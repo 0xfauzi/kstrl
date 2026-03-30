@@ -41,6 +41,7 @@ class RalphConfig:
     agent_cmd: str | None = None
     model: str | None = None
     model_reasoning_effort: str | None = None
+    agent_type: str | None = None  # "claude-code", "codex", "auto", or None
 
     # UI config
     ui_mode: str = "auto"  # auto|rich|plain
@@ -71,6 +72,7 @@ class RalphConfig:
             agent_cmd=os.environ.get("AGENT_CMD"),
             model=os.environ.get("MODEL"),
             model_reasoning_effort=os.environ.get("MODEL_REASONING_EFFORT"),
+            agent_type=os.environ.get("RALPH_AGENT_TYPE"),
             ui_mode=os.environ.get("RALPH_UI", "auto"),
             no_color="NO_COLOR" in os.environ,
             ascii_only=_parse_bool(os.environ.get("RALPH_ASCII")),

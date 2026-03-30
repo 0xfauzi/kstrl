@@ -13,10 +13,13 @@ import click
 from click.core import ParameterSource
 
 from ralph_py import __version__
-from ralph_py.agents import CodexAgent, get_agent
+from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
 from ralph_py.config import RalphConfig, _parse_paths
-from ralph_py.init_cmd import DEFAULT_CODEBASE_MAP, DEFAULT_FEATURE_UNDERSTAND, run_init
+from ralph_py.decompose import decompose_spec
+from ralph_py.factory import FactoryConfig, run_factory
+from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from ralph_py.loop import run_loop
+from ralph_py.manifest import Manifest
 from ralph_py.prd import PRD
 from ralph_py.ui import get_ui
 
@@ -740,7 +743,8 @@ def feature(
         for story in prd_doc.user_stories:
             for item in story.acceptance_criteria:
                 lower = item.lower()
-                if ("typecheck" in lower or "tests" in lower or "lint" in lower) and "pass" in lower:
+                has_check = "typecheck" in lower or "tests" in lower or "lint" in lower
+                if has_check and "pass" in lower:
                     if item not in seen:
                         seen.add(item)
                         verification.append(item)
@@ -875,6 +879,359 @@ def feature(
         last_log = repair_log
 
     sys.exit(repair_result.exit_code)
+
+
+@cli.command()
+@click.option(
+    "--spec",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Markdown spec file to decompose",
+)
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option(
+    "--project-name",
+    required=True,
+    help="Name for this factory project",
+)
+@click.option(
+    "--base-branch",
+    default="main",
+    help="Base git branch",
+)
+@click.option(
+    "--single-pr",
+    is_flag=True,
+    help="Use a single branch for all components",
+)
+@click.option(
+    "--agent-cmd",
+    help="Custom agent command (prompt piped to stdin)",
+)
+@click.option(
+    "--model", "-m",
+    help="Model for the agent",
+)
+@click.option(
+    "--reasoning",
+    help="Reasoning effort for codex",
+)
+@click.option(
+    "--agent-type",
+    type=click.Choice(["auto", "claude-code", "codex"]),
+    default="auto",
+    help="Agent type",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def decompose(
+    spec: Path,
+    root: Path | None,
+    project_name: str,
+    base_branch: str,
+    single_pr: bool,
+    agent_cmd: str | None,
+    model: str | None,
+    reasoning: str | None,
+    agent_type: str,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Decompose a spec into components and generate PRDs."""
+    ctx = click.get_current_context()
+
+    root_dir = root.resolve() if root else Path.cwd()
+
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
+    effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
+    effective_reasoning = (
+        reasoning if _use_cli_value(ctx, "reasoning")
+        else os.environ.get("MODEL_REASONING_EFFORT")
+    )
+    effective_type = (
+        agent_type if _use_cli_value(ctx, "agent_type")
+        else os.environ.get("RALPH_AGENT_TYPE", "auto")
+    )
+
+    if not effective_cmd and not CodexAgent.is_available() and not ClaudeCodeAgent.is_available():
+        ui_impl.err("No agent available (codex and claude not found in PATH)")
+        ui_impl.info("Install an agent or use --agent-cmd to specify a custom one")
+        sys.exit(1)
+
+    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+
+    try:
+        manifest = decompose_spec(
+            spec_path=spec,
+            project_name=project_name,
+            base_branch=base_branch,
+            single_pr=single_pr,
+            agent=agent,
+            ui=ui_impl,
+            root_dir=root_dir,
+        )
+        ui_impl.ok(f"Decomposed into {len(manifest.components)} components")
+    except ValueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--spec",
+    type=click.Path(exists=True, path_type=Path),
+    help="Markdown spec file (runs decompose first)",
+)
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Existing manifest file (skip decompose)",
+)
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option(
+    "--project-name",
+    help="Name for this factory project (required with --spec)",
+)
+@click.option(
+    "--base-branch",
+    default="main",
+    help="Base git branch",
+)
+@click.option(
+    "--single-pr",
+    is_flag=True,
+    help="Use a single branch/PR for all components",
+)
+@click.option(
+    "--max-parallel",
+    type=int,
+    default=4,
+    help="Maximum parallel components",
+)
+@click.option(
+    "--max-retries",
+    type=int,
+    default=3,
+    help="Maximum retries per component",
+)
+@click.option(
+    "--create-prs/--no-prs",
+    default=True,
+    help="Create PRs for completed components",
+)
+@click.option(
+    "--verify-command",
+    help="Command to verify each component (e.g., 'uv run pytest')",
+)
+@click.option(
+    "--no-worktrees",
+    is_flag=True,
+    help="Disable git worktrees (forces sequential execution)",
+)
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.option(
+    "--agent-cmd",
+    help="Custom agent command (prompt piped to stdin)",
+)
+@click.option(
+    "--model", "-m",
+    help="Model for the agent",
+)
+@click.option(
+    "--reasoning",
+    help="Reasoning effort for codex",
+)
+@click.option(
+    "--agent-type",
+    type=click.Choice(["auto", "claude-code", "codex"]),
+    default="auto",
+    help="Agent type",
+)
+@click.option(
+    "--sleep", "-s",
+    type=float,
+    default=2.0,
+    help="Sleep seconds between iterations",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def factory(
+    spec: Path | None,
+    manifest_path: Path | None,
+    root: Path | None,
+    project_name: str | None,
+    base_branch: str,
+    single_pr: bool,
+    max_parallel: int,
+    max_retries: int,
+    create_prs: bool,
+    verify_command: str | None,
+    no_worktrees: bool,
+    yes: bool,
+    agent_cmd: str | None,
+    model: str | None,
+    reasoning: str | None,
+    agent_type: str,
+    sleep: float,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Run the software factory - decompose and execute a spec.
+
+    Provide either --spec (to decompose first) or --manifest (to resume).
+    """
+    ctx = click.get_current_context()
+
+    if not spec and not manifest_path:
+        ui_impl = get_ui("auto", no_color)
+        ui_impl.err("Either --spec or --manifest is required")
+        sys.exit(2)
+
+    root_dir = root.resolve() if root else Path.cwd()
+
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
+    effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
+    effective_reasoning = (
+        reasoning if _use_cli_value(ctx, "reasoning")
+        else os.environ.get("MODEL_REASONING_EFFORT")
+    )
+    effective_type = (
+        agent_type if _use_cli_value(ctx, "agent_type")
+        else os.environ.get("RALPH_AGENT_TYPE", "auto")
+    )
+
+    if not effective_cmd and not CodexAgent.is_available() and not ClaudeCodeAgent.is_available():
+        ui_impl.err("No agent available (codex and claude not found in PATH)")
+        ui_impl.info("Install an agent or use --agent-cmd to specify a custom one")
+        sys.exit(1)
+
+    agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
+
+    # Get or create manifest
+    if manifest_path:
+        try:
+            manifest = Manifest.load(manifest_path)
+        except Exception as exc:
+            ui_impl.err(f"Failed to load manifest: {exc}")
+            sys.exit(1)
+    else:
+        assert spec is not None
+        if not project_name:
+            ui_impl.err("--project-name is required with --spec")
+            sys.exit(2)
+
+        try:
+            manifest = decompose_spec(
+                spec_path=spec,
+                project_name=project_name,
+                base_branch=base_branch,
+                single_pr=single_pr,
+                agent=agent,
+                ui=ui_impl,
+                root_dir=root_dir,
+            )
+        except ValueError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(1)
+
+    # Display summary and confirm
+    ui_impl.section("Factory Plan")
+    ui_impl.kv("Project", manifest.project_name)
+    ui_impl.kv("Components", str(len(manifest.components)))
+    ui_impl.kv("Base branch", manifest.base_branch)
+    ui_impl.kv("Single PR", "yes" if manifest.single_pr else "no")
+    ui_impl.kv("Max parallel", str(max_parallel))
+    ui_impl.kv("Create PRs", "yes" if create_prs else "no")
+
+    topo = manifest.topological_order()
+    ui_impl.info("")
+    ui_impl.info("Execution order:")
+    for i, comp_id in enumerate(topo, 1):
+        comp = manifest.get_component(comp_id)
+        status = comp.status if comp else "?"
+        dep_list = ", ".join(comp.dependencies) if comp and comp.dependencies else ""
+        deps = f" (depends on: {dep_list})" if dep_list else ""
+        ui_impl.info(f"  {i}. {comp_id} [{status}]{deps}")
+
+    if not yes and ui_impl.can_prompt():
+        choice = ui_impl.choose(
+            "Proceed with factory execution?",
+            ["Start", "Quit"],
+            default=0,
+        )
+        if choice != 0:
+            sys.exit(0)
+
+    # Build configs
+    factory_config = FactoryConfig(
+        max_parallel=max_parallel,
+        max_retries=max_retries,
+        use_worktrees=not no_worktrees,
+        single_pr=manifest.single_pr,
+        create_prs=create_prs,
+        verify_command=verify_command,
+    )
+
+    ralph_dir = root_dir / "scripts" / "ralph"
+    base_config = RalphConfig.from_env(root_dir)
+    if _use_cli_value(ctx, "agent_cmd"):
+        base_config.agent_cmd = agent_cmd
+    if _use_cli_value(ctx, "model"):
+        base_config.model = model
+    if _use_cli_value(ctx, "reasoning"):
+        base_config.model_reasoning_effort = reasoning
+    if _use_cli_value(ctx, "agent_type"):
+        base_config.agent_type = agent_type
+    if _use_cli_value(ctx, "sleep"):
+        base_config.sleep_seconds = sleep
+    base_config.ui_mode = "plain"
+    base_config.no_color = True
+
+    # Ensure prompt file exists
+    if not base_config.prompt_file.exists():
+        default_prompt = ralph_dir / "prompt.md"
+        if default_prompt.exists():
+            base_config.prompt_file = default_prompt
+
+    result = run_factory(manifest, factory_config, base_config, ui_impl, root_dir)
+    sys.exit(result.exit_code)
 
 
 def main() -> None:
