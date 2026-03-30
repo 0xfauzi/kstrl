@@ -53,6 +53,9 @@ class VerifyConfig:
     lint_command: str | None = None
     check_diff_scope: bool = True
     check_bad_patterns: bool = True
+    mutation_testing: bool = False
+    mutation_threshold: float = 50.0
+    mutation_timeout: float = 600.0
     subprocess_timeout: float = 300.0
 
     @classmethod
@@ -62,6 +65,13 @@ class VerifyConfig:
             test_command=os.environ.get("RALPH_VERIFY_TEST_CMD"),
             typecheck_command=os.environ.get("RALPH_VERIFY_TYPECHECK_CMD"),
             lint_command=os.environ.get("RALPH_VERIFY_LINT_CMD"),
+            mutation_testing=os.environ.get("RALPH_MUTATION_TESTING", "") == "1",
+            mutation_threshold=float(
+                os.environ.get("RALPH_MUTATION_THRESHOLD", "50")
+            ),
+            mutation_timeout=float(
+                os.environ.get("RALPH_MUTATION_TIMEOUT", "600")
+            ),
             subprocess_timeout=float(
                 os.environ.get("RALPH_TIMEOUT_VERIFY", "300")
             ),
@@ -311,6 +321,128 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     )
 
 
+def check_mutation_score(
+    cwd: Path,
+    base_branch: str,
+    threshold: float = 50.0,
+    timeout: float = 600.0,
+) -> CheckResult:
+    """Run mutation testing on changed files using mutmut.
+
+    Only mutates Python files changed relative to base_branch.
+    Returns FAIL if mutation score is below threshold.
+    Requires mutmut to be installed (pip install mutmut).
+    """
+    import shutil
+
+    start = time.monotonic()
+
+    if not shutil.which("mutmut"):
+        return CheckResult(
+            name="mutation_testing",
+            passed=True,
+            message="mutmut not installed, skipping",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    changed = git.get_diff_names(base_branch, cwd)
+    py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
+    if not py_files:
+        return CheckResult(
+            name="mutation_testing",
+            passed=True,
+            message="No non-test Python files changed",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    # Run mutmut on changed files only
+    paths_arg = " ".join(py_files)
+    try:
+        result = subprocess.run(
+            f"mutmut run --paths-to-mutate={paths_arg} --no-progress",
+            shell=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return CheckResult(
+            name="mutation_testing",
+            passed=True,
+            message=f"Mutation testing timed out after {timeout}s, skipping",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    # Parse mutmut results
+    try:
+        results_proc = subprocess.run(
+            "mutmut results",
+            shell=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = results_proc.stdout
+    except subprocess.TimeoutExpired:
+        output = result.stdout
+
+    # Parse score from mutmut junitxml or text output
+    killed = 0
+    survived = 0
+    for line in (result.stdout + result.stderr + output).splitlines():
+        lower = line.lower().strip()
+        if "killed" in lower:
+            parts = lower.split()
+            for i, p in enumerate(parts):
+                if p == "killed" and i > 0:
+                    try:
+                        killed = int(parts[i - 1])
+                    except ValueError:
+                        pass
+        if "survived" in lower:
+            parts = lower.split()
+            for i, p in enumerate(parts):
+                if p == "survived" and i > 0:
+                    try:
+                        survived = int(parts[i - 1])
+                    except ValueError:
+                        pass
+
+    total = killed + survived
+    if total == 0:
+        return CheckResult(
+            name="mutation_testing",
+            passed=True,
+            message="No mutations generated",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    score = (killed / total) * 100
+    details = [
+        f"Killed: {killed}, Survived: {survived}, Total: {total}",
+        f"Score: {score:.1f}% (threshold: {threshold}%)",
+    ]
+
+    if score < threshold:
+        return CheckResult(
+            name="mutation_testing",
+            passed=False,
+            message=f"Mutation score {score:.1f}% below threshold {threshold}%",
+            details=details,
+            duration_seconds=time.monotonic() - start,
+        )
+
+    return CheckResult(
+        name="mutation_testing",
+        passed=True,
+        message=f"Mutation score {score:.1f}% (threshold: {threshold}%)",
+        details=details,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def run_mechanical_verification(
     worktree_path: Path,
     prd_path: Path,
@@ -342,6 +474,12 @@ def run_mechanical_verification(
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))
+
+    if config.mutation_testing:
+        checks.append(check_mutation_score(
+            worktree_path, base_branch,
+            config.mutation_threshold, config.mutation_timeout,
+        ))
 
     passed = all(c.passed for c in checks)
     return VerificationResult(passed=passed, checks=checks)

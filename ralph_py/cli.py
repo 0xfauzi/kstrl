@@ -1064,6 +1064,17 @@ def decompose(
     help="Skip Phase 1 mechanical verification",
 )
 @click.option(
+    "--mutation-testing",
+    is_flag=True,
+    help="Enable mutation testing (requires mutmut, off by default)",
+)
+@click.option(
+    "--mutation-threshold",
+    type=float,
+    default=50.0,
+    help="Mutation score threshold percent (default: 50)",
+)
+@click.option(
     "--review-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
     default="hard",
@@ -1164,6 +1175,8 @@ def factory(
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
+    mutation_testing: bool,
+    mutation_threshold: float,
     review_mode: str,
     review_agent_cmd: str | None,
     review_model: str | None,
@@ -1281,6 +1294,8 @@ def factory(
             test_command=test_command,
             typecheck_command=typecheck_command,
             lint_command=lint_command,
+            mutation_testing=mutation_testing,
+            mutation_threshold=mutation_threshold,
         )
 
     c_config: ContractConfig | None = None

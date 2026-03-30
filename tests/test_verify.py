@@ -12,6 +12,7 @@ from ralph_py.verify import (
     VerifyConfig,
     check_bad_patterns,
     check_diff_scope,
+    check_mutation_score,
     check_prd_stories,
     check_test_suite,
     check_typecheck,
@@ -227,3 +228,48 @@ class TestRunMechanicalVerification:
         ctx = result.as_context()
         assert "test_suite: FAIL" in ctx
         assert "typecheck" not in ctx  # passed checks excluded
+
+
+class TestCheckMutationScore:
+    def test_skips_when_mutmut_not_installed(self, tmp_path: Path) -> None:
+        with patch("shutil.which", return_value=None):
+            result = check_mutation_score(tmp_path, "main")
+        assert result.passed is True
+        assert "not installed" in result.message
+
+    def test_skips_when_no_py_files_changed(self, tmp_path: Path) -> None:
+        with (
+            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch("ralph_py.verify.git.get_diff_names", return_value=["readme.md"]),
+        ):
+            result = check_mutation_score(tmp_path, "main")
+        assert result.passed is True
+        assert "No non-test" in result.message
+
+    def test_skips_test_files(self, tmp_path: Path) -> None:
+        with (
+            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch(
+                "ralph_py.verify.git.get_diff_names",
+                return_value=["test_main.py", "tests/test_foo.py"],
+            ),
+        ):
+            result = check_mutation_score(tmp_path, "main")
+        assert result.passed is True
+
+    def test_timeout_passes_gracefully(self, tmp_path: Path) -> None:
+        import subprocess as sp
+        with (
+            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch(
+                "ralph_py.verify.git.get_diff_names",
+                return_value=["src/main.py"],
+            ),
+            patch(
+                "ralph_py.verify.subprocess.run",
+                side_effect=sp.TimeoutExpired("mutmut", 600),
+            ),
+        ):
+            result = check_mutation_score(tmp_path, "main", timeout=600)
+        assert result.passed is True
+        assert "timed out" in result.message
