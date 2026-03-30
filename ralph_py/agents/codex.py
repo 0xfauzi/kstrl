@@ -41,7 +41,9 @@ class CodexAgent:
         """Check if codex CLI is available."""
         return shutil.which("codex") is not None
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
         """Run codex with prompt piped to stdin.
 
         Yields output lines as they arrive.

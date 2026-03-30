@@ -38,6 +38,15 @@ class Component:
     retries: int = 0
     pr_number: int | None = None
     pr_url: str = ""
+    # Observability fields
+    started_at: str = ""
+    completed_at: str = ""
+    duration_seconds: float = 0.0
+    iteration_count: int = 0
+    # Verification/review results
+    verification_passed: bool | None = None
+    review_passed: bool | None = None
+    review_findings: str = ""
 
 
 @dataclass
@@ -74,6 +83,13 @@ class Manifest:
                 retries=c.get("retries", 0),
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
+                started_at=c.get("startedAt", ""),
+                completed_at=c.get("completedAt", ""),
+                duration_seconds=c.get("durationSeconds", 0.0),
+                iteration_count=c.get("iterationCount", 0),
+                verification_passed=c.get("verificationPassed"),
+                review_passed=c.get("reviewPassed"),
+                review_findings=c.get("reviewFindings", ""),
             )
             for c in data["components"]
         ]
@@ -108,6 +124,13 @@ class Manifest:
                     "retries": c.retries,
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
+                    "startedAt": c.started_at,
+                    "completedAt": c.completed_at,
+                    "durationSeconds": c.duration_seconds,
+                    "iterationCount": c.iteration_count,
+                    "verificationPassed": c.verification_passed,
+                    "reviewPassed": c.review_passed,
+                    "reviewFindings": c.review_findings,
                 }
                 for c in self.components
             ],
@@ -171,7 +194,11 @@ class Manifest:
             return errors
 
         component_required = {"id", "title", "description", "dependencies", "prdPath", "branchName"}
-        component_optional = {"status", "error", "retries", "prNumber", "prUrl"}
+        component_optional = {
+            "status", "error", "retries", "prNumber", "prUrl",
+            "startedAt", "completedAt", "durationSeconds", "iterationCount",
+            "verificationPassed", "reviewPassed", "reviewFindings",
+        }
         component_all = component_required | component_optional
 
         for i, comp in enumerate(components):
@@ -362,3 +389,39 @@ class Manifest:
                     bfs_queue.append(dependent_id)
 
         return skipped
+
+    def compute_tiers(self) -> list[list[str]]:
+        """Compute DAG tier levels using Kahn's algorithm with level tracking.
+
+        Tier 0: components with no dependencies.
+        Tier N: components whose dependencies are all in tiers < N.
+
+        Returns list of tiers, each tier is a list of component IDs.
+        Raises ValueError if the graph contains cycles.
+        """
+        dag_errors = self.validate_dag()
+        cycle_errors = [e for e in dag_errors if "cycle" in e.lower()]
+        if cycle_errors:
+            raise ValueError(cycle_errors[0])
+
+        in_degree: dict[str, int] = {c.id: 0 for c in self.components}
+        adj: dict[str, list[str]] = {c.id: [] for c in self.components}
+        for comp in self.components:
+            for dep in comp.dependencies:
+                adj[dep].append(comp.id)
+                in_degree[comp.id] += 1
+
+        tiers: list[list[str]] = []
+        current_tier = [cid for cid, deg in in_degree.items() if deg == 0]
+
+        while current_tier:
+            tiers.append(sorted(current_tier))
+            next_tier: list[str] = []
+            for node in current_tier:
+                for neighbor in adj[node]:
+                    in_degree[neighbor] -= 1
+                    if in_degree[neighbor] == 0:
+                        next_tier.append(neighbor)
+            current_tier = next_tier
+
+        return tiers

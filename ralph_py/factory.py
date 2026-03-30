@@ -1,4 +1,4 @@
-"""Factory orchestrator - parallel component execution with git worktrees."""
+"""Factory orchestrator - parallel component execution with 3-phase verification."""
 
 from __future__ import annotations
 
@@ -11,8 +11,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py.config import RalphConfig
+from ralph_py.context import IterationContext
+from ralph_py.contract import ContractConfig, ContractMode, run_contract_testing
 from ralph_py.manifest import Component, ComponentStatus, Manifest
+from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
+from ralph_py.review import ReviewMode, run_review
+from ralph_py.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
@@ -29,6 +34,17 @@ class FactoryConfig:
     single_pr: bool = False
     create_prs: bool = True
     verify_command: str | None = None
+    # Phase 1: mechanical verification
+    verify_config: VerifyConfig | None = None
+    # Phase 2: reviewer agent
+    review_mode: str = ReviewMode.HARD.value
+    review_agent_cmd: str | None = None
+    review_agent_type: str | None = None
+    review_model: str | None = None
+    # Phase 3: contract testing
+    contract_config: ContractConfig | None = None
+    # Observability
+    progress_log_path: Path | None = None
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -48,6 +64,8 @@ class ComponentResult:
     success: bool
     iterations: int = 0
     error: str | None = None
+    duration_seconds: float = 0.0
+    context_json: str | None = None
 
 
 @dataclass
@@ -67,53 +85,31 @@ def _setup_worktree(
     base_branch: str,
     root_dir: Path,
 ) -> Path:
-    """Create a git worktree for a component.
-
-    Returns the worktree path.
-    Raises RuntimeError on failure.
-    """
+    """Create a git worktree for a component."""
     worktree_base = root_dir / ".ralph" / "worktrees"
     worktree_base.mkdir(parents=True, exist_ok=True)
     worktree_path = worktree_base / component_id
 
     if worktree_path.exists():
-        # Clean up stale worktree
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=root_dir,
-            capture_output=True,
+            cwd=root_dir, capture_output=True, timeout=30,
         )
 
     result = subprocess.run(
-        [
-            "git", "worktree", "add",
-            str(worktree_path),
-            "-b", branch_name,
-            base_branch,
-        ],
-        cwd=root_dir,
-        capture_output=True,
-        text=True,
+        ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
+        cwd=root_dir, capture_output=True, text=True, timeout=30,
     )
 
     if result.returncode != 0:
-        # Branch may already exist - try without -b
         result = subprocess.run(
-            [
-                "git", "worktree", "add",
-                str(worktree_path),
-                branch_name,
-            ],
-            cwd=root_dir,
-            capture_output=True,
-            text=True,
+            ["git", "worktree", "add", str(worktree_path), branch_name],
+            cwd=root_dir, capture_output=True, text=True, timeout=30,
         )
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip()
-        raise RuntimeError(
-            f"Failed to create worktree for '{component_id}': {error}"
-        )
+        raise RuntimeError(f"Failed to create worktree for '{component_id}': {error}")
 
     return worktree_path
 
@@ -123,11 +119,9 @@ def _cleanup_worktree(component_id: str, root_dir: Path) -> None:
     worktree_path = root_dir / ".ralph" / "worktrees" / component_id
     if not worktree_path.exists():
         return
-
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
-        cwd=root_dir,
-        capture_output=True,
+        cwd=root_dir, capture_output=True, timeout=30,
     )
 
 
@@ -141,16 +135,18 @@ def _run_component(
     reasoning: str | None,
     agent_type: str | None,
     sleep_seconds: float,
+    previous_context_json: str | None = None,
 ) -> ComponentResult:
-    """Run a single component's feature pipeline.
+    """Run a single component's implementation loop.
 
-    This is a top-level function so it's picklable for ProcessPoolExecutor.
-    It creates all its own objects internally - no shared state.
+    Top-level function (picklable for ProcessPoolExecutor).
+    Creates all objects internally - no shared state.
     """
     from ralph_py.agents import get_agent
     from ralph_py.loop import run_loop
     from ralph_py.ui.plain import PlainUI
 
+    start = time.monotonic()
     worktree_path = Path(worktree_path_str)
     prd_path = Path(prd_path_str)
 
@@ -170,7 +166,14 @@ def _run_component(
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
         worktree_prompt.write_text(prompt_source.read_text())
 
-    # Build config for implementation loop
+    # Build context prefix from previous retries
+    context_prefix: str | None = None
+    if previous_context_json:
+        ctx = IterationContext.from_json(previous_context_json)
+        formatted = ctx.format_for_prompt()
+        if formatted.strip():
+            context_prefix = formatted
+
     config = RalphConfig(
         max_iterations=10,
         prompt_file=worktree_prompt,
@@ -188,12 +191,14 @@ def _run_component(
     )
 
     try:
-        result = run_loop(config, ui, agent, worktree_path)
+        result = run_loop(config, ui, agent, worktree_path, context_prefix=context_prefix)
         return ComponentResult(
             component_id=component_id,
             success=result.completed,
             iterations=result.iterations,
             error=None if result.completed else "Did not complete",
+            duration_seconds=time.monotonic() - start,
+            context_json=previous_context_json,
         )
     except Exception as exc:
         return ComponentResult(
@@ -201,28 +206,9 @@ def _run_component(
             success=False,
             iterations=0,
             error=str(exc),
+            duration_seconds=time.monotonic() - start,
+            context_json=previous_context_json,
         )
-
-
-def _verify_component(
-    worktree_path: Path,
-    verify_command: str | None,
-) -> bool:
-    """Run verification in a component's worktree.
-
-    Returns True if verification passes.
-    """
-    if not verify_command:
-        return True
-
-    result = subprocess.run(
-        verify_command,
-        shell=True,
-        cwd=worktree_path,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
 
 
 def run_factory(
@@ -232,12 +218,24 @@ def run_factory(
     ui: UI,
     root_dir: Path,
 ) -> FactoryResult:
-    """Run the factory orchestrator.
+    """Run the factory orchestrator with 3-phase verification.
 
-    Executes components in parallel using git worktrees, respecting the
-    dependency DAG. Saves manifest after every state change for crash recovery.
+    Phase 1: Mechanical verification (tests, typecheck, lint, PRD, diff scope)
+    Phase 2: Second-opinion review (separate agent reviews diff against spec)
+    Phase 3: Contract testing (merge tier branches, run integration tests)
     """
+    from ralph_py.agents import get_agent
+
+    factory_start = time.monotonic()
     factory_result = FactoryResult()
+
+    # Set up progress log
+    if factory_config.progress_log_path:
+        progress_log = ProgressLog(factory_config.progress_log_path)
+    else:
+        progress_log = NullProgressLog()
+
+    progress_log.factory_started(manifest.project_name, len(manifest.components))
 
     # Validate DAG
     ui.section("Factory: Validating DAG")
@@ -251,10 +249,13 @@ def run_factory(
     topo_order = manifest.topological_order()
     ui.ok(f"DAG valid: {len(topo_order)} components in dependency order")
 
-    # Reset any RUNNING components (crash recovery)
+    # Crash recovery: reset intermediate states
     for comp in manifest.components:
-        if comp.status == ComponentStatus.RUNNING.value:
-            ui.info(f"  Resetting '{comp.id}' from RUNNING to PENDING (crash recovery)")
+        if comp.status in (
+            ComponentStatus.RUNNING.value,
+            ComponentStatus.VERIFYING.value,
+        ):
+            ui.info(f"  Resetting '{comp.id}' from {comp.status} to PENDING")
             comp.status = ComponentStatus.PENDING.value
 
     manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
@@ -268,115 +269,171 @@ def run_factory(
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))
     ui.kv("Max retries", str(factory_config.max_retries))
+    ui.kv("Review mode", factory_config.review_mode)
+    contract_mode = (
+        factory_config.contract_config.mode
+        if factory_config.contract_config else "skip"
+    )
+    ui.kv("Contract check", contract_mode)
 
-    # Main scheduling loop
+    # Scheduling state
     running_futures: dict[Future[ComponentResult], str] = {}
     worktree_paths: dict[str, Path] = {}
+    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
 
     if base_config.prompt_file.is_absolute():
         prompt_file_rel = base_config.prompt_file.relative_to(root_dir).as_posix()
     else:
         prompt_file_rel = str(base_config.prompt_file)
 
-    class _ComponentKwargs:
-        """Typed container for _run_component arguments."""
+    def _retry_or_fail(comp: Component, error: str, context_json: str | None) -> None:
+        """Retry a component or mark it as failed."""
+        if comp.retries < factory_config.max_retries:
+            comp.retries += 1
+            comp.status = ComponentStatus.PENDING.value
+            comp.error = error
+            if context_json:
+                component_contexts[comp.id] = context_json
+            progress_log.component_retrying(comp.id, comp.retries, error)
+            ui.info(
+                f"  Retrying '{comp.id}' "
+                f"(attempt {comp.retries}/{factory_config.max_retries}): "
+                f"{error[:80]}"
+            )
+            time.sleep(factory_config.retry_delay)
+        else:
+            comp.status = ComponentStatus.FAILED.value
+            comp.error = error
+            skipped = manifest.cascade_skip(comp.id)
+            factory_result.failed.append(comp.id)
+            factory_result.skipped.extend(skipped)
+            progress_log.component_failed(comp.id, error)
+            ui.err(f"  Failed: {comp.id}: {error[:80]}")
+        manifest.save(manifest_path)
 
-        def __init__(
-            self,
-            component_id: str,
-            prd_path_str: str,
-            worktree_path_str: str,
-            prompt_file_str: str,
-            agent_cmd: str | None,
-            model: str | None,
-            reasoning: str | None,
-            agent_type: str | None,
-            sleep_seconds: float,
-        ) -> None:
-            self.component_id = component_id
-            self.prd_path_str = prd_path_str
-            self.worktree_path_str = worktree_path_str
-            self.prompt_file_str = prompt_file_str
-            self.agent_cmd = agent_cmd
-            self.model = model
-            self.reasoning = reasoning
-            self.agent_type = agent_type
-            self.sleep_seconds = sleep_seconds
-
-    def _build_component_kwargs(comp_id: str, prd_path: str, wt_path: Path) -> _ComponentKwargs:
-        return _ComponentKwargs(
-            component_id=comp_id,
-            prd_path_str=prd_path,
-            worktree_path_str=str(wt_path),
-            prompt_file_str=prompt_file_rel,
-            agent_cmd=base_config.agent_cmd,
-            model=base_config.model,
-            reasoning=base_config.model_reasoning_effort,
-            agent_type=base_config.agent_type,
-            sleep_seconds=base_config.sleep_seconds,
-        )
-
-    def _handle_result(
-        comp_id: str, comp_result: ComponentResult,
-    ) -> None:
+    def _handle_result(comp_id: str, comp_result: ComponentResult) -> None:
+        """Process component result through 3-phase verification."""
         comp = manifest.get_component(comp_id)
         if comp is None:
             return
 
-        if comp_result.success:
-            wt_path = worktree_paths.get(comp_id, root_dir)
-            verified = _verify_component(wt_path, factory_config.verify_command)
+        # Record timing
+        comp.duration_seconds = comp_result.duration_seconds
+        comp.iteration_count = comp_result.iterations
 
-            if verified:
-                comp.status = ComponentStatus.COMPLETED.value
-                comp.error = ""
-                factory_result.completed.append(comp_id)
-                ui.ok(f"  Completed: {comp_id} ({comp_result.iterations} iterations)")
-            else:
-                ui.warn(f"  Verification failed for '{comp_id}'")
-                if comp.retries < factory_config.max_retries:
-                    comp.retries += 1
-                    comp.status = ComponentStatus.PENDING.value
-                    comp.error = "Verification failed"
-                    ui.info(
-                        f"  Retrying '{comp_id}' "
-                        f"(attempt {comp.retries}/{factory_config.max_retries})"
-                    )
-                else:
-                    comp.status = ComponentStatus.FAILED.value
-                    comp.error = "Verification failed after max retries"
-                    skipped = manifest.cascade_skip(comp_id)
-                    factory_result.failed.append(comp_id)
-                    factory_result.skipped.extend(skipped)
-                    ui.err(f"  Failed: {comp_id} (verification)")
-        else:
-            error_msg = comp_result.error or "Unknown error"
-            if comp.retries < factory_config.max_retries:
-                comp.retries += 1
-                comp.status = ComponentStatus.PENDING.value
-                comp.error = error_msg
-                ui.info(
-                    f"  Retrying '{comp_id}' "
-                    f"(attempt {comp.retries}/{factory_config.max_retries}): "
-                    f"{error_msg}"
+        if not comp_result.success:
+            from ralph_py.context import IterationRecord
+            ctx = IterationContext.from_json(comp_result.context_json or "{}")
+            ctx.add_iteration(IterationRecord(
+                iteration=comp_result.iterations,
+                success=False,
+                error=comp_result.error,
+            ))
+            _retry_or_fail(comp, comp_result.error or "Unknown error", ctx.to_json())
+            return
+
+        wt_path = worktree_paths.get(comp_id, root_dir)
+
+        # PHASE 1: Mechanical verification
+        comp.status = ComponentStatus.VERIFYING.value
+        manifest.save(manifest_path)
+
+        verify_config = factory_config.verify_config or VerifyConfig()
+        ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
+        verify_start = time.monotonic()
+        verification = run_mechanical_verification(
+            wt_path,
+            wt_path / comp.prd_path,
+            manifest.base_branch,
+            None,
+            verify_config,
+        )
+        verify_duration = time.monotonic() - verify_start
+        comp.verification_passed = verification.passed
+        progress_log.verification_result(
+            comp_id, verification.passed,
+            check_names=[c.name for c in verification.checks],
+            failures=[c.message for c in verification.checks if not c.passed],
+            duration=verify_duration,
+        )
+
+        if not verification.passed:
+            failing = [c for c in verification.checks if not c.passed]
+            ui.warn(
+                f"  Phase 1 FAILED for {comp_id}: "
+                f"{', '.join(c.name for c in failing)}"
+            )
+            ctx = IterationContext.from_json(comp_result.context_json or "{}")
+            ctx.add_verification_failure(verification.as_context())
+            _retry_or_fail(comp, "Mechanical verification failed", ctx.to_json())
+            return
+
+        ui.ok(f"  Phase 1 passed for {comp_id}")
+
+        # PHASE 2: Second-opinion review
+        review_mode = ReviewMode(factory_config.review_mode)
+        if review_mode != ReviewMode.SKIP:
+            ui.info(f"  Phase 2: review ({review_mode.value}) for {comp_id}...")
+
+            review_agent = get_agent(
+                factory_config.review_agent_cmd,
+                factory_config.review_model,
+                None,
+                factory_config.review_agent_type or base_config.agent_type,
+            )
+            review_result = run_review(
+                review_agent,
+                wt_path / comp.prd_path,
+                wt_path,
+                manifest.base_branch,
+                verification,
+                review_mode,
+                ui,
+            )
+            comp.review_passed = review_result.passed
+            comp.review_findings = review_result.as_pr_body_section()
+            progress_log.review_result(
+                comp_id, review_result.passed,
+                mode=review_mode.value,
+                fail_count=review_result.fail_count,
+                advisory_count=review_result.advisory_count,
+                duration=review_result.duration_seconds,
+            )
+
+            if not review_result.passed:
+                ui.warn(
+                    f"  Phase 2 FAILED for {comp_id}: "
+                    f"{review_result.fail_count} failures"
                 )
-                time.sleep(factory_config.retry_delay)
-            else:
-                comp.status = ComponentStatus.FAILED.value
-                comp.error = error_msg
-                skipped = manifest.cascade_skip(comp_id)
-                factory_result.failed.append(comp_id)
-                factory_result.skipped.extend(skipped)
-                ui.err(f"  Failed: {comp_id}: {error_msg}")
+                ctx = IterationContext.from_json(comp_result.context_json or "{}")
+                ctx.add_review_finding(review_result.as_retry_context())
+                _retry_or_fail(comp, "Review failed", ctx.to_json())
+                return
 
+            ui.ok(f"  Phase 2 passed for {comp_id}")
+        else:
+            comp.review_passed = None
+
+        # All phases passed
+        comp.status = ComponentStatus.COMPLETED.value
+        comp.error = ""
+        factory_result.completed.append(comp_id)
+        progress_log.component_completed(
+            comp_id, comp_result.duration_seconds, comp_result.iterations,
+        )
+        ui.ok(
+            f"  COMPLETED: {comp_id} "
+            f"({comp_result.iterations} iterations, "
+            f"{comp_result.duration_seconds:.0f}s)"
+        )
         manifest.save(manifest_path)
 
     def _launch_component(comp: Component) -> Path | None:
-        """Set up and prepare a component for execution. Returns worktree path."""
+        """Set up worktree for a component. Returns worktree path or None."""
         try:
             if factory_config.use_worktrees:
                 wt_path = _setup_worktree(
-                    comp.id, comp.branch_name, manifest.base_branch, root_dir
+                    comp.id, comp.branch_name, manifest.base_branch, root_dir,
                 )
             else:
                 wt_path = root_dir
@@ -392,7 +449,16 @@ def run_factory(
             manifest.save(manifest_path)
             return None
 
-    # Sequential mode: run directly in-process (no executor)
+    def _submit_args(comp: Component, wt_path: Path) -> tuple:
+        ctx_json = component_contexts.get(comp.id)
+        return (
+            comp.id, comp.prd_path, str(wt_path),
+            prompt_file_rel, base_config.agent_cmd, base_config.model,
+            base_config.model_reasoning_effort, base_config.agent_type,
+            base_config.sleep_seconds, ctx_json,
+        )
+
+    # Main scheduling loop
     if max_parallel <= 1:
         while True:
             ready = manifest.get_ready_components()
@@ -401,28 +467,25 @@ def run_factory(
 
             comp = ready[0]
             comp.status = ComponentStatus.RUNNING.value
+            comp.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             manifest.save(manifest_path)
+            progress_log.component_started(comp.id)
             ui.info(f"  Starting: {comp.id}")
 
             wt_path = _launch_component(comp)
             if wt_path is None:
                 continue
 
-            kw = _build_component_kwargs(comp.id, comp.prd_path, wt_path)
+            args = _submit_args(comp, wt_path)
             try:
-                comp_result = _run_component(
-                    kw.component_id, kw.prd_path_str, kw.worktree_path_str,
-                    kw.prompt_file_str, kw.agent_cmd, kw.model,
-                    kw.reasoning, kw.agent_type, kw.sleep_seconds,
-                )
+                comp_result = _run_component(*args)
             except Exception as exc:
                 comp_result = ComponentResult(
-                    component_id=comp.id, success=False, error=str(exc)
+                    component_id=comp.id, success=False, error=str(exc),
                 )
 
             _handle_result(comp.id, comp_result)
     else:
-        # Parallel mode with ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=max_parallel) as executor:
             while True:
                 ready = manifest.get_ready_components()
@@ -430,20 +493,19 @@ def run_factory(
 
                 for comp in ready[:slots]:
                     comp.status = ComponentStatus.RUNNING.value
+                    comp.started_at = time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+                    )
                     manifest.save(manifest_path)
+                    progress_log.component_started(comp.id)
                     ui.info(f"  Starting: {comp.id}")
 
                     wt_path = _launch_component(comp)
                     if wt_path is None:
                         continue
 
-                    kw = _build_component_kwargs(comp.id, comp.prd_path, wt_path)
-                    future = executor.submit(
-                        _run_component,
-                        kw.component_id, kw.prd_path_str, kw.worktree_path_str,
-                        kw.prompt_file_str, kw.agent_cmd, kw.model,
-                        kw.reasoning, kw.agent_type, kw.sleep_seconds,
-                    )
+                    args = _submit_args(comp, wt_path)
+                    future = executor.submit(_run_component, *args)
                     running_futures[future] = comp.id
 
                 if not running_futures:
@@ -458,11 +520,11 @@ def run_factory(
                         comp_result = future.result()
                     except Exception as exc:
                         comp_result = ComponentResult(
-                            component_id=comp_id, success=False, error=str(exc)
+                            component_id=comp_id, success=False, error=str(exc),
                         )
 
                     _handle_result(comp_id, comp_result)
-                    break  # Re-check ready after each completion
+                    break
 
                 for future in done_futures:
                     del running_futures[future]
@@ -473,6 +535,35 @@ def run_factory(
         for comp_id in worktree_paths:
             _cleanup_worktree(comp_id, root_dir)
         ui.ok("Worktrees cleaned up")
+
+    # PHASE 3: Contract testing
+    contract_config = factory_config.contract_config
+    if contract_config and contract_config.mode != ContractMode.SKIP.value:
+        contract_results = run_contract_testing(
+            manifest, root_dir, contract_config, ui,
+        )
+        for cr in contract_results:
+            progress_log.contract_result(
+                cr.tier, cr.passed, cr.breaker, cr.duration_seconds,
+            )
+            if not cr.passed and cr.breaker:
+                breaker = manifest.get_component(cr.breaker)
+                if breaker and breaker.retries < factory_config.max_retries:
+                    breaker.retries += 1
+                    breaker.status = ComponentStatus.PENDING.value
+                    breaker.error = f"Contract test failed at tier {cr.tier}"
+                    # Remove from completed list
+                    if cr.breaker in factory_result.completed:
+                        factory_result.completed.remove(cr.breaker)
+                    ctx = IterationContext.from_json(
+                        component_contexts.get(cr.breaker, "{}")
+                    )
+                    ctx.add_contract_failure(cr.test_output[:500])
+                    component_contexts[cr.breaker] = ctx.to_json()
+                    manifest.save(manifest_path)
+                    ui.warn(
+                        f"  Contract breaker '{cr.breaker}' sent back for retry"
+                    )
 
     # Create PRs
     if factory_config.create_prs:
@@ -487,10 +578,19 @@ def run_factory(
         manifest.save(manifest_path)
 
     # Summary
+    factory_duration = time.monotonic() - factory_start
+    progress_log.factory_completed(
+        len(factory_result.completed),
+        len(factory_result.failed),
+        len(factory_result.skipped),
+        factory_duration,
+    )
+
     ui.section("Factory: Summary")
     ui.kv("Completed", str(len(factory_result.completed)))
     ui.kv("Failed", str(len(factory_result.failed)))
     ui.kv("Skipped", str(len(factory_result.skipped)))
+    ui.kv("Duration", f"{factory_duration:.0f}s")
     if factory_result.pr_urls:
         ui.kv("PRs created", str(len(factory_result.pr_urls)))
         for url in factory_result.pr_urls:
