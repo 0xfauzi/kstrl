@@ -61,6 +61,11 @@ def _generate_pr_body(
                 lines.append(f"- `{dep_id}`")
         lines.append("")
 
+    # Review findings (if any)
+    if component.review_findings:
+        lines.append(component.review_findings)
+        lines.append("")
+
     # PRD reference
     lines.append("## PRD")
     lines.append("")

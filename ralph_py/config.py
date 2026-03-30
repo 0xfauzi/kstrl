@@ -43,6 +43,11 @@ class RalphConfig:
     model_reasoning_effort: str | None = None
     agent_type: str | None = None  # "claude-code", "codex", "auto", or None
 
+    # Timeout config
+    agent_iteration_timeout: float = 1800.0   # 30 min per agent.run() call
+    component_timeout: float = 7200.0         # 2 hours per component total
+    subprocess_timeout: float = 60.0          # general subprocess default
+
     # UI config
     ui_mode: str = "auto"  # auto|rich|plain
     no_color: bool = False
@@ -73,6 +78,15 @@ class RalphConfig:
             model=os.environ.get("MODEL"),
             model_reasoning_effort=os.environ.get("MODEL_REASONING_EFFORT"),
             agent_type=os.environ.get("RALPH_AGENT_TYPE"),
+            agent_iteration_timeout=float(
+                os.environ.get("RALPH_TIMEOUT_AGENT_ITERATION", "1800")
+            ),
+            component_timeout=float(
+                os.environ.get("RALPH_TIMEOUT_COMPONENT", "7200")
+            ),
+            subprocess_timeout=float(
+                os.environ.get("RALPH_TIMEOUT_DEFAULT", "60")
+            ),
             ui_mode=os.environ.get("RALPH_UI", "auto"),
             no_color="NO_COLOR" in os.environ,
             ascii_only=_parse_bool(os.environ.get("RALPH_ASCII")),

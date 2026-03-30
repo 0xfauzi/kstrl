@@ -15,12 +15,15 @@ class Agent(Protocol):
         """Human-readable agent name for display."""
         ...
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
         """Run agent with prompt, yielding output lines.
 
         Args:
             prompt: The prompt text to send to the agent
             cwd: Working directory for the agent process
+            timeout: Optional wall-clock timeout in seconds
 
         Yields:
             Output lines from the agent (without trailing newlines)

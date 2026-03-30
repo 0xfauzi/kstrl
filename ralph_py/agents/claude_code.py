@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
 
 class ClaudeCodeAgent:
     """Agent that uses the Claude Code CLI (claude --print)."""
-
-    _supports_stream_json: bool | None = None
 
     def __init__(self, model: str | None = None):
         """Initialize Claude Code agent.
@@ -34,13 +33,17 @@ class ClaudeCodeAgent:
         """Check if claude CLI is available."""
         return shutil.which("claude") is not None
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
         """Run claude --print with prompt piped to stdin.
 
-        Yields output lines as they arrive.
+        Yields output lines as they arrive. If timeout is set and exceeded,
+        the process is terminated and an error line is yielded.
         """
         self._final_message = None
         last_non_empty_line: str | None = None
+        start = time.monotonic()
 
         cmd = ["claude", "--print"]
         if self._model:
@@ -65,6 +68,14 @@ class ClaudeCodeAgent:
 
             if proc.stdout:
                 for line in proc.stdout:
+                    if timeout and (time.monotonic() - start) > timeout:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        yield f"ERROR: agent timed out after {timeout}s"
+                        return
                     line = line.rstrip("\n")
                     if line.strip():
                         last_non_empty_line = line

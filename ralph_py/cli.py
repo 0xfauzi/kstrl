@@ -87,7 +87,9 @@ class LoggingAgent:
     def name(self) -> str:
         return self._agent.name
 
-    def run(self, prompt: str, cwd: Path | None = None):
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ):  # type: ignore[override]
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         with self._log_path.open("a") as handle:
             for line in self._agent.run(prompt, cwd):
@@ -1042,7 +1044,76 @@ def decompose(
 )
 @click.option(
     "--verify-command",
-    help="Command to verify each component (e.g., 'uv run pytest')",
+    help="Legacy: single verify command (prefer --test-command etc.)",
+)
+@click.option(
+    "--test-command",
+    help="Test suite command (default: 'uv run pytest')",
+)
+@click.option(
+    "--typecheck-command",
+    help="Typecheck command (default: 'uv run mypy .')",
+)
+@click.option(
+    "--lint-command",
+    help="Lint command (default: 'uv run ruff check .')",
+)
+@click.option(
+    "--no-verify",
+    is_flag=True,
+    help="Skip Phase 1 mechanical verification",
+)
+@click.option(
+    "--mutation-testing",
+    is_flag=True,
+    help="Enable mutation testing (requires mutmut, off by default)",
+)
+@click.option(
+    "--mutation-threshold",
+    type=float,
+    default=50.0,
+    help="Mutation score threshold percent (default: 50)",
+)
+@click.option(
+    "--review-mode",
+    type=click.Choice(["hard", "advisory", "skip"]),
+    default="hard",
+    help="Phase 2 review: hard (block), advisory (warn), skip",
+)
+@click.option(
+    "--review-agent-cmd",
+    help="Custom agent for reviewer (default: same as implementation agent)",
+)
+@click.option(
+    "--review-model",
+    help="Model for reviewer agent",
+)
+@click.option(
+    "--contract-check",
+    type=click.Choice(["tier", "final", "skip"]),
+    default="tier",
+    help="Phase 3 contract testing: tier (per-tier), final (end-only), skip",
+)
+@click.option(
+    "--contract-test-cmd",
+    help="Test command for contract testing (default: same as --test-command)",
+)
+@click.option(
+    "--agent-timeout",
+    type=float,
+    default=1800.0,
+    help="Timeout per agent iteration in seconds (default: 1800)",
+)
+@click.option(
+    "--component-timeout",
+    type=float,
+    default=7200.0,
+    help="Timeout per component total in seconds (default: 7200)",
+)
+@click.option(
+    "--progress-log",
+    type=click.Path(path_type=Path),
+    help="Path for JSONL progress log",
 )
 @click.option(
     "--no-worktrees",
@@ -1100,6 +1171,20 @@ def factory(
     max_retries: int,
     create_prs: bool,
     verify_command: str | None,
+    test_command: str | None,
+    typecheck_command: str | None,
+    lint_command: str | None,
+    no_verify: bool,
+    mutation_testing: bool,
+    mutation_threshold: float,
+    review_mode: str,
+    review_agent_cmd: str | None,
+    review_model: str | None,
+    contract_check: str,
+    contract_test_cmd: str | None,
+    agent_timeout: float,
+    component_timeout: float,
+    progress_log: Path | None,
     no_worktrees: bool,
     yes: bool,
     agent_cmd: str | None,
@@ -1200,6 +1285,26 @@ def factory(
             sys.exit(0)
 
     # Build configs
+    from ralph_py.contract import ContractConfig
+    from ralph_py.verify import VerifyConfig
+
+    v_config: VerifyConfig | None = None
+    if not no_verify:
+        v_config = VerifyConfig(
+            test_command=test_command,
+            typecheck_command=typecheck_command,
+            lint_command=lint_command,
+            mutation_testing=mutation_testing,
+            mutation_threshold=mutation_threshold,
+        )
+
+    c_config: ContractConfig | None = None
+    if contract_check != "skip":
+        c_config = ContractConfig(
+            mode=contract_check,
+            test_command=contract_test_cmd or test_command or "uv run pytest",
+        )
+
     factory_config = FactoryConfig(
         max_parallel=max_parallel,
         max_retries=max_retries,
@@ -1207,6 +1312,12 @@ def factory(
         single_pr=manifest.single_pr,
         create_prs=create_prs,
         verify_command=verify_command,
+        verify_config=v_config,
+        review_mode=review_mode,
+        review_agent_cmd=review_agent_cmd,
+        review_model=review_model,
+        contract_config=c_config,
+        progress_log_path=progress_log,
     )
 
     ralph_dir = root_dir / "scripts" / "ralph"

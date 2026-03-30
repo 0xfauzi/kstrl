@@ -9,8 +9,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
 
+DEFAULT_TIMEOUT = 30.0
 
-def is_git_repo(path: Path | None = None) -> bool:
+
+def is_git_repo(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> bool:
     """Check if path is inside a git repository."""
     try:
         result = subprocess.run(
@@ -18,13 +20,14 @@ def is_git_repo(path: Path | None = None) -> bool:
             cwd=path,
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.TimeoutExpired, Exception):
         return False
 
 
-def get_repo_root(path: Path | None = None) -> Path | None:
+def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> Path | None:
     """Get the root directory of the git repository."""
     try:
         result = subprocess.run(
@@ -32,59 +35,67 @@ def get_repo_root(path: Path | None = None) -> Path | None:
             cwd=path,
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
         if result.returncode == 0:
             return Path(result.stdout.strip())
-    except Exception:
+    except (subprocess.TimeoutExpired, Exception):
         pass
     return None
 
 
-def branch_exists(branch: str, cwd: Path | None = None) -> bool:
+def branch_exists(
+    branch: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
     """Check if a branch exists."""
-    result = subprocess.run(
-        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-        cwd=cwd,
-        capture_output=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def checkout_branch(
-    branch: str, ui: UI, cwd: Path | None = None, source: str | None = None
+    branch: str,
+    ui: UI,
+    cwd: Path | None = None,
+    source: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> bool:
     """Checkout or create a branch.
-
-    Args:
-        branch: Branch name to checkout/create
-        ui: UI for output
-        cwd: Working directory
-        source: Optional source label (e.g. "from PRD", "from RALPH_BRANCH")
 
     Returns True on success, False on failure.
     """
     source_suffix = f" ({source})" if source else ""
 
-    if branch_exists(branch, cwd):
-        # Branch exists, checkout
-        ui.info(f"Branch: checking out existing branch {branch}{source_suffix}")
-        result = subprocess.run(
-            ["git", "checkout", branch],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
-    else:
-        # Create new branch
-        ui.info(f"Branch: creating branch {branch}{source_suffix}")
-        result = subprocess.run(
-            ["git", "checkout", "-b", branch],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-        )
+    try:
+        if branch_exists(branch, cwd, timeout=timeout):
+            ui.info(f"Branch: checking out existing branch {branch}{source_suffix}")
+            result = subprocess.run(
+                ["git", "checkout", branch],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        else:
+            ui.info(f"Branch: creating branch {branch}{source_suffix}")
+            result = subprocess.run(
+                ["git", "checkout", "-b", branch],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+    except subprocess.TimeoutExpired:
+        ui.err(f"Branch checkout timed out after {timeout}s")
+        return False
 
-    # Stream git output
     output = result.stdout + result.stderr
     for line in output.strip().splitlines():
         if line:
@@ -93,54 +104,74 @@ def checkout_branch(
     return result.returncode == 0
 
 
-def get_changed_files(cwd: Path | None = None) -> set[str]:
+def get_changed_files(
+    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> set[str]:
     """Get all changed files (staged, unstaged, and untracked).
 
     Returns paths relative to repo root.
     """
     files: set[str] = set()
 
-    # Unstaged changes
-    result = subprocess.run(
-        ["git", "diff", "--name-only"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+    try:
+        # Unstaged changes
+        result = subprocess.run(
+            ["git", "diff", "--name-only"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            files.update(
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            )
 
-    # Staged changes
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "--cached"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+        # Staged changes
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "--cached"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            files.update(
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            )
 
-    # Untracked files
-    result = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+        # Untracked files
+        result = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            files.update(
+                line.strip() for line in result.stdout.splitlines() if line.strip()
+            )
+    except subprocess.TimeoutExpired:
+        pass
 
     return files
 
 
-def restore_file(file: str, cwd: Path | None = None) -> bool:
+def restore_file(
+    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
     """Restore a tracked file (staged and working tree)."""
-    result = subprocess.run(
-        ["git", "restore", "--staged", "--worktree", "--", file],
-        cwd=cwd,
-        capture_output=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["git", "restore", "--staged", "--worktree", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def delete_untracked(file: str, cwd: Path | None = None) -> bool:
@@ -158,11 +189,142 @@ def delete_untracked(file: str, cwd: Path | None = None) -> bool:
         return False
 
 
-def is_file_tracked(file: str, cwd: Path | None = None) -> bool:
+def is_file_tracked(
+    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
     """Check if a file is tracked by git."""
-    result = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "--", file],
-        cwd=cwd,
-        capture_output=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def get_diff_names(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> list[str]:
+    """Get list of changed file names compared to a base branch."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{base_branch}...HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return [
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip()
+            ]
+    except subprocess.TimeoutExpired:
+        pass
+    return []
+
+
+def get_diff_content(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str:
+    """Get full diff content compared to a base branch."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", f"{base_branch}...HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return result.stdout
+    except subprocess.TimeoutExpired:
+        pass
+    return ""
+
+
+def merge_branch(
+    branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Merge a branch into the current branch (no-edit)."""
+    try:
+        result = subprocess.run(
+            ["git", "merge", "--no-edit", branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def create_branch_from(
+    branch_name: str,
+    base: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Create and checkout a new branch from a base ref."""
+    try:
+        result = subprocess.run(
+            ["git", "checkout", "-b", branch_name, base],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def delete_branch(
+    branch_name: str,
+    cwd: Path | None = None,
+    force: bool = False,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Delete a local branch."""
+    flag = "-D" if force else "-d"
+    try:
+        result = subprocess.run(
+            ["git", "branch", flag, branch_name],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def checkout_existing(
+    branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Checkout an existing branch without creating it."""
+    try:
+        result = subprocess.run(
+            ["git", "checkout", branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False

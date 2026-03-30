@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,9 +25,17 @@ class LoopResult:
     completed: bool
     iterations: int
     exit_code: int
+    duration_seconds: float = 0.0
+    iteration_durations: list[float] = field(default_factory=list)
 
 
-def run_loop(config: RalphConfig, ui: UI, agent: Agent, cwd: Path | None = None) -> LoopResult:
+def run_loop(
+    config: RalphConfig,
+    ui: UI,
+    agent: Agent,
+    cwd: Path | None = None,
+    context_prefix: str | None = None,
+) -> LoopResult:
     """Run the main agentic loop.
 
     Args:
@@ -71,6 +79,10 @@ def run_loop(config: RalphConfig, ui: UI, agent: Agent, cwd: Path | None = None)
     # Read prompt
     prompt = config.prompt_file.read_text()
 
+    # Prepend context from previous retries if provided
+    if context_prefix:
+        prompt = context_prefix + "\n\n" + prompt
+
     # Preflight
     ui.section("Preflight")
 
@@ -98,8 +110,12 @@ def run_loop(config: RalphConfig, ui: UI, agent: Agent, cwd: Path | None = None)
     else:
         ui.info("ALLOWED_PATHS is empty; enforcement disabled")
 
+    loop_start = time.monotonic()
+    iteration_durations: list[float] = []
+
     for iteration in range(1, config.max_iterations + 1):
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
+        iter_start = time.monotonic()
 
         # Run agent
         completion_seen = False
@@ -115,10 +131,20 @@ def run_loop(config: RalphConfig, ui: UI, agent: Agent, cwd: Path | None = None)
                 for line in final_message.splitlines()
             )
 
+        iter_duration = time.monotonic() - iter_start
+        iteration_durations.append(iter_duration)
+
         # Check for completion
         if completion_seen:
             ui.ok("Done")
-            return LoopResult(completed=True, iterations=iteration, exit_code=0)
+            total_duration = time.monotonic() - loop_start
+            return LoopResult(
+                completed=True,
+                iterations=iteration,
+                exit_code=0,
+                duration_seconds=total_duration,
+                iteration_durations=iteration_durations,
+            )
 
         # Enforce ALLOWED_PATHS
         if config.allowed_paths and is_repo:
@@ -145,7 +171,14 @@ def run_loop(config: RalphConfig, ui: UI, agent: Agent, cwd: Path | None = None)
 
     # Max iterations reached
     ui.warn(f"Max iterations reached (no {COMPLETION_MARKER} seen)")
-    return LoopResult(completed=False, iterations=config.max_iterations, exit_code=1)
+    total_duration = time.monotonic() - loop_start
+    return LoopResult(
+        completed=False,
+        iterations=config.max_iterations,
+        exit_code=1,
+        duration_seconds=total_duration,
+        iteration_durations=iteration_durations,
+    )
 
 
 def _determine_branch(config: RalphConfig) -> tuple[str | None, str | None]:

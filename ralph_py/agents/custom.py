@@ -25,7 +25,9 @@ class CustomAgent:
         """Human-readable agent name."""
         return f"custom ({self._command})"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
         """Run command with prompt piped to stdin.
 
         Yields output lines as they arrive.
