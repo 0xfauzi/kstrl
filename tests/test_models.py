@@ -72,7 +72,7 @@ def test_build_agent_command_unknown_raises() -> None:
 
 
 def test_agent_display_name() -> None:
-    assert agent_display_name("claude", "sonnet") == "Claude (sonnet)"
-    assert agent_display_name("codex", "o3") == "Codex (o3)"
+    assert agent_display_name("claude", "sonnet") == "Claude Code (sonnet)"
+    assert agent_display_name("codex", "o3") == "Codex CLI (o3)"
     assert agent_display_name("custom") == "Custom command"
-    assert agent_display_name("claude") == "Claude (sonnet)"  # uses default
+    assert agent_display_name("claude") == "Claude Code (sonnet)"  # uses default
