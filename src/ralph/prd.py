@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -169,4 +170,171 @@ def create_story(
         priority=priority,
         passes=False,
         notes="",
+    )
+
+
+# -- Section names that should be treated as metadata, not stories --
+_META_SECTIONS = {
+    "overview",
+    "background",
+    "context",
+    "introduction",
+    "intro",
+    "summary",
+    "tech stack",
+    "technology",
+    "technologies",
+    "stack",
+    "architecture",
+    "design",
+    "notes",
+    "references",
+    "appendix",
+    "glossary",
+    "verification",
+    "testing",
+    "test plan",
+    "non-functional requirements",
+    "constraints",
+    "assumptions",
+    "dependencies",
+}
+
+
+@dataclass
+class ParsedMarkdown:
+    """Result of parsing a free-form markdown document into PRD components."""
+
+    feature_overview: str
+    stories: list[dict[str, str]]  # [{"title": ..., "criteria": ...}]
+    tech_stack: str
+    verification_commands: str
+
+
+def parse_markdown_to_stories(content: str) -> ParsedMarkdown:
+    """Parse a free-form markdown document into story components.
+
+    Parsing strategy:
+    - ## or ### headings become story titles (unless they match meta-section names)
+    - Bullet items (- or * or 1.) under a heading become acceptance criteria
+    - Meta-sections (Overview, Background, Tech Stack, etc.) are extracted as metadata
+    - If no headings exist, paragraphs separated by blank lines become stories
+    """
+    lines = content.splitlines()
+    feature_overview = ""
+    tech_stack = ""
+    verification_commands = ""
+    stories: list[dict[str, str]] = []
+
+    current_heading: str | None = None
+    current_bullets: list[str] = []
+    current_text: list[str] = []
+
+    def _flush_section() -> None:
+        nonlocal feature_overview, tech_stack, verification_commands
+        if current_heading is None:
+            return
+
+        heading_lower = current_heading.lower().strip()
+
+        if heading_lower in _META_SECTIONS or any(
+            heading_lower.startswith(m) for m in _META_SECTIONS
+        ):
+            text_block = "\n".join(current_text).strip()
+            bullets_block = "\n".join(current_bullets).strip()
+            combined = (text_block + "\n" + bullets_block).strip()
+
+            overview_keys = {
+                "overview", "background", "context", "introduction", "intro", "summary",
+            }
+            tech_keys = {
+                "tech stack", "technology", "technologies", "stack", "architecture",
+            }
+            verify_keys = {"verification", "testing", "test plan"}
+
+            if heading_lower in overview_keys:
+                feature_overview = (feature_overview + "\n" + combined).strip()
+            elif heading_lower in tech_keys:
+                tech_stack = (tech_stack + "\n" + combined).strip()
+            elif heading_lower in verify_keys:
+                verification_commands = (verification_commands + "\n" + combined).strip()
+        else:
+            criteria_text = (
+                "\n".join(current_bullets) if current_bullets
+                else "\n".join(current_text)
+            )
+            stories.append({
+                "title": current_heading.strip(),
+                "criteria": criteria_text.strip(),
+            })
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect headings (## or ###, skip # which is usually document title)
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            _flush_section()
+            current_heading = stripped.lstrip("#").strip()
+            current_bullets = []
+            current_text = []
+            continue
+
+        # Detect # heading as document title -> feature overview
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            _flush_section()
+            # Use the title text as part of feature overview if we have no heading yet
+            title_text = stripped.lstrip("#").strip()
+            if not feature_overview:
+                feature_overview = title_text
+            current_heading = None
+            current_bullets = []
+            current_text = []
+            continue
+
+        # Detect bullet items
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            current_bullets.append(stripped[2:].strip())
+            continue
+
+        # Detect numbered items
+        numbered = re.match(r"^\d+[\.\)]\s+(.+)", stripped)
+        if numbered:
+            current_bullets.append(numbered.group(1).strip())
+            continue
+
+        # Regular text
+        if stripped:
+            current_text.append(stripped)
+
+    # Flush last section
+    _flush_section()
+
+    # Fallback: if no stories were found from headings, split by paragraphs
+    if not stories:
+        paragraphs: list[str] = []
+        current_para: list[str] = []
+        for line in lines:
+            if line.strip():
+                current_para.append(line.strip())
+            elif current_para:
+                paragraphs.append("\n".join(current_para))
+                current_para = []
+        if current_para:
+            paragraphs.append("\n".join(current_para))
+
+        for para in paragraphs:
+            # Skip very short paragraphs (likely titles or separators)
+            if len(para) < 10:
+                continue
+            # Use first line as title, rest as criteria
+            para_lines = para.splitlines()
+            title = para_lines[0][:80]
+            criteria = "\n".join(para_lines[1:]) if len(para_lines) > 1 else ""
+            stories.append({"title": title, "criteria": criteria})
+
+    return ParsedMarkdown(
+        feature_overview=feature_overview,
+        stories=stories,
+        tech_stack=tech_stack,
+        verification_commands=verification_commands,
     )

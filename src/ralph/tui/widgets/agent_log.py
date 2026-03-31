@@ -25,11 +25,7 @@ ROLE_STYLES: dict[LineRole, tuple[str, str]] = {
 class AgentLogWidget(RichLog):
     """RichLog-based agent output display with role-classified coloring."""
 
-    DEFAULT_CSS = """
-    AgentLogWidget {
-        scrollbar-size: 1;
-    }
-    """
+    DEFAULT_CSS = ""
 
     def write_agent_line(self, output: AgentOutput) -> None:
         """Write a classified agent output line to the log."""

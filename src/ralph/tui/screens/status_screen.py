@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
@@ -26,12 +26,25 @@ class StatusScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Vertical(id="status-container"):
+        with VerticalScroll(id="status-container"):
             yield Static("Project Status", classes="title")
-            yield Static("", id="config-summary")
-            yield Static("", id="git-summary")
-            yield Static("", id="agent-summary")
-            yield Static("", id="prd-summary")
+
+            with Vertical(classes="status-card"):
+                yield Static("Configuration", classes="status-card-title")
+                yield Static("", id="config-summary")
+
+            with Vertical(classes="status-card"):
+                yield Static("Git", classes="status-card-title")
+                yield Static("", id="git-summary")
+
+            with Vertical(classes="status-card"):
+                yield Static("Agents", classes="status-card-title")
+                yield Static("", id="agent-summary")
+
+            with Vertical(classes="status-card"):
+                yield Static("PRD", classes="status-card-title")
+                yield Static("", id="prd-summary")
+
             yield StoryTableWidget(id="story-table")
         yield Footer()
 
@@ -46,53 +59,41 @@ class StatusScreen(Screen):
             config = load_config()
             display = config_to_display(config)
             config_lines = "\n".join(f"  {k}: {v}" for k, v in display.items())
-            self.query_one("#config-summary", Static).update(
-                f"[bold]Configuration[/bold]\n{config_lines}"
-            )
+            self.query_one("#config-summary", Static).update(config_lines)
         except Exception as e:
             self.query_one("#config-summary", Static).update(
-                f"[yellow]Config: {e}[/yellow]"
+                f"[yellow]{e}[/yellow]"
             )
 
         # Git summary
         if is_git_repo(cwd):
             branch = current_branch(cwd)
-            self.query_one("#git-summary", Static).update(
-                f"\n[bold]Git[/bold]\n  Branch: {branch}"
-            )
+            self.query_one("#git-summary", Static).update(f"  Branch: {branch}")
         else:
             self.query_one("#git-summary", Static).update(
-                "\n[dim]Not a git repository[/dim]"
+                "  [dim]Not a git repository[/dim]"
             )
 
         # Agent summary
         installed = detect_installed_agents()
         agent_str = ", ".join(installed) if installed else "[yellow]none found[/yellow]"
-        self.query_one("#agent-summary", Static).update(
-            f"\n[bold]Installed Agents[/bold]\n  {agent_str}"
-        )
+        self.query_one("#agent-summary", Static).update(f"  {agent_str}")
 
         # PRD summary
         try:
             config = load_config()
             prd = load_prd(cwd / config.paths.prd)
             self.query_one("#prd-summary", Static).update(
-                f"\n[bold]PRD[/bold]\n"
                 f"  Branch: {prd.branch_name}\n"
                 f"  Stories: {prd.total_stories} total, "
                 f"{prd.passing_stories} passing, {prd.failing_stories} failing"
             )
-            next_story = prd.next_story()
-            if next_story:
-                self.query_one("#prd-summary", Static).update(
-                    self.query_one("#prd-summary", Static).renderable  # type: ignore[arg-type]
-                )
 
             story_table = self.query_one("#story-table", StoryTableWidget)
             story_table.update_stories(prd)
         except Exception as e:
             self.query_one("#prd-summary", Static).update(
-                f"\n[dim]PRD: {e}[/dim]"
+                f"  [dim]{e}[/dim]"
             )
 
     def action_refresh(self) -> None:

@@ -1,11 +1,11 @@
-"""Init wizard screen - guided project setup."""
+"""Init wizard screen - guided setup for existing (brownfield) projects."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from textual.app import ComposeResult
-from textual.containers import Center, Vertical
+from textual.containers import Center, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (
     Button,
@@ -13,8 +13,6 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    RadioButton,
-    RadioSet,
     Static,
 )
 
@@ -25,7 +23,7 @@ from ralph.tui.widgets.model_selector import ModelSelector
 
 
 class InitWizardScreen(Screen):
-    """Guided project initialization wizard."""
+    """Guided project initialization wizard for existing codebases."""
 
     BINDINGS = [
         ("escape", "back", "Back"),
@@ -35,87 +33,100 @@ class InitWizardScreen(Screen):
         super().__init__(name=name, id=id)
         self._step = 0
         self._target_dir = str(Path.cwd())
-        self._project_type = "greenfield"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        with Center():
+        with Center(classes="wizard-outer"):
             with Vertical(id="init-container"):
-                yield Static("Project Setup", classes="title")
-                yield Static("Step 1 of 3: Target Directory", id="init-step-label")
+                yield Static("Add Ralph to Existing Project", classes="title")
+                yield Static(
+                    self._progress_dots(),
+                    id="init-step-label",
+                )
                 yield Vertical(id="init-step")
-                yield Button("Next", id="init-next", variant="primary")
+                with Horizontal(id="new-project-nav"):
+                    yield Button("Back", id="init-back", variant="default", disabled=True)
+                    yield Button("Next", id="init-next", variant="primary")
         yield Footer()
 
     def on_mount(self) -> None:
         self._render_step()
 
+    def _progress_dots(self) -> str:
+        """Render step progress as dots."""
+        total = 2
+        parts: list[str] = []
+        for i in range(total):
+            if i == self._step:
+                parts.append("[bold]()[/bold]")
+            else:
+                parts.append("[dim]o[/dim]")
+        return "  ".join(parts) + f"    Step {self._step + 1} of {total}"
+
     def _render_step(self) -> None:
         step_container = self.query_one("#init-step", Vertical)
         step_label = self.query_one("#init-step-label", Static)
         next_btn = self.query_one("#init-next", Button)
+        back_btn = self.query_one("#init-back", Button)
 
         step_container.remove_children()
+        step_label.update(self._progress_dots())
 
-        step_titles = [
-            "Step 1 of 3: Target Directory",
-            "Step 2 of 3: Project Type",
-            "Step 3 of 3: Agent Selection",
-        ]
-        step_label.update(step_titles[self._step])
-        next_btn.label = "Initialize" if self._step == 2 else "Next"
+        back_btn.disabled = self._step == 0
+        next_btn.label = "Initialize" if self._step == 1 else "Next"
 
         if self._step == 0:
-            step_container.mount(Label("Target directory:"))
+            step_container.mount(Label("Target directory"))
             step_container.mount(
-                Input(value=self._target_dir, id="target-dir", placeholder="/path/to/project")
-            )
-        elif self._step == 1:
-            step_container.mount(Label("Is this an existing codebase?"))
-            step_container.mount(
-                RadioSet(
-                    RadioButton(
-                        "Greenfield (new project)",
-                        value=self._project_type == "greenfield",
-                    ),
-                    RadioButton(
-                        "Brownfield (existing code)",
-                        value=self._project_type == "brownfield",
-                    ),
-                    id="project-type",
+                Input(
+                    value=self._target_dir,
+                    id="target-dir",
+                    placeholder="/path/to/project",
                 )
             )
-        elif self._step == 2:
-            step_container.mount(Label("Select your AI agent:"))
+            step_container.mount(
+                Static(
+                    "[dim]The directory containing your existing codebase. "
+                    "Ralph will create a scripts/ralph/ directory here.[/dim]",
+                    classes="help-text",
+                )
+            )
+        elif self._step == 1:
+            step_container.mount(Label("Select your AI agent"))
             step_container.mount(ModelSelector(id="init-model-selector"))
 
             installed = detect_installed_agents()
             if not installed:
                 step_container.mount(
-                    Static("[yellow]No agents detected. Install claude or codex first.[/yellow]")
+                    Static(
+                        "[yellow]No agents detected. "
+                        "Install claude or codex first.[/yellow]"
+                    )
+                )
+            else:
+                step_container.mount(
+                    Static(
+                        "[dim]Tip: after setup, run 'ralph understand 10' "
+                        "to map your codebase before writing a PRD.[/dim]",
+                        classes="help-text",
+                    )
                 )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id != "init-next":
-            return
-
-        if self._step == 0:
-            try:
-                self._target_dir = self.query_one("#target-dir", Input).value
-            except Exception:
-                pass
-            self._step = 1
-            self._render_step()
-        elif self._step == 1:
-            radio_set = self.query_one("#project-type", RadioSet)
-            if radio_set.pressed_index == 1:
-                self._project_type = "brownfield"
-            else:
-                self._project_type = "greenfield"
-            self._step = 2
-            self._render_step()
-        elif self._step == 2:
-            self._run_init()
+        if event.button.id == "init-back":
+            if self._step > 0:
+                self._step -= 1
+                self._render_step()
+        elif event.button.id == "init-next":
+            if self._step == 0:
+                try:
+                    self._target_dir = self.query_one("#target-dir", Input).value
+                except Exception:
+                    pass
+                self._step = 1
+                self._render_step()
+            elif self._step == 1:
+                self._run_init()
 
     def _run_init(self) -> None:
         target = Path(self._target_dir).resolve()
@@ -151,19 +162,13 @@ class InitWizardScreen(Screen):
             step_container.mount(Static("[green]Created: ralph.toml[/green]"))
 
         step_container.mount(Static(""))
-        step_container.mount(Static("[bold green]Setup complete![/bold green]"))
-
-        if self._project_type == "brownfield":
-            step_container.mount(Static(
-                "\nRecommended next step: run codebase understanding first.\n"
-                "  ralph understand 10"
-            ))
-        else:
-            step_container.mount(Static(
-                "\nNext steps:\n"
-                "  ralph prd create    # Create your PRD\n"
-                "  ralph run 25        # Run the feature loop"
-            ))
+        step_container.mount(Static("[bold green]Setup complete[/bold green]"))
+        step_container.mount(Static(
+            "\nRecommended next steps:\n"
+            "  1. ralph understand 10   - Map your codebase\n"
+            "  2. ralph prd create      - Create your PRD\n"
+            "  3. ralph run 25          - Run the feature loop"
+        ))
 
         self.query_one("#init-next", Button).disabled = True
         self.query_one("#init-step-label", Static).update("Setup Complete")

@@ -17,14 +17,7 @@ class RunHeader(Static):
     elapsed = reactive(0.0)
     _start_time: float = 0.0
 
-    DEFAULT_CSS = """
-    RunHeader {
-        height: 3;
-        background: $primary-background;
-        padding: 1 2;
-        text-style: bold;
-    }
-    """
+    DEFAULT_CSS = ""
 
     def on_mount(self) -> None:
         self._start_time = time.monotonic()
@@ -38,10 +31,10 @@ class RunHeader(Static):
         seconds = int(self.elapsed) % 60
         time_str = f"{minutes:02d}:{seconds:02d}"
 
-        iter_str = f"Iteration {self.iteration} / {self.max_iterations}"
-        story_str = self.current_story or "..."
+        iter_str = f"Iteration {self.iteration}/{self.max_iterations}"
+        story_str = self.current_story or "-"
 
-        return f"  {iter_str}        {story_str}        {time_str}"
+        return f"  {iter_str}   |   Story: {story_str}   |   {time_str}"
 
     def set_iteration(self, iteration: int, max_iterations: int) -> None:
         self.iteration = iteration

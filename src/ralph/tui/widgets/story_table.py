@@ -10,11 +10,7 @@ from ralph.prd import PRD
 class StoryTableWidget(DataTable):
     """DataTable showing user story status with pass/fail indicators."""
 
-    DEFAULT_CSS = """
-    StoryTableWidget {
-        height: 1fr;
-    }
-    """
+    DEFAULT_CSS = ""
 
     def on_mount(self) -> None:
         self.add_column("ID", key="id", width=8)
