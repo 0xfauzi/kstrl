@@ -40,9 +40,12 @@ CLAUDE_MODELS = (
 )
 
 CODEX_MODELS = (
-    ModelInfo("o3", "o3", "Strong reasoning, default"),
-    ModelInfo("o4-mini", "o4-mini", "Fast and cost-effective"),
-    ModelInfo("gpt-4.1", "GPT-4.1", "GPT-4 class"),
+    ModelInfo("o3", "o3", "Strong reasoning, 200K context, default"),
+    ModelInfo("o4-mini", "o4-mini", "Fast reasoning, 200K context"),
+    ModelInfo("codex-mini-latest", "Codex Mini", "Optimized for Codex CLI"),
+    ModelInfo("gpt-4.1", "GPT-4.1", "General purpose, 1M context"),
+    ModelInfo("gpt-4.1-mini", "GPT-4.1 Mini", "Fast general purpose, 1M context"),
+    ModelInfo("gpt-4.1-nano", "GPT-4.1 Nano", "Fastest, 1M context"),
 )
 
 KNOWN_AGENTS: dict[str, AgentInfo] = {
@@ -141,7 +144,7 @@ def _discover_codex_models() -> list[ModelInfo] | None:
     """Discover Codex models by querying the CLI."""
     try:
         result = subprocess.run(
-            ["codex", "--help"],
+            ["codex", "--version"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -149,11 +152,26 @@ def _discover_codex_models() -> list[ModelInfo] | None:
         if result.returncode != 0:
             return None
 
-        # Return known codex models (codex doesn't expose a model list command)
+        version = result.stdout.strip()
+
+        # Codex doesn't expose a model list command, so we return
+        # the known models with the CLI version appended for context
         return [
-            ModelInfo("o3", "o3", "Strong reasoning, default"),
-            ModelInfo("o4-mini", "o4-mini", "Fast and cost-effective"),
-            ModelInfo("gpt-4.1", "GPT-4.1", "GPT-4 class"),
+            ModelInfo("o3", "o3", f"Strong reasoning, 200K context ({version})"),
+            ModelInfo("o4-mini", "o4-mini", f"Fast reasoning, 200K context ({version})"),
+            ModelInfo(
+                "codex-mini-latest", "Codex Mini",
+                f"Optimized for Codex CLI ({version})",
+            ),
+            ModelInfo("gpt-4.1", "GPT-4.1", f"General purpose, 1M context ({version})"),
+            ModelInfo(
+                "gpt-4.1-mini", "GPT-4.1 Mini",
+                f"Fast general purpose, 1M context ({version})",
+            ),
+            ModelInfo(
+                "gpt-4.1-nano", "GPT-4.1 Nano",
+                f"Fastest, 1M context ({version})",
+            ),
         ]
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         return None

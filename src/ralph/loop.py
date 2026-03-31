@@ -117,6 +117,9 @@ async def run_loop(
 
     # Main iteration loop
     max_iter = config.run.max_iterations
+    consecutive_errors = 0
+    max_consecutive_errors = 3
+
     for i in range(1, max_iter + 1):
         if control.stop_requested:
             callbacks.on_info("Stopped by user")
@@ -132,6 +135,7 @@ async def run_loop(
         callbacks.on_iteration_start(i, max_iter)
         iter_start = time.monotonic()
         completed = False
+        had_error = False
 
         # Run agent and stream output
         try:
@@ -148,9 +152,23 @@ async def run_loop(
                     completed = True
         except Exception as e:
             callbacks.on_error(f"Agent error: {e}")
+            had_error = True
 
         elapsed = time.monotonic() - iter_start
         callbacks.on_iteration_end(i, elapsed)
+
+        # Track consecutive errors and bail if they keep repeating
+        if had_error:
+            consecutive_errors += 1
+            if consecutive_errors >= max_consecutive_errors:
+                callbacks.on_error(
+                    f"Stopping: {max_consecutive_errors} consecutive errors. "
+                    "Check your configuration and try again."
+                )
+                callbacks.on_complete(False, i)
+                return LoopResult(success=False, iterations_used=i, exit_code=2)
+        else:
+            consecutive_errors = 0
 
         if completed:
             callbacks.on_complete(True, i)
