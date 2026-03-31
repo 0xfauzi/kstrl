@@ -328,7 +328,8 @@ async def _run_claude_streaming(
     effective_model = model or "sonnet"
     cmd = (
         f"claude --print --model {effective_model} "
-        f"--output-format stream-json --verbose"
+        f"--output-format stream-json --verbose "
+        f"--permission-mode auto"
     )
 
     # Stream-json lines can be very large (tool results with full file
@@ -377,7 +378,7 @@ async def _run_codex(
     reasoning_effort: str = "",
 ) -> AsyncIterator[AgentOutput]:
     """Run Codex agent with line-by-line output."""
-    parts = ["codex", "exec", "-C", str(cwd)]
+    parts = ["codex", "exec", "-C", str(cwd), "--full-auto"]
     if model:
         parts.extend(["-m", model])
     if reasoning_effort:
