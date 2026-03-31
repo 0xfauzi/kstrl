@@ -86,6 +86,7 @@ async def run_loop(
 
     prompt_path = cwd / config.paths.prompt
     prd_path = cwd / config.paths.prd
+    progress_path = cwd / config.paths.progress
 
     # Validate prompt exists
     if not prompt_path.exists():
@@ -146,6 +147,8 @@ async def run_loop(
                 prompt_path=prompt_path,
                 cwd=cwd,
                 reasoning_effort=config.agent.reasoning_effort,
+                progress_path=progress_path,
+                iteration=i,
             ):
                 callbacks.on_agent_line(output)
                 if detect_completion(output.line):

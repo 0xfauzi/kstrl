@@ -199,7 +199,7 @@ def understand(max_iterations: int, config_file: str) -> None:
     config = load_config(Path(config_file))
     config.run.max_iterations = max_iterations
     config.paths.prompt = "scripts/ralph/understand_prompt.md"
-    config.paths.allowed = ["scripts/ralph/codebase_map.md"]
+    config.paths.allowed = ["scripts/ralph/codebase_map.md", "scripts/ralph/progress.txt"]
     if not config.git.branch:
         config.git.branch = "ralph/understanding"
 

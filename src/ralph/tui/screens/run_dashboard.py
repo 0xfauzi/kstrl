@@ -114,7 +114,10 @@ class RunDashboardScreen(Screen):
 
         if self.understand_mode:
             config.paths.prompt = "scripts/ralph/understand_prompt.md"
-            config.paths.allowed = ["scripts/ralph/codebase_map.md"]
+            config.paths.allowed = [
+                "scripts/ralph/codebase_map.md",
+                "scripts/ralph/progress.txt",
+            ]
             if not config.git.branch:
                 config.git.branch = "ralph/understanding"
 
