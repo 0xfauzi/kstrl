@@ -11,6 +11,7 @@ from ralph.prd import (
     create_empty_prd,
     create_story,
     load_prd,
+    parse_markdown_to_stories,
     save_prd,
     validate_prd,
 )
@@ -155,3 +156,95 @@ def test_create_story() -> None:
     assert story.id == "US-001"
     assert story.passes is False
     assert story.notes == ""
+
+
+# -- parse_markdown_to_stories tests --
+
+
+def test_parse_markdown_headings_to_stories() -> None:
+    md = """\
+# My Feature
+
+## User login
+- Username and password required
+- Session token returned on success
+
+## Password reset
+- Email sent with reset link
+- Link expires after 24h
+"""
+    result = parse_markdown_to_stories(md)
+    assert result.feature_overview == "My Feature"
+    assert len(result.stories) == 2
+    assert result.stories[0]["title"] == "User login"
+    assert "Username and password required" in result.stories[0]["criteria"]
+    assert result.stories[1]["title"] == "Password reset"
+
+
+def test_parse_markdown_meta_sections() -> None:
+    md = """\
+## Overview
+This is the project overview.
+
+## Tech Stack
+Python, FastAPI, PostgreSQL
+
+## User registration
+- Form validation works
+- Confirmation email sent
+"""
+    result = parse_markdown_to_stories(md)
+    assert "project overview" in result.feature_overview
+    assert "Python" in result.tech_stack
+    assert len(result.stories) == 1
+    assert result.stories[0]["title"] == "User registration"
+
+
+def test_parse_markdown_numbered_lists() -> None:
+    md = """\
+## Data export
+1. CSV format supported
+2. JSON format supported
+3. Download link generated
+"""
+    result = parse_markdown_to_stories(md)
+    assert len(result.stories) == 1
+    assert "CSV format supported" in result.stories[0]["criteria"]
+    assert "JSON format supported" in result.stories[0]["criteria"]
+
+
+def test_parse_markdown_no_headings_fallback() -> None:
+    md = """\
+This is the first feature. It should handle user authentication
+with OAuth support and session management.
+
+This is the second feature. It should provide an API
+for fetching user profiles with pagination.
+"""
+    result = parse_markdown_to_stories(md)
+    assert len(result.stories) >= 1
+
+
+def test_parse_markdown_empty() -> None:
+    result = parse_markdown_to_stories("")
+    assert result.stories == []
+    assert result.feature_overview == ""
+
+
+def test_parse_markdown_h3_headings() -> None:
+    md = """\
+## Features
+
+### Search
+- Full-text search
+- Filters by date
+
+### Sort
+- Sort by name
+- Sort by date
+"""
+    result = parse_markdown_to_stories(md)
+    # "Features" might be treated as a story or skipped
+    story_titles = [s["title"] for s in result.stories]
+    assert "Search" in story_titles
+    assert "Sort" in story_titles

@@ -9,6 +9,7 @@ from textual.app import App
 from ralph.tui.screens.config_screen import ConfigScreen
 from ralph.tui.screens.init_wizard import InitWizardScreen
 from ralph.tui.screens.main_menu import MainMenuScreen
+from ralph.tui.screens.new_project_wizard import NewProjectWizardScreen
 from ralph.tui.screens.prd_wizard import PRDWizardScreen
 from ralph.tui.screens.run_dashboard import RunDashboardScreen
 from ralph.tui.screens.status_screen import StatusScreen
@@ -27,6 +28,7 @@ class RalphApp(App):
     SCREENS = {
         "main_menu": MainMenuScreen,
         "init_wizard": InitWizardScreen,
+        "new_project_wizard": NewProjectWizardScreen,
         "run_dashboard": lambda: RunDashboardScreen(understand_mode=False),
         "run_dashboard_understand": lambda: RunDashboardScreen(understand_mode=True),
         "prd_wizard": PRDWizardScreen,

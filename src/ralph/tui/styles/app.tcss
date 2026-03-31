@@ -1,135 +1,30 @@
-/* Ralph TUI Theme */
+/* Ralph TUI - Clean & Professional Theme */
+
+/* ── Global ─────────────────────────────────────────── */
 
 Screen {
     background: $surface;
 }
 
-/* Main menu */
-#main-menu {
-    align: center middle;
-}
-
-#main-menu-title {
-    text-align: center;
-    color: $accent;
-    text-style: bold;
-    margin-bottom: 1;
-}
-
-#main-menu-subtitle {
-    text-align: center;
-    color: $text-muted;
-    margin-bottom: 2;
-}
-
-#main-menu-list {
-    width: 60;
-    height: auto;
-    max-height: 20;
-}
-
-#project-info {
-    margin-top: 1;
-    padding: 1 2;
-    border: solid $primary-background;
-    width: 60;
-}
-
-/* Run dashboard */
-#run-header {
-    dock: top;
-    height: 3;
-    background: $primary-background;
-    color: $text;
-    padding: 0 2;
-}
-
-#run-body {
-    height: 1fr;
-}
-
-#agent-log {
-    width: 3fr;
-    border-right: solid $primary-background;
-}
-
-#story-panel {
-    width: 2fr;
-    padding: 0 1;
-}
-
-#run-footer {
-    dock: bottom;
-    height: 1;
-    background: $primary-background;
-}
-
-/* PRD wizard */
-#wizard-container {
-    align: center middle;
-    padding: 2;
-}
-
-#wizard-step {
-    width: 80;
-    max-height: 30;
-    border: solid $primary-background;
-    padding: 1 2;
-}
-
-#wizard-nav {
-    dock: bottom;
-    height: 3;
-    align: center middle;
-}
-
-/* Config screen */
-#config-container {
-    padding: 1 2;
-}
-
-.config-section {
-    margin-bottom: 1;
-    padding: 1;
-    border: solid $primary-background;
-}
-
-.config-section-title {
-    text-style: bold;
-    color: $accent;
-    margin-bottom: 1;
-}
-
-/* Status screen */
-#status-container {
-    padding: 1 2;
-}
-
-#status-summary {
-    margin-bottom: 1;
-    padding: 1;
-    border: solid $primary-background;
-}
-
-/* Init wizard */
-#init-container {
-    align: center middle;
-    padding: 2;
-}
-
-#init-step {
-    width: 70;
-    border: solid $primary-background;
-    padding: 1 2;
-}
-
-/* Common styles */
 .title {
     text-style: bold;
-    color: $accent;
+    color: $text;
+    margin-bottom: 1;
 }
 
-.subtitle {
+.section-heading {
+    text-style: bold;
+    color: $text-muted;
+    text-transform: uppercase;
+    margin-bottom: 1;
+}
+
+.help-text {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+.muted {
     color: $text-muted;
 }
 
@@ -145,6 +40,289 @@ Screen {
     color: $warning;
 }
 
-.muted {
+/* ── Main Menu ──────────────────────────────────────── */
+
+#main-menu {
+    align: center middle;
+    width: 64;
+}
+
+#main-menu-logo {
+    text-align: center;
+    color: $text;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+#main-menu-subtitle {
+    text-align: center;
     color: $text-muted;
+    margin-bottom: 2;
+}
+
+#main-menu-list {
+    width: 100%;
+    height: auto;
+    max-height: 24;
+    margin-bottom: 1;
+}
+
+#main-menu-list > ListItem {
+    padding: 0 2;
+    height: 3;
+}
+
+#main-menu-list > ListItem > Label {
+    padding: 1 0;
+}
+
+#project-info {
+    padding: 1 2;
+    background: $panel;
+    width: 100%;
+    margin-top: 1;
+}
+
+/* ── Run Dashboard ──────────────────────────────────── */
+
+#run-header {
+    dock: top;
+    height: 3;
+    background: $panel;
+    color: $text;
+    padding: 0 2;
+}
+
+#run-body {
+    height: 1fr;
+}
+
+#agent-log {
+    width: 3fr;
+    border-right: solid $surface-darken-2;
+}
+
+#story-panel {
+    width: 2fr;
+    padding: 0 1;
+}
+
+#run-footer {
+    dock: bottom;
+    height: 1;
+    background: $panel;
+}
+
+/* ── Wizard Shared ──────────────────────────────────── */
+
+.wizard-outer {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+.wizard-box {
+    width: 90;
+    max-width: 90;
+    padding: 2 3;
+}
+
+.wizard-progress {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 2;
+}
+
+.wizard-step-content {
+    min-height: 8;
+    max-height: 32;
+    padding: 1 0;
+}
+
+.wizard-nav {
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+.wizard-nav Button {
+    margin-left: 1;
+}
+
+/* ── PRD Wizard (legacy IDs kept for compat) ────────── */
+
+#wizard-container {
+    width: 90;
+    max-width: 90;
+    padding: 2 3;
+}
+
+#wizard-step-label {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#wizard-step {
+    min-height: 8;
+    max-height: 32;
+    padding: 1 0;
+}
+
+#wizard-nav {
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+#wizard-nav Button {
+    margin-left: 1;
+}
+
+/* ── Config Screen ──────────────────────────────────── */
+
+#config-container {
+    padding: 2 4;
+}
+
+.config-section {
+    margin-bottom: 2;
+    padding: 1 2;
+    background: $panel;
+}
+
+.config-section-title {
+    text-style: bold;
+    color: $text-muted;
+    text-transform: uppercase;
+    margin-bottom: 1;
+}
+
+.config-help {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#save-btn {
+    margin-top: 1;
+}
+
+#save-status {
+    margin-top: 1;
+}
+
+/* ── Status Screen ──────────────────────────────────── */
+
+#status-container {
+    padding: 2 4;
+}
+
+.status-card {
+    margin-bottom: 1;
+    padding: 1 2;
+    background: $panel;
+}
+
+.status-card-title {
+    text-style: bold;
+    color: $text-muted;
+    text-transform: uppercase;
+    margin-bottom: 1;
+}
+
+/* ── Init Wizard ────────────────────────────────────── */
+
+#init-container {
+    width: 90;
+    max-width: 90;
+    padding: 2 3;
+}
+
+#init-step-label {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#init-step {
+    min-height: 6;
+    padding: 1 0;
+}
+
+#init-next {
+    margin-top: 1;
+    dock: bottom;
+}
+
+/* ── New Project Wizard ─────────────────────────────── */
+
+#new-project-container {
+    width: 90;
+    max-width: 90;
+    padding: 2 3;
+}
+
+#new-project-step-label {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#new-project-step {
+    min-height: 8;
+    max-height: 32;
+    padding: 1 0;
+}
+
+#new-project-nav {
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+#new-project-nav Button {
+    margin-left: 1;
+}
+
+/* ── Widget Overrides ───────────────────────────────── */
+
+AgentLogWidget {
+    scrollbar-size: 1;
+}
+
+StoryTableWidget {
+    height: 1fr;
+}
+
+RunHeader {
+    height: 3;
+    background: $panel;
+    padding: 1 2;
+    text-style: bold;
+}
+
+ModelSelector {
+    height: auto;
+    padding: 1;
+}
+
+ModelSelector Horizontal {
+    height: auto;
+}
+
+ModelSelector .selector-label {
+    width: 12;
+    padding: 1 1 0 0;
+}
+
+ModelSelector Select {
+    width: 30;
+}
+
+Input {
+    margin-bottom: 1;
+}
+
+TextArea {
+    margin-bottom: 1;
 }
