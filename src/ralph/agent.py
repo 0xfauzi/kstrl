@@ -81,104 +81,121 @@ def detect_completion(line: str) -> bool:
     return COMPLETION_MARKER in line
 
 
-def _parse_stream_json_line(raw: str) -> AgentOutput | None:
-    """Parse a single stream-json line from Claude into an AgentOutput.
+def _parse_stream_json_line(raw: str) -> list[AgentOutput]:
+    """Parse a single stream-json line from Claude into AgentOutput(s).
 
-    Returns None for events we want to skip (system hooks, rate limits, etc.).
+    Returns a list (possibly empty) of outputs. A single JSON event
+    can produce multiple display lines (e.g., an assistant message with
+    both thinking and text blocks).
     """
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        # Not JSON - treat as plain text
-        return AgentOutput(line=raw, role=classify_line(raw))
+        return [AgentOutput(line=raw, role=classify_line(raw))]
 
     event_type = data.get("type", "")
 
     if event_type == "assistant":
-        message = data.get("message", {})
-        content_blocks = message.get("content", [])
-        parts: list[str] = []
-        role = LineRole.AI
-
-        for block in content_blocks:
-            block_type = block.get("type", "")
-            if block_type == "text":
-                text = block.get("text", "")
-                if text:
-                    parts.append(text)
-                    role = LineRole.AI
-            elif block_type == "thinking":
-                thinking = block.get("thinking", "")
-                if thinking:
-                    # Truncate long thinking blocks to first meaningful line
-                    first_line = thinking.strip().split("\n")[0][:200]
-                    parts.append(first_line)
-                    role = LineRole.THINK
-            elif block_type == "tool_use":
-                tool_name = block.get("name", "unknown")
-                tool_input = block.get("input", {})
-                # Show the tool being called with a compact summary
-                if tool_name == "Bash":
-                    cmd = tool_input.get("command", "")
-                    parts.append(f"{tool_name}: {cmd[:120]}")
-                elif tool_name in ("Read", "Write", "Edit", "Glob", "Grep"):
-                    path = tool_input.get("file_path", "") or tool_input.get(
-                        "pattern", ""
-                    )
-                    parts.append(f"{tool_name}: {path[:120]}")
-                else:
-                    parts.append(f"{tool_name}")
-                role = LineRole.TOOL
-            elif block_type == "tool_result":
-                # Usually very long, skip or show brief summary
-                content = str(block.get("content", ""))
-                if content and len(content) > 200:
-                    parts.append(f"(result: {len(content)} chars)")
-                elif content:
-                    parts.append(content[:200])
-                role = LineRole.TOOL
-
-        if parts:
-            return AgentOutput(line=" ".join(parts), role=role)
-        return None
+        return _parse_assistant_event(data)
 
     elif event_type == "tool":
-        # Tool response event
+        # Tool response - compact summary
         tool_name = data.get("tool_name", "")
         content = str(data.get("content", ""))
         if len(content) > 150:
             summary = f"{tool_name} returned {len(content)} chars"
         else:
             summary = f"{tool_name}: {content[:150]}"
-        return AgentOutput(line=summary, role=LineRole.TOOL)
-
-    elif event_type == "user":
-        # Internal user message (usually auto-generated context)
-        return None
-
-    elif event_type == "system":
-        # System/hook events - skip most
-        subtype = data.get("subtype", "")
-        if subtype in ("hook_started", "hook_response"):
-            return None
-        return None
+        return [AgentOutput(line=summary, role=LineRole.TOOL)]
 
     elif event_type == "result":
-        # Final result summary
         cost = data.get("cost_usd", 0)
         duration = data.get("duration_seconds", 0)
         if cost or duration:
-            return AgentOutput(
+            return [AgentOutput(
                 line=f"Done (${cost:.4f}, {duration:.1f}s)",
                 role=LineRole.SYS,
-            )
-        return None
+            )]
 
-    elif event_type == "rate_limit_event":
-        return None
+    # Skip: user, system, rate_limit_event, unknown
+    return []
 
-    # Unknown event type - skip
-    return None
+
+def _parse_assistant_event(data: dict) -> list[AgentOutput]:
+    """Parse an assistant event into one output per content block."""
+    message = data.get("message", {})
+    content_blocks = message.get("content", [])
+    outputs: list[AgentOutput] = []
+
+    for block in content_blocks:
+        block_type = block.get("type", "")
+
+        if block_type == "text":
+            text = block.get("text", "").strip()
+            if text:
+                outputs.append(AgentOutput(line=text, role=LineRole.AI))
+
+        elif block_type == "thinking":
+            thinking = block.get("thinking", "").strip()
+            if thinking:
+                # Show first two meaningful lines of thinking
+                lines = [
+                    ln.strip() for ln in thinking.split("\n")
+                    if ln.strip()
+                ]
+                for ln in lines[:2]:
+                    outputs.append(AgentOutput(
+                        line=ln[:200], role=LineRole.THINK,
+                    ))
+
+        elif block_type == "tool_use":
+            tool_name = block.get("name", "unknown")
+            tool_input = block.get("input", {})
+            summary = _format_tool_call(tool_name, tool_input)
+            outputs.append(AgentOutput(line=summary, role=LineRole.TOOL))
+
+        elif block_type == "tool_result":
+            content = str(block.get("content", ""))
+            if content and len(content) > 200:
+                outputs.append(AgentOutput(
+                    line=f"({len(content)} chars)", role=LineRole.TOOL,
+                ))
+
+    return outputs
+
+
+def _format_tool_call(name: str, inputs: dict) -> str:
+    """Format a tool call into a compact one-line summary."""
+    if name == "Bash":
+        cmd = inputs.get("command", "")
+        return f"$ {cmd[:140]}" if cmd else "Bash"
+    elif name == "Read":
+        path = inputs.get("file_path", "")
+        return f"Read {_short_path(path)}"
+    elif name == "Write":
+        path = inputs.get("file_path", "")
+        return f"Write {_short_path(path)}"
+    elif name == "Edit":
+        path = inputs.get("file_path", "")
+        return f"Edit {_short_path(path)}"
+    elif name == "Glob":
+        pattern = inputs.get("pattern", "")
+        return f"Glob {pattern[:80]}"
+    elif name == "Grep":
+        pattern = inputs.get("pattern", "")
+        return f"Grep {pattern[:80]}"
+    elif name == "Bash" and inputs.get("command"):
+        return f"$ {inputs['command'][:140]}"
+    else:
+        return name
+
+
+def _short_path(path: str) -> str:
+    """Shorten a file path for display (keep last 3 segments)."""
+    parts = path.split("/")
+    if len(parts) <= 3:
+        return path
+    return ".../" + "/".join(parts[-3:])
 
 
 async def run_agent_async(
@@ -255,8 +272,7 @@ async def _run_claude_streaming(
         raw = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
         if not raw:
             continue
-        output = _parse_stream_json_line(raw)
-        if output is not None:
+        for output in _parse_stream_json_line(raw):
             yield output
 
     # Check stderr for errors
