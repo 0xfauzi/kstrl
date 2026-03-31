@@ -1,0 +1,28 @@
+# Ralph configuration
+# Copy to ralph.toml and customize. All values shown are defaults.
+# Environment variables override these settings (see README for mapping).
+
+[agent]
+type = "claude"                    # "claude" | "codex" | "custom"
+command = ""                       # shell command (only used when type = "custom")
+model = ""                         # e.g., "sonnet" for claude, "o3" for codex (empty = default)
+reasoning_effort = ""              # codex-specific: low|medium|high|xhigh
+
+[run]
+max_iterations = 10
+sleep_seconds = 2
+interactive = false
+
+[paths]
+prompt = "scripts/ralph/prompt.md"
+prd = "scripts/ralph/prd.json"
+progress = "scripts/ralph/progress.txt"
+codebase_map = "scripts/ralph/codebase_map.md"
+allowed = []                       # e.g., ["scripts/ralph/", "src/"]
+
+[git]
+branch = ""                        # override branch (empty = use PRD branchName)
+auto_checkout = true
+
+[ui]
+ascii = false

@@ -1,0 +1,150 @@
+/* Ralph TUI Theme */
+
+Screen {
+    background: $surface;
+}
+
+/* Main menu */
+#main-menu {
+    align: center middle;
+}
+
+#main-menu-title {
+    text-align: center;
+    color: $accent;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#main-menu-subtitle {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 2;
+}
+
+#main-menu-list {
+    width: 60;
+    height: auto;
+    max-height: 20;
+}
+
+#project-info {
+    margin-top: 1;
+    padding: 1 2;
+    border: solid $primary-background;
+    width: 60;
+}
+
+/* Run dashboard */
+#run-header {
+    dock: top;
+    height: 3;
+    background: $primary-background;
+    color: $text;
+    padding: 0 2;
+}
+
+#run-body {
+    height: 1fr;
+}
+
+#agent-log {
+    width: 3fr;
+    border-right: solid $primary-background;
+}
+
+#story-panel {
+    width: 2fr;
+    padding: 0 1;
+}
+
+#run-footer {
+    dock: bottom;
+    height: 1;
+    background: $primary-background;
+}
+
+/* PRD wizard */
+#wizard-container {
+    align: center middle;
+    padding: 2;
+}
+
+#wizard-step {
+    width: 80;
+    max-height: 30;
+    border: solid $primary-background;
+    padding: 1 2;
+}
+
+#wizard-nav {
+    dock: bottom;
+    height: 3;
+    align: center middle;
+}
+
+/* Config screen */
+#config-container {
+    padding: 1 2;
+}
+
+.config-section {
+    margin-bottom: 1;
+    padding: 1;
+    border: solid $primary-background;
+}
+
+.config-section-title {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+/* Status screen */
+#status-container {
+    padding: 1 2;
+}
+
+#status-summary {
+    margin-bottom: 1;
+    padding: 1;
+    border: solid $primary-background;
+}
+
+/* Init wizard */
+#init-container {
+    align: center middle;
+    padding: 2;
+}
+
+#init-step {
+    width: 70;
+    border: solid $primary-background;
+    padding: 1 2;
+}
+
+/* Common styles */
+.title {
+    text-style: bold;
+    color: $accent;
+}
+
+.subtitle {
+    color: $text-muted;
+}
+
+.success {
+    color: $success;
+}
+
+.error {
+    color: $error;
+}
+
+.warning {
+    color: $warning;
+}
+
+.muted {
+    color: $text-muted;
+}
