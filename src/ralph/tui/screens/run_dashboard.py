@@ -26,35 +26,35 @@ class DashboardCallbacks:
         self.screen = screen
 
     def on_loop_start(self, config: RalphConfig, prd: PRD | None) -> None:
-        self.screen.call_from_thread(self.screen._on_loop_start, config, prd)
+        self.screen.app.call_from_thread(self.screen._on_loop_start, config, prd)
 
     def on_branch_status(self, message: str) -> None:
-        self.screen.call_from_thread(self.screen._on_info, message)
+        self.screen.app.call_from_thread(self.screen._on_info, message)
 
     def on_iteration_start(self, iteration: int, max_iterations: int) -> None:
-        self.screen.call_from_thread(self.screen._on_iteration_start, iteration, max_iterations)
+        self.screen.app.call_from_thread(self.screen._on_iteration_start, iteration, max_iterations)
 
     def on_agent_line(self, output: AgentOutput) -> None:
-        self.screen.call_from_thread(self.screen._on_agent_line, output)
+        self.screen.app.call_from_thread(self.screen._on_agent_line, output)
 
     def on_iteration_end(self, iteration: int, elapsed_seconds: float) -> None:
-        self.screen.call_from_thread(self.screen._on_iteration_end, iteration, elapsed_seconds)
+        self.screen.app.call_from_thread(self.screen._on_iteration_end, iteration, elapsed_seconds)
 
     def on_guard_violation(self, disallowed: list[str]) -> None:
-        self.screen.call_from_thread(self.screen._on_guard_violation, disallowed)
+        self.screen.app.call_from_thread(self.screen._on_guard_violation, disallowed)
 
     def on_guard_reverted(self, messages: list[str]) -> None:
         for msg in messages:
-            self.screen.call_from_thread(self.screen._on_info, msg)
+            self.screen.app.call_from_thread(self.screen._on_info, msg)
 
     def on_complete(self, success: bool, iterations_used: int) -> None:
-        self.screen.call_from_thread(self.screen._on_complete, success, iterations_used)
+        self.screen.app.call_from_thread(self.screen._on_complete, success, iterations_used)
 
     def on_info(self, message: str) -> None:
-        self.screen.call_from_thread(self.screen._on_info, message)
+        self.screen.app.call_from_thread(self.screen._on_info, message)
 
     def on_error(self, message: str) -> None:
-        self.screen.call_from_thread(self.screen._on_error, message)
+        self.screen.app.call_from_thread(self.screen._on_error, message)
 
 
 class RunDashboardScreen(Screen):
