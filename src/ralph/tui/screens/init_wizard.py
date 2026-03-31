@@ -34,6 +34,7 @@ class InitWizardScreen(Screen):
         self._step = 0
         self._target_dir = str(Path.cwd())
         self._error = ""
+        self._done = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -118,6 +119,10 @@ class InitWizardScreen(Screen):
                 )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "init-done":
+            self.app.pop_screen()
+            return
+
         if event.button.id == "init-back":
             if self._step > 0:
                 self._step -= 1
@@ -130,7 +135,6 @@ class InitWizardScreen(Screen):
                 except Exception:
                     pass
 
-                # Validate directory exists
                 target = Path(self._target_dir).resolve()
                 if not target.exists():
                     self._error = f"Directory does not exist: {target}"
@@ -148,7 +152,6 @@ class InitWizardScreen(Screen):
                 self._run_init()
 
     def _run_init(self) -> None:
-        # Disable button immediately to prevent double-clicks
         next_btn = self.query_one("#init-next", Button)
         next_btn.disabled = True
 
@@ -157,16 +160,15 @@ class InitWizardScreen(Screen):
         step_container.remove_children()
 
         step_container.mount(Static(f"Initializing {target}..."))
+        step_container.mount(Static(""))
 
-        # Scaffold files
         messages = scaffold_project(target)
         for msg in messages:
             if msg.startswith("Created"):
-                step_container.mount(Static(f"[green]{msg}[/green]"))
+                step_container.mount(Static(f"  [green]{msg}[/green]"))
             else:
-                step_container.mount(Static(f"[dim]{msg}[/dim]"))
+                step_container.mount(Static(f"  [dim]{msg}[/dim]"))
 
-        # Create ralph.toml
         config = RalphConfig()
         try:
             selector = self.query_one("#init-model-selector", ModelSelector)
@@ -177,31 +179,38 @@ class InitWizardScreen(Screen):
             if "claude" in installed:
                 config.agent.type = "claude"
                 step_container.mount(
-                    Static("[dim]Auto-detected agent: claude[/dim]")
+                    Static("  [dim]Auto-detected agent: claude[/dim]")
                 )
             elif "codex" in installed:
                 config.agent.type = "codex"
                 step_container.mount(
-                    Static("[dim]Auto-detected agent: codex[/dim]")
+                    Static("  [dim]Auto-detected agent: codex[/dim]")
                 )
 
         toml_path = target / "ralph.toml"
         if not toml_path.exists():
             save_config(config, toml_path)
-            step_container.mount(Static("[green]Created: ralph.toml[/green]"))
+            step_container.mount(Static("  [green]Created: ralph.toml[/green]"))
         else:
-            step_container.mount(Static("[dim]Exists: ralph.toml[/dim]"))
+            step_container.mount(Static("  [dim]Exists: ralph.toml[/dim]"))
 
         step_container.mount(Static(""))
         step_container.mount(Static("[bold green]Setup complete[/bold green]"))
-        step_container.mount(Static(
-            "\nRecommended next steps:\n"
-            "  1. ralph understand 10   - Map your codebase\n"
-            "  2. ralph prd create      - Create your PRD\n"
-            "  3. ralph run 25          - Run the feature loop"
-        ))
+        step_container.mount(Static(""))
+        step_container.mount(Static("Next steps:"))
+        step_container.mount(Static("  1. ralph understand 10   Map your codebase"))
+        step_container.mount(Static("  2. ralph prd create      Create your PRD"))
+        step_container.mount(Static("  3. ralph run 25          Run the feature loop"))
 
-        self.query_one("#init-step-label", Static).update("Setup Complete")
+        self._done = True
+        self.query_one("#init-step-label", Static).update(
+            "[green]o[/green]  [green]o[/green]    Complete"
+        )
+
+        # Replace nav buttons with Done
+        nav = self.query_one("#new-project-nav", Horizontal)
+        nav.remove_children()
+        nav.mount(Button("Done", id="init-done", variant="primary"))
 
     def action_back(self) -> None:
         self.app.pop_screen()

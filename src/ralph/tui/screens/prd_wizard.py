@@ -343,6 +343,10 @@ class PRDWizardScreen(Screen):
     # -- Navigation --
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "wizard-done":
+            self.app.pop_screen()
+            return
+
         if event.button.id == "wizard-next":
             self._save_current_step()
 
@@ -388,12 +392,22 @@ class PRDWizardScreen(Screen):
         step_container = self.query_one("#wizard-step", VerticalScroll)
         step_container.remove_children()
         step_container.mount(Static(f"[green]PRD saved to {output_path}[/green]"))
+        step_container.mount(Static(""))
         step_container.mount(Static(
             f"  Branch:  {prd.branch_name}\n"
             f"  Stories: {prd.total_stories}"
         ))
-        step_container.mount(Static("\nYou can now run: ralph run"))
-        self.query_one("#wizard-next", Button).disabled = True
+        step_container.mount(Static(""))
+        step_container.mount(Static("You can now run: [bold]ralph run[/bold]"))
+
+        # Replace nav buttons with Done
+        self.query_one("#wizard-step-label", Static).update(
+            "  ".join("[green]o[/green]" for _ in range(_TOTAL_STEPS))
+            + "    Complete"
+        )
+        nav = self.query_one("#wizard-nav", Horizontal)
+        nav.remove_children()
+        nav.mount(Button("Done", id="wizard-done", variant="primary"))
 
     def action_back(self) -> None:
         self.app.pop_screen()
