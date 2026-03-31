@@ -15,7 +15,7 @@ Screen {
 .section-heading {
     text-style: bold;
     color: $text-muted;
-    text-transform: uppercase;
+
     margin-bottom: 1;
 }
 
@@ -194,7 +194,7 @@ Screen {
 .config-section-title {
     text-style: bold;
     color: $text-muted;
-    text-transform: uppercase;
+
     margin-bottom: 1;
 }
 
@@ -226,7 +226,7 @@ Screen {
 .status-card-title {
     text-style: bold;
     color: $text-muted;
-    text-transform: uppercase;
+
     margin-bottom: 1;
 }
 
@@ -287,7 +287,7 @@ Screen {
 /* ── Widget Overrides ───────────────────────────────── */
 
 AgentLogWidget {
-    scrollbar-size: 1;
+    scrollbar-size: 1 1;
 }
 
 StoryTableWidget {
