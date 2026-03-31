@@ -319,18 +319,40 @@ async def run_agent_async(
             yield output
 
 
-async def _run_claude_streaming(
+async def run_conversation_agent(
     model: str,
     prompt: str,
     cwd: Path,
 ) -> AsyncIterator[AgentOutput]:
+    """Run Claude for an interactive planning conversation.
+
+    No file permissions, no verbose hooks - just a conversation.
+    """
+    async for output in _run_claude_streaming(
+        model=model, prompt=prompt, cwd=cwd,
+        verbose=False, permission_mode="",
+    ):
+        yield output
+
+
+async def _run_claude_streaming(
+    model: str,
+    prompt: str,
+    cwd: Path,
+    verbose: bool = True,
+    permission_mode: str = "acceptEdits",
+) -> AsyncIterator[AgentOutput]:
     """Run Claude with stream-json output for real-time streaming."""
     effective_model = model or "sonnet"
-    cmd = (
-        f"claude --print --model {effective_model} "
-        f"--output-format stream-json --verbose "
-        f"--permission-mode acceptEdits"
-    )
+    cmd_parts = [
+        f"claude --print --model {effective_model}",
+        "--output-format stream-json",
+    ]
+    if verbose:
+        cmd_parts.append("--verbose")
+    if permission_mode:
+        cmd_parts.append(f"--permission-mode {permission_mode}")
+    cmd = " ".join(cmd_parts)
 
     # Stream-json lines can be very large (tool results with full file
     # contents). Increase the buffer limit from the default 64KB to 4MB

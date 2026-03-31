@@ -7,6 +7,7 @@ from pathlib import Path
 from textual.app import App
 
 from ralph.tui.screens.config_screen import ConfigScreen
+from ralph.tui.screens.feature_config import FeatureConfigScreen
 from ralph.tui.screens.init_wizard import InitWizardScreen
 from ralph.tui.screens.main_menu import MainMenuScreen
 from ralph.tui.screens.new_project_wizard import NewProjectWizardScreen
@@ -29,6 +30,7 @@ class RalphApp(App):
         "main_menu": MainMenuScreen,
         "init_wizard": InitWizardScreen,
         "new_project_wizard": NewProjectWizardScreen,
+        "feature_config": FeatureConfigScreen,
         "run_config": lambda: RunConfigScreen(understand_mode=False),
         "run_config_understand": lambda: RunConfigScreen(understand_mode=True),
         "prd_wizard": PRDWizardScreen,

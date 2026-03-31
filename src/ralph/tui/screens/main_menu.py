@@ -29,11 +29,12 @@ class MainMenuScreen(Screen):
         ("q", "quit", "Quit"),
         ("1", "select_new_project", "New Project"),
         ("2", "select_existing_project", "Existing Project"),
-        ("3", "select_run", "Run"),
-        ("4", "select_understand", "Understand"),
-        ("5", "select_prd", "PRD"),
-        ("6", "select_status", "Status"),
-        ("7", "select_config", "Settings"),
+        ("3", "select_interactive", "Interactive Feature"),
+        ("4", "select_run", "Run"),
+        ("5", "select_understand", "Understand"),
+        ("6", "select_prd", "PRD"),
+        ("7", "select_status", "Status"),
+        ("8", "select_config", "Settings"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -46,11 +47,12 @@ class MainMenuScreen(Screen):
                 yield ListView(
                     ListItem(Label("[1]  New Project"), id="menu-new-project"),
                     ListItem(Label("[2]  Add to Existing Project"), id="menu-existing-project"),
-                    ListItem(Label("[3]  Run Feature Loop"), id="menu-run"),
-                    ListItem(Label("[4]  Run Codebase Understanding"), id="menu-understand"),
-                    ListItem(Label("[5]  Create / Edit PRD"), id="menu-prd"),
-                    ListItem(Label("[6]  View Status"), id="menu-status"),
-                    ListItem(Label("[7]  Settings"), id="menu-config"),
+                    ListItem(Label("[3]  Interactive Feature"), id="menu-interactive"),
+                    ListItem(Label("[4]  Run Feature Loop"), id="menu-run"),
+                    ListItem(Label("[5]  Run Codebase Understanding"), id="menu-understand"),
+                    ListItem(Label("[6]  Create / Edit PRD"), id="menu-prd"),
+                    ListItem(Label("[7]  View Status"), id="menu-status"),
+                    ListItem(Label("[8]  Settings"), id="menu-config"),
                     id="main-menu-list",
                 )
 
@@ -92,6 +94,7 @@ class MainMenuScreen(Screen):
         actions = {
             "menu-new-project": self.action_select_new_project,
             "menu-existing-project": self.action_select_existing_project,
+            "menu-interactive": self.action_select_interactive,
             "menu-run": self.action_select_run,
             "menu-understand": self.action_select_understand,
             "menu-prd": self.action_select_prd,
@@ -107,6 +110,9 @@ class MainMenuScreen(Screen):
 
     def action_select_existing_project(self) -> None:
         self.app.push_screen("init_wizard")
+
+    def action_select_interactive(self) -> None:
+        self.app.push_screen("feature_config")
 
     def action_select_run(self) -> None:
         self.app.push_screen("run_config")
