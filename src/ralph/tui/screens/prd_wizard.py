@@ -375,6 +375,8 @@ class PRDWizardScreen(Screen):
         """Show/hide import fields when mode changes."""
         if event.radio_set.id == "prd-mode":
             self._mode = "import" if event.index == 1 else "scratch"
+            if self._mode == "scratch":
+                self._import_error = ""
             self._render_step()
 
     def _save_prd(self) -> None:

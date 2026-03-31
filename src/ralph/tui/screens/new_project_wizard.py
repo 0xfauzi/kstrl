@@ -63,6 +63,7 @@ class NewProjectWizardScreen(Screen):
         self._stories: list[dict[str, str]] = []
         self._tech_stack = ""
         self._verification_commands = ""
+        self._error = ""
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -143,6 +144,8 @@ class NewProjectWizardScreen(Screen):
                 classes="help-text",
             )
         )
+        if self._error:
+            container.mount(Static(f"[red]{self._error}[/red]"))
 
     def _render_agent_step(self, container: Vertical) -> None:
         container.mount(Label("Select your AI agent"))
@@ -195,6 +198,8 @@ class NewProjectWizardScreen(Screen):
             )
 
         container.mount(Button("+ Add Story", id="np-add-story", variant="success"))
+        if self._error:
+            container.mount(Static(f"[red]{self._error}[/red]"))
         container.mount(Static(""))
         container.mount(Label("Tech stack"))
         container.mount(
@@ -293,13 +298,36 @@ class NewProjectWizardScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "np-next":
             self._save_current_step()
+
+            # Validate step 0: project name required
+            if self._step == 0:
+                if not self._project_name.strip():
+                    self._error = "Project name is required"
+                    self._render_step()
+                    return
+                self._error = ""
+
+            # Validate step 2: at least one story with a title
+            if self._step == 2:
+                has_story = any(
+                    s["title"].strip() for s in self._stories
+                )
+                if not has_story:
+                    self._error = "Add at least one story with a title"
+                    self._render_step()
+                    return
+                self._error = ""
+
             if self._step == TOTAL_STEPS - 1:
+                # Disable button to prevent double-click
+                self.query_one("#np-next", Button).disabled = True
                 self._create_project()
             else:
                 self._step += 1
                 self._render_step()
         elif event.button.id == "np-back":
             self._save_current_step()
+            self._error = ""
             if self._step > 0:
                 self._step -= 1
                 self._render_step()

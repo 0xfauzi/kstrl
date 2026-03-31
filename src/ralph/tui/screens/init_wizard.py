@@ -33,6 +33,7 @@ class InitWizardScreen(Screen):
         super().__init__(name=name, id=id)
         self._step = 0
         self._target_dir = str(Path.cwd())
+        self._error = ""
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -53,12 +54,13 @@ class InitWizardScreen(Screen):
         self._render_step()
 
     def _progress_dots(self) -> str:
-        """Render step progress as dots."""
         total = 2
         parts: list[str] = []
         for i in range(total):
             if i == self._step:
                 parts.append("[bold]()[/bold]")
+            elif i < self._step:
+                parts.append("[green]o[/green]")
             else:
                 parts.append("[dim]o[/dim]")
         return "  ".join(parts) + f"    Step {self._step + 1} of {total}"
@@ -73,6 +75,7 @@ class InitWizardScreen(Screen):
         step_label.update(self._progress_dots())
 
         back_btn.disabled = self._step == 0
+        next_btn.disabled = False
         next_btn.label = "Initialize" if self._step == 1 else "Next"
 
         if self._step == 0:
@@ -91,6 +94,8 @@ class InitWizardScreen(Screen):
                     classes="help-text",
                 )
             )
+            if self._error:
+                step_container.mount(Static(f"[red]{self._error}[/red]"))
         elif self._step == 1:
             step_container.mount(Label("Select your AI agent"))
             step_container.mount(ModelSelector(id="init-model-selector"))
@@ -116,6 +121,7 @@ class InitWizardScreen(Screen):
         if event.button.id == "init-back":
             if self._step > 0:
                 self._step -= 1
+                self._error = ""
                 self._render_step()
         elif event.button.id == "init-next":
             if self._step == 0:
@@ -123,12 +129,29 @@ class InitWizardScreen(Screen):
                     self._target_dir = self.query_one("#target-dir", Input).value
                 except Exception:
                     pass
+
+                # Validate directory exists
+                target = Path(self._target_dir).resolve()
+                if not target.exists():
+                    self._error = f"Directory does not exist: {target}"
+                    self._render_step()
+                    return
+                if not target.is_dir():
+                    self._error = f"Not a directory: {target}"
+                    self._render_step()
+                    return
+
+                self._error = ""
                 self._step = 1
                 self._render_step()
             elif self._step == 1:
                 self._run_init()
 
     def _run_init(self) -> None:
+        # Disable button immediately to prevent double-clicks
+        next_btn = self.query_one("#init-next", Button)
+        next_btn.disabled = True
+
         target = Path(self._target_dir).resolve()
         step_container = self.query_one("#init-step", Vertical)
         step_container.remove_children()
@@ -153,13 +176,21 @@ class InitWizardScreen(Screen):
             installed = detect_installed_agents()
             if "claude" in installed:
                 config.agent.type = "claude"
+                step_container.mount(
+                    Static("[dim]Auto-detected agent: claude[/dim]")
+                )
             elif "codex" in installed:
                 config.agent.type = "codex"
+                step_container.mount(
+                    Static("[dim]Auto-detected agent: codex[/dim]")
+                )
 
         toml_path = target / "ralph.toml"
         if not toml_path.exists():
             save_config(config, toml_path)
             step_container.mount(Static("[green]Created: ralph.toml[/green]"))
+        else:
+            step_container.mount(Static("[dim]Exists: ralph.toml[/dim]"))
 
         step_container.mount(Static(""))
         step_container.mount(Static("[bold green]Setup complete[/bold green]"))
@@ -170,7 +201,6 @@ class InitWizardScreen(Screen):
             "  3. ralph run 25          - Run the feature loop"
         ))
 
-        self.query_one("#init-next", Button).disabled = True
         self.query_one("#init-step-label", Static).update("Setup Complete")
 
     def action_back(self) -> None:

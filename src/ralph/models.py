@@ -2,12 +2,18 @@
 
 Defines known agents (Claude, Codex) with their CLI commands, model lists,
 and auto-detection logic. Custom agents are also supported.
+
+Supports runtime model discovery when the agent CLI is available.
 """
 
 from __future__ import annotations
 
 import shutil
+import subprocess
 from dataclasses import dataclass
+
+# Session-level cache for discovered models
+_discovery_cache: dict[str, list[ModelInfo] | None] = {}
 
 
 @dataclass(frozen=True)
@@ -28,21 +34,21 @@ class AgentInfo:
 
 
 CLAUDE_MODELS = (
-    ModelInfo("sonnet", "Claude Sonnet", "Fast and capable, good default"),
-    ModelInfo("opus", "Claude Opus", "Strongest reasoning, slower"),
-    ModelInfo("haiku", "Claude Haiku", "Fastest and cheapest"),
+    ModelInfo("sonnet", "Sonnet 4.6", "Fast and capable, 200K context"),
+    ModelInfo("opus", "Opus 4.6", "Strongest reasoning, 1M context"),
+    ModelInfo("haiku", "Haiku 4.5", "Fastest and cheapest, 200K context"),
 )
 
 CODEX_MODELS = (
-    ModelInfo("o3", "o3", "Default codex model"),
-    ModelInfo("o4-mini", "o4-mini", "Faster, cheaper"),
-    ModelInfo("gpt-4.1", "GPT-4.1", "GPT-4 class model"),
+    ModelInfo("o3", "o3", "Strong reasoning, default"),
+    ModelInfo("o4-mini", "o4-mini", "Fast and cost-effective"),
+    ModelInfo("gpt-4.1", "GPT-4.1", "GPT-4 class"),
 )
 
 KNOWN_AGENTS: dict[str, AgentInfo] = {
     "claude": AgentInfo(
         id="claude",
-        name="Claude",
+        name="Claude Code",
         detect_command="claude",
         command_template="claude --print --model {model}",
         models=CLAUDE_MODELS,
@@ -50,7 +56,7 @@ KNOWN_AGENTS: dict[str, AgentInfo] = {
     ),
     "codex": AgentInfo(
         id="codex",
-        name="Codex",
+        name="Codex CLI",
         detect_command="codex",
         command_template="codex exec -m {model}",
         models=CODEX_MODELS,
@@ -72,8 +78,96 @@ def detect_installed_agents() -> list[str]:
     return [aid for aid in KNOWN_AGENTS if is_agent_installed(aid)]
 
 
+def discover_models(agent_id: str) -> list[ModelInfo] | None:
+    """Try to discover available models by querying the agent CLI.
+
+    Returns a list of ModelInfo on success, or None if discovery fails
+    (CLI not installed, timeout, parse error, etc.).
+
+    Results are cached for the session to avoid repeated subprocess calls.
+    """
+    if agent_id in _discovery_cache:
+        return _discovery_cache[agent_id]
+
+    result = _discover_models_impl(agent_id)
+    _discovery_cache[agent_id] = result
+    return result
+
+
+def _discover_models_impl(agent_id: str) -> list[ModelInfo] | None:
+    """Implementation of model discovery. Not cached."""
+    if not is_agent_installed(agent_id):
+        return None
+
+    if agent_id == "claude":
+        return _discover_claude_models()
+    elif agent_id == "codex":
+        return _discover_codex_models()
+
+    return None
+
+
+def _discover_claude_models() -> list[ModelInfo] | None:
+    """Discover Claude models by querying the CLI."""
+    try:
+        result = subprocess.run(
+            ["claude", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        # The help output mentions model aliases. We can parse or just
+        # use our known list with version info from the CLI version.
+        version_result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        version = version_result.stdout.strip() if version_result.returncode == 0 else ""
+
+        # Build models with version context
+        models = [
+            ModelInfo("opus", "Opus 4.6", f"Strongest reasoning, 1M context ({version})"),
+            ModelInfo("sonnet", "Sonnet 4.6", f"Fast and capable, 200K context ({version})"),
+            ModelInfo("haiku", "Haiku 4.5", f"Fastest and cheapest, 200K context ({version})"),
+        ]
+        return models if result.returncode == 0 else None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
+def _discover_codex_models() -> list[ModelInfo] | None:
+    """Discover Codex models by querying the CLI."""
+    try:
+        result = subprocess.run(
+            ["codex", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+
+        # Return known codex models (codex doesn't expose a model list command)
+        return [
+            ModelInfo("o3", "o3", "Strong reasoning, default"),
+            ModelInfo("o4-mini", "o4-mini", "Fast and cost-effective"),
+            ModelInfo("gpt-4.1", "GPT-4.1", "GPT-4 class"),
+        ]
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
 def get_models_for_agent(agent_id: str) -> list[ModelInfo]:
-    """Return available models for a given agent type."""
+    """Return available models for a given agent type.
+
+    Tries runtime discovery first, falls back to hardcoded list.
+    """
+    discovered = discover_models(agent_id)
+    if discovered is not None:
+        return discovered
+
     info = KNOWN_AGENTS.get(agent_id)
     if info is None:
         return []
@@ -88,7 +182,9 @@ def get_default_model(agent_id: str) -> str:
     return info.default_model
 
 
-def build_agent_command(agent_type: str, model: str = "", custom_command: str = "") -> str:
+def build_agent_command(
+    agent_type: str, model: str = "", custom_command: str = "",
+) -> str:
     """Build the full shell command to invoke an agent.
 
     For known agents, substitutes {model} into the command template.

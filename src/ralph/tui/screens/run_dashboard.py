@@ -92,6 +92,18 @@ class RunDashboardScreen(Screen):
 
     def _start_run(self) -> None:
         """Start the agentic loop in a worker thread."""
+        log = self.query_one("#agent-log", AgentLogWidget)
+        cwd = Path.cwd()
+
+        # Pre-flight: check ralph.toml exists
+        toml_path = cwd / "ralph.toml"
+        if not toml_path.exists():
+            log.write_error(
+                "No ralph.toml found. Run 'ralph init' or use "
+                "the New Project / Existing Project wizard first."
+            )
+            return
+
         config = load_config()
 
         if self.understand_mode:
@@ -103,13 +115,24 @@ class RunDashboardScreen(Screen):
         self._config = config
         self.control = LoopControl()
 
+        # Pre-flight: check prompt file exists
+        prompt_path = cwd / config.paths.prompt
+        if not prompt_path.exists():
+            log.write_error(f"Missing prompt file: {prompt_path}")
+            log.write_info(
+                "Run 'ralph init' to create the required template files."
+            )
+            return
+
         # Load PRD for story display
         try:
-            self._prd = load_prd(Path.cwd() / config.paths.prd)
+            self._prd = load_prd(cwd / config.paths.prd)
             story_table = self.query_one("#story-panel", StoryTableWidget)
             story_table.update_stories(self._prd)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            log.write_info("No PRD found. Story panel will be empty.")
+        except ValueError as e:
+            log.write_error(f"PRD invalid: {e}")
 
         self._worker = self.run_worker(
             self._run_loop_worker(config),

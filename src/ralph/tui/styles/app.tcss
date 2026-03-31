@@ -321,8 +321,26 @@ ModelSelector Select {
 
 Input {
     margin-bottom: 1;
+    border: tall $surface-darken-2;
+}
+
+Input:focus {
+    border: tall $accent;
 }
 
 TextArea {
+    margin-bottom: 1;
+    border: tall $surface-darken-2;
+}
+
+TextArea:focus {
+    border: tall $accent;
+}
+
+Checkbox {
+    margin-bottom: 1;
+}
+
+Select {
     margin-bottom: 1;
 }
