@@ -11,7 +11,7 @@ from ralph.tui.screens.init_wizard import InitWizardScreen
 from ralph.tui.screens.main_menu import MainMenuScreen
 from ralph.tui.screens.new_project_wizard import NewProjectWizardScreen
 from ralph.tui.screens.prd_wizard import PRDWizardScreen
-from ralph.tui.screens.run_dashboard import RunDashboardScreen
+from ralph.tui.screens.run_config import RunConfigScreen
 from ralph.tui.screens.status_screen import StatusScreen
 
 CSS_PATH = Path(__file__).parent / "styles" / "app.tcss"
@@ -29,8 +29,8 @@ class RalphApp(App):
         "main_menu": MainMenuScreen,
         "init_wizard": InitWizardScreen,
         "new_project_wizard": NewProjectWizardScreen,
-        "run_dashboard": lambda: RunDashboardScreen(understand_mode=False),
-        "run_dashboard_understand": lambda: RunDashboardScreen(understand_mode=True),
+        "run_config": lambda: RunConfigScreen(understand_mode=False),
+        "run_config_understand": lambda: RunConfigScreen(understand_mode=True),
         "prd_wizard": PRDWizardScreen,
         "config": ConfigScreen,
         "status": StatusScreen,

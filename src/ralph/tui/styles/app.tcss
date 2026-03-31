@@ -284,6 +284,13 @@ Screen {
     margin-left: 1;
 }
 
+/* ── Run Config ──────────────────────────────────────── */
+
+#run-config-body {
+    min-height: 10;
+    padding: 1 0;
+}
+
 /* ── Widget Overrides ───────────────────────────────── */
 
 AgentLogWidget {

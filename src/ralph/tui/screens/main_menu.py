@@ -109,10 +109,10 @@ class MainMenuScreen(Screen):
         self.app.push_screen("init_wizard")
 
     def action_select_run(self) -> None:
-        self.app.push_screen("run_dashboard")
+        self.app.push_screen("run_config")
 
     def action_select_understand(self) -> None:
-        self.app.push_screen("run_dashboard_understand")
+        self.app.push_screen("run_config_understand")
 
     def action_select_prd(self) -> None:
         self.app.push_screen("prd_wizard")
