@@ -82,9 +82,15 @@ class RunDashboardScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield RunHeader(id="run-header")
-        with Horizontal(id="run-body"):
+        if self.understand_mode:
+            # Understanding mode has no PRD stories - full-width log
             yield AgentLogWidget(id="agent-log", wrap=True, highlight=True, markup=True)
-            yield StoryTableWidget(id="story-panel")
+        else:
+            with Horizontal(id="run-body"):
+                yield AgentLogWidget(
+                    id="agent-log", wrap=True, highlight=True, markup=True,
+                )
+                yield StoryTableWidget(id="story-panel")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -124,15 +130,16 @@ class RunDashboardScreen(Screen):
             )
             return
 
-        # Load PRD for story display
-        try:
-            self._prd = load_prd(cwd / config.paths.prd)
-            story_table = self.query_one("#story-panel", StoryTableWidget)
-            story_table.update_stories(self._prd)
-        except FileNotFoundError:
-            log.write_info("No PRD found. Story panel will be empty.")
-        except ValueError as e:
-            log.write_error(f"PRD invalid: {e}")
+        # Load PRD for story display (not relevant in understanding mode)
+        if not self.understand_mode:
+            try:
+                self._prd = load_prd(cwd / config.paths.prd)
+                story_table = self.query_one("#story-panel", StoryTableWidget)
+                story_table.update_stories(self._prd)
+            except FileNotFoundError:
+                log.write_info("No PRD found. Story panel will be empty.")
+            except ValueError as e:
+                log.write_error(f"PRD invalid: {e}")
 
         self._worker = self.run_worker(
             self._run_loop_worker(config),
@@ -159,8 +166,8 @@ class RunDashboardScreen(Screen):
         log = self.query_one("#agent-log", AgentLogWidget)
         log.write_info(f"--- Iteration {iteration} / {max_iterations} ---")
 
-        # Refresh PRD to get current story
-        if self._config:
+        # Refresh PRD to get current story (not in understanding mode)
+        if self._config and not self.understand_mode:
             try:
                 self._prd = load_prd(Path.cwd() / self._config.paths.prd)
                 next_story = self._prd.next_story()
@@ -179,8 +186,8 @@ class RunDashboardScreen(Screen):
         log = self.query_one("#agent-log", AgentLogWidget)
         log.write_info(f"Iteration {iteration} completed in {elapsed_seconds:.1f}s")
 
-        # Refresh story table
-        if self._config:
+        # Refresh story table (not in understanding mode)
+        if self._config and not self.understand_mode:
             try:
                 self._prd = load_prd(Path.cwd() / self._config.paths.prd)
                 story_table = self.query_one("#story-panel", StoryTableWidget)
@@ -204,8 +211,8 @@ class RunDashboardScreen(Screen):
         log.write_info("")
         log.write_info("Press Escape to return to the menu.")
 
-        # Final story table refresh
-        if self._config:
+        # Final story table refresh (not in understanding mode)
+        if self._config and not self.understand_mode:
             try:
                 self._prd = load_prd(Path.cwd() / self._config.paths.prd)
                 story_table = self.query_one("#story-panel", StoryTableWidget)
