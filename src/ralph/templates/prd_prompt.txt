@@ -1,26 +1,22 @@
-You are a product manager and QA lead. Produce a PRD as a single JSON object meant to be saved as `scripts/ralph/prd.json`.
+You are a product manager creating a PRD for an autonomous coding agent.
 
-Output requirements:
-- Output ONLY valid JSON (no Markdown, no code fences, no comments).
-- The top-level output must be a JSON object with exactly these keys: "branchName", "userStories".
-- Do not add any other top-level keys.
-- "userStories" must be an array of story objects.
-- Each story object must have exactly these keys: "id", "title", "acceptanceCriteria", "priority", "passes", "notes".
-- Set "passes" to false for every story.
-- Set "notes" to "" for every story.
+Your output must be a single valid JSON object. No markdown, no code fences, no commentary outside the JSON.
 
-Schema (example shape only, do not copy the text):
+## Output schema
+
+The JSON object must have exactly two top-level keys:
+
 {
-  "branchName": "ralph/feature-name",
+  "branchName": "ralph/<feature-slug>",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Short description of the story",
+      "title": "Short imperative description",
       "acceptanceCriteria": [
-        "First testable requirement",
-        "Second testable requirement",
-        "Typecheck passes: <typecheck command>",
-        "Tests pass: <test command>"
+        "Testable criterion 1",
+        "Testable criterion 2",
+        "Typecheck passes: <exact command>",
+        "Tests pass: <exact command>"
       ],
       "priority": 1,
       "passes": false,
@@ -29,69 +25,64 @@ Schema (example shape only, do not copy the text):
   ]
 }
 
-Content rules:
-- Stories must be small and atomic: each story should be implementable and verifiable in a single Ralph iteration.
-- "priority": lower number = higher priority. Priorities must be unique and start at 1.
-- "acceptanceCriteria": explicit, testable, ordered checks. Include verification commands with expected outcomes.
-- Always include typecheck and test criteria using the commands specified in the context below.
-- Do not invent UI elements, endpoints, or files that are not described in the context.
-- Cover core flows first, then important edge cases implied by the context.
-- If the context mentions existing patterns or conventions, criteria should verify the new code follows them.
+Rules:
+- Each story object has exactly these keys: id, title, acceptanceCriteria, priority, passes, notes
+- Set "passes" to false and "notes" to "" for every story
+- Priority: lower number = higher priority. Unique integers starting at 1.
+
+## Story design principles
+
+Each story will be implemented by an autonomous agent in a single iteration. Design stories accordingly:
+
+- Small and atomic: one story = one focused change that can be implemented and tested in isolation
+- Ordered by dependency: if story B depends on story A, give A a lower priority number
+- Testable: every acceptance criterion must be verifiable by running a command or checking a condition
+- Always include typecheck and test criteria with exact commands from the context below
+- Do not invent UI elements, endpoints, or files not described in the context
+- Cover core flows first, then edge cases
 
 ================================================================================
-CONTEXT - Fill in the sections below, then feed this entire file to an LLM
+CONTEXT (provided by the user)
 ================================================================================
 
 ## Feature Overview
-<!-- What are you building? Describe the feature in 2-3 sentences. -->
+<!-- What are you building? 2-3 sentences. -->
 
 
 
 ## Branch Name
-<!-- What should the git branch be called? e.g., ralph/add-user-auth -->
-
-
-
-## Target Users
-<!-- Who will use this feature? What problem does it solve for them? -->
+<!-- Git branch name, e.g., ralph/add-user-auth -->
 
 
 
 ## Requirements
-<!-- List the specific things this feature must do. Be concrete. -->
-1. 
-2. 
-3. 
+<!-- Specific things this feature must do. -->
+1.
+2.
+3.
 
 ## Out of Scope
-<!-- What are you NOT building? Helps the LLM avoid inventing extra features. -->
-- 
+<!-- What you are NOT building. -->
+-
 
-## Tech Stack & Conventions
-<!-- What technologies is the project using? What patterns should be followed? -->
-- Language: 
-- Framework: 
-- Testing: 
-- Other: 
+## Tech Stack
+<!-- Languages, frameworks, testing tools, patterns to follow. -->
+- Language:
+- Framework:
+- Testing:
 
 ## Existing Code Context
-<!-- Describe relevant existing files, APIs, or patterns the new code should integrate with. -->
+<!-- Relevant existing files, APIs, or patterns to integrate with. -->
 
 
 
 ## Verification Commands
-<!-- How should the agent verify the code works? Provide exact commands. -->
-- Typecheck: 
-- Tests: 
-- Lint: 
-- Other: 
+<!-- Exact commands the agent should run to verify correctness. -->
+- Typecheck:
+- Tests:
+- Lint:
 
 ## Constraints
-<!-- Any limitations, performance requirements, or non-functional requirements? -->
-
-
-
-## Additional Notes
-<!-- Anything else the LLM should know? Edge cases, error handling, etc. -->
+<!-- Limitations, performance requirements, non-functional requirements. -->
 
 

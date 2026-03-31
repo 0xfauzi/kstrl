@@ -205,14 +205,31 @@ async def run_agent_async(
     prompt_path: Path,
     cwd: Path,
     reasoning_effort: str = "",
+    progress_path: Path | None = None,
+    iteration: int = 0,
 ) -> AsyncIterator[AgentOutput]:
     """Run an agent asynchronously, yielding classified output lines.
 
     For Claude, uses stream-json format for real-time streaming.
     For Codex and custom agents, reads stdout line-by-line.
+
+    If progress_path is provided and the file exists, its contents are
+    appended to the prompt as inter-iteration handoff context.
     """
     # Read the prompt file
     prompt_content = prompt_path.read_text(encoding="utf-8")
+
+    # Inject handoff context from progress.txt
+    if progress_path and progress_path.exists():
+        progress = progress_path.read_text(encoding="utf-8").strip()
+        if progress:
+            prompt_content += (
+                f"\n\n---\n\n"
+                f"## Handoff context (iteration {iteration})\n\n"
+                f"The following is the progress log from previous iterations. "
+                f"Read it to understand what has been done and what to do next.\n\n"
+                f"{progress}\n"
+            )
 
     if agent_type == "claude":
         async for output in _run_claude_streaming(
