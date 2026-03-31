@@ -198,6 +198,37 @@ def _short_path(path: str) -> str:
     return ".../" + "/".join(parts[-3:])
 
 
+def _extract_recent_handoff(progress_path: Path, max_entries: int = 5) -> str:
+    """Extract the last N iteration entries from progress.txt.
+
+    Entries are delimited by lines starting with '## Iteration'.
+    Returns just the recent entries, not the file header.
+    """
+    content = progress_path.read_text(encoding="utf-8")
+    if not content.strip():
+        return ""
+
+    # Split on iteration headers
+    entries: list[str] = []
+    current: list[str] = []
+    for line in content.splitlines():
+        if line.startswith("## Iteration"):
+            if current:
+                entries.append("\n".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        entries.append("\n".join(current))
+
+    if not entries:
+        return ""
+
+    # Take only the last N entries
+    recent = entries[-max_entries:]
+    return "\n\n".join(recent)
+
+
 async def run_agent_async(
     agent_type: str,
     model: str,
@@ -219,16 +250,16 @@ async def run_agent_async(
     # Read the prompt file
     prompt_content = prompt_path.read_text(encoding="utf-8")
 
-    # Inject handoff context from progress.txt
+    # Inject handoff context from progress.txt (last N entries only)
     if progress_path and progress_path.exists():
-        progress = progress_path.read_text(encoding="utf-8").strip()
-        if progress:
+        handoff = _extract_recent_handoff(progress_path, max_entries=5)
+        if handoff:
             prompt_content += (
                 f"\n\n---\n\n"
                 f"## Handoff context (iteration {iteration})\n\n"
-                f"The following is the progress log from previous iterations. "
-                f"Read it to understand what has been done and what to do next.\n\n"
-                f"{progress}\n"
+                f"Below are the handoff notes from the most recent iterations. "
+                f"Read them to understand what has been done and what to do next.\n\n"
+                f"{handoff}\n"
             )
 
     if agent_type == "claude":

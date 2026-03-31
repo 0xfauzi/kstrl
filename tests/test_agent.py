@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ralph.agent import (
     COMPLETION_MARKER,
     LineRole,
+    _extract_recent_handoff,
     classify_line,
     detect_completion,
 )
@@ -54,3 +57,42 @@ def test_detect_completion_false() -> None:
 
 def test_completion_marker_value() -> None:
     assert COMPLETION_MARKER == "<promise>COMPLETE</promise>"
+
+
+# -- _extract_recent_handoff tests --
+
+
+def test_extract_recent_handoff_empty(tmp_path: Path) -> None:
+    p = tmp_path / "progress.txt"
+    p.write_text("# Ralph Progress Log\n\n---\n\n", encoding="utf-8")
+    assert _extract_recent_handoff(p) == ""
+
+
+def test_extract_recent_handoff_few_entries(tmp_path: Path) -> None:
+    p = tmp_path / "progress.txt"
+    p.write_text(
+        "# Header\n\n"
+        "## Iteration 1 - US-001\n- Did stuff\n---\n\n"
+        "## Iteration 2 - US-002\n- Did more\n---\n",
+        encoding="utf-8",
+    )
+    result = _extract_recent_handoff(p, max_entries=5)
+    assert "Iteration 1" in result
+    assert "Iteration 2" in result
+
+
+def test_extract_recent_handoff_sliding_window(tmp_path: Path) -> None:
+    lines = "# Header\n\n"
+    for i in range(1, 11):
+        lines += f"## Iteration {i} - US-{i:03d}\n- Work {i}\n---\n\n"
+    p = tmp_path / "progress.txt"
+    p.write_text(lines, encoding="utf-8")
+
+    result = _extract_recent_handoff(p, max_entries=3)
+    # Should only have last 3
+    assert "Iteration 8" in result
+    assert "Iteration 9" in result
+    assert "Iteration 10" in result
+    # Should NOT have earlier ones
+    assert "Iteration 1 -" not in result
+    assert "Iteration 7 -" not in result
