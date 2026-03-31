@@ -130,28 +130,28 @@ class PRDWizardScreen(Screen):
             )
         )
 
-        if self._mode == "import":
-            container.mount(Static(""))
-            container.mount(Label("Path to markdown file"))
-            container.mount(
-                Input(
-                    value=self._import_path,
-                    id="import-path",
-                    placeholder="/path/to/spec.md",
-                )
+        # Import fields - always mounted, visibility toggled by radio
+        container.mount(Static("", id="import-spacer"))
+        container.mount(Label("Path to markdown file", id="import-label"))
+        container.mount(
+            Input(
+                value=self._import_path,
+                id="import-path",
+                placeholder="/path/to/spec.md",
             )
-            container.mount(
-                Static(
-                    "[dim]The file will be parsed into user stories. "
-                    "Headings become story titles, bullets become acceptance criteria. "
-                    "You can review and edit everything before saving.[/dim]",
-                    classes="help-text",
-                )
+        )
+        container.mount(
+            Static(
+                "[dim]The file will be parsed into user stories. "
+                "Headings become story titles, bullets become acceptance criteria. "
+                "You can review and edit everything before saving.[/dim]",
+                id="import-help",
+                classes="help-text",
             )
-            if self._import_error:
-                container.mount(
-                    Static(f"[red]{self._import_error}[/red]")
-                )
+        )
+        container.mount(Static("", id="import-error"))
+
+        self._update_import_visibility()
 
     def _render_feature_step(self, container: VerticalScroll) -> None:
         container.mount(Label("Describe the feature you're building"))
@@ -375,13 +375,33 @@ class PRDWizardScreen(Screen):
             self._stories.append({"title": "", "criteria": ""})
             self._render_step()
 
+    def _update_import_visibility(self) -> None:
+        """Show or hide import fields based on current mode."""
+        show = self._mode == "import"
+        for widget_id in ("import-spacer", "import-label", "import-path", "import-help"):
+            try:
+                widget = self.query_one(f"#{widget_id}")
+                widget.display = show
+            except Exception:
+                pass
+        try:
+            error_widget = self.query_one("#import-error", Static)
+            if show and self._import_error:
+                error_widget.update(f"[red]{self._import_error}[/red]")
+                error_widget.display = True
+            else:
+                error_widget.update("")
+                error_widget.display = False
+        except Exception:
+            pass
+
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         """Show/hide import fields when mode changes."""
         if event.radio_set.id == "prd-mode":
             self._mode = "import" if event.index == 1 else "scratch"
             if self._mode == "scratch":
                 self._import_error = ""
-            self._render_step()
+            self._update_import_visibility()
 
     def _save_prd(self) -> None:
         prd = self._build_prd()
