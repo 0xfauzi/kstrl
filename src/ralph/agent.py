@@ -329,7 +329,7 @@ async def _run_claude_streaming(
     cmd = (
         f"claude --print --model {effective_model} "
         f"--output-format stream-json --verbose "
-        f"--permission-mode auto"
+        f"--permission-mode acceptEdits"
     )
 
     # Stream-json lines can be very large (tool results with full file
