@@ -22,7 +22,7 @@ from textual.widgets import (
 
 from ralph.prd import PRD, create_empty_prd, create_story, parse_markdown_to_stories, save_prd
 
-# Step indices after the mode-selection step
+# Step indices
 _STEP_MODE = 0
 _STEP_FEATURE = 1
 _STEP_BRANCH = 2
@@ -42,7 +42,7 @@ class PRDWizardScreen(Screen):
     def __init__(self, name: str | None = None, id: str | None = None) -> None:
         super().__init__(name=name, id=id)
         self._step = _STEP_MODE
-        self._mode = "scratch"  # "scratch" or "import"
+        self._mode = "scratch"
         self._import_path = ""
         self._import_error = ""
         self._branch_name = "ralph/feature"
@@ -67,7 +67,7 @@ class PRDWizardScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self._render_step()
+        self._do_render_step()
 
     def _progress_dots(self) -> str:
         total = _TOTAL_STEPS
@@ -81,15 +81,21 @@ class PRDWizardScreen(Screen):
                 parts.append("[dim]o[/dim]")
         return "  ".join(parts)
 
-    def _render_step(self) -> None:
+    def _do_render_step(self) -> None:
+        """Schedule the async render step."""
+        self.run_worker(self._render_step_async(), exclusive=True)
+
+    async def _render_step_async(self) -> None:
+        """Render the current step. Awaits child removal to avoid duplicate IDs."""
         step_container = self.query_one("#wizard-step", VerticalScroll)
         step_label = self.query_one("#wizard-step-label", Static)
         back_btn = self.query_one("#wizard-back", Button)
         next_btn = self.query_one("#wizard-next", Button)
 
-        step_container.remove_children()
-        step_label.update(self._progress_dots())
+        # Await removal so old widgets are fully gone before mounting new ones
+        await step_container.remove_children()
 
+        step_label.update(self._progress_dots())
         back_btn.disabled = self._step == _STEP_MODE
 
         if self._step == _STEP_MODE:
@@ -130,7 +136,7 @@ class PRDWizardScreen(Screen):
             )
         )
 
-        # Import fields - always mounted, visibility toggled by radio
+        # Import fields - always mounted, visibility toggled
         container.mount(Static("", id="import-spacer"))
         container.mount(Label("Path to markdown file", id="import-label"))
         container.mount(
@@ -156,10 +162,7 @@ class PRDWizardScreen(Screen):
     def _render_feature_step(self, container: VerticalScroll) -> None:
         container.mount(Label("Describe the feature you're building"))
         container.mount(
-            TextArea(
-                self._feature_overview,
-                id="feature-overview",
-            )
+            TextArea(self._feature_overview, id="feature-overview")
         )
 
     def _render_branch_step(self, container: VerticalScroll) -> None:
@@ -171,7 +174,8 @@ class PRDWizardScreen(Screen):
         ))
         container.mount(
             Static(
-                "[dim]The agent will check out this branch before starting work.[/dim]",
+                "[dim]The agent will check out this branch "
+                "before starting work.[/dim]",
                 classes="help-text",
             )
         )
@@ -180,8 +184,8 @@ class PRDWizardScreen(Screen):
         container.mount(Label("User stories"))
         container.mount(
             Static(
-                "[dim]Each story needs a title and testable acceptance criteria, "
-                "one per line.[/dim]",
+                "[dim]Each story needs a title and testable "
+                "acceptance criteria, one per line.[/dim]",
                 classes="help-text",
             )
         )
@@ -197,13 +201,12 @@ class PRDWizardScreen(Screen):
                 placeholder="Story title",
             ))
             container.mount(
-                TextArea(
-                    story["criteria"],
-                    id=f"story-criteria-{i}",
-                )
+                TextArea(story["criteria"], id=f"story-criteria-{i}")
             )
 
-        container.mount(Button("+ Add Story", id="add-story", variant="success"))
+        container.mount(
+            Button("+ Add Story", id="add-story", variant="success")
+        )
 
     def _render_tech_step(self, container: VerticalScroll) -> None:
         container.mount(Label("Tech stack"))
@@ -213,14 +216,12 @@ class PRDWizardScreen(Screen):
                 classes="help-text",
             )
         )
-        container.mount(
-            TextArea(self._tech_stack, id="tech-stack")
-        )
+        container.mount(TextArea(self._tech_stack, id="tech-stack"))
         container.mount(Label("Verification commands"))
         container.mount(
             Static(
-                "[dim]Commands to verify correctness (e.g., pytest, mypy, npm test). "
-                "These are added as acceptance criteria to every story.[/dim]",
+                "[dim]Commands to verify correctness (e.g., pytest, mypy). "
+                "Added as acceptance criteria to every story.[/dim]",
                 classes="help-text",
             )
         )
@@ -248,40 +249,50 @@ class PRDWizardScreen(Screen):
         if self._step == _STEP_MODE:
             try:
                 radio_set = self.query_one("#prd-mode", RadioSet)
-                self._mode = "import" if radio_set.pressed_index == 1 else "scratch"
+                idx = radio_set.pressed_index
+                self._mode = "import" if idx == 1 else "scratch"
             except Exception:
                 pass
             if self._mode == "import":
                 try:
-                    self._import_path = self.query_one("#import-path", Input).value
+                    self._import_path = self.query_one(
+                        "#import-path", Input
+                    ).value
                 except Exception:
                     pass
         elif self._step == _STEP_FEATURE:
             try:
-                ta = self.query_one("#feature-overview", TextArea)
-                self._feature_overview = ta.text
+                self._feature_overview = self.query_one(
+                    "#feature-overview", TextArea
+                ).text
             except Exception:
                 pass
         elif self._step == _STEP_BRANCH:
             try:
-                inp = self.query_one("#branch-name", Input)
-                self._branch_name = inp.value
+                self._branch_name = self.query_one(
+                    "#branch-name", Input
+                ).value
             except Exception:
                 pass
         elif self._step == _STEP_STORIES:
             for i in range(len(self._stories)):
                 try:
-                    title_inp = self.query_one(f"#story-title-{i}", Input)
-                    criteria_ta = self.query_one(f"#story-criteria-{i}", TextArea)
-                    self._stories[i]["title"] = title_inp.value
-                    self._stories[i]["criteria"] = criteria_ta.text
+                    self._stories[i]["title"] = self.query_one(
+                        f"#story-title-{i}", Input
+                    ).value
+                    self._stories[i]["criteria"] = self.query_one(
+                        f"#story-criteria-{i}", TextArea
+                    ).text
                 except Exception:
                     pass
         elif self._step == _STEP_TECH:
             try:
-                self._tech_stack = self.query_one("#tech-stack", TextArea).text
-                ta = self.query_one("#verification-commands", TextArea)
-                self._verification_commands = ta.text
+                self._tech_stack = self.query_one(
+                    "#tech-stack", TextArea
+                ).text
+                self._verification_commands = self.query_one(
+                    "#verification-commands", TextArea
+                ).text
             except Exception:
                 pass
 
@@ -307,7 +318,10 @@ class PRDWizardScreen(Screen):
 
         parsed = parse_markdown_to_stories(content)
         self._feature_overview = parsed.feature_overview
-        self._stories = parsed.stories if parsed.stories else [{"title": "", "criteria": ""}]
+        self._stories = (
+            parsed.stories if parsed.stories
+            else [{"title": "", "criteria": ""}]
+        )
         self._tech_stack = parsed.tech_stack
         self._verification_commands = parsed.verification_commands
         self._import_error = ""
@@ -327,14 +341,16 @@ class PRDWizardScreen(Screen):
             ]
             if self._verification_commands.strip():
                 for cmd_line in self._verification_commands.strip().splitlines():
-                    cmd_line = cmd_line.strip()
-                    if cmd_line and cmd_line not in criteria_lines:
-                        criteria_lines.append(cmd_line)
+                    cmd = cmd_line.strip()
+                    if cmd and cmd not in criteria_lines:
+                        criteria_lines.append(cmd)
 
             story = create_story(
                 story_id=f"US-{i + 1:03d}",
                 title=title,
-                acceptance_criteria=criteria_lines or ["Typecheck passes", "Tests pass"],
+                acceptance_criteria=(
+                    criteria_lines or ["Typecheck passes", "Tests pass"]
+                ),
                 priority=i + 1,
             )
             prd.user_stories.append(story)
@@ -350,48 +366,47 @@ class PRDWizardScreen(Screen):
         if event.button.id == "wizard-next":
             self._save_current_step()
 
-            # Handle import on mode step
             if self._step == _STEP_MODE and self._mode == "import":
                 if not self._try_import_markdown():
-                    self._render_step()  # Re-render to show error
+                    self._do_render_step()
                     return
-                # Skip feature overview step (already populated from file)
                 self._step = _STEP_BRANCH
-                self._render_step()
+                self._do_render_step()
                 return
 
             if self._step == _STEP_REVIEW:
-                self._save_prd()
+                self._do_save_prd()
             else:
                 self._step += 1
-                self._render_step()
+                self._do_render_step()
         elif event.button.id == "wizard-back":
             self._save_current_step()
             if self._step > _STEP_MODE:
                 self._step -= 1
-                self._render_step()
+                self._do_render_step()
         elif event.button.id == "add-story":
             self._save_current_step()
             self._stories.append({"title": "", "criteria": ""})
-            self._render_step()
+            self._do_render_step()
 
     def _update_import_visibility(self) -> None:
         """Show or hide import fields based on current mode."""
         show = self._mode == "import"
-        for widget_id in ("import-spacer", "import-label", "import-path", "import-help"):
+        for wid in (
+            "import-spacer", "import-label", "import-path", "import-help",
+        ):
             try:
-                widget = self.query_one(f"#{widget_id}")
-                widget.display = show
+                self.query_one(f"#{wid}").display = show
             except Exception:
                 pass
         try:
-            error_widget = self.query_one("#import-error", Static)
+            err = self.query_one("#import-error", Static)
             if show and self._import_error:
-                error_widget.update(f"[red]{self._import_error}[/red]")
-                error_widget.display = True
+                err.update(f"[red]{self._import_error}[/red]")
+                err.display = True
             else:
-                error_widget.update("")
-                error_widget.display = False
+                err.update("")
+                err.display = False
         except Exception:
             pass
 
@@ -403,30 +418,37 @@ class PRDWizardScreen(Screen):
                 self._import_error = ""
             self._update_import_visibility()
 
-    def _save_prd(self) -> None:
+    def _do_save_prd(self) -> None:
+        """Schedule the async save."""
+        self.run_worker(self._save_prd_async(), exclusive=True)
+
+    async def _save_prd_async(self) -> None:
         prd = self._build_prd()
         output_path = Path.cwd() / "scripts" / "ralph" / "prd.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         save_prd(prd, output_path)
 
-        step_container = self.query_one("#wizard-step", VerticalScroll)
-        step_container.remove_children()
-        step_container.mount(Static(f"[green]PRD saved to {output_path}[/green]"))
-        step_container.mount(Static(""))
-        step_container.mount(Static(
+        container = self.query_one("#wizard-step", VerticalScroll)
+        await container.remove_children()
+        container.mount(
+            Static(f"[green]PRD saved to {output_path}[/green]")
+        )
+        container.mount(Static(""))
+        container.mount(Static(
             f"  Branch:  {prd.branch_name}\n"
             f"  Stories: {prd.total_stories}"
         ))
-        step_container.mount(Static(""))
-        step_container.mount(Static("You can now run: [bold]ralph run[/bold]"))
+        container.mount(Static(""))
+        container.mount(
+            Static("You can now run: [bold]ralph run[/bold]")
+        )
 
-        # Replace nav buttons with Done
         self.query_one("#wizard-step-label", Static).update(
             "  ".join("[green]o[/green]" for _ in range(_TOTAL_STEPS))
             + "    Complete"
         )
         nav = self.query_one("#wizard-nav", Horizontal)
-        nav.remove_children()
+        await nav.remove_children()
         nav.mount(Button("Done", id="wizard-done", variant="primary"))
 
     def action_back(self) -> None:
