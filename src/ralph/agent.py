@@ -335,6 +335,48 @@ async def run_conversation_agent(
         yield output
 
 
+async def run_prd_generation(
+    model: str,
+    prompt: str,
+    json_schema: str,
+    cwd: Path,
+) -> str:
+    """Run Claude with --output-format json --json-schema to generate a PRD.
+
+    Returns the raw JSON output string. The caller should parse it with
+    parse_prd_from_json_output() from conversation.py.
+
+    This is a non-streaming call - it waits for the full response.
+    """
+    effective_model = model or "sonnet"
+    # Shell-escape the schema by writing it via stdin along with the prompt
+    cmd = (
+        f"claude --print --model {effective_model} "
+        f"--output-format json "
+        f"--json-schema '{json_schema}'"
+    )
+
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        limit=4 * 1024 * 1024,
+    )
+
+    assert process.stdin is not None
+    process.stdin.write(prompt.encode("utf-8"))
+    await process.stdin.drain()
+    process.stdin.close()
+
+    assert process.stdout is not None
+    stdout_bytes = await process.stdout.read()
+    await process.wait()
+
+    return stdout_bytes.decode("utf-8", errors="replace")
+
+
 async def _run_claude_streaming(
     model: str,
     prompt: str,

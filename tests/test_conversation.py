@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 from ralph.conversation import (
+    READY_MARKER,
     ConversationMessage,
     build_conversation_prompt,
-    try_extract_prd_from_response,
+    build_generation_prompt,
+    parse_prd_from_json_output,
+    response_has_ready_marker,
 )
 
 
@@ -18,7 +23,7 @@ def test_conversation_message_construction() -> None:
 def test_build_prompt_empty_history() -> None:
     prompt = build_conversation_prompt([])
     assert "product manager" in prompt.lower() or "PM" in prompt
-    assert "Continue the conversation" in prompt
+    assert "READY_TO_GENERATE" in prompt
 
 
 def test_build_prompt_with_messages() -> None:
@@ -35,87 +40,72 @@ def test_build_prompt_with_messages() -> None:
     assert "PM (you)" in prompt
 
 
-def test_extract_prd_valid_json() -> None:
-    response = """\
-Here is your PRD:
+def test_build_generation_prompt() -> None:
+    messages = [
+        ConversationMessage(role="user", content="Build a login page"),
+        ConversationMessage(role="assistant", content="What about OAuth?"),
+        ConversationMessage(role="user", content="No, just JWT"),
+    ]
+    prompt = build_generation_prompt(messages)
+    assert "Build a login page" in prompt
+    assert "What about OAuth?" in prompt
+    assert "No, just JWT" in prompt
+    assert "generating a PRD" in prompt.lower() or "PRD" in prompt
 
-```json
-{
-  "branchName": "ralph/test-feature",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Add login page",
-      "acceptanceCriteria": ["Login form renders", "JWT token issued"],
-      "priority": 1,
-      "passes": false,
-      "notes": ""
+
+def test_response_has_ready_marker() -> None:
+    assert response_has_ready_marker(f"I'm satisfied. {READY_MARKER}")
+    assert response_has_ready_marker(READY_MARKER)
+    assert not response_has_ready_marker("Still have questions")
+    assert not response_has_ready_marker("")
+
+
+def test_parse_prd_from_json_output_with_envelope() -> None:
+    prd_data = {
+        "branchName": "ralph/test",
+        "userStories": [
+            {
+                "id": "US-001",
+                "title": "Test story",
+                "acceptanceCriteria": ["Criterion 1"],
+                "priority": 1,
+                "passes": False,
+                "notes": "",
+            }
+        ],
     }
-  ]
-}
-```
-
-Let me know if you want changes.
-"""
-    prd = try_extract_prd_from_response(response)
+    envelope = json.dumps({"structured_output": prd_data})
+    prd = parse_prd_from_json_output(envelope)
     assert prd is not None
-    assert prd.branch_name == "ralph/test-feature"
+    assert prd.branch_name == "ralph/test"
     assert len(prd.user_stories) == 1
-    assert prd.user_stories[0].title == "Add login page"
 
 
-def test_extract_prd_no_json() -> None:
-    response = "I have some more questions before generating the PRD."
-    prd = try_extract_prd_from_response(response)
-    assert prd is None
-
-
-def test_extract_prd_invalid_json() -> None:
-    response = """\
-```json
-{"branchName": "test"}
-```
-"""
-    prd = try_extract_prd_from_response(response)
-    assert prd is None  # missing userStories
-
-
-def test_extract_prd_malformed_json() -> None:
-    response = """\
-```json
-{not valid json}
-```
-"""
-    prd = try_extract_prd_from_response(response)
-    assert prd is None
-
-
-def test_extract_prd_multiple_code_blocks() -> None:
-    response = """\
-Here is some example code:
-
-```python
-print("hello")
-```
-
-And the PRD:
-
-```json
-{
-  "branchName": "ralph/multi-block",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Test story",
-      "acceptanceCriteria": ["Criterion 1"],
-      "priority": 1,
-      "passes": false,
-      "notes": ""
+def test_parse_prd_from_json_output_direct() -> None:
+    """PRD data without the result envelope."""
+    prd_data = {
+        "branchName": "ralph/direct",
+        "userStories": [
+            {
+                "id": "US-001",
+                "title": "Direct story",
+                "acceptanceCriteria": ["Works"],
+                "priority": 1,
+                "passes": False,
+                "notes": "",
+            }
+        ],
     }
-  ]
-}
-```
-"""
-    prd = try_extract_prd_from_response(response)
+    prd = parse_prd_from_json_output(json.dumps(prd_data))
     assert prd is not None
-    assert prd.branch_name == "ralph/multi-block"
+    assert prd.branch_name == "ralph/direct"
+
+
+def test_parse_prd_from_json_output_invalid() -> None:
+    prd = parse_prd_from_json_output('{"branchName": "test"}')
+    assert prd is None
+
+
+def test_parse_prd_from_json_output_not_json() -> None:
+    prd = parse_prd_from_json_output("not json at all")
+    assert prd is None

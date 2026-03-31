@@ -3,14 +3,15 @@
 Manages the back-and-forth between the user and a PM agent that reviews
 specs, asks probing questions, and eventually generates a PRD.
 
-The conversation is stateless per Claude invocation - the full history
-is serialized into each prompt.
+Two-phase approach:
+1. Conversation phase: free-text back-and-forth until the spec is thorough
+2. Generation phase: a separate call with --json-schema that outputs
+   a guaranteed-valid PRD JSON (no regex extraction needed)
 """
 
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 
 from ralph.prd import PRD, validate_prd
@@ -51,56 +52,82 @@ unambiguous specification that can be turned into implementable user stories.
 3. Do NOT accept vague specs. Push back on hand-wavy requirements.
 4. Number your questions so the developer can reference them.
 5. Keep asking until you are confident the spec is thorough.
-6. When you believe the specification is complete, tell the developer \
-you are ready to generate the PRD, summarize your understanding, and \
-ask for confirmation.
-7. Once confirmed, generate the PRD as a JSON code block.
+6. When you believe the specification is complete, say exactly:
 
-## PRD format
+   READY_TO_GENERATE
 
-When generating, output ONLY a JSON code block with this exact schema:
+   Then summarize your understanding and ask the developer to confirm.
 
-```json
-{
-  "branchName": "ralph/feature-name",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Short imperative description",
-      "acceptanceCriteria": [
-        "First testable requirement",
-        "Second testable requirement"
-      ],
-      "priority": 1,
-      "passes": false,
-      "notes": ""
-    }
-  ]
-}
-```
+## Important
 
-## PRD rules
+- Do NOT generate a PRD yourself. When you are satisfied, output the \
+marker READY_TO_GENERATE and wait for confirmation. A separate process \
+will handle the actual PRD generation.
+- Be conversational but focused.
+- Be direct - do not pad with pleasantries.
+"""
+
+GENERATION_PROMPT_TEMPLATE = """\
+You are generating a PRD (Product Requirements Document) from a \
+completed specification conversation.
+
+## Conversation transcript
+
+{transcript}
+
+## Instructions
+
+Based on the conversation above, generate the PRD. Follow these rules:
 
 - Stories must be small and atomic (one focused change per story)
 - Priority: lower number = higher priority, unique integers starting at 1
 - Order stories by dependency (if B depends on A, A gets lower priority)
 - Acceptance criteria must be explicit and testable
-- Include verification commands (typecheck, tests) as criteria
+- Include verification commands (typecheck, tests) as criteria where discussed
 - Set "passes" to false and "notes" to "" for every story
 - Do not invent features that were not discussed
-
-## Style
-
-- Be conversational but focused
-- Be direct - do not pad with pleasantries
-- Summarize your understanding before generating the PRD
+- Use the branch name discussed, or derive one from the feature name
 """
+
+# JSON Schema for Claude's --json-schema flag. Guarantees the output
+# conforms to the PRD structure at the token level.
+PRD_JSON_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "branchName": {"type": "string"},
+        "userStories": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "title": {"type": "string"},
+                    "acceptanceCriteria": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "priority": {"type": "integer"},
+                    "passes": {"type": "boolean"},
+                    "notes": {"type": "string"},
+                },
+                "required": [
+                    "id", "title", "acceptanceCriteria",
+                    "priority", "passes", "notes",
+                ],
+            },
+        },
+    },
+    "required": ["branchName", "userStories"],
+})
+
+# Marker the PM agent outputs when it's satisfied the spec is thorough
+READY_MARKER = "READY_TO_GENERATE"
 
 
 def build_conversation_prompt(
     messages: list[ConversationMessage],
 ) -> str:
-    """Build the full prompt for Claude with conversation history.
+    """Build the full prompt for the conversation phase.
 
     Each call to claude --print is stateless, so the entire conversation
     history is included in every invocation.
@@ -116,31 +143,54 @@ def build_conversation_prompt(
     parts.append(
         "\n---\n"
         "Continue the conversation. Ask your next questions, "
-        "or if the spec is thorough enough, propose generating the PRD "
-        "and ask for confirmation.\n"
+        "or if the spec is thorough enough, output READY_TO_GENERATE "
+        "and summarize your understanding.\n"
     )
 
     return "\n".join(parts)
 
 
-def try_extract_prd_from_response(response: str) -> PRD | None:
-    """Extract a valid PRD JSON from an assistant response.
+def build_generation_prompt(
+    messages: list[ConversationMessage],
+) -> str:
+    """Build the prompt for the PRD generation phase.
 
-    Looks for JSON inside code blocks (```json ... ``` or ``` ... ```).
-    Returns a PRD if valid JSON is found and passes schema validation,
-    otherwise returns None (conversation should continue).
+    This prompt is sent with --output-format json --json-schema so
+    Claude returns guaranteed-valid PRD JSON.
     """
-    fence_pattern = r"```\w*\s*\n([\s\S]*?)\n```"
-    matches = re.findall(fence_pattern, response)
+    transcript_parts: list[str] = []
+    for msg in messages:
+        label = "Developer" if msg.role == "user" else "PM"
+        transcript_parts.append(f"{label}: {msg.content}")
 
-    for match in matches:
-        try:
-            data = json.loads(match.strip())
-        except json.JSONDecodeError:
-            continue
+    transcript = "\n\n".join(transcript_parts)
+    return GENERATION_PROMPT_TEMPLATE.format(transcript=transcript)
 
-        errors = validate_prd(data)
-        if not errors:
-            return PRD.from_dict(data)
 
-    return None
+def response_has_ready_marker(response: str) -> bool:
+    """Check if the PM agent's response contains the READY_TO_GENERATE marker."""
+    return READY_MARKER in response
+
+
+def parse_prd_from_json_output(raw_output: str) -> PRD | None:
+    """Parse a PRD from Claude's --output-format json response.
+
+    The raw output is Claude's result JSON which contains a
+    'structured_output' field with the PRD data.
+    """
+    try:
+        result = json.loads(raw_output)
+    except json.JSONDecodeError:
+        return None
+
+    # Claude --output-format json wraps the output in a result envelope
+    prd_data = result.get("structured_output")
+    if prd_data is None:
+        # Maybe the output IS the PRD directly (no envelope)
+        prd_data = result
+
+    errors = validate_prd(prd_data)
+    if errors:
+        return None
+
+    return PRD.from_dict(prd_data)

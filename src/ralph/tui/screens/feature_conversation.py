@@ -14,11 +14,20 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Header, Input
 
-from ralph.agent import AgentOutput, LineRole, reset_stream_state, run_conversation_agent
+from ralph.agent import (
+    AgentOutput,
+    LineRole,
+    reset_stream_state,
+    run_conversation_agent,
+    run_prd_generation,
+)
 from ralph.conversation import (
+    PRD_JSON_SCHEMA,
     ConversationMessage,
     build_conversation_prompt,
-    try_extract_prd_from_response,
+    build_generation_prompt,
+    parse_prd_from_json_output,
+    response_has_ready_marker,
 )
 from ralph.tui.widgets.agent_log import AgentLogWidget
 
@@ -151,7 +160,7 @@ class FeatureConversationScreen(Screen):
         log.write_error(f"Agent error: {error}")
 
     def _on_agent_done(self) -> None:
-        """Agent finished responding. Check for PRD, or re-enable input."""
+        """Agent finished responding. Check for ready marker or re-enable input."""
         self._agent_busy = False
         response = self._accumulated_response.strip()
 
@@ -160,10 +169,50 @@ class FeatureConversationScreen(Screen):
                 ConversationMessage(role="assistant", content=response)
             )
 
-        # Check if the response contains a PRD
-        prd = try_extract_prd_from_response(response)
-        if prd is not None:
+        # Check if the PM agent signaled it's ready to generate
+        if response_has_ready_marker(response):
             log = self.query_one("#conv-log", AgentLogWidget)
+            log.write(Text(""))
+            log.write_info(
+                "PM is satisfied. Generating PRD with structured output..."
+            )
+            self._generate_prd()
+        else:
+            self._enable_input()
+
+    def _generate_prd(self) -> None:
+        """Launch the structured PRD generation call."""
+        self._agent_busy = True
+        self._disable_input()
+        self.run_worker(
+            self._prd_generation_worker(),
+            name="prd-gen",
+            thread=True,
+            exclusive=True,
+        )
+
+    async def _prd_generation_worker(self) -> None:
+        """Worker: call Claude with --json-schema to generate PRD."""
+        try:
+            prompt = build_generation_prompt(self._messages)
+            raw = await run_prd_generation(
+                model=self._model,
+                prompt=prompt,
+                json_schema=PRD_JSON_SCHEMA,
+                cwd=Path.cwd(),
+            )
+            self.app.call_from_thread(self._on_prd_generated, raw)
+        except Exception as e:
+            self.app.call_from_thread(self._on_agent_error, str(e))
+            self.app.call_from_thread(self._enable_input)
+
+    def _on_prd_generated(self, raw_output: str) -> None:
+        """Handle the structured PRD generation result."""
+        self._agent_busy = False
+        log = self.query_one("#conv-log", AgentLogWidget)
+
+        prd = parse_prd_from_json_output(raw_output)
+        if prd is not None:
             log.write(Text(""))
             log.write_success(
                 f"PRD generated: {prd.total_stories} stories, "
@@ -174,6 +223,10 @@ class FeatureConversationScreen(Screen):
             from ralph.tui.screens.prd_review import PRDReviewScreen
             self.app.push_screen(PRDReviewScreen(prd=prd))
         else:
+            log.write_error("Failed to generate valid PRD. Try again.")
+            log.write_info(
+                "Type 'generate' to retry, or continue the conversation."
+            )
             self._enable_input()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
