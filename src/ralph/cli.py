@@ -424,3 +424,32 @@ def status() -> None:
     console.print(
         f"\n  Agents: {', '.join(installed) if installed else '[yellow]none found[/yellow]'}"
     )
+
+
+@main.command("interactive")
+@click.option("--prompt", "-p", default="", help="Initial feature description")
+@click.option(
+    "--file", "-f", "spec_file", default="",
+    type=click.Path(), help="Markdown spec file",
+)
+@click.option("--model", "-m", default="sonnet", help="Model to use")
+def interactive_cmd(prompt: str, spec_file: str, model: str) -> None:
+    """Launch interactive feature planning session."""
+    from ralph.tui.screens.feature_conversation import FeatureConversationScreen
+
+    screen = FeatureConversationScreen(
+        initial_prompt=prompt,
+        initial_file=spec_file,
+        model=model,
+    )
+
+    from ralph.tui.app import RalphApp
+
+    app = RalphApp(start_screen="main_menu")
+    app._start_screen = ""
+
+    def _mount() -> None:
+        app.push_screen(screen)
+
+    app.on_mount = _mount  # type: ignore[method-assign]
+    app.run()

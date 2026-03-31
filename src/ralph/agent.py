@@ -319,18 +319,82 @@ async def run_agent_async(
             yield output
 
 
-async def _run_claude_streaming(
+async def run_conversation_agent(
     model: str,
     prompt: str,
     cwd: Path,
 ) -> AsyncIterator[AgentOutput]:
-    """Run Claude with stream-json output for real-time streaming."""
+    """Run Claude for an interactive planning conversation.
+
+    No file permissions, no verbose hooks - just a conversation.
+    """
+    async for output in _run_claude_streaming(
+        model=model, prompt=prompt, cwd=cwd,
+        verbose=False, permission_mode="",
+    ):
+        yield output
+
+
+async def run_prd_generation(
+    model: str,
+    prompt: str,
+    json_schema: str,
+    cwd: Path,
+) -> str:
+    """Run Claude with --output-format json --json-schema to generate a PRD.
+
+    Returns the raw JSON output string. The caller should parse it with
+    parse_prd_from_json_output() from conversation.py.
+
+    This is a non-streaming call - it waits for the full response.
+    """
     effective_model = model or "sonnet"
+    # Shell-escape the schema by writing it via stdin along with the prompt
     cmd = (
         f"claude --print --model {effective_model} "
-        f"--output-format stream-json --verbose "
-        f"--permission-mode acceptEdits"
+        f"--output-format json "
+        f"--json-schema '{json_schema}'"
     )
+
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        limit=4 * 1024 * 1024,
+    )
+
+    assert process.stdin is not None
+    process.stdin.write(prompt.encode("utf-8"))
+    await process.stdin.drain()
+    process.stdin.close()
+
+    assert process.stdout is not None
+    stdout_bytes = await process.stdout.read()
+    await process.wait()
+
+    return stdout_bytes.decode("utf-8", errors="replace")
+
+
+async def _run_claude_streaming(
+    model: str,
+    prompt: str,
+    cwd: Path,
+    verbose: bool = True,
+    permission_mode: str = "acceptEdits",
+) -> AsyncIterator[AgentOutput]:
+    """Run Claude with stream-json output for real-time streaming."""
+    effective_model = model or "sonnet"
+    cmd_parts = [
+        f"claude --print --model {effective_model}",
+        "--output-format stream-json",
+    ]
+    if verbose:
+        cmd_parts.append("--verbose")
+    if permission_mode:
+        cmd_parts.append(f"--permission-mode {permission_mode}")
+    cmd = " ".join(cmd_parts)
 
     # Stream-json lines can be very large (tool results with full file
     # contents). Increase the buffer limit from the default 64KB to 4MB

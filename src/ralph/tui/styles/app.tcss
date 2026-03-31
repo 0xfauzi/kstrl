@@ -291,6 +291,41 @@ Screen {
     padding: 1 0;
 }
 
+/* ── Feature Conversation ───────────────────────────── */
+
+#conv-log {
+    height: 1fr;
+}
+
+#conv-input-bar {
+    dock: bottom;
+    height: 3;
+    padding: 0 1;
+}
+
+#conv-input-bar Input {
+    width: 1fr;
+}
+
+#conv-input-bar Button {
+    width: 10;
+    margin-left: 1;
+}
+
+/* ── PRD Review ─────────────────────────────────────── */
+
+#prd-review-body {
+    min-height: 10;
+    padding: 1 0;
+}
+
+/* ── Feature Config ─────────────────────────────────── */
+
+#fc-body {
+    min-height: 10;
+    padding: 1 0;
+}
+
 /* ── Widget Overrides ───────────────────────────────── */
 
 AgentLogWidget {
