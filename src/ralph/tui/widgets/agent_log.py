@@ -1,11 +1,14 @@
 """Agent output log widget - displays streaming agent output with visual hierarchy.
 
-Design principles:
-- AI text output is the most prominent (white, clear spacing)
-- Thinking is subdued (dim italic, vertical bar prefix)
-- Tool calls are compact (dim, one-line summaries)
-- Errors are red and prominent
-- System/info messages are minimal
+Visual hierarchy uses only indentation, spacing, color, and text weight.
+No unicode symbols - only ASCII characters that render everywhere.
+
+Hierarchy (most to least prominent):
+1. AI text     - left-aligned, bold white, the content users scan for
+2. Thinking    - indented 6 chars, dim italic, clearly background reasoning
+3. Tool calls  - indented 6 chars, dim, compact summaries
+4. Errors      - left-aligned, red, bold
+5. System/info - indented 4 chars, dim, minimal
 """
 
 from __future__ import annotations
@@ -27,66 +30,68 @@ class AgentLogWidget(RichLog):
 
     def write_agent_line(self, output: AgentOutput) -> None:
         """Write a classified agent output line with appropriate styling."""
-        # Add spacing between different role types for visual grouping
-        if self._last_role is not None and self._last_role != output.role:
-            # Transition from tool -> ai or think -> ai gets a blank line
-            if output.role == LineRole.AI and self._last_role in (
-                LineRole.TOOL, LineRole.THINK,
-            ):
+        prev = self._last_role
+        curr = output.role
+
+        # Insert blank lines at role transitions for visual grouping
+        if prev is not None and prev != curr:
+            # AI text after anything else gets a blank line
+            if curr == LineRole.AI:
                 self.write(Text(""))
-            # Transition into thinking gets a blank line
-            elif output.role == LineRole.THINK and self._last_role != LineRole.THINK:
+            # Starting a thinking block gets a blank line
+            elif curr == LineRole.THINK and prev != LineRole.THINK:
+                self.write(Text(""))
+            # Tool after AI gets a blank line
+            elif curr == LineRole.TOOL and prev == LineRole.AI:
                 self.write(Text(""))
 
-        self._last_role = output.role
+        self._last_role = curr
 
-        if output.role == LineRole.AI:
+        if curr == LineRole.AI:
             self._write_ai(output.line)
-        elif output.role == LineRole.THINK:
+        elif curr == LineRole.THINK:
             self._write_think(output.line)
-        elif output.role == LineRole.TOOL:
+        elif curr == LineRole.TOOL:
             self._write_tool(output.line)
-        elif output.role == LineRole.GUARD:
+        elif curr == LineRole.GUARD:
             self._write_guard(output.line)
-        elif output.role == LineRole.GIT:
+        elif curr == LineRole.GIT:
             self._write_git(output.line)
-        elif output.role == LineRole.SYS:
+        elif curr == LineRole.SYS:
             self._write_sys(output.line)
         else:
             self._write_default(output.line)
 
     def _write_ai(self, line: str) -> None:
-        """AI text output - most prominent, white, clear."""
+        """AI text - most prominent. Left-aligned, bold."""
         text = Text()
-        text.append("  ", style="")
         text.append(line, style="bold")
         self.write(text)
 
     def _write_think(self, line: str) -> None:
-        """Thinking - subdued, italic, with vertical bar prefix."""
+        """Thinking - subdued. Indented, dim italic."""
         text = Text()
-        text.append("  \u2502 ", style="dim magenta")
+        text.append("      ", style="")
         text.append(line, style="dim italic")
         self.write(text)
 
     def _write_tool(self, line: str) -> None:
-        """Tool calls - compact, dim, monospace feel."""
+        """Tool calls - compact. Indented, dim."""
         text = Text()
-        text.append("  \u25aa ", style="dim yellow")
+        text.append("      ", style="")
         text.append(line, style="dim")
         self.write(text)
 
     def _write_guard(self, line: str) -> None:
         """Guard violations - red, prominent."""
         text = Text()
-        text.append("  ! ", style="bold red")
-        text.append(line, style="red")
+        text.append(line, style="bold red")
         self.write(text)
 
     def _write_git(self, line: str) -> None:
-        """Git operations - blue accent."""
+        """Git operations."""
         text = Text()
-        text.append("  \u25aa ", style="dim blue")
+        text.append("      ", style="")
         text.append(line, style="dim blue")
         self.write(text)
 
@@ -98,29 +103,26 @@ class AgentLogWidget(RichLog):
         self.write(text)
 
     def _write_default(self, line: str) -> None:
-        """Fallback for unknown roles."""
+        """Fallback."""
         text = Text()
-        text.append("  ", style="")
         text.append(line, style="dim")
         self.write(text)
 
     def write_info(self, message: str) -> None:
-        """Write an informational message."""
+        """Informational message."""
         text = Text()
-        text.append("  ", style="")
+        text.append("    ", style="")
         text.append(message, style="dim")
         self.write(text)
 
     def write_success(self, message: str) -> None:
-        """Write a success message."""
+        """Success message."""
         text = Text()
-        text.append("  \u2713 ", style="bold green")
-        text.append(message, style="green")
+        text.append(message, style="bold green")
         self.write(text)
 
     def write_error(self, message: str) -> None:
-        """Write an error message."""
+        """Error message."""
         text = Text()
-        text.append("  \u2717 ", style="bold red")
-        text.append(message, style="red")
+        text.append(message, style="bold red")
         self.write(text)
