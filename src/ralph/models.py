@@ -53,7 +53,7 @@ KNOWN_AGENTS: dict[str, AgentInfo] = {
         id="claude",
         name="Claude Code",
         detect_command="claude",
-        command_template="claude --print --model {model} --permission-mode auto",
+        command_template="claude --print --model {model} --permission-mode acceptEdits",
         models=CLAUDE_MODELS,
         default_model="sonnet",
     ),
