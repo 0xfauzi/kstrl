@@ -296,6 +296,10 @@ class NewProjectWizardScreen(Screen):
     # -- Button handling --
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "np-done":
+            self.app.pop_screen()
+            return
+
         if event.button.id == "np-next":
             self._save_current_step()
 
@@ -319,7 +323,6 @@ class NewProjectWizardScreen(Screen):
                 self._error = ""
 
             if self._step == TOTAL_STEPS - 1:
-                # Disable button to prevent double-click
                 self.query_one("#np-next", Button).disabled = True
                 self._create_project()
             else:
@@ -383,14 +386,19 @@ class NewProjectWizardScreen(Screen):
 
         container.mount(Static(""))
         container.mount(Static("[bold green]Project created[/bold green]"))
-        container.mount(Static(
-            "\nNext steps:\n"
-            f"  cd {target}\n"
-            f"  ralph run 25    - Run the feature loop"
-        ))
+        container.mount(Static(""))
+        container.mount(Static("Next steps:"))
+        container.mount(Static(f"  cd {target}"))
+        container.mount(Static("  ralph run 25    Run the feature loop"))
 
-        self.query_one("#np-next", Button).disabled = True
-        self.query_one("#new-project-step-label", Static).update("Done")
+        # Replace nav buttons with Done
+        self.query_one("#new-project-step-label", Static).update(
+            "  ".join("[green]o[/green]" for _ in range(TOTAL_STEPS))
+            + "    Complete"
+        )
+        nav = self.query_one("#new-project-nav", Horizontal)
+        nav.remove_children()
+        nav.mount(Button("Done", id="np-done", variant="primary"))
 
     def action_back(self) -> None:
         self.app.pop_screen()

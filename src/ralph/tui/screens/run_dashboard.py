@@ -201,6 +201,9 @@ class RunDashboardScreen(Screen):
         else:
             log.write_error(f"Max iterations reached ({iterations_used})")
 
+        log.write_info("")
+        log.write_info("Press Escape to return to the menu.")
+
         # Final story table refresh
         if self._config:
             try:
@@ -209,6 +212,10 @@ class RunDashboardScreen(Screen):
                 story_table.update_stories(self._prd)
             except Exception:
                 pass
+
+        # Update header to show completion
+        header = self.query_one("#run-header", RunHeader)
+        header.set_story("done" if success else "stopped")
 
     def _on_info(self, message: str) -> None:
         log = self.query_one("#agent-log", AgentLogWidget)
