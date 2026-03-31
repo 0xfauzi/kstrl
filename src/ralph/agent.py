@@ -2,11 +2,14 @@
 
 Provides a unified interface for invoking AI agents (Claude, Codex, custom)
 and classifying their output lines by role.
+
+Supports streaming JSON output from Claude for real-time display.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -78,6 +81,106 @@ def detect_completion(line: str) -> bool:
     return COMPLETION_MARKER in line
 
 
+def _parse_stream_json_line(raw: str) -> AgentOutput | None:
+    """Parse a single stream-json line from Claude into an AgentOutput.
+
+    Returns None for events we want to skip (system hooks, rate limits, etc.).
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # Not JSON - treat as plain text
+        return AgentOutput(line=raw, role=classify_line(raw))
+
+    event_type = data.get("type", "")
+
+    if event_type == "assistant":
+        message = data.get("message", {})
+        content_blocks = message.get("content", [])
+        parts: list[str] = []
+        role = LineRole.AI
+
+        for block in content_blocks:
+            block_type = block.get("type", "")
+            if block_type == "text":
+                text = block.get("text", "")
+                if text:
+                    parts.append(text)
+                    role = LineRole.AI
+            elif block_type == "thinking":
+                thinking = block.get("thinking", "")
+                if thinking:
+                    # Truncate long thinking blocks to first meaningful line
+                    first_line = thinking.strip().split("\n")[0][:200]
+                    parts.append(first_line)
+                    role = LineRole.THINK
+            elif block_type == "tool_use":
+                tool_name = block.get("name", "unknown")
+                tool_input = block.get("input", {})
+                # Show the tool being called with a compact summary
+                if tool_name == "Bash":
+                    cmd = tool_input.get("command", "")
+                    parts.append(f"{tool_name}: {cmd[:120]}")
+                elif tool_name in ("Read", "Write", "Edit", "Glob", "Grep"):
+                    path = tool_input.get("file_path", "") or tool_input.get(
+                        "pattern", ""
+                    )
+                    parts.append(f"{tool_name}: {path[:120]}")
+                else:
+                    parts.append(f"{tool_name}")
+                role = LineRole.TOOL
+            elif block_type == "tool_result":
+                # Usually very long, skip or show brief summary
+                content = str(block.get("content", ""))
+                if content and len(content) > 200:
+                    parts.append(f"(result: {len(content)} chars)")
+                elif content:
+                    parts.append(content[:200])
+                role = LineRole.TOOL
+
+        if parts:
+            return AgentOutput(line=" ".join(parts), role=role)
+        return None
+
+    elif event_type == "tool":
+        # Tool response event
+        tool_name = data.get("tool_name", "")
+        content = str(data.get("content", ""))
+        if len(content) > 150:
+            summary = f"{tool_name} returned {len(content)} chars"
+        else:
+            summary = f"{tool_name}: {content[:150]}"
+        return AgentOutput(line=summary, role=LineRole.TOOL)
+
+    elif event_type == "user":
+        # Internal user message (usually auto-generated context)
+        return None
+
+    elif event_type == "system":
+        # System/hook events - skip most
+        subtype = data.get("subtype", "")
+        if subtype in ("hook_started", "hook_response"):
+            return None
+        return None
+
+    elif event_type == "result":
+        # Final result summary
+        cost = data.get("cost_usd", 0)
+        duration = data.get("duration_seconds", 0)
+        if cost or duration:
+            return AgentOutput(
+                line=f"Done (${cost:.4f}, {duration:.1f}s)",
+                role=LineRole.SYS,
+            )
+        return None
+
+    elif event_type == "rate_limit_event":
+        return None
+
+    # Unknown event type - skip
+    return None
+
+
 async def run_agent_async(
     agent_type: str,
     model: str,
@@ -88,29 +191,96 @@ async def run_agent_async(
 ) -> AsyncIterator[AgentOutput]:
     """Run an agent asynchronously, yielding classified output lines.
 
-    The prompt file is piped to the agent's stdin. Output is read line by line
-    from stdout+stderr (merged).
+    For Claude, uses stream-json format for real-time streaming.
+    For Codex and custom agents, reads stdout line-by-line.
     """
-    command = build_agent_command(agent_type, model, custom_command)
-
-    # For codex, we need special handling
-    if agent_type == "codex":
-        # Build the full codex command with all flags
-        parts = ["codex", "exec", "-C", str(cwd)]
-        if model:
-            parts.extend(["-m", model])
-        if reasoning_effort:
-            parts.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-        # The prompt is piped via stdin with "-" flag
-        parts.append("-")
-        cmd_str = " ".join(parts)
-    else:
-        cmd_str = command
-
     # Read the prompt file
     prompt_content = prompt_path.read_text(encoding="utf-8")
 
-    # Run via shell (needed for AGENT_CMD which may contain pipes/redirections)
+    if agent_type == "claude":
+        async for output in _run_claude_streaming(
+            model=model, prompt=prompt_content, cwd=cwd,
+        ):
+            yield output
+    elif agent_type == "codex":
+        async for output in _run_codex(
+            model=model,
+            prompt=prompt_content,
+            cwd=cwd,
+            reasoning_effort=reasoning_effort,
+        ):
+            yield output
+    else:
+        command = build_agent_command(agent_type, model, custom_command)
+        async for output in _run_generic(
+            command=command, prompt=prompt_content, cwd=cwd,
+        ):
+            yield output
+
+
+async def _run_claude_streaming(
+    model: str,
+    prompt: str,
+    cwd: Path,
+) -> AsyncIterator[AgentOutput]:
+    """Run Claude with stream-json output for real-time streaming."""
+    effective_model = model or "sonnet"
+    cmd = (
+        f"claude --print --model {effective_model} "
+        f"--output-format stream-json --verbose"
+    )
+
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+    )
+
+    assert process.stdin is not None
+    process.stdin.write(prompt.encode("utf-8"))
+    await process.stdin.drain()
+    process.stdin.close()
+
+    assert process.stdout is not None
+    while True:
+        line_bytes = await process.stdout.readline()
+        if not line_bytes:
+            break
+        raw = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
+        if not raw:
+            continue
+        output = _parse_stream_json_line(raw)
+        if output is not None:
+            yield output
+
+    # Check stderr for errors
+    assert process.stderr is not None
+    stderr_bytes = await process.stderr.read()
+    if stderr_bytes:
+        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+        if stderr_text:
+            yield AgentOutput(line=f"stderr: {stderr_text[:200]}", role=LineRole.SYS)
+
+    await process.wait()
+
+
+async def _run_codex(
+    model: str,
+    prompt: str,
+    cwd: Path,
+    reasoning_effort: str = "",
+) -> AsyncIterator[AgentOutput]:
+    """Run Codex agent with line-by-line output."""
+    parts = ["codex", "exec", "-C", str(cwd)]
+    if model:
+        parts.extend(["-m", model])
+    if reasoning_effort:
+        parts.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    parts.append("-")
+    cmd_str = " ".join(parts)
+
     process = await asyncio.create_subprocess_shell(
         cmd_str,
         stdin=asyncio.subprocess.PIPE,
@@ -119,13 +289,42 @@ async def run_agent_async(
         cwd=cwd,
     )
 
-    # Feed prompt to stdin
     assert process.stdin is not None
-    process.stdin.write(prompt_content.encode("utf-8"))
+    process.stdin.write(prompt.encode("utf-8"))
     await process.stdin.drain()
     process.stdin.close()
 
-    # Stream output line by line
+    assert process.stdout is not None
+    while True:
+        line_bytes = await process.stdout.readline()
+        if not line_bytes:
+            break
+        line = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
+        role = classify_line(line)
+        yield AgentOutput(line=line, role=role)
+
+    await process.wait()
+
+
+async def _run_generic(
+    command: str,
+    prompt: str,
+    cwd: Path,
+) -> AsyncIterator[AgentOutput]:
+    """Run a generic/custom agent with line-by-line output."""
+    process = await asyncio.create_subprocess_shell(
+        command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        cwd=cwd,
+    )
+
+    assert process.stdin is not None
+    process.stdin.write(prompt.encode("utf-8"))
+    await process.stdin.drain()
+    process.stdin.close()
+
     assert process.stdout is not None
     while True:
         line_bytes = await process.stdout.readline()
