@@ -32,6 +32,10 @@ env/
 htmlcov/
 .tox/
 
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+
 # IDEs
 .vscode/
 .idea/
@@ -42,6 +46,9 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Env
+.env*.local
 
 # Ralph - auto-generated project files
 scripts/ralph/prd.json

@@ -1,202 +1,157 @@
-"""Tests for PRD module."""
+"""Tests for ralph.prd module."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from ralph_py.prd import PRD, UserStory
+from ralph.prd import (
+    PRD,
+    create_empty_prd,
+    create_story,
+    load_prd,
+    save_prd,
+    validate_prd,
+)
 
 
-class TestPRDValidateSchema:
-    """Tests for PRD.validate_schema."""
-
-    def test_valid_empty_stories(self) -> None:
-        data = {"branchName": "main", "userStories": []}
-        errors = PRD.validate_schema(data)
-        assert errors == []
-
-    def test_valid_with_story(self) -> None:
-        data = {
-            "branchName": "feature/test",
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Test story",
-                    "acceptanceCriteria": ["Criterion 1"],
-                    "priority": 1,
-                    "passes": False,
-                    "notes": "",
-                }
-            ],
-        }
-        errors = PRD.validate_schema(data)
-        assert errors == []
-
-    def test_missing_branch_name(self) -> None:
-        data = {"userStories": []}
-        errors = PRD.validate_schema(data)
-        assert any("branchName" in e for e in errors)
-
-    def test_missing_user_stories(self) -> None:
-        data = {"branchName": "main"}
-        errors = PRD.validate_schema(data)
-        assert any("userStories" in e for e in errors)
-
-    def test_extra_top_level_key(self) -> None:
-        data = {"branchName": "main", "userStories": [], "extra": "value"}
-        errors = PRD.validate_schema(data)
-        assert any("extra" in e for e in errors)
-
-    def test_empty_branch_name(self) -> None:
-        data = {"branchName": "", "userStories": []}
-        errors = PRD.validate_schema(data)
-        assert any("non-empty" in e for e in errors)
-
-    def test_wrong_branch_name_type(self) -> None:
-        data = {"branchName": 123, "userStories": []}
-        errors = PRD.validate_schema(data)
-        assert any("string" in e for e in errors)
-
-    def test_wrong_user_stories_type(self) -> None:
-        data = {"branchName": "main", "userStories": "not an array"}
-        errors = PRD.validate_schema(data)
-        assert any("array" in e for e in errors)
-
-    def test_story_missing_field(self) -> None:
-        data = {
-            "branchName": "main",
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Test",
-                    # Missing acceptanceCriteria, priority, passes, notes
-                }
-            ],
-        }
-        errors = PRD.validate_schema(data)
-        assert any("missing keys" in e for e in errors)
-
-    def test_story_extra_field(self) -> None:
-        data = {
-            "branchName": "main",
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Test",
-                    "acceptanceCriteria": [],
-                    "priority": 1,
-                    "passes": False,
-                    "notes": "",
-                    "extra": "field",
-                }
-            ],
-        }
-        errors = PRD.validate_schema(data)
-        assert any("extra" in e for e in errors)
-
-    def test_story_wrong_type_priority(self) -> None:
-        data = {
-            "branchName": "main",
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Test",
-                    "acceptanceCriteria": [],
-                    "priority": "high",  # Should be int
-                    "passes": False,
-                    "notes": "",
-                }
-            ],
-        }
-        errors = PRD.validate_schema(data)
-        assert any("integer" in e for e in errors)
-
-    def test_story_wrong_type_passes(self) -> None:
-        data = {
-            "branchName": "main",
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Test",
-                    "acceptanceCriteria": [],
-                    "priority": 1,
-                    "passes": "no",  # Should be bool
-                    "notes": "",
-                }
-            ],
-        }
-        errors = PRD.validate_schema(data)
-        assert any("boolean" in e for e in errors)
+def _make_valid_prd_data() -> dict:
+    return {
+        "branchName": "ralph/test",
+        "userStories": [
+            {
+                "id": "US-001",
+                "title": "First story",
+                "acceptanceCriteria": ["Criterion 1", "Criterion 2"],
+                "priority": 1,
+                "passes": False,
+                "notes": "",
+            },
+            {
+                "id": "US-002",
+                "title": "Second story",
+                "acceptanceCriteria": ["Criterion A"],
+                "priority": 2,
+                "passes": True,
+                "notes": "Done",
+            },
+        ],
+    }
 
 
-class TestPRDLoad:
-    """Tests for PRD.load."""
-
-    def test_load_valid(self, tmp_path: Path) -> None:
-        prd_file = tmp_path / "prd.json"
-        prd_file.write_text(
-            json.dumps(
-                {
-                    "branchName": "test-branch",
-                    "userStories": [
-                        {
-                            "id": "US-001",
-                            "title": "Test story",
-                            "acceptanceCriteria": ["AC1", "AC2"],
-                            "priority": 2,
-                            "passes": True,
-                            "notes": "Some notes",
-                        }
-                    ],
-                }
-            )
-        )
-
-        prd = PRD.load(prd_file)
-
-        assert prd.branch_name == "test-branch"
-        assert len(prd.user_stories) == 1
-        assert prd.user_stories[0].id == "US-001"
-        assert prd.user_stories[0].acceptance_criteria == ["AC1", "AC2"]
-        assert prd.user_stories[0].passes is True
-
-    def test_load_invalid_schema(self, tmp_path: Path) -> None:
-        prd_file = tmp_path / "prd.json"
-        prd_file.write_text('{"invalid": "schema"}')
-
-        with pytest.raises(ValueError, match="Invalid PRD schema"):
-            PRD.load(prd_file)
+def test_validate_valid_prd() -> None:
+    errors = validate_prd(_make_valid_prd_data())
+    assert errors == []
 
 
-class TestPRDGetNextStory:
-    """Tests for PRD.get_next_story."""
+def test_validate_missing_keys() -> None:
+    errors = validate_prd({"branchName": "test"})
+    assert any("top-level keys" in e for e in errors)
 
-    def test_no_stories(self) -> None:
-        prd = PRD(branch_name="main", user_stories=[])
-        assert prd.get_next_story() is None
 
-    def test_all_passing(self) -> None:
-        prd = PRD(
-            branch_name="main",
-            user_stories=[
-                UserStory("1", "Story 1", [], 1, True, ""),
-                UserStory("2", "Story 2", [], 2, True, ""),
-            ],
-        )
-        assert prd.get_next_story() is None
+def test_validate_not_object() -> None:
+    errors = validate_prd([1, 2, 3])
+    assert errors == ["top-level must be an object"]
 
-    def test_returns_highest_priority_failing(self) -> None:
-        prd = PRD(
-            branch_name="main",
-            user_stories=[
-                UserStory("1", "Story 1", [], 3, False, ""),  # Priority 3
-                UserStory("2", "Story 2", [], 1, False, ""),  # Priority 1 (highest)
-                UserStory("3", "Story 3", [], 2, True, ""),  # Passing
-            ],
-        )
-        next_story = prd.get_next_story()
-        assert next_story is not None
-        assert next_story.id == "2"
+
+def test_validate_empty_branch_name() -> None:
+    data = _make_valid_prd_data()
+    data["branchName"] = ""
+    errors = validate_prd(data)
+    assert any("branchName" in e for e in errors)
+
+
+def test_validate_story_missing_fields() -> None:
+    data = {
+        "branchName": "test",
+        "userStories": [{"id": "US-001"}],
+    }
+    errors = validate_prd(data)
+    assert len(errors) > 0
+
+
+def test_validate_story_wrong_types() -> None:
+    data = _make_valid_prd_data()
+    data["userStories"][0]["priority"] = "high"  # should be int
+    errors = validate_prd(data)
+    assert any("priority" in e for e in errors)
+
+
+def test_prd_from_dict() -> None:
+    data = _make_valid_prd_data()
+    prd = PRD.from_dict(data)
+    assert prd.branch_name == "ralph/test"
+    assert len(prd.user_stories) == 2
+    assert prd.user_stories[0].id == "US-001"
+    assert prd.user_stories[1].passes is True
+
+
+def test_prd_to_dict_round_trip() -> None:
+    data = _make_valid_prd_data()
+    prd = PRD.from_dict(data)
+    result = prd.to_dict()
+    assert result == data
+
+
+def test_prd_properties() -> None:
+    prd = PRD.from_dict(_make_valid_prd_data())
+    assert prd.total_stories == 2
+    assert prd.passing_stories == 1
+    assert prd.failing_stories == 1
+
+
+def test_prd_next_story() -> None:
+    prd = PRD.from_dict(_make_valid_prd_data())
+    next_s = prd.next_story()
+    assert next_s is not None
+    assert next_s.id == "US-001"  # priority 1, not passing
+
+
+def test_prd_next_story_all_passing() -> None:
+    data = _make_valid_prd_data()
+    data["userStories"][0]["passes"] = True
+    prd = PRD.from_dict(data)
+    assert prd.next_story() is None
+
+
+def test_prd_all_pass() -> None:
+    data = _make_valid_prd_data()
+    assert PRD.from_dict(data).all_pass() is False
+    data["userStories"][0]["passes"] = True
+    assert PRD.from_dict(data).all_pass() is True
+
+
+def test_load_save_prd(tmp_path: Path) -> None:
+    prd = PRD.from_dict(_make_valid_prd_data())
+    path = tmp_path / "prd.json"
+    save_prd(prd, path)
+
+    loaded = load_prd(path)
+    assert loaded.branch_name == prd.branch_name
+    assert len(loaded.user_stories) == len(prd.user_stories)
+
+
+def test_load_prd_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        load_prd(tmp_path / "nonexistent.json")
+
+
+def test_load_prd_invalid_schema(tmp_path: Path) -> None:
+    path = tmp_path / "bad.json"
+    path.write_text('{"foo": "bar"}', encoding="utf-8")
+    with pytest.raises(ValueError, match="validation failed"):
+        load_prd(path)
+
+
+def test_create_empty_prd() -> None:
+    prd = create_empty_prd("ralph/new")
+    assert prd.branch_name == "ralph/new"
+    assert prd.user_stories == []
+
+
+def test_create_story() -> None:
+    story = create_story("US-001", "Test story", ["Criterion 1"], 1)
+    assert story.id == "US-001"
+    assert story.passes is False
+    assert story.notes == ""

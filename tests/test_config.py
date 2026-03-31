@@ -1,4 +1,4 @@
-"""Tests for config module."""
+"""Tests for ralph.config module."""
 
 from __future__ import annotations
 
@@ -6,113 +6,93 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.config import RalphConfig, _parse_bool, _parse_paths
+from ralph.config import (
+    RalphConfig,
+    config_to_display,
+    load_config,
+    save_config,
+)
 
 
-class TestParseBool:
-    """Tests for _parse_bool helper."""
-
-    def test_none_returns_false(self) -> None:
-        assert _parse_bool(None) is False
-
-    def test_empty_string_returns_false(self) -> None:
-        assert _parse_bool("") is False
-
-    def test_one_returns_true(self) -> None:
-        assert _parse_bool("1") is True
-
-    def test_true_returns_true(self) -> None:
-        assert _parse_bool("true") is True
-        assert _parse_bool("TRUE") is True
-        assert _parse_bool("True") is True
-
-    def test_yes_returns_true(self) -> None:
-        assert _parse_bool("yes") is True
-        assert _parse_bool("YES") is True
-
-    def test_other_values_return_false(self) -> None:
-        assert _parse_bool("0") is False
-        assert _parse_bool("false") is False
-        assert _parse_bool("no") is False
-        assert _parse_bool("random") is False
+def test_default_config() -> None:
+    config = RalphConfig()
+    assert config.agent.type == "claude"
+    assert config.run.max_iterations == 10
+    assert config.run.sleep_seconds == 2
+    assert config.run.interactive is False
+    assert config.paths.prompt == "scripts/ralph/prompt.md"
+    assert config.paths.allowed == []
+    assert config.git.auto_checkout is True
 
 
-class TestParsePaths:
-    """Tests for _parse_paths helper."""
-
-    def test_none_returns_empty(self) -> None:
-        assert _parse_paths(None) == []
-
-    def test_empty_string_returns_empty(self) -> None:
-        assert _parse_paths("") == []
-
-    def test_single_path(self) -> None:
-        assert _parse_paths("foo/bar.txt") == ["foo/bar.txt"]
-
-    def test_multiple_paths(self) -> None:
-        assert _parse_paths("foo/bar.txt,baz/qux.py") == ["foo/bar.txt", "baz/qux.py"]
-
-    def test_trims_whitespace(self) -> None:
-        assert _parse_paths("  foo/bar.txt , baz/qux.py  ") == ["foo/bar.txt", "baz/qux.py"]
-
-    def test_skips_empty_entries(self) -> None:
-        assert _parse_paths("foo,,bar") == ["foo", "bar"]
+def test_load_missing_toml(tmp_path: Path) -> None:
+    config = load_config(tmp_path / "nonexistent.toml")
+    # Should return defaults
+    assert config.agent.type == "claude"
+    assert config.run.max_iterations == 10
 
 
-class TestRalphConfig:
-    """Tests for RalphConfig."""
+def test_load_and_save_round_trip(tmp_path: Path) -> None:
+    original = RalphConfig()
+    original.agent.type = "codex"
+    original.agent.model = "o3"
+    original.run.max_iterations = 25
+    original.run.interactive = True
+    original.paths.allowed = ["src/", "tests/"]
+    original.git.branch = "ralph/test"
 
-    def test_defaults(self) -> None:
-        config = RalphConfig()
-        assert config.max_iterations == 10
-        assert config.sleep_seconds == 2.0
-        assert config.interactive is False
-        assert config.allowed_paths == []
-        assert config.agent_cmd is None
-        assert config.ui_mode == "auto"
+    toml_path = tmp_path / "ralph.toml"
+    save_config(original, toml_path)
 
-    def test_from_env_basic(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        monkeypatch.setenv("MAX_ITERATIONS", "25")
-        monkeypatch.setenv("SLEEP_SECONDS", "5")
-        monkeypatch.setenv("INTERACTIVE", "1")
+    loaded = load_config(toml_path)
+    assert loaded.agent.type == "codex"
+    assert loaded.agent.model == "o3"
+    assert loaded.run.max_iterations == 25
+    assert loaded.run.interactive is True
+    assert loaded.paths.allowed == ["src/", "tests/"]
+    assert loaded.git.branch == "ralph/test"
 
-        config = RalphConfig.from_env(tmp_path)
 
-        assert config.max_iterations == 25
-        assert config.sleep_seconds == 5.0
-        assert config.interactive is True
+def test_env_var_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    toml_path = tmp_path / "ralph.toml"
+    config = RalphConfig()
+    save_config(config, toml_path)
 
-    def test_from_env_ralph_branch_explicit(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # When RALPH_BRANCH is set (even if empty)
-        monkeypatch.setenv("RALPH_BRANCH", "")
-        config = RalphConfig.from_env(tmp_path)
-        assert config.ralph_branch == ""
-        assert config.ralph_branch_explicit is True
+    monkeypatch.setenv("MODEL", "opus")
+    monkeypatch.setenv("SLEEP_SECONDS", "5")
+    monkeypatch.setenv("INTERACTIVE", "true")
+    monkeypatch.setenv("ALLOWED_PATHS", "src/,tests/")
 
-    def test_from_env_ralph_branch_not_set(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # When RALPH_BRANCH is not set at all
-        monkeypatch.delenv("RALPH_BRANCH", raising=False)
-        config = RalphConfig.from_env(tmp_path)
-        assert config.ralph_branch is None
-        assert config.ralph_branch_explicit is False
+    loaded = load_config(toml_path)
+    assert loaded.agent.model == "opus"
+    assert loaded.run.sleep_seconds == 5
+    assert loaded.run.interactive is True
+    assert loaded.paths.allowed == ["src/", "tests/"]
 
-    def test_validate_negative_iterations(self, tmp_path: Path) -> None:
-        config = RalphConfig(
-            max_iterations=-1,
-            prompt_file=tmp_path / "prompt.md",
-        )
-        errors = config.validate()
-        assert any("non-negative" in e for e in errors)
 
-    def test_validate_missing_prompt(self, tmp_path: Path) -> None:
-        config = RalphConfig(
-            prompt_file=tmp_path / "nonexistent.md",
-        )
-        errors = config.validate()
-        assert any("not found" in e for e in errors)
+def test_agent_cmd_env_sets_custom_type(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT_CMD", "my-agent --stdin")
+    loaded = load_config(tmp_path / "nonexistent.toml")
+    assert loaded.agent.type == "custom"
+    assert loaded.agent.command == "my-agent --stdin"
+
+
+def test_cli_overrides() -> None:
+    config = load_config(
+        cli_overrides={
+            "run.max_iterations": 50,
+            "agent.model": "haiku",
+        }
+    )
+    assert config.run.max_iterations == 50
+    assert config.agent.model == "haiku"
+
+
+def test_config_to_display() -> None:
+    config = RalphConfig()
+    config.agent.type = "claude"
+    config.agent.model = "sonnet"
+    display = config_to_display(config)
+    assert display["Agent"] == "claude (sonnet)"
+    assert display["Max iterations"] == "10"
+    assert display["Interactive"] == "no"
