@@ -230,12 +230,16 @@ async def _run_claude_streaming(
         f"--output-format stream-json --verbose"
     )
 
+    # Stream-json lines can be very large (tool results with full file
+    # contents). Increase the buffer limit from the default 64KB to 4MB
+    # to avoid "Separator is found, but chunk is longer than limit" errors.
     process = await asyncio.create_subprocess_shell(
         cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
+        limit=4 * 1024 * 1024,
     )
 
     assert process.stdin is not None

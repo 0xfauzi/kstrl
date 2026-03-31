@@ -108,14 +108,36 @@ def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
     return False
 
 
+# Files that ralph itself manages - never revert these even if they
+# appear in the disallowed list. Otherwise the guard can delete
+# the very files ralph needs to operate (prompt, PRD, config, etc.).
+RALPH_INFRASTRUCTURE_FILES = {
+    "ralph.toml",
+    "scripts/ralph/prompt.md",
+    "scripts/ralph/understand_prompt.md",
+    "scripts/ralph/prd.json",
+    "scripts/ralph/prd_prompt.txt",
+    "scripts/ralph/progress.txt",
+    "scripts/ralph/codebase_map.md",
+}
+
+
 def find_disallowed_files(
     allowed_paths: list[str], cwd: Path | None = None
 ) -> list[str]:
-    """Return list of changed files that are not in the allowed paths."""
+    """Return list of changed files that are not in the allowed paths.
+
+    Ralph's own infrastructure files (ralph.toml, prompt files, etc.)
+    are always excluded from the disallowed list to prevent the guard
+    from deleting files ralph needs to operate.
+    """
     if not allowed_paths:
         return []
     changed = get_changed_files(cwd)
-    return [f for f in changed if not path_is_allowed(f, allowed_paths)]
+    return [
+        f for f in changed
+        if not path_is_allowed(f, allowed_paths) and f not in RALPH_INFRASTRUCTURE_FILES
+    ]
 
 
 def revert_files(files: list[str], cwd: Path | None = None) -> list[str]:
