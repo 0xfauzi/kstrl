@@ -69,11 +69,17 @@ class RunDashboardScreen(Screen):
     def __init__(
         self,
         understand_mode: bool = False,
+        max_iterations_override: int | None = None,
+        agent_type_override: str | None = None,
+        model_override: str | None = None,
         name: str | None = None,
         id: str | None = None,
     ) -> None:
         super().__init__(name=name, id=id)
         self.understand_mode = understand_mode
+        self._max_iterations_override = max_iterations_override
+        self._agent_type_override = agent_type_override
+        self._model_override = model_override
         self.control = LoopControl()
         self._prd: PRD | None = None
         self._config: RalphConfig | None = None
@@ -111,6 +117,14 @@ class RunDashboardScreen(Screen):
             return
 
         config = load_config()
+
+        # Apply overrides from pre-run config screen
+        if self._max_iterations_override is not None:
+            config.run.max_iterations = self._max_iterations_override
+        if self._agent_type_override:
+            config.agent.type = self._agent_type_override
+        if self._model_override:
+            config.agent.model = self._model_override
 
         if self.understand_mode:
             config.paths.prompt = "scripts/ralph/understand_prompt.md"
