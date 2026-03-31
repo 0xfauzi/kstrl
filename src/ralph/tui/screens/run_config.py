@@ -144,7 +144,22 @@ class RunConfigScreen(Screen):
                 )
             except Exception:
                 body.mount(
-                    Static("  PRD:    [red]not found or invalid[/red]")
+                    Static("  PRD:    [yellow]not found[/yellow]")
+                )
+                body.mount(Static(""))
+                body.mount(
+                    Button(
+                        "Plan Feature Interactively",
+                        id="rc-plan",
+                        variant="default",
+                    )
+                )
+                body.mount(
+                    Static(
+                        "[dim]No PRD found. Start an interactive planning "
+                        "session to create one before running.[/dim]",
+                        classes="help-text",
+                    )
                 )
 
         if self._error:
@@ -156,6 +171,8 @@ class RunConfigScreen(Screen):
             self.app.pop_screen()
         elif event.button.id == "rc-start":
             self._start_run()
+        elif event.button.id == "rc-plan":
+            self._launch_interactive_planning()
 
     def _start_run(self) -> None:
         # Validate iterations
@@ -192,6 +209,24 @@ class RunConfigScreen(Screen):
             model_override=model or None,
         )
         self.app.push_screen(dashboard)
+
+    def _launch_interactive_planning(self) -> None:
+        """Switch to interactive planning to create a PRD."""
+        model = ""
+        try:
+            selector = self.query_one("#rc-model-selector", ModelSelector)
+            model = selector.model
+        except Exception:
+            pass
+
+        from ralph.tui.screens.feature_conversation import (
+            FeatureConversationScreen,
+        )
+
+        self.app.pop_screen()
+        self.app.push_screen(
+            FeatureConversationScreen(model=model or "sonnet")
+        )
 
     def action_back(self) -> None:
         self.app.pop_screen()

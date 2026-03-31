@@ -300,6 +300,10 @@ class NewProjectWizardScreen(Screen):
             self.app.pop_screen()
             return
 
+        if event.button.id == "np-plan":
+            self._launch_planning()
+            return
+
         if event.button.id == "np-next":
             self._save_current_step()
 
@@ -387,18 +391,43 @@ class NewProjectWizardScreen(Screen):
         container.mount(Static(""))
         container.mount(Static("[bold green]Project created[/bold green]"))
         container.mount(Static(""))
-        container.mount(Static("Next steps:"))
-        container.mount(Static(f"  cd {target}"))
-        container.mount(Static("  ralph run 25    Run the feature loop"))
+        container.mount(Static(
+            "You can now plan your feature interactively "
+            "or return to the main menu."
+        ))
 
-        # Replace nav buttons with Done
+        # Replace nav buttons with Plan + Done
         self.query_one("#new-project-step-label", Static).update(
             "  ".join("[green]o[/green]" for _ in range(TOTAL_STEPS))
             + "    Complete"
         )
         nav = self.query_one("#new-project-nav", Horizontal)
         nav.remove_children()
-        nav.mount(Button("Done", id="np-done", variant="primary"))
+        nav.mount(Button("Done", id="np-done", variant="default"))
+        nav.mount(
+            Button(
+                "Plan Feature", id="np-plan", variant="primary",
+            )
+        )
+
+    def _launch_planning(self) -> None:
+        """Launch interactive feature planning after project creation."""
+        model = ""
+        try:
+            selector = self.query_one("#np-model-selector", ModelSelector)
+            model = selector.model
+        except Exception:
+            pass
+
+        from ralph.tui.screens.feature_conversation import (
+            FeatureConversationScreen,
+        )
+
+        # Pop the wizard and push the conversation
+        self.app.pop_screen()
+        self.app.push_screen(
+            FeatureConversationScreen(model=model or "sonnet")
+        )
 
     def action_back(self) -> None:
         self.app.pop_screen()
