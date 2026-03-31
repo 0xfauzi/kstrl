@@ -81,6 +81,13 @@ def detect_completion(line: str) -> bool:
     return COMPLETION_MARKER in line
 
 
+# Track last emitted thinking/text to deduplicate accumulated content.
+# Claude's stream-json sends the full accumulated content on each event,
+# so the same thinking block appears repeatedly as it grows.
+_last_thinking: str = ""
+_last_ai_text: str = ""
+
+
 def _parse_stream_json_line(raw: str) -> list[AgentOutput]:
     """Parse a single stream-json line from Claude into AgentOutput(s).
 
@@ -122,7 +129,14 @@ def _parse_stream_json_line(raw: str) -> list[AgentOutput]:
 
 
 def _parse_assistant_event(data: dict) -> list[AgentOutput]:
-    """Parse an assistant event into one output per content block."""
+    """Parse an assistant event into one output per content block.
+
+    Deduplicates thinking and AI text blocks since Claude's stream-json
+    sends accumulated content on each event (the same block appears
+    repeatedly as it grows).
+    """
+    global _last_thinking, _last_ai_text  # noqa: PLW0603
+
     message = data.get("message", {})
     content_blocks = message.get("content", [])
     outputs: list[AgentOutput] = []
@@ -132,21 +146,36 @@ def _parse_assistant_event(data: dict) -> list[AgentOutput]:
 
         if block_type == "text":
             text = block.get("text", "").strip()
-            if text:
-                outputs.append(AgentOutput(line=text, role=LineRole.AI))
+            if text and text != _last_ai_text:
+                # Only emit the new portion
+                if _last_ai_text and text.startswith(_last_ai_text):
+                    new_part = text[len(_last_ai_text):].strip()
+                    if new_part:
+                        outputs.append(AgentOutput(
+                            line=new_part, role=LineRole.AI,
+                        ))
+                else:
+                    outputs.append(AgentOutput(line=text, role=LineRole.AI))
+                _last_ai_text = text
 
         elif block_type == "thinking":
             thinking = block.get("thinking", "").strip()
-            if thinking:
-                # Show first two meaningful lines of thinking
-                lines = [
-                    ln.strip() for ln in thinking.split("\n")
-                    if ln.strip()
-                ]
-                for ln in lines[:2]:
+            if thinking and thinking != _last_thinking:
+                # Only emit the new portion of thinking
+                if _last_thinking and thinking.startswith(_last_thinking):
+                    new_part = thinking[len(_last_thinking):].strip()
+                    if new_part:
+                        first_line = new_part.split("\n")[0][:200]
+                        outputs.append(AgentOutput(
+                            line=first_line, role=LineRole.THINK,
+                        ))
+                else:
+                    # First thinking block or completely new
+                    first_line = thinking.split("\n")[0][:200]
                     outputs.append(AgentOutput(
-                        line=ln[:200], role=LineRole.THINK,
+                        line=first_line, role=LineRole.THINK,
                     ))
+                _last_thinking = thinking
 
         elif block_type == "tool_use":
             tool_name = block.get("name", "unknown")
@@ -162,6 +191,13 @@ def _parse_assistant_event(data: dict) -> list[AgentOutput]:
                 ))
 
     return outputs
+
+
+def reset_stream_state() -> None:
+    """Reset dedup state between iterations."""
+    global _last_thinking, _last_ai_text  # noqa: PLW0603
+    _last_thinking = ""
+    _last_ai_text = ""
 
 
 def _format_tool_call(name: str, inputs: dict) -> str:

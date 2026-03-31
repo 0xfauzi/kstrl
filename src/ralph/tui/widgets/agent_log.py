@@ -108,6 +108,19 @@ class AgentLogWidget(RichLog):
         text.append(line, style="dim")
         self.write(text)
 
+    def write_separator(self, label: str) -> None:
+        """Write a prominent separator line between iterations."""
+        self.write(Text(""))
+        line = Text()
+        width = 60
+        pad = max(0, width - len(label) - 4)
+        line.append("-- ", style="bold")
+        line.append(label, style="bold")
+        line.append(" " + "-" * pad, style="bold")
+        self.write(line)
+        self.write(Text(""))
+        self._last_role = None
+
     def write_info(self, message: str) -> None:
         """Informational message."""
         text = Text()

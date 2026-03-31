@@ -10,7 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header
 from textual.worker import Worker
 
-from ralph.agent import AgentOutput
+from ralph.agent import AgentOutput, reset_stream_state
 from ralph.config import RalphConfig, load_config
 from ralph.loop import LoopControl, LoopResult, run_loop
 from ralph.prd import PRD, load_prd
@@ -177,11 +177,14 @@ class RunDashboardScreen(Screen):
         log.write_info(f"Starting {mode} loop")
 
     def _on_iteration_start(self, iteration: int, max_iterations: int) -> None:
+        # Reset stream dedup state so new iteration starts clean
+        reset_stream_state()
+
         header = self.query_one("#run-header", RunHeader)
         header.set_iteration(iteration, max_iterations)
 
         log = self.query_one("#agent-log", AgentLogWidget)
-        log.write_info(f"--- Iteration {iteration} / {max_iterations} ---")
+        log.write_separator(f"Iteration {iteration} / {max_iterations}")
 
         # Refresh PRD to get current story (not in understanding mode)
         if self._config and not self.understand_mode:
