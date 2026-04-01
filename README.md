@@ -211,20 +211,119 @@ The agent updates `passes` and `notes` as it works. Ralph reads these between it
 
 ## Architecture
 
+### System overview
+
 ```mermaid
-flowchart LR
-    CLI["CLI\n(headless)"] --> Loop["Core loop\n(loop.py)"]
-    TUI["TUI\n(interactive)"] --> Loop
-    Loop --> Agent["Agent\nabstraction"]
-    Loop --> Guard["Guard rails\n+ git ops"]
-    Agent --> Claude["Claude Code"]
-    Agent --> Codex["Codex"]
-    Agent --> Custom["Custom cmd"]
-    TUI --> Planning["Interactive\nplanning"]
-    Planning --> Agent
+flowchart TB
+    subgraph Interface["Interface layer"]
+        CLI["cli.py\nClick commands\n+ RichCallbacks"]
+        TUI["tui/app.py\nTextual app"]
+        subgraph TUI_Screens["TUI screens"]
+            Dashboard["Run dashboard\nDashboardCallbacks"]
+            FeatureConv["Feature conversation"]
+            PRDWiz["PRD wizard"]
+            ConfigScr["Config editor"]
+        end
+        TUI --> TUI_Screens
+    end
+
+    subgraph Core["Core engine"]
+        Loop["loop.py\nrun_loop()"]
+        Agent["agent.py\nAgent abstraction"]
+        Conv["conversation.py\nInteractive planning"]
+    end
+
+    subgraph Data["Data and state"]
+        Config["config.py\nralph.toml + env vars"]
+        PRD["prd.py\nSchema + validation"]
+        Git["git_ops.py\nBranch + path enforcement"]
+        Models["models.py\nAgent registry + detection"]
+        Templates["templates/\nPrompt templates"]
+    end
+
+    subgraph External["External"]
+        Claude["Claude Code CLI"]
+        Codex["Codex CLI"]
+        Custom["Custom command"]
+        Repo["Git repository"]
+    end
+
+    CLI -->|LoopCallbacks protocol| Loop
+    Dashboard -->|LoopCallbacks protocol| Loop
+
+    Loop --> Agent
+    Loop --> PRD
+    Loop --> Git
+    Loop --> Config
+    Loop --> Templates
+
+    FeatureConv --> Conv
+    Conv --> Agent
+
+    Agent --> Models
+    Agent --> Claude
+    Agent --> Codex
+    Agent --> Custom
+
+    Git --> Repo
+
+    Models -.->|auto-detect| Claude
+    Models -.->|auto-detect| Codex
 ```
 
-The core loop is decoupled from the interface via a callback protocol. Both CLI and TUI implement the same protocol, so the loop works identically in both modes.
+### Iteration lifecycle
+
+This is what happens inside `run_loop()` on each iteration:
+
+```mermaid
+sequenceDiagram
+    participant Loop as loop.py
+    participant Config as config.py
+    participant PRD as prd.json
+    participant Git as git_ops.py
+    participant Agent as agent.py
+    participant CLI as Claude/Codex
+    participant CB as Callbacks (CLI or TUI)
+
+    Loop->>Config: load_config(toml + env vars + CLI flags)
+    Loop->>PRD: load_prd()
+    Loop->>Git: checkout_branch(prd.branch_name)
+    Loop->>CB: on_loop_start(config, prd)
+
+    loop Each iteration
+        Loop->>CB: on_iteration_start(i, max)
+        Loop->>Agent: run_agent_async(prompt + progress context)
+        Agent->>CLI: spawn subprocess with prompt on stdin
+        CLI-->>Agent: stream output lines
+        Agent-->>Loop: yield AgentOutput(line, role)
+        Loop->>CB: on_agent_line(output)
+        Loop->>Loop: detect_completion()
+
+        opt Guard rails enabled
+            Loop->>Git: find_disallowed_files(allowed_paths)
+            Loop->>Git: revert_files(disallowed)
+            Loop->>CB: on_guard_violation(), on_guard_reverted()
+        end
+
+        Loop->>CB: on_iteration_end(i, elapsed)
+
+        alt Completion detected
+            Loop->>CB: on_complete(success=true)
+        else 3 consecutive errors
+            Loop->>CB: on_error(), on_complete(success=false)
+        end
+    end
+```
+
+### Key design decisions
+
+**Callback protocol**: The loop (`loop.py`) knows nothing about how output is displayed. It fires events via `LoopCallbacks` - a protocol that both the CLI (`RichCallbacks`) and TUI (`DashboardCallbacks`) implement. This means the same loop drives headless CLI runs and the live TUI dashboard.
+
+**Agent abstraction**: `agent.py` dispatches to three implementations: Claude (stream-json parsing with deduplication), Codex (line-by-line transcript parsing), or a generic stdin/stdout command. All three yield the same `AgentOutput(line, role)` stream.
+
+**Progress injection**: Between iterations, `agent.py` reads the last 5 entries from `progress.txt` and appends them to the prompt as handoff context. This gives the agent memory of what it already tried.
+
+**Guard rails**: After each iteration, `git_ops.py` checks all changed files against `paths.allowed`. Files outside the allowed set are automatically reverted (tracked files restored, untracked files deleted). Ralph's own infrastructure files are always protected.
 
 ## Development
 
