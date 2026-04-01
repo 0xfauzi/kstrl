@@ -19,7 +19,17 @@ from ralph.models import (
 class ModelSelector(Widget):
     """Compound widget for selecting agent type and model."""
 
-    DEFAULT_CSS = ""
+    DEFAULT_CSS = """
+    ModelSelector {
+        height: auto;
+    }
+    ModelSelector Vertical {
+        height: auto;
+    }
+    ModelSelector Horizontal {
+        height: auto;
+    }
+    """
 
     class Changed(Message):
         """Emitted when the agent or model selection changes."""

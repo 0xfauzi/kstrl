@@ -33,7 +33,6 @@ class FeatureConfigScreen(Screen):
 
     def __init__(self, name: str | None = None, id: str | None = None) -> None:
         super().__init__(name=name, id=id)
-        self._error = ""
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -46,7 +45,28 @@ class FeatureConfigScreen(Screen):
                     "generating a PRD.[/dim]",
                     classes="help-text",
                 )
-                yield Vertical(id="fc-body")
+                with Vertical(id="fc-body"):
+                    yield Label("Agent and model")
+                    yield ModelSelector(id="fc-model-selector")
+                    yield Label("Describe your feature (optional)")
+                    yield Static(
+                        "[dim]A few sentences about what you want to build. "
+                        "You can also provide this interactively in the "
+                        "conversation.[/dim]",
+                        classes="help-text",
+                    )
+                    yield TextArea("", id="fc-prompt", tab_behavior="indent")
+                    yield Label("Markdown spec file (optional)")
+                    yield Static(
+                        "[dim]Path to an existing spec or requirements "
+                        "document. Leave empty to skip.[/dim]",
+                        classes="help-text",
+                    )
+                    yield Input(
+                        value="",
+                        id="fc-file",
+                        placeholder="/path/to/spec.md",
+                    )
                 with Horizontal(id="new-project-nav"):
                     yield Button("Back", id="fc-back", variant="default")
                     yield Button(
@@ -56,47 +76,13 @@ class FeatureConfigScreen(Screen):
                     )
         yield Footer()
 
-    def on_mount(self) -> None:
-        self._render_form()
-
-    def _render_form(self) -> None:
-        body = self.query_one("#fc-body", Vertical)
-        body.remove_children()
-
-        body.mount(Label("Agent and model"))
-        body.mount(ModelSelector(id="fc-model-selector"))
-
-        body.mount(Label("Describe your feature (optional)"))
-        body.mount(
-            Static(
-                "[dim]A few sentences about what you want to build. "
-                "You can also provide this interactively in the "
-                "conversation.[/dim]",
-                classes="help-text",
-            )
-        )
-        body.mount(
-            TextArea("", id="fc-prompt", tab_behavior="indent")
-        )
-
-        body.mount(Label("Markdown spec file (optional)"))
-        body.mount(
-            Static(
-                "[dim]Path to an existing spec or requirements "
-                "document. Leave empty to skip.[/dim]",
-                classes="help-text",
-            )
-        )
-        body.mount(
-            Input(
-                value="",
-                id="fc-file",
-                placeholder="/path/to/spec.md",
-            )
-        )
-
-        if self._error:
-            body.mount(Static(f"[red]{self._error}[/red]"))
+    def _show_error(self, message: str) -> None:
+        self.notify(message, severity="error")
+        try:
+            error_widget = self.query_one("#fc-error", Static)
+            error_widget.update(f"[red]{message}[/red]" if message else "")
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "fc-back":
@@ -105,37 +91,24 @@ class FeatureConfigScreen(Screen):
             self._start_conversation()
 
     def _start_conversation(self) -> None:
-        prompt = ""
-        file_path = ""
-
-        try:
-            prompt = self.query_one("#fc-prompt", TextArea).text.strip()
-        except Exception:
-            pass
-
-        try:
-            file_path = self.query_one("#fc-file", Input).value.strip()
-        except Exception:
-            pass
+        prompt = self.query_one("#fc-prompt", TextArea).text.strip()
+        file_path = self.query_one("#fc-file", Input).value.strip()
 
         # Validate file exists if provided
         if file_path:
             p = Path(file_path).expanduser().resolve()
             if not p.exists():
-                self._error = f"File not found: {p}"
-                self._render_form()
+                self._show_error(f"File not found: {p}")
                 return
             if not p.is_file():
-                self._error = f"Not a file: {p}"
-                self._render_form()
+                self._show_error(f"Not a file: {p}")
                 return
 
         # At least one input required
         if not prompt and not file_path:
-            self._error = (
+            self._show_error(
                 "Provide a feature description, a spec file, or both."
             )
-            self._render_form()
             return
 
         # Get model selection

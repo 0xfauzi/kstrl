@@ -293,23 +293,36 @@ Screen {
 
 /* ── Feature Conversation ───────────────────────────── */
 
-#conv-log {
+#chat-scroll {
     height: 1fr;
+    scrollbar-size: 1 1;
 }
 
-#conv-input-bar {
+#chat-log {
+    height: auto;
+    min-height: 1;
+}
+
+#streaming-display {
+    height: auto;
+}
+
+#chat-input {
     dock: bottom;
     height: 3;
-    padding: 0 1;
+    border: none;
+    border-top: solid $surface-lighten-1;
+    background: $surface;
+    padding: 1 2;
 }
 
-#conv-input-bar Input {
-    width: 1fr;
+#chat-input:disabled {
+    opacity: 0.4;
 }
 
-#conv-input-bar Button {
-    width: 10;
-    margin-left: 1;
+#chat-input:focus {
+    border: none;
+    border-top: solid $surface-lighten-1;
 }
 
 /* ── PRD Review ─────────────────────────────────────── */
