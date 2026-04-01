@@ -330,7 +330,7 @@ async def run_conversation_agent(
     """
     async for output in _run_claude_streaming(
         model=model, prompt=prompt, cwd=cwd,
-        verbose=False, permission_mode="",
+        verbose=True, permission_mode="",
     ):
         yield output
 
