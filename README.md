@@ -276,43 +276,33 @@ flowchart TB
 This is what happens inside `run_loop()` on each iteration:
 
 ```mermaid
-sequenceDiagram
-    participant Loop as loop.py
-    participant Config as config.py
-    participant PRD as prd.json
-    participant Git as git_ops.py
-    participant Agent as agent.py
-    participant CLI as Claude/Codex
-    participant CB as Callbacks (CLI or TUI)
-
-    Loop->>Config: load_config(toml + env vars + CLI flags)
-    Loop->>PRD: load_prd()
-    Loop->>Git: checkout_branch(prd.branch_name)
-    Loop->>CB: on_loop_start(config, prd)
-
-    loop Each iteration
-        Loop->>CB: on_iteration_start(i, max)
-        Loop->>Agent: run_agent_async(prompt + progress context)
-        Agent->>CLI: spawn subprocess with prompt on stdin
-        CLI-->>Agent: stream output lines
-        Agent-->>Loop: yield AgentOutput(line, role)
-        Loop->>CB: on_agent_line(output)
-        Loop->>Loop: detect_completion()
-
-        opt Guard rails enabled
-            Loop->>Git: find_disallowed_files(allowed_paths)
-            Loop->>Git: revert_files(disallowed)
-            Loop->>CB: on_guard_violation(), on_guard_reverted()
-        end
-
-        Loop->>CB: on_iteration_end(i, elapsed)
-
-        alt Completion detected
-            Loop->>CB: on_complete(success=true)
-        else 3 consecutive errors
-            Loop->>CB: on_error(), on_complete(success=false)
-        end
+flowchart TD
+    subgraph Init["Initialization (once)"]
+        A1["load_config()\ntoml + env vars + CLI flags"] --> A2["load_prd()"]
+        A2 --> A3["checkout_branch(prd.branch_name)"]
+        A3 --> A4["on_loop_start(config, prd)"]
     end
+
+    subgraph Iteration["Iteration (repeats up to N times)"]
+        B1["on_iteration_start(i, max)"] --> B2["run_agent_async()\nBuild prompt with progress context"]
+        B2 --> B3["Spawn agent subprocess\nStream AgentOutput lines"]
+        B3 --> B4["on_agent_line(output)\nfor each streamed line"]
+        B4 --> B5["detect_completion()\nCheck for COMPLETE marker"]
+        B5 --> B6{"Guard rails\nenabled?"}
+        B6 -->|Yes| B7["find_disallowed_files()\nrevert_files()\non_guard_violation()"]
+        B6 -->|No| B8["on_iteration_end(i, elapsed)"]
+        B7 --> B8
+    end
+
+    subgraph Exit["Exit conditions"]
+        C1["All stories pass"] --> C4["on_complete(success)"]
+        C2["Max iterations reached"] --> C4
+        C3["3 consecutive errors"] --> C4
+    end
+
+    A4 --> B1
+    B8 --> C1
+    B8 -->|"Stories incomplete"| B1
 ```
 
 ### Key design decisions
