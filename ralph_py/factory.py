@@ -175,7 +175,7 @@ def _run_component(
             context_prefix = formatted
 
     config = RalphConfig(
-        max_iterations=10,
+        max_iterations=15,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
         sleep_seconds=sleep_seconds,
@@ -414,7 +414,27 @@ def run_factory(
         else:
             comp.review_passed = None
 
-        # All phases passed
+        # All verification phases passed - create PR and merge
+        if factory_config.create_prs:
+            from ralph_py.pr import push_create_and_merge_pr, is_gh_available
+
+            if is_gh_available():
+                ui.info(f"  Creating and merging PR for {comp_id}...")
+                pr_result = push_create_and_merge_pr(
+                    comp, manifest, root_dir, ui,
+                    merge_method="squash",
+                    merge_timeout=300,
+                )
+                if pr_result:
+                    factory_result.pr_urls.append(pr_result[1])
+                manifest.save(manifest_path)
+
+        # Clean up worktree now that code is merged
+        if factory_config.use_worktrees and comp_id in worktree_paths:
+            _cleanup_worktree(comp_id, root_dir)
+            del worktree_paths[comp_id]
+
+        # Mark completed
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
         factory_result.completed.append(comp_id)
@@ -565,17 +585,24 @@ def run_factory(
                         f"  Contract breaker '{cr.breaker}' sent back for retry"
                     )
 
-    # Create PRs
+    # Create PRs for any remaining components that weren't handled per-component
+    # (e.g. single-pr mode, or stragglers from parallel execution)
     if factory_config.create_prs:
         if factory_config.single_pr:
             result = create_single_pr(manifest, root_dir, ui)
             if result:
                 factory_result.pr_urls.append(result[1])
+            manifest.save(manifest_path)
         else:
-            pr_results = create_prs_in_order(manifest, root_dir, ui)
-            factory_result.pr_urls.extend(url for _, url in pr_results)
-
-        manifest.save(manifest_path)
+            # Per-component PRs are created in _handle_result; only handle stragglers
+            remaining = [
+                c for c in manifest.components
+                if c.status == "completed" and not c.pr_url
+            ]
+            if remaining:
+                pr_results = create_prs_in_order(manifest, root_dir, ui)
+                factory_result.pr_urls.extend(url for _, url in pr_results)
+                manifest.save(manifest_path)
 
     # Summary
     factory_duration = time.monotonic() - factory_start

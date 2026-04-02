@@ -1,9 +1,11 @@
-"""PR creation and management via gh CLI."""
+"""PR creation, merge, and management via gh CLI."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +35,125 @@ def push_branch(branch: str, cwd: Path) -> bool:
         text=True,
     )
     return result.returncode == 0
+
+
+def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> bool:
+    """Merge a PR via gh CLI with auto-merge.
+
+    Uses --auto so GitHub merges once status checks pass.
+    Uses --delete-branch to clean up the feature branch.
+
+    Args:
+        pr_number: PR number to merge.
+        cwd: Working directory (must be in the git repo).
+        method: Merge method - "squash", "merge", or "rebase".
+    """
+    result = subprocess.run(
+        [
+            "gh", "pr", "merge", str(pr_number),
+            f"--{method}", "--delete-branch", "--auto",
+        ],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
+    # If --auto fails (no required checks), try direct merge
+    if result.returncode != 0:
+        result = subprocess.run(
+            [
+                "gh", "pr", "merge", str(pr_number),
+                f"--{method}", "--delete-branch",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+        )
+    return result.returncode == 0
+
+
+def wait_for_merge(
+    pr_number: int, cwd: Path, timeout: int = 300, poll_interval: int = 10,
+) -> bool:
+    """Poll until a PR is merged or timeout.
+
+    Returns True if merged, False if timeout or closed without merge.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = subprocess.run(
+            ["gh", "pr", "view", str(pr_number), "--json", "state"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            state = data.get("state", "")
+            if state == "MERGED":
+                return True
+            if state == "CLOSED":
+                return False
+        time.sleep(poll_interval)
+    return False
+
+
+def push_create_and_merge_pr(
+    component: Component,
+    manifest: Manifest,
+    cwd: Path,
+    ui: UI,
+    merge_method: str = "squash",
+    merge_timeout: int = 300,
+) -> tuple[int, str] | None:
+    """Push branch, create PR, merge it, and pull main.
+
+    Full per-component PR lifecycle:
+    1. Push branch to origin
+    2. Create PR via gh
+    3. Merge PR (auto-merge if checks required, direct otherwise)
+    4. Wait for merge to complete
+    5. Pull main so downstream components get the merged code
+
+    Returns (pr_number, pr_url) on success, None on failure.
+    """
+    if component.pr_url:
+        ui.info(f"  {component.id}: PR already exists ({component.pr_url})")
+        return (component.pr_number or 0, component.pr_url)
+
+    # Push
+    ui.info(f"  Pushing {component.branch_name}...")
+    if not push_branch(component.branch_name, cwd):
+        ui.warn(f"  Failed to push {component.branch_name}")
+        return None
+
+    # Create PR
+    try:
+        pr_number, pr_url = create_component_pr(component, manifest, cwd)
+    except RuntimeError as exc:
+        ui.warn(f"  {exc}")
+        return None
+
+    component.pr_number = pr_number
+    component.pr_url = pr_url
+    ui.ok(f"  PR created: {pr_url}")
+
+    # Merge
+    if not merge_pr(pr_number, cwd, merge_method):
+        ui.warn(f"  Failed to merge #{pr_number} - needs manual merge")
+        return (pr_number, pr_url)
+
+    # Wait for merge
+    if wait_for_merge(pr_number, cwd, timeout=merge_timeout):
+        ui.ok(f"  PR #{pr_number} merged")
+        # Pull main so downstream worktrees start from merged state
+        subprocess.run(
+            ["git", "pull", "origin", manifest.base_branch],
+            cwd=cwd, capture_output=True,
+        )
+        return (pr_number, pr_url)
+
+    ui.warn(f"  PR #{pr_number} not merged within {merge_timeout}s - may need manual merge")
+    return (pr_number, pr_url)
 
 
 def _generate_pr_body(
