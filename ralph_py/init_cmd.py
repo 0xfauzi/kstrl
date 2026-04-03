@@ -866,49 +866,39 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
         sections.append(antipatterns.strip())
         sections.append("")
 
+    # Agent learnings section (agents append patterns, gotchas, conventions here)
+    sections.append("""## Agent Learnings
+
+> This section is maintained by AI agents working on this codebase.
+> Agents: append patterns, gotchas, and conventions you discover below.
+> This is the single source of truth - AGENTS.md is a symlink to this file.
+
+### Codebase Patterns
+<!-- Agents: add reusable patterns you discover here -->
+
+### Gotchas
+<!-- Agents: add surprises and non-obvious behaviors here -->
+
+### Conventions
+<!-- Agents: add established conventions here -->""")
+    sections.append("")
+
     return "\n".join(sections) + "\n"
 
 
-def _generate_agents_md(ctx: dict[str, str]) -> str:
-    """Generate AGENTS.md starter content."""
-    lines = [
-        "# AGENTS.md",
-        "",
-        "> This file is maintained by AI agents working on this codebase.",
-        "> It captures patterns, conventions, and learnings discovered during development.",
-        "> See CLAUDE.md for project-wide coding standards and guidelines.",
-        "",
-        "## Quick Facts",
-        f"- **Language**: {ctx['language']}",
-    ]
-    if ctx["test_cmd"]:
-        lines.append(f"- **Test**: `{ctx['test_cmd']}`")
-    if ctx["typecheck_cmd"]:
-        lines.append(f"- **Typecheck**: `{ctx['typecheck_cmd']}`")
-    if ctx["lint_cmd"]:
-        lines.append(f"- **Lint**: `{ctx['lint_cmd']}`")
-    lines.extend([
-        "",
-        "## Codebase Patterns",
-        "<!-- Agents: add patterns you discover here -->",
-        "",
-        "## Gotchas",
-        "<!-- Agents: add surprises and non-obvious behaviors here -->",
-        "",
-        "## Conventions",
-        "<!-- Agents: add established conventions here -->",
-        "",
-    ])
-    return "\n".join(lines) + "\n"
-
-
 def bootstrap_claude_md(root: Path, ui: UI) -> None:
-    """Generate CLAUDE.md and AGENTS.md if they don't exist.
+    """Generate CLAUDE.md and symlink AGENTS.md to it.
 
     Detects project language, framework, and tooling from config files,
     then generates agent-facing documentation with coding standards,
     implementation principles, and verification commands.
+
+    AGENTS.md is a symlink to CLAUDE.md so both names point to the same
+    file. When the prompt tells agents to "update AGENTS.md", they are
+    writing to CLAUDE.md.
     """
+    import os
+
     ui.section("Agent context files")
 
     ctx = _detect_project_context(root)
@@ -924,8 +914,11 @@ def bootstrap_claude_md(root: Path, ui: UI) -> None:
         ui.ok("  Created CLAUDE.md")
 
     agents_md = root / "AGENTS.md"
-    if agents_md.exists():
-        ui.info("  AGENTS.md already exists")
+    if agents_md.is_symlink() and os.readlink(str(agents_md)) == "CLAUDE.md":
+        ui.info("  AGENTS.md already symlinked to CLAUDE.md")
+    elif agents_md.exists():
+        ui.info("  AGENTS.md already exists (not a symlink)")
     else:
-        agents_md.write_text(_generate_agents_md(ctx))
-        ui.ok("  Created AGENTS.md")
+        # Create relative symlink: AGENTS.md -> CLAUDE.md
+        agents_md.symlink_to("CLAUDE.md")
+        ui.ok("  Created AGENTS.md -> CLAUDE.md (symlink)")
