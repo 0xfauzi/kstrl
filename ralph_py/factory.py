@@ -166,6 +166,19 @@ def _run_component(
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
         worktree_prompt.write_text(prompt_source.read_text())
 
+    # Copy CLAUDE.md into worktree. AGENTS.md is a symlink to CLAUDE.md,
+    # so copying CLAUDE.md and recreating the symlink gives the agent both.
+    repo_root = worktree_path.parent.parent.parent  # .ralph/worktrees/<id> -> root
+    claude_dest = worktree_path / "CLAUDE.md"
+    if not claude_dest.exists():
+        claude_src = repo_root / "CLAUDE.md"
+        if claude_src.exists():
+            # Resolve symlinks to get actual content
+            claude_dest.write_text(claude_src.read_text())
+    agents_dest = worktree_path / "AGENTS.md"
+    if not agents_dest.exists() and claude_dest.exists():
+        agents_dest.symlink_to("CLAUDE.md")
+
     # Build context prefix from previous retries
     context_prefix: str | None = None
     if previous_context_json:

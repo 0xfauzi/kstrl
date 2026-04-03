@@ -477,6 +477,9 @@ def run_init(directory: Path, ui: UI) -> int:
         ui,
     )
 
+    # Bootstrap CLAUDE.md and AGENTS.md
+    bootstrap_claude_md(root, ui)
+
     # Validate PRD
     ui.section("Validate PRD")
     prd_file = ralph_dir / "prd.json"
@@ -531,3 +534,391 @@ def _create_if_missing(path: Path, content: str, ui: UI) -> None:
     else:
         path.write_text(content)
         ui.ok(f"  Created {path.name}")
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE.md and AGENTS.md bootstrap
+# ---------------------------------------------------------------------------
+
+
+def _detect_project_context(root: Path) -> dict[str, str]:
+    """Detect project language, framework, and tooling from config files.
+
+    Inspects the project root for pyproject.toml, Cargo.toml, package.json,
+    go.mod, etc. and returns a dict of detected values.
+    """
+    ctx: dict[str, str] = {
+        "name": root.name,
+        "language": "unknown",
+        "framework": "",
+        "test_cmd": "",
+        "lint_cmd": "",
+        "typecheck_cmd": "",
+        "build_cmd": "",
+        "format_cmd": "",
+    }
+
+    # Python
+    pyproject = root / "pyproject.toml"
+    setup_py = root / "setup.py"
+    if pyproject.exists() or setup_py.exists():
+        ctx["language"] = "Python"
+        has_uv = (root / "uv.lock").exists() or (root / ".venv").exists()
+        runner = "uv run " if has_uv else ""
+        ctx["test_cmd"] = f"{runner}pytest tests/ -v --tb=short"
+        ctx["typecheck_cmd"] = f"{runner}mypy src/ --strict"
+        ctx["lint_cmd"] = f"{runner}ruff check src/"
+        ctx["format_cmd"] = f"{runner}ruff format src/"
+        if pyproject.exists():
+            try:
+                text = pyproject.read_text()
+                if "name" in text:
+                    import re
+
+                    m = re.search(r'name\s*=\s*"([^"]+)"', text)
+                    if m:
+                        ctx["name"] = m.group(1)
+                if "fastapi" in text:
+                    ctx["framework"] = "FastAPI"
+                elif "django" in text:
+                    ctx["framework"] = "Django"
+                elif "flask" in text:
+                    ctx["framework"] = "Flask"
+            except OSError:
+                pass
+        return ctx
+
+    # Rust
+    cargo_toml = root / "Cargo.toml"
+    if cargo_toml.exists():
+        ctx["language"] = "Rust"
+        ctx["test_cmd"] = "cargo test"
+        ctx["lint_cmd"] = "cargo clippy -- -D warnings"
+        ctx["typecheck_cmd"] = "cargo check"
+        ctx["build_cmd"] = "cargo build"
+        ctx["format_cmd"] = "cargo fmt"
+        try:
+            text = cargo_toml.read_text()
+            import re
+
+            m = re.search(r'name\s*=\s*"([^"]+)"', text)
+            if m:
+                ctx["name"] = m.group(1)
+            if "actix" in text or "axum" in text:
+                ctx["framework"] = "Axum/Actix"
+            elif "rocket" in text:
+                ctx["framework"] = "Rocket"
+        except OSError:
+            pass
+        return ctx
+
+    # TypeScript / JavaScript
+    pkg_json = root / "package.json"
+    if pkg_json.exists():
+        ctx["language"] = "TypeScript"
+        try:
+            import json as _json
+
+            pkg = _json.loads(pkg_json.read_text())
+            ctx["name"] = pkg.get("name", root.name)
+            scripts = pkg.get("scripts", {})
+            ctx["test_cmd"] = f"npm run {scripts.get('test', 'test')}" if "test" in scripts else "npx jest"
+            ctx["lint_cmd"] = f"npm run {scripts.get('lint', 'lint')}" if "lint" in scripts else "npx eslint ."
+            ctx["typecheck_cmd"] = "npx tsc --noEmit"
+            ctx["build_cmd"] = f"npm run build" if "build" in scripts else ""
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            if "next" in deps:
+                ctx["framework"] = "Next.js"
+            elif "react" in deps:
+                ctx["framework"] = "React"
+            elif "express" in deps:
+                ctx["framework"] = "Express"
+            elif "vue" in deps:
+                ctx["framework"] = "Vue"
+            if "typescript" not in deps and not (root / "tsconfig.json").exists():
+                ctx["language"] = "JavaScript"
+        except (OSError, ValueError):
+            pass
+        return ctx
+
+    # Go
+    go_mod = root / "go.mod"
+    if go_mod.exists():
+        ctx["language"] = "Go"
+        ctx["test_cmd"] = "go test ./..."
+        ctx["lint_cmd"] = "golangci-lint run"
+        ctx["typecheck_cmd"] = "go vet ./..."
+        ctx["build_cmd"] = "go build ./..."
+        ctx["format_cmd"] = "gofmt -w ."
+        try:
+            text = go_mod.read_text()
+            first_line = text.strip().splitlines()[0] if text.strip() else ""
+            if first_line.startswith("module "):
+                ctx["name"] = first_line.split()[-1].split("/")[-1]
+        except OSError:
+            pass
+        return ctx
+
+    # Java / Kotlin
+    if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
+        ctx["language"] = "Java"
+        if (root / "build.gradle.kts").exists():
+            ctx["language"] = "Kotlin"
+        ctx["test_cmd"] = "./gradlew test" if (root / "gradlew").exists() else "mvn test"
+        ctx["build_cmd"] = "./gradlew build" if (root / "gradlew").exists() else "mvn package"
+        return ctx
+
+    return ctx
+
+
+_LANGUAGE_STANDARDS: dict[str, str] = {
+    "Python": """
+- Use type hints on ALL function signatures
+- Use `from __future__ import annotations` in every file
+- Use `T | None` not `Optional[T]`, `A | B` not `Union[A, B]`
+- Prefer `@dataclass` for data models, `frozen=True` when immutable
+- Use `Protocol` for interfaces (structural subtyping over inheritance)
+- Google-style docstrings with Args/Returns/Raises sections
+- snake_case for functions/variables, PascalCase for classes, UPPER_SNAKE for constants
+- Absolute imports only, grouped: stdlib, third-party, local
+- No star imports, no circular imports
+- No bare `except:` clauses - always specify the exception type
+- No mutable default arguments (use `field(default_factory=...)`)
+""",
+    "Rust": """
+- Use `Result<T, E>` for fallible operations, not panics
+- Prefer `&str` over `String` in function parameters
+- Use `derive` macros: Debug, Clone, PartialEq where appropriate
+- Handle all match arms exhaustively - no catch-all `_` unless justified
+- Prefer iterators and combinators over manual loops
+- Use `clippy::pedantic` lint level
+- Document public APIs with `///` doc comments
+- Use `thiserror` for library errors, `anyhow` for application errors
+- Minimize `unwrap()` - use `?` or explicit error handling
+- Prefer `impl Trait` over `dyn Trait` when the concrete type is known
+""",
+    "TypeScript": """
+- Enable strict mode in tsconfig.json
+- Use explicit return types on all exported functions
+- Prefer `interface` over `type` for object shapes
+- Use `readonly` for properties that should not be mutated
+- Prefer `unknown` over `any` - narrow with type guards
+- Use discriminated unions for variant types
+- Handle all Promise rejections - no unhandled promises
+- Use `const` by default, `let` only when mutation is needed, never `var`
+- Prefer named exports over default exports
+- Use template literals over string concatenation
+""",
+    "Go": """
+- Handle every error - never use `_` for error returns
+- Use table-driven tests
+- Keep interfaces small (1-3 methods)
+- Accept interfaces, return structs
+- Use `context.Context` as the first parameter for cancellable operations
+- Prefer composition over embedding
+- Use `errors.Is` and `errors.As` for error checking, not string matching
+- Document all exported identifiers
+- Use `go vet` and `golangci-lint` in CI
+- Prefer channels for synchronization, mutexes for state protection
+""",
+    "Java": """
+- Use final for variables that should not be reassigned
+- Prefer composition over inheritance
+- Use Optional<T> instead of null for return types
+- Document public APIs with Javadoc
+- Use try-with-resources for AutoCloseable resources
+- Prefer immutable collections where possible
+- Use meaningful exception types, not generic RuntimeException
+""",
+    "Kotlin": """
+- Prefer val over var (immutability by default)
+- Use data classes for plain data holders
+- Use sealed classes for restricted hierarchies
+- Prefer expression bodies for simple functions
+- Use coroutines for async operations, not callbacks
+- Leverage null safety - avoid `!!` operator
+- Use `when` expressions exhaustively
+""",
+}
+
+_LANGUAGE_ANTIPATTERNS: dict[str, str] = {
+    "Python": """
+- Do NOT use `typing.Optional` or `typing.Union` - use `|` syntax
+- Do NOT use `Any` without a TODO comment explaining why
+- Do NOT use mutable default arguments (`def f(x=[])`)
+- Do NOT use bare `except:` or `except Exception:` without re-raising
+- Do NOT use `import *`
+- Do NOT use `type: ignore` without a specific mypy error code
+- Do NOT use `global` or `nonlocal` unless absolutely necessary
+- Do NOT suppress linter warnings without justification
+""",
+    "Rust": """
+- Do NOT use `unwrap()` or `expect()` in library code
+- Do NOT use `unsafe` without a SAFETY comment explaining the invariant
+- Do NOT use `clone()` to avoid borrow checker issues - redesign instead
+- Do NOT use `Box<dyn Any>` as an escape hatch from the type system
+- Do NOT ignore compiler warnings - treat them as errors
+- Do NOT use `String` in struct fields when `&str` with a lifetime would work
+""",
+    "TypeScript": """
+- Do NOT use `any` - use `unknown` and narrow with type guards
+- Do NOT use `!` non-null assertion operator without justification
+- Do NOT use `var` - use `const` or `let`
+- Do NOT use `==` - always use `===`
+- Do NOT ignore TypeScript errors with `@ts-ignore` without a specific reason
+- Do NOT use `Function` or `Object` types - use specific signatures
+""",
+    "Go": """
+- Do NOT use `panic` for error handling in library code
+- Do NOT ignore errors with `_`
+- Do NOT use `init()` functions unless absolutely necessary
+- Do NOT use global mutable state
+- Do NOT use `interface{}` / `any` as an escape hatch from the type system
+""",
+}
+
+
+def _generate_claude_md(ctx: dict[str, str]) -> str:
+    """Generate CLAUDE.md content from detected project context."""
+    lang = ctx["language"]
+    framework_line = f" ({ctx['framework']})" if ctx["framework"] else ""
+
+    sections = [f"# CLAUDE.md - {ctx['name']}", ""]
+
+    # Project overview
+    sections.append("## Project Overview")
+    sections.append(f"- **Language**: {lang}{framework_line}")
+    sections.append(f"- **Project**: {ctx['name']}")
+    sections.append("")
+
+    # Verification commands
+    sections.append("## Verification Commands")
+    if ctx["test_cmd"]:
+        sections.append(f"- **Test**: `{ctx['test_cmd']}`")
+    if ctx["typecheck_cmd"]:
+        sections.append(f"- **Typecheck**: `{ctx['typecheck_cmd']}`")
+    if ctx["lint_cmd"]:
+        sections.append(f"- **Lint**: `{ctx['lint_cmd']}`")
+    if ctx["format_cmd"]:
+        sections.append(f"- **Format**: `{ctx['format_cmd']}`")
+    if ctx["build_cmd"]:
+        sections.append(f"- **Build**: `{ctx['build_cmd']}`")
+    sections.append("")
+
+    # Coding standards
+    standards = _LANGUAGE_STANDARDS.get(lang, "")
+    if standards:
+        sections.append("## Coding Standards")
+        sections.append(standards.strip())
+        sections.append("")
+
+    # Implementation principles (language-agnostic, elite-level)
+    sections.append("""## Implementation Principles
+
+### First Principles Thinking
+- Reason from first principles about WHY the code should work, not just HOW
+- Consider nth-order effects: what happens downstream when this function's contract changes?
+- Ask "what invariant does this maintain?" for every data structure and state transition
+- Before implementing, understand the problem domain - do not cargo-cult patterns from other contexts
+
+### No Shortcuts
+- Do not implement stub functions that return hardcoded values
+- Do not add TODO comments as a substitute for implementation
+- Do not use placeholder/dummy values in production code paths
+- Do not catch exceptions just to silence them
+- Do not skip validation because "it should never happen"
+- Every code path must be intentional and justified
+
+### No Handwaving
+- Every function must have a concrete, complete implementation
+- Error handling must cover ALL failure modes, not just the happy path
+- Edge cases (empty inputs, None values, boundary conditions, concurrent access) must be handled explicitly
+- Do not assume "this will never happen" - if the type system allows it, handle it
+- Performance implications must be considered, not deferred
+
+### Correctness Over Cleverness
+- Prefer readable, straightforward implementations over clever one-liners
+- Add assertions for preconditions that the type system cannot enforce
+- Use immutable data structures by default
+- Never silently swallow errors or return default values for unexpected inputs
+- Make illegal states unrepresentable through the type system
+
+### Testing Discipline
+- Every public function needs at least one test
+- Test the contract (inputs/outputs), not the implementation details
+- Include edge cases: empty inputs, single elements, maximum values, None/null, unicode, negative numbers
+- Error paths are tested as thoroughly as success paths
+- Do not write tests that always pass (tautological assertions like `assert True`)
+- Tests must be deterministic - no flaky tests, no time-dependent assertions
+
+### Completeness
+- Implement ALL specified behavior, not a subset
+- Handle ALL variants of enums and match/switch expressions
+- Implement ALL methods of an interface/protocol/trait, not just the common ones
+- Do not leave partial implementations - either fully implement or explicitly raise/panic with a reason
+- Documentation matches behavior - if docs say it does X, it must do X""")
+    sections.append("")
+
+    # Anti-patterns
+    antipatterns = _LANGUAGE_ANTIPATTERNS.get(lang, "")
+    if antipatterns:
+        sections.append("## What NOT To Do")
+        sections.append(antipatterns.strip())
+        sections.append("")
+
+    # Agent learnings section (agents append patterns, gotchas, conventions here)
+    sections.append("""## Agent Learnings
+
+> This section is maintained by AI agents working on this codebase.
+> Agents: append patterns, gotchas, and conventions you discover below.
+> This is the single source of truth - AGENTS.md is a symlink to this file.
+
+### Codebase Patterns
+<!-- Agents: add reusable patterns you discover here -->
+
+### Gotchas
+<!-- Agents: add surprises and non-obvious behaviors here -->
+
+### Conventions
+<!-- Agents: add established conventions here -->""")
+    sections.append("")
+
+    return "\n".join(sections) + "\n"
+
+
+def bootstrap_claude_md(root: Path, ui: UI) -> None:
+    """Generate CLAUDE.md and symlink AGENTS.md to it.
+
+    Detects project language, framework, and tooling from config files,
+    then generates agent-facing documentation with coding standards,
+    implementation principles, and verification commands.
+
+    AGENTS.md is a symlink to CLAUDE.md so both names point to the same
+    file. When the prompt tells agents to "update AGENTS.md", they are
+    writing to CLAUDE.md.
+    """
+    import os
+
+    ui.section("Agent context files")
+
+    ctx = _detect_project_context(root)
+    ui.kv("Detected language", ctx["language"])
+    if ctx["framework"]:
+        ui.kv("Detected framework", ctx["framework"])
+
+    claude_md = root / "CLAUDE.md"
+    if claude_md.exists():
+        ui.info("  CLAUDE.md already exists")
+    else:
+        claude_md.write_text(_generate_claude_md(ctx))
+        ui.ok("  Created CLAUDE.md")
+
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_symlink() and os.readlink(str(agents_md)) == "CLAUDE.md":
+        ui.info("  AGENTS.md already symlinked to CLAUDE.md")
+    elif agents_md.exists():
+        ui.info("  AGENTS.md already exists (not a symlink)")
+    else:
+        # Create relative symlink: AGENTS.md -> CLAUDE.md
+        agents_md.symlink_to("CLAUDE.md")
+        ui.ok("  Created AGENTS.md -> CLAUDE.md (symlink)")
