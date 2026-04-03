@@ -79,6 +79,17 @@ def run_loop(
     # Read prompt
     prompt = config.prompt_file.read_text()
 
+    # Prepend CLAUDE.md project context if it exists in the working directory
+    claude_md_path = cwd / "CLAUDE.md"
+    if claude_md_path.exists():
+        claude_md_content = claude_md_path.read_text()
+        prompt = (
+            "# Project Context (from CLAUDE.md)\n\n"
+            + claude_md_content
+            + "\n\n---\n\n"
+            + prompt
+        )
+
     # Prepend context from previous retries if provided
     if context_prefix:
         prompt = context_prefix + "\n\n" + prompt

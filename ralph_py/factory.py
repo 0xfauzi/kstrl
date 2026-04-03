@@ -166,6 +166,18 @@ def _run_component(
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
         worktree_prompt.write_text(prompt_source.read_text())
 
+    # CLAUDE.md and AGENTS.md are in the git repo, so they appear in worktrees
+    # automatically if committed. If they exist in the main repo but aren't
+    # committed, copy them from the worktree's parent (the repo root).
+    repo_root = worktree_path.parent.parent.parent  # .ralph/worktrees/<id> -> root
+    for context_file in ("CLAUDE.md", "AGENTS.md"):
+        dest = worktree_path / context_file
+        if dest.exists():
+            continue
+        source = repo_root / context_file
+        if source.exists():
+            dest.write_text(source.read_text())
+
     # Build context prefix from previous retries
     context_prefix: str | None = None
     if previous_context_json:
