@@ -52,8 +52,43 @@ class TestClaudeCodeAgent:
 
         call_args = mock_popen.call_args
         cmd = call_args[0][0]
-        assert cmd == ["claude", "--print", "--model", "claude-sonnet-4-5"]
+        assert "claude" == cmd[0]
+        assert "--print" in cmd
+        assert "--model" in cmd
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "claude-sonnet-4-5"
+        assert "--output-format" in cmd
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--effort" not in cmd  # no effort by default
         assert call_args[1]["cwd"] == tmp_path
+
+    def test_run_includes_effort_flag(self, tmp_path: Path) -> None:
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter(["done\n"])
+        mock_proc.wait.return_value = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            agent = ClaudeCodeAgent(model="sonnet", effort="max")
+            list(agent.run("test", cwd=tmp_path))
+
+        cmd = mock_popen.call_args[0][0]
+        assert "--effort" in cmd
+        effort_idx = cmd.index("--effort")
+        assert cmd[effort_idx + 1] == "max"
+
+    def test_run_omits_effort_when_empty(self, tmp_path: Path) -> None:
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter(["done\n"])
+        mock_proc.wait.return_value = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            agent = ClaudeCodeAgent(model="sonnet", effort=None)
+            list(agent.run("test", cwd=tmp_path))
+
+        cmd = mock_popen.call_args[0][0]
+        assert "--effort" not in cmd
 
     def test_run_handles_broken_pipe(self, tmp_path: Path) -> None:
         mock_stdin = MagicMock()

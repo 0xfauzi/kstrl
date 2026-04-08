@@ -58,7 +58,9 @@ class CodexAgent:
         if self._model:
             cmd.extend(["-m", self._model])
         if self._reasoning_effort:
-            cmd.extend(["-c", f'model_reasoning_effort="{self._reasoning_effort}"'])
+            # Translate unified effort levels to codex-specific values
+            codex_effort = "xhigh" if self._reasoning_effort == "max" else self._reasoning_effort
+            cmd.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
 
         # Use --output-last-message when supported by the codex CLI.
         last_msg_file: Path | None = None

@@ -21,13 +21,15 @@ class ClaudeCodeAgent:
     execution rather than only showing the final text response.
     """
 
-    def __init__(self, model: str | None = None):
+    def __init__(self, model: str | None = None, effort: str | None = None):
         """Initialize Claude Code agent.
 
         Args:
             model: Model name to pass to claude --model
+            effort: Reasoning effort level (low, medium, high, max)
         """
         self._model = model
+        self._effort = effort
         self._final_message: str | None = None
 
     @property
@@ -62,6 +64,8 @@ class ClaudeCodeAgent:
         ]
         if self._model:
             cmd.extend(["--model", self._model])
+        if self._effort:
+            cmd.extend(["--effort", self._effort])
 
         try:
             proc = subprocess.Popen(

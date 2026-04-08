@@ -18,7 +18,7 @@ class AgentConfig:
     type: str = "claude"  # "claude" | "codex" | "custom"
     command: str = ""  # only used when type = "custom"
     model: str = ""  # e.g., "sonnet" for claude, "o3" for codex
-    reasoning_effort: str = ""  # codex-specific: low|medium|high|xhigh
+    reasoning_effort: str = ""  # low|medium|high|max
 
 
 @dataclass
