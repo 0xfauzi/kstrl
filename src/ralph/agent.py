@@ -301,6 +301,7 @@ async def run_agent_async(
     if agent_type == "claude":
         async for output in _run_claude_streaming(
             model=model, prompt=prompt_content, cwd=cwd,
+            reasoning_effort=reasoning_effort,
         ):
             yield output
     elif agent_type == "codex":
@@ -383,6 +384,7 @@ async def _run_claude_streaming(
     cwd: Path,
     verbose: bool = True,
     permission_mode: str = "acceptEdits",
+    reasoning_effort: str = "",
 ) -> AsyncIterator[AgentOutput]:
     """Run Claude with stream-json output for real-time streaming."""
     effective_model = model or "sonnet"
@@ -394,6 +396,8 @@ async def _run_claude_streaming(
         cmd_parts.append("--verbose")
     if permission_mode:
         cmd_parts.append(f"--permission-mode {permission_mode}")
+    if reasoning_effort:
+        cmd_parts.append(f"--effort {reasoning_effort}")
     cmd = " ".join(cmd_parts)
 
     # Stream-json lines can be very large (tool results with full file
@@ -446,7 +450,9 @@ async def _run_codex(
     if model:
         parts.extend(["-m", model])
     if reasoning_effort:
-        parts.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+        # Translate unified effort levels to codex-specific values
+        codex_effort = "xhigh" if reasoning_effort == "max" else reasoning_effort
+        parts.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
     parts.append("-")
     cmd_str = " ".join(parts)
 

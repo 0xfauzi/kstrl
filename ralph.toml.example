@@ -6,7 +6,7 @@
 type = "claude"                    # "claude" | "codex" | "custom"
 command = ""                       # shell command (only used when type = "custom")
 model = ""                         # e.g., "sonnet" for claude, "o3" for codex (empty = default)
-reasoning_effort = ""              # codex-specific: low|medium|high|xhigh
+reasoning_effort = ""              # low|medium|high|max
 
 [run]
 max_iterations = 10

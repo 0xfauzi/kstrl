@@ -25,11 +25,11 @@ def get_agent(
     if agent_cmd:
         return CustomAgent(agent_cmd)
     if agent_type == "claude-code":
-        return ClaudeCodeAgent(model=model)
+        return ClaudeCodeAgent(model=model, effort=model_reasoning_effort)
     if agent_type == "codex":
         return CodexAgent(model=model, reasoning_effort=model_reasoning_effort)
     # Auto-detect: prefer claude-code, fall back to codex
     if agent_type is None or agent_type == "auto":
         if ClaudeCodeAgent.is_available():
-            return ClaudeCodeAgent(model=model)
+            return ClaudeCodeAgent(model=model, effort=model_reasoning_effort)
     return CodexAgent(model=model, reasoning_effort=model_reasoning_effort)

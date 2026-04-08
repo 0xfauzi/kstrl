@@ -140,7 +140,7 @@ def cli() -> None:
 )
 @click.option(
     "--reasoning",
-    help="Reasoning effort for codex (low, medium, high)",
+    help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
     "--sleep", "-s",
@@ -331,7 +331,7 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
 )
 @click.option(
     "--reasoning",
-    help="Reasoning effort for codex",
+    help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
     "--sleep", "-s",
@@ -521,7 +521,7 @@ def understand(
 )
 @click.option(
     "--reasoning",
-    help="Reasoning effort for codex (low, medium, high)",
+    help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
     "--sleep", "-s",
@@ -920,7 +920,7 @@ def feature(
 )
 @click.option(
     "--reasoning",
-    help="Reasoning effort for codex",
+    help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
     "--agent-type",
@@ -1135,7 +1135,7 @@ def decompose(
 )
 @click.option(
     "--reasoning",
-    help="Reasoning effort for codex",
+    help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
     "--agent-type",
