@@ -31,6 +31,7 @@ class ClaudeCodeAgent:
         self._model = model
         self._effort = effort
         self._final_message: str | None = None
+        self._saw_result: bool = False
 
     @property
     def name(self) -> str:
@@ -53,6 +54,7 @@ class ClaudeCodeAgent:
         Yields human-readable lines describing what the agent is doing.
         """
         self._final_message = None
+        self._saw_result = False
         accumulated_text: list[str] = []
         start = time.monotonic()
 
@@ -99,16 +101,32 @@ class ClaudeCodeAgent:
                     if not raw_line.strip():
                         continue
 
+                    # Check for result event (final output, process should exit soon)
+                    result_text = _extract_result_text(raw_line)
+                    if result_text is not None:
+                        self._saw_result = True
+                        self._final_message = result_text
+                        break
+
                     # Parse stream-json events
                     for display_line in _parse_stream_event(raw_line):
                         if display_line.strip():
                             accumulated_text.append(display_line)
                         yield display_line
 
-            proc.wait()
+            # Wait for process to exit, but don't hang forever
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
 
-            # Set final_message to the last result text
-            if accumulated_text:
+            # Set final_message from accumulated text if not already set by result event
+            if self._final_message is None and accumulated_text:
                 self._final_message = accumulated_text[-1]
 
         except FileNotFoundError:
@@ -118,6 +136,22 @@ class ClaudeCodeAgent:
     def final_message(self) -> str | None:
         """Return last non-empty output line."""
         return self._final_message
+
+
+def _extract_result_text(raw_line: str) -> str | None:
+    """Extract final result text from a stream-json result event.
+
+    Returns the result text if this is a result event, None otherwise.
+    The result event is the last event in a Claude Code stream-json
+    session and signals that the process is about to exit.
+    """
+    try:
+        evt = json.loads(raw_line)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if evt.get("type") == "result":
+        return evt.get("result", "")
+    return None
 
 
 def _parse_stream_event(raw_line: str) -> Iterator[str]:
