@@ -10,9 +10,9 @@ You are operating inside a git repository. Ralph (the harness) manages the loop,
 
 Read these files at the start of every iteration:
 
-1. `scripts/ralph/prd.json` - the PRD with user stories, priorities, and pass/fail status
-2. `scripts/ralph/progress.txt` - log of what previous iterations accomplished (your inter-iteration memory)
-3. `scripts/ralph/codebase_map.md` - if it exists, scan the headers and read only sections relevant to your current story
+1. `$prd_path` - the PRD with user stories, priorities, and pass/fail status
+2. `$progress_path` - log of what previous iterations accomplished (your inter-iteration memory)
+3. `$codebase_map_path` - if it exists, scan the headers and read only sections relevant to your current story
 
 ## What to do
 
@@ -24,12 +24,12 @@ Read these files at the start of every iteration:
    - Run them. If they fail, fix the issues and re-run.
    - Do NOT mark the story as passing unless both typecheck and tests succeed.
 5. Commit your changes with the message: `feat: [Story ID] - [Story Title]`
-6. Update `scripts/ralph/prd.json`: set that story's `passes` to `true`.
-7. Update `scripts/ralph/progress.txt` with your handoff notes (format below).
+6. Update `$prd_path`: set that story's `passes` to `true`.
+7. Update `$progress_path` with your handoff notes (format below).
 
 ## Handoff notes format
 
-Append this to the END of `scripts/ralph/progress.txt` after each iteration. This is how the next iteration knows where you left off.
+Append this to the END of `$progress_path` after each iteration. This is how the next iteration knows where you left off.
 
 ```
 ## Iteration [N] - [Story ID]: [Story Title]
