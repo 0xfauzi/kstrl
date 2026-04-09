@@ -165,6 +165,15 @@ def _run_component(
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         worktree_prd.write_text(prd_path.read_text())
 
+    # Overwrite the default prd.json in the worktree with the component PRD.
+    # The prompt template hardcodes "scripts/ralph/prd.json" as the PRD path,
+    # so if the component PRD lives elsewhere, the agent would read the wrong
+    # (monolithic) PRD and go rogue, implementing stories beyond its scope.
+    default_prd = worktree_path / "scripts" / "ralph" / "prd.json"
+    if default_prd.resolve() != worktree_prd.resolve():
+        default_prd.parent.mkdir(parents=True, exist_ok=True)
+        default_prd.write_text(worktree_prd.read_text())
+
     # Copy prompt into worktree if needed
     worktree_prompt = worktree_path / prompt_file_str
     prompt_source = Path(prompt_file_str)
