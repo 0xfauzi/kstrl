@@ -128,3 +128,64 @@ class TestClaudeCodeAgent:
             list(agent.run("test", cwd=tmp_path))
 
         assert agent.final_message == "content"
+
+    def test_result_event_breaks_stdout_loop(self, tmp_path: Path) -> None:
+        """When a result event arrives, stop reading stdout and set final_message."""
+        import json
+
+        assistant_event = json.dumps({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "working..."}]},
+        })
+        result_event = json.dumps({
+            "type": "result",
+            "subtype": "success",
+            "result": "All done",
+            "duration_ms": 1000,
+        })
+        # Lines after result should never be read
+        unreachable = "THIS SHOULD NOT BE YIELDED\n"
+
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter([
+            assistant_event + "\n",
+            result_event + "\n",
+            unreachable,
+        ])
+        mock_proc.wait.return_value = 0
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            agent = ClaudeCodeAgent()
+            lines = list(agent.run("test", cwd=tmp_path))
+
+        # Should see the assistant text but not the unreachable line
+        assert "working..." in lines
+        assert "THIS SHOULD NOT BE YIELDED" not in lines
+        assert agent.final_message == "All done"
+
+    def test_proc_wait_timeout_terminates(self, tmp_path: Path) -> None:
+        """If proc.wait times out after result, terminate the process."""
+        import json
+        import subprocess
+
+        result_event = json.dumps({
+            "type": "result",
+            "result": "done",
+        })
+
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdout = iter([result_event + "\n"])
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired("claude", 10),  # first wait times out
+            0,  # wait after terminate succeeds
+        ]
+        mock_proc.terminate = MagicMock()
+
+        with patch("subprocess.Popen", return_value=mock_proc):
+            agent = ClaudeCodeAgent()
+            list(agent.run("test", cwd=tmp_path))
+
+        mock_proc.terminate.assert_called_once()
+        assert agent.final_message == "done"
