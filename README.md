@@ -1,58 +1,50 @@
 # Ralph
 
-Ralph lets you hand a feature spec to an AI coding agent and walk away. It runs the agent in a loop - writing code, running tests, checking results - and keeps going until every requirement passes or it hits a retry limit.
+Ralph is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
-The problem it solves: AI coding agents like Claude Code and Codex are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. Ralph automates that outer loop. You define the requirements up front as testable acceptance criteria, and Ralph handles the iteration, progress tracking, and guardrails.
+The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. Ralph automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work.
 
-## What a session looks like
+## What makes ralph different
 
-You start with an idea. Ralph helps you turn it into a structured spec, then drives an agent to implement it:
+Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. Ralph applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
 
 ```
-$ ralph init .                         # scaffold ralph config in your project
-$ ralph prd create                     # define what you want to build
-$ ralph run 25 --agent claude          # let the agent work for up to 25 iterations
+                        Feedforward (Phase 0)
+                        Codebase structure, conventions,
+                        dependency graph, scaffolding
+                                |
+                                v
+PRD + Prompt  ------>  [ AI Coding Agent ]  ------->  Output
+                                |
+                                v
+                        Feedback (Phases 1-3)
+                        Tests, typecheck, lint, review,
+                        contract testing
+                                |
+                          pass? |
+                         /      \
+                       yes       no
+                        |         |
+                      Done    Structured retry context
+                              with source lines, fix hints
+                                |
+                                v
+                        [ Evolution Journal ]
+                        Track patterns across runs,
+                        propose harness improvements
 ```
 
-Behind the scenes, each iteration:
-
-1. Ralph reads your requirements (a JSON file of user stories with acceptance criteria)
-2. It builds a prompt that includes the requirements, the agent's instructions, and a log of what happened in previous iterations
-3. It sends the prompt to the agent, which writes code, runs tests, and reports back
-4. Ralph checks whether the agent signaled completion and whether any file changes violated path restrictions
-5. If stories remain incomplete, it loops back to step 2 with updated context
-
-The loop exits when the agent marks all stories as passing, or when the iteration limit is reached.
-
-```mermaid
-flowchart TD
-    PRD["Requirements\n(user stories + acceptance criteria)"] --> Prompt["Build prompt\n(instructions + progress from prior iterations)"]
-    Prompt --> Agent["AI agent writes code and runs tests\n(Claude Code, Codex, or custom)"]
-    Agent --> Check{"All stories\npassing?"}
-    Check -->|No| Prompt
-    Check -->|Yes| Done["Done"]
-    Check -->|Max iterations| Done
-```
-
-## Why not just use Claude Code directly?
-
-You can, and for small tasks you should. Ralph is for when you want to:
-
-- **Define success criteria before starting** - "tests pass, types check, login form works" - and have the agent keep trying until they're met
-- **Walk away** - Ralph runs unattended. You come back to a branch with the work done (or a progress log showing what was attempted)
-- **Constrain the agent** - restrict which files it can touch, automatically revert out-of-scope changes
-- **Track progress across iterations** - each run builds on the last, with full context injection so the agent knows what it already tried
-- **Plan before building** - Ralph's interactive mode lets you have a conversation with an AI PM that stress-tests your spec before any code is written
-
-## Installation
-
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+## Quick start
 
 ```bash
-uv tool install ralph-cli
+uv tool install ralph-cli          # install (requires Python 3.11+, uv)
+cd your-project
+ralph init .                       # scaffold config and prompt templates
+ralph prd create                   # define what to build
+ralph run 25                       # let the agent work for up to 25 iterations
 ```
 
-You also need at least one AI coding agent CLI:
+You need at least one AI coding agent CLI:
 
 | Agent | Install | Models |
 |-------|---------|--------|
@@ -60,102 +52,151 @@ You also need at least one AI coding agent CLI:
 | OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | o3, o4-mini |
 | Custom | Any command that reads stdin | - |
 
-## Quick start
+## How it works
 
-### 1. Set up
+### Phase 0: Feedforward - give the agent context before it starts
 
-```bash
-cd your-project
-ralph init .
+Before the agent writes a single line, ralph computationally analyzes the codebase and injects structural context into the prompt. No LLM calls, no token cost - pure static analysis:
+
+- **Module map** - directory tree with file counts and lines of code
+- **Public interfaces** - classes and function signatures extracted via Python's `ast` module
+- **Dependency graph** - internal import relationships between modules
+- **Active conventions** - line length, quote style, type checking mode from pyproject.toml, ruff.toml, .editorconfig
+
+This reduces wasted iterations. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
+
+### Phases 1-3: Verification - check the output, not just the completion marker
+
+When the agent signals completion, ralph doesn't just trust it. Every run goes through mechanical verification:
+
+**Phase 1 - Mechanical checks** (computational, fast):
+- Test suite passes
+- Type checker passes
+- Linter passes
+- No changes outside allowed paths
+- No leaked secrets or syntax errors
+- Optional: mutation testing
+
+**Phase 2 - Second-opinion review** (inferential, LLM-based):
+- A separate agent reviews the diff against the acceptance criteria
+- Modes: `hard` (failures block), `advisory` (warn only), `skip`
+
+**Phase 3 - Contract testing** (for multi-component runs):
+- Merges component branches tier-by-tier
+- Runs integration tests at each tier
+- Bisects to identify which component broke integration
+
+When verification fails, ralph doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
+
+```
+1. src/api/auth.py:23
+   error: Argument 1 to "verify_password" has incompatible type "str | None"
+
+   21 |     password = request.form.get("password")
+   22 |     user = get_user(username)
+ > 23 |     if verify_password(password, user.password_hash):
+   24 |         return create_token(user)
+
+   FIX: Add a None check before calling verify_password, or provide a default value.
 ```
 
-This creates `ralph.toml` (configuration) and `scripts/ralph/` (prompt templates, progress log). Ralph auto-detects which agent CLIs you have installed.
+### Continuous learning - the harness improves itself
 
-### 2. Define what to build
-
-Three options depending on how fleshed out your idea is:
-
-**You have a rough idea** - talk it through with an AI PM first:
-```bash
-ralph                    # launch TUI, select "Interactive Feature"
-```
-Ralph starts a conversation where an AI reviewer asks probing questions from product, engineering, and reliability perspectives. When the spec is tight enough, it generates a structured PRD automatically.
-
-**You have a spec document** - import and convert it:
-```bash
-ralph prd import spec.md --agent claude
-```
-
-**You want to define stories manually** - use the step-by-step wizard:
-```bash
-ralph prd create
-```
-
-All three produce the same output: a `prd.json` file with user stories, acceptance criteria, priorities, and a branch name.
-
-### 3. Run
+After each factory run, ralph records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements:
 
 ```bash
-ralph run 25
+ralph evolve              # analyze recent runs, find patterns
+ralph evolve --status     # show experiment trends (retry rate over time)
 ```
 
-Ralph checks out (or creates) the branch from the PRD, then starts iterating. You'll see the agent reading files, writing code, running tests. Progress is logged between iterations so each run builds on the last.
+If the agent keeps triggering the same linter rule across components, `ralph evolve` proposes adding a convention to CLAUDE.md. If typecheck failures recur on Optional types, it proposes a mypy config change. Proposals are written as markdown files for human review.
+
+This is the meta-loop: ralph doesn't just retry - it learns what causes failures and updates its own controls to prevent them.
+
+## Factory mode - parallel multi-component execution
+
+For large features, ralph decomposes a spec into independent components and runs them in parallel:
 
 ```bash
-ralph run                  # 10 iterations (default)
-ralph run 50 --model opus  # 50 iterations with a specific model
-ralph run --interactive    # pause after each iteration for review
+ralph decompose --spec features.md --project-name myproject
+ralph factory --manifest scripts/ralph/manifest.json --max-parallel 4
 ```
 
-### 4. (Optional) Understand an unfamiliar codebase first
+Each component runs in an isolated git worktree with its own PRD. The factory orchestrator:
 
-Before building features on a codebase you don't know well:
+1. Validates the component DAG (topological sort, cycle detection)
+2. Schedules components respecting dependency order
+3. Runs each through the full Phase 0-2 pipeline
+4. Creates and merges PRs automatically
+5. Runs contract tests across merged tiers
+6. Retries failed components with accumulated context
 
-```bash
-ralph understand 10
+`ralph run` is actually factory mode with a single component. The same verification pipeline runs whether you're building one feature or twenty.
+
+## Approved fixtures - behavioral verification you control
+
+Agent-generated tests can be written to pass trivially. Approved fixtures are human-written input/output pairs that the agent's code must satisfy:
+
+```json
+{
+  "branchName": "ralph/auth",
+  "fixtures": [
+    {
+      "description": "Login returns token",
+      "fixture_type": "cli",
+      "input_data": {"command": "curl -s localhost:8000/api/login -d '{\"user\":\"test\"}'"},
+      "expected": {"exit_code": 0, "stdout_contains": ["token"]}
+    },
+    {
+      "description": "Config is importable",
+      "fixture_type": "function",
+      "input_data": {"module": "src.config", "function": "get_settings", "args": []},
+      "expected": {"returns": {"debug": false}}
+    },
+    {
+      "description": "Migration file exists",
+      "fixture_type": "file",
+      "input_data": {"path": "migrations/001_users.sql"},
+      "expected": {"exists": true, "contains": ["CREATE TABLE users"]}
+    }
+  ],
+  "userStories": [...]
+}
 ```
 
-This runs the agent in read-only mode for 10 iterations, producing `scripts/ralph/codebase_map.md` - an evidence-based document about the architecture, patterns, and conventions. The agent reads but does not modify source files.
+Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content). Fixtures run during Phase 1 alongside tests and typecheck. Snapshot regression detects when a previously-passing fixture breaks.
 
-## Features
+## Why not just use Claude Code directly?
 
-- **Autonomous iteration** - runs the agent in a loop until acceptance criteria pass, with progress context injected between iterations
-- **Interactive feature planning** - AI PM conversation that stress-tests your spec before generating a PRD
-- **Codebase understanding** - read-only mode that maps architecture before you start building
-- **Guard rails** - path restrictions auto-revert out-of-scope changes; infrastructure files are protected; 3 consecutive errors trigger bail-out
-- **Git integration** - auto branch creation/checkout, change tracking, per-iteration reversion of disallowed files
-- **Multi-agent** - Claude Code (streaming with classified output), OpenAI Codex, or any stdin/stdout command
-- **Terminal UI** - live dashboard with agent output and story progress, PRD wizard, config editor, status view
-- **Headless CLI** - every TUI feature available as a command for scripting and CI
+You can, and for small tasks you should. Ralph is for when you want to:
 
-## Terminal UI
-
-```bash
-ralph                    # launch TUI
-```
-
-| Screen | What it does |
-|--------|-------------|
-| Run dashboard | Live agent output alongside story progress table. `p` pause, `s` stop |
-| Interactive feature | Chat with an AI PM to refine your spec and generate a PRD |
-| PRD wizard | Step-by-step story creation form |
-| Config | Visual editor for ralph.toml |
-| Status | Project overview with story table |
+- **Define success criteria before starting** - acceptance criteria, golden fixtures, path restrictions - not just "make it work"
+- **Walk away** - Ralph runs unattended with structured verification, not just a completion marker
+- **Give the agent context** - feedforward injection means fewer wasted iterations discovering the codebase
+- **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
+- **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
+- **Improve over time** - the evolution journal tracks patterns so the same mistakes don't keep recurring
+- **Plan before building** - interactive mode stress-tests your spec with an AI PM before any code is written
 
 ## CLI reference
 
 ```
-ralph                     Launch TUI
-ralph init [DIR]          Set up Ralph in a project
-ralph run [N]             Run the agent loop (N = max iterations, default 10)
-ralph understand [N]      Run read-only codebase mapping
-ralph prd create          PRD creation wizard
-ralph prd import FILE     Generate PRD from a spec document
-ralph prd validate        Check prd.json schema
-ralph prd status          Story summary table
-ralph config show         Print current config
-ralph config init         Create ralph.toml with defaults
-ralph status              Project overview
+ralph                         Launch TUI
+ralph init [DIR]              Set up Ralph in a project
+ralph run [N]                 Run with verification (factory pipeline)
+ralph run [N] --no-verify     Run without verification (faster, less safe)
+ralph run [N] --legacy        Run with old direct loop (no factory)
+ralph understand [N]          Run read-only codebase mapping
+ralph feature                 Two-phase: understand then implement
+ralph decompose --spec FILE   Decompose spec into component DAG
+ralph factory                 Run multi-component factory
+ralph evolve                  Analyze runs, propose harness improvements
+ralph evolve --status         Show experiment trends
+ralph prd create              PRD creation wizard
+ralph prd import FILE         Generate PRD from a spec document
+ralph prd validate            Check prd.json schema
+ralph config show             Print current config
+ralph status                  Project overview
 ```
 
 ## Configuration
@@ -164,9 +205,9 @@ Ralph uses `ralph.toml` at the project root:
 
 ```toml
 [agent]
-type = "claude"           # "claude", "codex", or "custom"
-model = ""                # model override (empty = agent default)
-command = ""              # shell command for custom agents
+type = "claude"               # "claude", "codex", or "custom"
+model = ""                    # model override
+command = ""                  # shell command for custom agents
 
 [run]
 max_iterations = 10
@@ -174,16 +215,46 @@ sleep_seconds = 2
 interactive = false
 
 [paths]
-allowed = []              # restrict which files the agent can change
+allowed = []                  # restrict which files the agent can change
 
 [git]
-branch = ""               # override branch (empty = use PRD branch name)
+branch = ""                   # override branch (empty = use PRD)
 auto_checkout = true
+
+# Feedforward controls (Phase 0)
+[feedforward]
+enabled = true
+module_map = true             # directory tree with LOC counts
+public_interfaces = true      # extract public symbols via ast
+dependency_graph = true       # internal import analysis
+conventions = true            # extract from pyproject.toml, ruff.toml, etc.
+max_context_tokens = 4000     # cap to avoid prompt bloat
+
+# Sensor output optimization
+[sensors]
+parse_output = true           # structured parsing of test/lint output
+include_source_context = true # include source lines around failures
+max_failures_per_check = 10   # cap failures per check in retry context
+
+# Continuous learning
+[evolution]
+enabled = true
+journal_path = ".ralph/evolution.jsonl"
+experiments_path = ".ralph/experiments.tsv"
+min_pattern_frequency = 2     # pattern must recur N times before proposal
+lookback_runs = 10            # how many past runs to analyze
+auto_propose = true           # generate proposals after each factory run
+
+# Approved fixtures
+[fixtures]
+enabled = false               # opt-in
+snapshot_on_success = true    # auto-snapshot outputs after verification pass
+snapshot_dir = ".ralph/snapshots"
 ```
 
 Environment variables override ralph.toml: `AGENT_CMD`, `MODEL`, `INTERACTIVE`, `SLEEP_SECONDS`, `ALLOWED_PATHS`, `RALPH_BRANCH`.
 
-## How the PRD works
+## The PRD
 
 The PRD (`prd.json`) is a list of user stories with testable acceptance criteria:
 
@@ -207,113 +278,70 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 }
 ```
 
-The agent updates `passes` and `notes` as it works. Ralph reads these between iterations to decide whether to continue or stop. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify.
+The agent updates `passes` and `notes` as it works. Ralph reads these between iterations to decide whether to continue. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify.
+
+Optionally, add a `fixtures` array for behavioral verification (see [Approved fixtures](#approved-fixtures---behavioral-verification-you-control)).
 
 ## Architecture
 
-### System overview
-
 ```mermaid
 flowchart TB
-    subgraph Interface["Interface layer"]
-        CLI["cli.py\nClick commands\n+ RichCallbacks"]
-        TUI["tui/app.py\nTextual app"]
-        subgraph TUI_Screens["TUI screens"]
-            Dashboard["Run dashboard\nDashboardCallbacks"]
-            FeatureConv["Feature conversation"]
-            PRDWiz["PRD wizard"]
-            ConfigScr["Config editor"]
-        end
-        TUI --> TUI_Screens
+    subgraph Input
+        Spec["Feature spec / PRD"]
+        Fixtures["Approved fixtures"]
     end
 
-    subgraph Core["Core engine"]
-        Loop["loop.py\nrun_loop()"]
-        Agent["agent.py\nAgent abstraction"]
-        Conv["conversation.py\nInteractive planning"]
+    subgraph Phase0["Phase 0: Feedforward"]
+        ModMap["Module map"]
+        Interfaces["Public interfaces"]
+        DepGraph["Dependency graph"]
+        Conventions["Conventions"]
     end
 
-    subgraph Data["Data and state"]
-        Config["config.py\nralph.toml + env vars"]
-        PRD["prd.py\nSchema + validation"]
-        Git["git_ops.py\nBranch + path enforcement"]
-        Models["models.py\nAgent registry + detection"]
-        Templates["templates/\nPrompt templates"]
+    subgraph Execution["Agent execution"]
+        Loop["Agentic loop\n(iterate until COMPLETE)"]
     end
 
-    subgraph External["External"]
-        Claude["Claude Code CLI"]
-        Codex["Codex CLI"]
-        Custom["Custom command"]
-        Repo["Git repository"]
+    subgraph Phase1["Phase 1: Mechanical verification"]
+        Tests["Test suite"]
+        Types["Type checker"]
+        Lint["Linter"]
+        Scope["Diff scope check"]
+        Patterns["Bad pattern scan"]
+        FixtureCheck["Fixture checks"]
     end
 
-    CLI -->|LoopCallbacks protocol| Loop
-    Dashboard -->|LoopCallbacks protocol| Loop
+    subgraph Phase2["Phase 2: Review"]
+        Review["Second-opinion agent\nreviews diff against spec"]
+    end
 
-    Loop --> Agent
-    Loop --> PRD
-    Loop --> Git
-    Loop --> Config
-    Loop --> Templates
+    subgraph Phase3["Phase 3: Contract testing"]
+        Contract["Tier-by-tier merge\n+ integration tests"]
+    end
 
-    FeatureConv --> Conv
-    Conv --> Agent
+    subgraph Learning["Continuous learning"]
+        Journal["Evolution journal"]
+        Experiments["Experiment tracker"]
+        Proposals["Harness proposals"]
+    end
 
-    Agent --> Models
-    Agent --> Claude
-    Agent --> Codex
-    Agent --> Custom
-
-    Git --> Repo
-
-    Models -.->|auto-detect| Claude
-    Models -.->|auto-detect| Codex
+    Spec --> Phase0
+    Fixtures --> FixtureCheck
+    Phase0 --> Loop
+    Loop --> Phase1
+    Phase1 -->|pass| Phase2
+    Phase1 -->|fail| Loop
+    Phase2 -->|pass| Phase3
+    Phase2 -->|fail| Loop
+    Phase3 -->|pass| Done["Done"]
+    Phase3 -->|fail| Loop
+    Phase1 --> Journal
+    Phase2 --> Journal
+    Journal --> Experiments
+    Experiments --> Proposals
 ```
 
-### Iteration lifecycle
-
-This is what happens inside `run_loop()` on each iteration:
-
-```mermaid
-flowchart TD
-    subgraph Init["Initialization (once)"]
-        A1["load_config()\ntoml + env vars + CLI flags"] --> A2["load_prd()"]
-        A2 --> A3["checkout_branch(prd.branch_name)"]
-        A3 --> A4["on_loop_start(config, prd)"]
-    end
-
-    subgraph Iteration["Iteration (repeats up to N times)"]
-        B1["on_iteration_start(i, max)"] --> B2["run_agent_async()\nBuild prompt with progress context"]
-        B2 --> B3["Spawn agent subprocess\nStream AgentOutput lines"]
-        B3 --> B4["on_agent_line(output)\nfor each streamed line"]
-        B4 --> B5["detect_completion()\nCheck for COMPLETE marker"]
-        B5 --> B6{"Guard rails\nenabled?"}
-        B6 -->|Yes| B7["find_disallowed_files()\nrevert_files()\non_guard_violation()"]
-        B6 -->|No| B8["on_iteration_end(i, elapsed)"]
-        B7 --> B8
-    end
-
-    subgraph Exit["Exit conditions"]
-        C1["All stories pass"] --> C4["on_complete(success)"]
-        C2["Max iterations reached"] --> C4
-        C3["3 consecutive errors"] --> C4
-    end
-
-    A4 --> B1
-    B8 --> C1
-    B8 -->|"Stories incomplete"| B1
-```
-
-### Key design decisions
-
-**Callback protocol**: The loop (`loop.py`) knows nothing about how output is displayed. It fires events via `LoopCallbacks` - a protocol that both the CLI (`RichCallbacks`) and TUI (`DashboardCallbacks`) implement. This means the same loop drives headless CLI runs and the live TUI dashboard.
-
-**Agent abstraction**: `agent.py` dispatches to three implementations: Claude (stream-json parsing with deduplication), Codex (line-by-line transcript parsing), or a generic stdin/stdout command. All three yield the same `AgentOutput(line, role)` stream.
-
-**Progress injection**: Between iterations, `agent.py` reads the last 5 entries from `progress.txt` and appends them to the prompt as handoff context. This gives the agent memory of what it already tried.
-
-**Guard rails**: After each iteration, `git_ops.py` checks all changed files against `paths.allowed`. Files outside the allowed set are automatically reverted (tracked files restored, untracked files deleted). Ralph's own infrastructure files are always protected.
+For multi-component factory runs, each component goes through this pipeline independently in parallel git worktrees, with contract testing merging them tier-by-tier after individual verification.
 
 ## Development
 
@@ -322,7 +350,7 @@ git clone https://github.com/0xfauzi/ralph-loop.git
 cd ralph-loop
 uv sync
 uv tool install -e .
-uv run pytest
+uv run pytest                  # 333 tests
 ```
 
 ## License

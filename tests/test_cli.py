@@ -94,6 +94,7 @@ class TestCliValidation:
                 "printf '<promise>COMPLETE</promise>\\n'",
                 "--sleep",
                 "0",
+                "--legacy",
             ],
             env={
                 "PROMPT_FILE": str(ralph_dir / "prompt.md"),

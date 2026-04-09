@@ -12,6 +12,14 @@ from pathlib import Path
 
 from ralph_py import git
 from ralph_py.guards import path_is_allowed
+from ralph_py.parsers import (
+    ParsedOutput,
+    add_source_context,
+    generate_fix_hint,
+    parse_mypy_output,
+    parse_pytest_output,
+    parse_ruff_output,
+)
 from ralph_py.prd import PRD
 
 
@@ -24,6 +32,7 @@ class CheckResult:
     message: str = ""
     details: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
+    parsed: ParsedOutput | None = None
 
 
 @dataclass
@@ -141,13 +150,18 @@ def check_test_suite(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        last_lines = output.splitlines()[-50:] if output else []
+        parsed = parse_pytest_output(output)
+        for failure in parsed.failures:
+            add_source_context(failure, cwd)
+            if not failure.fix_hint:
+                failure.fix_hint = generate_fix_hint(failure)
         return CheckResult(
             name="test_suite",
             passed=False,
             message=f"Tests failed (exit code {result.returncode})",
-            details=last_lines,
+            details=parsed.format_for_prompt(),
             duration_seconds=time.monotonic() - start,
+            parsed=parsed,
         )
 
     return CheckResult(
@@ -180,13 +194,18 @@ def check_typecheck(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        last_lines = output.splitlines()[-30:] if output else []
+        parsed = parse_mypy_output(output)
+        for failure in parsed.failures:
+            add_source_context(failure, cwd)
+            if not failure.fix_hint:
+                failure.fix_hint = generate_fix_hint(failure)
         return CheckResult(
             name="typecheck",
             passed=False,
             message=f"Typecheck failed (exit code {result.returncode})",
-            details=last_lines,
+            details=parsed.format_for_prompt(),
             duration_seconds=time.monotonic() - start,
+            parsed=parsed,
         )
 
     return CheckResult(
@@ -219,13 +238,18 @@ def check_linter(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        last_lines = output.splitlines()[-30:] if output else []
+        parsed = parse_ruff_output(output)
+        for failure in parsed.failures:
+            add_source_context(failure, cwd)
+            if not failure.fix_hint:
+                failure.fix_hint = generate_fix_hint(failure)
         return CheckResult(
             name="linter",
             passed=False,
             message=f"Linter failed (exit code {result.returncode})",
-            details=last_lines,
+            details=parsed.format_for_prompt(),
             duration_seconds=time.monotonic() - start,
+            parsed=parsed,
         )
 
     return CheckResult(

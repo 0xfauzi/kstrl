@@ -47,6 +47,8 @@ class Component:
     verification_passed: bool | None = None
     review_passed: bool | None = None
     review_findings: str = ""
+    # Optional scaffold script to run before the agent
+    scaffold: str = ""
 
 
 @dataclass
@@ -59,6 +61,49 @@ class Manifest:
     base_branch: str
     single_pr: bool
     components: list[Component] = field(default_factory=list)
+
+    @classmethod
+    def from_prd(
+        cls,
+        prd_path: Path,
+        branch: str,
+        project_name: str = "",
+        base_branch: str = "main",
+    ) -> Manifest:
+        """Create a single-component manifest from an existing PRD.
+
+        Used by ``ralph run`` to delegate to the factory pipeline.
+        If *project_name* is not given, it is derived from the branch name
+        (e.g. ``ralph/auth`` becomes ``auth``) or the PRD file stem.
+        """
+        rel_prd = str(prd_path)
+
+        # Derive a meaningful project name when not provided
+        if not project_name:
+            if branch:
+                # "ralph/auth-service" -> "auth-service"
+                project_name = branch.rsplit("/", 1)[-1]
+            else:
+                project_name = prd_path.stem or "run"
+
+        comp = Component(
+            id="main",
+            title=project_name,
+            description="Single-component run via ralph run",
+            dependencies=[],
+            prd_path=rel_prd,
+            branch_name=branch or f"ralph/{project_name}",
+            status=ComponentStatus.PENDING.value,
+        )
+
+        return cls(
+            version="1",
+            spec_file="",
+            project_name=project_name,
+            base_branch=base_branch,
+            single_pr=False,
+            components=[comp],
+        )
 
     @classmethod
     def load(cls, path: Path) -> Manifest:
@@ -90,6 +135,7 @@ class Manifest:
                 verification_passed=c.get("verificationPassed"),
                 review_passed=c.get("reviewPassed"),
                 review_findings=c.get("reviewFindings", ""),
+                scaffold=c.get("scaffold", ""),
             )
             for c in data["components"]
         ]
@@ -131,6 +177,7 @@ class Manifest:
                     "verificationPassed": c.verification_passed,
                     "reviewPassed": c.review_passed,
                     "reviewFindings": c.review_findings,
+                    "scaffold": c.scaffold,
                 }
                 for c in self.components
             ],
@@ -198,6 +245,7 @@ class Manifest:
             "status", "error", "retries", "prNumber", "prUrl",
             "startedAt", "completedAt", "durationSeconds", "iterationCount",
             "verificationPassed", "reviewPassed", "reviewFindings",
+            "scaffold",
         }
         component_all = component_required | component_optional
 
