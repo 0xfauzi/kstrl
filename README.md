@@ -8,30 +8,20 @@ The problem it solves: AI coding agents are powerful, but they work on a single 
 
 Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. Ralph applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
 
-```
-                        Feedforward (Phase 0)
-                        Codebase structure, conventions,
-                        dependency graph, scaffolding
-                                |
-                                v
-PRD + Prompt  ------>  [ AI Coding Agent ]  ------->  Output
-                                |
-                                v
-                        Feedback (Phases 1-3)
-                        Tests, typecheck, lint, review,
-                        contract testing
-                                |
-                          pass? |
-                         /      \
-                       yes       no
-                        |         |
-                      Done    Structured retry context
-                              with source lines, fix hints
-                                |
-                                v
-                        [ Evolution Journal ]
-                        Track patterns across runs,
-                        propose harness improvements
+```mermaid
+flowchart TD
+    PRD["PRD + Prompt"] --> FF["Phase 0: Feedforward\nModule map, interfaces,\ndependency graph, conventions"]
+    FF --> Agent["AI Coding Agent\nClaude Code, Codex, or custom"]
+    Agent --> P1["Phase 1: Mechanical verification\nTests, typecheck, lint,\nscope, secrets, fixtures"]
+    P1 -->|fail| Retry["Structured retry context\nSource lines + fix hints"]
+    Retry --> Agent
+    P1 -->|pass| P2["Phase 2: Second-opinion review\nSeparate agent reviews diff\nagainst acceptance criteria"]
+    P2 -->|fail| Retry
+    P2 -->|pass| P3["Phase 3: Contract testing\nTier-by-tier merge +\nintegration tests"]
+    P3 -->|fail| Retry
+    P3 -->|pass| Done["Done"]
+    P1 --> Journal["Evolution Journal\nTrack patterns across runs,\npropose harness improvements"]
+    P2 --> Journal
 ```
 
 ## Quick start
@@ -102,7 +92,17 @@ When verification fails, ralph doesn't dump raw stderr into the retry prompt. It
 
 ### Continuous learning - the harness improves itself
 
-After each factory run, ralph records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements:
+After each factory run, ralph records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements.
+
+```mermaid
+flowchart LR
+    Run1["Factory run N"] --> Record["Record outcomes\n.ralph/evolution.jsonl\n.ralph/experiments.tsv"]
+    Record --> Extract["Extract patterns\nGroup by error signature"]
+    Extract --> Propose["Generate proposals\n.ralph/proposals/*.md"]
+    Propose --> Review["Human review"]
+    Review -->|approve| Apply["Update CLAUDE.md,\npyproject.toml,\nfeedforward config"]
+    Apply --> Run2["Factory run N+1\nBenefits from\nimproved harness"]
+```
 
 ```bash
 ralph evolve              # analyze recent runs, find patterns
@@ -122,16 +122,35 @@ ralph decompose --spec features.md --project-name myproject
 ralph factory --manifest scripts/ralph/manifest.json --max-parallel 4
 ```
 
-Each component runs in an isolated git worktree with its own PRD. The factory orchestrator:
+Each component runs in an isolated git worktree with its own PRD. `ralph run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
-1. Validates the component DAG (topological sort, cycle detection)
-2. Schedules components respecting dependency order
-3. Runs each through the full Phase 0-2 pipeline
-4. Creates and merges PRs automatically
-5. Runs contract tests across merged tiers
-6. Retries failed components with accumulated context
+```mermaid
+flowchart TD
+    Spec["Markdown spec"] --> Decompose["ralph decompose\nLLM-driven spec decomposition"]
+    Decompose --> Manifest["Manifest\nComponent DAG with dependencies"]
+    Manifest --> Validate["Validate DAG\nTopological sort, cycle detection"]
+    Validate --> Schedule["Schedule components\nRespect dependency order"]
 
-`ralph run` is actually factory mode with a single component. The same verification pipeline runs whether you're building one feature or twenty.
+    Schedule --> WT1["Worktree A\nComponent A"]
+    Schedule --> WT2["Worktree B\nComponent B"]
+    Schedule --> WT3["Worktree C\nComponent C"]
+
+    WT1 --> V1["Phase 0-2\nFeedforward + verify + review"]
+    WT2 --> V2["Phase 0-2\nFeedforward + verify + review"]
+    WT3 --> V3["Phase 0-2\nFeedforward + verify + review"]
+
+    V1 --> PR1["PR + merge"]
+    V2 --> PR2["PR + merge"]
+    V3 --> PR3["PR + merge"]
+
+    PR1 --> Contract["Phase 3: Contract testing\nTier-by-tier merge + integration tests"]
+    PR2 --> Contract
+    PR3 --> Contract
+
+    Contract -->|pass| Done["Done"]
+    Contract -->|fail| Bisect["Bisect breaker\nIdentify which component\nbroke integration"]
+    Bisect --> Schedule
+```
 
 ## Approved fixtures - behavioral verification you control
 
@@ -284,6 +303,40 @@ Optionally, add a `fixtures` array for behavioral verification (see [Approved fi
 
 ## Architecture
 
+### Iteration lifecycle
+
+This is what happens inside each component's execution loop:
+
+```mermaid
+flowchart TD
+    subgraph Init["Initialization"]
+        A1["Load config\ntoml + env vars + CLI flags"] --> A2["Load PRD"]
+        A2 --> A3["Checkout branch"]
+        A3 --> A4["Run scaffold\n(if configured)"]
+        A4 --> A5["Build feedforward context\nModule map, interfaces,\ndependency graph, conventions"]
+    end
+
+    subgraph Iteration["Iteration (repeats up to N times)"]
+        B1["Build prompt\nfeedforward + retry context + instructions"] --> B2["Run agent\nStream output line by line"]
+        B2 --> B3{"COMPLETE\nmarker?"}
+        B3 -->|No| B4["Enforce allowed paths\nRevert out-of-scope changes"]
+        B4 --> B1
+        B3 -->|Yes| B5["Phase 1: Mechanical verification\nTests, typecheck, lint, fixtures"]
+    end
+
+    subgraph Verify["Verification"]
+        B5 -->|fail| B6["Parse failures\nSource context + fix hints"]
+        B6 --> B1
+        B5 -->|pass| B7["Phase 2: Review\nSecond-opinion agent"]
+        B7 -->|fail| B6
+        B7 -->|pass| B8["Complete"]
+    end
+
+    A5 --> B1
+```
+
+### System overview
+
 ```mermaid
 flowchart TB
     subgraph Input
@@ -350,7 +403,7 @@ git clone https://github.com/0xfauzi/ralph-loop.git
 cd ralph-loop
 uv sync
 uv tool install -e .
-uv run pytest                  # 333 tests
+uv run pytest                  # 362 tests
 ```
 
 ## License
