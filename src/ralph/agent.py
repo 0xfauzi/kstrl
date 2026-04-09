@@ -283,8 +283,16 @@ async def run_agent_async(
     If progress_path is provided and the file exists, its contents are
     appended to the prompt as inter-iteration handoff context.
     """
-    # Read the prompt file
-    prompt_content = prompt_path.read_text(encoding="utf-8")
+    # Read the prompt file and apply template substitution.
+    # The prompt template can use $prd_path to reference the PRD file,
+    # which varies per component in factory mode.
+    from string import Template
+    raw_prompt = prompt_path.read_text(encoding="utf-8")
+    prompt_content = Template(raw_prompt).safe_substitute(
+        prd_path=str(prompt_path.parent / "prd.json"),
+        progress_path=str(prompt_path.parent / "progress.txt"),
+        codebase_map_path=str(prompt_path.parent / "codebase_map.md"),
+    )
 
     # Inject handoff context from progress.txt (last N entries only)
     if progress_path and progress_path.exists():

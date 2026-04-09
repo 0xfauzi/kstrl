@@ -76,8 +76,16 @@ def run_loop(
         ui.err(f"Prompt file not found: {config.prompt_file}")
         return LoopResult(completed=False, iterations=0, exit_code=1)
 
-    # Read prompt
-    prompt = config.prompt_file.read_text()
+    # Read prompt and apply template substitution.
+    # The prompt template can use $prd_path, $progress_path, and $codebase_map_path
+    # to reference file paths that may vary per component in factory mode.
+    from string import Template
+    raw_prompt = config.prompt_file.read_text()
+    prompt = Template(raw_prompt).safe_substitute(
+        prd_path=str(config.prd_file),
+        progress_path=str(config.progress_file) if hasattr(config, "progress_file") else "scripts/ralph/progress.txt",
+        codebase_map_path="scripts/ralph/codebase_map.md",
+    )
 
     # Prepend CLAUDE.md project context if it exists in the working directory
     claude_md_path = cwd / "CLAUDE.md"
