@@ -177,6 +177,16 @@ def cli() -> None:
     is_flag=True,
     help="Use ASCII characters only",
 )
+@click.option(
+    "--no-verify",
+    is_flag=True,
+    help="Skip mechanical verification (raw loop, no post-checks)",
+)
+@click.option(
+    "--legacy",
+    is_flag=True,
+    help="Use legacy direct loop (bypass factory pipeline)",
+)
 def run(
     max_iterations: int,
     root: Path | None,
@@ -192,10 +202,15 @@ def run(
     ui: str,
     no_color: bool,
     ascii: bool,
+    no_verify: bool,
+    legacy: bool,
 ) -> None:
     """Run the agentic loop.
 
     MAX_ITERATIONS is the maximum number of iterations (default: 10).
+
+    By default, delegates to the factory pipeline with mechanical verification.
+    Use --no-verify to skip verification or --legacy for the old direct loop.
     """
     ctx = click.get_current_context()
     env_prompt = os.environ.get("PROMPT_FILE")
@@ -272,12 +287,74 @@ def run(
         ui_impl.info("Install codex or use --agent-cmd to specify a custom agent")
         sys.exit(1)
 
-    # Get UI and agent
-    agent = get_agent(config.agent_cmd, config.model, config.model_reasoning_effort)
+    # Legacy mode: use direct loop (old behavior)
+    if legacy:
+        agent = get_agent(config.agent_cmd, config.model, config.model_reasoning_effort)
+        result = run_loop(config, ui_impl, agent, root_dir)
+        sys.exit(result.exit_code)
 
-    # Run loop
-    result = run_loop(config, ui_impl, agent, root_dir)
-    sys.exit(result.exit_code)
+    # Default: delegate to factory pipeline as single-component run
+    from ralph_py.feedforward import FeedforwardConfig
+    from ralph_py.manifest import Manifest
+    from ralph_py.verify import VerifyConfig
+
+    # Determine branch from config or PRD
+    prd_branch = ""
+    if config.prd_file.exists():
+        try:
+            from ralph_py.prd import PRD as PRDLoader
+            prd_doc = PRDLoader.load(config.prd_file)
+            prd_branch = prd_doc.branch_name
+        except Exception:
+            pass
+
+    effective_branch = config.ralph_branch or prd_branch or "ralph/run"
+
+    # Detect base branch from git
+    detected_base = "main"
+    try:
+        import subprocess as _sp
+        head_ref = _sp.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            cwd=root_dir, capture_output=True, text=True, timeout=5,
+        )
+        if head_ref.returncode == 0:
+            # "refs/remotes/origin/main" -> "main"
+            detected_base = head_ref.stdout.strip().rsplit("/", 1)[-1]
+    except Exception:
+        pass
+
+    # Build single-component manifest from PRD
+    rel_prd = str(config.prd_file)
+    try:
+        rel_prd = str(config.prd_file.relative_to(root_dir))
+    except ValueError:
+        pass
+
+    manifest = Manifest.from_prd(
+        prd_path=Path(rel_prd),
+        branch=effective_branch,
+        base_branch=detected_base,
+    )
+
+    # Build factory config for single-component mode
+    v_config = None if no_verify else VerifyConfig()
+    ff_config = FeedforwardConfig() if not no_verify else None
+
+    factory_cfg = FactoryConfig(
+        max_parallel=1,
+        max_retries=3,
+        use_worktrees=False,
+        single_pr=False,
+        create_prs=False,
+        verify_config=v_config,
+        review_mode="advisory",
+        contract_config=None,
+        feedforward_config=ff_config,
+    )
+
+    factory_result = run_factory(manifest, factory_cfg, config, ui_impl, root_dir)
+    sys.exit(factory_result.exit_code)
 
 
 @cli.command()
@@ -1343,6 +1420,120 @@ def factory(
 
     result = run_factory(manifest, factory_config, base_config, ui_impl, root_dir)
     sys.exit(result.exit_code)
+
+
+@cli.command()
+@click.option(
+    "--apply",
+    "apply_id",
+    type=str,
+    default=None,
+    help="Apply a specific proposal (e.g. PROP-001) or 'all' for all proposals",
+)
+@click.option(
+    "--status",
+    "show_status",
+    is_flag=True,
+    help="Show experiment trends",
+)
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def evolve(
+    apply_id: str | None,
+    show_status: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Analyze factory runs and propose harness improvements.
+
+    Without arguments, analyzes recent runs and shows proposals.
+    Use --status to see experiment trends.
+    Use --apply to apply proposals.
+    """
+    from ralph_py.evolution import EvolutionConfig, EvolutionJournal
+
+    root_dir = root.resolve() if root else Path.cwd()
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    evo_config = EvolutionConfig()
+
+    if not evo_config.enabled:
+        ui_impl.err("Evolution is disabled in config")
+        sys.exit(1)
+
+    journal = EvolutionJournal(evo_config)
+
+    if show_status:
+        ui_impl.section("Experiment Trends")
+        trends = journal.get_experiment_trends(last_n=10)
+        if not trends:
+            ui_impl.info("No experiments recorded yet. Run `ralph factory` first.")
+            sys.exit(0)
+
+        for entry in trends:
+            ui_impl.info(
+                f"  {entry.get('run_id', '?')} | "
+                f"completed={entry.get('completed', '?')} "
+                f"failed={entry.get('failed', '?')} "
+                f"retry_rate={entry.get('retry_rate', '?')}"
+            )
+        sys.exit(0)
+
+    if apply_id:
+        proposals_dir = root_dir / ".ralph" / "proposals"
+        if not proposals_dir.exists():
+            ui_impl.err("No proposals found. Run `ralph evolve` first.")
+            sys.exit(1)
+
+        ui_impl.info(f"Applying proposal: {apply_id}")
+        ui_impl.warn("Proposal application is not yet automated. Review proposals in .ralph/proposals/ and apply manually.")
+        sys.exit(0)
+
+    # Default: analyze and propose
+    ui_impl.section("Evolution: Analyzing Runs")
+    patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
+
+    if not patterns:
+        ui_impl.info("No recurring failure patterns found across recent runs.")
+        ui_impl.info("Run more factory sessions to accumulate data.")
+        sys.exit(0)
+
+    ui_impl.ok(f"Found {len(patterns)} recurring patterns")
+    for pattern in patterns:
+        ui_impl.info(
+            f"  [{pattern.check_name}] {pattern.description} "
+            f"(seen in {pattern.frequency} components)"
+        )
+
+    proposals = journal.propose_improvements(patterns)
+    if proposals:
+        proposals_dir = root_dir / ".ralph" / "proposals"
+        paths = journal.save_proposals(proposals, proposals_dir)
+        ui_impl.section("Proposals Generated")
+        for path in paths:
+            ui_impl.info(f"  {path}")
+        ui_impl.info("")
+        ui_impl.info("Review proposals and apply with `ralph evolve --apply <ID>`")
+    else:
+        ui_impl.info("No actionable proposals generated from current patterns.")
+
+    sys.exit(0)
 
 
 def main() -> None:

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
 from ralph_py.contract import ContractConfig, ContractMode, run_contract_testing
+from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
@@ -43,6 +44,8 @@ class FactoryConfig:
     review_model: str | None = None
     # Phase 3: contract testing
     contract_config: ContractConfig | None = None
+    # Phase 0: feedforward
+    feedforward_config: FeedforwardConfig | None = None
     # Observability
     progress_log_path: Path | None = None
 
@@ -136,6 +139,9 @@ def _run_component(
     agent_type: str | None,
     sleep_seconds: float,
     previous_context_json: str | None = None,
+    feedforward_config_dict: dict | None = None,
+    scaffold_cmd: str | None = None,
+    component_deps: list[str] | None = None,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -168,27 +174,62 @@ def _run_component(
 
     # Copy CLAUDE.md into worktree. AGENTS.md is a symlink to CLAUDE.md,
     # so copying CLAUDE.md and recreating the symlink gives the agent both.
-    repo_root = worktree_path.parent.parent.parent  # .ralph/worktrees/<id> -> root
+    # When use_worktrees=False, worktree_path IS the repo root so CLAUDE.md
+    # is already in place - the .exists() guards handle this correctly.
+    worktree_base = worktree_path / ".ralph" / "worktrees"
+    if worktree_base.exists() and worktree_path.name != worktree_path.parent.name:
+        # This is a real worktree: .ralph/worktrees/<id> -> root is 3 levels up
+        repo_root = worktree_path.parent.parent.parent
+    else:
+        # No worktree (use_worktrees=False) - worktree_path is the repo root
+        repo_root = worktree_path
     claude_dest = worktree_path / "CLAUDE.md"
     if not claude_dest.exists():
         claude_src = repo_root / "CLAUDE.md"
         if claude_src.exists():
-            # Resolve symlinks to get actual content
             claude_dest.write_text(claude_src.read_text())
     agents_dest = worktree_path / "AGENTS.md"
     if not agents_dest.exists() and claude_dest.exists():
         agents_dest.symlink_to("CLAUDE.md")
 
+    # Run scaffold script if configured
+    if scaffold_cmd:
+        try:
+            subprocess.run(
+                scaffold_cmd, shell=True, cwd=worktree_path,
+                capture_output=True, timeout=120,
+            )
+        except Exception:
+            pass  # scaffold failure is non-fatal
+
+    # Build feedforward context (Phase 0)
+    feedforward_prefix: str = ""
+    if feedforward_config_dict:
+        try:
+            ff_config = FeedforwardConfig(**feedforward_config_dict)
+            feedforward_prefix = build_feedforward_context(
+                worktree_path, ff_config,
+                component_id=component_id,
+                component_deps=component_deps,
+            )
+        except Exception:
+            pass  # feedforward failure is non-fatal
+
     # Build context prefix from previous retries
     context_prefix: str | None = None
+    parts: list[str] = []
+    if feedforward_prefix:
+        parts.append(feedforward_prefix)
     if previous_context_json:
         ctx = IterationContext.from_json(previous_context_json)
         formatted = ctx.format_for_prompt()
         if formatted.strip():
-            context_prefix = formatted
+            parts.append(formatted)
+    if parts:
+        context_prefix = "\n\n".join(parts)
 
     config = RalphConfig(
-        max_iterations=15,
+        max_iterations=30,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
         sleep_seconds=sleep_seconds,
@@ -295,7 +336,18 @@ def run_factory(
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
 
     if base_config.prompt_file.is_absolute():
-        prompt_file_rel = base_config.prompt_file.relative_to(root_dir).as_posix()
+        try:
+            prompt_file_rel = base_config.prompt_file.relative_to(root_dir).as_posix()
+        except ValueError:
+            # Symlink or mount differences - try with resolved paths
+            try:
+                prompt_file_rel = (
+                    base_config.prompt_file.resolve()
+                    .relative_to(root_dir.resolve())
+                    .as_posix()
+                )
+            except ValueError:
+                prompt_file_rel = str(base_config.prompt_file)
     else:
         prompt_file_rel = str(base_config.prompt_file)
 
@@ -482,6 +534,19 @@ def run_factory(
             manifest.save(manifest_path)
             return None
 
+    # Build feedforward config dict for serialization to worker processes
+    ff_config_dict: dict | None = None
+    if factory_config.feedforward_config and factory_config.feedforward_config.enabled:
+        fc = factory_config.feedforward_config
+        ff_config_dict = {
+            "enabled": fc.enabled,
+            "module_map": fc.module_map,
+            "public_interfaces": fc.public_interfaces,
+            "dependency_graph": fc.dependency_graph,
+            "conventions": fc.conventions,
+            "max_context_tokens": fc.max_context_tokens,
+        }
+
     def _submit_args(comp: Component, wt_path: Path) -> tuple:
         ctx_json = component_contexts.get(comp.id)
         return (
@@ -489,6 +554,9 @@ def run_factory(
             prompt_file_rel, base_config.agent_cmd, base_config.model,
             base_config.model_reasoning_effort, base_config.agent_type,
             base_config.sleep_seconds, ctx_json,
+            ff_config_dict,
+            comp.scaffold or None,
+            comp.dependencies or None,
         )
 
     # Main scheduling loop
@@ -640,5 +708,17 @@ def run_factory(
         factory_result.exit_code = 1
     elif factory_result.skipped and not factory_result.completed:
         factory_result.exit_code = 1
+
+    # Record run to evolution journal
+    try:
+        from ralph_py.evolution import EvolutionConfig, EvolutionJournal
+
+        evo_config = EvolutionConfig()
+        if evo_config.enabled:
+            journal = EvolutionJournal(evo_config)
+            run_id = f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+            journal.record_run(run_id, manifest, factory_result)
+    except Exception:
+        pass  # evolution recording is non-fatal
 
     return factory_result
