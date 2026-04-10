@@ -11,6 +11,7 @@ from ralph_py.verify import (
     VerificationResult,
     VerifyConfig,
     check_bad_patterns,
+    check_dead_code,
     check_diff_scope,
     check_mutation_score,
     check_prd_stories,
@@ -273,3 +274,151 @@ class TestCheckMutationScore:
             result = check_mutation_score(tmp_path, "main", timeout=600)
         assert result.passed is True
         assert "timed out" in result.message
+
+
+class TestCheckDeadCode:
+    def test_no_tools_available_skips(self, tmp_path: Path) -> None:
+        """When neither ruff nor vulture are installed, skip gracefully."""
+        with patch("shutil.which", return_value=None):
+            result = check_dead_code(tmp_path, "main")
+        assert result.passed is True
+        assert "neither vulture nor custom command" in result.message.lower()
+
+    def test_ruff_fixes_committed(self, tmp_path: Path) -> None:
+        """When ruff finds fixable issues, they are auto-committed."""
+        import subprocess as sp
+
+        calls: list[str] = []
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            calls.append(cmd)
+            if "ruff check --fix" in cmd:
+                return sp.CompletedProcess(cmd, 0, "Found 3 errors (2 fixed, 1 remaining).", "")
+            if "git add" in cmd:
+                return sp.CompletedProcess(cmd, 0, "", "")
+            if "git commit" in cmd:
+                return sp.CompletedProcess(cmd, 0, "", "")
+            # vulture
+            return sp.CompletedProcess(cmd, 0, "", "")
+
+        def mock_which(name: str) -> str | None:
+            if name in ("ruff", "vulture"):
+                return f"/usr/bin/{name}"
+            return None
+
+        with (
+            patch("shutil.which", side_effect=mock_which),
+            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py"]),
+        ):
+            result = check_dead_code(tmp_path, "main")
+
+        assert result.passed is True
+        assert "auto-fixed 2" in result.message
+        assert any("git commit" in c for c in calls)
+
+    def test_vulture_findings_fail(self, tmp_path: Path) -> None:
+        """When vulture finds dead code, the check fails with details."""
+        import subprocess as sp
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            if "ruff check --fix" in cmd:
+                return sp.CompletedProcess(cmd, 0, "", "")
+            # vulture output
+            return sp.CompletedProcess(
+                cmd, 1,
+                "src/main.py:10: unused function 'old_handler' (60% confidence)\n"
+                "src/utils.py:25: unused variable 'temp' (90% confidence)\n",
+                "",
+            )
+
+        def mock_which(name: str) -> str | None:
+            if name in ("ruff", "vulture"):
+                return f"/usr/bin/{name}"
+            return None
+
+        with (
+            patch("shutil.which", side_effect=mock_which),
+            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py", "src/utils.py"]),
+        ):
+            result = check_dead_code(tmp_path, "main")
+
+        assert result.passed is False
+        assert "2 dead code issues" in result.message
+        assert len(result.details) == 2
+
+    def test_custom_command_used(self, tmp_path: Path) -> None:
+        """When a custom command is provided, it runs instead of vulture."""
+        import subprocess as sp
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            if "ruff check --fix" in cmd:
+                return sp.CompletedProcess(cmd, 0, "", "")
+            if "my-custom-checker" in cmd:
+                return sp.CompletedProcess(cmd, 0, "", "")
+            return sp.CompletedProcess(cmd, 0, "", "")
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/ruff"),
+            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+        ):
+            result = check_dead_code(tmp_path, "main", command="my-custom-checker src/")
+
+        assert result.passed is True
+
+    def test_no_python_files_changed_passes(self, tmp_path: Path) -> None:
+        """When no Python files changed, skip vulture scan."""
+        import subprocess as sp
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            return sp.CompletedProcess(cmd, 0, "", "")
+
+        def mock_which(name: str) -> str | None:
+            if name in ("ruff", "vulture"):
+                return f"/usr/bin/{name}"
+            return None
+
+        with (
+            patch("shutil.which", side_effect=mock_which),
+            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.git.get_diff_names", return_value=["README.md", "docs/spec.md"]),
+        ):
+            result = check_dead_code(tmp_path, "main")
+
+        assert result.passed is True
+
+    def test_included_in_verification_when_enabled(self, tmp_path: Path) -> None:
+        """When dead_code_cleanup is True, check_dead_code runs in verification."""
+        config = VerifyConfig(dead_code_cleanup=True)
+
+        # Mock everything to pass
+        with (
+            patch("ralph_py.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
+            patch("ralph_py.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
+            patch("ralph_py.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
+            patch("ralph_py.verify.check_linter", return_value=CheckResult("linter", True)),
+            patch("ralph_py.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
+            patch("ralph_py.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
+            patch("ralph_py.verify.check_dead_code", return_value=CheckResult("dead_code", True)) as mock_dc,
+        ):
+            result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
+
+        mock_dc.assert_called_once()
+        assert any(c.name == "dead_code" for c in result.checks)
+
+    def test_excluded_from_verification_when_disabled(self, tmp_path: Path) -> None:
+        """When dead_code_cleanup is False (default), check is skipped."""
+        config = VerifyConfig(dead_code_cleanup=False)
+
+        with (
+            patch("ralph_py.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
+            patch("ralph_py.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
+            patch("ralph_py.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
+            patch("ralph_py.verify.check_linter", return_value=CheckResult("linter", True)),
+            patch("ralph_py.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
+            patch("ralph_py.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
+        ):
+            result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
+
+        assert not any(c.name == "dead_code" for c in result.checks)
