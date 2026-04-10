@@ -1141,6 +1141,15 @@ def decompose(
     help="Skip Phase 1 mechanical verification",
 )
 @click.option(
+    "--dead-code-cleanup",
+    is_flag=True,
+    help="Enable dead code cleanup: ruff auto-fixes unused imports/variables, vulture detects remaining dead code",
+)
+@click.option(
+    "--dead-code-command",
+    help="Custom dead code detection command (default: vulture on changed files)",
+)
+@click.option(
     "--mutation-testing",
     is_flag=True,
     help="Enable mutation testing (requires mutmut, off by default)",
@@ -1252,6 +1261,8 @@ def factory(
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
+    dead_code_cleanup: bool,
+    dead_code_command: str | None,
     mutation_testing: bool,
     mutation_threshold: float,
     review_mode: str,
@@ -1371,6 +1382,8 @@ def factory(
             test_command=test_command,
             typecheck_command=typecheck_command,
             lint_command=lint_command,
+            dead_code_cleanup=dead_code_cleanup,
+            dead_code_command=dead_code_command,
             mutation_testing=mutation_testing,
             mutation_threshold=mutation_threshold,
         )

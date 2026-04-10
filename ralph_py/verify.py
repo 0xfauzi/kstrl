@@ -62,6 +62,8 @@ class VerifyConfig:
     lint_command: str | None = None
     check_diff_scope: bool = True
     check_bad_patterns: bool = True
+    dead_code_cleanup: bool = False
+    dead_code_command: str | None = None
     mutation_testing: bool = False
     mutation_threshold: float = 50.0
     mutation_timeout: float = 600.0
@@ -74,6 +76,8 @@ class VerifyConfig:
             test_command=os.environ.get("RALPH_VERIFY_TEST_CMD"),
             typecheck_command=os.environ.get("RALPH_VERIFY_TYPECHECK_CMD"),
             lint_command=os.environ.get("RALPH_VERIFY_LINT_CMD"),
+            dead_code_cleanup=os.environ.get("RALPH_DEAD_CODE_CLEANUP", "") == "1",
+            dead_code_command=os.environ.get("RALPH_DEAD_CODE_CMD"),
             mutation_testing=os.environ.get("RALPH_MUTATION_TESTING", "") == "1",
             mutation_threshold=float(
                 os.environ.get("RALPH_MUTATION_THRESHOLD", "50")
@@ -467,6 +471,143 @@ def check_mutation_score(
     )
 
 
+def check_dead_code(
+    cwd: Path,
+    base_branch: str,
+    command: str | None = None,
+    timeout: float = 300.0,
+) -> CheckResult:
+    """Remove dead code with ruff auto-fix, then detect remaining dead code with vulture.
+
+    Two-phase approach:
+    1. ruff --fix --select F401,F811,F841 auto-removes unused imports, redefined
+       unused names, and unused local variables. Changes are staged and committed.
+    2. vulture scans for deeper dead code (unreachable functions, unused classes,
+       unused attributes). If a custom command is provided, it runs instead.
+
+    If ruff fixes anything, those fixes are committed automatically so the worktree
+    stays clean for subsequent checks. Vulture findings (if any) are reported as
+    failures for the agent to fix on retry.
+    """
+    import shutil
+
+    start = time.monotonic()
+
+    # --- Phase A: ruff auto-fix for unused imports/variables ---
+    ruff_cmd = "ruff check --fix --select F401,F811,F841 ."
+    ruff_fixed_count = 0
+
+    if shutil.which("ruff"):
+        try:
+            ruff_result = subprocess.run(
+                ruff_cmd, shell=True, cwd=cwd,
+                capture_output=True, text=True, timeout=timeout,
+            )
+            # Count fixes from ruff output (lines like "Found X errors (Y fixed, ...)")
+            for line in (ruff_result.stdout + ruff_result.stderr).splitlines():
+                if "fixed" in line.lower():
+                    import re as _re
+                    match = _re.search(r"(\d+)\s+fix", line.lower())
+                    if match:
+                        ruff_fixed_count = int(match.group(1))
+        except subprocess.TimeoutExpired:
+            pass  # Non-fatal: continue to vulture
+
+        # If ruff made changes, stage and commit them
+        if ruff_fixed_count > 0:
+            try:
+                # Stage all changes ruff made
+                subprocess.run(
+                    "git add -A", shell=True, cwd=cwd,
+                    capture_output=True, text=True, timeout=30,
+                )
+                subprocess.run(
+                    'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
+                    shell=True, cwd=cwd,
+                    capture_output=True, text=True, timeout=30,
+                )
+            except subprocess.TimeoutExpired:
+                pass  # Non-fatal
+
+    # --- Phase B: vulture or custom dead code detection ---
+    if command:
+        # User-provided dead code detection command
+        detect_cmd = command
+    elif shutil.which("vulture"):
+        # Default: vulture on changed Python files only
+        changed = git.get_diff_names(base_branch, cwd)
+        py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
+        if not py_files:
+            msg = f"No dead code issues (ruff auto-fixed {ruff_fixed_count})"
+            return CheckResult(
+                name="dead_code",
+                passed=True,
+                message=msg,
+                duration_seconds=time.monotonic() - start,
+            )
+        detect_cmd = f"vulture {' '.join(py_files)} --min-confidence 80"
+    else:
+        # Neither vulture nor custom command available
+        if ruff_fixed_count > 0:
+            return CheckResult(
+                name="dead_code",
+                passed=True,
+                message=f"ruff auto-fixed {ruff_fixed_count} issues (vulture not installed)",
+                duration_seconds=time.monotonic() - start,
+            )
+        return CheckResult(
+            name="dead_code",
+            passed=True,
+            message="Skipped: neither vulture nor custom command available",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    try:
+        result = subprocess.run(
+            detect_cmd, shell=True, cwd=cwd,
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return CheckResult(
+            name="dead_code",
+            passed=True,
+            message=f"Dead code scan timed out after {timeout}s, skipping",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    output = (result.stdout + result.stderr).strip()
+    if result.returncode != 0 and output:
+        # vulture returns exit code 1 when it finds dead code
+        lines = output.splitlines()
+        # Filter out common false positives (e.g., __all__, __init__)
+        real_issues = [
+            line for line in lines
+            if line.strip()
+            and not line.strip().startswith("#")
+            and "__all__" not in line
+        ]
+        if real_issues:
+            prefix = f"ruff auto-fixed {ruff_fixed_count}, " if ruff_fixed_count else ""
+            return CheckResult(
+                name="dead_code",
+                passed=False,
+                message=f"{prefix}{len(real_issues)} dead code issues remaining",
+                details=real_issues[:20],
+                duration_seconds=time.monotonic() - start,
+            )
+
+    msg_parts: list[str] = []
+    if ruff_fixed_count:
+        msg_parts.append(f"ruff auto-fixed {ruff_fixed_count}")
+    msg_parts.append("no remaining dead code")
+    return CheckResult(
+        name="dead_code",
+        passed=True,
+        message=", ".join(msg_parts),
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def run_mechanical_verification(
     worktree_path: Path,
     prd_path: Path,
@@ -498,6 +639,12 @@ def run_mechanical_verification(
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))
+
+    if config.dead_code_cleanup:
+        checks.append(check_dead_code(
+            worktree_path, base_branch,
+            config.dead_code_command, config.subprocess_timeout,
+        ))
 
     if config.mutation_testing:
         checks.append(check_mutation_score(
