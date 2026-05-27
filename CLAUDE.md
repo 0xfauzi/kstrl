@@ -13,6 +13,8 @@
 - **Typecheck**: `uv run mypy ralph_py/ --strict`
 - **Lint**: `uv run ruff check ralph_py/ tests/`
 
+Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["ralph_py"]` so `uv run mypy` (no args) also checks `ralph_py/`. The legacy `src/ralph/` package is intentionally not in mypy's scope -- it is the out-of-scope single-component loop, and the factory's smart-default typecheck command honors this configuration. If you actively maintain `src/ralph/`, run `uv run mypy src/ralph/ --strict` manually; CI does not gate it.
+
 ## Adversarial role taxonomy
 
 Ralph's factory uses eight distinct roles. Three are LLM-driven adversarial passes; the rest are mechanical or computational. Full taxonomy with file:line references is in [docs/adversarial-design.md](docs/adversarial-design.md).

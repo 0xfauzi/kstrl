@@ -533,19 +533,28 @@ def run_factory(
         ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
         verify_start = time.monotonic()
         # Per-component allowed_paths comes from the PRD (architect-emitted
-        # via DECOMPOSE_PROMPT v1.1.0+). Without this, the diff-scope check
-        # silently passes and a rogue agent can touch anything in the
-        # worktree -- the end-to-end validation run on 2026-05-27 caught
-        # an agent editing factory internals because allowed_paths was
-        # always None here. Legacy PRDs without the field still get None
-        # which preserves the prior "no constraint" behavior.
+        # via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+). Without
+        # this, the diff-scope check silently passes and a rogue agent
+        # can touch anything in the worktree -- the end-to-end validation
+        # run on 2026-05-27 caught an agent editing factory internals
+        # because allowed_paths was always None here. Legacy PRDs without
+        # the field load with allowed_paths=None which preserves the
+        # prior "no constraint" behavior; v1.2.0+ architect outputs are
+        # gated upstream in decompose._validate_decompose_output.
+        #
+        # Acknowledged limitation: the try/except below briefly masks
+        # real PRD problems by falling through to allowed_paths=None.
+        # The verifier surfaces real PRD problems on its own checks
+        # (check_prd_stories) so this is a one-iteration grace period,
+        # not silent forever -- but a downstream consumer reading
+        # comp.findings should not assume allowed_paths=None means
+        # "intentionally unconstrained" without cross-referencing the
+        # verifier's PRD check status.
         component_allowed_paths: list[str] | None = None
         try:
             prd_for_scope = PRD.load(wt_path / comp.prd_path)
             component_allowed_paths = prd_for_scope.allowed_paths
         except (FileNotFoundError, ValueError):
-            # PRD problems will surface again from inside the verifier;
-            # don't block Phase 1 setup on this lookup.
             pass
         verification = run_mechanical_verification(
             wt_path,

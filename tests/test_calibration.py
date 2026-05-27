@@ -96,6 +96,16 @@ def _spec_fixtures() -> list[tuple[Path, dict]]:
     return _load_fixtures("specs", ".md")
 
 
+def _halting_spec_fixtures() -> list[tuple[Path, dict]]:
+    """Spec fixtures that grade architect spec-issue detection
+    (``must_detect`` schema). Excludes non-halting fixtures whose
+    grading is on ``allowedPaths`` emission, not issue detection."""
+    return [
+        (artifact, meta) for artifact, meta in _spec_fixtures()
+        if "must_detect" in meta
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Agent invocation
 # ---------------------------------------------------------------------------
@@ -216,6 +226,95 @@ def architect_caught(
     )
     detail = f"got {len(issues)} issues: {[(i.severity, i.kind) for i in issues]}"
     return caught, detail
+
+
+def architect_allowed_paths_caught(
+    decompose_output: dict, requirement: dict,
+) -> tuple[bool, str]:
+    """Return ``(caught, detail)`` for the architect ``allowedPaths``
+    emission matcher.
+
+    Grades a non-halting architect decomposition on whether each emitted
+    component carries a sensible ``allowedPaths`` per the v1.2.0
+    DECOMPOSE_PROMPT rule #12. The requirement dict supports:
+
+    - ``non_halting`` (bool): the architect must emit at least one
+      component. Halting on a non-halting fixture is a regression.
+    - ``every_component_has_allowed_paths`` (bool): every emitted
+      component must carry the field.
+    - ``excludes_harness_internals`` (list[str]): no allowedPaths
+      entry across any component may contain any of these substrings.
+    - ``includes_test_root_prefix`` (str): every component's
+      ``allowedPaths`` must contain at least one entry starting with
+      this prefix.
+    - ``includes_feature_subtree`` (bool): each component's
+      ``allowedPaths`` must include ``scripts/ralph/feature/<id>/``.
+    """
+    components = decompose_output.get("components", [])
+
+    if requirement.get("non_halting") and not components:
+        return False, "architect halted (returned components=[]); expected components"
+
+    if requirement.get("every_component_has_allowed_paths"):
+        for c in components:
+            if not isinstance(c, dict):
+                continue
+            ap = c.get("allowedPaths")
+            if not ap:
+                return False, (
+                    f"component {c.get('id', '?')} missing allowedPaths "
+                    f"(got {ap!r})"
+                )
+
+    forbidden = requirement.get("excludes_harness_internals", [])
+    if forbidden:
+        for c in components:
+            if not isinstance(c, dict):
+                continue
+            for entry in c.get("allowedPaths", []) or []:
+                if not isinstance(entry, str):
+                    continue
+                for forbid in forbidden:
+                    if forbid in entry:
+                        return False, (
+                            f"component {c.get('id', '?')} allowedPaths "
+                            f"contains forbidden harness internal: "
+                            f"{entry!r} matches {forbid!r}"
+                        )
+
+    test_root = requirement.get("includes_test_root_prefix")
+    if test_root:
+        for c in components:
+            if not isinstance(c, dict):
+                continue
+            entries = c.get("allowedPaths", []) or []
+            if not any(
+                isinstance(e, str) and e.startswith(test_root) for e in entries
+            ):
+                return False, (
+                    f"component {c.get('id', '?')} missing test-root "
+                    f"prefix {test_root!r} in allowedPaths={entries!r}"
+                )
+
+    if requirement.get("includes_feature_subtree"):
+        for c in components:
+            if not isinstance(c, dict):
+                continue
+            comp_id = c.get("id", "")
+            expected = f"scripts/ralph/feature/{comp_id}/"
+            entries = c.get("allowedPaths", []) or []
+            if not any(
+                isinstance(e, str) and expected in e for e in entries
+            ):
+                return False, (
+                    f"component {comp_id} missing feature subtree "
+                    f"{expected!r} in allowedPaths={entries!r}"
+                )
+
+    summary = ", ".join(
+        f"{c.get('id', '?')}={c.get('allowedPaths', [])}" for c in components
+    )
+    return True, f"{len(components)} components, all gate-clean: {summary}"
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +452,7 @@ def test_reviewer_role_catches_planted_concern(
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _spec_fixtures(),
+@pytest.mark.parametrize("artifact,meta", _halting_spec_fixtures(),
                          ids=lambda x: x.get("fixture_id", "unknown")
                          if isinstance(x, dict) else x.stem)
 def test_architect_role_flags_vague_spec(
@@ -386,6 +485,79 @@ def test_architect_role_flags_vague_spec(
     report.record("architect", meta["fixture_id"], caught, detail)
     assert caught, (
         f"Architect missed planted vagueness in {meta['fixture_id']}: {detail}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Architect (PRD red-team) -- allowedPaths emission quality
+# ---------------------------------------------------------------------------
+
+
+def _allowed_paths_fixtures() -> list[tuple[Path, dict]]:
+    """Return spec fixtures whose meta has ``must_emit_allowed_paths``.
+
+    These are non-halting fixtures: specs clear enough that the
+    architect should decompose them, used to grade whether the
+    emitted ``allowedPaths`` are sensible per DECOMPOSE_PROMPT
+    v1.2.0 rule #12.
+    """
+    return [
+        (artifact, meta) for artifact, meta in _spec_fixtures()
+        if "must_emit_allowed_paths" in meta
+    ]
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("artifact,meta", _allowed_paths_fixtures(),
+                         ids=lambda x: x.get("fixture_id", "unknown")
+                         if isinstance(x, dict) else x.stem)
+def test_architect_emits_sensible_allowed_paths(
+    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+) -> None:
+    """Grade architect output on the allowedPaths emission rule.
+
+    This is the calibration counterpart to ``decompose._validate_decompose_output``
+    -- the validator gates the *shape* (presence + non-emptyness +
+    types), but only a real LLM call can verify that the architect
+    emits *sensible* scopes (includes test root, excludes harness
+    internals, names the feature subtree). Without a non-halting
+    fixture the v1.2.0 prompt's rule #12 is unmeasured.
+    """
+    spec_content = artifact.read_text(encoding="utf-8")
+    prompt = DECOMPOSE_PROMPT.format(
+        project_name=meta["fixture_id"],
+        spec_content=spec_content,
+    )
+
+    agent = _get_calibration_agent()
+    output: list[str] = []
+    try:
+        output = _collect(agent, prompt, tmp_path)
+    except Exception as exc:  # noqa: BLE001
+        report.record(
+            "architect_allowed_paths", meta["fixture_id"], False,
+            f"agent error: {exc}",
+        )
+        pytest.skip(f"agent unavailable: {exc}")
+
+    try:
+        data = _extract_agent_json(agent, output)
+    except ValueError as exc:
+        report.record(
+            "architect_allowed_paths", meta["fixture_id"], False,
+            f"json parse: {exc}",
+        )
+        pytest.fail(
+            f"Architect output did not parse for {meta['fixture_id']}: {exc}",
+        )
+        return
+
+    caught, detail = architect_allowed_paths_caught(
+        data, meta["must_emit_allowed_paths"],
+    )
+    report.record("architect_allowed_paths", meta["fixture_id"], caught, detail)
+    assert caught, (
+        f"Architect allowedPaths regression on {meta['fixture_id']}: {detail}"
     )
 
 
@@ -429,7 +601,8 @@ class TestFixtureStructure:
 
     def test_spec_fixtures_count(self) -> None:
         fixtures = list((FIXTURES_DIR / "specs").glob("*.md"))
-        assert len(fixtures) == 3, "Expected 3 spec fixtures"
+        # 3 original halting fixtures + 1 non-halting allowedPaths fixture
+        assert len(fixtures) == 4, "Expected 4 spec fixtures"
 
     def test_security_meta_has_required_keys(self) -> None:
         for _artifact, meta in _security_fixtures():
@@ -456,7 +629,20 @@ class TestFixtureStructure:
     def test_spec_meta_has_required_keys(self) -> None:
         for _artifact, meta in _spec_fixtures():
             assert "fixture_id" in meta
-            assert "must_detect" in meta
-            assert "spec_issues_min" in meta["must_detect"]
+            # A spec fixture must carry exactly one grading schema:
+            # either ``must_detect`` (halting fixtures that grade
+            # spec-issue detection) or ``must_emit_allowed_paths``
+            # (non-halting fixtures that grade allowedPaths quality).
+            assert "must_detect" in meta or "must_emit_allowed_paths" in meta, (
+                f"{meta['fixture_id']} has neither must_detect nor "
+                "must_emit_allowed_paths grading"
+            )
+            if "must_detect" in meta:
+                assert "spec_issues_min" in meta["must_detect"]
+            if "must_emit_allowed_paths" in meta:
+                req = meta["must_emit_allowed_paths"]
+                # Required keys for the new schema.
+                assert "non_halting" in req
+                assert "every_component_has_allowed_paths" in req
 
 

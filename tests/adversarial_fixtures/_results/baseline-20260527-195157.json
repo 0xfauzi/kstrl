@@ -1,0 +1,42 @@
+{
+  "model": "haiku",
+  "timestamp": "20260527-195157",
+  "summary": {
+    "architect": {
+      "total": 3,
+      "caught": 2,
+      "detection_rate": 0.6666666666666666
+    },
+    "architect_allowed_paths": {
+      "total": 1,
+      "caught": 1,
+      "detection_rate": 1.0
+    }
+  },
+  "fixtures": [
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "caught": true,
+      "detail": "got 10 issues: [('blocker', 'undefined_failure_mode'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "caught": false,
+      "detail": "got 14 issues: [('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'contradiction'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "caught": true,
+      "detail": "got 14 issues: [('blocker', 'ambiguity'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "caught": true,
+      "detail": "1 components, all gate-clean: slugify-function=['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/slugify-function/']"
+    }
+  ]
+}

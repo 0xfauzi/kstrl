@@ -47,6 +47,9 @@ VALID_DECOMPOSE_OUTPUT = json.dumps({
             "title": "Database Schema",
             "description": "Create the database tables",
             "dependencies": [],
+            "allowedPaths": [
+                "src/", "tests/", "scripts/ralph/feature/database/",
+            ],
             "userStories": [
                 {
                     "id": "US-001",
@@ -63,6 +66,9 @@ VALID_DECOMPOSE_OUTPUT = json.dumps({
             "title": "API Endpoints",
             "description": "Create REST API endpoints",
             "dependencies": ["database"],
+            "allowedPaths": [
+                "src/", "tests/", "scripts/ralph/feature/api/",
+            ],
             "userStories": [
                 {
                     "id": "US-002",
@@ -178,9 +184,11 @@ class TestValidateDecomposeOutput:
         errors = _validate_decompose_output(data)
         assert any("nonexistent" in e for e in errors)
 
-    def test_allowed_paths_optional(self) -> None:
-        """Components without allowedPaths still validate (legacy
-        DECOMPOSE_PROMPT v1.0.0 architect outputs don't emit it)."""
+    def test_allowed_paths_required(self) -> None:
+        """DECOMPOSE_PROMPT v1.2.0+ requires allowedPaths on every
+        component. The architect output gate rejects emissions that
+        omit it; the diff-scope check would otherwise be silently
+        disabled at Phase 1."""
         data = {
             "components": [
                 {
@@ -193,9 +201,11 @@ class TestValidateDecomposeOutput:
             ]
         }
         errors = _validate_decompose_output(data)
-        assert errors == []
+        assert any(
+            "allowedPaths" in e and "required" in e for e in errors
+        )
 
-    def test_allowed_paths_must_be_array_when_present(self) -> None:
+    def test_allowed_paths_must_be_array(self) -> None:
         data = {
             "components": [
                 {
@@ -381,6 +391,9 @@ class TestSpecIssues:
                     "title": "A",
                     "description": "x",
                     "dependencies": [],
+                    "allowedPaths": [
+                        "src/", "tests/", "scripts/ralph/feature/comp-a/",
+                    ],
                     "userStories": [{
                         "id": "US-001",
                         "title": "S1",
