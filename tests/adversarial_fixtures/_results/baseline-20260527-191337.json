@@ -1,0 +1,31 @@
+{
+  "model": "haiku",
+  "timestamp": "20260527-191337",
+  "summary": {
+    "architect": {
+      "total": 3,
+      "caught": 2,
+      "detection_rate": 0.6666666666666666
+    }
+  },
+  "fixtures": [
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "caught": true,
+      "detail": "got 15 issues: [('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "caught": false,
+      "detail": "got 16 issues: [('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'out_of_scope_creep')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "caught": true,
+      "detail": "got 13 issues: [('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail')]"
+    }
+  ]
+}

@@ -82,8 +82,8 @@ _VERSIONS: dict[str, str] = {
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DECOMPOSE_PROMPT": (
-        "89c9d6a70512676aefffa643558fbb71a6937682c56a9fd3943b69c49eb2abcf",
-        "1.0.0",
+        "38efb17f881a6f75e92cad41c7a1d4accf3ebd88db0457da8263ec2de68662ca",
+        "1.1.0",
     ),
     "REVIEWER_PROMPT": (
         "9307260aee8aedeea22d7fcb8e28131421013a915ec697d71f3428996bc434ca",

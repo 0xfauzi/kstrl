@@ -43,7 +43,7 @@ class SpecBlockerError(Exception):
             + "\n".join(summary_lines),
         )
 
-DECOMPOSE_PROMPT_VERSION = "1.0.0"
+DECOMPOSE_PROMPT_VERSION = "1.1.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -81,6 +81,9 @@ The output must be a JSON object with this exact structure:
       "title": "Short title",
       "description": "What this component does and why",
       "dependencies": ["other-component-id"],
+      "allowedPaths": [
+        "src/", "tests/", "scripts/ralph/feature/<id>/"
+      ],
       "userStories": [
         {{
           "id": "US-001",
@@ -122,6 +125,30 @@ Decomposition rules:
 11. Do not invent UI elements, endpoints, or files not described in the
     spec. If the spec is silent on something you would need to invent,
     add a `spec_issues` entry instead.
+12. `allowedPaths` is REQUIRED for every component. It is the agent's
+    write-scope guardrail: the harness's diff-scope check fails any
+    iteration that touches files outside this list. Each entry is a
+    path prefix (directory or file). Rules:
+    - Include the language-appropriate source root (e.g. `src/`,
+      `lib/`, or the package directory the spec names) AND the test
+      root (e.g. `tests/`, `__tests__/`, `spec/`).
+    - Include the component's own PRD-and-progress subtree
+      `scripts/ralph/feature/<component-id>/` (the agent updates
+      progress.txt there).
+    - PREFER tighter scopes: if the spec names specific files, list
+      those files instead of broad directories. A tight scope means
+      a rogue agent cannot delete unrelated code.
+    - NEVER include `.ralph/` (harness state), `.github/`,
+      `pyproject.toml`, the harness's own packages (`ralph_py/`,
+      `src/ralph/`), or any file/directory above the component's
+      feature subtree under `scripts/ralph/`. These are
+      out-of-scope by definition and an agent that touches them is
+      malfunctioning.
+    - If you genuinely cannot infer a sensible scope from the spec,
+      add a `spec_issues` entry of `kind: missing_detail` rather
+      than emitting an empty array. An empty `allowedPaths`
+      silently disables the diff-scope check, which is worse than
+      halting on a vague spec.
 
 Red-team rules:
 - Look for: ambiguous quantifiers ("fast", "secure", "user-friendly"),
@@ -356,6 +383,23 @@ def _validate_decompose_output(data: Any) -> list[str]:
         elif not all(isinstance(d, str) for d in deps):
             errors.append(f"{prefix}.dependencies: all items must be strings")
 
+        # allowedPaths (optional for backwards compatibility with v1.0.0
+        # architect outputs; v1.1.0+ always emits it). When present, must
+        # be a non-empty array of non-empty strings.
+        if "allowedPaths" in comp:
+            ap = comp["allowedPaths"]
+            if not isinstance(ap, list):
+                errors.append(f"{prefix}.allowedPaths: must be an array")
+            elif not ap:
+                errors.append(
+                    f"{prefix}.allowedPaths: must be non-empty -- an empty "
+                    "array silently disables diff-scope enforcement"
+                )
+            elif not all(isinstance(p, str) and p for p in ap):
+                errors.append(
+                    f"{prefix}.allowedPaths: all items must be non-empty strings"
+                )
+
         stories = comp.get("userStories")
         if not isinstance(stories, list):
             errors.append(f"{prefix}.userStories: must be an array")
@@ -476,6 +520,14 @@ def _generate_component_prd(
         "branchName": branch_name,
         "userStories": comp_data["userStories"],
     }
+    # allowedPaths is emitted by the architect (DECOMPOSE_PROMPT v1.1.0+)
+    # and forwarded into the PRD verbatim. The factory then passes them
+    # through to verify.check_diff_scope so the diff-scope guardrail
+    # actually fires per-component. Older architect outputs may omit
+    # this field; the PRD parser tolerates absence by treating it as
+    # "scope unconstrained" (the previous global behavior).
+    if "allowedPaths" in comp_data:
+        prd_data["allowedPaths"] = comp_data["allowedPaths"]
 
     prd_path = feature_dir / "prd.json"
     with open(prd_path, "w") as f:

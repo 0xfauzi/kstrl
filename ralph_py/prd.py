@@ -26,6 +26,13 @@ class PRD:
 
     branch_name: str
     user_stories: list[UserStory]
+    # Allow-list of path prefixes the engineer is permitted to write to.
+    # Populated by the architect (DECOMPOSE_PROMPT v1.1.0+); legacy PRDs
+    # without this field load as None which preserves the prior
+    # "scope unconstrained" behavior. The factory forwards this to
+    # ``verify.check_diff_scope`` so the agent's diff is bounded per-
+    # component rather than allowed to touch anywhere in the worktree.
+    allowed_paths: list[str] | None = None
 
     @classmethod
     def load(cls, path: Path) -> PRD:
@@ -49,19 +56,30 @@ class PRD:
             for s in data["userStories"]
         ]
 
-        return cls(branch_name=data["branchName"], user_stories=stories)
+        allowed_paths = data.get("allowedPaths")
+        if allowed_paths is not None and not isinstance(allowed_paths, list):
+            allowed_paths = None
+        return cls(
+            branch_name=data["branchName"],
+            user_stories=stories,
+            allowed_paths=allowed_paths,
+        )
 
     @classmethod
     def validate_schema(cls, data: Any) -> list[str]:
         """Validate PRD JSON schema, returning list of errors.
 
-        Schema requirements (matching the init command exactly):
-        - Top-level must be dict with exactly 2 keys: branchName, userStories
-        - branchName: non-empty string
-        - userStories: array of story objects
-        - Each story must have exactly 6 keys: id, title, acceptanceCriteria,
-          priority, passes, notes
-        - Field types are strictly enforced
+        Schema requirements:
+        - Top-level must be dict with ``branchName`` and ``userStories``,
+          optionally ``allowedPaths``.
+        - branchName: non-empty string.
+        - userStories: array of story objects, each with exactly 6 keys
+          (id, title, acceptanceCriteria, priority, passes, notes).
+        - allowedPaths (optional): non-empty array of non-empty strings
+          when present. An empty array is rejected because it silently
+          disables diff-scope enforcement -- omit the field entirely
+          to mean "no constraint".
+        - Field types are strictly enforced.
         """
         errors: list[str] = []
 
@@ -69,18 +87,31 @@ class PRD:
             errors.append("PRD must be a JSON object")
             return errors
 
-        # Check top-level keys
-        expected_keys = {"branchName", "userStories"}
+        required_keys = {"branchName", "userStories"}
+        optional_keys = {"allowedPaths"}
         actual_keys = set(data.keys())
+        missing = required_keys - actual_keys
+        extra = actual_keys - required_keys - optional_keys
 
-        if actual_keys != expected_keys:
-            missing = expected_keys - actual_keys
-            extra = actual_keys - expected_keys
+        if missing or extra:
             if missing:
                 errors.append(f"Missing required keys: {', '.join(sorted(missing))}")
             if extra:
                 errors.append(f"Unexpected keys: {', '.join(sorted(extra))}")
             return errors
+
+        # Validate optional allowedPaths shape
+        if "allowedPaths" in data:
+            ap = data["allowedPaths"]
+            if not isinstance(ap, list):
+                errors.append("allowedPaths must be an array")
+            elif not ap:
+                errors.append(
+                    "allowedPaths must be non-empty when present "
+                    "(omit the field entirely to leave scope unconstrained)"
+                )
+            elif not all(isinstance(p, str) and p for p in ap):
+                errors.append("allowedPaths: all items must be non-empty strings")
 
         # Validate branchName
         branch_name = data.get("branchName")

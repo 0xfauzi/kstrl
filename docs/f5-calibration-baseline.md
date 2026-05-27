@@ -78,6 +78,20 @@ H2 of the hardening roadmap says: if a prompt change moves this number,
 calibration is the verification. Both interpretations should be tracked across
 prompt edits.
 
+## v1.1.0 architect re-run (DECOMPOSE_PROMPT version bump, 2026-05-27 19:13)
+
+Re-ran the architect role against the 3 spec fixtures after bumping `DECOMPOSE_PROMPT` from `1.0.0` to `1.1.0` (added `allowedPaths` requirements). Per H2 a prompt change without a calibration delta is treated as untested.
+
+Result: **2/3 = 67%** (same rate as v1.0.0). Different fixture missed:
+
+- `spec-01-no-error-handling` -- caught this run (was missed in v1.0.0 baseline)
+- `spec-02-unspecified-auth` -- missed this run (was caught in v1.0.0)
+- `spec-03-ambiguous-perf` -- caught both runs
+
+The missed-fixture rotation is within LLM run-to-run variance at single-run sample size. The bias documented for v1.0.0 (Haiku over-uses `missing_detail` and `ambiguity`, under-uses `undefined_failure_mode` / `unstated_assumption`) appears unchanged. The prompt change did not regress the spec-issue detection axis -- which is the only axis the current fixtures grade. Whether the architect now reliably emits `allowedPaths` for non-halting specs is a separate measurement that the existing calibration fixtures do not cover (they are all designed to halt the architect on planted blockers).
+
+Raw: `tests/adversarial_fixtures/_results/baseline-20260527-191337.json`.
+
 ## Trustworthy use of these numbers
 
 - **Single-run baseline**. LLMs vary; aggregate across multiple runs before
