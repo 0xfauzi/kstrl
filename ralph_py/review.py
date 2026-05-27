@@ -209,6 +209,8 @@ class ReviewResult:
         return self.criterion_advisory_count + self.concern_advisory_count
 
 
+REVIEWER_PROMPT_VERSION = "1.0.0"
+
 REVIEWER_PROMPT = """\
 You are a hostile senior reviewer. Your default stance is that the diff is
 wrong somewhere; your job is to find what's wrong before approving it. A

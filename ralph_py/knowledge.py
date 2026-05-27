@@ -591,6 +591,8 @@ def _transitive_dependencies(manifest: Manifest, component_id: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
+DISTILL_PROMPT_VERSION = "1.0.0"
+
 DISTILL_PROMPT = """\
 You are a knowledge-distillation agent. The implementing agent has just
 completed an iteration on a single component, and that work has passed

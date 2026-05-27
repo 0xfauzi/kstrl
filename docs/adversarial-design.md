@@ -91,4 +91,6 @@ H1 of the hardening roadmap: the assistant does not run `/code-review` on its ow
 
 H2: when an adversarial prompt changes, calibration is re-run. A prompt edit without a calibration delta is treated as untested.
 
+H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a SHA-256 snapshot in `tests/test_prompt_versions.py`. Editing a prompt without bumping the version AND updating the hash fails the test suite. The audit trail (prompt diff + hash diff travelling in the same PR) is what makes the H2 calibration step a real gate rather than a polite suggestion.
+
 H4: when reporting "tested" or "verified", be explicit about what was checked vs. what was assumed. Smoke tests are presence checks; calibration is behavior verification.
