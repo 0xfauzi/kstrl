@@ -1,9 +1,0 @@
-# Ralph Progress Log
-
-## Codebase Patterns
-- (add reusable patterns here)
-
-## Iteration Notes
-- (append entries below using the format in prompt.md)
-
----
