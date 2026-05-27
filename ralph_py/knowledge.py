@@ -25,7 +25,12 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ralph_py.decompose import _extract_json, _select_agent_output
+from ralph_py.decompose import (
+    AgentOutputTooLarge,
+    _extract_json,
+    _select_agent_output,
+    collect_agent_output,
+)
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -664,6 +669,37 @@ def _parse_distill_output(raw_output: str) -> list[dict]:
 
 _FACT_ID_RE = re.compile(r"^fact-\d{3}$")
 
+# Hard cap on claim length. A durable semantic fact rarely needs more
+# than a few sentences; longer values are usually the LLM drifting into
+# essay mode and are more likely to carry injection payloads.
+MAX_CLAIM_LENGTH = 500
+MAX_EVIDENCE_ITEMS = 10
+MAX_TAG_ITEMS = 8
+
+# Patterns that look like prompt-injection attempts inside a fact body.
+# Knowledge facts get rendered verbatim into downstream component prompts,
+# so any content that looks like a role marker or "ignore previous
+# instructions" gets the fact rejected at write time.
+_INJECTION_PATTERNS = [
+    re.compile(r"<\s*system\s*>", re.IGNORECASE),
+    re.compile(r"</\s*system\s*>", re.IGNORECASE),
+    re.compile(r"<\s*assistant\s*>", re.IGNORECASE),
+    re.compile(r"<\s*user\s*>", re.IGNORECASE),
+    re.compile(r"<\|.*?\|>"),  # OpenAI-style special tokens
+    re.compile(r"^\s*#{1,6}\s*instructions?\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\bignore\b.{0,30}\b(previous|prior|all)\b.{0,30}\binstructions?\b",
+               re.IGNORECASE | re.DOTALL),
+    re.compile(r"\bdisregard\b.{0,30}\binstructions?\b",
+               re.IGNORECASE | re.DOTALL),
+    re.compile(r"\boverride\b.{0,30}\bsystem\b", re.IGNORECASE | re.DOTALL),
+    re.compile(r"\bnew\s+(instructions?|task|goal)\b:", re.IGNORECASE),
+]
+
+
+def _is_injection_attempt(text: str) -> bool:
+    """Return True when the text matches any known prompt-injection pattern."""
+    return any(pat.search(text) for pat in _INJECTION_PATTERNS)
+
 
 def _coerce_facts(
     raw_facts: list[dict],
@@ -696,18 +732,30 @@ def _coerce_facts(
         if not isinstance(evidence_raw, list) or not evidence_raw:
             continue
         evidence = [str(e).strip() for e in evidence_raw if isinstance(e, str)]
-        evidence = [e for e in evidence if e]
+        evidence = [e for e in evidence if e][:MAX_EVIDENCE_ITEMS]
         if not evidence:
             continue
         claim = str(raw.get("claim", "")).strip()
         if not claim:
             continue
+        # Knowledge facts get rendered verbatim into downstream prompts.
+        # Reject anything that looks like a prompt-injection attempt or
+        # an out-of-band role marker. Cap claim length to discourage the
+        # LLM from smuggling instructions inside a long body.
+        if _is_injection_attempt(claim):
+            continue
+        if len(claim) > MAX_CLAIM_LENGTH:
+            claim = claim[:MAX_CLAIM_LENGTH].rstrip() + "..."
         tags_raw = raw.get("tags", [])
         tags = (
             [str(t).strip() for t in tags_raw if isinstance(t, str)]
             if isinstance(tags_raw, list)
             else []
         )
+        # Reject injection patterns in tags too; tags get rendered into
+        # the prompt as part of the fact frontmatter.
+        tags = [t for t in tags if t and not _is_injection_attempt(t)]
+        tags = tags[:MAX_TAG_ITEMS]
 
         facts.append(
             Fact(
@@ -768,12 +816,13 @@ def distill_facts(
         diff_content=diff_for_prompt,
     )
 
-    output_lines: list[str] = []
     try:
-        for line in agent.run(
-            prompt, cwd=worktree_path, timeout=config.distill_timeout_seconds,
-        ):
-            output_lines.append(line)
+        output_lines = collect_agent_output(
+            agent, prompt, cwd=worktree_path,
+            timeout=config.distill_timeout_seconds,
+        )
+    except AgentOutputTooLarge as exc:
+        return 0, f"knowledge.agent_output_too_large: {exc}"
     except Exception as exc:  # noqa: BLE001 - non-fatal
         return 0, f"knowledge.agent_error: {exc}"
 
@@ -839,5 +888,13 @@ def _parse_bool(value: str) -> bool:
 
 
 def current_run_id() -> str:
-    """Construct a run id of the same shape factory.py uses for evolution.jsonl."""
-    return f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+    """Construct a run id of the same shape factory.py uses for evolution.jsonl.
+
+    Includes a 6-char random nonce so two factory invocations started
+    within the same UTC second produce distinct ids.
+    """
+    import secrets
+    return (
+        f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+        f"-{secrets.token_hex(3)}"
+    )

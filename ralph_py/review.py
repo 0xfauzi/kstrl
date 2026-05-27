@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
-from ralph_py.decompose import _extract_json, _select_agent_output
+from ralph_py.decompose import (
+    AgentOutputTooLarge,
+    _extract_json,
+    _select_agent_output,
+    collect_agent_output,
+)
 from ralph_py.prd import PRD
 from ralph_py.verify import VerificationResult
 
@@ -445,9 +450,20 @@ def run_review(
         diff_content=diff_content,
     )
 
-    output_lines: list[str] = []
-    for line in agent.run(prompt, cwd=worktree_path, timeout=timeout):
-        output_lines.append(line)
+    try:
+        output_lines = collect_agent_output(
+            agent, prompt, cwd=worktree_path, timeout=timeout,
+        )
+    except AgentOutputTooLarge as exc:
+        # Hostile/buggy agent flooding output. In hard mode this needs
+        # to surface as a review failure; advisory passes but logs.
+        result = ReviewResult(
+            passed=mode != ReviewMode.HARD,
+            mode=mode.value,
+            overall_notes=f"Reviewer agent output too large: {exc}",
+        )
+        result.duration_seconds = time.monotonic() - start
+        return result
 
     raw_output = _select_agent_output(agent, output_lines)
     result = parse_review_output(raw_output)

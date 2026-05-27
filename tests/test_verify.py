@@ -319,6 +319,66 @@ class TestCheckSelfCritique:
         result = check_self_critique(progress)
         assert result.passed is True
 
+    def test_does_not_match_self_critique_in_prose(self, tmp_path: Path) -> None:
+        """A reference to 'self-critique' in body text must not be
+        treated as the heading. Only proper headings count."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1\n"
+            "I wrote a self-critique that lists three failure modes:\n"
+            "- mode A\n"
+            "- mode B\n"
+            "- mode C\n"
+            "\nDone.\n"
+        )
+        result = check_self_critique(progress)
+        assert result.passed is False
+        assert "No '## Self-Critique'" in result.message
+
+    def test_fuzz_corpus_of_accepted_headings(self, tmp_path: Path) -> None:
+        """Forms the engineer prompt's loose phrasing might produce."""
+        accepted = [
+            "## Self-Critique",
+            "## self-critique",  # case-insensitive
+            "### Self-Critique",  # H3 also OK
+            "- **Self-Critique:**",
+            "- **Self-Critique**",
+            "* **Self-Critique:**",
+            "## Self Critique",  # space instead of hyphen
+        ]
+        for heading in accepted:
+            progress = tmp_path / "progress.txt"
+            progress.write_text(
+                f"## Iteration 1\nbody\n{heading}\n"
+                "- failure 1: realistic description with details\n"
+                "- failure 2: realistic description with details\n"
+                "- failure 3: realistic description with details\n"
+            )
+            result = check_self_critique(progress)
+            assert result.passed is True, f"heading {heading!r} should be accepted"
+
+    def test_fuzz_corpus_of_rejected_lines(self, tmp_path: Path) -> None:
+        """Lines that mention self-critique but aren't a heading."""
+        rejected = [
+            "the self-critique below lists failure modes",
+            "self-critique: yes",  # no leading marker
+            "**self-critique:**",  # bare bold, no list marker
+            "selfcritique",  # no separator
+            "see Self-Critique above",
+        ]
+        for line in rejected:
+            progress = tmp_path / "progress.txt"
+            progress.write_text(
+                f"## Iteration 1\n{line}\n"
+                "- failure: realistic\n"
+                "- failure: realistic\n"
+                "- failure: realistic\n"
+            )
+            result = check_self_critique(progress)
+            assert result.passed is False, (
+                f"line {line!r} should not be treated as heading"
+            )
+
 
 class TestCheckMutationScore:
     def test_skips_when_mutmut_not_installed(self, tmp_path: Path) -> None:
