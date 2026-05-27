@@ -65,5 +65,10 @@ ignore = []
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["ralph"]
-mypy_path = "src"
+# `files` is consulted by `uv run mypy` (no args) and by the Ralph
+# factory's new smart-default typecheck command (verify._default_typecheck_command).
+# Listing ralph_py here keeps CLAUDE.md's stated typecheck contract
+# (`uv run mypy ralph_py/ --strict`) and `uv run mypy` invoked from the
+# factory's verify phase in lockstep -- no command-line override needed.
+# src/ralph (legacy single-component loop) is out of scope per CLAUDE.md.
+files = ["ralph_py"]
