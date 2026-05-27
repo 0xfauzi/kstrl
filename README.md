@@ -11,18 +11,27 @@ Most agent wrappers are retry loops: run the agent, check if it's done, retry if
 ```mermaid
 flowchart TD
     PRD["PRD + Prompt"] --> FF["Phase 0: Feedforward\nModule map, interfaces,\ndependency graph, conventions"]
-    FF --> Agent["AI Coding Agent\nClaude Code, Codex, or custom"]
-    Agent --> P1["Phase 1: Mechanical verification\nTests, typecheck, lint,\nscope, secrets, fixtures"]
+    FF --> Knowledge["Knowledge prefix\nDurable facts from prior components"]
+    Knowledge --> Agent["Implementing agent\nClaude Code, Codex, or custom"]
+    Agent --> P1["Phase 1: Mechanical verification\nTests, typecheck, lint, scope,\nbad patterns, optional self-critique"]
     P1 -->|fail| Retry["Structured retry context\nSource lines + fix hints"]
     Retry --> Agent
-    P1 -->|pass| P2["Phase 2: Second-opinion review\nSeparate agent reviews diff\nagainst acceptance criteria"]
+    P1 -->|pass| P2["Phase 2: Code reviewer\nPRD criteria + concerns:\nscope_creep, test_quality,\ndead_code, error_handling..."]
     P2 -->|fail| Retry
-    P2 -->|pass| P3["Phase 3: Contract testing\nTier-by-tier merge +\nintegration tests"]
-    P3 -->|fail| Retry
+    P2 -->|pass| P25["Phase 2.5: Security reviewer\nInjection, auth_bypass,\nhardcoded_secret, crypto,\nrace, SSRF, XSS, DoS\nMapped to OWASP+CWE"]
+    P25 -->|fail| Retry
+    P25 -->|pass| HITL["Optional human checkpoint\npause_before_pr_merge"]
+    HITL --> PR["Create + merge PR"]
+    PR --> Distill["Knowledge distiller\nDurable facts written to\n.ralph/knowledge/<comp>/<run>/"]
+    Distill --> P3["Phase 3: Contract testing\nTier-by-tier merge +\nintegration tests"]
+    P3 -->|fail breaker| Retry
     P3 -->|pass| Done["Done"]
-    P1 --> Journal["Evolution Journal\nTrack patterns across runs,\npropose harness improvements"]
+    P1 --> Journal["Evolution journal\nPatterns, concern hit-rate,\nharness improvement proposals"]
     P2 --> Journal
+    P25 --> Journal
 ```
+
+Phase 0 also includes an architect/PRD-red-team pass at decompose time that halts on blocker-severity spec issues. See [docs/adversarial-design.md](docs/adversarial-design.md) for the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) for every env var, and [docs/runbook.md](docs/runbook.md) for operator failure recovery.
 
 ## Quick start
 
