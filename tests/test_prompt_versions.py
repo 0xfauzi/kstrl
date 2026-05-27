@@ -46,8 +46,6 @@ from pathlib import Path
 
 from ralph_py.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
 from ralph_py.init_cmd import (
-    DEFAULT_PRD_PROMPT,
-    DEFAULT_PRD_PROMPT_VERSION,
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
@@ -66,7 +64,6 @@ _PROMPTS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
     "DEFAULT_PROMPT": DEFAULT_PROMPT,
-    "DEFAULT_PRD_PROMPT": DEFAULT_PRD_PROMPT,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -75,7 +72,6 @@ _VERSIONS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
     "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
-    "DEFAULT_PRD_PROMPT": DEFAULT_PRD_PROMPT_VERSION,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -101,10 +97,6 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "a4a3a090139c370d7eecd12e3ef98055352110722750bb7b4cbf9bc50b1b9125",
         "1.0.0",
     ),
-    "DEFAULT_PRD_PROMPT": (
-        "8f9f2f4122254cdfb3cf9e74d76ced7fd00bbca54b95d985434d170deccc0c9c",
-        "1.0.0",
-    ),
 }
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -115,12 +107,11 @@ _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # generate documentation outputs, not adversarial-role outputs, and are
 # out of scope for H3 snapshot protection.
 #
-# Note: DEFAULT_PRD_PROMPT was originally exempt but was enrolled in
-# the post-retrospective cleanup because the PRD-creation prompt
-# shapes the PRD that every downstream phase depends on -- editing it
-# silently is exactly the kind of drift H3 exists to prevent. If you
-# add a NEW template that produces user-facing content rather than
-# adversarial-role output, add its name here with a one-line rationale.
+# If you add a NEW template that produces user-facing content rather
+# than adversarial-role output, add its name here with a one-line
+# rationale. (DEFAULT_PRD_PROMPT was previously enrolled here but was
+# deleted along with the manual `ralph prd create` path during the
+# legacy-purge cleanup -- the factory is now the only PRD path.)
 _ENROLLMENT_EXEMPT_NAMES = frozenset({
     "DEFAULT_PROGRESS",
     "DEFAULT_CODEBASE_MAP",

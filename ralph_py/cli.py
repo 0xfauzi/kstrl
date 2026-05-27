@@ -184,11 +184,6 @@ def cli() -> None:
     is_flag=True,
     help="Skip mechanical verification (raw loop, no post-checks)",
 )
-@click.option(
-    "--legacy",
-    is_flag=True,
-    help="Use legacy direct loop (bypass factory pipeline)",
-)
 def run(
     max_iterations: int,
     root: Path | None,
@@ -205,14 +200,13 @@ def run(
     no_color: bool,
     ascii: bool,
     no_verify: bool,
-    legacy: bool,
 ) -> None:
-    """Run the agentic loop.
+    """Run the agentic loop as a single-component factory invocation.
 
     MAX_ITERATIONS is the maximum number of iterations (default: 10).
 
-    By default, delegates to the factory pipeline with mechanical verification.
-    Use --no-verify to skip verification or --legacy for the old direct loop.
+    Delegates to the factory pipeline with mechanical verification.
+    Use --no-verify to skip the verification phase.
     """
     ctx = click.get_current_context()
     env_prompt = os.environ.get("PROMPT_FILE")
@@ -289,13 +283,7 @@ def run(
         ui_impl.info("Install codex or use --agent-cmd to specify a custom agent")
         sys.exit(1)
 
-    # Legacy mode: use direct loop (old behavior)
-    if legacy:
-        agent = get_agent(config.agent_cmd, config.model, config.model_reasoning_effort)
-        result = run_loop(config, ui_impl, agent, root_dir)
-        sys.exit(result.exit_code)
-
-    # Default: delegate to factory pipeline as single-component run
+    # Single-component factory invocation
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.manifest import Manifest
     from ralph_py.verify import VerifyConfig
