@@ -21,7 +21,6 @@ import pytest
 
 from ralph_py.agents.codex import CodexAgent
 
-
 CODEX_AVAILABLE = shutil.which("codex") is not None
 
 

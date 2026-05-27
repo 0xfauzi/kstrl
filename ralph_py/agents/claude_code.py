@@ -8,7 +8,7 @@ import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
-
+from typing import Any
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
@@ -150,7 +150,8 @@ def _extract_result_text(raw_line: str) -> str | None:
     except (json.JSONDecodeError, ValueError):
         return None
     if evt.get("type") == "result":
-        return evt.get("result", "")
+        result = evt.get("result", "")
+        return str(result) if result is not None else None
     return None
 
 
@@ -202,7 +203,7 @@ def _parse_stream_event(raw_line: str) -> Iterator[str]:
     # Skip result (duplicates assistant text), system, rate_limit_event, etc.
 
 
-def _format_tool_use(tool_name: str, tool_input: dict) -> Iterator[str]:
+def _format_tool_use(tool_name: str, tool_input: dict[str, Any]) -> Iterator[str]:
     """Format a tool_use block into a concise human-readable line."""
     if tool_name == "Read":
         path = tool_input.get("file_path", "")

@@ -420,7 +420,7 @@ def save_snapshot(
     snapshot_path = snapshot_dir / f"{component_id}.json"
 
     snapshot_entries = []
-    for fixture, result in zip(fixtures, results):
+    for fixture, result in zip(fixtures, results, strict=True):
         if result.passed:
             snapshot_entries.append({
                 "description": fixture.description,

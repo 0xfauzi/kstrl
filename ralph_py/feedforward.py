@@ -44,6 +44,7 @@ class FeedforwardConfig:
     def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
         """Load feedforward config with precedence: env > toml > defaults."""
         import os
+
         from ralph_py.config import load_toml_section
         if root_dir is None:
             root_dir = Path.cwd()
@@ -420,9 +421,12 @@ def build_dependency_graph(root: Path) -> str:
     lines: list[str] = []
     for src_mod in sorted(edges):
         for tgt_mod in sorted(edges[src_mod]):
-            names = sorted(edges[src_mod][tgt_mod])
-            if names:
-                lines.append(f"{src_mod} -> {tgt_mod} (imports: {', '.join(names)})")
+            sorted_names = sorted(edges[src_mod][tgt_mod])
+            if sorted_names:
+                lines.append(
+                    f"{src_mod} -> {tgt_mod} "
+                    f"(imports: {', '.join(sorted_names)})"
+                )
             else:
                 lines.append(f"{src_mod} -> {tgt_mod}")
 

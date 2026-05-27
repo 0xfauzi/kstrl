@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,6 @@ from ralph_py.security import (
     SecurityMode,
     parse_security_output,
 )
-
 
 CALIBRATION_ENABLED = os.environ.get("RALPH_RUN_CALIBRATION") == "1"
 CALIBRATION_MODEL = os.environ.get("RALPH_CALIBRATION_MODEL", "haiku")
@@ -151,7 +150,7 @@ class _DetectionReport:
 
     def save(self) -> Path:
         RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        date_str = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        date_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         out = RESULTS_DIR / f"baseline-{date_str}.json"
         summary: dict[str, dict] = {}
         for entry in self.results:
@@ -160,7 +159,7 @@ class _DetectionReport:
             s["total"] += 1
             if entry["caught"]:
                 s["caught"] += 1
-        for role, counts in summary.items():
+        for counts in summary.values():
             counts["detection_rate"] = (
                 counts["caught"] / counts["total"] if counts["total"] else 0.0
             )
@@ -387,7 +386,7 @@ class TestFixtureStructure:
         assert len(fixtures) == 3, "Expected 3 spec fixtures"
 
     def test_security_meta_has_required_keys(self) -> None:
-        for artifact, meta in _security_fixtures():
+        for _artifact, meta in _security_fixtures():
             assert "fixture_id" in meta
             assert "must_detect" in meta
             assert "category" in meta["must_detect"]
@@ -402,14 +401,14 @@ class TestFixtureStructure:
             }
 
     def test_concern_meta_has_required_keys(self) -> None:
-        for artifact, meta in _concern_fixtures():
+        for _artifact, meta in _concern_fixtures():
             assert "fixture_id" in meta
             assert "must_detect" in meta
             assert "category" in meta["must_detect"]
             assert "prd" in meta, "Reviewer fixtures need a PRD context"
 
     def test_spec_meta_has_required_keys(self) -> None:
-        for artifact, meta in _spec_fixtures():
+        for _artifact, meta in _spec_fixtures():
             assert "fixture_id" in meta
             assert "must_detect" in meta
             assert "spec_issues_min" in meta["must_detect"]

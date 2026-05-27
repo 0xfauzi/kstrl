@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: pytest
+        # Calibration tests are gated behind RALPH_RUN_CALIBRATION=1
+        # and require real LLM keys; they stay skipped in CI by design.
+        run: uv run pytest tests/ -v --tb=short
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: ruff
+        run: uv run ruff check ralph_py/ tests/
+
+      - name: mypy
+        run: uv run mypy ralph_py/ --strict

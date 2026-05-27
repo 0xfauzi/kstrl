@@ -16,9 +16,6 @@ import json
 import textwrap
 from pathlib import Path
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -267,7 +264,7 @@ class TestParsersIntegration:
 
 class TestFixturesIntegration:
     def test_cli_fixture_passes(self, tmp_path: Path) -> None:
-        from ralph_py.fixtures import Fixture, FixturesConfig, run_cli_fixture
+        from ralph_py.fixtures import Fixture, run_cli_fixture
 
         f = Fixture(
             description="echo works",

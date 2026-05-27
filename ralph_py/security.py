@@ -18,25 +18,25 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
-from ralph_py.findings import Finding
 from ralph_py.decompose import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,
     collect_agent_output,
 )
+from ralph_py.findings import Finding
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
     from ralph_py.ui.base import UI
 
 
-class SecurityMode(str, Enum):
+class SecurityMode(StrEnum):
     HARD = "hard"      # block on critical findings
     ADVISORY = "advisory"  # surface findings but never block
     SKIP = "skip"      # skip the phase entirely

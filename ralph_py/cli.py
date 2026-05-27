@@ -6,6 +6,7 @@ import copy
 import json
 import os
 import sys
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from click.core import ParameterSource
 
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
+from ralph_py.agents.base import Agent
 from ralph_py.config import RalphConfig, _parse_paths
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
@@ -79,7 +81,7 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
 class LoggingAgent:
     """Agent wrapper that appends streamed output to a log file."""
 
-    def __init__(self, agent: object, log_path: Path) -> None:
+    def __init__(self, agent: Agent, log_path: Path) -> None:
         self._agent = agent
         self._log_path = log_path
 
@@ -89,10 +91,10 @@ class LoggingAgent:
 
     def run(
         self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
-    ):  # type: ignore[override]
+    ) -> Iterator[str]:
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         with self._log_path.open("a") as handle:
-            for line in self._agent.run(prompt, cwd):
+            for line in self._agent.run(prompt, cwd, timeout):
                 handle.write(f"{line}\n")
                 handle.flush()
                 yield line
@@ -1153,7 +1155,10 @@ def decompose(
 @click.option(
     "--dead-code-cleanup",
     is_flag=True,
-    help="Enable dead code cleanup: ruff auto-fixes unused imports/variables, vulture detects remaining dead code",
+    help=(
+        "Enable dead code cleanup: ruff auto-fixes unused "
+        "imports/variables, vulture detects remaining dead code"
+    ),
 )
 @click.option(
     "--dead-code-command",
@@ -1567,7 +1572,10 @@ def evolve(
             sys.exit(1)
 
         ui_impl.info(f"Applying proposal: {apply_id}")
-        ui_impl.warn("Proposal application is not yet automated. Review proposals in .ralph/proposals/ and apply manually.")
+        ui_impl.warn(
+            "Proposal application is not yet automated. "
+            "Review proposals in .ralph/proposals/ and apply manually."
+        )
         sys.exit(0)
 
     # Default: analyze and propose

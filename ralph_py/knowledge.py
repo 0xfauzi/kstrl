@@ -23,7 +23,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ralph_py.decompose import (
     AgentOutputTooLarge,
@@ -92,7 +92,7 @@ class KnowledgeConfig:
         config.knowledge_root = root_dir / ".ralph" / "knowledge"
 
         toml_path = root_dir / "ralph.toml"
-        data: dict = {}
+        data: dict[str, Any] = {}
         if toml_path.exists():
             try:
                 with open(toml_path, "rb") as f:
@@ -464,10 +464,11 @@ def _pack_facts_full(
 def _pack_facts_summary(
     facts: list[Fact], budget_tokens: int,
 ) -> tuple[list[Fact], bool]:
-    """Pack first-sentence summaries into budget. Returns (kept_facts_with_summary_claim, overflowed).
+    """Pack first-sentence summaries into budget.
 
-    A summary that doesn't fit is dropped, but the loop continues so
-    smaller subsequent summaries are still considered.
+    Returns ``(kept_facts_with_summary_claim, overflowed)``. A summary
+    that doesn't fit is dropped, but the loop continues so smaller
+    subsequent summaries are still considered.
     """
     if not facts:
         return [], False
@@ -731,7 +732,7 @@ def _read_prd_text(prd_path: Path) -> str:
     return text
 
 
-def _parse_distill_output(raw_output: str) -> list[dict]:
+def _parse_distill_output(raw_output: str) -> list[dict[str, Any]]:
     """Extract the facts array from raw agent output. Returns [] on any failure."""
     try:
         data = _extract_json(raw_output)
@@ -780,7 +781,7 @@ def _is_injection_attempt(text: str) -> bool:
 
 
 def _coerce_facts(
-    raw_facts: list[dict],
+    raw_facts: list[dict[str, Any]],
     component_id: str,
     iteration_count: int,
     run_id: str,

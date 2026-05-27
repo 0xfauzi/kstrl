@@ -239,11 +239,12 @@ def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
     final = getattr(agent, "final_message", None)
     if not final:
         return streamed
+    final_str = str(final)
     try:
-        _extract_json(final)
+        _extract_json(final_str)
     except ValueError:
         return streamed
-    return final
+    return final_str
 
 
 def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
@@ -320,7 +321,10 @@ def _validate_decompose_output(data: Any) -> list[str]:
         ):
             # Architect explicitly halted - this is a valid outcome.
             return []
-        return ["'components' must not be empty (no well-formed blocker spec_issues to justify halt)"]
+        return [
+            "'components' must not be empty (no well-formed blocker "
+            "spec_issues to justify halt)"
+        ]
 
     seen_ids: set[str] = set()
     seen_story_ids: set[str] = set()

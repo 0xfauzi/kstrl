@@ -650,10 +650,16 @@ def _detect_project_context(root: Path) -> dict[str, str]:
             pkg = _json.loads(pkg_json.read_text())
             ctx["name"] = pkg.get("name", root.name)
             scripts = pkg.get("scripts", {})
-            ctx["test_cmd"] = f"npm run {scripts.get('test', 'test')}" if "test" in scripts else "npx jest"
-            ctx["lint_cmd"] = f"npm run {scripts.get('lint', 'lint')}" if "lint" in scripts else "npx eslint ."
+            ctx["test_cmd"] = (
+                f"npm run {scripts.get('test', 'test')}"
+                if "test" in scripts else "npx jest"
+            )
+            ctx["lint_cmd"] = (
+                f"npm run {scripts.get('lint', 'lint')}"
+                if "lint" in scripts else "npx eslint ."
+            )
             ctx["typecheck_cmd"] = "npx tsc --noEmit"
-            ctx["build_cmd"] = f"npm run build" if "build" in scripts else ""
+            ctx["build_cmd"] = "npm run build" if "build" in scripts else ""
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             if "next" in deps:
                 ctx["framework"] = "Next.js"
@@ -688,7 +694,11 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         return ctx
 
     # Java / Kotlin
-    if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
+    if (
+        (root / "pom.xml").exists()
+        or (root / "build.gradle").exists()
+        or (root / "build.gradle.kts").exists()
+    ):
         ctx["language"] = "Java"
         if (root / "build.gradle.kts").exists():
             ctx["language"] = "Kotlin"

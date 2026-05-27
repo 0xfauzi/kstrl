@@ -10,7 +10,6 @@ import pytest
 
 from ralph_py.decompose import (
     SpecBlockerError,
-    SpecIssue,
     _extract_json,
     _parse_spec_issues,
     _validate_decompose_output,

@@ -7,14 +7,14 @@ import os
 import tempfile
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from ralph_py.findings import Finding
 
 
-class ComponentStatus(str, Enum):
+class ComponentStatus(StrEnum):
     """Component execution states."""
 
     PENDING = "pending"

@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
-from ralph_py.findings import Finding
 from ralph_py.decompose import (
     AgentOutputTooLarge,
     _extract_json,
     _select_agent_output,
     collect_agent_output,
 )
+from ralph_py.findings import Finding
 from ralph_py.prd import PRD
 from ralph_py.verify import VerificationResult
 
@@ -24,13 +24,13 @@ if TYPE_CHECKING:
     from ralph_py.ui.base import UI
 
 
-class ReviewVerdict(str, Enum):
+class ReviewVerdict(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     ADVISORY = "advisory"
 
 
-class ReviewMode(str, Enum):
+class ReviewMode(StrEnum):
     HARD = "hard"
     ADVISORY = "advisory"
     SKIP = "skip"
