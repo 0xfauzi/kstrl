@@ -170,10 +170,23 @@ class SecurityResult:
     def as_findings(self) -> list[Finding]:
         """E3: typed representation of every SecurityFinding, enriched
         with the OWASP/CWE taxonomy from SECURITY_CATEGORY_MAP. Used by
-        factory to populate ``Component.findings``."""
-        return [
-            Finding(
+        factory to populate ``Component.findings``.
+
+        E3-infra: when this result has ``infrastructure_error=True``
+        (security agent crashed, output unparseable, timeout) returns a
+        single synthetic infrastructure_error Finding so downstream
+        consumers can distinguish "clean security review" (empty list)
+        from "security review never ran" (one infra finding)."""
+        if self.infrastructure_error:
+            return [Finding.infrastructure_error(
                 phase="security",
+                explanation=(
+                    self.overall_notes
+                    or "Security reviewer agent did not produce parseable output"
+                ),
+            )]
+        return [
+            Finding.from_security_finding(
                 category=f.category,
                 severity=f.severity,
                 location=f.location,

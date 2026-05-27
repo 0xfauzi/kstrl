@@ -111,6 +111,60 @@ class TestRecordRun:
         assert len(tsv_lines) == 2  # header + data row
         assert "run-001" in tsv_lines[1]
 
+    def test_record_run_includes_typed_findings(
+        self, tmp_path: Path,
+    ) -> None:
+        """E3-consume: the evolution journal must serialize
+        Component.findings alongside the existing scalars, and include
+        a findings_summary for fast aggregation. This is what makes the
+        typed Finding stream actually load-bearing."""
+        from ralph_py.findings import Finding
+
+        journal_path = tmp_path / "evolution.jsonl"
+        experiments_path = tmp_path / "experiments.tsv"
+        config = EvolutionConfig(
+            journal_path=journal_path,
+            experiments_path=experiments_path,
+        )
+        journal = EvolutionJournal(config)
+
+        comp = _make_component(
+            "a", status=ComponentStatus.COMPLETED.value, duration_seconds=10.0,
+        )
+        comp.findings = [
+            Finding.from_review_concern(
+                category="dead_code", severity="fail",
+                location="src/a.py:1", explanation="unused",
+            ),
+            Finding.from_security_finding(
+                category="injection", severity="critical",
+                location="src/b.py:2", explanation="raw sql",
+                suggestion="parametrize",
+                owasp="A03:2021-Injection", cwe="CWE-89",
+            ),
+            Finding.infrastructure_error("security", "agent timeout"),
+        ]
+        manifest = _make_manifest([comp])
+        factory_result = FactoryResult(completed=["a"], failed=[], skipped=[])
+
+        journal.record_run("run-findings", manifest, factory_result)
+
+        entry = json.loads(journal_path.read_text().strip())
+        # All three findings serialized.
+        assert len(entry["findings"]) == 3
+        # Summary aggregates correctly.
+        summary = entry["findings_summary"]
+        assert summary["total"] == 3
+        assert summary["by_phase"]["review"] == 1
+        assert summary["by_phase"]["security"] == 2
+        assert summary["by_severity"]["fail"] == 1
+        assert summary["by_severity"]["critical"] == 2
+        assert summary["by_category"]["dead_code"] == 1
+        assert summary["by_category"]["injection"] == 1
+        assert summary["by_owasp"]["A03:2021-Injection"] == 1
+        # Infrastructure errors are counted separately from real findings.
+        assert summary["infrastructure_errors"] == 1
+
 
 # ---------------------------------------------------------------------------
 # extract_failure_patterns

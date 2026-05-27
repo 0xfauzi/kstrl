@@ -570,6 +570,101 @@ class TestBuildKnowledgeContext:
         with pytest.raises(ValueError, match="dependency_scope"):
             KnowledgeConfig(dependency_scope="recursive")
 
+    def test_e8_telemetry_records_excluded_facts_under_direct_scope(
+        self, tmp_path: Path,
+    ) -> None:
+        """E8-telemetry: building a knowledge context for a component
+        whose transitive set is wider than its direct set must log the
+        delta to ``<knowledge_root>/_e8_dependency_scope.jsonl``.
+
+        Setup: 3-tier chain a <- b <- c. Component a has 2 facts. With
+        direct scope, c's context omits a's facts from the full-text
+        tier; telemetry records ``excluded_dep_count=1,
+        withheld_fact_count=2``."""
+        from ralph_py.knowledge import read_dependency_scope_telemetry
+
+        knowledge_root = tmp_path / "knowledge"
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+            _make_component("c", dependencies=["b"]),
+        ])
+        write_facts(
+            [
+                _make_fact(
+                    fact_id="fact-001", component_id="a",
+                    claim="A first fact.",
+                ),
+                _make_fact(
+                    fact_id="fact-002", component_id="a",
+                    claim="A second fact.",
+                ),
+            ],
+            knowledge_root, "a", "factory-20260101-120000",
+        )
+        config = KnowledgeConfig(
+            knowledge_root=knowledge_root, dependency_scope="direct",
+        )
+        build_knowledge_context(
+            manifest, manifest.components[2], knowledge_root, config,
+        )
+
+        events = read_dependency_scope_telemetry(knowledge_root)
+        assert len(events) == 1
+        assert events[0]["component_id"] == "c"
+        assert events[0]["excluded_dep_count"] == 1
+        assert events[0]["withheld_fact_count"] == 2
+
+    def test_e8_telemetry_silent_when_direct_equals_transitive(
+        self, tmp_path: Path,
+    ) -> None:
+        """When direct deps == transitive deps (single-tier graph),
+        nothing is excluded and no telemetry event is written. The
+        absence of events is the healthy state."""
+        from ralph_py.knowledge import read_dependency_scope_telemetry
+
+        knowledge_root = tmp_path / "knowledge"
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+        ])
+        write_facts(
+            [_make_fact(fact_id="fact-001", component_id="a", claim="x")],
+            knowledge_root, "a", "run-1",
+        )
+        config = KnowledgeConfig(
+            knowledge_root=knowledge_root, dependency_scope="direct",
+        )
+        build_knowledge_context(
+            manifest, manifest.components[1], knowledge_root, config,
+        )
+        assert read_dependency_scope_telemetry(knowledge_root) == []
+
+    def test_e8_telemetry_silent_under_transitive_scope(
+        self, tmp_path: Path,
+    ) -> None:
+        """When dependency_scope=transitive, no facts are excluded and
+        the telemetry stays empty even on a deep chain."""
+        from ralph_py.knowledge import read_dependency_scope_telemetry
+
+        knowledge_root = tmp_path / "knowledge"
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+            _make_component("c", dependencies=["b"]),
+        ])
+        write_facts(
+            [_make_fact(fact_id="fact-001", component_id="a", claim="x")],
+            knowledge_root, "a", "run-1",
+        )
+        config = KnowledgeConfig(
+            knowledge_root=knowledge_root, dependency_scope="transitive",
+        )
+        build_knowledge_context(
+            manifest, manifest.components[2], knowledge_root, config,
+        )
+        assert read_dependency_scope_telemetry(knowledge_root) == []
+
     def test_three_tiers(self, tmp_path: Path) -> None:
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest([
