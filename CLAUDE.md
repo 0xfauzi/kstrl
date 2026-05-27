@@ -32,6 +32,7 @@ Ralph's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 
 - **Do not run `/code-review` on your own code.** Per H1 of `docs/adversarial-roadmap.md`, AI self-review of AI-generated code is prohibited. The user or `/code-review ultra` is the gating reviewer.
 - **Calibration is the truth signal.** When changing an adversarial prompt (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, the engineer prompt), re-run the calibration suite and compare detection rates against the saved baseline. A prompt edit without a calibration check is treated as untested (H2).
+- **Prompt edits require a version bump and a hash update.** Every adversarial prompt declares a `*_PROMPT_VERSION` semver constant next to the prompt body. `tests/test_prompt_versions.py` snapshots each prompt's SHA-256; editing a prompt makes the snapshot test fail. Land the change by bumping the version, re-running calibration, and updating the recorded hash. The two-file diff (prompt + hash) is the audit trail that the change was reviewed (H3).
 - **Be explicit about what was tested vs assumed.** "Smoke passed" without listing what was checked is presence-testing, not behavior-testing (H4).
 - **All adversarial-roadmap policies are tracked in `docs/adversarial-roadmap.md`**. Read it before changing the role architecture.
 
@@ -69,6 +70,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 
 - Do NOT run `/code-review` on your own code (H1).
 - Do NOT ship a prompt change without re-running calibration (H2).
+- Do NOT update the hash in `tests/test_prompt_versions.py` without also bumping the matching `*_PROMPT_VERSION` constant (H3). The two changes always travel together.
 - Do NOT use `pickle` to load untrusted data; the existing `tests/test_phase_c_coverage.py` C8 pickling test only round-trips configs we constructed in-test.
 - Do NOT add unverifiable self-report claims to results without flagging them as hints (E9 added `infrastructure_error` precisely to distinguish verified from claimed).
 - Do NOT bypass the budget cap (`max_adversarial_calls`) without explicit user opt-in.

@@ -43,6 +43,8 @@ class SpecBlockerError(Exception):
             + "\n".join(summary_lines),
         )
 
+DECOMPOSE_PROMPT_VERSION = "1.0.0"
+
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
 two jobs and you must do BOTH before decomposing:

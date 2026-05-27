@@ -149,7 +149,7 @@ Done when: PR merged.
 
 - [x] H1 - Adopted 2026-05-27. Assistant does NOT self-review its own code. PRs #37-#43 in this hardening cycle all merged without `/code-review`; user is the gating reviewer via `/code-review ultra` or direct diff inspection. Codified in CLAUDE.md "What NOT to do".
 - [x] H2 - Adopted 2026-05-27. Calibration suite (`tests/test_calibration.py`) is the verification path for prompt changes. CI hook still TBD (env var gating is the manual-trigger mechanism today). Codified in CLAUDE.md.
-- [~] H3 - Prompt-versioning policy: today prompts are module-level constants edited under PR review. A versioning policy beyond that (e.g. per-prompt version field, semantic-versioned prompt files) is deferred — would be a separate cross-cutting change.
+- [x] H3 - Adopted 2026-05-27. Every adversarial prompt (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`) now declares a `*_PROMPT_VERSION` semver constant. `tests/test_prompt_versions.py` snapshots the SHA-256 of each prompt; drift fails the suite and forces a version bump + hash update + recalibration. The two-file diff (prompt + hash) is the audit trail.
 - [x] H4 - Adopted 2026-05-27. Claim discipline codified in CLAUDE.md "What NOT to do" and docs/adversarial-design.md "Process" section: be explicit about checked vs assumed; smoke tests are presence checks, not behavior checks.
 - [ ] H5 - User-driven: user runs `/code-review ultra` retroactively on PRs #35, #36 and the seven hardening PRs #37-#43. Not something the assistant can do (H1).
 

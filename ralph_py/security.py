@@ -245,6 +245,8 @@ class SecurityConfig:
         return config
 
 
+SECURITY_PROMPT_VERSION = "1.0.0"
+
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance
 is that this diff introduces a vulnerability somewhere; your job is to
