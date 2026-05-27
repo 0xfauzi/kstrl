@@ -1,8 +1,0 @@
-# Ralph Progress Log
-
-This file is the inter-iteration memory for the Ralph agent loop.
-Each iteration appends handoff notes so the next iteration knows
-where to pick up.
-
----
-
