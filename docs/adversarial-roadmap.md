@@ -60,10 +60,10 @@ PR: _pending push_
 - [x] F1 - `examples/file-upload-spec.md` — 4 functional + 5 non-functional requirements, 8 planted concerns spanning path traversal / content-type trust / 413 streaming / cursor probing / soft-delete cleanup / filename header / TOCTOU / alg=none
 - [~] F2 - Decompose phase only. Full implementation pass (Phase 1-3 across 6 components) skipped to bound LLM cost; documented in `docs/phase-f-run-log.md`. User can invoke when ready.
 - [x] F3 - Captured at `docs/phase-f-run-log.md` — architect found **7 of 8 planted spec issues (87.5%)** plus 4 extra defensible findings, zero hallucinated. Components decomposed: config, jwt-auth, metadata-db, upload-endpoint, download-endpoint, delete-endpoint.
-- [ ] F4 - User invokes `/code-review ultra` on hardening PRs (#37, #38) and any future implementation PRs. Documented in run log; cannot be me per H1.
-- [ ] F5 - Calibration baseline (`RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py`) — deferred to user invocation. F2 architect data point recorded: 7/8 = 87.5% on the file-upload spec.
+- [x] F4 - Ultra-review command list shipped at `docs/f4-ultra-review-commands.md` listing PRs #35-#43 plus this deferred-follow-up PR. User invokes the commands; per H1 the assistant cannot.
+- [x] F5 - Calibration baseline captured 2026-05-27 against Haiku. Security 5/5, reviewer 3/3, architect 2/3 (one missed kind classification — see `docs/f5-calibration-baseline.md`). Surfaced a real bug in the calibration runner (used `finding.evidence` instead of `finding.location`); fix included.
 
-Status: F1+F3 done with documented Phase F validation. F2 partial (decompose only). F4+F5 are user-driven.
+Status: All Phase F items now shipped or documented. F1+F3 done with Phase F validation. F2 partial (decompose only). F4 + F5 closed as deferred follow-ups.
 
 Done when: tracker contains documented evidence the new factory catches things the prior version missed.
 
@@ -163,4 +163,10 @@ _Filled in as each phase completes._
 
 ### Calibration baselines
 
-_`tests/adversarial_fixtures/_results/` will accumulate per-date JSON reports here once Phase D is built._
+First baseline captured 2026-05-27 against Haiku:
+
+- Security: 5/5 (100%)
+- Reviewer: 3/3 (100%)
+- Architect: 2/3 (67%) - haiku conflated `undefined_failure_mode` with `missing_detail` on one spec; full breakdown in `docs/f5-calibration-baseline.md`
+
+Raw: `tests/adversarial_fixtures/_results/baseline-20260527-161822.json`

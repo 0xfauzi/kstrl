@@ -1,0 +1,89 @@
+{
+  "model": "haiku",
+  "timestamp": "20260527-161822",
+  "summary": {
+    "security": {
+      "total": 5,
+      "caught": 5,
+      "detection_rate": 1.0
+    },
+    "reviewer": {
+      "total": 3,
+      "caught": 3,
+      "detection_rate": 1.0
+    },
+    "architect": {
+      "total": 3,
+      "caught": 2,
+      "detection_rate": 0.6666666666666666
+    }
+  },
+  "fixtures": [
+    {
+      "role": "security",
+      "fixture_id": "sec-01-sql-injection",
+      "caught": true,
+      "detail": "critical injection at src/users.py:11-13"
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-02-command-injection",
+      "caught": true,
+      "detail": "critical injection at src/backup.py:10-14"
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-03-hardcoded-secret",
+      "caught": true,
+      "detail": "critical hardcoded_secret at src/config.py:6"
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-04-predictable-token",
+      "caught": true,
+      "detail": "critical predictable_randomness at src/auth.py:15"
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-05-broken-jwt-verify",
+      "caught": true,
+      "detail": "critical auth_bypass at src/jwt_verify.py:9-13"
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-01-dead-code",
+      "caught": true,
+      "detail": "fail dead_code at src/sandbox/parser.py:15-31"
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-02-tautological-test",
+      "caught": true,
+      "detail": "fail test_quality at tests/test_calculator.py:6-8"
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-03-scope-creep",
+      "caught": true,
+      "detail": "fail scope_creep at src/sandbox/logger.py (entire file)"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "caught": false,
+      "detail": "got 8 issues: [('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('major', 'unstated_assumption'), ('minor', 'ambiguity')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "caught": true,
+      "detail": "got 14 issues: [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity'), ('minor', 'ambiguity'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "caught": true,
+      "detail": "got 15 issues: [('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'contradiction'), ('minor', 'missing_detail')]"
+    }
+  ]
+}
