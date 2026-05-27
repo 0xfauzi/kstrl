@@ -15,6 +15,7 @@ from ralph_py.verify import (
     check_diff_scope,
     check_mutation_score,
     check_prd_stories,
+    check_self_critique,
     check_test_suite,
     check_typecheck,
     run_mechanical_verification,
@@ -229,6 +230,94 @@ class TestRunMechanicalVerification:
         ctx = result.as_context()
         assert "test_suite: FAIL" in ctx
         assert "typecheck" not in ctx  # passed checks excluded
+
+
+class TestCheckSelfCritique:
+    """Tests for the engineer-prompt self-critique mechanical check."""
+
+    def test_missing_file_fails(self, tmp_path: Path) -> None:
+        result = check_self_critique(tmp_path / "missing.txt")
+        assert result.passed is False
+        assert "Could not read" in result.message
+
+    def test_no_block_fails(self, tmp_path: Path) -> None:
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1 - US-001\n- did stuff\n- ran tests\n",
+        )
+        result = check_self_critique(progress)
+        assert result.passed is False
+        assert "No '## Self-Critique'" in result.message
+
+    def test_block_with_three_bullets_passes(self, tmp_path: Path) -> None:
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1 - US-001\n"
+            "- did stuff\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: invalid input crashes parser\n"
+            "  - Failure mode 2: concurrent writes race\n"
+            "  - Failure mode 3: timeout swallowed silently\n"
+        )
+        result = check_self_critique(progress)
+        assert result.passed is True
+        assert "3 failure modes" in result.message
+
+    def test_fewer_than_min_fails(self, tmp_path: Path) -> None:
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1 - US-001\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: x\n"
+            "  - Failure mode 2: y\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is False
+        assert "2 bullets" in result.message
+
+    def test_tbd_bullets_dont_count(self, tmp_path: Path) -> None:
+        """The check should reject placeholder content like TBD/TODO/N/A."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1\n"
+            "- **Self-Critique:**\n"
+            "  - TBD\n"
+            "  - TODO write later\n"
+            "  - N/A\n"
+            "  - Failure mode: empty input crashes the parser\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is False  # only 1 substantive bullet
+
+    def test_latest_iteration_block_used(self, tmp_path: Path) -> None:
+        """Multiple Self-Critique blocks in one file - the LAST one is
+        evaluated so previous iterations don't carry the current one."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1\n"
+            "- **Self-Critique:**\n"
+            "  - mode1: x\n"
+            "  - mode2: y\n"
+            "  - mode3: z\n"
+            "\n## Iteration 2\n"
+            "- **Self-Critique:**\n"
+            "  - only one this time\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is False  # latest iteration has only 1
+
+    def test_h2_style_heading_recognized(self, tmp_path: Path) -> None:
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## Iteration 1\n"
+            "Some narrative.\n"
+            "## Self-Critique\n"
+            "- failure A: detailed reason\n"
+            "- failure B: detailed reason\n"
+            "- failure C: detailed reason\n"
+        )
+        result = check_self_critique(progress)
+        assert result.passed is True
 
 
 class TestCheckMutationScore:
