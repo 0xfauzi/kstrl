@@ -605,7 +605,11 @@ class TestDistillFacts:
         )
         assert written == 0
         assert "no_facts" in status
-        assert not (knowledge_root / "comp-a").exists()
+        # No fact files were written (a debug dump may exist alongside;
+        # that's a diagnostic, not a knowledge artifact).
+        assert read_facts(knowledge_root, "comp-a") == []
+        fact_files = list(knowledge_root.glob("comp-a/*/fact-*.md"))
+        assert fact_files == []
 
     def test_disabled_short_circuits(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
@@ -649,6 +653,77 @@ class TestDistillFacts:
         facts = read_facts(knowledge_root, "comp-a")
         # downgraded because Phase 2 was skipped
         assert facts[0].confidence == "asserted"
+
+    def test_final_message_preferred_over_streamed_output(
+        self, tmp_path: Path,
+    ) -> None:
+        """When the agent echoes the prompt back (as codex does), the streamed
+        output contains the JSON schema example. _extract_json's first-brace
+        heuristic would latch onto the schema's example fact (with the literal
+        scope string "handler|adapter|...") and reject it during coercion.
+        distill_facts must prefer agent.final_message when set."""
+        component = _make_component("comp-a")
+        prd_path = self._setup_prd(tmp_path, "comp-a")
+        knowledge_root = tmp_path / "knowledge"
+        config = KnowledgeConfig(knowledge_root=knowledge_root)
+
+        schema_example_dump = """
+prompt echoed back: schema is
+{
+  "facts": [
+    {
+      "id": "fact-001",
+      "scope": "handler|adapter|schema|contract|invariant|gotcha",
+      "confidence": "verified|asserted",
+      "evidence": ["path/to/file.py:42-58"],
+      "tags": ["x"],
+      "claim": "example"
+    }
+  ]
+}
+... and so on ...
+"""
+        real_response = json.dumps({
+            "facts": [{
+                "id": "fact-001",
+                "scope": "handler",
+                "confidence": "verified",
+                "evidence": ["src/x.py:1-2"],
+                "claim": "real fact from final_message",
+                "tags": [],
+            }],
+        })
+
+        class _EchoingAgent:
+            @property
+            def name(self) -> str:
+                return "fake-codex"
+
+            def run(
+                self, prompt: str, cwd: Path | None = None,
+                timeout: float | None = None,
+            ) -> Iterator[str]:
+                # Mimic codex: echo prompt back, then output JSON
+                for line in schema_example_dump.split("\n"):
+                    yield line
+                yield real_response
+
+            @property
+            def final_message(self) -> str | None:
+                return real_response
+
+        written, _status = distill_facts(
+            _EchoingAgent(), component, "diff", prd_path, 1, "run-1",
+            knowledge_root, config, tmp_path, review_passed=True,
+        )
+
+        assert written == 1
+        facts = read_facts(knowledge_root, "comp-a")
+        assert len(facts) == 1
+        assert facts[0].claim == "real fact from final_message"
+        # If we'd parsed the streamed echo, scope would have been the
+        # pipe-separated schema string and the fact would have been rejected.
+        assert facts[0].scope == "handler"
 
     def test_diff_truncated_at_50kb(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
