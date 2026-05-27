@@ -25,7 +25,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ralph_py.decompose import _extract_json
+from ralph_py.decompose import _extract_json, _select_agent_output
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -56,6 +56,9 @@ class KnowledgeConfig:
 
         Reads the [knowledge] section from ``<root_dir>/ralph.toml`` if
         present, then applies any matching environment variable overrides.
+        Raises ValueError on malformed TOML, matching the error policy of
+        :meth:`RalphConfig.load` so the two loaders treat the same file
+        consistently.
         """
         import tomllib
 
@@ -66,30 +69,32 @@ class KnowledgeConfig:
         config.knowledge_root = root_dir / ".ralph" / "knowledge"
 
         toml_path = root_dir / "ralph.toml"
+        data: dict = {}
         if toml_path.exists():
             try:
                 with open(toml_path, "rb") as f:
                     data = tomllib.load(f)
-            except tomllib.TOMLDecodeError:
-                data = {}
-            section = data.get("knowledge")
-            if isinstance(section, dict):
-                if "enabled" in section:
-                    config.enabled = bool(section["enabled"])
-                if "max_core_tokens" in section:
-                    config.max_core_tokens = int(section["max_core_tokens"])
-                if "max_dependency_tokens" in section:
-                    config.max_dependency_tokens = int(section["max_dependency_tokens"])
-                if "max_sibling_tokens" in section:
-                    config.max_sibling_tokens = int(section["max_sibling_tokens"])
-                if "distill_timeout_seconds" in section:
-                    config.distill_timeout_seconds = float(
-                        section["distill_timeout_seconds"]
-                    )
-                if "distill_model" in section:
-                    config.distill_model = str(section["distill_model"])
-                if "max_facts_per_distill" in section:
-                    config.max_facts_per_distill = int(section["max_facts_per_distill"])
+            except tomllib.TOMLDecodeError as exc:
+                raise ValueError(f"Invalid TOML in {toml_path}: {exc}") from exc
+
+        section = data.get("knowledge")
+        if isinstance(section, dict):
+            if "enabled" in section:
+                config.enabled = bool(section["enabled"])
+            if "max_core_tokens" in section:
+                config.max_core_tokens = int(section["max_core_tokens"])
+            if "max_dependency_tokens" in section:
+                config.max_dependency_tokens = int(section["max_dependency_tokens"])
+            if "max_sibling_tokens" in section:
+                config.max_sibling_tokens = int(section["max_sibling_tokens"])
+            if "distill_timeout_seconds" in section:
+                config.distill_timeout_seconds = float(
+                    section["distill_timeout_seconds"]
+                )
+            if "distill_model" in section:
+                config.distill_model = str(section["distill_model"])
+            if "max_facts_per_distill" in section:
+                config.max_facts_per_distill = int(section["max_facts_per_distill"])
 
         # Env overrides
         if "RALPH_KNOWLEDGE_ENABLED" in os.environ:
@@ -317,12 +322,26 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+# Sentence-end regex: terminal punctuation followed by either end-of-string
+# or whitespace + an uppercase ASCII letter. This avoids splitting on
+# common abbreviations like "e.g.", "i.e.", "Mr." where the period is
+# followed by a lowercase continuation.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s+[A-Z]|\s*$)")
+
+
 def _first_sentence(claim: str) -> str:
-    """Return the first sentence of a claim (everything up to the first '.', '!', or '?')."""
+    """Return the first sentence of a claim.
+
+    Splits on '.', '!', or '?' only when followed by whitespace + a
+    capital letter (or end of string). This is a heuristic - it
+    deliberately keeps abbreviations like "e.g." intact at the cost of
+    occasionally missing a real boundary when the next sentence starts
+    with a lowercase word.
+    """
     stripped = claim.strip()
     if not stripped:
         return ""
-    match = re.search(r"[.!?](?:\s|$)", stripped)
+    match = _SENTENCE_END_RE.search(stripped)
     if match is None:
         return stripped
     return stripped[: match.end()].rstrip()
@@ -341,9 +360,10 @@ def _pack_facts_full(
 ) -> tuple[list[Fact], bool]:
     """Pack facts into budget. Returns (kept_facts, overflowed).
 
-    Drops asserted before verified, then oldest first. Within a single
-    fact, the body is truncated to fit only if that buys more than 30
-    tokens of payload (otherwise the fact is dropped entirely).
+    Drops asserted before verified, then oldest first. The first
+    overflowing fact may have its body truncated to fit the remaining
+    budget if doing so buys more than 30 tokens of payload. Subsequent
+    smaller facts that still fit are kept (no greedy abort).
     """
     if not facts:
         return [], False
@@ -351,6 +371,7 @@ def _pack_facts_full(
     kept: list[Fact] = []
     used = 0
     overflowed = False
+    truncation_used = False
     for fact in ordered:
         rendered = _render_fact_md(fact)
         cost = _estimate_tokens(rendered)
@@ -359,17 +380,24 @@ def _pack_facts_full(
             used += cost
             continue
 
-        # Try truncating the body to fit the remaining budget.
-        meta_only = _render_fact_md(replace(fact, claim=""))
-        meta_cost = _estimate_tokens(meta_only)
-        remaining = budget_tokens - used - meta_cost
-        if remaining > 30:
-            chars_available = remaining * 4
-            truncated_claim = fact.claim[: chars_available - 20].rstrip() + "..."
-            kept.append(replace(fact, claim=truncated_claim))
-            used = budget_tokens
+        # Doesn't fit at full size. Try truncating once (only the first
+        # overflowing fact gets this treatment) to soak up remaining
+        # budget; subsequent overflowing facts are dropped but smaller
+        # facts after them may still fit.
+        if not truncation_used:
+            meta_only = _render_fact_md(replace(fact, claim=""))
+            meta_cost = _estimate_tokens(meta_only)
+            remaining = budget_tokens - used - meta_cost
+            if remaining > 30:
+                chars_available = remaining * 4
+                truncated_claim = (
+                    fact.claim[: chars_available - 20].rstrip() + "..."
+                )
+                kept.append(replace(fact, claim=truncated_claim))
+                used = budget_tokens
+                truncation_used = True
         overflowed = True
-        break
+        # Don't break: smaller subsequent facts may still fit.
 
     if len(kept) < len(facts):
         overflowed = True
@@ -379,7 +407,11 @@ def _pack_facts_full(
 def _pack_facts_summary(
     facts: list[Fact], budget_tokens: int,
 ) -> tuple[list[Fact], bool]:
-    """Pack first-sentence summaries into budget. Returns (kept_facts_with_summary_claim, overflowed)."""
+    """Pack first-sentence summaries into budget. Returns (kept_facts_with_summary_claim, overflowed).
+
+    A summary that doesn't fit is dropped, but the loop continues so
+    smaller subsequent summaries are still considered.
+    """
     if not facts:
         return [], False
     ordered = _sort_for_packing(facts)
@@ -396,7 +428,7 @@ def _pack_facts_summary(
             used += cost
         else:
             overflowed = True
-            break
+            # Don't break: smaller subsequent summaries may still fit.
     if len(kept) < len(facts):
         overflowed = True
     return kept, overflowed
@@ -746,13 +778,12 @@ def distill_facts(
         return 0, f"knowledge.agent_error: {exc}"
 
     streamed_output = "\n".join(output_lines)
-
-    # Prefer the agent's final_message when set (codex populates this via
-    # --output-last-message). The streamed output often echoes the prompt
-    # back, and _extract_json's first-brace heuristic would otherwise
-    # latch onto the JSON schema example inside the echoed prompt.
+    # Select the best candidate: prefer agent.final_message when it
+    # parses (codex/claude path), else use streamed (CustomAgent or any
+    # agent that emits multi-line JSON without populating final_message
+    # with the full response).
+    raw_output = _select_agent_output(agent, output_lines)
     final_message = getattr(agent, "final_message", None)
-    raw_output = final_message if final_message else streamed_output
 
     def _dump_debug(label: str) -> None:
         """Persist raw distiller output so failure modes are diagnosable

@@ -161,6 +161,16 @@ max_dependency_tokens = 50
         assert config.max_core_tokens == 9999
         assert config.max_dependency_tokens == 50
 
+    def test_malformed_toml_raises(self, tmp_path: Path) -> None:
+        """KnowledgeConfig.load must raise ValueError on bad TOML, matching
+        RalphConfig.load. Silently falling back to defaults would hide
+        user typos in the [knowledge] section."""
+        (tmp_path / "ralph.toml").write_text(
+            "this is not = valid = toml = [\n",
+        )
+        with pytest.raises(ValueError, match="Invalid TOML"):
+            KnowledgeConfig.load(tmp_path)
+
     def test_env_overrides_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -291,6 +301,24 @@ class TestHelpers:
     def test_first_sentence_empty(self) -> None:
         assert _first_sentence("") == ""
 
+    def test_first_sentence_preserves_eg_abbreviation(self) -> None:
+        assert (
+            _first_sentence(
+                "Handler returns 200, e.g. for GET /health. Returns 500 otherwise.",
+            )
+            == "Handler returns 200, e.g. for GET /health."
+        )
+
+    def test_first_sentence_preserves_ie_abbreviation(self) -> None:
+        assert (
+            _first_sentence("Maps i.e. simply. Done.")
+            == "Maps i.e. simply."
+        )
+
+    def test_first_sentence_single_sentence_ending_period(self) -> None:
+        # No continuation after the terminal period - $ branch fires.
+        assert _first_sentence("A single sentence.") == "A single sentence."
+
     def test_transitive_dependencies_chain(self) -> None:
         manifest = _make_manifest([
             _make_component("a"),
@@ -360,6 +388,72 @@ class TestPackFacts:
         kept, _over = _pack_facts_summary([fact], 10000)
         assert len(kept) == 1
         assert kept[0].claim == "First sentence."
+
+    def test_pack_full_does_not_drop_smaller_facts_after_overflow(self) -> None:
+        """A single oversized fact must not abort the whole pack: smaller
+        subsequent facts that still fit in the remaining budget should be
+        kept."""
+        huge = _make_fact(
+            fact_id="fact-001",
+            confidence="verified",
+            claim="x" * 1000,  # render cost ~300 tokens
+        )
+        small_a = _make_fact(
+            fact_id="fact-002",
+            confidence="verified",
+            claim="short A",
+        )
+        # Budget chosen so huge cannot fit AND the truncation branch
+        # can't fire (remaining < 30 tokens after subtracting meta size).
+        # Without the greedy-break fix, the loop aborts on huge and the
+        # subsequent small fact never gets considered.
+        kept, over = _pack_facts_full([huge, small_a], 70)
+        kept_ids = [f.id for f in kept]
+        assert "fact-001" not in kept_ids
+        assert "fact-002" in kept_ids
+        assert over is True
+
+    def test_pack_summary_does_not_drop_smaller_facts_after_overflow(
+        self,
+    ) -> None:
+        """Same fix in _pack_facts_summary: an oversized first sentence
+        must not block smaller subsequent sentences."""
+        # _first_sentence is greedy; use claims with no terminator so the
+        # entire claim is the "first sentence".
+        huge = _make_fact(
+            fact_id="fact-001",
+            confidence="verified",
+            claim="A" * 4000,
+        )
+        small_a = _make_fact(
+            fact_id="fact-002",
+            confidence="verified",
+            claim="short",
+        )
+        kept, over = _pack_facts_summary([huge, small_a], 60)
+        kept_ids = [f.id for f in kept]
+        assert "fact-002" in kept_ids
+        assert "fact-001" not in kept_ids
+        assert over is True
+
+    def test_pack_full_truncates_only_first_overflowing_fact(self) -> None:
+        """The truncation branch should fire at most once per pack call,
+        not repeatedly squeezing fact bodies down to nothing."""
+        # All three are too large at full size; only first should be
+        # truncated to fit, the rest dropped.
+        f1 = _make_fact(
+            fact_id="fact-001", confidence="verified", claim="A" * 800,
+        )
+        f2 = _make_fact(
+            fact_id="fact-002", confidence="verified", claim="B" * 800,
+        )
+        f3 = _make_fact(
+            fact_id="fact-003", confidence="verified", claim="C" * 800,
+        )
+        kept, over = _pack_facts_full([f1, f2, f3], 200)
+        truncated = [f for f in kept if f.claim.endswith("...")]
+        assert len(truncated) <= 1
+        assert over is True
 
 
 # ---------------------------------------------------------------------------
@@ -724,6 +818,59 @@ prompt echoed back: schema is
         # If we'd parsed the streamed echo, scope would have been the
         # pipe-separated schema string and the fact would have been rejected.
         assert facts[0].scope == "handler"
+
+    def test_falls_back_to_streamed_when_final_message_unparseable(
+        self, tmp_path: Path,
+    ) -> None:
+        """If agent.final_message is set but doesn't contain valid JSON
+        (e.g. CustomAgent that emits multi-line JSON and records only the
+        last line as final_message), distill_facts must fall back to the
+        streamed output rather than silently dropping the response."""
+        component = _make_component("comp-a")
+        prd_path = self._setup_prd(tmp_path, "comp-a")
+        knowledge_root = tmp_path / "knowledge"
+        config = KnowledgeConfig(knowledge_root=knowledge_root)
+
+        multi_line_json = json.dumps({
+            "facts": [{
+                "id": "fact-001",
+                "scope": "handler",
+                "confidence": "verified",
+                "evidence": ["src/x.py:1"],
+                "claim": "valid claim from streamed output",
+                "tags": [],
+            }],
+        })
+
+        class _PartialFinalAgent:
+            """Mimics CustomAgent: final_message is just the last
+            non-empty line of streamed output, not the full response."""
+
+            @property
+            def name(self) -> str:
+                return "fake-custom"
+
+            def run(
+                self, prompt: str, cwd: Path | None = None,
+                timeout: float | None = None,
+            ) -> Iterator[str]:
+                # Stream the JSON across multiple lines
+                for line in multi_line_json.split(","):
+                    yield line + ("," if line != multi_line_json.split(",")[-1] else "")
+
+            @property
+            def final_message(self) -> str | None:
+                # Only the last line, like CustomAgent records
+                return multi_line_json.split(",")[-1]
+
+        written, status = distill_facts(
+            _PartialFinalAgent(), component, "diff", prd_path, 1, "run-1",
+            knowledge_root, config, tmp_path, review_passed=True,
+        )
+
+        assert written == 1, f"expected fallback to streamed; got status={status}"
+        facts = read_facts(knowledge_root, "comp-a")
+        assert facts[0].claim == "valid claim from streamed output"
 
     def test_diff_truncated_at_50kb(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")

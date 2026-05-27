@@ -535,7 +535,14 @@ def understand(
         config.prompt_file = ralph_dir / "understand_prompt.md"
     if not _use_cli_value(ctx, "allowed_paths") and "ALLOWED_PATHS" not in os.environ:
         config.allowed_paths = ["scripts/ralph/codebase_map.md"]
-    if not _use_cli_value(ctx, "branch") and "RALPH_BRANCH" not in os.environ:
+    # Only fall back to the understand-mode branch default when no other
+    # source (CLI / env / TOML) supplied a branch. RalphConfig.load sets
+    # ralph_branch_explicit=True when TOML provides a non-empty [git].branch.
+    if (
+        not _use_cli_value(ctx, "branch")
+        and "RALPH_BRANCH" not in os.environ
+        and not config.ralph_branch_explicit
+    ):
         config.ralph_branch = "ralph/understanding"
         config.ralph_branch_explicit = False
 

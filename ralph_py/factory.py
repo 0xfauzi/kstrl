@@ -148,6 +148,8 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
+    progress_file_str: str = "scripts/ralph/progress.txt",
+    codebase_map_file_str: str = "scripts/ralph/codebase_map.md",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -244,6 +246,8 @@ def _run_component(
         max_iterations=30,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
+        progress_file=worktree_path / progress_file_str,
+        codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=False,
         ralph_branch="",
@@ -349,21 +353,23 @@ def run_factory(
     worktree_paths: dict[str, Path] = {}
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
 
-    if base_config.prompt_file.is_absolute():
+    def _path_relative_to_root(path: Path) -> str:
+        """Render `path` relative to root_dir for use inside per-component
+        worktrees. Falls back to the absolute path string when relativization
+        fails (e.g. a path on a different mount)."""
+        if not path.is_absolute():
+            return str(path)
         try:
-            prompt_file_rel = base_config.prompt_file.relative_to(root_dir).as_posix()
+            return path.relative_to(root_dir).as_posix()
         except ValueError:
-            # Symlink or mount differences - try with resolved paths
             try:
-                prompt_file_rel = (
-                    base_config.prompt_file.resolve()
-                    .relative_to(root_dir.resolve())
-                    .as_posix()
-                )
+                return path.resolve().relative_to(root_dir.resolve()).as_posix()
             except ValueError:
-                prompt_file_rel = str(base_config.prompt_file)
-    else:
-        prompt_file_rel = str(base_config.prompt_file)
+                return str(path)
+
+    prompt_file_rel = _path_relative_to_root(base_config.prompt_file)
+    progress_file_rel = _path_relative_to_root(base_config.progress_file)
+    codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
     def _retry_or_fail(comp: Component, error: str, context_json: str | None) -> None:
         """Retry a component or mark it as failed."""
@@ -623,6 +629,8 @@ def run_factory(
             comp.scaffold or None,
             comp.dependencies or None,
             knowledge_prefix,
+            progress_file_rel,
+            codebase_map_file_rel,
         )
 
     # Main scheduling loop

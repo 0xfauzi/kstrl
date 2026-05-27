@@ -131,6 +131,65 @@ class TestRunLoop:
         assert result.completed is True
         assert result.exit_code == 0
 
+    def test_auto_checkout_false_skips_branch_checkout(
+        self, tmp_path: Path,
+    ) -> None:
+        """When config.auto_checkout is False, run_loop must skip both the
+        branch resolution AND the checkout call, even if a non-empty
+        branch is configured. Otherwise the documented [git].auto_checkout
+        setting has no effect."""
+        import subprocess
+
+        # Real git repo so the is_git_repo check passes
+        subprocess.run(
+            ["git", "init", "-q", "-b", "main", str(tmp_path)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
+            check=True, capture_output=True,
+        )
+        (tmp_path / "stub").write_text("stub")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "stub"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
+            check=True, capture_output=True,
+        )
+
+        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir.mkdir(parents=True)
+        (ralph_dir / "prompt.md").write_text("hi")
+        (ralph_dir / "prd.json").write_text(
+            '{"branchName": "feature/should-not-checkout", "userStories": []}'
+        )
+
+        config = RalphConfig(
+            max_iterations=1,
+            prompt_file=ralph_dir / "prompt.md",
+            prd_file=ralph_dir / "prd.json",
+            sleep_seconds=0,
+            auto_checkout=False,
+        )
+        ui = PlainUI(no_color=True)
+        agent = MockAgent([COMPLETION_MARKER])
+
+        result = run_loop(config, ui, agent, tmp_path)
+        assert result.completed is True
+
+        current = subprocess.run(
+            ["git", "-C", str(tmp_path), "branch", "--show-current"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        # Did not switch to feature/should-not-checkout
+        assert current == "main"
+
     def test_inline_marker_does_not_trigger_completion(self, tmp_path: Path) -> None:
         """Inline marker should not end the loop."""
         ralph_dir = tmp_path / "scripts" / "ralph"

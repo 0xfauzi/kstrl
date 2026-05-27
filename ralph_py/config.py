@@ -198,7 +198,12 @@ def _apply_toml_overrides(
     if isinstance(git_section, dict):
         if "branch" in git_section:
             branch = git_section["branch"]
-            if isinstance(branch, str):
+            # Only treat the TOML branch as an explicit override when it
+            # is non-empty. `branch = ""` in the shipped example means
+            # "no override, fall back to PRD branchName", whereas the env
+            # var `RALPH_BRANCH=""` (handled below) keeps its historical
+            # meaning of "explicit skip".
+            if isinstance(branch, str) and branch:
                 config.ralph_branch = branch
                 config.ralph_branch_explicit = True
         if "auto_checkout" in git_section:

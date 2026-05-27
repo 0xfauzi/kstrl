@@ -261,9 +261,14 @@ def test_load_env_paths_resolved_against_root(
     assert config.prompt_file == tmp_path / "custom/prompt.md"
 
 
-def test_load_toml_branch_marks_explicit_even_when_empty(
+def test_load_toml_empty_branch_does_not_mark_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """ralph.toml.example documents `branch = ""` as 'empty = use PRD
+    branchName'. An empty TOML branch must therefore NOT mark explicit,
+    so loop._determine_branch falls through to PRD lookup instead of
+    skipping checkout. Env var RALPH_BRANCH="" retains its historical
+    explicit-skip meaning - that path is tested elsewhere."""
     for var in ("RALPH_BRANCH",):
         monkeypatch.delenv(var, raising=False)
     _write_toml(
@@ -274,7 +279,24 @@ branch = ""
 """,
     )
     config = RalphConfig.load(tmp_path)
-    assert config.ralph_branch == ""
+    assert config.ralph_branch is None
+    assert config.ralph_branch_explicit is False
+
+
+def test_load_toml_nonempty_branch_marks_explicit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for var in ("RALPH_BRANCH",):
+        monkeypatch.delenv(var, raising=False)
+    _write_toml(
+        tmp_path / "ralph.toml",
+        """
+[git]
+branch = "feature/foo"
+""",
+    )
+    config = RalphConfig.load(tmp_path)
+    assert config.ralph_branch == "feature/foo"
     assert config.ralph_branch_explicit is True
 
 
