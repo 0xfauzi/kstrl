@@ -38,7 +38,7 @@ The fields are:
 | `owasp`, `cwe` | str | Populated for security findings via `SECURITY_CATEGORY_MAP` |
 | `tags` | tuple[str,...] | Free-form; reserved for downstream consumers |
 
-`Component.findings` is the source of truth. The string at `Component.review_findings` is a derived view kept as a backward-compat fallback for legacy manifests where the typed list is absent.
+**Two consumers, two surfaces.** `Component.findings: list[Finding]` is the typed surface, consumed by `evolution.py::record_run` for dashboards and trend analysis. `Component.review_findings: str` is the rendered surface, consumed by `pr.py::build_pr_body` for human-readable PR descriptions. They carry overlapping but non-identical information: the typed list has OWASP/CWE tags and structured filtering; the string has PASS-criteria confirmations, summary counts, and the criterion text as headers. Neither is a derived view of the other -- they are both populated from the same `ReviewResult`/`SecurityResult` and serve different downstream needs.
 
 ### Infrastructure error semantics (E3-infra)
 

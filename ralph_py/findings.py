@@ -155,8 +155,16 @@ class Finding:
 
 
 def render_findings_markdown(findings: list[Finding]) -> str:
-    """Render a list[Finding] as a markdown section suitable for a PR
-    body or evolution journal. Returns empty string for empty input.
+    """Render a list[Finding] as a markdown section. Returns empty
+    string for empty input.
+
+    Intended for ad-hoc dumping, debugging, and downstream consumers
+    that prefer a typed-list rendering. NOT used by the canonical PR
+    body builder: ``pr.py`` keeps the legacy ``review_findings`` string
+    because it carries information the typed Finding stream does not
+    (PASS criteria, pass/fail/advisory counts, criterion text as
+    headers). See the comment in ``pr.py::build_pr_body`` for the
+    full rationale.
 
     The output is grouped by phase and includes infrastructure-error
     callouts so the reader can distinguish "no findings" (good) from
