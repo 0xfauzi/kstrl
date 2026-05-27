@@ -1,0 +1,13 @@
+{
+  "fixture_id": "sec-04-predictable-token",
+  "role": "security",
+  "must_detect": {
+    "category": "predictable_randomness",
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/auth.py"
+  },
+  "owasp": "A02:2021 - Cryptographic Failures",
+  "cwe": "CWE-338",
+  "description": "Password-reset tokens generated via `random` (Mersenne Twister). With ~624 outputs an attacker can reconstruct the seed and predict all future tokens; security-sensitive randomness must use `secrets`.",
+  "expected_fix": "Use `secrets.token_urlsafe(length)` or `secrets.choice` with `secrets.SystemRandom`."
+}

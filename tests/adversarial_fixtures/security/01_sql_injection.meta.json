@@ -1,0 +1,13 @@
+{
+  "fixture_id": "sec-01-sql-injection",
+  "role": "security",
+  "must_detect": {
+    "category": "injection",
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/users.py"
+  },
+  "owasp": "A03:2021 - Injection",
+  "cwe": "CWE-89",
+  "description": "User-supplied `name` is interpolated into the SQL string via f-string concatenation. An attacker who controls `name` can inject SQL (e.g. `' OR '1'='1`).",
+  "expected_fix": "Use a parameterized query: cur.execute('SELECT ... WHERE name = ?', (name,))"
+}

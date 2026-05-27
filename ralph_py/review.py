@@ -86,10 +86,12 @@ class ReviewResult:
     overall_notes: str = ""
     raw_output: str = ""
     duration_seconds: float = 0.0
-    # True when the reviewer explicitly asserted it looked exhaustively
-    # for concerns and found none. False when concerns were surfaced OR
-    # when the reviewer didn't claim exhaustive coverage (treat as
-    # suspicious silence).
+    # Self-reported claim that the reviewer searched thoroughly. Useful
+    # as a hint when investigating reviews but DO NOT gate on it - it
+    # cannot be verified at runtime. The trustworthy verification path
+    # is the planted-bug calibration suite at tests/test_calibration.py
+    # (runs with RALPH_RUN_CALIBRATION=1) which catches reviewers that
+    # claim exhaustive coverage but miss known bugs.
     exhaustively_searched: bool = False
 
     def as_retry_context(self) -> str:

@@ -1,0 +1,12 @@
+{
+  "fixture_id": "concern-03-scope-creep",
+  "role": "reviewer",
+  "prd": "Add a `greet(name: str) -> str` function to src/sandbox/greeter.py that returns 'Hello, {name}!'.",
+  "must_detect": {
+    "category": "scope_creep",
+    "severity_at_least": "advisory",
+    "evidence_path_contains": "src/sandbox/logger.py"
+  },
+  "description": "PRD asks only for a tiny greeter function. The diff also rewrites src/sandbox/logger.py - changes log level, adds a file handler with hardcoded log path, adds an unsolicited backwards-compat alias. None of that is mentioned in the PRD.",
+  "expected_fix": "Revert the logger.py changes; ship only the greeter addition. If the logger needs reshaping, file a separate PR with its own PRD."
+}

@@ -10,6 +10,7 @@ from ralph_py.evolution import (
     EvolutionJournal,
     FailurePattern,
 )
+
 from ralph_py.factory import FactoryResult
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 
@@ -173,6 +174,43 @@ class TestGetExperimentTrends:
         journal = EvolutionJournal(config)
         trends = journal.get_experiment_trends()
         assert trends == []
+
+
+class TestConcernHitRate:
+    """D8: aggregate reviewer-concern signal across recent runs."""
+
+    def _write_entries(self, path: Path, entries: list[dict]) -> None:
+        with open(path, "w", encoding="utf-8") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+    def test_empty_journal(self, tmp_path: Path) -> None:
+        journal_path = tmp_path / "evolution.jsonl"
+        journal_path.write_text("")
+        config = EvolutionConfig(journal_path=journal_path)
+        journal = EvolutionJournal(config)
+        result = journal.get_concern_hit_rate()
+        assert result == {
+            "runs": 0, "components": 0, "with_concern": 0, "by_category": {},
+        }
+
+    def test_counts_categories(self, tmp_path: Path) -> None:
+        journal_path = tmp_path / "evolution.jsonl"
+        self._write_entries(journal_path, [
+            {"run_id": "run-1", "component_id": "a", "error": "FAIL scope_creep: x"},
+            {"run_id": "run-1", "component_id": "b", "error": "ADVISORY test_quality: y"},
+            {"run_id": "run-2", "component_id": "c", "error": "FAIL security_concern: hardcoded key"},
+            {"run_id": "run-2", "component_id": "d", "error": ""},
+        ])
+        config = EvolutionConfig(journal_path=journal_path)
+        journal = EvolutionJournal(config)
+        result = journal.get_concern_hit_rate()
+        assert result["runs"] == 2
+        assert result["components"] == 4
+        assert result["with_concern"] == 3
+        assert result["by_category"]["scope_creep"] == 1
+        assert result["by_category"]["test_quality"] == 1
+        assert result["by_category"]["security_concern"] == 1
 
 
 # ---------------------------------------------------------------------------

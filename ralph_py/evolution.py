@@ -561,6 +561,51 @@ class EvolutionJournal:
         return written
 
     # ------------------------------------------------------------------
+    # get_concern_hit_rate (D8)
+    # ------------------------------------------------------------------
+
+    def get_concern_hit_rate(self, lookback_runs: int = 10) -> dict:
+        """Aggregate reviewer-concern signal across recent factory runs.
+
+        Returns ``{"runs": N, "components": M, "with_concern": K,
+        "by_category": {...}}`` so dashboards can ask "did the
+        adversarial reviewer surface anything across the last N runs?"
+
+        Today the evolution journal does not persist concerns as a
+        structured field (concerns are rendered into ``component.error``
+        or PR-body text). This method returns the LOWER BOUND of
+        concern surface based on the existing journal shape; a richer
+        implementation would write a dedicated concerns entry per
+        component. Tracked as a follow-up in
+        docs/adversarial-roadmap.md (Phase E3 - structured findings).
+        """
+        entries = self._read_journal_entries(lookback_runs)
+        runs = len({e.get("run_id", "") for e in entries})
+        components = len(entries)
+        with_concern = 0
+        by_category: dict[str, int] = {}
+        for entry in entries:
+            error = (entry.get("error") or "").lower()
+            # Recognize concern-shaped errors by the reviewer prefix
+            # that as_retry_context emits ("FAIL <category>:" or
+            # "ADVISORY <category>:"). Best-effort signal only.
+            for category in (
+                "scope_creep", "security_concern", "test_quality",
+                "unrelated_change", "dead_code", "error_handling",
+                "copy_paste",
+            ):
+                if category in error:
+                    with_concern += 1
+                    by_category[category] = by_category.get(category, 0) + 1
+                    break
+        return {
+            "runs": runs,
+            "components": components,
+            "with_concern": with_concern,
+            "by_category": by_category,
+        }
+
+    # ------------------------------------------------------------------
     # get_experiment_trends
     # ------------------------------------------------------------------
 

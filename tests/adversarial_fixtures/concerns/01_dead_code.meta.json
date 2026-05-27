@@ -1,0 +1,12 @@
+{
+  "fixture_id": "concern-01-dead-code",
+  "role": "reviewer",
+  "prd": "Implement parse_config(path) -> dict that reads a JSON config file and returns its contents.",
+  "must_detect": {
+    "category": "dead_code",
+    "severity_at_least": "advisory",
+    "evidence_path_contains": "src/sandbox/parser.py"
+  },
+  "description": "Diff adds _normalize_keys, _validate_schema, and _compute_checksum which are never called from parse_config or anywhere else. They satisfy no PRD criterion and are pure dead code.",
+  "expected_fix": "Remove the unused helpers or add a clear caller / public export for them."
+}

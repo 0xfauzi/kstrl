@@ -1,0 +1,13 @@
+{
+  "fixture_id": "sec-05-broken-jwt-verify",
+  "role": "security",
+  "must_detect": {
+    "category": "auth_bypass",
+    "severity_at_least": "critical",
+    "evidence_path_contains": "src/jwt_verify.py"
+  },
+  "owasp": "A07:2021 - Identification and Authentication Failures",
+  "cwe": "CWE-347",
+  "description": "decode_jwt splits and decodes the payload but never verifies the signature. An attacker can forge any payload, set sub to admin's user_id, and bypass authentication entirely.",
+  "expected_fix": "Use a proper JWT library (PyJWT) with jwt.decode(token, key, algorithms=['RS256']) so signature verification is mandatory."
+}

@@ -18,6 +18,7 @@ from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
     distill_facts,
+    measure_fact_utilization,
 )
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
@@ -699,6 +700,36 @@ def run_factory(
                     ui.info(f"  Knowledge: {status}")
             except Exception as exc:  # noqa: BLE001 - non-fatal
                 ui.warn(f"  Knowledge distillation failed: {exc}")
+
+            # Fact-utilization metric: did the agent reference any of
+            # the facts we injected at the top of the worker prompt?
+            # Crude substring match against the post-iteration diff and
+            # progress.txt; under-counts when the LLM paraphrases.
+            try:
+                prefix = build_knowledge_context(
+                    manifest, comp,
+                    knowledge_config.knowledge_root, knowledge_config,
+                )
+                if prefix:
+                    progress_text = ""
+                    progress_path = (
+                        wt_path / "scripts" / "ralph" / "progress.txt"
+                    )
+                    try:
+                        progress_text = progress_path.read_text(encoding="utf-8")
+                    except OSError:
+                        pass
+                    util = measure_fact_utilization(
+                        prefix, shared_diff, progress_text,
+                    )
+                    if util["injected"] > 0:
+                        ui.info(
+                            f"  Knowledge utilization: "
+                            f"{util['referenced']}/{util['injected']} "
+                            f"facts referenced in diff or progress.txt"
+                        )
+            except Exception:  # noqa: BLE001
+                pass
 
         # All verification phases passed - create PR and merge
         if factory_config.create_prs:

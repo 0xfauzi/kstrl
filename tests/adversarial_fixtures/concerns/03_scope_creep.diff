@@ -1,0 +1,46 @@
+diff --git a/src/sandbox/greeter.py b/src/sandbox/greeter.py
+new file mode 100644
+index 0000000..9c0d1e2
+--- /dev/null
++++ b/src/sandbox/greeter.py
+@@ -0,0 +1,8 @@
++"""Simple greeter."""
++
++from __future__ import annotations
++
++
++def greet(name: str) -> str:
++    """Return a greeting for `name`."""
++    return f"Hello, {name}!"
+diff --git a/src/sandbox/logger.py b/src/sandbox/logger.py
+index abcd111..efgh222 100644
+--- a/src/sandbox/logger.py
++++ b/src/sandbox/logger.py
+@@ -1,15 +1,28 @@
+ """Logging helpers."""
+
+ from __future__ import annotations
+
+ import logging
++import os
++import sys
++from pathlib import Path
+
+-_logger = logging.getLogger("sandbox")
++_log_dir = Path(os.environ.get("SANDBOX_LOG_DIR", "/var/log/sandbox"))
++_log_dir.mkdir(parents=True, exist_ok=True)
++
++_logger = logging.getLogger("sandbox.refactored")
++_handler = logging.FileHandler(_log_dir / "sandbox.log")
++_handler.setLevel(logging.DEBUG)
++_logger.addHandler(_handler)
++_logger.addHandler(logging.StreamHandler(sys.stderr))
++_logger.setLevel(logging.DEBUG)
+
+
+ def log(msg: str) -> None:
+-    _logger.info(msg)
++    _logger.debug(msg)
++
++# Backwards-compat alias for the old API
++log_info = log

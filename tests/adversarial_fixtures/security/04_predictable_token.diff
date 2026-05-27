@@ -1,0 +1,21 @@
+diff --git a/src/auth.py b/src/auth.py
+new file mode 100644
+index 0000000..4d5e6f7
+--- /dev/null
++++ b/src/auth.py
+@@ -0,0 +1,16 @@
++"""Password-reset token generation."""
++
++from __future__ import annotations
++
++import random
++import string
++
++
++def generate_reset_token(length: int = 16) -> str:
++    """Generate a single-use password-reset token.
++
++    Token is sent via email; user clicks the link to reset password.
++    """
++    alphabet = string.ascii_letters + string.digits
++    return "".join(random.choice(alphabet) for _ in range(length))
