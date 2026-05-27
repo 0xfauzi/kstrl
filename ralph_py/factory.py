@@ -598,6 +598,9 @@ def run_factory(
                 diff_content=shared_diff,
             )
             comp.review_passed = review_result.passed
+            # E3: typed findings are the source of truth; the rendered
+            # string is a derived view kept for backward-compat consumers.
+            comp.findings.extend(review_result.as_findings())
             comp.review_findings = review_result.as_pr_body_section()
             # Observability gets criterion-only counts to preserve the
             # historical meaning of fail_count = "failed PRD criteria".
@@ -698,7 +701,9 @@ def run_factory(
                     duration=sec_result.duration_seconds,
                 )
 
-                # Attach security findings to the PR body alongside review
+                # E3: source-of-truth typed findings list, plus the
+                # legacy rendered string for PR body / manifest readers.
+                comp.findings.extend(sec_result.as_findings())
                 if sec_result.findings:
                     if comp.review_findings:
                         comp.review_findings = (

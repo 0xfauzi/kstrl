@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
+from ralph_py.findings import Finding
 from ralph_py.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -207,6 +208,39 @@ class ReviewResult:
         """Total advisories across criteria AND concerns. See
         fail_count docstring for the breakdown properties."""
         return self.criterion_advisory_count + self.concern_advisory_count
+
+    def as_findings(self) -> list[Finding]:
+        """E3: typed representation of every non-PASS criterion + every
+        concern. Used by factory to populate ``Component.findings``.
+
+        Criteria with verdict=PASS are skipped (they're not findings).
+        ADVISORY criteria carry severity="advisory"; FAIL criteria carry
+        severity="fail". Concerns carry their native severity field
+        (already "fail" or "advisory" -- see ReviewConcern).
+        """
+        out: list[Finding] = []
+        for cr in self.criteria:
+            if cr.verdict == ReviewVerdict.PASS.value:
+                continue
+            sev = "fail" if cr.verdict == ReviewVerdict.FAIL.value else "advisory"
+            out.append(Finding(
+                phase="review",
+                category="prd_criterion",
+                severity=sev,
+                location="",
+                explanation=f"{cr.criterion}: {cr.explanation}",
+                suggestion=cr.suggestion,
+            ))
+        for concern in self.concerns:
+            out.append(Finding(
+                phase="review",
+                category=concern.category,
+                severity=concern.severity,
+                location=concern.location,
+                explanation=concern.explanation,
+                suggestion=concern.suggestion,
+            ))
+        return out
 
 
 REVIEWER_PROMPT_VERSION = "1.0.0"

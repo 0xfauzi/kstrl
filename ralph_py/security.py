@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
+from ralph_py.findings import Finding
 from ralph_py.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -165,6 +166,24 @@ class SecurityResult:
     @property
     def high_count(self) -> int:
         return sum(1 for f in self.findings if f.severity == "high")
+
+    def as_findings(self) -> list[Finding]:
+        """E3: typed representation of every SecurityFinding, enriched
+        with the OWASP/CWE taxonomy from SECURITY_CATEGORY_MAP. Used by
+        factory to populate ``Component.findings``."""
+        return [
+            Finding(
+                phase="security",
+                category=f.category,
+                severity=f.severity,
+                location=f.location,
+                explanation=f.explanation,
+                suggestion=f.suggestion,
+                owasp=category_owasp(f.category),
+                cwe=category_cwe(f.category),
+            )
+            for f in self.findings
+        ]
 
 
 @dataclass
