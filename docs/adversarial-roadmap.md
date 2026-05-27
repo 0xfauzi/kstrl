@@ -111,19 +111,21 @@ Done when: PR merged.
 
 ## Phase E - Architectural refinements (minus E1)
 
-PR: _pending_
+PR (partial): _pending push_
 
 - [-] E1 - Multi-model rotation - SKIPPED per user decision; documented as known limitation
-- [ ] E2 - Strip Self-Critique from reviewer-visible diff (or invert ordering)
-- [ ] E3 - Structured `comp.findings: list[Finding]` replacing stringly-typed `comp.review_findings`
-- [ ] E4 - Per-run LLM budget cap in `FactoryConfig`; enforced via shared counter in `agents`
-- [ ] E5 - Rename `confidence: verified` -> `review_passed`; add `test_verified` tier
-- [ ] E6 - Configurable HITL checkpoint (`FactoryConfig.pause_before_pr_merge`, opt-in)
-- [ ] E7 - Feedforward/knowledge overlap doc + dedupe
-- [ ] E8 - Fact scope by import surface
-- [ ] E9 - Standardize `infrastructure_error` / `Result[T, E]` across all roles
+- [x] E2 - Strip Self-Critique block from reviewer-visible diff via `git.strip_self_critique_from_diff`; review.py invokes it before truncation
+- [~] E3 - Structured `comp.findings: list[Finding]` - DEFERRED to follow-up PR. Today review/security findings funnel into the stringly-typed `comp.review_findings`. A real typed `Finding` requires changing PR creation paths and breaking serialization compat. Scope is one focused PR; tracked here for visibility.
+- [x] E4 - `FactoryConfig.max_adversarial_calls` shared counter; review/security/distill all consult it; 0 = unbounded (default)
+- [x] E5 - Confidence rename: `verified` -> `review_passed`, new `test_verified` tier added. Legacy `verified` aliased on read for backward compat.
+- [x] E6 - `FactoryConfig.pause_before_pr_merge` HITL checkpoint. Prompts user before push+merge when UI is interactive; warns and proceeds when non-interactive.
+- [~] E7 - Feedforward/knowledge overlap doc - DEFERRED to Phase G (documentation). The dedupe analysis itself is small; addressed there.
+- [~] E8 - Fact scope by import surface - DEFERRED to follow-up PR. Today every transitive dependency's facts get injected; filtering by import surface needs Component-level import metadata that the manifest doesn't carry yet.
+- [x] E9 - ReviewResult.infrastructure_error added (parallel to SecurityResult.infrastructure_error); parse failures set it; downstream can distinguish "clean review" from "review never ran"
 
-Done when: each refinement lands with tests; rationale captured in `docs/adversarial-design.md`.
+Status: 5 of 8 items shipped (E2/E4/E5/E6/E9). E3 + E8 deferred with rationale in tracker; E1 permanently skipped per user; E7 folded into Phase G. 10 new tests; full suite 585 passing.
+
+Done when: PR merged. Deferred items tracked here for the next iteration.
 
 ---
 

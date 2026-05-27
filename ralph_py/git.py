@@ -270,6 +270,42 @@ def truncate_diff_for_prompt(
     return diff_content[:limit] + f"\n... (diff truncated at {limit // 1000}KB)"
 
 
+# E2: regex matches a Self-Critique block in a diff. Used by the
+# reviewer-prep step to remove the engineer's self-reported failure
+# modes from what the reviewer sees, so the reviewer is not biased
+# toward "the implementer already thought of that" and skips checking.
+import re as _re
+
+_SELF_CRITIQUE_BLOCK_RE = _re.compile(
+    r"""
+    \+\#{2,3}\s+Self[-\s]Critique[\s\S]*?       # heading + content
+    (?=                                          # stop before:
+        ^\+\#{1,6}\s                             #   any other heading
+      | ^\+---\s*$                               #   ---  separator
+      | ^[^+]                                    #   non-add line
+      | \Z                                       #   end of string
+    )
+    """,
+    _re.MULTILINE | _re.VERBOSE | _re.IGNORECASE,
+)
+
+
+def strip_self_critique_from_diff(diff_content: str) -> str:
+    """Remove the engineer's Self-Critique block from a diff before
+    showing it to the reviewer.
+
+    The Self-Critique block is the engineer's self-reported list of
+    failure modes (verify.py mandates >=3 bullets). If the reviewer
+    sees it inline in progress.txt's diff, the reviewer is biased to
+    think those failure modes are already handled. The reviewer should
+    arrive at its concerns independently.
+
+    Returns the diff with the block stripped; if no block is found,
+    returns the input unchanged.
+    """
+    return _SELF_CRITIQUE_BLOCK_RE.sub("", diff_content)
+
+
 def merge_branch(
     branch: str,
     cwd: Path | None = None,

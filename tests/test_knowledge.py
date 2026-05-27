@@ -46,7 +46,7 @@ def _make_fact(
     fact_id: str = "fact-001",
     component_id: str = "comp-a",
     scope: str = "handler",
-    confidence: str = "verified",
+    confidence: str = "review_passed",
     claim: str = "The handler validates the request body before invoking the service.",
     evidence: list[str] | None = None,
     tags: list[str] | None = None,
@@ -363,7 +363,7 @@ class TestPackFacts:
         # Make claims sized so only one fact fits per call after the verified one
         big_claim = "x" * 800  # ~200 tokens
         verified = _make_fact(
-            fact_id="fact-001", confidence="verified", claim=big_claim,
+            fact_id="fact-001", confidence="review_passed", claim=big_claim,
         )
         asserted_recent = _make_fact(
             fact_id="fact-002", confidence="asserted", claim=big_claim,
@@ -395,12 +395,12 @@ class TestPackFacts:
         kept."""
         huge = _make_fact(
             fact_id="fact-001",
-            confidence="verified",
+            confidence="review_passed",
             claim="x" * 1000,  # render cost ~300 tokens
         )
         small_a = _make_fact(
             fact_id="fact-002",
-            confidence="verified",
+            confidence="review_passed",
             claim="short A",
         )
         # Budget chosen so huge cannot fit AND the truncation branch
@@ -422,12 +422,12 @@ class TestPackFacts:
         # entire claim is the "first sentence".
         huge = _make_fact(
             fact_id="fact-001",
-            confidence="verified",
+            confidence="review_passed",
             claim="A" * 4000,
         )
         small_a = _make_fact(
             fact_id="fact-002",
-            confidence="verified",
+            confidence="review_passed",
             claim="short",
         )
         kept, over = _pack_facts_summary([huge, small_a], 60)
@@ -442,13 +442,13 @@ class TestPackFacts:
         # All three are too large at full size; only first should be
         # truncated to fit, the rest dropped.
         f1 = _make_fact(
-            fact_id="fact-001", confidence="verified", claim="A" * 800,
+            fact_id="fact-001", confidence="review_passed", claim="A" * 800,
         )
         f2 = _make_fact(
-            fact_id="fact-002", confidence="verified", claim="B" * 800,
+            fact_id="fact-002", confidence="review_passed", claim="B" * 800,
         )
         f3 = _make_fact(
-            fact_id="fact-003", confidence="verified", claim="C" * 800,
+            fact_id="fact-003", confidence="review_passed", claim="C" * 800,
         )
         kept, over = _pack_facts_full([f1, f2, f3], 200)
         truncated = [f for f in kept if f.claim.endswith("...")]
@@ -815,7 +815,8 @@ class TestDistillFacts:
         assert "wrote 1" in status
         facts = read_facts(knowledge_root, "comp-a")
         assert len(facts) == 1
-        assert facts[0].confidence == "verified"
+        # Legacy "verified" string is aliased to "review_passed" on read (E5).
+        assert facts[0].confidence == "review_passed"
 
     def test_invalid_json_nonfatal(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
@@ -1070,7 +1071,7 @@ class TestFactUtilization:
                 created_run_id="factory-20260101-120000-aaaaaa",
                 scope="contract",
                 evidence=["src/x.py:1"],
-                confidence="verified",
+                confidence="review_passed",
                 claim=claim,
             )
             for i, claim in enumerate(claims)
