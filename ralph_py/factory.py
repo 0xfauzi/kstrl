@@ -23,6 +23,7 @@ from ralph_py.knowledge import (
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
+from ralph_py.prd import PRD
 from ralph_py.review import ReviewMode, run_review
 from ralph_py.security import SecurityConfig, SecurityMode, run_security_review
 from ralph_py.verify import VerifyConfig, run_mechanical_verification
@@ -531,11 +532,26 @@ def run_factory(
         verify_config = factory_config.verify_config or VerifyConfig()
         ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
         verify_start = time.monotonic()
+        # Per-component allowed_paths comes from the PRD (architect-emitted
+        # via DECOMPOSE_PROMPT v1.1.0+). Without this, the diff-scope check
+        # silently passes and a rogue agent can touch anything in the
+        # worktree -- the end-to-end validation run on 2026-05-27 caught
+        # an agent editing factory internals because allowed_paths was
+        # always None here. Legacy PRDs without the field still get None
+        # which preserves the prior "no constraint" behavior.
+        component_allowed_paths: list[str] | None = None
+        try:
+            prd_for_scope = PRD.load(wt_path / comp.prd_path)
+            component_allowed_paths = prd_for_scope.allowed_paths
+        except (FileNotFoundError, ValueError):
+            # PRD problems will surface again from inside the verifier;
+            # don't block Phase 1 setup on this lookup.
+            pass
         verification = run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
             manifest.base_branch,
-            None,
+            component_allowed_paths,
             verify_config,
         )
         verify_duration = time.monotonic() - verify_start

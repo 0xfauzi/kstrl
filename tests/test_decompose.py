@@ -178,6 +178,95 @@ class TestValidateDecomposeOutput:
         errors = _validate_decompose_output(data)
         assert any("nonexistent" in e for e in errors)
 
+    def test_allowed_paths_optional(self) -> None:
+        """Components without allowedPaths still validate (legacy
+        DECOMPOSE_PROMPT v1.0.0 architect outputs don't emit it)."""
+        data = {
+            "components": [
+                {
+                    "id": "a",
+                    "title": "A",
+                    "description": "A",
+                    "dependencies": [],
+                    "userStories": [],
+                }
+            ]
+        }
+        errors = _validate_decompose_output(data)
+        assert errors == []
+
+    def test_allowed_paths_must_be_array_when_present(self) -> None:
+        data = {
+            "components": [
+                {
+                    "id": "a",
+                    "title": "A",
+                    "description": "A",
+                    "dependencies": [],
+                    "allowedPaths": "src/",
+                    "userStories": [],
+                }
+            ]
+        }
+        errors = _validate_decompose_output(data)
+        assert any("allowedPaths" in e and "array" in e for e in errors)
+
+    def test_allowed_paths_empty_rejected(self) -> None:
+        """An empty allowedPaths silently disables the diff-scope check
+        which is worse than not setting it at all; reject explicitly."""
+        data = {
+            "components": [
+                {
+                    "id": "a",
+                    "title": "A",
+                    "description": "A",
+                    "dependencies": [],
+                    "allowedPaths": [],
+                    "userStories": [],
+                }
+            ]
+        }
+        errors = _validate_decompose_output(data)
+        assert any(
+            "allowedPaths" in e and "non-empty" in e for e in errors
+        )
+
+    def test_allowed_paths_non_string_item_rejected(self) -> None:
+        data = {
+            "components": [
+                {
+                    "id": "a",
+                    "title": "A",
+                    "description": "A",
+                    "dependencies": [],
+                    "allowedPaths": ["src/", 42],
+                    "userStories": [],
+                }
+            ]
+        }
+        errors = _validate_decompose_output(data)
+        assert any("allowedPaths" in e for e in errors)
+
+    def test_allowed_paths_valid(self) -> None:
+        data = {
+            "components": [
+                {
+                    "id": "comp-a",
+                    "title": "A",
+                    "description": "A",
+                    "dependencies": [],
+                    "allowedPaths": [
+                        "src/",
+                        "tests/",
+                        "scripts/ralph/feature/comp-a/",
+                    ],
+                    "userStories": [],
+                }
+            ]
+        }
+        errors = _validate_decompose_output(data)
+        assert errors == []
+
 
 class TestSpecIssues:
     """Tests for the red-team / spec-audit surface."""
