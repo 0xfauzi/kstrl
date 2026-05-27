@@ -115,7 +115,7 @@ PR (partial): _pending push_
 
 - [-] E1 - Multi-model rotation - SKIPPED per user decision; documented as known limitation
 - [x] E2 - Strip Self-Critique block from reviewer-visible diff via `git.strip_self_critique_from_diff`; review.py invokes it before truncation
-- [~] E3 - Structured `comp.findings: list[Finding]` - DEFERRED to follow-up PR. Today review/security findings funnel into the stringly-typed `comp.review_findings`. A real typed `Finding` requires changing PR creation paths and breaking serialization compat. Scope is one focused PR; tracked here for visibility.
+- [x] E3 - Typed `Finding` dataclass at `ralph_py/findings.py`. `Component.findings: list[Finding]` is the new source of truth, `Component.review_findings` (string) is a derived view kept for backward compat. `ReviewResult.as_findings()` converts criteria failures + concerns; `SecurityResult.as_findings()` adds OWASP/CWE taxonomy. Factory wires both at the existing phase 2 / 2.5 attachment points. Manifest.json roundtrip handled; legacy manifests without `findings` load as `[]`. 15 new tests; full suite 613 passing.
 - [x] E4 - `FactoryConfig.max_adversarial_calls` shared counter; review/security/distill all consult it; 0 = unbounded (default)
 - [x] E5 - Confidence rename: `verified` -> `review_passed`, new `test_verified` tier added. Legacy `verified` aliased on read for backward compat.
 - [x] E6 - `FactoryConfig.pause_before_pr_merge` HITL checkpoint. Prompts user before push+merge when UI is interactive; warns and proceeds when non-interactive.
@@ -123,7 +123,7 @@ PR (partial): _pending push_
 - [x] E8 - `KnowledgeConfig.dependency_scope: str = "direct"` (default) restricts the Dependencies full-text tier to `Component.dependencies` only. Transitive deps still appear in the sibling first-sentence summary tier (downgraded, not hidden). The old behavior is opt-in via `dependency_scope = "transitive"` or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`. 5 new tests in `test_knowledge.py`.
 - [x] E9 - ReviewResult.infrastructure_error added (parallel to SecurityResult.infrastructure_error); parse failures set it; downstream can distinguish "clean review" from "review never ran"
 
-Status: 5 of 8 items shipped (E2/E4/E5/E6/E9). E3 + E8 deferred with rationale in tracker; E1 permanently skipped per user; E7 folded into Phase G. 10 new tests; full suite 585 passing.
+Status: 7 of 8 items shipped (E2/E3/E4/E5/E6/E8/E9). E1 permanently skipped per user; E7 folded into Phase G. Deferred-follow-up PRs (E3, E8) merged 2026-05-27. 25+ new tests across the E-series.
 
 Done when: PR merged. Deferred items tracked here for the next iteration.
 

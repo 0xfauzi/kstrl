@@ -11,6 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from ralph_py.findings import Finding
+
 
 class ComponentStatus(str, Enum):
     """Component execution states."""
@@ -46,6 +48,12 @@ class Component:
     # Verification/review results
     verification_passed: bool | None = None
     review_passed: bool | None = None
+    # E3: source-of-truth typed findings from review + security roles.
+    # Populated by factory.run_one via ReviewResult.as_findings() and
+    # SecurityResult.as_findings(). The rendered string ``review_findings``
+    # below is a derived view kept for backward compat with downstream
+    # consumers (PR body, manifest.json readers).
+    findings: list[Finding] = field(default_factory=list)
     review_findings: str = ""
     # Optional scaffold script to run before the agent
     scaffold: str = ""
@@ -134,6 +142,11 @@ class Manifest:
                 iteration_count=c.get("iterationCount", 0),
                 verification_passed=c.get("verificationPassed"),
                 review_passed=c.get("reviewPassed"),
+                findings=[
+                    Finding.from_dict(d)
+                    for d in c.get("findings", [])
+                    if isinstance(d, dict)
+                ],
                 review_findings=c.get("reviewFindings", ""),
                 scaffold=c.get("scaffold", ""),
             )
@@ -176,6 +189,7 @@ class Manifest:
                     "iterationCount": c.iteration_count,
                     "verificationPassed": c.verification_passed,
                     "reviewPassed": c.review_passed,
+                    "findings": [f.to_dict() for f in c.findings],
                     "reviewFindings": c.review_findings,
                     "scaffold": c.scaffold,
                 }
@@ -245,7 +259,7 @@ class Manifest:
             "status", "error", "retries", "prNumber", "prUrl",
             "startedAt", "completedAt", "durationSeconds", "iterationCount",
             "verificationPassed", "reviewPassed", "reviewFindings",
-            "scaffold",
+            "findings", "scaffold",
         }
         component_all = component_required | component_optional
 

@@ -21,6 +21,23 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 | **Knowledge distiller** | `ralph_py/knowledge.py` | `DISTILL_PROMPT` | Post-merge | Captures durable facts about the artifact for downstream components. Voyager-style write gate: only fires when Phase 2 review passed. |
 | **Human checkpoint (E6)** | `ralph_py/factory.py` | (interactive) | Pre-merge | Optional. When `FactoryConfig.pause_before_pr_merge=True` and UI is interactive, prompts a human to approve or reject before PR creation. Off by default. |
 
+## Findings model (E3)
+
+Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`ralph_py/findings.py`) before landing on `Component.findings: list[Finding]`. The fields are:
+
+| Field | Type | Notes |
+|---|---|---|
+| `phase` | str | `"review"` or `"security"` |
+| `category` | str | Reviewer concern category, security category, or `"prd_criterion"` for failed acceptance criteria |
+| `severity` | str | Native to the role: `"fail" / "advisory"` (review), `"critical" / "high" / "medium" / "low"` (security) |
+| `location` | str | `file:line`, file path, or `"(entire file)"` |
+| `explanation` | str | Free text |
+| `suggestion` | str | Optional |
+| `owasp`, `cwe` | str | Populated for security findings via `SECURITY_CATEGORY_MAP` |
+| `tags` | tuple[str,...] | Free-form; reserved for downstream consumers |
+
+`Component.findings` is the source of truth. The string at `Component.review_findings` is a derived view kept for backward compatibility with PR-body rendering and manifest.json readers. New downstream code (dashboards, evolution-journal queries, retry-context builders that want richer than-string information) should consume the typed list directly.
+
 ## Pipeline
 
 ```
