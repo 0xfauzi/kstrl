@@ -146,6 +146,26 @@ def _load_toml(path: Path) -> dict[str, Any]:
         raise ValueError(f"Invalid TOML in {path}: {exc}") from exc
 
 
+def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
+    """Read a named section from a ralph.toml file.
+
+    Shared by every config dataclass that has a corresponding
+    ``[section]`` in the canonical ralph.toml. Returns ``{}`` when the
+    file or the section is absent; raises ``ValueError`` with a clear
+    message when the file is malformed so every loader behaves
+    consistently. Sub-section keys that are not dicts (e.g. someone
+    wrote ``factory = "hi"`` instead of ``[factory]``) return ``{}``
+    rather than crashing later in the per-key cast.
+    """
+    if not toml_path.exists():
+        return {}
+    data = _load_toml(toml_path)
+    section_data = data.get(section, {})
+    if not isinstance(section_data, dict):
+        return {}
+    return section_data
+
+
 def _apply_toml_overrides(
     config: RalphConfig, toml_path: Path, root_dir: Path,
 ) -> None:

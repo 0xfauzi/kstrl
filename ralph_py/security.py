@@ -207,6 +207,43 @@ class SecurityConfig:
             fail_threshold=os.environ.get("RALPH_SECURITY_FAIL_THRESHOLD", "high"),
         )
 
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> SecurityConfig:
+        """Load security config with precedence: env > toml > defaults."""
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "security")
+        if "mode" in section:
+            config.mode = str(section["mode"])
+        if "agent_cmd" in section:
+            config.agent_cmd = str(section["agent_cmd"]) or None
+        if "agent_type" in section:
+            config.agent_type = str(section["agent_type"]) or None
+        if "model" in section:
+            config.model = str(section["model"]) or None
+        if "timeout_seconds" in section:
+            config.timeout_seconds = float(section["timeout_seconds"])
+        if "fail_threshold" in section:
+            config.fail_threshold = str(section["fail_threshold"])
+        # Env overrides
+        if "RALPH_SECURITY_MODE" in os.environ:
+            config.mode = os.environ["RALPH_SECURITY_MODE"]
+        if "RALPH_SECURITY_AGENT_CMD" in os.environ:
+            config.agent_cmd = os.environ["RALPH_SECURITY_AGENT_CMD"] or None
+        if "RALPH_SECURITY_AGENT_TYPE" in os.environ:
+            config.agent_type = os.environ["RALPH_SECURITY_AGENT_TYPE"] or None
+        if "RALPH_SECURITY_MODEL" in os.environ:
+            config.model = os.environ["RALPH_SECURITY_MODEL"] or None
+        if "RALPH_SECURITY_TIMEOUT" in os.environ:
+            config.timeout_seconds = float(os.environ["RALPH_SECURITY_TIMEOUT"])
+        if "RALPH_SECURITY_FAIL_THRESHOLD" in os.environ:
+            config.fail_threshold = os.environ["RALPH_SECURITY_FAIL_THRESHOLD"]
+        # Re-validate after assignment - typos in env or TOML must surface
+        config.__post_init__()
+        return config
+
 
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance

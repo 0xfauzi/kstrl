@@ -40,6 +40,41 @@ class FeedforwardConfig:
     conventions: bool = True         # extract from config files
     max_context_tokens: int = 4000   # rough cap (estimate 4 chars per token)
 
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
+        """Load feedforward config with precedence: env > toml > defaults."""
+        import os
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "feedforward")
+        for key in (
+            "enabled", "module_map", "public_interfaces",
+            "dependency_graph", "conventions",
+        ):
+            if key in section:
+                setattr(config, key, bool(section[key]))
+        if "max_context_tokens" in section:
+            config.max_context_tokens = int(section["max_context_tokens"])
+        # Env overrides
+        env_map = {
+            "RALPH_FEEDFORWARD_ENABLED": ("enabled", bool),
+            "RALPH_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
+            "RALPH_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
+            "RALPH_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
+            "RALPH_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
+            "RALPH_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
+        }
+        for env_key, (field_name, caster) in env_map.items():
+            if env_key in os.environ:
+                raw = os.environ[env_key]
+                if caster is bool:
+                    setattr(config, field_name, raw.lower() in {"1", "true", "yes"})
+                else:
+                    setattr(config, field_name, caster(raw))
+        return config
+
 
 def _is_hidden(name: str) -> bool:
     """Check if a file or directory name is hidden (starts with dot)."""

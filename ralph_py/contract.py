@@ -43,6 +43,15 @@ class ContractConfig:
     test_command: str = "uv run pytest"
     timeout: float = 600.0
 
+    def __post_init__(self) -> None:
+        # B8: reject typo'd modes loudly instead of letting them silently
+        # drop through to default branches downstream.
+        if self.mode not in {m.value for m in ContractMode}:
+            raise ValueError(
+                f"Invalid ContractConfig.mode {self.mode!r}; "
+                f"must be one of {[m.value for m in ContractMode]}"
+            )
+
     @classmethod
     def from_env(cls) -> ContractConfig:
         """Load contract config from environment variables."""
@@ -51,6 +60,30 @@ class ContractConfig:
             test_command=os.environ.get("RALPH_CONTRACT_TEST_CMD", "uv run pytest"),
             timeout=float(os.environ.get("RALPH_TIMEOUT_CONTRACT", "600")),
         )
+
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> ContractConfig:
+        """Load contract config with precedence: env > toml > defaults."""
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "contract")
+        if "mode" in section:
+            config.mode = str(section["mode"])
+        if "test_command" in section:
+            config.test_command = str(section["test_command"])
+        if "timeout" in section:
+            config.timeout = float(section["timeout"])
+        if "RALPH_CONTRACT_MODE" in os.environ:
+            config.mode = os.environ["RALPH_CONTRACT_MODE"]
+        if "RALPH_CONTRACT_TEST_CMD" in os.environ:
+            config.test_command = os.environ["RALPH_CONTRACT_TEST_CMD"]
+        if "RALPH_TIMEOUT_CONTRACT" in os.environ:
+            config.timeout = float(os.environ["RALPH_TIMEOUT_CONTRACT"])
+        # Re-validate after assignment (env / toml may have introduced typos)
+        config.__post_init__()
+        return config
 
 
 def compute_tiers(manifest: Manifest) -> list[list[str]]:
