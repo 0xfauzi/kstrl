@@ -76,6 +76,12 @@ The overlap: both can describe what a component exports. The distinction:
 
 If a feedforward entry says `auth.middleware.verify_token(token: str) -> User`, that's the current signature. If a knowledge fact says "the middleware rejects expired tokens at the handler layer, before the route guard runs," that's the *behavior* the LLM extracted from passing tests + the diff. They complement, but neither replaces the other.
 
+### Dependency scope (E8)
+
+The knowledge layer's "Dependencies" tier defaults to `direct` scope: only facts from `Component.dependencies` (the import surface declared in the manifest) appear in the full-text tier. Transitive dependencies still surface in the sibling summary tier (first-sentence only).
+
+Rationale: the typical reason a component needs full-text facts about a transitive dependency is that the manifest is missing a direct edge - i.e. the architect under-specified imports. Forcing the user to add the edge is better than silently injecting every transitive ancestor's facts into every downstream prompt. For projects that genuinely need the old behavior, `KnowledgeConfig.dependency_scope = "transitive"` (or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`) restores it.
+
 ## Known limitations
 
 1. **Correlated failure.** The architect, engineer, reviewer, security reviewer, and distiller can all be the same model. They will fail on the same inputs in the same way. Multi-model rotation (roadmap E1) was deliberately deferred; until it lands, treat "all roles agree" as one data point, not several.

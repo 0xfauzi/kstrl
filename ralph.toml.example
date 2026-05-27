@@ -49,6 +49,11 @@ max_sibling_tokens = 500           # other components' facts (first sentence onl
 distill_timeout_seconds = 300
 distill_model = ""                 # empty = falls back to [agent].model
 max_facts_per_distill = 7
+# E8: scope of the "Dependencies" full-text tier in build_knowledge_context.
+# "direct" surfaces only Component.dependencies (the manifest's import surface);
+# "transitive" walks the full closure. Transitive deps not in the full-text
+# tier still appear in the sibling first-sentence summary tier.
+dependency_scope = "direct"
 
 # Factory orchestrator settings (Phase 0-3 pipeline coordination).
 [factory]

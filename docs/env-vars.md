@@ -90,6 +90,9 @@ Invalid mode or threshold raises ValueError (Phase B8). Note: the `ralph_py fact
 | `RALPH_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS` | float | 300 |
 | `RALPH_KNOWLEDGE_DISTILL_MODEL` | str | falls back to `MODEL` |
 | `RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL` | int | 7 |
+| `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE` | str | `direct` (`direct\|transitive`) |
+
+`dependency_scope` (E8) controls whether the full-text "Dependencies" tier in `build_knowledge_context` surfaces only direct manifest dependencies (`direct`, default) or the transitive closure (`transitive`). Transitive deps excluded from the full-text tier still appear in the sibling first-sentence summary tier - downgraded, not hidden. Invalid values raise ValueError.
 
 ## FeedforwardConfig (`[feedforward]`)
 
