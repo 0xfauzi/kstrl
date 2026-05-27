@@ -42,6 +42,9 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+_VALID_DEPENDENCY_SCOPES = frozenset({"direct", "transitive"})
+
+
 @dataclass
 class KnowledgeConfig:
     """Configuration for the per-component knowledge layer."""
@@ -54,6 +57,21 @@ class KnowledgeConfig:
     distill_timeout_seconds: float = 300.0
     distill_model: str = ""  # empty = falls back to base config's model
     max_facts_per_distill: int = 7
+    # E8: scope of the "Dependencies" full-text tier in build_knowledge_context.
+    # "direct" surfaces only Component.dependencies (the import surface declared
+    # in the manifest). "transitive" walks the full closure. Transitive deps
+    # excluded from the full-text tier still appear in the sibling summary,
+    # so they are not invisible -- just downgraded. Default is "direct"
+    # because the typical reason a component needs a transitive dep's full
+    # facts is that the manifest is missing a direct edge.
+    dependency_scope: str = "direct"
+
+    def __post_init__(self) -> None:
+        if self.dependency_scope not in _VALID_DEPENDENCY_SCOPES:
+            raise ValueError(
+                f"KnowledgeConfig.dependency_scope must be one of "
+                f"{sorted(_VALID_DEPENDENCY_SCOPES)}, got {self.dependency_scope!r}"
+            )
 
     @classmethod
     def load(cls, root_dir: Path | None = None) -> KnowledgeConfig:
@@ -100,6 +118,8 @@ class KnowledgeConfig:
                 config.distill_model = str(section["distill_model"])
             if "max_facts_per_distill" in section:
                 config.max_facts_per_distill = int(section["max_facts_per_distill"])
+            if "dependency_scope" in section:
+                config.dependency_scope = str(section["dependency_scope"])
 
         # Env overrides
         if "RALPH_KNOWLEDGE_ENABLED" in os.environ:
@@ -123,6 +143,17 @@ class KnowledgeConfig:
         if "RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL" in os.environ:
             config.max_facts_per_distill = int(
                 os.environ["RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL"]
+            )
+        if "RALPH_KNOWLEDGE_DEPENDENCY_SCOPE" in os.environ:
+            config.dependency_scope = os.environ["RALPH_KNOWLEDGE_DEPENDENCY_SCOPE"]
+
+        # Re-run validation: env can supply a bad value that bypassed
+        # __post_init__ at construction time.
+        if config.dependency_scope not in _VALID_DEPENDENCY_SCOPES:
+            raise ValueError(
+                f"RALPH_KNOWLEDGE_DEPENDENCY_SCOPE must be one of "
+                f"{sorted(_VALID_DEPENDENCY_SCOPES)}, "
+                f"got {config.dependency_scope!r}"
             )
 
         return config
@@ -502,8 +533,11 @@ def build_knowledge_context(
     core_facts = read_facts(knowledge_root, component.id)
     core_kept, core_overflow = _pack_facts_full(core_facts, config.max_core_tokens)
 
-    # Dependency (transitive closure)
-    dep_ids = _transitive_dependencies(manifest, component.id)
+    # Dependency tier -- scope controlled by E8 config flag.
+    if config.dependency_scope == "transitive":
+        dep_ids = _transitive_dependencies(manifest, component.id)
+    else:
+        dep_ids = _direct_dependencies(manifest, component.id)
     dep_facts: list[Fact] = []
     for dep_id in dep_ids:
         dep_facts.extend(read_facts(knowledge_root, dep_id))
@@ -511,7 +545,9 @@ def build_knowledge_context(
         dep_facts, config.max_dependency_tokens,
     )
 
-    # Sibling: everything else
+    # Sibling: everything not in core or dep tiers. When dependency_scope
+    # is "direct", transitive deps land here -- not invisible, just
+    # downgraded to first-sentence summaries.
     excluded = {component.id} | dep_ids
     sibling_facts: list[Fact] = []
     for comp in manifest.components:
@@ -562,6 +598,20 @@ def build_knowledge_context(
         parts.append("")
 
     return "\n".join(parts).rstrip() + "\n"
+
+
+def _direct_dependencies(manifest: Manifest, component_id: str) -> set[str]:
+    """Return the set of directly-declared dependency IDs for ``component_id``.
+
+    This is what ``Component.dependencies`` says in the manifest, no
+    transitive walk. Used by E8's default "direct" dependency scope to
+    avoid flooding downstream components' prompts with full-text facts
+    from transitive deps the consumer does not actually import.
+    """
+    for comp in manifest.components:
+        if comp.id == component_id:
+            return {dep for dep in comp.dependencies if dep != component_id}
+    return set()
 
 
 def _transitive_dependencies(manifest: Manifest, component_id: str) -> set[str]:

@@ -341,6 +341,24 @@ class TestHelpers:
         ])
         assert _transitive_dependencies(manifest, "d") == {"a", "b", "c"}
 
+    def test_direct_dependencies_chain_skips_transitive(self) -> None:
+        from ralph_py.knowledge import _direct_dependencies
+
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+            _make_component("c", dependencies=["b"]),
+        ])
+        # c declares only b in its manifest dependencies; a is transitive
+        # and must NOT appear in direct-scope lookup.
+        assert _direct_dependencies(manifest, "c") == {"b"}
+
+    def test_direct_dependencies_unknown_component_returns_empty(self) -> None:
+        from ralph_py.knowledge import _direct_dependencies
+
+        manifest = _make_manifest([_make_component("a")])
+        assert _direct_dependencies(manifest, "ghost") == set()
+
 
 # ---------------------------------------------------------------------------
 # Budget capping
@@ -484,6 +502,75 @@ class TestBuildKnowledgeContext:
             manifest, manifest.components[0], knowledge_root, config,
         )
         assert result == ""
+
+    def test_dependency_scope_direct_excludes_transitive_facts(self, tmp_path: Path) -> None:
+        """E8: 3-tier chain a <- b <- c. With direct scope, c's prompt
+        shows b's full-text facts but a's facts get downgraded to the
+        sibling summary tier (first-sentence only)."""
+        knowledge_root = tmp_path / "knowledge"
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+            _make_component("c", dependencies=["b"]),
+        ])
+        write_facts(
+            [_make_fact(
+                fact_id="fact-001", component_id="a",
+                claim="Transitive A fact full body. Second sentence here.",
+            )],
+            knowledge_root, "a", "factory-20260101-120000",
+        )
+        write_facts(
+            [_make_fact(
+                fact_id="fact-002", component_id="b",
+                claim="Direct B dependency fact. Full body second sentence.",
+            )],
+            knowledge_root, "b", "factory-20260101-120000",
+        )
+
+        config = KnowledgeConfig(
+            knowledge_root=knowledge_root, dependency_scope="direct",
+        )
+        result = build_knowledge_context(
+            manifest, manifest.components[2], knowledge_root, config,
+        )
+
+        # b's full text is in the Dependencies tier.
+        assert "Direct B dependency fact. Full body second sentence." in result
+        # a only shows up via sibling first-sentence summary.
+        assert "Transitive A fact full body." in result  # first sentence
+        assert "Second sentence here." not in result  # rest of body trimmed
+
+    def test_dependency_scope_transitive_keeps_old_behavior(self, tmp_path: Path) -> None:
+        """E8: explicit opt-in to old behavior surfaces transitive deps
+        in the full-text Dependencies tier."""
+        knowledge_root = tmp_path / "knowledge"
+        manifest = _make_manifest([
+            _make_component("a"),
+            _make_component("b", dependencies=["a"]),
+            _make_component("c", dependencies=["b"]),
+        ])
+        write_facts(
+            [_make_fact(
+                fact_id="fact-001", component_id="a",
+                claim="Transitive A fact full body. Second sentence here.",
+            )],
+            knowledge_root, "a", "factory-20260101-120000",
+        )
+        config = KnowledgeConfig(
+            knowledge_root=knowledge_root, dependency_scope="transitive",
+        )
+        result = build_knowledge_context(
+            manifest, manifest.components[2], knowledge_root, config,
+        )
+        # Full body present -- transitive scope keeps it in the full-text tier.
+        assert "Transitive A fact full body. Second sentence here." in result
+
+    def test_knowledge_config_rejects_bad_dependency_scope(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="dependency_scope"):
+            KnowledgeConfig(dependency_scope="recursive")
 
     def test_three_tiers(self, tmp_path: Path) -> None:
         knowledge_root = tmp_path / "knowledge"

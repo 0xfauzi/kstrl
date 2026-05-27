@@ -120,7 +120,7 @@ PR (partial): _pending push_
 - [x] E5 - Confidence rename: `verified` -> `review_passed`, new `test_verified` tier added. Legacy `verified` aliased on read for backward compat.
 - [x] E6 - `FactoryConfig.pause_before_pr_merge` HITL checkpoint. Prompts user before push+merge when UI is interactive; warns and proceeds when non-interactive.
 - [~] E7 - Feedforward/knowledge overlap doc - DEFERRED to Phase G (documentation). The dedupe analysis itself is small; addressed there.
-- [~] E8 - Fact scope by import surface - DEFERRED to follow-up PR. Today every transitive dependency's facts get injected; filtering by import surface needs Component-level import metadata that the manifest doesn't carry yet.
+- [x] E8 - `KnowledgeConfig.dependency_scope: str = "direct"` (default) restricts the Dependencies full-text tier to `Component.dependencies` only. Transitive deps still appear in the sibling first-sentence summary tier (downgraded, not hidden). The old behavior is opt-in via `dependency_scope = "transitive"` or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`. 5 new tests in `test_knowledge.py`.
 - [x] E9 - ReviewResult.infrastructure_error added (parallel to SecurityResult.infrastructure_error); parse failures set it; downstream can distinguish "clean review" from "review never ran"
 
 Status: 5 of 8 items shipped (E2/E4/E5/E6/E9). E3 + E8 deferred with rationale in tracker; E1 permanently skipped per user; E7 folded into Phase G. 10 new tests; full suite 585 passing.
