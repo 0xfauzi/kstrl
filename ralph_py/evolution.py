@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ralph_py.factory import FactoryResult
+    from ralph_py.findings import Finding
     from ralph_py.manifest import Component, Manifest
 
 
@@ -184,6 +185,33 @@ def _timestamp_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
+    """Aggregate counts grouped by phase, severity, category, and OWASP
+    bucket for the evolution journal. Lets dashboards query trends
+    without re-walking every Finding."""
+    summary: dict[str, Any] = {
+        "total": len(findings),
+        "by_phase": {},
+        "by_severity": {},
+        "by_category": {},
+        "by_owasp": {},
+        "infrastructure_errors": 0,
+    }
+    for f in findings:
+        if f.is_infrastructure_error:
+            summary["infrastructure_errors"] += 1
+        summary["by_phase"][f.phase] = summary["by_phase"].get(f.phase, 0) + 1
+        summary["by_severity"][f.severity] = (
+            summary["by_severity"].get(f.severity, 0) + 1
+        )
+        summary["by_category"][f.category] = (
+            summary["by_category"].get(f.category, 0) + 1
+        )
+        if f.owasp:
+            summary["by_owasp"][f.owasp] = summary["by_owasp"].get(f.owasp, 0) + 1
+    return summary
+
+
 # ---------------------------------------------------------------------------
 # Journal
 # ---------------------------------------------------------------------------
@@ -224,6 +252,13 @@ class EvolutionJournal:
             if has_error:
                 check_name, _ = _classify_check(comp.error)
                 error_sig = _normalize_error(comp.error)
+            # E3-consume: include typed findings in the journal so
+            # downstream aggregations (concern hit-rate, OWASP-bucket
+            # frequency, infrastructure_error rate) can query the
+            # structured stream directly rather than re-parsing the
+            # rendered string.
+            findings_serialized = [f.to_dict() for f in comp.findings]
+            findings_summary = _summarize_findings(comp.findings)
             entry = {
                 "timestamp": timestamp,
                 "run_id": run_id,
@@ -237,6 +272,8 @@ class EvolutionJournal:
                 "error_signature": error_sig,
                 "duration_seconds": comp.duration_seconds,
                 "iteration_count": comp.iteration_count,
+                "findings": findings_serialized,
+                "findings_summary": findings_summary,
             }
             entries.append(entry)
 

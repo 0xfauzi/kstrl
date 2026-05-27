@@ -72,7 +72,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 - Do NOT ship a prompt change without re-running calibration (H2).
 - Do NOT update the hash in `tests/test_prompt_versions.py` without also bumping the matching `*_PROMPT_VERSION` constant (H3). The two changes always travel together.
 - Do NOT use `pickle` to load untrusted data; the existing `tests/test_phase_c_coverage.py` C8 pickling test only round-trips configs we constructed in-test.
-- Do NOT add unverifiable self-report claims to results without flagging them as hints (E9 added `infrastructure_error` precisely to distinguish verified from claimed).
+- Do NOT add unverifiable self-report claims to results without flagging them as hints (E9 added `infrastructure_error` precisely to distinguish verified from claimed; E3-infra lifts the same signal into the `Finding` stream so `len(findings)==0` is a safe "ran cleanly" check).
 - Do NOT bypass the budget cap (`max_adversarial_calls`) without explicit user opt-in.
 
 ## Agent Learnings

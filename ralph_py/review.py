@@ -217,14 +217,27 @@ class ReviewResult:
         ADVISORY criteria carry severity="advisory"; FAIL criteria carry
         severity="fail". Concerns carry their native severity field
         (already "fail" or "advisory" -- see ReviewConcern).
+
+        E3-infra: when this result has ``infrastructure_error=True``
+        (review agent crashed, output unparseable, timeout) returns a
+        single synthetic infrastructure_error Finding so downstream
+        consumers can distinguish "clean review" (empty list) from
+        "review never ran" (one infra finding).
         """
+        if self.infrastructure_error:
+            return [Finding.infrastructure_error(
+                phase="review",
+                explanation=(
+                    self.overall_notes
+                    or "Reviewer agent did not produce parseable output"
+                ),
+            )]
         out: list[Finding] = []
         for cr in self.criteria:
             if cr.verdict == ReviewVerdict.PASS.value:
                 continue
             sev = "fail" if cr.verdict == ReviewVerdict.FAIL.value else "advisory"
-            out.append(Finding(
-                phase="review",
+            out.append(Finding.from_review_concern(
                 category="prd_criterion",
                 severity=sev,
                 location="",
@@ -232,8 +245,7 @@ class ReviewResult:
                 suggestion=cr.suggestion,
             ))
         for concern in self.concerns:
-            out.append(Finding(
-                phase="review",
+            out.append(Finding.from_review_concern(
                 category=concern.category,
                 severity=concern.severity,
                 location=concern.location,

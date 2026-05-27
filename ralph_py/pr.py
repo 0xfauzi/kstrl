@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ralph_py.findings import render_findings_markdown
+
 if TYPE_CHECKING:
     from ralph_py.manifest import Component, Manifest
     from ralph_py.ui.base import UI
@@ -182,8 +184,14 @@ def _generate_pr_body(
                 lines.append(f"- `{dep_id}`")
         lines.append("")
 
-    # Review findings (if any)
-    if component.review_findings:
+    # Adversarial findings (E3-consume): prefer the typed list when
+    # available; the rendered string at component.review_findings remains
+    # the legacy fallback for any old manifests still in flight.
+    rendered = render_findings_markdown(component.findings)
+    if rendered:
+        lines.append(rendered)
+        lines.append("")
+    elif component.review_findings:
         lines.append(component.review_findings)
         lines.append("")
 

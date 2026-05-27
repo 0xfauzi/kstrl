@@ -23,7 +23,9 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 
 ## Findings model (E3)
 
-Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`ralph_py/findings.py`) before landing on `Component.findings: list[Finding]`. The fields are:
+Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`ralph_py/findings.py`) before landing on `Component.findings: list[Finding]`. **Consumers**: `pr.py` renders findings into the PR body via `render_findings_markdown` (the legacy `review_findings` string is a fallback for legacy manifests); `evolution.py::record_run` serializes `findings` + a `findings_summary` aggregator into the journal.
+
+The fields are:
 
 | Field | Type | Notes |
 |---|---|---|
@@ -36,7 +38,25 @@ Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult
 | `owasp`, `cwe` | str | Populated for security findings via `SECURITY_CATEGORY_MAP` |
 | `tags` | tuple[str,...] | Free-form; reserved for downstream consumers |
 
-`Component.findings` is the source of truth. The string at `Component.review_findings` is a derived view kept for backward compatibility with PR-body rendering and manifest.json readers. New downstream code (dashboards, evolution-journal queries, retry-context builders that want richer than-string information) should consume the typed list directly.
+`Component.findings` is the source of truth. The string at `Component.review_findings` is a derived view kept as a backward-compat fallback for legacy manifests where the typed list is absent.
+
+### Infrastructure error semantics (E3-infra)
+
+When a role's result has `infrastructure_error=True` (timeout, parse failure, agent crash), `as_findings()` emits a single synthetic `Finding(phase=<role>, category="infrastructure_error", severity="critical")` with `is_infrastructure_error=True`. This guarantees:
+
+- `len(findings) == 0` always means "the role ran AND found nothing" — a verifiably clean review.
+- `[f for f in findings if not f.is_infrastructure_error]` filters to the verified subset.
+- A consumer that checks only `len(findings) > 0` to gate something will not accidentally pass an unverified component through.
+
+### Tag conventions (E3-tags)
+
+Each Finding emitted by the factory path carries:
+- `phase:<role>` (review or security)
+- `category:<X>` (matching the `category` field)
+- For security: `owasp:<bucket>` and `cwe:<id>` when `SECURITY_CATEGORY_MAP` covers the category
+- For infrastructure errors: `infrastructure`
+
+Tags let downstream consumers filter by taxonomy without re-parsing the field-level data.
 
 ## Pipeline
 
@@ -98,6 +118,12 @@ If a feedforward entry says `auth.middleware.verify_token(token: str) -> User`, 
 The knowledge layer's "Dependencies" tier defaults to `direct` scope: only facts from `Component.dependencies` (the import surface declared in the manifest) appear in the full-text tier. Transitive dependencies still surface in the sibling summary tier (first-sentence only).
 
 Rationale: the typical reason a component needs full-text facts about a transitive dependency is that the manifest is missing a direct edge - i.e. the architect under-specified imports. Forcing the user to add the edge is better than silently injecting every transitive ancestor's facts into every downstream prompt. For projects that genuinely need the old behavior, `KnowledgeConfig.dependency_scope = "transitive"` (or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`) restores it.
+
+### Telemetry for the direct-vs-transitive gap (E8-telemetry)
+
+Switching to `direct` scope can silently drop facts that downstream components were relying on. To make that visible, `build_knowledge_context` writes a per-component event to `<knowledge_root>/_e8_dependency_scope.jsonl` every time it excludes one or more transitive deps. The event records `excluded_dep_count` and `withheld_fact_count`. Read via `read_dependency_scope_telemetry(knowledge_root) -> list[dict]`.
+
+Healthy state: empty file. Persistent non-zero values per build are the signal that direct scope is dropping information real workflows need, and the architect should be asked to make the missing edges explicit (or `dependency_scope=transitive` re-enabled).
 
 ## Known limitations
 

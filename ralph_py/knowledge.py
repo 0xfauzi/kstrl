@@ -519,11 +519,15 @@ def build_knowledge_context(
 
     Tiers (each token-capped from config):
     - Core: full text of all facts for ``component``.
-    - Dependency: full text of facts for every transitive dependency.
+    - Dependency: full text of facts for every direct (or transitive
+      under opt-in) dependency.
     - Sibling: first-sentence summary of facts for every other component.
 
     Returns the empty string when there is nothing to surface or when
-    knowledge is disabled.
+    knowledge is disabled. Side-effect: when ``dependency_scope=direct``
+    and the gap between direct and transitive is non-zero, records an
+    E8 telemetry event via :func:`record_dependency_scope_gap` so that
+    silent regressions are detectable from the evolution journal.
     """
     if not config.enabled:
         return ""
@@ -534,11 +538,31 @@ def build_knowledge_context(
     core_facts = read_facts(knowledge_root, component.id)
     core_kept, core_overflow = _pack_facts_full(core_facts, config.max_core_tokens)
 
-    # Dependency tier -- scope controlled by E8 config flag.
+    # Dependency tier -- scope controlled by E8 config flag. Always
+    # compute the transitive set; we use the direct subset when in
+    # direct mode, and the delta for E8 telemetry.
+    transitive_dep_ids = _transitive_dependencies(manifest, component.id)
+    direct_dep_ids = _direct_dependencies(manifest, component.id)
     if config.dependency_scope == "transitive":
-        dep_ids = _transitive_dependencies(manifest, component.id)
+        dep_ids = transitive_dep_ids
     else:
-        dep_ids = _direct_dependencies(manifest, component.id)
+        dep_ids = direct_dep_ids
+        # E8 telemetry: facts that direct scope withheld from the
+        # full-text tier (they still appear in sibling summaries).
+        # Recorded so a downstream consumer can detect "I switched to
+        # direct scope and silently lost N facts per build."
+        excluded_dep_ids = transitive_dep_ids - direct_dep_ids
+        if excluded_dep_ids:
+            withheld_facts = sum(
+                len(read_facts(knowledge_root, dep_id))
+                for dep_id in excluded_dep_ids
+            )
+            record_dependency_scope_gap(
+                component_id=component.id,
+                excluded_dep_count=len(excluded_dep_ids),
+                withheld_fact_count=withheld_facts,
+                knowledge_root=knowledge_root,
+            )
     dep_facts: list[Fact] = []
     for dep_id in dep_ids:
         dep_facts.extend(read_facts(knowledge_root, dep_id))
@@ -599,6 +623,79 @@ def build_knowledge_context(
         parts.append("")
 
     return "\n".join(parts).rstrip() + "\n"
+
+
+# ---------------------------------------------------------------------------
+# E8 telemetry: surface "direct scope hid these facts" so silent quality
+# regressions become visible.
+# ---------------------------------------------------------------------------
+
+
+_E8_TELEMETRY_RELATIVE_PATH = Path("_e8_dependency_scope.jsonl")
+
+
+def record_dependency_scope_gap(
+    component_id: str,
+    excluded_dep_count: int,
+    withheld_fact_count: int,
+    knowledge_root: Path,
+) -> None:
+    """Append an E8 telemetry event to
+    ``<knowledge_root>/_e8_dependency_scope.jsonl``.
+
+    Each line records that ``component_id`` was built with
+    ``dependency_scope=direct`` while ``excluded_dep_count`` transitive
+    deps carried ``withheld_fact_count`` full-text facts that were
+    demoted to first-sentence sibling summaries. Persistent non-zero
+    values across runs are the signal that direct scope is dropping
+    information real workflows need. The default empty signal is the
+    healthy state.
+
+    Atomic-append best-effort -- write failures are swallowed (telemetry
+    must never block a factory run).
+    """
+    if excluded_dep_count == 0 and withheld_fact_count == 0:
+        return
+    record = {
+        "timestamp": _telemetry_timestamp(),
+        "component_id": component_id,
+        "excluded_dep_count": excluded_dep_count,
+        "withheld_fact_count": withheld_fact_count,
+    }
+    target = knowledge_root / _E8_TELEMETRY_RELATIVE_PATH
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+
+
+def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]]:
+    """Read the JSONL log produced by
+    :func:`record_dependency_scope_gap`. Returns ``[]`` when the file
+    does not exist or cannot be parsed."""
+    target = knowledge_root / _E8_TELEMETRY_RELATIVE_PATH
+    if not target.is_file():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        for line in target.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        return []
+    return out
+
+
+def _telemetry_timestamp() -> str:
+    from datetime import UTC, datetime
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _direct_dependencies(manifest: Manifest, component_id: str) -> set[str]:
