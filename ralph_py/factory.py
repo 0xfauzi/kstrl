@@ -8,7 +8,7 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
@@ -226,7 +226,7 @@ def _run_component(
     agent_type: str | None,
     sleep_seconds: float,
     previous_context_json: str | None = None,
-    feedforward_config_dict: dict | None = None,
+    feedforward_config_dict: dict[str, Any] | None = None,
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
@@ -376,9 +376,9 @@ def run_factory(
     Phase 2: Second-opinion review (separate agent reviews diff against spec)
     Phase 3: Contract testing (merge tier branches, run integration tests)
     """
-    from ralph_py.agents import get_agent
-
     import secrets
+
+    from ralph_py.agents import get_agent
 
     factory_start = time.monotonic()
     factory_result = FactoryResult()
@@ -820,7 +820,7 @@ def run_factory(
 
         # All verification phases passed - create PR and merge
         if factory_config.create_prs:
-            from ralph_py.pr import push_create_and_merge_pr, is_gh_available
+            from ralph_py.pr import is_gh_available, push_create_and_merge_pr
 
             # E6: human-in-the-loop checkpoint. When opt-in, prompt
             # before pushing+merging so a human can inspect the diff,
@@ -911,7 +911,7 @@ def run_factory(
             return None
 
     # Build feedforward config dict for serialization to worker processes
-    ff_config_dict: dict | None = None
+    ff_config_dict: dict[str, Any] | None = None
     if factory_config.feedforward_config and factory_config.feedforward_config.enabled:
         fc = factory_config.feedforward_config
         ff_config_dict = {
@@ -926,7 +926,7 @@ def run_factory(
     # Load knowledge config once for the entire factory run
     knowledge_config = KnowledgeConfig.load(root_dir)
 
-    def _submit_args(comp: Component, wt_path: Path) -> tuple:
+    def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
         knowledge_prefix = ""
         if knowledge_config.enabled:

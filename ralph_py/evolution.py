@@ -11,9 +11,9 @@ import io
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ralph_py.factory import FactoryResult
@@ -39,6 +39,7 @@ class EvolutionConfig:
     def load(cls, root_dir: Path | None = None) -> EvolutionConfig:
         """Load evolution config with precedence: env > toml > defaults."""
         import os
+
         from ralph_py.config import load_toml_section
         if root_dir is None:
             root_dir = Path.cwd()
@@ -88,7 +89,8 @@ class FailurePattern:
     total_components: int
     affected_components: list[str]
     check_name: str  # e.g. "test_suite", "typecheck", "linter", "review"
-    error_signature: str  # normalized error pattern (e.g. "S608" for ruff, "missing-argument" for pytest)
+    # normalized error pattern (e.g. "S608" for ruff, "missing-argument" for pytest)
+    error_signature: str
     category: str  # "verification", "review", "contract", "iteration"
 
 
@@ -179,7 +181,7 @@ def _classify_check(error: str) -> tuple[str, str]:
 
 
 def _timestamp_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +213,7 @@ class EvolutionJournal:
         timestamp = _timestamp_now()
 
         # --- JSONL entries per component ---
-        entries: list[dict] = []
+        entries: list[dict[str, Any]] = []
         for comp in manifest.components:
             has_error = bool(comp.error) and comp.status in (
                 ComponentStatus.FAILED.value,
@@ -609,7 +611,7 @@ class EvolutionJournal:
     # get_concern_hit_rate (D8)
     # ------------------------------------------------------------------
 
-    def get_concern_hit_rate(self, lookback_runs: int = 10) -> dict:
+    def get_concern_hit_rate(self, lookback_runs: int = 10) -> dict[str, Any]:
         """Aggregate reviewer-concern signal across recent factory runs.
 
         Returns ``{"runs": N, "components": M, "with_concern": K,
@@ -654,7 +656,7 @@ class EvolutionJournal:
     # get_experiment_trends
     # ------------------------------------------------------------------
 
-    def get_experiment_trends(self, last_n: int = 10) -> list[dict]:
+    def get_experiment_trends(self, last_n: int = 10) -> list[dict[str, Any]]:
         """Read experiments.tsv and return the last N entries as dicts."""
         try:
             text = self.config.experiments_path.read_text()
@@ -669,14 +671,14 @@ class EvolutionJournal:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _read_journal_entries(self, lookback_runs: int = 10) -> list[dict]:
+    def _read_journal_entries(self, lookback_runs: int = 10) -> list[dict[str, Any]]:
         """Read JSONL journal and return entries from the last N distinct runs."""
         try:
             lines = self.config.journal_path.read_text().strip().splitlines()
         except OSError:
             return []
 
-        entries: list[dict] = []
+        entries: list[dict[str, Any]] = []
         for line in lines:
             line = line.strip()
             if not line:

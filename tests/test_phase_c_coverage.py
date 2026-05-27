@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import json
 import pickle  # Safe: we pickle and immediately unpickle objects we
-                 # constructed in this same test, never untrusted data.
-                 # This guards the ProcessPoolExecutor compat surface.
+
+# constructed in this same test, never untrusted data.
+# This guards the ProcessPoolExecutor compat surface.
 import sys
 import threading
 from pathlib import Path
@@ -44,7 +45,6 @@ from ralph_py.review import ReviewResult
 from ralph_py.security import SecurityConfig, SecurityMode
 from ralph_py.ui.plain import PlainUI
 from ralph_py.verify import VerifyConfig
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -359,7 +359,10 @@ class TestC6ConcurrentFactory:
 
         t1 = threading.Thread(target=go, args=(root_a,))
         t2 = threading.Thread(target=go, args=(root_b,))
-        t1.start(); t2.start(); t1.join(); t2.join()
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
         assert errors == []
 
 

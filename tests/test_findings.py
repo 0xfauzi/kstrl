@@ -68,6 +68,7 @@ class TestFinding:
 
     def test_frozen(self) -> None:
         import dataclasses
+
         import pytest
 
         f = Finding(phase="review", category="x", severity="fail",

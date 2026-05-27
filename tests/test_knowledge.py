@@ -36,7 +36,6 @@ from ralph_py.manifest import Component, Manifest
 from ralph_py.ui.plain import PlainUI
 from ralph_py.verify import VerifyConfig
 
-
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
@@ -79,8 +78,7 @@ class _FakeAgent:
     def run(
         self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
     ) -> Iterator[str]:
-        for line in self._lines:
-            yield line
+        yield from self._lines
 
     @property
     def final_message(self) -> str | None:
@@ -1030,9 +1028,7 @@ prompt echoed back: schema is
                 self, prompt: str, cwd: Path | None = None,
                 timeout: float | None = None,
             ) -> Iterator[str]:
-                # Mimic codex: echo prompt back, then output JSON
-                for line in schema_example_dump.split("\n"):
-                    yield line
+                yield from schema_example_dump.split("\n")
                 yield real_response
 
             @property

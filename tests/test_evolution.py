@@ -10,7 +10,6 @@ from ralph_py.evolution import (
     EvolutionJournal,
     FailurePattern,
 )
-
 from ralph_py.factory import FactoryResult
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 

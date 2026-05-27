@@ -11,17 +11,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from ralph_py.config import RalphConfig
 from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
 from ralph_py.git import strip_self_critique_from_diff
-from ralph_py.knowledge import Fact, _coerce_facts, _parse_fact_md, _render_fact_md
+from ralph_py.knowledge import _coerce_facts, _parse_fact_md
 from ralph_py.manifest import Component, Manifest
 from ralph_py.review import ReviewResult, parse_review_output
 from ralph_py.ui.plain import PlainUI
 from ralph_py.verify import VerifyConfig
-
 
 # ---------------------------------------------------------------------------
 # E5 - confidence rename + backwards compat

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re as _re
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -274,8 +275,6 @@ def truncate_diff_for_prompt(
 # reviewer-prep step to remove the engineer's self-reported failure
 # modes from what the reviewer sees, so the reviewer is not biased
 # toward "the implementer already thought of that" and skips checking.
-import re as _re
-
 _SELF_CRITIQUE_BLOCK_RE = _re.compile(
     r"""
     \+\#{2,3}\s+Self[-\s]Critique[\s\S]*?       # heading + content

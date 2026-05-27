@@ -6,7 +6,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from ralph_py.ui.base import UI
 
 
-class ContractMode(str, Enum):
+class ContractMode(StrEnum):
     TIER = "tier"
     FINAL = "final"
     SKIP = "skip"

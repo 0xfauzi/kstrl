@@ -41,6 +41,27 @@ target-version = "py311"
 select = ["E", "F", "I", "UP", "B"]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+# Long lines in these files live inside triple-quoted LLM prompt
+# bodies. Reformatting them changes the prompt SHA-256 (H3 protects
+# against silent prompt drift) and would force a version bump for
+# what is purely cosmetic. The prompt IS the artifact -- keep its
+# bytes stable.
+"ralph_py/decompose.py" = ["E501"]
+"ralph_py/review.py" = ["E501"]
+"ralph_py/security.py" = ["E501"]
+"ralph_py/knowledge.py" = ["E501"]
+# init_cmd.py is full of triple-quoted CLAUDE.md / prompt template
+# strings used to scaffold user projects. Reflowing markdown inside
+# those strings changes the output users see; keep bytes stable.
+"ralph_py/init_cmd.py" = ["E501"]
+# Test files contain long literal expected strings (verification
+# output, JSON payloads). Reflowing would obscure the test intent.
+"tests/test_verify.py" = ["E501"]
+"tests/test_evolution.py" = ["E501"]
+"tests/test_harness_integration.py" = ["E501"]
+"tests/test_parsers.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
