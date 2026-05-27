@@ -82,8 +82,8 @@ _VERSIONS: dict[str, str] = {
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DECOMPOSE_PROMPT": (
-        "38efb17f881a6f75e92cad41c7a1d4accf3ebd88db0457da8263ec2de68662ca",
-        "1.1.0",
+        "c20cd2fad257df33d3b5ce28a79c1c7752c0780fc667dc8255fd591eac2abad3",
+        "1.2.0",
     ),
     "REVIEWER_PROMPT": (
         "9307260aee8aedeea22d7fcb8e28131421013a915ec697d71f3428996bc434ca",
@@ -391,6 +391,47 @@ def test_ast_walker_catches_nested_declaration() -> None:
                     found.append(target.id)
     assert "NESTED_PROMPT" in found, (
         "AST walker failed to catch nested prompt declaration."
+    )
+
+
+def test_enrollment_exempt_names_are_not_stale() -> None:
+    """Every entry in ``_ENROLLMENT_EXEMPT_NAMES`` must reference a
+    real module-level string assignment somewhere in ralph_py/. If you
+    delete an exempt constant (e.g. you remove DEFAULT_CODEBASE_MAP
+    from init_cmd.py), the exempt entry would become dead code that
+    silently masks a future name collision.
+
+    The test fails fast and forces the developer to remove the stale
+    entry instead of letting it rot.
+    """
+    discovered_anywhere: set[str] = set()
+    ralph_py = Path(__file__).resolve().parent.parent / "ralph_py"
+    for py_file in sorted(ralph_py.rglob("*.py")):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if not _is_prompt_value(node.value):
+                    continue
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        discovered_anywhere.add(target.id)
+            elif isinstance(node, ast.AnnAssign):
+                if not _is_prompt_value(node.value):
+                    continue
+                if isinstance(node.target, ast.Name):
+                    discovered_anywhere.add(node.target.id)
+    stale = [
+        name for name in _ENROLLMENT_EXEMPT_NAMES
+        if name not in discovered_anywhere
+    ]
+    assert not stale, (
+        f"_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "
+        f"correspond to a module-level string constant in ralph_py/: "
+        f"{stale}. Remove them, otherwise the exemption silently "
+        "masks any future name collision."
     )
 
 

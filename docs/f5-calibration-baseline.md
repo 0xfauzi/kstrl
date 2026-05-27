@@ -92,6 +92,27 @@ The missed-fixture rotation is within LLM run-to-run variance at single-run samp
 
 Raw: `tests/adversarial_fixtures/_results/baseline-20260527-191337.json`.
 
+## v1.2.0 architect re-run with new allowedPaths fixture (2026-05-27 19:51)
+
+Re-ran the architect after the DECOMPOSE_PROMPT bump to `1.2.0` (tightened wording on `allowedPaths` rule #12) and after adding a non-halting fixture `spec-04-clear-layout` that grades whether the architect emits sensible scopes per the rule.
+
+Result:
+
+| Suite | Caught | Total | Rate |
+|---|---|---|---|
+| Architect (halting, spec-issue detection) | 2 | 3 | 67% |
+| Architect (non-halting, allowedPaths quality) | 1 | 1 | 100% |
+
+The halting-fixture rate held at 67% across v1.0.0/v1.1.0/v1.2.0. The non-halting fixture is new in v1.2.0 and Haiku passed on first run, producing `['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/slugify-.../']` -- excludes harness internals, includes test root, names the feature subtree. This is the first calibrated evidence that the rule actually constrains the architect, not just the prompt-instruction layer.
+
+Raw: `tests/adversarial_fixtures/_results/baseline-20260527-195157.json`.
+
+## Acknowledged limitation: single-run baselines are noisy signal
+
+Every baseline in this document is one fixture-suite run against Haiku. With 3 halting fixtures and LLM-inherent variance, comparing rates across versions (`v1.0.0`: missed spec-01; `v1.1.0`: missed spec-02; `v1.2.0`: missed spec-02) is noisy at best -- the same fixture rotates in and out of the miss column on different runs. Aggregating 5+ runs would give confidence intervals.
+
+The fixture-suite is also small. Three halting spec fixtures grade three distinct vagueness modes; one non-halting fixture grades the allowedPaths rule. Expanding the suite (more vagueness fixtures, more layouts to test allowedPaths emission, multi-component fixtures) is fixture-library work that would tighten the H2 verification path. Future calibration improvement.
+
 ## Trustworthy use of these numbers
 
 - **Single-run baseline**. LLMs vary; aggregate across multiple runs before

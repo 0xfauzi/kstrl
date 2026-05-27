@@ -43,7 +43,7 @@ class SpecBlockerError(Exception):
             + "\n".join(summary_lines),
         )
 
-DECOMPOSE_PROMPT_VERSION = "1.1.0"
+DECOMPOSE_PROMPT_VERSION = "1.2.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -125,30 +125,48 @@ Decomposition rules:
 11. Do not invent UI elements, endpoints, or files not described in the
     spec. If the spec is silent on something you would need to invent,
     add a `spec_issues` entry instead.
-12. `allowedPaths` is REQUIRED for every component. It is the agent's
-    write-scope guardrail: the harness's diff-scope check fails any
-    iteration that touches files outside this list. Each entry is a
-    path prefix (directory or file). Rules:
-    - Include the language-appropriate source root (e.g. `src/`,
-      `lib/`, or the package directory the spec names) AND the test
-      root (e.g. `tests/`, `__tests__/`, `spec/`).
-    - Include the component's own PRD-and-progress subtree
+12. `allowedPaths` is REQUIRED for every component. The harness rejects
+    any architect output without it. Each entry is a path prefix
+    (directory or file). Each entry MUST end with `/` for directories
+    or be an exact file path. Rules:
+
+    INCLUDE:
+    - Language-appropriate source root (e.g. `src/`, `lib/`, or the
+      package directory the spec names).
+    - Test root (e.g. `tests/`, `__tests__/`, `spec/`).
+    - The component's own feature subtree, exactly
       `scripts/ralph/feature/<component-id>/` (the agent updates
-      progress.txt there).
-    - PREFER tighter scopes: if the spec names specific files, list
-      those files instead of broad directories. A tight scope means
-      a rogue agent cannot delete unrelated code.
-    - NEVER include `.ralph/` (harness state), `.github/`,
-      `pyproject.toml`, the harness's own packages (`ralph_py/`,
-      `src/ralph/`), or any file/directory above the component's
-      feature subtree under `scripts/ralph/`. These are
-      out-of-scope by definition and an agent that touches them is
-      malfunctioning.
-    - If you genuinely cannot infer a sensible scope from the spec,
-      add a `spec_issues` entry of `kind: missing_detail` rather
-      than emitting an empty array. An empty `allowedPaths`
+      progress.txt and PRD passes there).
+
+    EXCLUDE (never list these in allowedPaths):
+    - `.ralph/` (harness runtime state).
+    - `.github/` (CI configuration).
+    - `pyproject.toml`, `package.json`, `Cargo.toml`, or other build
+      manifests at the repo root.
+    - The harness's own packages: `ralph_py/`, `src/ralph/`.
+    - `scripts/ralph/` as a bare prefix. Listing the bare directory
+      would let the agent edit the manifest or sibling feature
+      subtrees. ONLY list the specific `scripts/ralph/feature/<id>/`
+      subtree for this component -- nothing higher.
+
+    PREFER tighter scopes:
+    - If the spec names specific files, list those files instead of
+      broad directories. A tight scope means a rogue agent cannot
+      delete unrelated code.
+    - If the spec is silent on layout, prefer the conservative
+      defaults (one source root, one test root, the feature subtree).
+
+    FAILURE MODES:
+    - Empty array: REJECTED at validation. An empty `allowedPaths`
       silently disables the diff-scope check, which is worse than
       halting on a vague spec.
+    - Field omitted: REJECTED at validation. The architect must take
+      a position on scope.
+    - If you genuinely cannot infer a sensible scope from the spec
+      (e.g. the spec doesn't name any code paths or layout), add a
+      `spec_issues` entry of kind `missing_detail` summarizing
+      "spec does not specify the implementation layout; cannot bound
+      agent write scope" AND return an empty `components` array.
 
 Red-team rules:
 - Look for: ambiguous quantifiers ("fast", "secure", "user-friendly"),
@@ -383,10 +401,25 @@ def _validate_decompose_output(data: Any) -> list[str]:
         elif not all(isinstance(d, str) for d in deps):
             errors.append(f"{prefix}.dependencies: all items must be strings")
 
-        # allowedPaths (optional for backwards compatibility with v1.0.0
-        # architect outputs; v1.1.0+ always emits it). When present, must
-        # be a non-empty array of non-empty strings.
-        if "allowedPaths" in comp:
+        # allowedPaths is REQUIRED in architect output. The
+        # diff-scope check at Phase 1 is silently disabled when
+        # allowed_paths is None, so an architect that forgets to
+        # emit this field would bypass the guardrail entirely. This
+        # is a v1.2.0 prompt contract: DECOMPOSE_PROMPT rule #12
+        # spells it out, and the validator gates it here. Legacy
+        # v1.0.0/v1.1.0-from-disk PRDs still load (see PRD.load
+        # which keeps the field optional for backward compat with
+        # hand-edited PRDs) -- this gate only fires on FRESH
+        # architect emissions inside decompose_spec.
+        if "allowedPaths" not in comp:
+            errors.append(
+                f"{prefix}.allowedPaths: required field missing. "
+                "The architect must declare a per-component write "
+                "scope; see DECOMPOSE_PROMPT rule #12. To halt on "
+                "vague layout instead, return an empty `components` "
+                "array with a `spec_issues` entry."
+            )
+        else:
             ap = comp["allowedPaths"]
             if not isinstance(ap, list):
                 errors.append(f"{prefix}.allowedPaths: must be an array")

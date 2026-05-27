@@ -383,6 +383,13 @@ def _default_typecheck_command(cwd: Path) -> str:
             return "uv run mypy ."
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):
+            # Acknowledged edge case: this heuristic does not consult
+            # ``[[tool.mypy.overrides]]`` (per-module relaxation) or
+            # modules-only configs. If a project relaxes via overrides
+            # but doesn't set ``files``/``packages``, the broad
+            # ``uv run mypy .`` default would override the relaxation.
+            # Real-world rare. Users can always override explicitly via
+            # ``--typecheck-command`` or env var.
             if mypy_section.get("files") or mypy_section.get("packages"):
                 return "uv run mypy"
     return "uv run mypy ."
