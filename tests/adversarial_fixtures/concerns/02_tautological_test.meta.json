@@ -1,0 +1,12 @@
+{
+  "fixture_id": "concern-02-tautological-test",
+  "role": "reviewer",
+  "prd": "Add an `add(a: int, b: int) -> int` helper to the calculator module. Tests pass.",
+  "must_detect": {
+    "category": "test_quality",
+    "severity_at_least": "fail",
+    "evidence_path_contains": "tests/test_calculator.py"
+  },
+  "description": "test_add_works asserts True, exercising nothing; test_add_returns_int uses `or True` which makes the assertion always pass regardless of the actual type. Neither test would catch any regression in add().",
+  "expected_fix": "Replace with real assertions: assert add(2, 3) == 5; assert isinstance(add(1, 2), int) (without the `or True`)."
+}

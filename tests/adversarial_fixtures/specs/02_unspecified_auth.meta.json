@@ -1,0 +1,15 @@
+{
+  "fixture_id": "spec-02-unspecified-auth",
+  "role": "architect",
+  "must_detect": {
+    "spec_issues_min": 2,
+    "must_include_kind": ["missing_detail", "unstated_assumption"],
+    "blocker_or_major": true
+  },
+  "description": "Admin dashboard with delete-user and reset-password actions, but spec never specifies WHO is an admin, how admin status is checked, audit logging requirements, or whether actions are recoverable. These are fail-class omissions for any admin feature.",
+  "expected_spec_issues": [
+    {"kind": "missing_detail", "summary": "No definition of how 'admin' is determined / authenticated"},
+    {"kind": "undefined_failure_mode", "summary": "Delete user: is it soft delete? Hard delete? Recoverable?"},
+    {"kind": "unstated_assumption", "summary": "No audit log requirement for admin actions"}
+  ]
+}

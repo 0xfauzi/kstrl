@@ -1053,6 +1053,66 @@ prompt echoed back: schema is
 # ---------------------------------------------------------------------------
 
 
+class TestFactUtilization:
+    """D6: measure_fact_utilization returns the lower-bound count of
+    fact claims referenced in downstream artifacts."""
+
+    def _prefix(self, *claims: str) -> str:
+        from ralph_py.knowledge import (
+            Fact,
+            _format_section,
+        )
+        facts = [
+            Fact(
+                id=f"fact-{i + 1:03d}",
+                component_id="comp-x",
+                created_iter=1,
+                created_run_id="factory-20260101-120000-aaaaaa",
+                scope="contract",
+                evidence=["src/x.py:1"],
+                confidence="verified",
+                claim=claim,
+            )
+            for i, claim in enumerate(claims)
+        ]
+        return _format_section("Dependencies", facts)
+
+    def test_empty_prefix_zero_zero(self) -> None:
+        from ralph_py.knowledge import measure_fact_utilization
+        result = measure_fact_utilization("", "diff", "progress")
+        assert result == {"injected": 0, "referenced": 0}
+
+    def test_referenced_when_claim_in_diff(self) -> None:
+        from ralph_py.knowledge import measure_fact_utilization
+        prefix = self._prefix("The handler returns 200 for valid input.")
+        diff = "+# The handler returns 200 for valid input.\n+def handler():\n"
+        result = measure_fact_utilization(prefix, diff, "")
+        assert result["injected"] == 1
+        assert result["referenced"] == 1
+
+    def test_not_referenced(self) -> None:
+        from ralph_py.knowledge import measure_fact_utilization
+        prefix = self._prefix("The handler validates JWT before accepting requests.")
+        result = measure_fact_utilization(prefix, "unrelated diff", "unrelated progress")
+        assert result["injected"] == 1
+        assert result["referenced"] == 0
+
+    def test_mixed_referenced(self) -> None:
+        from ralph_py.knowledge import measure_fact_utilization
+        prefix = self._prefix(
+            "First fact about authentication middleware.",
+            "Second fact about database adapter.",
+            "Third fact about response shape.",
+        )
+        diff = (
+            "+# First fact about authentication middleware mentioned here\n"
+            "+# also third fact about response shape\n"
+        )
+        result = measure_fact_utilization(prefix, diff, "")
+        assert result["injected"] == 3
+        assert result["referenced"] == 2
+
+
 def test_current_run_id_matches_factory_format() -> None:
     import re
     rid = current_run_id()

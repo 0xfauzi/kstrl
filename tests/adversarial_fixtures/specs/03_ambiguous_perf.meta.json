@@ -1,0 +1,16 @@
+{
+  "fixture_id": "spec-03-ambiguous-perf",
+  "role": "architect",
+  "must_detect": {
+    "spec_issues_min": 3,
+    "must_include_kind": ["ambiguity", "missing_detail"],
+    "blocker_or_major": true
+  },
+  "description": "'Snappy', 'millions', 'real time', and 'whatever's appropriate' are all undefined. No P95 latency target, no throughput requirement, no indication of debouncing strategy, no answer for what 'best practices' mean. Architect should refuse to decompose without resolving these.",
+  "expected_spec_issues": [
+    {"kind": "ambiguity", "summary": "'Snappy' / 'real time' have no measurable target (P95 latency in ms?)"},
+    {"kind": "ambiguity", "summary": "'Millions of products' is vague - 5M? 50M? Affects index choice."},
+    {"kind": "missing_detail", "summary": "Tech stack is unspecified ('whatever's appropriate')"},
+    {"kind": "missing_detail", "summary": "No debouncing / typeahead behavior specified"}
+  ]
+}

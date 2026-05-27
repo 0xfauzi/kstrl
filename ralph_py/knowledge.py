@@ -887,6 +887,55 @@ def _parse_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes"}
 
 
+_PREFIX_CLAIM_RE = re.compile(
+    r"^- \*\*[^\*]+\*\*\[[^\]]+\]\s+\{[^\}]+\}:\s*(.+?)(?:\s*\(evidence:|\s*$)",
+)
+
+
+def _extract_prefix_claims(knowledge_prefix: str) -> list[str]:
+    """Return the human-readable claim sentences from a rendered
+    knowledge prefix. Used by the fact-utilization metric to look for
+    downstream references."""
+    claims: list[str] = []
+    for line in knowledge_prefix.splitlines():
+        m = _PREFIX_CLAIM_RE.match(line)
+        if m:
+            claim = m.group(1).strip()
+            if claim:
+                claims.append(claim)
+    return claims
+
+
+def measure_fact_utilization(
+    knowledge_prefix: str, *artifacts: str, snippet_length: int = 30,
+) -> dict[str, int]:
+    """Approximate fact-utilization metric.
+
+    Returns ``{"injected": N, "referenced": M}`` where N is the number
+    of fact claims injected via ``knowledge_prefix`` and M is the count
+    that have a 30-char snippet from their first sentence appearing as
+    a substring in any of the provided ``artifacts`` (typically the
+    component's git diff and progress.txt).
+
+    The substring match is crude: LLMs paraphrase, so a False
+    negative just means we under-count. The metric is meant to surface
+    the lower bound of utilization, not measure semantic understanding.
+    """
+    claims = _extract_prefix_claims(knowledge_prefix)
+    if not claims:
+        return {"injected": 0, "referenced": 0}
+    # Case-insensitive substring match: LLMs frequently echo facts with
+    # casing changes (e.g. starting a sentence with "The" vs the
+    # mid-sentence "the").
+    haystack = "\n".join(artifacts).lower()
+    referenced = 0
+    for claim in claims:
+        snippet = _first_sentence(claim)[:snippet_length].strip().lower()
+        if snippet and snippet in haystack:
+            referenced += 1
+    return {"injected": len(claims), "referenced": referenced}
+
+
 def current_run_id() -> str:
     """Construct a run id of the same shape factory.py uses for evolution.jsonl.
 

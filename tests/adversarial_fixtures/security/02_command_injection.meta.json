@@ -1,0 +1,13 @@
+{
+  "fixture_id": "sec-02-command-injection",
+  "role": "security",
+  "must_detect": {
+    "category": "injection",
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/backup.py"
+  },
+  "owasp": "A03:2021 - Injection",
+  "cwe": "CWE-78",
+  "description": "shell=True with f-string concatenation of user-controlled `path` and `output`. An attacker can inject shell metacharacters (e.g. `; rm -rf /`).",
+  "expected_fix": "Use shell=False and pass arguments as a list: subprocess.run(['tar', 'czf', output, path], check=False)"
+}

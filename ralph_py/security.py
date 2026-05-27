@@ -41,25 +41,42 @@ class SecurityMode(str, Enum):
     SKIP = "skip"      # skip the phase entirely
 
 
-VALID_CATEGORIES = frozenset({
-    "injection",
-    "auth_bypass",
-    "authz_bypass",
-    "hardcoded_secret",
-    "unsafe_deserialization",
-    "broken_crypto",
-    "predictable_randomness",
-    "missing_input_validation",
-    "race_condition",
-    "ssrf",
-    "xss",
-    "open_redirect",
-    "information_disclosure",
-    "denial_of_service",
-    "other",
-})
+# Security category taxonomy. Each category maps to an OWASP Top 10
+# (2021) bucket and a representative CWE so findings can be aggregated
+# against industry-standard classifications. Used by the calibration
+# runner and downstream reporting; kept here so the security reviewer
+# prompt and tooling share one source of truth.
+SECURITY_CATEGORY_MAP: dict[str, dict[str, str]] = {
+    "injection": {"owasp": "A03:2021", "cwe": "CWE-89"},
+    "auth_bypass": {"owasp": "A07:2021", "cwe": "CWE-287"},
+    "authz_bypass": {"owasp": "A01:2021", "cwe": "CWE-285"},
+    "hardcoded_secret": {"owasp": "A02:2021", "cwe": "CWE-798"},
+    "unsafe_deserialization": {"owasp": "A08:2021", "cwe": "CWE-502"},
+    "broken_crypto": {"owasp": "A02:2021", "cwe": "CWE-327"},
+    "predictable_randomness": {"owasp": "A02:2021", "cwe": "CWE-338"},
+    "missing_input_validation": {"owasp": "A03:2021", "cwe": "CWE-20"},
+    "race_condition": {"owasp": "A04:2021", "cwe": "CWE-362"},
+    "ssrf": {"owasp": "A10:2021", "cwe": "CWE-918"},
+    "xss": {"owasp": "A03:2021", "cwe": "CWE-79"},
+    "open_redirect": {"owasp": "A01:2021", "cwe": "CWE-601"},
+    "information_disclosure": {"owasp": "A04:2021", "cwe": "CWE-200"},
+    "denial_of_service": {"owasp": "A04:2021", "cwe": "CWE-400"},
+    "other": {"owasp": "n/a", "cwe": "n/a"},
+}
+
+VALID_CATEGORIES = frozenset(SECURITY_CATEGORY_MAP.keys())
 
 VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+
+
+def category_owasp(category: str) -> str:
+    """Return the OWASP Top 10 bucket for a category, or 'n/a'."""
+    return SECURITY_CATEGORY_MAP.get(category, {}).get("owasp", "n/a")
+
+
+def category_cwe(category: str) -> str:
+    """Return a representative CWE for a category, or 'n/a'."""
+    return SECURITY_CATEGORY_MAP.get(category, {}).get("cwe", "n/a")
 
 
 @dataclass
@@ -81,6 +98,12 @@ class SecurityResult:
     mode: str
     findings: list[SecurityFinding] = field(default_factory=list)
     overall_notes: str = ""
+    # Self-reported thoroughness claim. Useful as a hint when triaging
+    # security findings but DO NOT gate on it - it cannot be verified
+    # at runtime. The trustworthy verification path is the planted-bug
+    # calibration suite at tests/test_calibration.py (runs with
+    # RALPH_RUN_CALIBRATION=1) which catches reviewers that claim
+    # exhaustive coverage but miss known bugs.
     exhaustively_searched: bool = False
     raw_output: str = ""
     duration_seconds: float = 0.0

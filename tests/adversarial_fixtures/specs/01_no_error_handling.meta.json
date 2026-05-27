@@ -1,0 +1,15 @@
+{
+  "fixture_id": "spec-01-no-error-handling",
+  "role": "architect",
+  "must_detect": {
+    "spec_issues_min": 2,
+    "must_include_kind": ["undefined_failure_mode", "missing_detail"],
+    "blocker_or_major": true
+  },
+  "description": "The spec says nothing about what happens when user_id is invalid, missing, or the user doesn't exist. No mention of authentication / authorization (any caller can read any profile?). 'Fast and reliable' is unquantified.",
+  "expected_spec_issues": [
+    {"kind": "undefined_failure_mode", "summary": "No behavior specified for non-existent user_id"},
+    {"kind": "missing_detail", "summary": "No authentication / authorization story"},
+    {"kind": "ambiguity", "summary": "'Fast and reliable' has no measurable target"}
+  ]
+}

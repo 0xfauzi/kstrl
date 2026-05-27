@@ -1,0 +1,25 @@
+diff --git a/src/jwt_verify.py b/src/jwt_verify.py
+new file mode 100644
+index 0000000..5e6f7g8
+--- /dev/null
++++ b/src/jwt_verify.py
+@@ -0,0 +1,20 @@
++"""JWT verification helper."""
++
++from __future__ import annotations
++
++import base64
++import json
++
++
++def decode_jwt(token: str) -> dict:
++    """Decode a JWT and return its claims."""
++    header_b64, payload_b64, _signature = token.split(".", 2)
++    payload_padded = payload_b64 + "=" * (-len(payload_b64) % 4)
++    payload = json.loads(base64.urlsafe_b64decode(payload_padded))
++    return payload
++
++
++def get_user_id(token: str) -> str:
++    """Return the subject claim from a JWT."""
++    return decode_jwt(token)["sub"]

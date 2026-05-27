@@ -1,0 +1,20 @@
+diff --git a/src/backup.py b/src/backup.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/backup.py
+@@ -0,0 +1,15 @@
++"""Backup utilities."""
++
++from __future__ import annotations
++
++import subprocess
++
++
++def archive_directory(path: str, output: str) -> int:
++    """Tar-gzip a directory to an output file. Returns process exit code."""
++    return subprocess.run(
++        f"tar czf {output} {path}",
++        shell=True,
++        check=False,
++    ).returncode
