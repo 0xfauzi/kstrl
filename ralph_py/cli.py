@@ -1073,6 +1073,9 @@ def decompose(
             root_dir=root_dir,
         )
         ui_impl.ok(f"Decomposed into {len(manifest.components)} components")
+    except SpecBlockerError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(1)
@@ -1184,9 +1187,9 @@ def decompose(
 @click.option(
     "--security-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
-    default="advisory",
+    default="skip",
     help="Phase 2.5 security review: hard (block on critical+high), "
-         "advisory (warn only), skip",
+         "advisory (warn only), skip (default - opt in explicitly)",
 )
 @click.option(
     "--security-agent-cmd",

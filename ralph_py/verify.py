@@ -68,6 +68,13 @@ class VerifyConfig:
     mutation_threshold: float = 50.0
     mutation_timeout: float = 600.0
     subprocess_timeout: float = 300.0
+    # Mechanical enforcement of the engineer prompt's "## Self-Critique"
+    # mandate. Off by default to keep this opt-in; set to True (or
+    # RALPH_VERIFY_REQUIRE_SELF_CRITIQUE=1) to fail Phase 1 when an
+    # iteration's progress.txt entry omits the block.
+    require_self_critique: bool = False
+    self_critique_min_bullets: int = 3
+    progress_file_path: str = "scripts/ralph/progress.txt"
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -88,6 +95,16 @@ class VerifyConfig:
             subprocess_timeout=float(
                 os.environ.get("RALPH_TIMEOUT_VERIFY", "300")
             ),
+            require_self_critique=os.environ.get(
+                "RALPH_VERIFY_REQUIRE_SELF_CRITIQUE", "",
+            ) == "1",
+            self_critique_min_bullets=int(
+                os.environ.get("RALPH_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
+            ),
+            progress_file_path=os.environ.get(
+                "RALPH_VERIFY_PROGRESS_FILE",
+                "scripts/ralph/progress.txt",
+            ),
         )
 
 
@@ -99,6 +116,105 @@ SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----"),  # Private keys
     re.compile(r"xox[bpoas]-[a-zA-Z0-9-]+"),             # Slack tokens
 ]
+
+
+# Matches the variety of heading forms the engineer prompt produces:
+#   ## Self-Critique
+#   - **Self-Critique:**
+#   * Self Critique
+_SELF_CRITIQUE_HEADING_RE = re.compile(
+    r"^[#\-*\s\*]*Self[-\s]?Critique[\*:\s]*$",
+    re.IGNORECASE,
+)
+
+
+def check_self_critique(
+    progress_path: Path, min_bullets: int = 3,
+) -> CheckResult:
+    """Confirm the latest progress.txt entry contains a Self-Critique
+    block with at least ``min_bullets`` bullet points.
+
+    The check looks at the LAST occurrence of a Self-Critique heading
+    (line matching `_SELF_CRITIQUE_HEADING_RE`, e.g. `## Self-Critique`
+    or `- **Self-Critique:**`) and counts the bullet lines that follow
+    until the next heading or end-of-file.
+
+    Without this mechanical check, the engineer prompt's mandate to
+    list >=3 failure modes can silently rot - the only enforcement
+    path otherwise is the reviewer noticing, which is unreliable.
+    """
+    start = time.monotonic()
+    try:
+        text = progress_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return CheckResult(
+            name="self_critique",
+            passed=False,
+            message=f"Could not read progress file: {exc}",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    lines = text.splitlines()
+    # Find the LAST self-critique heading. Walking from the end lets
+    # multiple iterations accumulate without earlier ones masking the
+    # current iteration's block.
+    heading_idx: int | None = None
+    for i in range(len(lines) - 1, -1, -1):
+        if _SELF_CRITIQUE_HEADING_RE.match(lines[i]):
+            heading_idx = i
+            break
+
+    if heading_idx is None:
+        return CheckResult(
+            name="self_critique",
+            passed=False,
+            message=(
+                "No '## Self-Critique' block found in progress file. "
+                "Engineer prompt mandates >=3 failure-mode bullets "
+                "before declaring done."
+            ),
+            duration_seconds=time.monotonic() - start,
+        )
+
+    # Count bullets after the heading until the next heading (^##) or
+    # the next list-style heading (e.g. - **Learnings:**).
+    bullet_count = 0
+    bullet_lines: list[str] = []
+    for line in lines[heading_idx + 1:]:
+        stripped = line.strip()
+        # Stop at next major heading
+        if stripped.startswith("##"):
+            break
+        # Stop at the next labeled bullet header (e.g. "- **Interpretations:**")
+        if stripped.startswith("- **") and stripped.rstrip(":*").lower().endswith(
+            ("**", "**:"),
+        ) and "self" not in stripped.lower():
+            break
+        # Count substantive bullets (require non-trivial content after the marker)
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            body = stripped[2:].strip()
+            if body and not body.lower().startswith(("tbd", "todo", "n/a")):
+                bullet_count += 1
+                bullet_lines.append(body[:80])
+
+    if bullet_count < min_bullets:
+        return CheckResult(
+            name="self_critique",
+            passed=False,
+            message=(
+                f"Self-Critique block has {bullet_count} bullets; "
+                f"minimum required is {min_bullets}"
+            ),
+            details=bullet_lines,
+            duration_seconds=time.monotonic() - start,
+        )
+
+    return CheckResult(
+        name="self_critique",
+        passed=True,
+        message=f"{bullet_count} failure modes listed",
+        duration_seconds=time.monotonic() - start,
+    )
 
 
 def check_prd_stories(prd_path: Path) -> CheckResult:
@@ -650,6 +766,12 @@ def run_mechanical_verification(
         checks.append(check_mutation_score(
             worktree_path, base_branch,
             config.mutation_threshold, config.mutation_timeout,
+        ))
+
+    if config.require_self_critique:
+        progress_path = worktree_path / config.progress_file_path
+        checks.append(check_self_critique(
+            progress_path, config.self_critique_min_bullets,
         ))
 
     passed = all(c.passed for c in checks)

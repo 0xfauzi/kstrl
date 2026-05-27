@@ -458,6 +458,15 @@ def run_factory(
 
         ui.ok(f"  Phase 1 passed for {comp_id}")
 
+        # Fetch the component diff once and share it across Phase 2,
+        # Phase 2.5, and knowledge distillation. Without this each phase
+        # would shell out to `git diff` independently, redundantly
+        # rebuilding the same patch on every component.
+        from ralph_py import git as _git_for_diff
+        shared_diff = _git_for_diff.get_diff_content(
+            manifest.base_branch, wt_path,
+        )
+
         # PHASE 2: Second-opinion review
         review_mode = ReviewMode(factory_config.review_mode)
         if review_mode != ReviewMode.SKIP:
@@ -477,14 +486,19 @@ def run_factory(
                 verification,
                 review_mode,
                 ui,
+                diff_content=shared_diff,
             )
             comp.review_passed = review_result.passed
             comp.review_findings = review_result.as_pr_body_section()
+            # Observability gets criterion-only counts to preserve the
+            # historical meaning of fail_count = "failed PRD criteria".
+            # Concern counts ride along separately via fail_concerns /
+            # advisory_concerns so dashboards can distinguish.
             progress_log.review_result(
                 comp_id, review_result.passed,
                 mode=review_mode.value,
-                fail_count=review_result.fail_count,
-                advisory_count=review_result.advisory_count,
+                fail_count=review_result.criterion_fail_count,
+                advisory_count=review_result.criterion_advisory_count,
                 duration=review_result.duration_seconds,
             )
 
@@ -504,9 +518,9 @@ def run_factory(
 
         # PHASE 2.5: Security review (adversarial pass focused on vulns).
         # Runs as a separate LLM call with its own threat-model framing so
-        # it catches what the correctness reviewer misses. Non-fatal on
-        # infrastructure errors. Hard-mode fails the component on
-        # findings at or above SecurityConfig.fail_threshold.
+        # it catches what the correctness reviewer misses. Hard-mode
+        # fails the component on findings at or above
+        # SecurityConfig.fail_threshold OR on infrastructure errors.
         sec_config = factory_config.security_config
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
             from ralph_py.agents import get_agent as _get_sec_agent
@@ -514,6 +528,12 @@ def run_factory(
             ui.info(
                 f"  Phase 2.5: security review ({sec_config.mode}) for {comp_id}..."
             )
+            sec_result = None
+            # The try/except deliberately wraps ONLY the agent-driven
+            # work (getting the agent + running the review). Errors in
+            # the retry-or-fail path below must NOT be swallowed - if
+            # they were, a hard-mode security failure could fall through
+            # to PR creation as if it had passed.
             try:
                 sec_model = sec_config.model or base_config.model
                 sec_agent = _get_sec_agent(
@@ -529,7 +549,28 @@ def run_factory(
                     manifest.base_branch,
                     sec_config,
                     ui,
+                    diff_content=shared_diff,
                 )
+            except Exception as exc:  # noqa: BLE001
+                # Agent infrastructure failed before run_security_review
+                # could classify the outcome. Hard mode must block;
+                # advisory passes through.
+                ui.warn(f"  Security review crashed: {exc}")
+                if sec_config.mode == SecurityMode.HARD.value:
+                    ctx = IterationContext.from_json(
+                        comp_result.context_json or "{}",
+                    )
+                    ctx.add_review_finding(
+                        f"Security review infrastructure error: {exc}",
+                    )
+                    _retry_or_fail(
+                        comp,
+                        f"Security review crashed: {exc}",
+                        ctx.to_json(),
+                    )
+                    return
+
+            if sec_result is not None:
                 progress_log.review_result(
                     comp_id, sec_result.passed,
                     mode=f"security-{sec_config.mode}",
@@ -549,6 +590,11 @@ def run_factory(
                         comp.review_findings = sec_result.as_pr_body_section()
 
                 if not sec_result.passed:
+                    reason = (
+                        "Security review crashed"
+                        if sec_result.infrastructure_error
+                        else "Security review failed"
+                    )
                     ui.warn(
                         f"  Phase 2.5 FAILED for {comp_id}: "
                         f"{sec_result.critical_count} critical, "
@@ -558,12 +604,8 @@ def run_factory(
                         comp_result.context_json or "{}",
                     )
                     ctx.add_review_finding(sec_result.as_retry_context())
-                    _retry_or_fail(
-                        comp, "Security review failed", ctx.to_json(),
-                    )
+                    _retry_or_fail(comp, reason, ctx.to_json())
                     return
-            except Exception as exc:  # noqa: BLE001 - non-fatal
-                ui.warn(f"  Security review failed (non-fatal): {exc}")
 
         # Knowledge distillation (Voyager-style post-gate write).
         # Runs after Phase 2 succeeds (or is skipped) but BEFORE the PR
@@ -571,12 +613,12 @@ def run_factory(
         # component's true delta. Non-fatal on any failure.
         if knowledge_config.enabled:
             try:
-                from ralph_py import git as git_ops
                 from ralph_py.agents import get_agent as _get_agent
 
-                diff_content = git_ops.get_diff_content(
-                    manifest.base_branch, wt_path,
-                )
+                # Reuse the diff already fetched at the top of this
+                # method - the worktree state hasn't changed between
+                # Phase 1 and here.
+                diff_content = shared_diff
                 distill_model = (
                     knowledge_config.distill_model or base_config.model
                 )

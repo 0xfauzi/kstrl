@@ -79,6 +79,11 @@ class SecurityResult:
     exhaustively_searched: bool = False
     raw_output: str = ""
     duration_seconds: float = 0.0
+    # True when the reviewer agent failed to run or returned unparseable
+    # output. Distinguishes "clean review found nothing" from "review
+    # never actually happened" so hard-mode can fail loudly instead of
+    # accidentally passing on infrastructure errors.
+    infrastructure_error: bool = False
 
     def as_retry_context(self) -> str:
         """Format failing findings for injection into the implementer's
@@ -146,6 +151,22 @@ class SecurityConfig:
     # Severity threshold above which findings cause the phase to fail
     # in HARD mode. Default "high" means critical+high fail the phase.
     fail_threshold: str = "high"
+
+    def __post_init__(self) -> None:
+        # Reject unknown modes / thresholds rather than silently
+        # defaulting downstream (the env-var path bypasses click choice
+        # validation so a typo would otherwise change the gate without
+        # any signal).
+        if self.mode not in {m.value for m in SecurityMode}:
+            raise ValueError(
+                f"Invalid SecurityConfig.mode {self.mode!r}; "
+                f"must be one of skip|advisory|hard"
+            )
+        if self.fail_threshold not in VALID_SEVERITIES:
+            raise ValueError(
+                f"Invalid SecurityConfig.fail_threshold {self.fail_threshold!r}; "
+                f"must be one of {sorted(VALID_SEVERITIES)}"
+            )
 
     @classmethod
     def from_env(cls) -> SecurityConfig:
@@ -252,14 +273,9 @@ GIT DIFF (changes to review for security)
 
 
 def _build_security_prompt(prd_text: str, diff_content: str) -> str:
-    truncated_diff = diff_content
-    if len(truncated_diff) > 50000:
-        truncated_diff = (
-            truncated_diff[:50000] + "\n... (diff truncated at 50KB)"
-        )
     return SECURITY_PROMPT.format(
         prd_content=prd_text or "(PRD not available)",
-        diff_content=truncated_diff,
+        diff_content=git.truncate_diff_for_prompt(diff_content),
     )
 
 
@@ -273,6 +289,7 @@ def parse_security_output(raw_output: str, mode: str) -> SecurityResult:
             mode=mode,
             overall_notes="Failed to parse security reviewer output as JSON",
             raw_output=raw_output[:2000],
+            infrastructure_error=True,
         )
 
     if not isinstance(data, dict):
@@ -281,6 +298,7 @@ def parse_security_output(raw_output: str, mode: str) -> SecurityResult:
             mode=mode,
             overall_notes="Security output was not a JSON object",
             raw_output=raw_output[:2000],
+            infrastructure_error=True,
         )
 
     findings: list[SecurityFinding] = []
@@ -347,6 +365,7 @@ def run_security_review(
     base_branch: str,
     config: SecurityConfig,
     ui: UI,
+    diff_content: str | None = None,
 ) -> SecurityResult:
     """Run the security review phase. Always non-fatal: on any
     infrastructure error returns a SecurityResult with empty findings
@@ -364,7 +383,8 @@ def run_security_review(
     except OSError:
         pass
 
-    diff_content = git.get_diff_content(base_branch, worktree_path)
+    if diff_content is None:
+        diff_content = git.get_diff_content(base_branch, worktree_path)
     prompt = _build_security_prompt(prd_text, diff_content)
 
     output_lines: list[str] = []
@@ -374,18 +394,32 @@ def run_security_review(
         ):
             output_lines.append(line)
     except Exception as exc:  # noqa: BLE001 - non-fatal
+        # Agent crashed mid-run. In hard mode this MUST surface as a
+        # failure - otherwise a flaky API call silently approves the
+        # diff. Advisory mode warns but doesn't block. Skip mode never
+        # gets here.
+        passed = mode != SecurityMode.HARD.value
         return SecurityResult(
-            passed=True,
+            passed=passed,
             mode=mode,
             overall_notes=f"Security review agent failed: {exc}",
             duration_seconds=time.monotonic() - start,
+            infrastructure_error=True,
         )
 
     raw_output = _select_agent_output(agent, output_lines)
     result = parse_security_output(raw_output, mode)
-    result.passed = _passes_threshold(
-        result.findings, mode, config.fail_threshold,
-    )
+    if result.infrastructure_error:
+        # Parsing failed - we have no usable findings list, so don't
+        # let _passes_threshold overwrite passed=False with True. In
+        # hard mode this is a block; in advisory it surfaces as a
+        # warning but lets the pipeline continue.
+        if mode != SecurityMode.HARD.value:
+            result.passed = True
+    else:
+        result.passed = _passes_threshold(
+            result.findings, mode, config.fail_threshold,
+        )
     result.duration_seconds = time.monotonic() - start
 
     status = "passed" if result.passed else "FAILED"

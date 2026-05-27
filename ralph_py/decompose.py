@@ -260,14 +260,23 @@ def _validate_decompose_output(data: Any) -> list[str]:
         return ["'components' must be an array"]
 
     if not components:
+        # Empty components is only valid when there's at least one
+        # well-formed blocker spec_issue (severity AND kind AND summary
+        # all present). Without this stricter check, a malformed entry
+        # like {"severity": "blocker"} would pass validation here but
+        # be dropped by _parse_spec_issues, leaving zero blockers and
+        # zero components with no error raised - a silent halt.
         spec_issues = data.get("spec_issues", [])
         if isinstance(spec_issues, list) and any(
-            isinstance(s, dict) and s.get("severity") == "blocker"
+            isinstance(s, dict)
+            and s.get("severity") == "blocker"
+            and isinstance(s.get("kind"), str) and s["kind"] in _VALID_KINDS
+            and isinstance(s.get("summary"), str) and s["summary"].strip()
             for s in spec_issues
         ):
             # Architect explicitly halted - this is a valid outcome.
             return []
-        return ["'components' must not be empty (no blocker spec_issues to justify halt)"]
+        return ["'components' must not be empty (no well-formed blocker spec_issues to justify halt)"]
 
     seen_ids: set[str] = set()
     seen_story_ids: set[str] = set()

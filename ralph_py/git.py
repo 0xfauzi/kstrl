@@ -251,6 +251,25 @@ def get_diff_content(
     return ""
 
 
+# Shared budget for diff content injected into LLM prompts. Centralized
+# here so review / security / knowledge prompts truncate to the same
+# limit; if the LLM context window changes, edit one place.
+DEFAULT_PROMPT_DIFF_CHAR_LIMIT = 50_000
+
+
+def truncate_diff_for_prompt(
+    diff_content: str, limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
+) -> str:
+    """Truncate a diff string for inclusion in an LLM prompt.
+
+    Appends a single trailing line noting the truncation so the reviewer
+    knows it isn't seeing the full diff.
+    """
+    if len(diff_content) <= limit:
+        return diff_content
+    return diff_content[:limit] + f"\n... (diff truncated at {limit // 1000}KB)"
+
+
 def merge_branch(
     branch: str,
     cwd: Path | None = None,

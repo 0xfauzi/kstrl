@@ -278,9 +278,7 @@ class TestRunSecurityReview:
         )
         assert result.passed is True
 
-    def test_agent_crash_is_nonfatal(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
-
+    def _boom_agent(self) -> object:
         class _Boom:
             @property
             def name(self) -> str:
@@ -297,13 +295,56 @@ class TestRunSecurityReview:
             def final_message(self) -> str | None:
                 return None
 
+        return _Boom()
+
+    def test_agent_crash_hard_mode_fails(self, tmp_path: Path) -> None:
+        """Hard mode must surface infrastructure errors as a failure -
+        otherwise a flaky API silently approves every diff."""
+        prd_path = self._setup_repo(tmp_path)
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            _Boom(), prd_path, tmp_path, "main", config, ui,
+            self._boom_agent(), prd_path, tmp_path, "main", config, ui,
         )
-        assert result.passed is True  # non-fatal
+        assert result.passed is False
+        assert result.infrastructure_error is True
         assert "exploded" in result.overall_notes
+
+    def test_agent_crash_advisory_mode_passes(self, tmp_path: Path) -> None:
+        """Advisory mode should warn but not block."""
+        prd_path = self._setup_repo(tmp_path)
+        config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
+        ui = PlainUI(no_color=True)
+        result = run_security_review(
+            self._boom_agent(), prd_path, tmp_path, "main", config, ui,
+        )
+        assert result.passed is True
+        assert result.infrastructure_error is True
+
+    def test_parse_failure_hard_mode_fails(self, tmp_path: Path) -> None:
+        """If the agent returns un-parseable output in hard mode, we
+        must NOT silently overwrite passed=False via _passes_threshold
+        on the (empty) findings list."""
+        prd_path = self._setup_repo(tmp_path)
+        agent = MockSecurityAgent("garbage that is not JSON at all")
+        config = SecurityConfig(mode=SecurityMode.HARD.value)
+        ui = PlainUI(no_color=True)
+        result = run_security_review(
+            agent, prd_path, tmp_path, "main", config, ui,
+        )
+        assert result.passed is False
+        assert result.infrastructure_error is True
+
+    def test_parse_failure_advisory_mode_passes(self, tmp_path: Path) -> None:
+        prd_path = self._setup_repo(tmp_path)
+        agent = MockSecurityAgent("garbage")
+        config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
+        ui = PlainUI(no_color=True)
+        result = run_security_review(
+            agent, prd_path, tmp_path, "main", config, ui,
+        )
+        assert result.passed is True
+        assert result.infrastructure_error is True
 
 
 # ---------------------------------------------------------------------------

@@ -111,13 +111,22 @@ class ReviewResult:
     def as_pr_body_section(self) -> str:
         """Format all findings for PR description."""
         lines: list[str] = ["## Review Findings", ""]
-        pass_count = sum(1 for c in self.criteria if c.verdict == ReviewVerdict.PASS.value)
-        fail_count = sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value)
-        adv_count = sum(
+        # Locals are explicitly criterion-only to avoid colliding with
+        # the same-named instance properties (which sum criteria +
+        # concerns). The header line below describes criteria; concerns
+        # are summarized separately as "additional concerns".
+        criterion_pass = sum(
+            1 for c in self.criteria if c.verdict == ReviewVerdict.PASS.value
+        )
+        criterion_fail = sum(
+            1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value
+        )
+        criterion_adv = sum(
             1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
         )
         lines.append(
-            f"**{pass_count} criteria passed, {fail_count} failed, {adv_count} advisory; "
+            f"**{criterion_pass} criteria passed, {criterion_fail} failed, "
+            f"{criterion_adv} advisory; "
             f"{len(self.concerns)} additional concerns**"
         )
         lines.append("")
@@ -154,20 +163,38 @@ class ReviewResult:
         return "\n".join(lines)
 
     @property
-    def fail_count(self) -> int:
-        criterion_fails = sum(
+    def criterion_fail_count(self) -> int:
+        return sum(
             1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value
         )
-        concern_fails = sum(1 for c in self.concerns if c.severity == "fail")
-        return criterion_fails + concern_fails
+
+    @property
+    def criterion_advisory_count(self) -> int:
+        return sum(
+            1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
+        )
+
+    @property
+    def concern_fail_count(self) -> int:
+        return sum(1 for c in self.concerns if c.severity == "fail")
+
+    @property
+    def concern_advisory_count(self) -> int:
+        return sum(1 for c in self.concerns if c.severity == "advisory")
+
+    @property
+    def fail_count(self) -> int:
+        """Total fails across criteria AND concerns. The combined count
+        is what gates run_review's pass/fail decision. For observability
+        that needs to distinguish (e.g. dashboards), use the
+        criterion_/concern_ specific properties instead."""
+        return self.criterion_fail_count + self.concern_fail_count
 
     @property
     def advisory_count(self) -> int:
-        criterion_adv = sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
-        )
-        concern_adv = sum(1 for c in self.concerns if c.severity == "advisory")
-        return criterion_adv + concern_adv
+        """Total advisories across criteria AND concerns. See
+        fail_count docstring for the breakdown properties."""
+        return self.criterion_advisory_count + self.concern_advisory_count
 
 
 REVIEWER_PROMPT = """\
@@ -279,8 +306,15 @@ def build_review_prompt(
     worktree_path: Path,
     base_branch: str,
     verification_result: VerificationResult,
+    diff_content: str | None = None,
 ) -> str:
-    """Assemble the full reviewer prompt."""
+    """Assemble the full reviewer prompt.
+
+    ``diff_content`` may be pre-fetched by the caller (e.g. the factory
+    hoists git.get_diff_content to component scope and reuses the result
+    across Phase 2, 2.5, and knowledge distillation). When None, the
+    diff is fetched here for backward compatibility.
+    """
     prd = PRD.load(prd_path)
     prd_lines: list[str] = []
     for story in prd.user_stories:
@@ -289,9 +323,9 @@ def build_review_prompt(
             prd_lines.append(f"- {ac}")
         prd_lines.append("")
 
-    diff_content = git.get_diff_content(base_branch, worktree_path)
-    if len(diff_content) > 50000:
-        diff_content = diff_content[:50000] + "\n... (diff truncated at 50KB)"
+    if diff_content is None:
+        diff_content = git.get_diff_content(base_branch, worktree_path)
+    diff_content = git.truncate_diff_for_prompt(diff_content)
 
     verify_lines: list[str] = []
     for check in verification_result.checks:
@@ -394,6 +428,7 @@ def run_review(
     mode: ReviewMode,
     ui: UI,
     timeout: float = 600.0,
+    diff_content: str | None = None,
 ) -> ReviewResult:
     """Run the full review: build prompt, run agent, parse output.
 
@@ -407,6 +442,7 @@ def run_review(
 
     prompt = build_review_prompt(
         prd_path, worktree_path, base_branch, verification_result,
+        diff_content=diff_content,
     )
 
     output_lines: list[str] = []
