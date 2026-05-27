@@ -57,6 +57,15 @@ class FactoryConfig:
     feedforward_config: FeedforwardConfig | None = None
     # Observability
     progress_log_path: Path | None = None
+    # E4: per-run hard cap on adversarial LLM calls (review + security
+    # + knowledge distill). 0 means unbounded. Once exceeded the
+    # remaining components skip those phases with an informational log
+    # line; mechanical verify + the implementing agent continue. This
+    # protects against runaway-cost factory runs.
+    max_adversarial_calls: int = 0
+    # E6: when True, pause and prompt the user before each component's
+    # PR creation step. Off by default; opt-in for sensitive projects.
+    pause_before_pr_merge: bool = False
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -434,6 +443,21 @@ def run_factory(
     worktree_paths: dict[str, Path] = {}
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
 
+    # E4: adversarial-call counter shared across review / security /
+    # knowledge phases. When max_adversarial_calls is 0 the budget is
+    # unbounded (current behavior); otherwise we skip the LLM phase
+    # once the budget is exhausted, with an informational log line.
+    adversarial_calls: dict[str, int] = {"count": 0}
+
+    def _adversarial_budget_ok() -> bool:
+        cap = factory_config.max_adversarial_calls
+        if cap <= 0:
+            return True
+        return adversarial_calls["count"] < cap
+
+    def _adversarial_budget_consume() -> None:
+        adversarial_calls["count"] += 1
+
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
         worktrees. Falls back to the absolute path string when relativization
@@ -547,7 +571,14 @@ def run_factory(
 
         # PHASE 2: Second-opinion review
         review_mode = ReviewMode(factory_config.review_mode)
+        if review_mode != ReviewMode.SKIP and not _adversarial_budget_ok():
+            ui.warn(
+                f"  Phase 2 SKIPPED for {comp_id}: "
+                f"adversarial LLM budget ({factory_config.max_adversarial_calls}) exhausted"
+            )
+            review_mode = ReviewMode.SKIP
         if review_mode != ReviewMode.SKIP:
+            _adversarial_budget_consume()
             ui.info(f"  Phase 2: review ({review_mode.value}) for {comp_id}...")
 
             review_agent = get_agent(
@@ -600,7 +631,17 @@ def run_factory(
         # fails the component on findings at or above
         # SecurityConfig.fail_threshold OR on infrastructure errors.
         sec_config = factory_config.security_config
+        if (
+            sec_config and sec_config.mode != SecurityMode.SKIP.value
+            and not _adversarial_budget_ok()
+        ):
+            ui.warn(
+                f"  Phase 2.5 SKIPPED for {comp_id}: "
+                f"adversarial LLM budget exhausted"
+            )
+            sec_config = None
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
+            _adversarial_budget_consume()
             from ralph_py.agents import get_agent as _get_sec_agent
 
             ui.info(
@@ -700,7 +741,13 @@ def run_factory(
                 f"  Knowledge: skipped for {comp_id} "
                 f"(single_pr mode produces a polluted per-component diff)"
             )
+        elif knowledge_config.enabled and not _adversarial_budget_ok():
+            ui.info(
+                f"  Knowledge: skipped for {comp_id} "
+                f"(adversarial budget exhausted)"
+            )
         elif knowledge_config.enabled:
+            _adversarial_budget_consume()
             try:
                 from ralph_py.agents import get_agent as _get_agent
 
@@ -770,7 +817,44 @@ def run_factory(
         if factory_config.create_prs:
             from ralph_py.pr import push_create_and_merge_pr, is_gh_available
 
-            if is_gh_available():
+            # E6: human-in-the-loop checkpoint. When opt-in, prompt
+            # before pushing+merging so a human can inspect the diff,
+            # the review findings, and the security findings before
+            # the PR goes through. Skip the prompt when no UI is
+            # interactive - automation should fail loudly rather than
+            # block indefinitely.
+            proceed = True
+            if factory_config.pause_before_pr_merge:
+                if ui.can_prompt():
+                    ui.section(f"Human checkpoint: {comp_id}")
+                    ui.info(comp.review_findings or "(no review findings)")
+                    choice = ui.choose(
+                        f"Approve PR creation and merge for {comp_id}?",
+                        ["Approve", "Reject and abort component"],
+                        default=0,
+                    )
+                    proceed = choice == 0
+                    if not proceed:
+                        ui.warn(
+                            f"  Human rejected {comp_id} at PR checkpoint"
+                        )
+                        ctx = IterationContext.from_json(
+                            comp_result.context_json or "{}",
+                        )
+                        ctx.add_review_finding(
+                            "Human reviewer rejected at PR checkpoint",
+                        )
+                        _retry_or_fail(
+                            comp, "Rejected at HITL checkpoint", ctx.to_json(),
+                        )
+                        return
+                else:
+                    ui.warn(
+                        f"  pause_before_pr_merge requested but UI is "
+                        f"non-interactive; proceeding without prompt for {comp_id}"
+                    )
+
+            if proceed and is_gh_available():
                 ui.info(f"  Creating and merging PR for {comp_id}...")
                 pr_result = push_create_and_merge_pr(
                     comp, manifest, root_dir, ui,

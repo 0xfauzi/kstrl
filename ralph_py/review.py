@@ -93,6 +93,11 @@ class ReviewResult:
     # (runs with RALPH_RUN_CALIBRATION=1) which catches reviewers that
     # claim exhaustive coverage but miss known bugs.
     exhaustively_searched: bool = False
+    # E9: parallel to SecurityResult.infrastructure_error - True when
+    # the agent failed to run or returned unparseable output, so
+    # downstream callers can distinguish "clean review found nothing"
+    # from "review never actually happened".
+    infrastructure_error: bool = False
 
     def as_retry_context(self) -> str:
         """Format failing/advisory findings for injection into retry prompt."""
@@ -332,6 +337,10 @@ def build_review_prompt(
 
     if diff_content is None:
         diff_content = git.get_diff_content(base_branch, worktree_path)
+    # E2: hide the engineer's Self-Critique block from the reviewer.
+    # Otherwise the reviewer sees "Failure mode 1: X" inline and may
+    # uncritically conclude X is handled.
+    diff_content = git.strip_self_critique_from_diff(diff_content)
     diff_content = git.truncate_diff_for_prompt(diff_content)
 
     verify_lines: list[str] = []
@@ -356,6 +365,7 @@ def parse_review_output(raw_output: str) -> ReviewResult:
             mode="",
             overall_notes="Failed to parse reviewer output as JSON",
             raw_output=raw_output[:2000],
+            infrastructure_error=True,
         )
 
     criteria: list[CriterionReview] = []
@@ -367,6 +377,7 @@ def parse_review_output(raw_output: str) -> ReviewResult:
             mode="",
             overall_notes="Invalid review output: 'stories' is not an array",
             raw_output=raw_output[:2000],
+            infrastructure_error=True,
         )
 
     for story in stories:

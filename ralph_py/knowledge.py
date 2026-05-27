@@ -136,7 +136,22 @@ class KnowledgeConfig:
 VALID_SCOPES = frozenset(
     {"handler", "adapter", "schema", "contract", "invariant", "gotcha"}
 )
-VALID_CONFIDENCES = frozenset({"verified", "asserted"})
+# E5: confidence taxonomy.
+# - "review_passed" replaces "verified" - more honest about what the
+#   signal actually means (Phase 2 review LLM said pass; not "this is
+#   true").
+# - "test_verified" is a stronger claim - the fact cites at least one
+#   passing test as evidence. Reserved for distillation paths that
+#   confirm the claim against test output, not just review verdicts.
+# - "asserted" is the bottom of the scale; the LLM stated the claim
+#   but no review or test confirmed it.
+# "verified" is kept as a backward-compat alias so old fact files on
+# disk continue to load. New facts should use review_passed.
+VALID_CONFIDENCES = frozenset({
+    "review_passed", "test_verified", "asserted", "verified",
+})
+# Map legacy values to the canonical name on read.
+_CONFIDENCE_ALIASES: dict[str, str] = {"verified": "review_passed"}
 
 
 @dataclass
@@ -219,7 +234,10 @@ def _parse_fact_md(content: str) -> Fact:
         created_run_id=str(meta.get("created_run_id", "")),
         scope=str(meta.get("scope", "")),
         evidence=[str(e) for e in meta.get("evidence", []) if isinstance(e, str)],
-        confidence=str(meta.get("confidence", "asserted")),
+        confidence=_CONFIDENCE_ALIASES.get(
+            str(meta.get("confidence", "asserted")),
+            str(meta.get("confidence", "asserted")),
+        ),
         tags=[str(t) for t in meta.get("tags", []) if isinstance(t, str)],
         claim=claim,
     )
@@ -356,7 +374,10 @@ def _sort_for_packing(facts: list[Fact]) -> list[Fact]:
     """Sort facts: verified before asserted, then newest run first."""
     # Python sort is stable: secondary sort first, then primary.
     by_recency = sorted(facts, key=lambda f: f.created_run_id, reverse=True)
-    by_recency.sort(key=lambda f: 0 if f.confidence == "verified" else 1)
+    # Sort: test_verified first, then review_passed, then asserted.
+    # Higher confidence packs first so the budget keeps the strongest.
+    _rank = {"test_verified": 0, "review_passed": 1, "verified": 1, "asserted": 2}
+    by_recency.sort(key=lambda f: _rank.get(f.confidence, 3))
     return by_recency
 
 
@@ -585,7 +606,7 @@ explanation). Schema:
     {{
       "id": "fact-001",
       "scope": "handler|adapter|schema|contract|invariant|gotcha",
-      "confidence": "verified|asserted",
+      "confidence": "review_passed|test_verified|asserted",
       "evidence": ["path/to/file.py:42-58", "tests/test_x.py:101"],
       "tags": ["auth", "tokens"],
       "claim": "A single durable assertion in 1-5 sentences. State it as a fact about the artifact, not the iteration. Cite the evidence inline if helpful."
@@ -601,8 +622,13 @@ Rules:
    files exist or what tests were run.
 3. Every fact must cite at least one path:line-range in the diff. If you
    cannot ground a claim in concrete evidence, do not write it.
-4. confidence="verified" only if the claim is backed by passing tests or
-   explicit acceptance criteria. Otherwise use "asserted".
+4. confidence values:
+   - "test_verified": the claim is backed by at least one passing test cited
+     by file:line in evidence. Strongest signal.
+   - "review_passed": the implementation passed Phase 2 reviewer judgment
+     but no specific test grounds the claim.
+   - "asserted": the claim is plausible from the diff but neither tests
+     nor the reviewer specifically confirmed it.
 5. Maximum {max_facts} facts. If nothing durable was established (e.g.
    pure refactor with no behavioral change), return {{"facts": []}}.
 6. fact ids must be unique within this response and match /^fact-\\d{{3}}$/.
@@ -863,9 +889,16 @@ def distill_facts(
         config.max_facts_per_distill,
     )
 
-    # Confidence ceiling: only Phase-2-passed work earns "verified"
+    # Confidence ceiling: only Phase-2-passed work earns the
+    # review_passed / test_verified tiers. When review is skipped or
+    # failed, downgrade any non-asserted claim back to asserted.
     if review_passed is not True:
-        facts = [replace(f, confidence="asserted") for f in facts]
+        facts = [
+            replace(f, confidence="asserted")
+            if f.confidence in {"review_passed", "test_verified", "verified"}
+            else f
+            for f in facts
+        ]
 
     if not facts:
         # Surface a brief sample of the rejected raw output so the user
