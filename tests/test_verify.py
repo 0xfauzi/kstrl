@@ -94,6 +94,70 @@ class TestCheckTypecheck:
         assert result.passed is False
 
 
+class TestDefaultTypecheckCommand:
+    """Gap 2 fix: when ``check_typecheck`` is called without an explicit
+    command, it should defer to the project's pyproject.toml mypy
+    configuration rather than overriding it with ``uv run mypy .``.
+
+    The end-to-end factory validation run on 2026-05-27 surfaced this
+    bug: the agent self-reported all checks passing (using CLAUDE.md's
+    contract command), but Phase 1 failed because the factory ran
+    ``uv run mypy .`` which scanned tests/ and pulled in errors that
+    weren't in the agent's diff."""
+
+    def _default(self, cwd: Path) -> str:
+        from ralph_py.verify import _default_typecheck_command
+        return _default_typecheck_command(cwd)
+
+    def test_no_pyproject_falls_back_to_dot(self, tmp_path: Path) -> None:
+        """A directory without pyproject.toml keeps the broad default
+        so greenfield projects still get typecheck coverage."""
+        assert self._default(tmp_path) == "uv run mypy ."
+
+    def test_pyproject_without_mypy_section_falls_back_to_dot(
+        self, tmp_path: Path,
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'foo'\n",
+        )
+        assert self._default(tmp_path) == "uv run mypy ."
+
+    def test_mypy_files_present_uses_no_arg_form(self, tmp_path: Path) -> None:
+        """With ``[tool.mypy] files`` configured, the default defers
+        to the project's mypy config by passing no path argument."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.mypy]\nstrict = true\nfiles = ["my_pkg"]\n',
+        )
+        assert self._default(tmp_path) == "uv run mypy"
+
+    def test_mypy_packages_present_uses_no_arg_form(
+        self, tmp_path: Path,
+    ) -> None:
+        """``[tool.mypy] packages`` also triggers the no-arg default."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.mypy]\nstrict = true\npackages = ["my_pkg"]\n',
+        )
+        assert self._default(tmp_path) == "uv run mypy"
+
+    def test_mypy_section_without_files_or_packages_falls_back(
+        self, tmp_path: Path,
+    ) -> None:
+        """A [tool.mypy] section that only sets strict / python_version
+        but doesn't constrain scope keeps the broad default."""
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.mypy]\nstrict = true\npython_version = "3.11"\n',
+        )
+        assert self._default(tmp_path) == "uv run mypy ."
+
+    def test_malformed_pyproject_falls_back_to_dot(
+        self, tmp_path: Path,
+    ) -> None:
+        """Don't crash on malformed TOML -- fall back to the broad
+        default, which the operator can then override explicitly."""
+        (tmp_path / "pyproject.toml").write_text("not [valid toml")
+        assert self._default(tmp_path) == "uv run mypy ."
+
+
 class TestCheckDiffScope:
     def test_no_constraints(self, tmp_path: Path) -> None:
         result = check_diff_scope(tmp_path, "main", allowed_paths=None)

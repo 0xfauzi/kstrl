@@ -89,22 +89,54 @@ class TestRunLoop:
         assert result.exit_code == 1
         assert result.iterations == 3
 
-    def test_missing_prompt_file(self, tmp_path: Path) -> None:
-        """Loop exits with code 1 when prompt file missing."""
+    def test_missing_prompt_file_falls_back_to_default(
+        self, tmp_path: Path,
+    ) -> None:
+        """Gap 1 fix: when the configured prompt file does not exist,
+        run_loop falls back to the H3-protected DEFAULT_PROMPT from
+        init_cmd.py rather than failing.
+
+        Pre-fix behavior was exit_code=1 / iterations=0; the factory
+        validation run on 2026-05-27 surfaced that this blocked any
+        ``ralph factory --spec X`` invocation on a project that had
+        not been ``ralph init``'d, even though the harness ships its
+        own engineer prompt that should be used as the default.
+        """
+        from ralph_py.init_cmd import DEFAULT_PROMPT
+
+        captured_prompts: list[str] = []
+
+        class _PromptCapturingAgent:
+            name = "capture"
+            final_message: str | None = None
+
+            def run(
+                self, prompt: str,
+                cwd: Path | None = None,
+                timeout: float | None = None,
+            ) -> Iterator[str]:
+                captured_prompts.append(prompt)
+                yield "starting"
+                yield COMPLETION_MARKER
+
         config = RalphConfig(
-            max_iterations=5,
+            max_iterations=2,
             prompt_file=tmp_path / "nonexistent.md",
             ralph_branch="",
             ralph_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
-        agent = MockAgent([])
 
-        result = run_loop(config, ui, agent, tmp_path)
+        result = run_loop(config, ui, _PromptCapturingAgent(), tmp_path)  # type: ignore[arg-type]
 
-        assert result.completed is False
-        assert result.exit_code == 1
-        assert result.iterations == 0
+        # Loop ran (didn't bail on the missing file) and completed via
+        # the marker emitted by the mock agent.
+        assert result.completed is True
+        assert result.iterations == 1
+        # The fallback prompt content is what the agent saw -- the
+        # first lines of DEFAULT_PROMPT are stable per H3 snapshot.
+        assert captured_prompts
+        assert DEFAULT_PROMPT.splitlines()[0] in captured_prompts[0]
 
     def test_completion_marker_in_middle_of_output(self, tmp_path: Path) -> None:
         """Completion marker found even when not at end of output."""

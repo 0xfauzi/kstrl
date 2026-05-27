@@ -355,12 +355,45 @@ def check_test_suite(
     )
 
 
+def _default_typecheck_command(cwd: Path) -> str:
+    """Choose a sensible default mypy invocation for ``cwd``.
+
+    Generic ``uv run mypy .`` is hostile to projects whose pyproject.toml
+    deliberately scopes mypy via ``[tool.mypy] files`` or ``packages``:
+    the ``.`` argument overrides those settings and pulls in test files
+    or vendored code that the project never intended to typecheck. When
+    the project has configured its own mypy scope, defer to it by
+    invoking ``uv run mypy`` with no path argument (mypy then reads the
+    config). When no such config is present, fall back to the broad
+    ``uv run mypy .`` so a green-field project still gets coverage.
+
+    This is the Gap 2 fix from the end-to-end factory validation run:
+    the factory's verify command was overriding the project's CLAUDE.md
+    typecheck contract, leading to Phase 1 failures on diffs that were
+    actually fine.
+    """
+    import tomllib
+
+    pyproject = cwd / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            with pyproject.open("rb") as fh:
+                data = tomllib.load(fh)
+        except (tomllib.TOMLDecodeError, OSError):
+            return "uv run mypy ."
+        mypy_section = data.get("tool", {}).get("mypy", {})
+        if isinstance(mypy_section, dict):
+            if mypy_section.get("files") or mypy_section.get("packages"):
+                return "uv run mypy"
+    return "uv run mypy ."
+
+
 def check_typecheck(
     cwd: Path, command: str | None = None, timeout: float = 300.0,
 ) -> CheckResult:
     """Run typecheck independently."""
     start = time.monotonic()
-    cmd = command or "uv run mypy ."
+    cmd = command or _default_typecheck_command(cwd)
 
     try:
         result = subprocess.run(

@@ -71,16 +71,27 @@ def run_loop(
     ui.kv("Reasoning", config.model_reasoning_effort or "<default>")
     ui.kv("UI", config.ui_mode)
 
-    # Validate prompt file
-    if not config.prompt_file.exists():
-        ui.err(f"Prompt file not found: {config.prompt_file}")
-        return LoopResult(completed=False, iterations=0, exit_code=1)
-
-    # Read prompt and apply template substitution.
-    # The prompt template can use $prd_path, $progress_path, and $codebase_map_path
-    # to reference file paths that may vary per component in factory mode.
+    # Resolve the prompt template. If the explicit prompt file does not
+    # exist, fall back to the H3-protected DEFAULT_PROMPT from
+    # init_cmd.py. This makes ``ralph factory`` runnable on a project
+    # that has not been ``ralph init``'d -- the engineer prompt is part
+    # of the harness contract and should not require user setup.
+    #
+    # The fallback is announced explicitly so the operator can tell
+    # "we used the default" from "we used your customized prompt at
+    # scripts/ralph/prompt.md", which matters when reading the
+    # iteration log later.
     from string import Template
-    raw_prompt = config.prompt_file.read_text()
+    if config.prompt_file.exists():
+        raw_prompt = config.prompt_file.read_text()
+    else:
+        from ralph_py.init_cmd import DEFAULT_PROMPT
+        ui.warn(
+            f"Prompt file not found at {config.prompt_file}; "
+            "falling back to harness DEFAULT_PROMPT (run `ralph init` "
+            "to scaffold a customizable copy)."
+        )
+        raw_prompt = DEFAULT_PROMPT
     prompt = Template(raw_prompt).safe_substitute(
         prd_path=str(config.prd_file),
         progress_path=str(config.progress_file),
