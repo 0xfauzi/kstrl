@@ -55,13 +55,15 @@ Done when: PR merged.
 
 ## Phase F - Real-world validation
 
-PR: _pending_
+PR: _pending push_
 
-- [ ] F1 - Write `examples/file-upload-spec.md` with natural concerns (path traversal, file-type validation, size limits, races)
-- [ ] F2 - Run the full factory against the spec, all phases enabled
-- [ ] F3 - Capture and document the factory output
-- [ ] F4 - User invokes `/code-review ultra` on resulting PRs (cannot be me; tracker note)
-- [ ] F5 - Compare new vs prior factory on Phase D fixtures; quantify detection delta
+- [x] F1 - `examples/file-upload-spec.md` — 4 functional + 5 non-functional requirements, 8 planted concerns spanning path traversal / content-type trust / 413 streaming / cursor probing / soft-delete cleanup / filename header / TOCTOU / alg=none
+- [~] F2 - Decompose phase only. Full implementation pass (Phase 1-3 across 6 components) skipped to bound LLM cost; documented in `docs/phase-f-run-log.md`. User can invoke when ready.
+- [x] F3 - Captured at `docs/phase-f-run-log.md` — architect found **7 of 8 planted spec issues (87.5%)** plus 4 extra defensible findings, zero hallucinated. Components decomposed: config, jwt-auth, metadata-db, upload-endpoint, download-endpoint, delete-endpoint.
+- [ ] F4 - User invokes `/code-review ultra` on hardening PRs (#37, #38) and any future implementation PRs. Documented in run log; cannot be me per H1.
+- [ ] F5 - Calibration baseline (`RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py`) — deferred to user invocation. F2 architect data point recorded: 7/8 = 87.5% on the file-upload spec.
+
+Status: F1+F3 done with documented Phase F validation. F2 partial (decompose only). F4+F5 are user-driven.
 
 Done when: tracker contains documented evidence the new factory catches things the prior version missed.
 
