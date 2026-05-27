@@ -219,10 +219,7 @@ def test_security_role_catches_planted_bug(
         if not _meets_severity(finding.severity, requirement["severity_at_least"]):
             continue
         if requirement.get("evidence_path_contains"):
-            if not any(
-                requirement["evidence_path_contains"] in ev
-                for ev in finding.evidence
-            ):
+            if requirement["evidence_path_contains"] not in finding.location:
                 continue
         caught = True
         detail = f"{finding.severity} {finding.category} at {finding.location}"
