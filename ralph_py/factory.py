@@ -96,33 +96,67 @@ def _setup_worktree(
     base_branch: str,
     root_dir: Path,
 ) -> Path:
-    """Create a git worktree for a component."""
+    """Create a git worktree for a component.
+
+    A per-host fcntl flock on ``.ralph/worktrees/<component_id>.lock``
+    serializes setup across concurrent factory invocations on the same
+    machine. Without it, two simultaneously-running factories could
+    clobber each other's worktree at the same path.
+
+    POSIX only. On Windows the fcntl import fails; we degrade to the
+    pre-lock behavior and document the limitation in the runbook.
+    """
     worktree_base = root_dir / ".ralph" / "worktrees"
     worktree_base.mkdir(parents=True, exist_ok=True)
     worktree_path = worktree_base / component_id
+    lock_path = worktree_base / f"{component_id}.lock"
 
-    if worktree_path.exists():
-        subprocess.run(
-            ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=root_dir, capture_output=True, timeout=30,
-        )
+    lock_fp = None
+    try:
+        try:
+            import fcntl
+            lock_fp = open(lock_path, "w")
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            # Windows / unusual filesystems where flock isn't available.
+            # We've already opened lock_fp on the Windows path? No -
+            # ImportError on fcntl skips the open above. Just continue
+            # without the lock; documented as a Windows non-support
+            # caveat.
+            lock_fp = None
 
-    result = subprocess.run(
-        ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
-        cwd=root_dir, capture_output=True, text=True, timeout=30,
-    )
+        if worktree_path.exists():
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree_path)],
+                cwd=root_dir, capture_output=True, timeout=30,
+            )
 
-    if result.returncode != 0:
         result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), branch_name],
+            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
             cwd=root_dir, capture_output=True, text=True, timeout=30,
         )
 
-    if result.returncode != 0:
-        error = result.stderr.strip() or result.stdout.strip()
-        raise RuntimeError(f"Failed to create worktree for '{component_id}': {error}")
+        if result.returncode != 0:
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), branch_name],
+                cwd=root_dir, capture_output=True, text=True, timeout=30,
+            )
 
-    return worktree_path
+        if result.returncode != 0:
+            error = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(
+                f"Failed to create worktree for '{component_id}': {error}"
+            )
+
+        return worktree_path
+    finally:
+        if lock_fp is not None:
+            try:
+                import fcntl
+                fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
+            except (ImportError, OSError):
+                pass
+            lock_fp.close()
 
 
 def _cleanup_worktree(component_id: str, root_dir: Path) -> None:
@@ -299,10 +333,18 @@ def run_factory(
     """
     from ralph_py.agents import get_agent
 
+    import secrets
+
     factory_start = time.monotonic()
     factory_result = FactoryResult()
-    # Stable run id shared by evolution journal and knowledge layer
-    run_id = f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+    # Stable run id shared by evolution journal and knowledge layer.
+    # Includes a random nonce so two factory invocations launched within
+    # the same UTC second do not collide on the run_id (and therefore on
+    # .ralph/knowledge/<comp>/<run_id>/ directories).
+    run_id = (
+        f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+        f"-{secrets.token_hex(3)}"
+    )
 
     # Set up progress log
     if factory_config.progress_log_path:
@@ -611,7 +653,18 @@ def run_factory(
         # Runs after Phase 2 succeeds (or is skipped) but BEFORE the PR
         # merge step pulls main into the worktree, so the diff is the
         # component's true delta. Non-fatal on any failure.
-        if knowledge_config.enabled:
+        #
+        # In single_pr mode every component shares one branch, which
+        # means `git diff base...HEAD` for component B also includes
+        # A's changes - distillation would write facts for B citing
+        # A's code as evidence. Skip the phase entirely until A2's
+        # follow-up wires up per-component diff isolation.
+        if knowledge_config.enabled and manifest.single_pr:
+            ui.info(
+                f"  Knowledge: skipped for {comp_id} "
+                f"(single_pr mode produces a polluted per-component diff)"
+            )
+        elif knowledge_config.enabled:
             try:
                 from ralph_py.agents import get_agent as _get_agent
 

@@ -23,7 +23,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
-from ralph_py.decompose import _extract_json, _select_agent_output
+from ralph_py.decompose import (
+    AgentOutputTooLarge,
+    _extract_json,
+    _select_agent_output,
+    collect_agent_output,
+)
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -387,17 +392,15 @@ def run_security_review(
         diff_content = git.get_diff_content(base_branch, worktree_path)
     prompt = _build_security_prompt(prd_text, diff_content)
 
-    output_lines: list[str] = []
     try:
-        for line in agent.run(
-            prompt, cwd=worktree_path, timeout=config.timeout_seconds,
-        ):
-            output_lines.append(line)
-    except Exception as exc:  # noqa: BLE001 - non-fatal
-        # Agent crashed mid-run. In hard mode this MUST surface as a
-        # failure - otherwise a flaky API call silently approves the
-        # diff. Advisory mode warns but doesn't block. Skip mode never
-        # gets here.
+        output_lines = collect_agent_output(
+            agent, prompt, cwd=worktree_path, timeout=config.timeout_seconds,
+        )
+    except (AgentOutputTooLarge, Exception) as exc:  # noqa: BLE001
+        # Agent crashed mid-run OR streamed more than MAX_AGENT_OUTPUT_BYTES.
+        # In hard mode this MUST surface as a failure - otherwise a
+        # flaky / hostile agent silently approves the diff. Advisory
+        # mode warns but doesn't block. Skip mode never gets here.
         passed = mode != SecurityMode.HARD.value
         return SecurityResult(
             passed=passed,

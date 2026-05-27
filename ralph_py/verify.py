@@ -118,13 +118,26 @@ SECRET_PATTERNS = [
 ]
 
 
-# Matches the variety of heading forms the engineer prompt produces:
-#   ## Self-Critique
-#   - **Self-Critique:**
-#   * Self Critique
+# Engineer prompt mandates the EXACT heading `## Self-Critique`.
+# Accept also `- **Self-Critique:**` (common bullet-in-list form) and
+# `## Self Critique` (loose hyphen-space variant). Reject prose like
+# "the self-critique above" so we don't false-positive on body text.
+# Both forms must START the line after at most a list marker + whitespace.
 _SELF_CRITIQUE_HEADING_RE = re.compile(
-    r"^[#\-*\s\*]*Self[-\s]?Critique[\*:\s]*$",
-    re.IGNORECASE,
+    r"""^
+    (?:
+        \#{2,3}\s+                  # H2 / H3: '## ' or '### '
+      | [\-*]\s+\*{2}\s*            # '- **' or '* **'
+    )
+    Self[-\s]Critique
+    (?:
+        \s*\*{2}                    # '**' (close bold)
+      | \s*:                        # ':'
+      | \s*\*{2}\s*:                # '**:'
+      | \s*$                        # end-of-line
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
 )
 
 

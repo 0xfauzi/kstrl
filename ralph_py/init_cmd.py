@@ -56,17 +56,18 @@ reviewer as already reading your diff while you write it.
    (only if you discovered something worth preserving):
    - Only update `AGENTS.md` in directories you edited
    - Add patterns/gotchas/conventions, not story-specific notes
-12. **Adversarial self-check.** Before declaring done, write a
-    `## Self-Critique` block at the end of your progress.txt entry. List
-    AT LEAST 3 concrete ways your implementation could fail in
-    production, drawn from this exact diff. Categories to consider:
-    invalid/empty/None input, concurrent access, partial-failure mid-way
-    through a multi-step operation, hostile input, schema drift, missing
-    auth/authz check, swallowed errors, performance under load, time/locale
-    dependence. For each, write one sentence: "If X happens, this code
-    will do Y, which is wrong because Z." If you genuinely cannot find
-    three, you have not thought hard enough - look at every new function
-    and ask what could break it.
+12. **Adversarial self-check.** Before declaring done, append the EXACT
+    heading `## Self-Critique` (verbatim, two hash marks - the harness
+    verifies this string) followed by AT LEAST 3 bullet lines (`- `).
+    Each bullet must be substantive: not `TBD`, not `TODO`, not `N/A`.
+    Format each bullet as: `- If X happens, this code will do Y, which
+    is wrong because Z.` Categories to consider: invalid/empty/None
+    input, concurrent access, partial-failure mid-way through a
+    multi-step operation, hostile input, schema drift, missing
+    auth/authz check, swallowed errors, performance under load,
+    time/locale dependence. If you genuinely cannot find three, look at
+    every new function and ask what could break it. Placeholders will
+    fail the mechanical check.
 13. Commit with message: `feat: [ID] - [Title]`
 14. Update `scripts/ralph/prd.json`: set that story's `passes` to `true`
     (only after tests/typecheck pass AND the self-critique is written)

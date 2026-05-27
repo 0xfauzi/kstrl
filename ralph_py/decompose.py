@@ -182,6 +182,48 @@ def _extract_json(text: str) -> Any:
     raise ValueError("No valid JSON found in output")
 
 
+# Hard cap on agent stream output. A pathological or compromised agent
+# could emit unbounded data; this guards against memory blowup and
+# downstream prompt-context flooding. 5MB is generous - real reviewer
+# / distiller / decompose responses are well under 100KB.
+MAX_AGENT_OUTPUT_BYTES = 5 * 1024 * 1024
+
+
+class AgentOutputTooLarge(RuntimeError):
+    """Raised when an agent emits more than MAX_AGENT_OUTPUT_BYTES of
+    streamed output. Callers should treat this as an infrastructure
+    failure (the agent likely misbehaved) and fail loudly in strict
+    modes, advisory in soft modes."""
+
+
+def collect_agent_output(
+    agent: Any,
+    prompt: str,
+    cwd: Path | None = None,
+    timeout: float | None = None,
+    *,
+    max_bytes: int = MAX_AGENT_OUTPUT_BYTES,
+) -> list[str]:
+    """Drain ``agent.run(...)`` into a list, aborting if total bytes
+    exceed ``max_bytes``.
+
+    Raises :class:`AgentOutputTooLarge` when the cap is hit. Callers
+    are expected to catch it and translate to their phase-specific
+    failure mode.
+    """
+    output_lines: list[str] = []
+    total_bytes = 0
+    for line in agent.run(prompt, cwd=cwd, timeout=timeout):
+        output_lines.append(line)
+        total_bytes += len(line) + 1  # +1 for the implicit newline
+        if total_bytes > max_bytes:
+            raise AgentOutputTooLarge(
+                f"Agent output exceeded {max_bytes // 1024 // 1024}MB cap "
+                f"(>{total_bytes} bytes, {len(output_lines)} lines)"
+            )
+    return output_lines
+
+
 def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
     """Return the best text candidate for JSON extraction from a finished
     agent run.
@@ -495,9 +537,23 @@ def decompose_spec(
             retry_prompt = prompt
 
         output_lines: list[str] = []
+        total_bytes = 0
+        too_large = False
         for line in agent.run(retry_prompt, cwd=root_dir):
             output_lines.append(line)
             ui.stream_line("AI", line)
+            total_bytes += len(line) + 1
+            if total_bytes > MAX_AGENT_OUTPUT_BYTES:
+                too_large = True
+                ui.warn(
+                    f"Decompose agent emitted >{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
+                    "aborting this attempt."
+                )
+                break
+
+        if too_large:
+            last_error = "agent output exceeded size cap"
+            continue
 
         try:
             data = _extract_agent_json(agent, output_lines)
