@@ -229,8 +229,8 @@ def run(
     root_value = root if _use_cli_value(ctx, "root") else None
     root_dir = _resolve_root(root_value, prompt_for_root, prd_for_root)
 
-    # Build config from environment defaults first.
-    config = RalphConfig.from_env(root_dir)
+    # Build config from ralph.toml + environment defaults first.
+    config = RalphConfig.load(root_dir)
 
     # Apply CLI overrides when explicitly provided.
     if _use_cli_value(ctx, "max_iterations"):
@@ -495,7 +495,7 @@ def understand(
         codebase_map.parent.mkdir(parents=True, exist_ok=True)
         codebase_map.write_text(DEFAULT_CODEBASE_MAP)
 
-    config = RalphConfig.from_env(root_dir)
+    config = RalphConfig.load(root_dir)
 
     # Apply CLI overrides when explicitly provided.
     if _use_cli_value(ctx, "max_iterations"):
@@ -704,7 +704,7 @@ def feature(
     root_dir = _resolve_root(root_value, prompt_for_root, prd_for_root)
     ralph_dir = root_dir / "scripts" / "ralph"
 
-    base_config = RalphConfig.from_env(root_dir)
+    base_config = RalphConfig.load(root_dir)
 
     # Apply CLI overrides that should affect both phases.
     if _use_cli_value(ctx, "sleep"):
@@ -1411,7 +1411,7 @@ def factory(
     )
 
     ralph_dir = root_dir / "scripts" / "ralph"
-    base_config = RalphConfig.from_env(root_dir)
+    base_config = RalphConfig.load(root_dir)
     if _use_cli_value(ctx, "agent_cmd"):
         base_config.agent_cmd = agent_cmd
     if _use_cli_value(ctx, "model"):

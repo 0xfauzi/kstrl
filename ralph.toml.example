@@ -26,3 +26,26 @@ auto_checkout = true
 
 [ui]
 ascii = false
+
+# Per-component semantic knowledge layer.
+# A third memory surface (alongside .ralph/evolution.jsonl and progress.txt)
+# that captures durable facts about WHAT WAS BUILT: interfaces, invariants,
+# contracts, gotchas. Written after Phase 2 review passes, read by
+# downstream components automatically.
+#
+# Storage: .ralph/knowledge/<component_id>/<run_id>/<fact_id>.md
+# Latest run dir per component wins; contract-breaker retries naturally
+# orphan stale facts.
+#
+# LLM-driven consolidation/rewriting of existing facts is intentionally
+# NOT a tunable. This is a permanent design decision: atomic fact files
+# plus latest-run-dir-wins gives audit history without the rewrite drift
+# observed when LLMs are allowed to update memory in place.
+[knowledge]
+enabled = true
+max_core_tokens = 2000             # current component's facts (full text)
+max_dependency_tokens = 1000       # transitive deps' facts (full text)
+max_sibling_tokens = 500           # other components' facts (first sentence only)
+distill_timeout_seconds = 300
+distill_model = ""                 # empty = falls back to [agent].model
+max_facts_per_distill = 7
