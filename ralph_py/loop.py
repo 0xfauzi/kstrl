@@ -83,8 +83,8 @@ def run_loop(
     raw_prompt = config.prompt_file.read_text()
     prompt = Template(raw_prompt).safe_substitute(
         prd_path=str(config.prd_file),
-        progress_path=str(config.progress_file) if hasattr(config, "progress_file") else "scripts/ralph/progress.txt",
-        codebase_map_path="scripts/ralph/codebase_map.md",
+        progress_path=str(config.progress_file),
+        codebase_map_path=str(config.codebase_map_file),
     )
 
     # Prepend CLAUDE.md project context if it exists in the working directory
@@ -111,6 +111,8 @@ def run_loop(
 
     if not is_repo:
         ui.warn("Not a git repository")
+    elif not config.auto_checkout:
+        ui.info("Branch: auto_checkout disabled; using current branch")
     else:
         branch, source = _determine_branch(config)
         if branch:

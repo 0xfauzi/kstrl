@@ -109,6 +109,64 @@ def _extract_json(text: str) -> Any:
     raise ValueError("No valid JSON found in output")
 
 
+def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
+    """Return the best text candidate for JSON extraction from a finished
+    agent run.
+
+    Returns :attr:`agent.final_message` if it contains parseable JSON;
+    otherwise returns the joined streamed output. This shields callers
+    that pass the result through :func:`_extract_json` (e.g. via a
+    domain-specific parser) from codex's prompt-echo behavior.
+    """
+    streamed = "\n".join(output_lines)
+    final = getattr(agent, "final_message", None)
+    if not final:
+        return streamed
+    try:
+        _extract_json(final)
+    except ValueError:
+        return streamed
+    return final
+
+
+def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
+    """Extract JSON from a completed agent run, trying agent.final_message
+    first and falling back to the streamed output.
+
+    Codex CLI (and other agents that echo the input prompt back) include
+    the JSON schema example inside their stdout, which can trip the
+    first-brace heuristic in :func:`_extract_json`. ``agent.final_message``
+    is populated by codex via ``--output-last-message`` and by
+    ClaudeCodeAgent from its result event, and contains only the model's
+    actual reply. Preferring it sidesteps the echoed-prompt problem.
+
+    For CustomAgent (whose final_message is just the last non-empty line
+    of streamed output), the multi-line JSON case is handled by the
+    streamed-output fallback when final_message fails to parse.
+
+    Raises :class:`ValueError` if neither candidate parses.
+    """
+    streamed = "\n".join(output_lines)
+    final = getattr(agent, "final_message", None)
+
+    candidates: list[str] = []
+    if final:
+        candidates.append(final)
+    if streamed and streamed != final:
+        candidates.append(streamed)
+
+    last_error: ValueError | None = None
+    for candidate in candidates:
+        try:
+            return _extract_json(candidate)
+        except ValueError as exc:
+            last_error = exc
+
+    if last_error is None:
+        raise ValueError("No agent output to parse")
+    raise last_error
+
+
 def _validate_decompose_output(data: Any) -> list[str]:
     """Validate the decomposition output structure."""
     errors: list[str] = []
@@ -275,10 +333,8 @@ def decompose_spec(
             output_lines.append(line)
             ui.stream_line("AI", line)
 
-        full_output = "\n".join(output_lines)
-
         try:
-            data = _extract_json(full_output)
+            data = _extract_agent_json(agent, output_lines)
         except ValueError as exc:
             last_error = str(exc)
             ui.warn(f"JSON extraction failed: {last_error}")

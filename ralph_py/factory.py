@@ -14,6 +14,11 @@ from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
 from ralph_py.contract import ContractConfig, ContractMode, run_contract_testing
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
+from ralph_py.knowledge import (
+    KnowledgeConfig,
+    build_knowledge_context,
+    distill_facts,
+)
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
@@ -142,6 +147,9 @@ def _run_component(
     feedforward_config_dict: dict | None = None,
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
+    knowledge_prefix: str = "",
+    progress_file_str: str = "scripts/ralph/progress.txt",
+    codebase_map_file_str: str = "scripts/ralph/codebase_map.md",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -222,6 +230,8 @@ def _run_component(
     # Build context prefix from previous retries
     context_prefix: str | None = None
     parts: list[str] = []
+    if knowledge_prefix:
+        parts.append(knowledge_prefix)
     if feedforward_prefix:
         parts.append(feedforward_prefix)
     if previous_context_json:
@@ -236,6 +246,8 @@ def _run_component(
         max_iterations=30,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
+        progress_file=worktree_path / progress_file_str,
+        codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=False,
         ralph_branch="",
@@ -286,6 +298,8 @@ def run_factory(
 
     factory_start = time.monotonic()
     factory_result = FactoryResult()
+    # Stable run id shared by evolution journal and knowledge layer
+    run_id = f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
 
     # Set up progress log
     if factory_config.progress_log_path:
@@ -339,21 +353,23 @@ def run_factory(
     worktree_paths: dict[str, Path] = {}
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
 
-    if base_config.prompt_file.is_absolute():
+    def _path_relative_to_root(path: Path) -> str:
+        """Render `path` relative to root_dir for use inside per-component
+        worktrees. Falls back to the absolute path string when relativization
+        fails (e.g. a path on a different mount)."""
+        if not path.is_absolute():
+            return str(path)
         try:
-            prompt_file_rel = base_config.prompt_file.relative_to(root_dir).as_posix()
+            return path.relative_to(root_dir).as_posix()
         except ValueError:
-            # Symlink or mount differences - try with resolved paths
             try:
-                prompt_file_rel = (
-                    base_config.prompt_file.resolve()
-                    .relative_to(root_dir.resolve())
-                    .as_posix()
-                )
+                return path.resolve().relative_to(root_dir.resolve()).as_posix()
             except ValueError:
-                prompt_file_rel = str(base_config.prompt_file)
-    else:
-        prompt_file_rel = str(base_config.prompt_file)
+                return str(path)
+
+    prompt_file_rel = _path_relative_to_root(base_config.prompt_file)
+    progress_file_rel = _path_relative_to_root(base_config.progress_file)
+    codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
     def _retry_or_fail(comp: Component, error: str, context_json: str | None) -> None:
         """Retry a component or mark it as failed."""
@@ -483,6 +499,46 @@ def run_factory(
         else:
             comp.review_passed = None
 
+        # Knowledge distillation (Voyager-style post-gate write).
+        # Runs after Phase 2 succeeds (or is skipped) but BEFORE the PR
+        # merge step pulls main into the worktree, so the diff is the
+        # component's true delta. Non-fatal on any failure.
+        if knowledge_config.enabled:
+            try:
+                from ralph_py import git as git_ops
+                from ralph_py.agents import get_agent as _get_agent
+
+                diff_content = git_ops.get_diff_content(
+                    manifest.base_branch, wt_path,
+                )
+                distill_model = (
+                    knowledge_config.distill_model or base_config.model
+                )
+                distill_agent = _get_agent(
+                    base_config.agent_cmd,
+                    distill_model,
+                    base_config.model_reasoning_effort,
+                    base_config.agent_type,
+                )
+                written, status = distill_facts(
+                    distill_agent,
+                    comp,
+                    diff_content,
+                    wt_path / comp.prd_path,
+                    comp_result.iterations,
+                    run_id,
+                    knowledge_config.knowledge_root,
+                    knowledge_config,
+                    wt_path,
+                    comp.review_passed,
+                )
+                if written > 0:
+                    ui.ok(f"  Knowledge: {status}")
+                else:
+                    ui.info(f"  Knowledge: {status}")
+            except Exception as exc:  # noqa: BLE001 - non-fatal
+                ui.warn(f"  Knowledge distillation failed: {exc}")
+
         # All verification phases passed - create PR and merge
         if factory_config.create_prs:
             from ralph_py.pr import push_create_and_merge_pr, is_gh_available
@@ -551,8 +607,19 @@ def run_factory(
             "max_context_tokens": fc.max_context_tokens,
         }
 
+    # Load knowledge config once for the entire factory run
+    knowledge_config = KnowledgeConfig.load(root_dir)
+
     def _submit_args(comp: Component, wt_path: Path) -> tuple:
         ctx_json = component_contexts.get(comp.id)
+        knowledge_prefix = ""
+        if knowledge_config.enabled:
+            try:
+                knowledge_prefix = build_knowledge_context(
+                    manifest, comp, knowledge_config.knowledge_root, knowledge_config,
+                )
+            except Exception:
+                pass  # knowledge retrieval is non-fatal
         return (
             comp.id, comp.prd_path, str(wt_path),
             prompt_file_rel, base_config.agent_cmd, base_config.model,
@@ -561,6 +628,9 @@ def run_factory(
             ff_config_dict,
             comp.scaffold or None,
             comp.dependencies or None,
+            knowledge_prefix,
+            progress_file_rel,
+            codebase_map_file_rel,
         )
 
     # Main scheduling loop
@@ -720,7 +790,6 @@ def run_factory(
         evo_config = EvolutionConfig()
         if evo_config.enabled:
             journal = EvolutionJournal(evo_config)
-            run_id = f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
             journal.record_run(run_id, manifest, factory_result)
     except Exception:
         pass  # evolution recording is non-fatal

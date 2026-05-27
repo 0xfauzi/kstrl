@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git
-from ralph_py.decompose import _extract_json
+from ralph_py.decompose import _extract_json, _select_agent_output
 from ralph_py.prd import PRD
 from ralph_py.verify import VerificationResult
 
@@ -270,7 +270,7 @@ def run_review(
     for line in agent.run(prompt, cwd=worktree_path, timeout=timeout):
         output_lines.append(line)
 
-    raw_output = "\n".join(output_lines)
+    raw_output = _select_agent_output(agent, output_lines)
     result = parse_review_output(raw_output)
     result.mode = mode.value
     result.duration_seconds = time.monotonic() - start
