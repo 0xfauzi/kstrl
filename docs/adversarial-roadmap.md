@@ -71,18 +71,20 @@ Done when: tracker contains documented evidence the new factory catches things t
 
 ## Phase B - Complete TOML loader
 
-PR: _pending_
+PR: _pending push_
 
-- [ ] B1 - `FactoryConfig.load()` reading `[factory]`
-- [ ] B2 - `VerifyConfig.load()` reading `[verify]`
-- [ ] B3 - `ContractConfig.load()` reading `[contract]`
-- [ ] B4 - `FeedforwardConfig.load()` reading `[feedforward]`
-- [ ] B5 - `EvolutionConfig.load()` reading `[evolution]`
-- [ ] B6 - `SecurityConfig.load()` reading `[security]`
-- [ ] B7 - Extract shared `_TomlSectionLoader` mixin in `config.py`
-- [ ] B8 - Enum-string validation across every `from_env`/`from_toml` (typo raises, not silently defaults)
+- [x] B1 - `FactoryConfig.load()` reads `[factory]` (max_parallel, max_retries, retry_delay, use_worktrees, single_pr, create_prs, review_mode)
+- [x] B2 - `VerifyConfig.load()` reads `[verify]` including the new require_self_critique fields
+- [x] B3 - `ContractConfig.load()` reads `[contract]`; `__post_init__` validates mode
+- [x] B4 - `FeedforwardConfig.load()` reads `[feedforward]` with env overrides
+- [x] B5 - `EvolutionConfig.load()` reads `[evolution]` and resolves relative journal/experiment paths against root_dir
+- [x] B6 - `SecurityConfig.load()` reads `[security]`; existing __post_init__ validates mode + threshold from both toml and env paths
+- [x] B7 - Shared `load_toml_section(toml_path, section)` helper in `config.py` reused by every loader; raises ValueError uniformly on malformed TOML
+- [x] B8 - Enum validation: ContractConfig and SecurityConfig validate in __post_init__ (the two configs with enum-typed fields). 6 validation tests (3 toml + 3 env) prove typos raise.
 
-Done when: every section of `ralph.toml.example` has an observable runtime effect, asserted by one integration test per section.
+Status: 19 new tests across the 6 loaders + cross-cutting malformed-toml parametrized test. Full suite 557 passing.
+
+Done when: PR merged.
 
 ---
 

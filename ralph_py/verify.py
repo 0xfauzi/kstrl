@@ -107,6 +107,56 @@ class VerifyConfig:
             ),
         )
 
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> VerifyConfig:
+        """Load verify config with precedence: env > toml > defaults."""
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "verify")
+        if "test_command" in section:
+            config.test_command = str(section["test_command"]) or None
+        if "typecheck_command" in section:
+            config.typecheck_command = str(section["typecheck_command"]) or None
+        if "lint_command" in section:
+            config.lint_command = str(section["lint_command"]) or None
+        if "check_diff_scope" in section:
+            config.check_diff_scope = bool(section["check_diff_scope"])
+        if "check_bad_patterns" in section:
+            config.check_bad_patterns = bool(section["check_bad_patterns"])
+        if "dead_code_cleanup" in section:
+            config.dead_code_cleanup = bool(section["dead_code_cleanup"])
+        if "mutation_testing" in section:
+            config.mutation_testing = bool(section["mutation_testing"])
+        if "mutation_threshold" in section:
+            config.mutation_threshold = float(section["mutation_threshold"])
+        if "subprocess_timeout" in section:
+            config.subprocess_timeout = float(section["subprocess_timeout"])
+        if "require_self_critique" in section:
+            config.require_self_critique = bool(section["require_self_critique"])
+        if "self_critique_min_bullets" in section:
+            config.self_critique_min_bullets = int(
+                section["self_critique_min_bullets"]
+            )
+        if "progress_file_path" in section:
+            config.progress_file_path = str(section["progress_file_path"])
+        # Env overrides
+        env = cls.from_env()
+        for f in (
+            "test_command", "typecheck_command", "lint_command",
+            "dead_code_cleanup", "dead_code_command", "mutation_testing",
+            "mutation_threshold", "mutation_timeout", "subprocess_timeout",
+            "require_self_critique", "self_critique_min_bullets",
+            "progress_file_path",
+        ):
+            # only override when env-derived value differs from default()
+            env_val = getattr(env, f)
+            default_val = getattr(cls(), f)
+            if env_val != default_val:
+                setattr(config, f, env_val)
+        return config
+
 
 # Patterns that suggest secrets in source code
 SECRET_PATTERNS = [

@@ -67,6 +67,41 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
         )
 
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> FactoryConfig:
+        """Load factory config with precedence: env > toml > defaults.
+
+        Reads the ``[factory]`` section from ``<root_dir>/ralph.toml`` if
+        present, then overlays any matching env vars on top.
+        """
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "factory")
+        if "max_parallel" in section:
+            config.max_parallel = int(section["max_parallel"])
+        if "max_retries" in section:
+            config.max_retries = int(section["max_retries"])
+        if "retry_delay" in section:
+            config.retry_delay = float(section["retry_delay"])
+        if "use_worktrees" in section:
+            config.use_worktrees = bool(section["use_worktrees"])
+        if "single_pr" in section:
+            config.single_pr = bool(section["single_pr"])
+        if "create_prs" in section:
+            config.create_prs = bool(section["create_prs"])
+        if "review_mode" in section:
+            config.review_mode = str(section["review_mode"])
+        # Env overrides (consistent with from_env)
+        if "FACTORY_MAX_PARALLEL" in os.environ:
+            config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
+        if "FACTORY_MAX_RETRIES" in os.environ:
+            config.max_retries = int(os.environ["FACTORY_MAX_RETRIES"])
+        if "FACTORY_RETRY_DELAY" in os.environ:
+            config.retry_delay = float(os.environ["FACTORY_RETRY_DELAY"])
+        return config
+
 
 @dataclass
 class ComponentResult:

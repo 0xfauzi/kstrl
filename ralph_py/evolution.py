@@ -35,6 +35,51 @@ class EvolutionConfig:
     auto_propose: bool = True
     auto_apply_computational: bool = False
 
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> EvolutionConfig:
+        """Load evolution config with precedence: env > toml > defaults."""
+        import os
+        from ralph_py.config import load_toml_section
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "evolution")
+        if "enabled" in section:
+            config.enabled = bool(section["enabled"])
+        if "journal_path" in section:
+            jp = str(section["journal_path"])
+            config.journal_path = (
+                Path(jp) if Path(jp).is_absolute() else root_dir / jp
+            )
+        if "experiments_path" in section:
+            ep = str(section["experiments_path"])
+            config.experiments_path = (
+                Path(ep) if Path(ep).is_absolute() else root_dir / ep
+            )
+        if "min_pattern_frequency" in section:
+            config.min_pattern_frequency = int(section["min_pattern_frequency"])
+        if "lookback_runs" in section:
+            config.lookback_runs = int(section["lookback_runs"])
+        if "auto_propose" in section:
+            config.auto_propose = bool(section["auto_propose"])
+        if "auto_apply_computational" in section:
+            config.auto_apply_computational = bool(
+                section["auto_apply_computational"]
+            )
+        # Env overrides
+        if "RALPH_EVOLUTION_ENABLED" in os.environ:
+            config.enabled = os.environ["RALPH_EVOLUTION_ENABLED"].lower() in {
+                "1", "true", "yes",
+            }
+        if "RALPH_EVOLUTION_JOURNAL_PATH" in os.environ:
+            raw = os.environ["RALPH_EVOLUTION_JOURNAL_PATH"]
+            config.journal_path = (
+                Path(raw) if Path(raw).is_absolute() else root_dir / raw
+            )
+        if "RALPH_EVOLUTION_LOOKBACK_RUNS" in os.environ:
+            config.lookback_runs = int(os.environ["RALPH_EVOLUTION_LOOKBACK_RUNS"])
+        return config
+
 
 @dataclass
 class FailurePattern:
