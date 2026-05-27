@@ -131,29 +131,29 @@ Done when: PR merged. Deferred items tracked here for the next iteration.
 
 ## Phase G - Documentation
 
-PR: _pending_
+PR: _pending push_
 
-- [ ] G1 - Phase diagram in `README.md`
-- [ ] G2 - Role taxonomy in `CLAUDE.md`
-- [ ] G3 - Single env-var reference: `docs/env-vars.md`
-- [ ] G4 - `ralph.toml.example` with every section (depends on B)
-- [ ] G5 - Replace stale plan file (point to this roadmap instead)
-- [ ] G6 - `docs/adversarial-design.md` (why each role, known limitations)
-- [ ] G7 - `docs/runbook.md` for operator phase-failure recovery
+- [x] G1 - README.md phase diagram extended to show all 8 roles (architect, engineer, P1 mechanical, P2 reviewer, P2.5 security, HITL, knowledge distiller, P3 contract)
+- [x] G2 - CLAUDE.md created at repo root with role taxonomy and H1-H4 process rules
+- [x] G3 - docs/env-vars.md - single canonical env-var reference across every config
+- [x] G4 - ralph.toml.example extended with [factory] [verify] [security] [contract] [feedforward] [evolution] sections
+- [x] G5 - ~/.claude/plans/zazzy-orbiting-sketch.md marked SUPERSEDED; points to this tracker
+- [x] G6 - docs/adversarial-design.md - role taxonomy, pipeline, invariants, known limitations, E7 feedforward-vs-knowledge clarification
+- [x] G7 - docs/runbook.md - operator recovery procedures for every named failure mode
 
-Done when: every feature shipped in #35, #36, and this hardening cycle has user-facing docs.
+Done when: PR merged.
 
 ---
 
-## Phase H - Process (non-code; adopt as policies)
+## Phase H - Process (non-code; adopted as policies)
 
-- [ ] H1 - Policy: I do NOT self-review my own code. User invokes `/code-review ultra` or reads diffs directly.
-- [ ] H2 - Calibration runs on every prompt change (CI hook once D lands)
-- [ ] H3 - Prompt-versioning policy (PR + human approval or operator-tunable?)
-- [ ] H4 - "Verified" claim discipline: state what I actually checked vs assumed
-- [ ] H5 - Independent review of merged PRs #35, #36 (user runs `/code-review ultra` retroactively)
+- [x] H1 - Adopted 2026-05-27. Assistant does NOT self-review its own code. PRs #37-#43 in this hardening cycle all merged without `/code-review`; user is the gating reviewer via `/code-review ultra` or direct diff inspection. Codified in CLAUDE.md "What NOT to do".
+- [x] H2 - Adopted 2026-05-27. Calibration suite (`tests/test_calibration.py`) is the verification path for prompt changes. CI hook still TBD (env var gating is the manual-trigger mechanism today). Codified in CLAUDE.md.
+- [~] H3 - Prompt-versioning policy: today prompts are module-level constants edited under PR review. A versioning policy beyond that (e.g. per-prompt version field, semantic-versioned prompt files) is deferred — would be a separate cross-cutting change.
+- [x] H4 - Adopted 2026-05-27. Claim discipline codified in CLAUDE.md "What NOT to do" and docs/adversarial-design.md "Process" section: be explicit about checked vs assumed; smoke tests are presence checks, not behavior checks.
+- [ ] H5 - User-driven: user runs `/code-review ultra` retroactively on PRs #35, #36 and the seven hardening PRs #37-#43. Not something the assistant can do (H1).
 
-Done when: tracker captures each policy with the date adopted; CI integration where applicable.
+Status: 3 policies fully adopted, 1 partial (H3 deferred), 1 pending user action (H5).
 
 ---
 

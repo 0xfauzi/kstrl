@@ -49,3 +49,60 @@ max_sibling_tokens = 500           # other components' facts (first sentence onl
 distill_timeout_seconds = 300
 distill_model = ""                 # empty = falls back to [agent].model
 max_facts_per_distill = 7
+
+# Factory orchestrator settings (Phase 0-3 pipeline coordination).
+[factory]
+max_parallel = 4                   # concurrent component workers
+max_retries = 3                    # per-component retry budget across all phases
+retry_delay = 5.0                  # seconds between retry attempts
+use_worktrees = true               # branch each component into .ralph/worktrees/<id>
+single_pr = false                  # one PR for the whole factory vs per-component
+create_prs = true                  # call `gh` to push + merge per component
+review_mode = "hard"               # hard | advisory | skip
+max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
+pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
+
+# Phase 1 mechanical verification.
+[verify]
+# test_command, typecheck_command, lint_command default to uv run pytest / mypy / ruff
+# Override to your project's commands if different.
+check_diff_scope = true
+check_bad_patterns = true
+dead_code_cleanup = false
+mutation_testing = false
+mutation_threshold = 50.0
+subprocess_timeout = 300.0
+require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
+self_critique_min_bullets = 3
+progress_file_path = "scripts/ralph/progress.txt"
+
+# Phase 2.5 security review (independent adversarial pass focused on vulns).
+[security]
+mode = "skip"                      # skip | advisory | hard
+fail_threshold = "high"            # critical | high | medium | low (hard mode only)
+timeout_seconds = 600.0
+# agent_cmd / agent_type / model: leave blank to inherit from [agent].
+# Categories mapped to OWASP Top 10 + CWE via SECURITY_CATEGORY_MAP in security.py.
+
+# Phase 3 cross-component contract testing.
+[contract]
+mode = "tier"                      # tier | final | skip
+test_command = "uv run pytest"
+timeout = 600.0
+
+# Phase 0 feedforward (computational structural scan; no LLM).
+[feedforward]
+enabled = true
+module_map = true
+public_interfaces = true
+dependency_graph = true
+conventions = true
+max_context_tokens = 4000
+
+# Continuous-learning journal.
+[evolution]
+enabled = true
+journal_path = ".ralph/evolution.jsonl"
+experiments_path = ".ralph/experiments.tsv"
+min_pattern_frequency = 2
+lookback_runs = 10
