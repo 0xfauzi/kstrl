@@ -31,14 +31,16 @@ import pytest
 
 from ralph_py.decompose import (
     DECOMPOSE_PROMPT,
+    SpecIssue,
     _extract_agent_json,
     _parse_spec_issues,
     _select_agent_output,
 )
-from ralph_py.review import REVIEWER_PROMPT, parse_review_output
+from ralph_py.review import REVIEWER_PROMPT, ReviewResult, parse_review_output
 from ralph_py.security import (
     SECURITY_PROMPT,
     SecurityMode,
+    SecurityResult,
     parse_security_output,
 )
 
@@ -130,6 +132,93 @@ def _meets_severity(actual: str, threshold: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Matcher helpers (F5-matchers)
+#
+# Extracted as top-level functions so they can be unit-tested against
+# synthetic inputs in tests/test_calibration_matchers.py without
+# requiring a real LLM call. The integration tests below feed the same
+# helpers with output produced by a live agent under
+# RALPH_RUN_CALIBRATION=1. Identical matcher means: a passing unit
+# test = the matcher works against the assumptions encoded in the
+# fixture meta; a passing integration test = the matcher AND the LLM
+# both held up.
+# ---------------------------------------------------------------------------
+
+
+def security_caught(
+    result: SecurityResult, requirement: dict,
+) -> tuple[bool, str]:
+    """Return ``(caught, detail)`` for the security matcher.
+
+    A finding counts as catching the planted bug when its category
+    matches, severity meets the threshold, and (optionally) location
+    contains the expected path substring. First match wins; subsequent
+    findings are ignored even if more severe -- this mirrors how the
+    review path would gate (one matching finding is enough).
+    """
+    for finding in result.findings:
+        if finding.category != requirement["category"]:
+            continue
+        if not _meets_severity(finding.severity, requirement["severity_at_least"]):
+            continue
+        if requirement.get("evidence_path_contains"):
+            if requirement["evidence_path_contains"] not in finding.location:
+                continue
+        return True, f"{finding.severity} {finding.category} at {finding.location}"
+    return False, ""
+
+
+def reviewer_caught(
+    result: ReviewResult, requirement: dict,
+) -> tuple[bool, str]:
+    """Return ``(caught, detail)`` for the reviewer matcher.
+
+    A concern counts as catching the planted issue when its category
+    matches, and (optionally) severity is ``"fail"`` when the fixture
+    demands ``severity_at_least == "fail"``, and (optionally) location
+    contains the expected path substring.
+    """
+    for concern in result.concerns:
+        if concern.category != requirement["category"]:
+            continue
+        if requirement.get("severity_at_least") == "fail":
+            if concern.severity != "fail":
+                continue
+        if requirement.get("evidence_path_contains"):
+            if requirement["evidence_path_contains"] not in concern.location:
+                continue
+        return True, (
+            f"{concern.severity} {concern.category} at {concern.location}"
+        )
+    return False, ""
+
+
+def architect_caught(
+    issues: list[SpecIssue], requirement: dict,
+) -> tuple[bool, str]:
+    """Return ``(caught, detail)`` for the architect spec-issue matcher.
+
+    Catches when: total issue count >= ``spec_issues_min``, every kind
+    in ``must_include_kind`` is present, and (when
+    ``blocker_or_major == True``) at least one issue is blocker or
+    major severity.
+    """
+    min_count = requirement.get("spec_issues_min", 1)
+    required_kinds = set(requirement.get("must_include_kind", []))
+    must_be_major_or_blocker = requirement.get("blocker_or_major", False)
+    caught = (
+        len(issues) >= min_count
+        and (not required_kinds or required_kinds.issubset({i.kind for i in issues}))
+        and (
+            not must_be_major_or_blocker
+            or any(i.severity in {"blocker", "major"} for i in issues)
+        )
+    )
+    detail = f"got {len(issues)} issues: {[(i.severity, i.kind) for i in issues]}"
+    return caught, detail
+
+
+# ---------------------------------------------------------------------------
 # Detection rate report
 # ---------------------------------------------------------------------------
 
@@ -209,25 +298,11 @@ def test_security_role_catches_planted_bug(
     raw = _select_agent_output(agent, output)
     result = parse_security_output(raw, SecurityMode.ADVISORY.value)
 
-    requirement = meta["must_detect"]
-    caught = False
-    detail = ""
-    for finding in result.findings:
-        if finding.category != requirement["category"]:
-            continue
-        if not _meets_severity(finding.severity, requirement["severity_at_least"]):
-            continue
-        if requirement.get("evidence_path_contains"):
-            if requirement["evidence_path_contains"] not in finding.location:
-                continue
-        caught = True
-        detail = f"{finding.severity} {finding.category} at {finding.location}"
-        break
-
+    caught, detail = security_caught(result, meta["must_detect"])
     report.record("security", meta["fixture_id"], caught, detail)
     assert caught, (
         f"Security role missed planted bug {meta['fixture_id']}: "
-        f"expected category={requirement['category']}, "
+        f"expected category={meta['must_detect']['category']}, "
         f"got findings={[f.category for f in result.findings]}"
     )
 
@@ -263,26 +338,11 @@ def test_reviewer_role_catches_planted_concern(
     raw = _select_agent_output(agent, output)
     result = parse_review_output(raw)
 
-    requirement = meta["must_detect"]
-    caught = False
-    detail = ""
-    for concern in result.concerns:
-        if concern.category != requirement["category"]:
-            continue
-        if requirement.get("severity_at_least") == "fail":
-            if concern.severity != "fail":
-                continue
-        if requirement.get("evidence_path_contains"):
-            if requirement["evidence_path_contains"] not in concern.location:
-                continue
-        caught = True
-        detail = f"{concern.severity} {concern.category} at {concern.location}"
-        break
-
+    caught, detail = reviewer_caught(result, meta["must_detect"])
     report.record("reviewer", meta["fixture_id"], caught, detail)
     assert caught, (
         f"Reviewer missed planted concern {meta['fixture_id']}: "
-        f"expected category={requirement['category']}, "
+        f"expected category={meta['must_detect']['category']}, "
         f"got concerns={[(c.category, c.severity) for c in result.concerns]}"
     )
 
@@ -322,21 +382,7 @@ def test_architect_role_flags_vague_spec(
 
     issues = _parse_spec_issues(data)
 
-    requirement = meta["must_detect"]
-    min_count = requirement.get("spec_issues_min", 1)
-    required_kinds = set(requirement.get("must_include_kind", []))
-    must_be_major_or_blocker = requirement.get("blocker_or_major", False)
-
-    caught = (
-        len(issues) >= min_count
-        and (not required_kinds or required_kinds.issubset({i.kind for i in issues}))
-        and (
-            not must_be_major_or_blocker
-            or any(i.severity in {"blocker", "major"} for i in issues)
-        )
-    )
-
-    detail = f"got {len(issues)} issues: {[(i.severity, i.kind) for i in issues]}"
+    caught, detail = architect_caught(issues, meta["must_detect"])
     report.record("architect", meta["fixture_id"], caught, detail)
     assert caught, (
         f"Architect missed planted vagueness in {meta['fixture_id']}: {detail}"
