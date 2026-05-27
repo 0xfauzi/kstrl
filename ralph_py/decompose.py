@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -14,16 +15,64 @@ if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
     from ralph_py.ui.base import UI
 
-DECOMPOSE_PROMPT = """\
-You are a senior software architect and product manager. Your job is to decompose
-a feature specification into independent, atomic components that can be implemented
-in parallel by separate coding agents.
 
-Output ONLY valid JSON (no Markdown, no code fences, no comments, no explanation).
+@dataclass
+class SpecIssue:
+    """A red-team finding raised by the architect during decomposition."""
+
+    severity: str  # "blocker" | "major" | "minor"
+    kind: str
+    summary: str
+    location: str = ""
+    suggestion: str = ""
+
+
+class SpecBlockerError(Exception):
+    """Raised when the architect found blocker-severity spec issues.
+
+    The decompose pipeline halts until the human resolves the spec
+    rather than letting a vague spec produce a brittle implementation.
+    The blocking issues are attached via ``issues``.
+    """
+
+    def __init__(self, issues: list[SpecIssue]):
+        self.issues = issues
+        summary_lines = [f"- [{i.severity}/{i.kind}] {i.summary}" for i in issues]
+        super().__init__(
+            "Spec has blocker-severity issues; resolve before re-running:\n"
+            + "\n".join(summary_lines),
+        )
+
+DECOMPOSE_PROMPT = """\
+You are a senior software architect AND a hostile spec auditor. You have
+two jobs and you must do BOTH before decomposing:
+
+  1. RED-TEAM the specification. Find every ambiguity, missing detail,
+     contradiction, unstated assumption, and unspecified failure mode.
+     Most specs are wrong somewhere; your default stance is suspicion.
+  2. Decompose the spec into atomic, parallelizable components, but only
+     to the extent the spec is concrete enough to decompose safely.
+
+If the spec is too vague to decompose responsibly, return `spec_issues`
+with the gaps you found AND an empty `components` array. Do not invent
+behavior to fill silence; that is what produces brittle implementations
+weeks later.
+
+Output ONLY valid JSON (no Markdown, no code fences, no comments, no
+explanation).
 
 The output must be a JSON object with this exact structure:
 
 {{
+  "spec_issues": [
+    {{
+      "severity": "blocker|major|minor",
+      "kind": "ambiguity|missing_detail|contradiction|unstated_assumption|undefined_failure_mode|out_of_scope_creep|other",
+      "summary": "one-sentence statement of the issue",
+      "location": "which part of the spec this is about (quote or paraphrase)",
+      "suggestion": "what would resolve it (one sentence)"
+    }}
+  ],
   "components": [
     {{
       "id": "kebab-case-id",
@@ -35,10 +84,10 @@ The output must be a JSON object with this exact structure:
           "id": "US-001",
           "title": "Short story title",
           "acceptanceCriteria": [
-            "First testable requirement",
-            "Second testable requirement",
-            "Typecheck passes",
-            "Tests pass"
+            "Concrete positive criterion with the actual expected behavior",
+            "Concrete negative criterion: what happens on invalid input / failure / boundary",
+            "Typecheck passes: <project typecheck command>",
+            "Tests pass: <project test command>"
           ],
           "priority": 1,
           "passes": false,
@@ -49,19 +98,43 @@ The output must be a JSON object with this exact structure:
   ]
 }}
 
-Rules:
+Decomposition rules:
 1. Component IDs must be kebab-case (lowercase, hyphens only).
 2. Each component should be independently implementable and testable.
-3. Dependencies reference other component IDs. Foundational components (data models,
-   config, shared utilities) should have no dependencies.
+3. Dependencies reference other component IDs. Foundational components
+   (data models, config, shared utilities) should have no dependencies.
 4. Order components so foundational ones come first.
-5. Each component should have 1-5 user stories. Stories must be small and atomic.
-6. User story IDs must be globally unique across all components (e.g., US-001, US-002...).
-7. Acceptance criteria must be explicit, testable, and include typecheck/test commands.
+5. Each component should have 1-5 user stories. Stories must be small
+   and atomic.
+6. User story IDs must be globally unique across all components
+   (e.g., US-001, US-002...).
+7. Acceptance criteria must be explicit and testable. Each story MUST
+   include at least ONE negative criterion (error path, empty input,
+   boundary value, unauthorized access, malformed payload - whatever
+   applies to that story). Do NOT use placeholder text like "First
+   testable requirement"; write the actual criterion.
 8. Priorities must be unique within each component, starting at 1.
 9. Set "passes" to false and "notes" to "" for every story.
-10. Minimize dependencies between components. Prefer independent components.
-11. Do not invent UI elements, endpoints, or files not described in the spec.
+10. Minimize dependencies between components. Prefer independent
+    components.
+11. Do not invent UI elements, endpoints, or files not described in the
+    spec. If the spec is silent on something you would need to invent,
+    add a `spec_issues` entry instead.
+
+Red-team rules:
+- Look for: ambiguous quantifiers ("fast", "secure", "user-friendly"),
+  missing acceptance criteria (no error behavior specified, no empty/null
+  handling, no concurrency story), undefined data shapes, missing
+  authentication/authorization story, unspecified perf budgets, missing
+  rollback / backwards-compat plan, contradictions between sections.
+- "blocker": cannot safely decompose without resolving this
+- "major": will likely cause rework or a fail-class bug if left
+- "minor": worth raising but not blocking
+- If you genuinely find no issues after reading carefully, return
+  "spec_issues": []. Honesty over performance: do not invent issues to
+  appear thorough.
+- If any issue is "blocker", you MUST return "components": [] so the
+  pipeline halts and the human can fix the spec.
 
 Project name: {project_name}
 
@@ -168,7 +241,12 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 
 
 def _validate_decompose_output(data: Any) -> list[str]:
-    """Validate the decomposition output structure."""
+    """Validate the decomposition output structure.
+
+    Empty components is permitted only when spec_issues contains at
+    least one blocker - the architect is explicitly halting the pipeline
+    until the human resolves the spec.
+    """
     errors: list[str] = []
 
     if not isinstance(data, dict):
@@ -182,7 +260,14 @@ def _validate_decompose_output(data: Any) -> list[str]:
         return ["'components' must be an array"]
 
     if not components:
-        return ["'components' must not be empty"]
+        spec_issues = data.get("spec_issues", [])
+        if isinstance(spec_issues, list) and any(
+            isinstance(s, dict) and s.get("severity") == "blocker"
+            for s in spec_issues
+        ):
+            # Architect explicitly halted - this is a valid outcome.
+            return []
+        return ["'components' must not be empty (no blocker spec_issues to justify halt)"]
 
     seen_ids: set[str] = set()
     seen_story_ids: set[str] = set()
@@ -243,6 +328,78 @@ def _validate_decompose_output(data: Any) -> list[str]:
                 )
 
     return errors
+
+
+_VALID_SEVERITIES = frozenset({"blocker", "major", "minor"})
+_VALID_KINDS = frozenset({
+    "ambiguity",
+    "missing_detail",
+    "contradiction",
+    "unstated_assumption",
+    "undefined_failure_mode",
+    "out_of_scope_creep",
+    "other",
+})
+
+
+def _parse_spec_issues(data: Any) -> list[SpecIssue]:
+    """Extract typed SpecIssue entries from raw decompose output.
+
+    Invalid entries (unknown severity, unknown kind, missing summary)
+    are skipped rather than crashing decomposition. We surface what the
+    LLM produced honestly even if some entries are malformed.
+    """
+    if not isinstance(data, dict):
+        return []
+    raw = data.get("spec_issues")
+    if not isinstance(raw, list):
+        return []
+    issues: list[SpecIssue] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        severity = str(entry.get("severity", "")).strip()
+        kind = str(entry.get("kind", "")).strip()
+        summary = str(entry.get("summary", "")).strip()
+        if severity not in _VALID_SEVERITIES:
+            continue
+        if kind not in _VALID_KINDS:
+            continue
+        if not summary:
+            continue
+        issues.append(SpecIssue(
+            severity=severity,
+            kind=kind,
+            summary=summary,
+            location=str(entry.get("location", "")).strip(),
+            suggestion=str(entry.get("suggestion", "")).strip(),
+        ))
+    return issues
+
+
+def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
+    """Render spec issues to the UI grouped by severity."""
+    if not issues:
+        ui.ok("Spec audit: no issues raised")
+        return
+    blockers = [i for i in issues if i.severity == "blocker"]
+    majors = [i for i in issues if i.severity == "major"]
+    minors = [i for i in issues if i.severity == "minor"]
+    ui.section("Spec Audit Findings")
+    for label, group, emit in (
+        ("Blockers", blockers, ui.err),
+        ("Major", majors, ui.warn),
+        ("Minor", minors, ui.info),
+    ):
+        if not group:
+            continue
+        ui.kv(label, str(len(group)))
+        for issue in group:
+            emit(f"  [{issue.kind}] {issue.summary}")
+            if issue.location:
+                ui.info(f"    location: {issue.location}")
+            if issue.suggestion:
+                ui.info(f"    suggestion: {issue.suggestion}")
 
 
 def _generate_component_prd(
@@ -355,6 +512,15 @@ def decompose_spec(
             f"Failed to decompose spec after {max_retries} attempts. "
             f"Last error: {last_error}"
         )
+
+    # Surface red-team findings before doing any further work. If any
+    # are blockers, halt before generating PRDs - the architect
+    # explicitly judged the spec un-decomposable.
+    spec_issues = _parse_spec_issues(data)
+    _surface_spec_issues(spec_issues, ui)
+    blockers = [i for i in spec_issues if i.severity == "blocker"]
+    if blockers:
+        raise SpecBlockerError(blockers)
 
     # Generate PRDs and build manifest components
     ui.section("Generating PRDs")

@@ -15,7 +15,7 @@ from click.core import ParameterSource
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
 from ralph_py.config import RalphConfig, _parse_paths
-from ralph_py.decompose import decompose_spec
+from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
 from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from ralph_py.loop import run_loop
@@ -1182,6 +1182,30 @@ def decompose(
     help="Model for reviewer agent",
 )
 @click.option(
+    "--security-mode",
+    type=click.Choice(["hard", "advisory", "skip"]),
+    default="advisory",
+    help="Phase 2.5 security review: hard (block on critical+high), "
+         "advisory (warn only), skip",
+)
+@click.option(
+    "--security-agent-cmd",
+    help="Custom agent for security reviewer "
+         "(default: same as implementation agent)",
+)
+@click.option(
+    "--security-model",
+    help="Model for security reviewer agent "
+         "(default: same as implementation agent)",
+)
+@click.option(
+    "--security-fail-threshold",
+    type=click.Choice(["critical", "high", "medium", "low"]),
+    default="high",
+    help="In hard mode, findings at or above this severity block "
+         "(default: high - critical+high fail)",
+)
+@click.option(
     "--contract-check",
     type=click.Choice(["tier", "final", "skip"]),
     default="tier",
@@ -1275,6 +1299,10 @@ def factory(
     review_mode: str,
     review_agent_cmd: str | None,
     review_model: str | None,
+    security_mode: str,
+    security_agent_cmd: str | None,
+    security_model: str | None,
+    security_fail_threshold: str,
     contract_check: str,
     contract_test_cmd: str | None,
     agent_timeout: float,
@@ -1347,6 +1375,11 @@ def factory(
                 ui=ui_impl,
                 root_dir=root_dir,
             )
+        except SpecBlockerError as exc:
+            # Architect halted: spec has blocker-severity issues. Surface
+            # them and exit cleanly. The user fixes the spec and re-runs.
+            ui_impl.err(str(exc))
+            sys.exit(2)
         except ValueError as exc:
             ui_impl.err(str(exc))
             sys.exit(1)
@@ -1402,6 +1435,14 @@ def factory(
             test_command=contract_test_cmd or test_command or "uv run pytest",
         )
 
+    from ralph_py.security import SecurityConfig as _SecurityConfig
+    s_config = _SecurityConfig(
+        mode=security_mode,
+        agent_cmd=security_agent_cmd,
+        model=security_model,
+        fail_threshold=security_fail_threshold,
+    )
+
     factory_config = FactoryConfig(
         max_parallel=max_parallel,
         max_retries=max_retries,
@@ -1413,6 +1454,7 @@ def factory(
         review_mode=review_mode,
         review_agent_cmd=review_agent_cmd,
         review_model=review_model,
+        security_config=s_config,
         contract_config=c_config,
         progress_log_path=progress_log,
     )

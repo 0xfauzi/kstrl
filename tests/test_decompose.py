@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 
 from ralph_py.decompose import (
+    SpecBlockerError,
+    SpecIssue,
     _extract_json,
+    _parse_spec_issues,
     _validate_decompose_output,
     decompose_spec,
 )
@@ -175,6 +178,145 @@ class TestValidateDecomposeOutput:
         }
         errors = _validate_decompose_output(data)
         assert any("nonexistent" in e for e in errors)
+
+
+class TestSpecIssues:
+    """Tests for the red-team / spec-audit surface."""
+
+    def test_parse_typed_issues(self) -> None:
+        data = {
+            "spec_issues": [
+                {
+                    "severity": "blocker",
+                    "kind": "ambiguity",
+                    "summary": "What 'fast' means is not defined",
+                    "location": "Performance section",
+                    "suggestion": "Specify a P95 latency budget",
+                },
+                {
+                    "severity": "major",
+                    "kind": "undefined_failure_mode",
+                    "summary": "No error path for db unavailable",
+                },
+            ],
+        }
+        issues = _parse_spec_issues(data)
+        assert len(issues) == 2
+        assert issues[0].severity == "blocker"
+        assert issues[1].kind == "undefined_failure_mode"
+
+    def test_invalid_severity_dropped(self) -> None:
+        data = {"spec_issues": [{
+            "severity": "critical",  # not valid
+            "kind": "ambiguity",
+            "summary": "x",
+        }]}
+        assert _parse_spec_issues(data) == []
+
+    def test_invalid_kind_dropped(self) -> None:
+        data = {"spec_issues": [{
+            "severity": "major",
+            "kind": "made_up_kind",
+            "summary": "x",
+        }]}
+        assert _parse_spec_issues(data) == []
+
+    def test_missing_summary_dropped(self) -> None:
+        data = {"spec_issues": [{
+            "severity": "minor",
+            "kind": "ambiguity",
+            "summary": "",
+        }]}
+        assert _parse_spec_issues(data) == []
+
+    def test_empty_components_allowed_when_blocker_exists(self) -> None:
+        data = {
+            "components": [],
+            "spec_issues": [{
+                "severity": "blocker",
+                "kind": "ambiguity",
+                "summary": "spec is too vague",
+            }],
+        }
+        assert _validate_decompose_output(data) == []
+
+    def test_empty_components_rejected_without_blockers(self) -> None:
+        data = {"components": []}
+        errors = _validate_decompose_output(data)
+        assert errors
+        assert "components" in errors[0]
+
+    def test_decompose_raises_on_blocker(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Vague spec\nDo something good.")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        output = json.dumps({
+            "spec_issues": [{
+                "severity": "blocker",
+                "kind": "ambiguity",
+                "summary": "Spec is empty",
+                "location": "everywhere",
+                "suggestion": "Write actual requirements",
+            }],
+            "components": [],
+        })
+        agent = MockDecomposeAgent(output)
+        ui = PlainUI(no_color=True)
+        with pytest.raises(SpecBlockerError) as exc_info:
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=agent,
+                ui=ui,
+                root_dir=tmp_path,
+            )
+        assert len(exc_info.value.issues) == 1
+        assert exc_info.value.issues[0].severity == "blocker"
+
+    def test_decompose_continues_on_non_blockers(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec\nBuild it.")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        output = json.dumps({
+            "spec_issues": [{
+                "severity": "minor",
+                "kind": "missing_detail",
+                "summary": "Edge case unspecified",
+            }],
+            "components": [
+                {
+                    "id": "comp-a",
+                    "title": "A",
+                    "description": "x",
+                    "dependencies": [],
+                    "userStories": [{
+                        "id": "US-001",
+                        "title": "S1",
+                        "acceptanceCriteria": ["AC1", "AC2"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }],
+                },
+            ],
+        })
+        agent = MockDecomposeAgent(output)
+        ui = PlainUI(no_color=True)
+        manifest = decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=agent,
+            ui=ui,
+            root_dir=tmp_path,
+        )
+        assert len(manifest.components) == 1
+        assert manifest.components[0].id == "comp-a"
 
 
 class TestDecomposeSpec:

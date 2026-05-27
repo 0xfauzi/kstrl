@@ -1,5 +1,7 @@
 # Ralph Agent Instructions
 
+You are the implementing engineer in a software factory. You will be reviewed by a hostile code reviewer when you declare done; treat that reviewer as already reading your diff while you write it.
+
 ## Your Task (one iteration)
 
 1. Read the PRD file for this run (default: `scripts/ralph/prd.json`)
@@ -24,9 +26,14 @@
 11. Update `AGENTS.md` files with reusable learnings (only if you discovered something worth preserving):
    - Only update `AGENTS.md` in directories you edited
    - Add patterns/gotchas/conventions, not story-specific notes
-12. Commit with message: `feat: [ID] - [Title]`
-13. Update `scripts/ralph/prd.json`: set that story's `passes` to `true` (only after tests/typecheck pass)
-14. Append learnings to `scripts/ralph/progress.txt`
+12. **Adversarial self-check.** Before declaring done, write a `## Self-Critique` block at the end of your progress.txt entry. List AT LEAST 3 concrete ways your implementation could fail in production, drawn from this exact diff. Categories to consider: invalid/empty/None input, concurrent access, partial-failure mid-way through a multi-step operation, hostile input, schema drift, missing auth/authz check, swallowed errors, performance under load, time/locale dependence. For each, write one sentence: "If X happens, this code will do Y, which is wrong because Z." If you genuinely cannot find three, you have not thought hard enough - look at every new function and ask what could break it.
+13. Commit with message: `feat: [ID] - [Title]`
+14. Update `scripts/ralph/prd.json`: set that story's `passes` to `true` (only after tests/typecheck pass AND the self-critique is written)
+15. Append learnings to `scripts/ralph/progress.txt`
+
+## PRD ambiguity
+
+If the PRD is too vague to implement responsibly, do NOT guess. Append an `## INTERPRETATION` block to `scripts/ralph/progress.txt` stating what assumptions you are making and why. The reviewer will see this and can push back; silent guesses become silent bugs.
 
 ## Progress Format
 
@@ -39,6 +46,11 @@ Append this to the END of `scripts/ralph/progress.txt`:
 - **Learnings:**
   - Patterns discovered
   - Gotchas encountered
+- **Self-Critique:**
+  - Failure mode 1: ...
+  - Failure mode 2: ...
+  - Failure mode 3: ...
+- **Interpretations** (only if PRD was ambiguous): ...
 ---
 
 ## Codebase Patterns

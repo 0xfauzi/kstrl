@@ -30,6 +30,18 @@ class ReviewMode(str, Enum):
     SKIP = "skip"
 
 
+VALID_CONCERN_CATEGORIES = frozenset({
+    "scope_creep",
+    "security_concern",
+    "test_quality",
+    "unrelated_change",
+    "dead_code",
+    "error_handling",
+    "copy_paste",
+    "other",
+})
+
+
 @dataclass
 class CriterionReview:
     """Review verdict for a single acceptance criterion."""
@@ -41,18 +53,42 @@ class CriterionReview:
 
 
 @dataclass
+class ReviewConcern:
+    """A cross-cutting concern the reviewer surfaced beyond the PRD criteria.
+
+    The PRD lists what the implementer was supposed to do. Concerns are
+    what they should NOT have done (scope creep, dead code, security
+    smells) or did sloppily (tautological tests, swallowed errors). These
+    are the bugs a real code reviewer catches that the PRD never asked
+    about.
+    """
+
+    category: str
+    severity: str  # "fail" or "advisory"
+    location: str
+    explanation: str
+    suggestion: str = ""
+
+
+@dataclass
 class ReviewResult:
     """Aggregated review result across all stories."""
 
     passed: bool
     mode: str
     criteria: list[CriterionReview] = field(default_factory=list)
+    concerns: list[ReviewConcern] = field(default_factory=list)
     overall_notes: str = ""
     raw_output: str = ""
     duration_seconds: float = 0.0
+    # True when the reviewer explicitly asserted it looked exhaustively
+    # for concerns and found none. False when concerns were surfaced OR
+    # when the reviewer didn't claim exhaustive coverage (treat as
+    # suspicious silence).
+    exhaustively_searched: bool = False
 
     def as_retry_context(self) -> str:
-        """Format failing/advisory criteria for injection into retry prompt."""
+        """Format failing/advisory findings for injection into retry prompt."""
         lines: list[str] = []
         for cr in self.criteria:
             if cr.verdict != ReviewVerdict.PASS.value:
@@ -60,6 +96,14 @@ class ReviewResult:
                 lines.append(f"  Explanation: {cr.explanation}")
                 if cr.suggestion:
                     lines.append(f"  Suggestion: {cr.suggestion}")
+        for concern in self.concerns:
+            lines.append(
+                f"- {concern.severity.upper()} {concern.category}: "
+                f"{concern.location}"
+            )
+            lines.append(f"  Explanation: {concern.explanation}")
+            if concern.suggestion:
+                lines.append(f"  Suggestion: {concern.suggestion}")
         if self.overall_notes:
             lines.append(f"Overall: {self.overall_notes}")
         return "\n".join(lines)
@@ -73,7 +117,8 @@ class ReviewResult:
             1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
         )
         lines.append(
-            f"**{pass_count} passed, {fail_count} failed, {adv_count} advisory**"
+            f"**{pass_count} criteria passed, {fail_count} failed, {adv_count} advisory; "
+            f"{len(self.concerns)} additional concerns**"
         )
         lines.append("")
 
@@ -90,6 +135,18 @@ class ReviewResult:
                 if cr.suggestion:
                     lines.append(f"  - Suggestion: {cr.suggestion}")
 
+        if self.concerns:
+            lines.append("")
+            lines.append("### Reviewer concerns (beyond PRD)")
+            for concern in self.concerns:
+                icon = "FAIL" if concern.severity == "fail" else "advisory"
+                lines.append(
+                    f"- [{icon}] **{concern.category}** at `{concern.location}`"
+                )
+                lines.append(f"  - {concern.explanation}")
+                if concern.suggestion:
+                    lines.append(f"  - Suggestion: {concern.suggestion}")
+
         if self.overall_notes:
             lines.append("")
             lines.append(f"**Notes**: {self.overall_notes}")
@@ -98,18 +155,30 @@ class ReviewResult:
 
     @property
     def fail_count(self) -> int:
-        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value)
+        criterion_fails = sum(
+            1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value
+        )
+        concern_fails = sum(1 for c in self.concerns if c.severity == "fail")
+        return criterion_fails + concern_fails
 
     @property
     def advisory_count(self) -> int:
-        return sum(
+        criterion_adv = sum(
             1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
         )
+        concern_adv = sum(1 for c in self.concerns if c.severity == "advisory")
+        return criterion_adv + concern_adv
 
 
 REVIEWER_PROMPT = """\
-You are a senior code reviewer. Your job is to verify that a git diff correctly
-implements the acceptance criteria in a PRD (Product Requirements Document).
+You are a hostile senior reviewer. Your default stance is that the diff is
+wrong somewhere; your job is to find what's wrong before approving it. A
+review that surfaces nothing is suspicious - look harder.
+
+You verify two distinct things:
+  1. PRD acceptance criteria - does the diff implement them correctly?
+  2. Cross-cutting concerns the PRD did not enumerate - scope creep, dead
+     code, sloppy tests, security smells, error-handling gaps, copy-paste.
 
 You must output ONLY valid JSON (no Markdown, no code fences, no explanation).
 
@@ -129,19 +198,61 @@ Output schema:
       ]
     }}
   ],
+  "concerns": [
+    {{
+      "category": "scope_creep|security_concern|test_quality|unrelated_change|dead_code|error_handling|copy_paste|other",
+      "severity": "fail|advisory",
+      "location": "path/to/file.py:42-58",
+      "explanation": "evidence-based description of the concern",
+      "suggestion": "what to fix"
+    }}
+  ],
+  "exhaustively_searched": true,
   "overallNotes": "cross-cutting observations (empty string if none)"
 }}
 
-Verdict rules:
+Verdict rules for PRD criteria:
 - "pass": the diff clearly implements this criterion
 - "fail": the diff does NOT implement this criterion, or implements it incorrectly
 - "advisory": the criterion appears implemented but there are quality concerns
   (poor error handling, missing edge cases, fragile patterns)
 
+Concern categories - look for ALL of these, not just the ones the PRD asked about:
+- "scope_creep": changes outside the PRD's stated scope (refactors, drive-by
+  edits, unrelated config tweaks)
+- "security_concern": hardcoded secrets, shell/SQL/command injection paths,
+  missing input validation on a trust boundary, auth/authz bypass, unsafe
+  deserialization, broken crypto, predictable randomness for security uses
+- "test_quality": tautological assertions (`assert True`, `assert x == x`),
+  tests that pass without exercising the change, missing edge-case coverage
+  (empty inputs, None, boundary values, error paths), missing negative tests
+- "unrelated_change": touches files or symbols outside the component's
+  natural scope
+- "dead_code": new code with no caller, parameters never used, imports
+  unused, conditional branches that cannot fire
+- "error_handling": bare excepts, errors silenced with `pass`/empty handlers,
+  missing error paths for foreseeable failures, error messages that lose
+  information
+- "copy_paste": near-duplicate of an existing helper that should be reused
+- "other": catch-all for anything that doesn't fit but matters
+
+Severity:
+- "fail": this concern is serious enough to block the PR
+- "advisory": worth flagging but not blocking
+
 Evidence rules:
-- Every verdict must reference specific files/lines from the diff
-- Do not guess - if you cannot verify a criterion from the diff, mark it "fail"
-- Be strict: working code that doesn't match the criterion's intent is a "fail"
+- Every verdict AND every concern must cite specific file:line ranges from the diff
+- Do not guess - if you cannot verify from the diff, do not assert it
+- Be strict: working code that doesn't match the criterion's intent is "fail"
+- Be honest: if you genuinely cannot find any concerns after looking hard,
+  set "concerns": [] AND "exhaustively_searched": true. Do NOT invent
+  concerns to pad the output. But also do not skip looking - silence is
+  evidence you didn't try.
+
+Process: read every hunk in the diff. For each new function, ask: what
+inputs make this misbehave? what callers does it have? what error paths
+does it leave un-handled? For each test, ask: would this test fail if the
+implementation were wrong? Then assemble your output.
 
 ================================================================================
 PRD (acceptance criteria to verify)
@@ -230,13 +341,45 @@ def parse_review_output(raw_output: str) -> ReviewResult:
                 suggestion=str(crit_data.get("suggestion", "")),
             ))
 
-    has_failures = any(c.verdict == ReviewVerdict.FAIL.value for c in criteria)
+    concerns: list[ReviewConcern] = []
+    raw_concerns = data.get("concerns", [])
+    if isinstance(raw_concerns, list):
+        for c in raw_concerns:
+            if not isinstance(c, dict):
+                continue
+            category = str(c.get("category", "")).strip()
+            severity = str(c.get("severity", "")).strip()
+            location = str(c.get("location", "")).strip()
+            explanation = str(c.get("explanation", "")).strip()
+            # Reject malformed entries instead of silently storing junk
+            if category not in VALID_CONCERN_CATEGORIES:
+                continue
+            if severity not in ("fail", "advisory"):
+                continue
+            if not explanation:
+                continue
+            concerns.append(ReviewConcern(
+                category=category,
+                severity=severity,
+                location=location,
+                explanation=explanation,
+                suggestion=str(c.get("suggestion", "")),
+            ))
+
+    exhaustively_searched = bool(data.get("exhaustively_searched", False))
+
+    has_criterion_failures = any(
+        c.verdict == ReviewVerdict.FAIL.value for c in criteria
+    )
+    has_concern_failures = any(c.severity == "fail" for c in concerns)
     overall_notes = str(data.get("overallNotes", ""))
 
     return ReviewResult(
-        passed=not has_failures,
+        passed=not (has_criterion_failures or has_concern_failures),
         mode="",
         criteria=criteria,
+        concerns=concerns,
+        exhaustively_searched=exhaustively_searched,
         overall_notes=overall_notes,
         raw_output=raw_output[:2000],
     )
@@ -280,6 +423,9 @@ def run_review(
         for cr in result.criteria:
             if cr.verdict == ReviewVerdict.FAIL.value:
                 cr.verdict = ReviewVerdict.ADVISORY.value
+        for concern in result.concerns:
+            if concern.severity == "fail":
+                concern.severity = "advisory"
         result.passed = True
 
     status = "passed" if result.passed else "FAILED"
