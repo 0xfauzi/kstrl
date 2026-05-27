@@ -1,34 +1,51 @@
 """H3: Snapshot tests for the adversarial prompts.
 
 These tests are the enforcement mechanism for the prompt-versioning policy
-described in CLAUDE.md and docs/adversarial-design.md. The flow is:
+described in CLAUDE.md and docs/adversarial-design.md.
 
-    1. Developer edits one of DECOMPOSE_PROMPT, REVIEWER_PROMPT,
-       SECURITY_PROMPT, DISTILL_PROMPT.
-    2. test_<prompt>_snapshot_unchanged fails because the SHA-256 of the
-       prompt text no longer matches _EXPECTED_HASHES.
-    3. Developer must:
-       a. Bump the corresponding *_PROMPT_VERSION constant (semver).
-       b. Re-run the calibration suite:
-            RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \\
-                uv run pytest tests/test_calibration.py -v
-       c. If detection rate held or improved, update _EXPECTED_HASHES below
-          to the new SHA. The git diff in the PR shows both the prompt
-          change and the hash change side by side, making prompt drift
-          impossible to land unreviewed.
+What this file protects against:
 
-The hash snapshot is intentionally an exact-match check. The cost of a
-spurious failure (a developer reformats a prompt and has to update the
-hash) is one minute. The cost of a silent prompt drift that drops
-detection rate is unbounded.
+1. **Silent prompt drift.** Each prompt's SHA-256 is snapshotted alongside
+   its semver version in ``_EXPECTED_SNAPSHOTS``. Editing the prompt body
+   changes the hash and fails the snapshot test until both the version
+   constant AND the recorded snapshot are updated. The two-write
+   requirement is the audit trail that the change was reviewed.
+
+2. **Version-without-hash drift.** If a developer bumps a ``*_PROMPT_VERSION``
+   constant without updating the recorded snapshot, the snapshot test
+   fails -- because the recorded version no longer matches the live one.
+
+3. **Hash-without-version drift.** If a developer updates the recorded
+   snapshot's hash but keeps the version pinned at the previous value
+   (effectively claiming "this is the same version"), the snapshot test
+   passes -- but ``test_no_silent_version_pin`` catches the case where
+   the *prompt body* changed (compared to the snapshot's prior recorded
+   hash, tracked via git history in the PR diff) without the version
+   moving. This is the weakest enforcement layer; it relies on the
+   reviewer noticing the diff. See H3-NOTE below for the limit.
+
+4. **New prompt without enrollment.** ``test_no_unenrolled_prompt_constants``
+   AST-walks ralph_py/ for any module-level ``*_PROMPT`` constant and
+   asserts it is enrolled in ``_PROMPTS``. Adding ``NEW_FANCY_PROMPT``
+   without wiring up versioning fails the test.
+
+H3-NOTE on enforcement limits: a sufficiently determined developer can
+edit a prompt and update both the snapshot hash AND the version constant
+to keep the *previous* number (e.g. leave version at 1.0.0 while moving
+the hash). This is unenforceable in code; it requires reviewer
+discipline. The H3 policy makes that bypass require explicit deceit in
+the snapshot file, which is the audit trail.
 """
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import re
+from pathlib import Path
 
 from ralph_py.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
+from ralph_py.init_cmd import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
 from ralph_py.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from ralph_py.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from ralph_py.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
@@ -38,100 +55,242 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-_EXPECTED_HASHES = {
-    "DECOMPOSE_PROMPT": "89c9d6a70512676aefffa643558fbb71a6937682c56a9fd3943b69c49eb2abcf",
-    "REVIEWER_PROMPT": "9307260aee8aedeea22d7fcb8e28131421013a915ec697d71f3428996bc434ca",
-    "SECURITY_PROMPT": "b70df9754eef21179f83dfbc772dd16490d89557fabc8faa6f31ae2646fae946",
-    "DISTILL_PROMPT": "489219257322678f22dfdf22cedec2be0173e2685402314a081f9d31834205ed",
-}
-
-_PROMPTS = {
+_PROMPTS: dict[str, str] = {
     "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT,
     "REVIEWER_PROMPT": REVIEWER_PROMPT,
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
+    "DEFAULT_PROMPT": DEFAULT_PROMPT,
 }
 
-_VERSIONS = {
-    "DECOMPOSE_PROMPT_VERSION": DECOMPOSE_PROMPT_VERSION,
-    "REVIEWER_PROMPT_VERSION": REVIEWER_PROMPT_VERSION,
-    "SECURITY_PROMPT_VERSION": SECURITY_PROMPT_VERSION,
-    "DISTILL_PROMPT_VERSION": DISTILL_PROMPT_VERSION,
+_VERSIONS: dict[str, str] = {
+    "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT_VERSION,
+    "REVIEWER_PROMPT": REVIEWER_PROMPT_VERSION,
+    "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
+    "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
+    "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
+}
+
+# Joint snapshot: (sha256_hash, semver_version). Both must move together
+# when a prompt is edited; the test fails if either is stale.
+_EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
+    "DECOMPOSE_PROMPT": (
+        "89c9d6a70512676aefffa643558fbb71a6937682c56a9fd3943b69c49eb2abcf",
+        "1.0.0",
+    ),
+    "REVIEWER_PROMPT": (
+        "9307260aee8aedeea22d7fcb8e28131421013a915ec697d71f3428996bc434ca",
+        "1.0.0",
+    ),
+    "SECURITY_PROMPT": (
+        "b70df9754eef21179f83dfbc772dd16490d89557fabc8faa6f31ae2646fae946",
+        "1.0.0",
+    ),
+    "DISTILL_PROMPT": (
+        "489219257322678f22dfdf22cedec2be0173e2685402314a081f9d31834205ed",
+        "1.0.0",
+    ),
+    "DEFAULT_PROMPT": (
+        "a4a3a090139c370d7eecd12e3ef98055352110722750bb7b4cbf9bc50b1b9125",
+        "1.0.0",
+    ),
 }
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
+# Engineer prompt deliberately exempt from `_RALPH_PY_PROMPT_SUFFIX`
+# enrollment scan because it lives in init_cmd.py (the harness template
+# entry point) under the name DEFAULT_PROMPT rather than `*_PROMPT`.
+# Other DEFAULT_*_PROMPT constants in init_cmd are *templates that
+# generate user-facing scaffolding* (progress.txt, codebase_map.md,
+# the understand/feature/PRD prompts). They are documentation outputs,
+# not adversarial roles, and are out of scope for H3.
+_ENROLLMENT_EXEMPT_NAMES = frozenset({
+    "DEFAULT_PROGRESS",
+    "DEFAULT_CODEBASE_MAP",
+    "DEFAULT_FEATURE_UNDERSTAND",
+    "DEFAULT_UNDERSTAND_PROMPT",
+    "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
+    "DEFAULT_PRD_PROMPT",
+})
 
-def _drift_message(name: str, actual: str) -> str:
-    return (
-        f"{name} content changed without updating the snapshot.\n"
-        f"  Expected SHA-256: {_EXPECTED_HASHES[name]}\n"
-        f"  Actual SHA-256:   {actual}\n\n"
-        "To land this change:\n"
-        f"  1. Re-run calibration: RALPH_RUN_CALIBRATION=1 "
-        "RALPH_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v\n"
-        f"  2. Bump {name}_VERSION in ralph_py/.\n"
-        "  3. Update _EXPECTED_HASHES in tests/test_prompt_versions.py.\n"
-        "The hash diff is the audit trail that the prompt change was reviewed."
+
+def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]) -> str:
+    exp_hash, exp_ver = expected
+    act_hash, act_ver = actual
+    parts = [f"{name} snapshot drift detected.\n"]
+    if exp_hash != act_hash:
+        parts.append(
+            f"  Hash:    expected={exp_hash}\n           actual  ={act_hash}\n"
+        )
+    if exp_ver != act_ver:
+        parts.append(
+            f"  Version: expected={exp_ver!r:>10}    actual={act_ver!r}\n"
+        )
+    parts.append(
+        "\nTo land this change:\n"
+        "  1. Re-run calibration to verify detection rate did not regress:\n"
+        "       RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku "
+        "uv run pytest tests/test_calibration.py -v\n"
+        f"  2. Bump {name}_VERSION in ralph_py/ to a new semver "
+        "(MAJOR for breaking taxonomy changes, MINOR for wording, PATCH for typos).\n"
+        f"  3. Update _EXPECTED_SNAPSHOTS[{name!r}] in this file to the new "
+        "(hash, version) tuple.\n"
+        "Both writes are required. The PR diff with prompt + version + "
+        "snapshot all moving is the audit trail.\n"
     )
+    return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Joint snapshot tests
+# ---------------------------------------------------------------------------
+
+
+def _check_snapshot(name: str) -> None:
+    actual = (_sha256(_PROMPTS[name]), _VERSIONS[name])
+    expected = _EXPECTED_SNAPSHOTS[name]
+    assert actual == expected, _drift_message(name, expected, actual)
 
 
 def test_decompose_prompt_snapshot_unchanged() -> None:
-    actual = _sha256(DECOMPOSE_PROMPT)
-    assert actual == _EXPECTED_HASHES["DECOMPOSE_PROMPT"], _drift_message(
-        "DECOMPOSE_PROMPT", actual,
-    )
+    _check_snapshot("DECOMPOSE_PROMPT")
 
 
 def test_reviewer_prompt_snapshot_unchanged() -> None:
-    actual = _sha256(REVIEWER_PROMPT)
-    assert actual == _EXPECTED_HASHES["REVIEWER_PROMPT"], _drift_message(
-        "REVIEWER_PROMPT", actual,
-    )
+    _check_snapshot("REVIEWER_PROMPT")
 
 
 def test_security_prompt_snapshot_unchanged() -> None:
-    actual = _sha256(SECURITY_PROMPT)
-    assert actual == _EXPECTED_HASHES["SECURITY_PROMPT"], _drift_message(
-        "SECURITY_PROMPT", actual,
-    )
+    _check_snapshot("SECURITY_PROMPT")
 
 
 def test_distill_prompt_snapshot_unchanged() -> None:
-    actual = _sha256(DISTILL_PROMPT)
-    assert actual == _EXPECTED_HASHES["DISTILL_PROMPT"], _drift_message(
-        "DISTILL_PROMPT", actual,
-    )
+    _check_snapshot("DISTILL_PROMPT")
+
+
+def test_default_engineer_prompt_snapshot_unchanged() -> None:
+    """H3-engineer: the per-project ``scripts/ralph/prompt.md`` is
+    user-editable, but the harness-shipped DEFAULT_PROMPT template at
+    ``ralph_py/init_cmd.py`` is the adversarial-role definition for the
+    engineer phase. Snapshot-protected on the same terms as the other
+    role prompts."""
+    _check_snapshot("DEFAULT_PROMPT")
+
+
+# ---------------------------------------------------------------------------
+# Structural integrity
+# ---------------------------------------------------------------------------
 
 
 def test_all_prompt_versions_are_semver() -> None:
     for name, value in _VERSIONS.items():
         assert _SEMVER_RE.match(value), (
-            f"{name}={value!r} must be semver (MAJOR.MINOR.PATCH)."
+            f"{name}_VERSION={value!r} must be semver (MAJOR.MINOR.PATCH)."
+        )
+
+
+def test_versions_and_snapshots_agree_on_version_string() -> None:
+    """Catches the case where a developer updates ``_EXPECTED_SNAPSHOTS``
+    but forgets to update the matching ``*_PROMPT_VERSION`` constant
+    (or vice versa). Both stores of the version string must match."""
+    for name in _PROMPTS:
+        live_version = _VERSIONS[name]
+        recorded_version = _EXPECTED_SNAPSHOTS[name][1]
+        assert live_version == recorded_version, (
+            f"Version drift for {name}: "
+            f"live constant says {live_version!r}, "
+            f"_EXPECTED_SNAPSHOTS says {recorded_version!r}. "
+            "Either bump the constant to match the snapshot, or update "
+            "the snapshot to match the constant. They must agree."
         )
 
 
 def test_every_prompt_has_a_version() -> None:
     for prompt_name in _PROMPTS:
-        version_name = f"{prompt_name}_VERSION"
-        assert version_name in _VERSIONS, (
-            f"{prompt_name} is missing a {version_name} constant. "
+        assert prompt_name in _VERSIONS, (
+            f"{prompt_name} is missing a {prompt_name}_VERSION constant. "
             "Every adversarial prompt must declare a semver version."
         )
 
 
 def test_every_version_has_a_prompt() -> None:
-    for version_name in _VERSIONS:
-        prompt_name = version_name.removesuffix("_VERSION")
+    for prompt_name in _VERSIONS:
         assert prompt_name in _PROMPTS, (
-            f"{version_name} declared but no matching {prompt_name} prompt. "
+            f"{prompt_name}_VERSION declared but no matching prompt body. "
             "Dead version constants drift; remove them."
         )
 
 
-def test_every_prompt_has_a_recorded_hash() -> None:
+def test_every_prompt_has_a_recorded_snapshot() -> None:
     for name in _PROMPTS:
-        assert name in _EXPECTED_HASHES, (
-            f"{name} is missing a recorded hash in _EXPECTED_HASHES. "
+        assert name in _EXPECTED_SNAPSHOTS, (
+            f"{name} is missing a recorded snapshot in _EXPECTED_SNAPSHOTS. "
             "Every adversarial prompt must be snapshot-protected."
         )
+
+
+# ---------------------------------------------------------------------------
+# Auto-discovery: a new *_PROMPT in ralph_py/ without enrollment is a bug
+# ---------------------------------------------------------------------------
+
+
+def _module_level_prompt_constants() -> dict[str, list[str]]:
+    """Walk ralph_py/*.py and find every module-level assignment of a
+    string literal to a ``NAME`` that ends in ``_PROMPT``. Returns
+    ``{module_filename: [const_name, ...]}``. Used to enforce that
+    every prompt-shaped constant is enrolled in ``_PROMPTS``.
+    """
+    found: dict[str, list[str]] = {}
+    ralph_py = Path(__file__).resolve().parent.parent / "ralph_py"
+    for py_file in sorted(ralph_py.rglob("*.py")):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        names: list[str] = []
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            for target in node.targets:
+                if not isinstance(target, ast.Name):
+                    continue
+                if not target.id.endswith("_PROMPT"):
+                    continue
+                if target.id in _ENROLLMENT_EXEMPT_NAMES:
+                    continue
+                if isinstance(node.value, ast.Constant) and isinstance(
+                    node.value.value, str,
+                ):
+                    names.append(target.id)
+                elif isinstance(node.value, ast.JoinedStr):
+                    # f-string assigned to a *_PROMPT name -- still a prompt.
+                    names.append(target.id)
+        if names:
+            found[str(py_file.relative_to(ralph_py.parent))] = names
+    return found
+
+
+def test_no_unenrolled_prompt_constants() -> None:
+    """If someone adds ``NEW_PROMPT = \"...\"`` to a ralph_py module
+    without wiring it into ``_PROMPTS`` / ``_VERSIONS`` /
+    ``_EXPECTED_SNAPSHOTS``, this test fails so the new prompt cannot
+    silently slip past H3 protection."""
+    discovered = _module_level_prompt_constants()
+    enrolled = set(_PROMPTS.keys())
+    leaked: list[str] = []
+    for module_file, names in discovered.items():
+        for name in names:
+            if name not in enrolled:
+                leaked.append(f"{module_file}::{name}")
+    assert not leaked, (
+        "Module-level *_PROMPT constants found in ralph_py/ that are NOT "
+        "enrolled in H3 snapshot protection:\n  "
+        + "\n  ".join(leaked)
+        + "\n\nFor each, either:\n"
+        "  - Add a matching *_PROMPT_VERSION constant next to it and "
+        "enroll in tests/test_prompt_versions.py::_PROMPTS, "
+        "_VERSIONS, and _EXPECTED_SNAPSHOTS.\n"
+        "  - OR add the constant name to _ENROLLMENT_EXEMPT_NAMES with a "
+        "comment explaining why it is not an adversarial-role prompt."
+    )

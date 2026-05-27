@@ -114,6 +114,14 @@ H1 of the hardening roadmap: the assistant does not run `/code-review` on its ow
 
 H2: when an adversarial prompt changes, calibration is re-run. A prompt edit without a calibration delta is treated as untested.
 
-H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a SHA-256 snapshot in `tests/test_prompt_versions.py`. Editing a prompt without bumping the version AND updating the hash fails the test suite. The audit trail (prompt diff + hash diff travelling in the same PR) is what makes the H2 calibration step a real gate rather than a polite suggestion.
+H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a `(hash, version)` snapshot in `tests/test_prompt_versions.py::_EXPECTED_SNAPSHOTS`. The joint snapshot catches three drift modes:
+
+1. **Prompt edit without snapshot bump**: hash differs from recorded hash, test fails.
+2. **Version constant change without snapshot bump**: live version differs from snapshot version, test fails.
+3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `ralph_py/` and fails on any unprotected prompt.
+
+The engineer prompt template (`init_cmd.DEFAULT_PROMPT`, used to scaffold per-project `scripts/ralph/prompt.md`) is also enrolled, not just the four LLM-driven role prompts.
+
+The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving together. That is what makes the H2 calibration step a real gate rather than a polite suggestion. H3 cannot prevent a determined developer from leaving the version pinned while updating both hash and snapshot to the *previous* version number; that bypass requires explicit deception in the snapshot file and is the irreducible limit of code-side enforcement.
 
 H4: when reporting "tested" or "verified", be explicit about what was checked vs. what was assumed. Smoke tests are presence checks; calibration is behavior verification.

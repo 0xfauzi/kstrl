@@ -18,6 +18,8 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
+DEFAULT_PROMPT_VERSION = "1.0.0"
+
 DEFAULT_PROMPT = """# Ralph Agent Instructions
 
 You are the implementing engineer in a software factory. You will be
