@@ -355,6 +355,8 @@ reply with exactly:
 Otherwise end normally.
 """
 
+DEFAULT_PRD_PROMPT_VERSION = "1.0.0"
+
 DEFAULT_PRD_PROMPT = """You are a product manager and QA lead. Produce a PRD as a single JSON object
 meant to be saved as `scripts/ralph/prd.json`.
 

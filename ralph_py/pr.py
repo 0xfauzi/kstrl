@@ -9,8 +9,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ralph_py.findings import render_findings_markdown
-
 if TYPE_CHECKING:
     from ralph_py.manifest import Component, Manifest
     from ralph_py.ui.base import UI
@@ -184,14 +182,17 @@ def _generate_pr_body(
                 lines.append(f"- `{dep_id}`")
         lines.append("")
 
-    # Adversarial findings (E3-consume): prefer the typed list when
-    # available; the rendered string at component.review_findings remains
-    # the legacy fallback for any old manifests still in flight.
-    rendered = render_findings_markdown(component.findings)
-    if rendered:
-        lines.append(rendered)
-        lines.append("")
-    elif component.review_findings:
+    # Review findings (if any). The string at component.review_findings
+    # is the canonical human-readable PR-body content because it carries
+    # information the typed Finding stream does not: PASS criteria
+    # confirmations, criterion-level pass/fail/advisory counts, and the
+    # criterion text as headers (Finding.category is "prd_criterion" for
+    # all of them, which obscures what the criterion actually asserted).
+    # The typed component.findings is still load-bearing -- it ships to
+    # the evolution journal via record_run for dashboards and
+    # aggregations -- but pr.py is the wrong consumer for it.
+    # render_findings_markdown remains available for ad-hoc dumping.
+    if component.review_findings:
         lines.append(component.review_findings)
         lines.append("")
 

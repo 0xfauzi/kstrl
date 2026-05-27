@@ -45,7 +45,12 @@ import re
 from pathlib import Path
 
 from ralph_py.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
-from ralph_py.init_cmd import DEFAULT_PROMPT, DEFAULT_PROMPT_VERSION
+from ralph_py.init_cmd import (
+    DEFAULT_PRD_PROMPT,
+    DEFAULT_PRD_PROMPT_VERSION,
+    DEFAULT_PROMPT,
+    DEFAULT_PROMPT_VERSION,
+)
 from ralph_py.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from ralph_py.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from ralph_py.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
@@ -61,6 +66,7 @@ _PROMPTS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
     "DEFAULT_PROMPT": DEFAULT_PROMPT,
+    "DEFAULT_PRD_PROMPT": DEFAULT_PRD_PROMPT,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -69,6 +75,7 @@ _VERSIONS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
     "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
+    "DEFAULT_PRD_PROMPT": DEFAULT_PRD_PROMPT_VERSION,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -94,24 +101,32 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "a4a3a090139c370d7eecd12e3ef98055352110722750bb7b4cbf9bc50b1b9125",
         "1.0.0",
     ),
+    "DEFAULT_PRD_PROMPT": (
+        "8f9f2f4122254cdfb3cf9e74d76ced7fd00bbca54b95d985434d170deccc0c9c",
+        "1.0.0",
+    ),
 }
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
-# Engineer prompt deliberately exempt from `_RALPH_PY_PROMPT_SUFFIX`
-# enrollment scan because it lives in init_cmd.py (the harness template
-# entry point) under the name DEFAULT_PROMPT rather than `*_PROMPT`.
-# Other DEFAULT_*_PROMPT constants in init_cmd are *templates that
-# generate user-facing scaffolding* (progress.txt, codebase_map.md,
-# the understand/feature/PRD prompts). They are documentation outputs,
-# not adversarial roles, and are out of scope for H3.
+# Exemption set for the auto-discovery scan. These are user-facing
+# scaffolding templates emitted by ``ralph init`` (progress log files,
+# codebase_map.md, the understand/feature understand instructions); they
+# generate documentation outputs, not adversarial-role outputs, and are
+# out of scope for H3 snapshot protection.
+#
+# Note: DEFAULT_PRD_PROMPT was originally exempt but was enrolled in
+# the post-retrospective cleanup because the PRD-creation prompt
+# shapes the PRD that every downstream phase depends on -- editing it
+# silently is exactly the kind of drift H3 exists to prevent. If you
+# add a NEW template that produces user-facing content rather than
+# adversarial-role output, add its name here with a one-line rationale.
 _ENROLLMENT_EXEMPT_NAMES = frozenset({
     "DEFAULT_PROGRESS",
     "DEFAULT_CODEBASE_MAP",
     "DEFAULT_FEATURE_UNDERSTAND",
     "DEFAULT_UNDERSTAND_PROMPT",
     "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
-    "DEFAULT_PRD_PROMPT",
 })
 
 
@@ -235,11 +250,37 @@ def test_every_prompt_has_a_recorded_snapshot() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_prompt_value(value: ast.expr | None) -> bool:
+    """True when ``value`` is the AST of a string literal or f-string,
+    i.e. plausibly a prompt body. ``None`` arises for annotated
+    assignments without a right-hand side (``X: str``) and is treated
+    as not-a-prompt."""
+    if value is None:
+        return False
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return True
+    if isinstance(value, ast.JoinedStr):
+        return True
+    return False
+
+
 def _module_level_prompt_constants() -> dict[str, list[str]]:
-    """Walk ralph_py/*.py and find every module-level assignment of a
-    string literal to a ``NAME`` that ends in ``_PROMPT``. Returns
-    ``{module_filename: [const_name, ...]}``. Used to enforce that
-    every prompt-shaped constant is enrolled in ``_PROMPTS``.
+    """Walk ralph_py/*.py and find every assignment of a string literal
+    or f-string to a ``NAME`` ending in ``_PROMPT``. Returns
+    ``{module_filename: [const_name, ...]}``.
+
+    Catches **all** forms a developer might use to declare a prompt:
+
+    - Plain assignment: ``NAME = "..."``  (``ast.Assign``)
+    - Typed assignment: ``NAME: str = "..."``  (``ast.AnnAssign``)
+    - Nested inside functions / classes / conditionals (via
+      ``ast.walk``, not just ``tree.body``)
+
+    Used by ``test_no_unenrolled_prompt_constants`` to enforce that
+    every prompt-shaped constant in ``ralph_py/`` is enrolled in
+    ``_PROMPTS``. The walker errs on the side of inclusion -- a const
+    that ``ends in _PROMPT`` and has a string-shaped value is treated
+    as a prompt regardless of nesting depth or annotation style.
     """
     found: dict[str, list[str]] = {}
     ralph_py = Path(__file__).resolve().parent.parent / "ralph_py"
@@ -249,25 +290,39 @@ def _module_level_prompt_constants() -> dict[str, list[str]]:
         except SyntaxError:
             continue
         names: list[str] = []
-        for node in tree.body:
-            if not isinstance(node, ast.Assign):
-                continue
-            for target in node.targets:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if not _is_prompt_value(node.value):
+                    continue
+                for target in node.targets:
+                    if not isinstance(target, ast.Name):
+                        continue
+                    if not target.id.endswith("_PROMPT"):
+                        continue
+                    if target.id in _ENROLLMENT_EXEMPT_NAMES:
+                        continue
+                    names.append(target.id)
+            elif isinstance(node, ast.AnnAssign):
+                # Typed assignment: ``NAME: str = "..."``.
+                if not _is_prompt_value(node.value):
+                    continue
+                target = node.target
                 if not isinstance(target, ast.Name):
                     continue
                 if not target.id.endswith("_PROMPT"):
                     continue
                 if target.id in _ENROLLMENT_EXEMPT_NAMES:
                     continue
-                if isinstance(node.value, ast.Constant) and isinstance(
-                    node.value.value, str,
-                ):
-                    names.append(target.id)
-                elif isinstance(node.value, ast.JoinedStr):
-                    # f-string assigned to a *_PROMPT name -- still a prompt.
-                    names.append(target.id)
+                names.append(target.id)
         if names:
-            found[str(py_file.relative_to(ralph_py.parent))] = names
+            # Stable order: preserve first-seen ordering of AST walk.
+            seen: set[str] = set()
+            unique: list[str] = []
+            for name in names:
+                if name not in seen:
+                    seen.add(name)
+                    unique.append(name)
+            found[str(py_file.relative_to(ralph_py.parent))] = unique
     return found
 
 
@@ -294,3 +349,61 @@ def test_no_unenrolled_prompt_constants() -> None:
         "  - OR add the constant name to _ENROLLMENT_EXEMPT_NAMES with a "
         "comment explaining why it is not an adversarial-role prompt."
     )
+
+
+def test_ast_walker_catches_typed_assignment() -> None:
+    """Regression guard: the walker must catch ``NAME: str = "..."``
+    in addition to ``NAME = "..."``. Without this, a developer can
+    type-annotate the assignment and bypass H3 protection."""
+    source = 'TYPED_PROMPT: str = "you are a hostile reviewer"\n'
+    tree = ast.parse(source)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            if not _is_prompt_value(node.value):
+                continue
+            target = node.target
+            if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
+                found.append(target.id)
+    assert found == ["TYPED_PROMPT"], (
+        "AST walker failed to catch typed-assignment prompt declaration."
+    )
+
+
+def test_ast_walker_catches_nested_declaration() -> None:
+    """Regression guard: the walker must catch ``NAME = "..."`` declared
+    inside a function or class body, not just at module level. Without
+    this, wrapping a prompt declaration in ``def _build_default(): ...``
+    bypasses H3."""
+    source = (
+        "def _build_default():\n"
+        '    NESTED_PROMPT = "you are a hostile reviewer"\n'
+        "    return NESTED_PROMPT\n"
+    )
+    tree = ast.parse(source)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if not _is_prompt_value(node.value):
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
+                    found.append(target.id)
+    assert "NESTED_PROMPT" in found, (
+        "AST walker failed to catch nested prompt declaration."
+    )
+
+
+def test_ast_walker_ignores_typed_assignment_without_value() -> None:
+    """``NAME: str`` with no right-hand side is not a prompt
+    declaration -- ``_is_prompt_value(None)`` returns False."""
+    source = "EMPTY_PROMPT: str\n"
+    tree = ast.parse(source)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.AnnAssign):
+            if _is_prompt_value(node.value):
+                target = node.target
+                if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
+                    found.append(target.id)
+    assert found == []
