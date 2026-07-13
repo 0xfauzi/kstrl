@@ -18,6 +18,7 @@ from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
+    current_run_id,
     distill_facts,
     measure_fact_utilization,
 )
@@ -469,20 +470,17 @@ def run_factory(
     Phase 2: Second-opinion review (separate agent reviews diff against spec)
     Phase 3: Contract testing (merge tier branches, run integration tests)
     """
-    import secrets
-
     from ralph_py.agents import get_agent
 
     factory_start = time.monotonic()
     factory_result = FactoryResult()
     # Stable run id shared by evolution journal and knowledge layer.
-    # Includes a random nonce so two factory invocations launched within
-    # the same UTC second do not collide on the run_id (and therefore on
-    # .ralph/knowledge/<comp>/<run_id>/ directories).
-    run_id = (
-        f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
-        f"-{secrets.token_hex(3)}"
-    )
+    # current_run_id() carries microseconds plus a random nonce, so two
+    # factory invocations launched within the same UTC second neither
+    # collide on .ralph/knowledge/<comp>/<run_id>/ directories nor
+    # order ambiguously (R1.6: same-second knowledge run dirs must sort
+    # by creation time, not by nonce).
+    run_id = current_run_id()
 
     # Set up progress log
     if factory_config.progress_log_path:
