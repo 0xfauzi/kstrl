@@ -12,6 +12,72 @@ if TYPE_CHECKING:
 
 DEFAULT_TIMEOUT = 30.0
 
+# Network fetches get a longer budget than local plumbing calls.
+FETCH_TIMEOUT = 120.0
+
+
+def resolve_base_ref(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str:
+    """Resolve the ref that worktree cuts and diffs measure against.
+
+    Returns ``origin/<base_branch>`` when that remote-tracking ref
+    exists, else ``base_branch`` unchanged (local-only repos). This is
+    the single place that decides the base ref (R0.2): squash merges
+    rewrite SHAs, so a stale local base produces phantom diffs via
+    ``base...HEAD``; cutting AND diffing against ``origin/<base>``
+    removes the class. Never mutates any ref or the checkout.
+    """
+    if base_branch.startswith("origin/"):
+        return base_branch
+    try:
+        result = subprocess.run(
+            [
+                "git", "rev-parse", "--verify", "--quiet",
+                f"refs/remotes/origin/{base_branch}",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return f"origin/{base_branch}"
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return base_branch
+
+
+def fetch_base_branch(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = FETCH_TIMEOUT,
+) -> str | None:
+    """Update ``refs/remotes/origin/<base_branch>`` via ``git fetch``.
+
+    Replaces the old ``git pull`` (R0.2/H-1): fetch touches only the
+    remote-tracking ref, never the operator's checked-out branch or the
+    local base branch. Returns an error message, or None on success.
+    """
+    try:
+        # "--" keeps a crafted base branch out of option position (R0.6).
+        result = subprocess.run(
+            ["git", "fetch", "--", "origin", base_branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return f"git fetch origin {base_branch} timed out after {timeout}s"
+    if result.returncode != 0:
+        return (
+            result.stderr.strip()
+            or f"git fetch origin {base_branch} failed"
+        )
+    return None
+
 
 def is_git_repo(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> bool:
     """Check if path is inside a git repository."""
@@ -215,10 +281,15 @@ def get_diff_names(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> list[str]:
-    """Get list of changed file names compared to a base branch."""
+    """Get list of changed file names compared to a base branch.
+
+    The base is resolved through :func:`resolve_base_ref` so diffs
+    measure against ``origin/<base>`` whenever a remote exists (R0.2).
+    """
+    base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base_branch}...HEAD", "--"],
+            ["git", "diff", "--name-only", f"{base_ref}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -240,10 +311,15 @@ def get_diff_content(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> str:
-    """Get full diff content compared to a base branch."""
+    """Get full diff content compared to a base branch.
+
+    The base is resolved through :func:`resolve_base_ref` so diffs
+    measure against ``origin/<base>`` whenever a remote exists (R0.2).
+    """
+    base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
         result = subprocess.run(
-            ["git", "diff", f"{base_branch}...HEAD", "--"],
+            ["git", "diff", f"{base_ref}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
             text=True,

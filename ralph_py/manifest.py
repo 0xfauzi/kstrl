@@ -114,6 +114,13 @@ class ComponentStatus(StrEnum):
     RUNNING = "running"
     VERIFYING = "verifying"
     COMPLETED = "completed"
+    # R0.2: the component's PR was created and a merge was initiated,
+    # but wait_for_merge could not confirm the merge within the timeout.
+    # Not a failure: crash recovery re-polls the PR state on the next
+    # run. Dependents are NOT scheduled past it (get_ready_components
+    # requires COMPLETED), because they would build without the
+    # dependency's merged code (CRIT-2).
+    MERGE_PENDING = "merge_pending"
     FAILED = "failed"
     SKIPPED = "skipped"
 

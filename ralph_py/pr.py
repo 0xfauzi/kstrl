@@ -6,97 +6,243 @@ import json
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from ralph_py.git import fetch_base_branch
 
 if TYPE_CHECKING:
     from ralph_py.manifest import Component, Manifest
     from ralph_py.ui.base import UI
+
+# Explicit budgets for every subprocess in this module (R0.2): a hung
+# gh or git call previously blocked the factory scheduler forever.
+GH_TIMEOUT = 60.0
+GH_POLL_TIMEOUT = 30.0
+PUSH_TIMEOUT = 300.0
+
+MergeState = Literal["merged", "closed", "pending"]
+
+
+@dataclass(frozen=True)
+class PrOutcome:
+    """Typed result of the per-component PR lifecycle (R0.2).
+
+    Replaces the lossy ``tuple | None`` return: the factory gates
+    COMPLETED on ``merged`` and maps ``merge_pending`` to the
+    MERGE_PENDING manifest status, so no failure shape can fall through
+    to "completed" (CRIT-2).
+    """
+
+    pushed: bool = False
+    pr_number: int | None = None
+    pr_url: str = ""
+    merged: bool = False
+    # True when a merge was initiated but not confirmed within the
+    # timeout: re-pollable, unlike a push/create/merge failure.
+    merge_pending: bool = False
+    error: str | None = None
+
+
+def pr_number_from_url(pr_url: str) -> int:
+    """Extract the PR number from a GitHub PR URL, 0 if unparseable."""
+    if "/pull/" in pr_url:
+        try:
+            return int(pr_url.rstrip("/").rsplit("/", 1)[-1])
+        except ValueError:
+            pass
+    return 0
 
 
 def is_gh_available() -> bool:
     """Check if gh CLI is available and authenticated."""
     if shutil.which("gh") is None:
         return False
-    result = subprocess.run(
-        ["gh", "auth", "status"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return result.returncode == 0
 
 
-def push_branch(branch: str, cwd: Path) -> bool:
-    """Push a branch to the remote with tracking."""
+def push_branch(branch: str, cwd: Path) -> str | None:
+    """Push a branch to the remote with tracking.
+
+    Returns an error message, or None on success.
+    """
     # "--" makes a crafted branch value an invalid refspec instead of a
     # git option (R0.6).
-    result = subprocess.run(
-        ["git", "push", "-u", "--", "origin", branch],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
+    try:
+        result = subprocess.run(
+            ["git", "push", "-u", "--", "origin", branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PUSH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return f"git push of {branch} timed out after {PUSH_TIMEOUT}s"
+    if result.returncode != 0:
+        return result.stderr.strip() or f"git push of {branch} failed"
+    return None
 
 
-def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> bool:
+def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
     """Merge a PR via gh CLI with auto-merge.
 
     Uses --auto so GitHub merges once status checks pass.
     Uses --delete-branch to clean up the feature branch.
+
+    Returns an error message, or None when a merge was initiated
+    (confirmation is wait_for_merge's job).
 
     Args:
         pr_number: PR number to merge.
         cwd: Working directory (must be in the git repo).
         method: Merge method - "squash", "merge", or "rebase".
     """
-    result = subprocess.run(
-        [
-            "gh", "pr", "merge", str(pr_number),
-            f"--{method}", "--delete-branch", "--auto",
-        ],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
-    # If --auto fails (no required checks), try direct merge
-    if result.returncode != 0:
+    try:
         result = subprocess.run(
             [
                 "gh", "pr", "merge", str(pr_number),
-                f"--{method}", "--delete-branch",
+                f"--{method}", "--delete-branch", "--auto",
             ],
             cwd=cwd,
             capture_output=True,
             text=True,
+            timeout=GH_TIMEOUT,
         )
-    return result.returncode == 0
+        # If --auto fails (no required checks), try direct merge
+        if result.returncode != 0:
+            result = subprocess.run(
+                [
+                    "gh", "pr", "merge", str(pr_number),
+                    f"--{method}", "--delete-branch",
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=GH_TIMEOUT,
+            )
+    except subprocess.TimeoutExpired:
+        return f"gh pr merge #{pr_number} timed out after {GH_TIMEOUT}s"
+    if result.returncode != 0:
+        return (
+            result.stderr.strip()
+            or f"gh pr merge #{pr_number} failed"
+        )
+    return None
 
 
-def wait_for_merge(
-    pr_number: int, cwd: Path, timeout: int = 300, poll_interval: int = 10,
-) -> bool:
-    """Poll until a PR is merged or timeout.
-
-    Returns True if merged, False if timeout or closed without merge.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+def _pr_state(pr_number: int, cwd: Path) -> str | None:
+    """Fetch a PR's state via gh: "MERGED", "CLOSED", "OPEN", or None
+    when the state could not be determined (gh error, timeout, bad
+    JSON)."""
+    try:
         result = subprocess.run(
             ["gh", "pr", "view", str(pr_number), "--json", "state"],
             cwd=cwd,
             capture_output=True,
             text=True,
+            timeout=GH_POLL_TIMEOUT,
         )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            state = data.get("state", "")
-            if state == "MERGED":
-                return True
-            if state == "CLOSED":
-                return False
-        time.sleep(poll_interval)
-    return False
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        return None
+    state = data.get("state", "") if isinstance(data, dict) else ""
+    return str(state) or None
+
+
+def wait_for_merge(
+    pr_number: int,
+    cwd: Path,
+    timeout: float = 300,
+    poll_interval: float = 10,
+) -> MergeState:
+    """Poll until a PR is merged, closed, or the timeout elapses.
+
+    Returns "merged", "closed" (closed without merge), or "pending"
+    (timeout: state unknown, re-pollable). Each poll is individually
+    bounded so a hung gh cannot outlive the deadline by much.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        state = _pr_state(pr_number, cwd)
+        if state == "MERGED":
+            return "merged"
+        if state == "CLOSED":
+            return "closed"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_interval, remaining))
+    return "pending"
+
+
+def _merge_and_wait(
+    pr_number: int,
+    pr_url: str,
+    base_branch: str,
+    cwd: Path,
+    ui: UI,
+    merge_method: str,
+    merge_timeout: float,
+) -> PrOutcome:
+    """Shared merge-initiate + confirm + fetch tail of the PR lifecycle."""
+    merge_error = merge_pr(pr_number, cwd, merge_method)
+    if merge_error:
+        ui.warn(f"  Failed to merge #{pr_number}: {merge_error}")
+        return PrOutcome(
+            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            error=f"merge failed for PR #{pr_number}: {merge_error}",
+        )
+
+    state = wait_for_merge(pr_number, cwd, timeout=merge_timeout)
+    if state == "merged":
+        ui.ok(f"  PR #{pr_number} merged")
+        # Fetch (never pull, H-1) so origin/<base> includes the merged
+        # code for downstream worktrees; the operator's checkout is
+        # untouched. A failed fetch does not un-merge the PR, but it
+        # leaves origin/<base> stale, so it is recorded loudly.
+        fetch_error = fetch_base_branch(base_branch, cwd)
+        if fetch_error:
+            ui.warn(
+                f"  Fetch of origin/{base_branch} after merge failed: "
+                f"{fetch_error}; downstream worktrees retry the fetch "
+                f"at setup"
+            )
+        return PrOutcome(
+            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            merged=True, error=fetch_error,
+        )
+
+    if state == "closed":
+        ui.warn(f"  PR #{pr_number} was closed without merging")
+        return PrOutcome(
+            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            error=f"PR #{pr_number} closed without merge",
+        )
+
+    ui.warn(
+        f"  PR #{pr_number} not merged within {merge_timeout}s - "
+        f"marked merge-pending; a factory re-run re-polls it"
+    )
+    return PrOutcome(
+        pushed=True, pr_number=pr_number, pr_url=pr_url,
+        merge_pending=True,
+        error=f"PR #{pr_number} not merged within {merge_timeout}s",
+    )
 
 
 def push_create_and_merge_pr(
@@ -105,58 +251,74 @@ def push_create_and_merge_pr(
     cwd: Path,
     ui: UI,
     merge_method: str = "squash",
-    merge_timeout: int = 300,
-) -> tuple[int, str] | None:
-    """Push branch, create PR, merge it, and pull main.
+    merge_timeout: float = 300,
+) -> PrOutcome:
+    """Push branch, create PR, merge it, and fetch the base branch.
 
     Full per-component PR lifecycle:
     1. Push branch to origin
     2. Create PR via gh
     3. Merge PR (auto-merge if checks required, direct otherwise)
     4. Wait for merge to complete
-    5. Pull main so downstream components get the merged code
+    5. Fetch origin/<base> so downstream worktrees get the merged code
+       (never ``git pull``: the operator's checkout is not ours to move)
 
-    Returns (pr_number, pr_url) on success, None on failure.
+    Returns a PrOutcome; the caller decides component status from it.
     """
     if component.pr_url:
+        # Resume/retry path: a PR already exists. Its state must be
+        # verified, not assumed - the pre-R0.2 code returned success
+        # here even when the PR was never merged.
+        pr_number = component.pr_number or pr_number_from_url(component.pr_url)
+        if not pr_number:
+            return PrOutcome(
+                pushed=True, pr_url=component.pr_url,
+                error=(
+                    f"existing PR {component.pr_url} has no usable PR "
+                    f"number; cannot verify merge state"
+                ),
+            )
         ui.info(f"  {component.id}: PR already exists ({component.pr_url})")
-        return (component.pr_number or 0, component.pr_url)
+        state = _pr_state(pr_number, cwd)
+        if state == "MERGED":
+            return PrOutcome(
+                pushed=True, pr_number=pr_number, pr_url=component.pr_url,
+                merged=True,
+            )
+        if state == "CLOSED":
+            return PrOutcome(
+                pushed=True, pr_number=pr_number, pr_url=component.pr_url,
+                error=f"PR #{pr_number} closed without merge",
+            )
+        return _merge_and_wait(
+            pr_number, component.pr_url, manifest.base_branch,
+            cwd, ui, merge_method, merge_timeout,
+        )
 
     # Push
     ui.info(f"  Pushing {component.branch_name}...")
-    if not push_branch(component.branch_name, cwd):
-        ui.warn(f"  Failed to push {component.branch_name}")
-        return None
+    push_error = push_branch(component.branch_name, cwd)
+    if push_error:
+        ui.warn(f"  Failed to push {component.branch_name}: {push_error}")
+        return PrOutcome(
+            error=f"push of {component.branch_name} failed: {push_error}",
+        )
 
     # Create PR
     try:
         pr_number, pr_url = create_component_pr(component, manifest, cwd)
     except RuntimeError as exc:
         ui.warn(f"  {exc}")
-        return None
+        return PrOutcome(pushed=True, error=str(exc))
 
     component.pr_number = pr_number
     component.pr_url = pr_url
     ui.ok(f"  PR created: {pr_url}")
 
-    # Merge
-    if not merge_pr(pr_number, cwd, merge_method):
-        ui.warn(f"  Failed to merge #{pr_number} - needs manual merge")
-        return (pr_number, pr_url)
-
-    # Wait for merge
-    if wait_for_merge(pr_number, cwd, timeout=merge_timeout):
-        ui.ok(f"  PR #{pr_number} merged")
-        # Pull main so downstream worktrees start from merged state.
-        # "--" keeps a crafted base branch out of option position (R0.6).
-        subprocess.run(
-            ["git", "pull", "--", "origin", manifest.base_branch],
-            cwd=cwd, capture_output=True,
-        )
-        return (pr_number, pr_url)
-
-    ui.warn(f"  PR #{pr_number} not merged within {merge_timeout}s - may need manual merge")
-    return (pr_number, pr_url)
+    return _merge_and_wait(
+        pr_number, pr_url, manifest.base_branch,
+        cwd, ui, merge_method, merge_timeout,
+    )
 
 
 def _generate_pr_body(
@@ -227,34 +389,32 @@ def create_component_pr(
 
     # --base=/--head= bind the branch values to their flags even if a
     # crafted value starts with "-" (R0.6).
-    result = subprocess.run(
-        [
-            "gh", "pr", "create",
-            "--title", title,
-            "--body", body,
-            f"--base={manifest.base_branch}",
-            f"--head={component.branch_name}",
-        ],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh", "pr", "create",
+                "--title", title,
+                "--body", body,
+                f"--base={manifest.base_branch}",
+                f"--head={component.branch_name}",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"Failed to create PR for '{component.id}': gh pr create "
+            f"timed out after {GH_TIMEOUT}s"
+        ) from None
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"Failed to create PR for '{component.id}': {error}")
 
     pr_url = result.stdout.strip()
-
-    # Extract PR number from URL (e.g., https://github.com/owner/repo/pull/42)
-    pr_number = 0
-    if "/pull/" in pr_url:
-        try:
-            pr_number = int(pr_url.rstrip("/").rsplit("/", 1)[-1])
-        except ValueError:
-            pass
-
-    return pr_number, pr_url
+    return pr_number_from_url(pr_url), pr_url
 
 
 def create_prs_in_order(
@@ -297,8 +457,12 @@ def create_prs_in_order(
             continue
 
         ui.info(f"  {comp_id}: pushing branch {component.branch_name}...")
-        if not push_branch(component.branch_name, cwd):
-            ui.warn(f"  {comp_id}: failed to push branch, skipping PR")
+        push_error = push_branch(component.branch_name, cwd)
+        if push_error:
+            ui.warn(
+                f"  {comp_id}: failed to push branch ({push_error}), "
+                f"skipping PR"
+            )
             continue
 
         try:
@@ -339,8 +503,9 @@ def create_single_pr(
     branch = next(iter(branches))
 
     ui.info(f"  Pushing branch {branch}...")
-    if not push_branch(branch, cwd):
-        ui.warn("  Failed to push branch, skipping PR")
+    push_error = push_branch(branch, cwd)
+    if push_error:
+        ui.warn(f"  Failed to push branch ({push_error}), skipping PR")
         return None
 
     # Build combined body
@@ -367,18 +532,23 @@ def create_single_pr(
 
     # --base=/--head= bind the branch values to their flags even if a
     # crafted value starts with "-" (R0.6).
-    result = subprocess.run(
-        [
-            "gh", "pr", "create",
-            "--title", title,
-            "--body", body,
-            f"--base={manifest.base_branch}",
-            f"--head={branch}",
-        ],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "gh", "pr", "create",
+                "--title", title,
+                "--body", body,
+                f"--base={manifest.base_branch}",
+                f"--head={branch}",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        ui.warn(f"  Failed to create PR: timed out after {GH_TIMEOUT}s")
+        return None
 
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip()
@@ -386,12 +556,5 @@ def create_single_pr(
         return None
 
     pr_url = result.stdout.strip()
-    pr_number = 0
-    if "/pull/" in pr_url:
-        try:
-            pr_number = int(pr_url.rstrip("/").rsplit("/", 1)[-1])
-        except ValueError:
-            pass
-
     ui.ok(f"  PR created: {pr_url}")
-    return pr_number, pr_url
+    return pr_number_from_url(pr_url), pr_url

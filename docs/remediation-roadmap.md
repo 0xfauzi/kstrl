@@ -73,7 +73,7 @@ item here is one of those three.
     worktree. Mitigation: timeout-failure retry path recreates the worktree
     from base instead of reusing it, and removes stale index locks.
 
-- [ ] R0.2 (M) **PR/merge outcome gates completion** [CRIT-2, H-1, MED pr-timeouts]
+- [x] R0.2 (M) **PR/merge outcome gates completion** [CRIT-2, H-1, MED pr-timeouts]
   - `pr.py`: return a typed `PrOutcome` (pushed / pr_url / merged /
     merge_pending / error) instead of a lossy tuple; add explicit timeouts to
     every `gh`/`git` subprocess call in the module.

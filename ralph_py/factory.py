@@ -22,6 +22,7 @@ from ralph_py.contract import (
     run_contract_testing,
 )
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
+from ralph_py.git import fetch_base_branch, resolve_base_ref
 from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
@@ -81,6 +82,9 @@ class FactoryConfig:
     # scheduler backstop margin). None means run_factory loads
     # TimeoutConfig.load(root_dir) - toml [timeout] section + env.
     timeout_config: TimeoutConfig | None = None
+    # R0.2: how long push_create_and_merge_pr waits for merge
+    # confirmation before the component is parked as MERGE_PENDING.
+    merge_timeout: float = 300.0
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -89,6 +93,7 @@ class FactoryConfig:
             max_parallel=int(os.environ.get("FACTORY_MAX_PARALLEL", "4")),
             max_retries=int(os.environ.get("FACTORY_MAX_RETRIES", "3")),
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
+            merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
         )
 
     @classmethod
@@ -117,6 +122,8 @@ class FactoryConfig:
             config.create_prs = bool(section["create_prs"])
         if "review_mode" in section:
             config.review_mode = str(section["review_mode"])
+        if "merge_timeout" in section:
+            config.merge_timeout = float(section["merge_timeout"])
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -124,6 +131,8 @@ class FactoryConfig:
             config.max_retries = int(os.environ["FACTORY_MAX_RETRIES"])
         if "FACTORY_RETRY_DELAY" in os.environ:
             config.retry_delay = float(os.environ["FACTORY_RETRY_DELAY"])
+        if "FACTORY_MERGE_TIMEOUT" in os.environ:
+            config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
         return config
 
 
@@ -146,6 +155,10 @@ class FactoryResult:
     completed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    # R0.2: components whose PR merge was initiated but not confirmed.
+    # Not failed - a factory re-run re-polls them - but their dependents
+    # were not scheduled, so the run is incomplete (nonzero exit code).
+    merge_pending: list[str] = field(default_factory=list)
     pr_urls: list[str] = field(default_factory=list)
     # R0.3: unresolved contract failures (one human-readable line per
     # failed check). Non-empty forces a nonzero exit code even when no
@@ -229,8 +242,16 @@ def _setup_worktree(
                 cwd=root_dir, capture_output=True, timeout=30,
             )
 
+        # R0.2: cut from origin/<base> when a remote exists so this
+        # component builds on the squash-merged history of its
+        # dependencies, not a stale local base ref. The fetch is
+        # freshness-only and non-fatal: offline runs fall back to the
+        # current tracking ref, local-only repos to the local base.
+        fetch_base_branch(base_branch, root_dir, timeout=60.0)
+        base_ref = resolve_base_ref(base_branch, root_dir)
+
         result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_branch],
+            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_ref],
             cwd=root_dir, capture_output=True, text=True, timeout=30,
         )
 
@@ -529,6 +550,62 @@ def run_factory(
             comp.status = ComponentStatus.PENDING.value
 
     manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
+
+    # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed. A
+    # prior run initiated the merge but could not confirm it; check the
+    # PR state again before scheduling so confirmed merges unblock their
+    # dependents. Local imports keep the late binding tests rely on.
+    merge_pending_comps = [
+        c for c in manifest.components
+        if c.status == ComponentStatus.MERGE_PENDING.value
+    ]
+    if merge_pending_comps:
+        from ralph_py.pr import is_gh_available, pr_number_from_url, wait_for_merge
+
+        if not factory_config.create_prs or not is_gh_available():
+            ui.warn(
+                f"  {len(merge_pending_comps)} component(s) are merge-pending "
+                f"but PR polling is unavailable (create_prs off or gh "
+                f"missing); their dependents stay blocked"
+            )
+        else:
+            for comp in merge_pending_comps:
+                pr_number = comp.pr_number or pr_number_from_url(comp.pr_url)
+                if not pr_number:
+                    ui.warn(
+                        f"  Cannot re-poll '{comp.id}': no PR number recorded"
+                    )
+                    continue
+                ui.info(
+                    f"  Re-polling merge state for '{comp.id}' "
+                    f"(PR #{pr_number})..."
+                )
+                merge_state = wait_for_merge(
+                    pr_number, root_dir, timeout=factory_config.merge_timeout,
+                )
+                if merge_state == "merged":
+                    fetch_base_branch(manifest.base_branch, root_dir)
+                    comp.status = ComponentStatus.COMPLETED.value
+                    comp.error = ""
+                    factory_result.completed.append(comp.id)
+                    progress_log.component_completed(
+                        comp.id, comp.duration_seconds, comp.iteration_count,
+                    )
+                    ui.ok(f"  PR #{pr_number} merged; '{comp.id}' completed")
+                elif merge_state == "closed":
+                    comp.status = ComponentStatus.FAILED.value
+                    comp.error = f"PR #{pr_number} closed without merge"
+                    skipped = manifest.cascade_skip(comp.id)
+                    factory_result.failed.append(comp.id)
+                    factory_result.skipped.extend(skipped)
+                    progress_log.component_failed(comp.id, comp.error)
+                    ui.err(f"  Failed: {comp.id}: {comp.error}")
+                else:
+                    ui.warn(
+                        f"  '{comp.id}' still awaiting merge of "
+                        f"PR #{pr_number}; dependents stay blocked"
+                    )
+        manifest.save(manifest_path)
 
     # Determine effective parallelism
     max_parallel = factory_config.max_parallel
@@ -987,8 +1064,12 @@ def run_factory(
             except Exception:  # noqa: BLE001
                 pass
 
-        # All verification phases passed - create PR and merge
-        if factory_config.create_prs:
+        # All verification phases passed - create PR and merge.
+        # single_pr mode is exempt: every component shares one branch,
+        # a single PR is created at end-of-run, and squash-merging the
+        # shared branch per component would destroy the history the
+        # remaining components build on.
+        if factory_config.create_prs and not factory_config.single_pr:
             from ralph_py.pr import is_gh_available, push_create_and_merge_pr
 
             # E6: human-in-the-loop checkpoint. When opt-in, prompt
@@ -1030,14 +1111,47 @@ def run_factory(
 
             if proceed and is_gh_available():
                 ui.info(f"  Creating and merging PR for {comp_id}...")
-                pr_result = push_create_and_merge_pr(
+                outcome = push_create_and_merge_pr(
                     comp, manifest, root_dir, ui,
                     merge_method="squash",
-                    merge_timeout=300,
+                    merge_timeout=factory_config.merge_timeout,
                 )
-                if pr_result:
-                    factory_result.pr_urls.append(pr_result[1])
+                if outcome.pr_url:
+                    factory_result.pr_urls.append(outcome.pr_url)
                 manifest.save(manifest_path)
+
+                # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
+                # Anything less and dependents would cut worktrees from
+                # a base that lacks this component's code.
+                if not outcome.merged:
+                    if outcome.merge_pending:
+                        comp.status = ComponentStatus.MERGE_PENDING.value
+                        comp.error = (
+                            outcome.error or "PR merge not confirmed"
+                        )
+                        ui.warn(
+                            f"  MERGE PENDING: {comp_id}: {comp.error}; "
+                            f"dependents stay blocked; a factory re-run "
+                            f"re-polls the PR"
+                        )
+                    else:
+                        comp.status = ComponentStatus.FAILED.value
+                        comp.error = outcome.error or "PR flow failed"
+                        skipped = manifest.cascade_skip(comp_id)
+                        factory_result.failed.append(comp_id)
+                        factory_result.skipped.extend(skipped)
+                        progress_log.component_failed(comp_id, comp.error)
+                        ui.err(f"  Failed: {comp_id}: {comp.error[:120]}")
+                    manifest.save(manifest_path)
+                    return
+            elif proceed:
+                # No gh: the PR/merge gate cannot run. Completing anyway
+                # preserves local-only workflows, but say so loudly -
+                # this component's code exists only on its local branch.
+                ui.warn(
+                    f"  gh CLI not available: {comp_id} completes without "
+                    f"a PR; its code stays on branch {comp.branch_name}"
+                )
 
         # Clean up worktree now that code is merged
         if factory_config.use_worktrees and comp_id in worktree_paths:
@@ -1461,6 +1575,14 @@ def run_factory(
         factory_duration,
     )
 
+    # R0.2: collect components parked awaiting merge confirmation. Built
+    # from the manifest (not accumulated during the run) so it reflects
+    # the final state after any crash-recovery re-poll.
+    factory_result.merge_pending = [
+        c.id for c in manifest.components
+        if c.status == ComponentStatus.MERGE_PENDING.value
+    ]
+
     ui.section("Factory: Summary")
     ui.kv("Completed", str(len(factory_result.completed)))
     ui.kv("Failed", str(len(factory_result.failed)))
@@ -1469,13 +1591,24 @@ def run_factory(
         ui.kv("Contract failures", str(len(factory_result.contract_failures)))
         for line in factory_result.contract_failures:
             ui.err(f"  {line}")
+    if factory_result.merge_pending:
+        ui.kv("Merge pending", str(len(factory_result.merge_pending)))
     ui.kv("Duration", f"{factory_duration:.0f}s")
     if factory_result.pr_urls:
         ui.kv("PRs created", str(len(factory_result.pr_urls)))
         for url in factory_result.pr_urls:
             ui.info(f"  {url}")
+    if factory_result.merge_pending:
+        ui.warn(
+            "Some PR merges are unconfirmed; re-run the factory to "
+            "re-poll them: " + ", ".join(factory_result.merge_pending)
+        )
 
     if factory_result.failed or factory_result.contract_failures:
+        factory_result.exit_code = 1
+    elif factory_result.merge_pending:
+        # Incomplete, not failed: unconfirmed merges blocked their
+        # dependents. Nonzero so automation notices; a re-run re-polls.
         factory_result.exit_code = 1
     elif factory_result.skipped and not factory_result.completed:
         factory_result.exit_code = 1
