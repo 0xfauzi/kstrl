@@ -369,12 +369,13 @@ spending, (c) what do I do when I come back to a partial failure.
     user to approve); commit or delete the untracked docs artifacts; track
     `ralph.toml.example`, ignore live `ralph.toml`.
   - Partial (landed in the R4.1 PR): `.gitignore` covers `.ralph/`;
-    polluted journals archived to `.ralph/archive/` with a README. NOT
-    done: the stale worktree was NOT removed - `claude/tender-leakey` has
-    2 commits not on main (6b41584, 917bde6: the pre-purge TUI work), so
-    per the check-first rule the user decides. The `ralph.toml.example`
-    tracking question and the remaining untracked docs artifacts also
-    stay open.
+    polluted journals archived to `.ralph/archive/` with a README. The
+    stale worktree `claude/tender-leakey` had 2 commits not on main
+    (6b41584, 917bde6: the pre-purge TUI work); after user approval the
+    worktree and branch were removed, with a local tag
+    `archive/tui-overhaul` left at 6b41584 so the commits stay
+    recoverable. Still open: the `ralph.toml.example` tracking question
+    and the remaining untracked docs artifacts.
 
 Done when: a deliberately failed 3-component run can be diagnosed and resumed
 using only `ralph status`, the failure summary, and `ralph retry`, without
