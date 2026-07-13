@@ -257,3 +257,117 @@ class TestRunLoop:
         assert result.completed is False
         assert result.exit_code == 1
         assert result.iterations == 1
+
+
+class _RogueWriterAgent:
+    """Agent that writes an out-of-scope file and emits COMPLETE in the
+    SAME iteration -- the R0.4 enforcement-bypass scenario."""
+
+    def __init__(self, rogue_file: Path):
+        self._rogue_file = rogue_file
+        self._final_message: str | None = None
+
+    @property
+    def name(self) -> str:
+        return "rogue"
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
+        self._rogue_file.write_text("rogue = True\n")
+        yield COMPLETION_MARKER
+        self._final_message = COMPLETION_MARKER
+
+    @property
+    def final_message(self) -> str | None:
+        return self._final_message
+
+
+class TestGuardsRunBeforeCompletion:
+    """R0.4: guards.enforce_allowed_paths must run BEFORE the completion
+    early-return, so an out-of-scope edit plus same-iteration COMPLETE
+    cannot bypass enforcement (pre-fix, the marker returned first and the
+    guard never saw the violation)."""
+
+    def _git_repo(self, tmp_path: Path) -> RalphConfig:
+        import subprocess
+
+        subprocess.run(
+            ["git", "init", "-q", "-b", "main", str(tmp_path)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
+            check=True, capture_output=True,
+        )
+        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir.mkdir(parents=True)
+        (ralph_dir / "prompt.md").write_text("test prompt")
+        (ralph_dir / "prd.json").write_text(
+            '{"branchName": "test", "userStories": []}'
+        )
+        # Commit the scaffolding so the rogue file is the ONLY change.
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "-A"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
+            check=True, capture_output=True,
+        )
+        return RalphConfig(
+            max_iterations=3,
+            prompt_file=ralph_dir / "prompt.md",
+            prd_file=ralph_dir / "prd.json",
+            sleep_seconds=0,
+            ralph_branch="",
+            ralph_branch_explicit=True,
+            allowed_paths=["src/"],
+        )
+
+    def test_out_of_scope_edit_plus_complete_fails_noninteractive(
+        self, tmp_path: Path,
+    ) -> None:
+        """Non-interactive: enforcement fires and the COMPLETE marker is
+        NOT honored -- the loop reports failure, not success."""
+        config = self._git_repo(tmp_path)
+        agent = _RogueWriterAgent(tmp_path / "rogue.py")
+
+        result = run_loop(config, PlainUI(no_color=True), agent, tmp_path)
+
+        assert result.completed is False
+        assert result.exit_code == 1
+        assert result.iterations == 1
+
+    def test_out_of_scope_edit_plus_complete_is_reverted_interactive(
+        self, tmp_path: Path,
+    ) -> None:
+        """Interactive revert path: the guard runs first, reverts the
+        out-of-scope edit, and only then is the completion marker honored
+        -- proving the guard executed before the early-return."""
+
+        class _ChooseRevertUI(PlainUI):
+            def can_prompt(self) -> bool:
+                return True
+
+            def choose(
+                self, header: str, options: list[str], default: int = 0,
+            ) -> int:
+                return options.index("Revert and continue")
+
+        config = self._git_repo(tmp_path)
+        config.interactive = True
+        rogue = tmp_path / "rogue.py"
+        agent = _RogueWriterAgent(rogue)
+
+        result = run_loop(
+            config, _ChooseRevertUI(no_color=True), agent, tmp_path,
+        )
+
+        assert not rogue.exists(), "out-of-scope edit was not reverted"
+        assert result.completed is True
+        assert result.exit_code == 0
