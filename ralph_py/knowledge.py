@@ -8,7 +8,11 @@ read by downstream components as part of the prompt context.
 Design constraints (see plans/zazzy-orbiting-sketch.md for rationale):
 
 - Atomic-fact files - never a single growing doc.
-- Latest run dir per component wins - simple, no supersede logic needed.
+- Retrieval unions every run dir per component with per-fact-id
+  latest-wins: a newer run supersedes only the fact ids it re-emits, so
+  the DISTILL rule "do not duplicate existing facts" preserves the
+  corpus instead of hiding it, and a failed distill can never erase
+  previously written facts.
 - No LLM-driven consolidation or rewriting of existing facts. This is a
   permanent design decision motivated by reports of memory-update
   degradation in LLM-driven memory systems.
@@ -20,7 +24,7 @@ import json
 import os
 import re
 import tempfile
-import time
+import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -229,7 +233,14 @@ def _render_fact_md(fact: Fact) -> str:
 
 
 def _parse_fact_md(content: str) -> Fact:
-    """Parse a fact markdown file. Raises ValueError on malformed input."""
+    """Parse and validate a fact markdown file.
+
+    Raises ValueError on malformed input AND on content that fails the
+    write-time filters (injection patterns, length/count caps, unknown
+    scope/confidence). Fact files are plain markdown on disk between
+    runs; without the re-validation here, editing a file after it lands
+    would bypass every filter in :func:`_coerce_facts`.
+    """
     lines = content.split("\n")
     if len(lines) < 3 or lines[0] != _FRONTMATTER_DELIMITER:
         raise ValueError("missing opening frontmatter delimiter")
@@ -258,20 +269,73 @@ def _parse_fact_md(content: str) -> Fact:
         claim_lines = claim_lines[1:]
     claim = "\n".join(claim_lines).rstrip("\n")
 
-    return Fact(
+    try:
+        created_iter = int(meta.get("created_iter", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"created_iter is not an integer: {exc}") from exc
+    evidence_raw = meta.get("evidence", [])
+    if not isinstance(evidence_raw, list):
+        raise ValueError("evidence must be a list")
+    tags_raw = meta.get("tags", [])
+    if not isinstance(tags_raw, list):
+        raise ValueError("tags must be a list")
+
+    fact = Fact(
         id=str(meta.get("id", "")),
         component_id=str(meta.get("component_id", "")),
-        created_iter=int(meta.get("created_iter", 0)),
+        created_iter=created_iter,
         created_run_id=str(meta.get("created_run_id", "")),
         scope=str(meta.get("scope", "")),
-        evidence=[str(e) for e in meta.get("evidence", []) if isinstance(e, str)],
+        evidence=[str(e) for e in evidence_raw if isinstance(e, str)],
         confidence=_CONFIDENCE_ALIASES.get(
             str(meta.get("confidence", "asserted")),
             str(meta.get("confidence", "asserted")),
         ),
-        tags=[str(t) for t in meta.get("tags", []) if isinstance(t, str)],
+        tags=[str(t) for t in tags_raw if isinstance(t, str)],
         claim=claim,
     )
+    error = _validate_fact_content(fact)
+    if error is not None:
+        raise ValueError(error)
+    return fact
+
+
+def _validate_fact_content(fact: Fact) -> str | None:
+    """Return an error message when a fact violates the write-time
+    content filters, else None.
+
+    Runs on READ (via :func:`_parse_fact_md`): the limits mirror the
+    write side exactly, so a file that breaches one here did not come
+    through :func:`_coerce_facts` intact and is treated as tampered.
+    """
+    if not _FACT_ID_RE.match(fact.id):
+        return f"fact id {fact.id!r} does not match fact-NNN"
+    if fact.scope not in VALID_SCOPES:
+        return f"unknown scope {fact.scope!r}"
+    if fact.confidence not in VALID_CONFIDENCES:
+        return f"unknown confidence {fact.confidence!r}"
+    if not fact.claim:
+        return "empty claim"
+    # Write-side truncation appends "..." past the cap, hence the +3.
+    if len(fact.claim) > MAX_CLAIM_LENGTH + 3:
+        return f"claim longer than {MAX_CLAIM_LENGTH} chars"
+    if _is_injection_attempt(fact.claim):
+        return "claim matches a prompt-injection pattern"
+    if not fact.evidence:
+        return "no evidence items"
+    if len(fact.evidence) > MAX_EVIDENCE_ITEMS:
+        return f"more than {MAX_EVIDENCE_ITEMS} evidence items"
+    for item in fact.evidence:
+        if len(item) > MAX_EVIDENCE_ITEM_LENGTH:
+            return f"evidence item longer than {MAX_EVIDENCE_ITEM_LENGTH} chars"
+        if _is_injection_attempt(item):
+            return "evidence item matches a prompt-injection pattern"
+    if len(fact.tags) > MAX_TAG_ITEMS:
+        return f"more than {MAX_TAG_ITEMS} tags"
+    for tag in fact.tags:
+        if _is_injection_attempt(tag):
+            return "tag matches a prompt-injection pattern"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -279,45 +343,64 @@ def _parse_fact_md(content: str) -> Fact:
 # ---------------------------------------------------------------------------
 
 
-def _latest_run_dir(component_root: Path) -> Path | None:
-    """Return the most-recent run directory for a component, or None.
+# Debug dumps live under <component_root>/_debug/<run_id>/. The leading
+# underscore keeps them out of _run_dirs, so a failed distill (which
+# writes only a dump) can never create a run dir that shadows real facts.
+_DEBUG_DIR_NAME = "_debug"
 
-    Run dirs are named like ``factory-YYYYMMDD-HHMMSS`` - lexicographic
-    sort matches chronological order.
+
+def _run_dirs(component_root: Path) -> list[Path]:
+    """Return every run directory for a component, oldest first.
+
+    Run dirs are named like ``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>``
+    (older runs may lack the microsecond field) - lexicographic sort
+    matches chronological order, and an old-format id sorts before a
+    new-format id from the same second because ``-`` < ``.``.
+    Underscore-prefixed entries (e.g. ``_debug``) are metadata, never
+    fact dirs.
     """
     if not component_root.is_dir():
-        return None
-    candidates = [d for d in component_root.iterdir() if d.is_dir()]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda p: p.name, reverse=True)
-    return candidates[0]
+        return []
+    candidates = [
+        d for d in component_root.iterdir()
+        if d.is_dir() and not d.name.startswith("_")
+    ]
+    candidates.sort(key=lambda p: p.name)
+    return candidates
 
 
 def read_facts(knowledge_root: Path, component_id: str) -> list[Fact]:
-    """Read all facts for a component from its latest run dir.
+    """Read a component's facts: the union of every run dir, with
+    per-fact-id latest-wins.
 
-    Returns an empty list if the component has no recorded facts, the
-    knowledge root does not exist, or files cannot be parsed. Individual
-    parse failures are skipped silently (they indicate a corrupted file,
-    not a crash-worthy condition).
+    A run supersedes only the fact ids it re-emits. The distill prompt
+    forbids re-emitting existing facts, so most runs add new ids; facts
+    from prior runs stay visible instead of being hidden by whichever
+    directory happens to sort last. Returns an empty list if the
+    component has no recorded facts or the knowledge root does not
+    exist. A file that fails parsing or content validation is rejected
+    with a RuntimeWarning, never a crash - one corrupted or tampered
+    file must not take down retrieval.
     """
     component_root = knowledge_root / component_id
-    run_dir = _latest_run_dir(component_root)
-    if run_dir is None:
-        return []
-
-    facts: list[Fact] = []
-    for path in sorted(run_dir.glob("*.md")):
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        try:
-            facts.append(_parse_fact_md(content))
-        except ValueError:
-            continue
-    return facts
+    facts_by_id: dict[str, Fact] = {}
+    for run_dir in _run_dirs(component_root):
+        for path in sorted(run_dir.glob("*.md")):
+            try:
+                content = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            try:
+                fact = _parse_fact_md(content)
+            except ValueError as exc:
+                warnings.warn(
+                    f"knowledge: rejected fact file {path}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+            facts_by_id[fact.id] = fact
+    return list(facts_by_id.values())
 
 
 def write_facts(
@@ -850,6 +933,9 @@ _FACT_ID_RE = re.compile(r"^fact-\d{3}$")
 # essay mode and are more likely to carry injection payloads.
 MAX_CLAIM_LENGTH = 500
 MAX_EVIDENCE_ITEMS = 10
+# Evidence items are path:line citations ("src/x.py:42-58"); anything
+# longer is essay-mode drift or a smuggled payload, not a citation.
+MAX_EVIDENCE_ITEM_LENGTH = 200
 MAX_TAG_ITEMS = 8
 
 # Patterns that look like prompt-injection attempts inside a fact body.
@@ -908,6 +994,17 @@ def _coerce_facts(
         if not isinstance(evidence_raw, list) or not evidence_raw:
             continue
         evidence = [str(e).strip() for e in evidence_raw if isinstance(e, str)]
+        evidence = [e for e in evidence if e]
+        # Evidence is rendered verbatim into downstream "treat as ground
+        # truth" prompts (both the fact file and _format_section), so it
+        # gets the same injection gate as the claim. Checked before
+        # truncation so a payload cannot dodge the patterns by being cut
+        # mid-match. One poisoned citation rejects the whole fact: a
+        # distiller that smuggles instructions into a citation cannot be
+        # trusted about the rest of the fact either.
+        if any(_is_injection_attempt(e) for e in evidence):
+            continue
+        evidence = [e[:MAX_EVIDENCE_ITEM_LENGTH].rstrip() for e in evidence]
         evidence = [e for e in evidence if e][:MAX_EVIDENCE_ITEMS]
         if not evidence:
             continue
@@ -948,6 +1045,34 @@ def _coerce_facts(
         )
         seen_ids.add(fact_id)
     return facts
+
+
+def _evidence_cites_existing_path(evidence: list[str], worktree_path: Path) -> bool:
+    """Return True when at least one evidence item cites a path that
+    exists inside the worktree.
+
+    Evidence items look like ``path/to/file.py:42-58``; everything
+    before the first ``:`` is treated as a worktree-relative path.
+    Absolute paths and paths that resolve outside the worktree never
+    count - evidence must point at the artifact under review.
+    """
+    try:
+        resolved_root = worktree_path.resolve()
+    except OSError:
+        return False
+    for item in evidence:
+        cited = item.split(":", 1)[0].strip()
+        if not cited or Path(cited).is_absolute():
+            continue
+        try:
+            candidate = (worktree_path / cited).resolve()
+        except OSError:
+            continue
+        if candidate == resolved_root or not candidate.is_relative_to(resolved_root):
+            continue
+        if candidate.exists():
+            return True
+    return False
 
 
 def distill_facts(
@@ -1012,9 +1137,15 @@ def distill_facts(
 
     def _dump_debug(label: str) -> None:
         """Persist raw distiller output so failure modes are diagnosable
-        without re-running. Best-effort; ignore disk errors."""
+        without re-running. Lives under _debug/<run_id>/, outside the
+        run-dir namespace, so a failed distill never creates a fact-less
+        run dir that could shadow real facts (read_facts skips
+        underscore-prefixed dirs entirely). Best-effort; ignore disk
+        errors."""
         try:
-            debug_dir = knowledge_root / component.id / run_id
+            debug_dir = (
+                knowledge_root / component.id / _DEBUG_DIR_NAME / run_id
+            )
             debug_dir.mkdir(parents=True, exist_ok=True)
             (debug_dir / "_distill_raw.txt").write_text(
                 streamed_output, encoding="utf-8",
@@ -1038,6 +1169,21 @@ def distill_facts(
         raw_facts, component.id, iteration_count, run_id,
         config.max_facts_per_distill,
     )
+
+    # "test_verified" is self-reported by the distiller and cannot be
+    # trusted alone - it is a hint, not a signal (E9 discipline). The
+    # cheapest verifiable precondition is that at least one cited
+    # evidence path actually exists in the worktree; when even that
+    # fails the citation is fabricated and the claim drops to
+    # "asserted". Path existence is NOT proof the cited test passed -
+    # the surviving value is still a hint, just one with a floor.
+    facts = [
+        replace(f, confidence="asserted")
+        if f.confidence == "test_verified"
+        and not _evidence_cites_existing_path(f.evidence, worktree_path)
+        else f
+        for f in facts
+    ]
 
     # Confidence ceiling: only Phase-2-passed work earns the
     # review_passed / test_verified tiers. When review is skipped or
@@ -1120,13 +1266,17 @@ def measure_fact_utilization(
 
 
 def current_run_id() -> str:
-    """Construct a run id of the same shape factory.py uses for evolution.jsonl.
+    """Construct a run id for the knowledge layer.
 
-    Includes a 6-char random nonce so two factory invocations started
-    within the same UTC second produce distinct ids.
+    Format: ``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>``. The microsecond
+    field makes same-second ids order deterministically by creation time
+    instead of by the random nonce; the nonce still guards against
+    collisions inside the same microsecond. Old-format second-precision
+    ids (factory.py builds one inline for the evolution journal) sort
+    before same-second new-format ids because ``-`` < ``.``.
     """
     import secrets
-    return (
-        f"factory-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
-        f"-{secrets.token_hex(3)}"
-    )
+    from datetime import UTC, datetime
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S.%f")
+    return f"factory-{stamp}-{secrets.token_hex(3)}"

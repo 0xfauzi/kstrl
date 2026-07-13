@@ -188,7 +188,7 @@ reviewers' output as much as it distrusts the engineer's.
     reject and retry-with-error like other validation failures.
   - `factory.py:554-558`: PRD load failure fails the diff-scope check closed
     (infra failure) instead of silently disabling scope.
-- [ ] R1.6 (M) **Knowledge retention + read-side defense** [CRIT-4, H-3, MED knowledge-trust, LOW nonce-order]
+- [~] R1.6 (M) **Knowledge retention + read-side defense** [CRIT-4, H-3, MED knowledge-trust, LOW nonce-order]
   - Retrieval: union across run dirs with per-fact-id latest-wins (supersede by
     fact id, not by directory). The DISTILL rule "do not duplicate existing
     facts" becomes correct instead of corpus-destroying.
@@ -204,6 +204,15 @@ reviewers' output as much as it distrusts the engineer's.
     correctly.
   - Verify: regression tests for the exact decay scenario (fail distill, then
     read), the evidence-field injection bypass, and supersede-by-fact-id.
+  - Note (2026-07-13, session 1C): all sub-items landed in
+    `ralph_py/knowledge.py` + tests. Marked `[~]` not `[x]` for one residual:
+    `knowledge.current_run_id()` now carries microseconds, but `factory.py`
+    still builds its own second-precision run id inline (out of 1C file
+    scope, and concurrently edited by session 1A). Follow-up is a one-line
+    change: have factory.py call `current_run_id()`. Until then the
+    nonce-order edge survives only for duplicate fact ids emitted by two
+    factory invocations started in the same second - union retrieval caps
+    the blast radius to that tie-break.
 - [ ] R1.7 (S) **Persist the architect's red-team output** [MED spec-issues-lost]
   - Write `spec_issues` (all severities) to `scripts/ralph/spec-issues.json`
     and a journal event; on SpecBlockerError, print the file path so the user
