@@ -175,7 +175,59 @@ class TestCheckDiffScope:
         ):
             result = check_diff_scope(tmp_path, "main", allowed_paths=["src/"])
         assert result.passed is False
-        assert "config/secret.py" in result.details
+        assert any("config/secret.py" in d for d in result.details)
+        # In-scope files are not listed as violations
+        assert not any("src/main.py" in d for d in result.details)
+
+    def test_failure_names_base_branch_and_allowed_paths(
+        self, tmp_path: Path,
+    ) -> None:
+        """R0.4: the failure details must name the base branch and the
+        allowed paths -- without them the retry agent guesses both (the
+        recorded e2e run guessed `main`, checked out base-branch content,
+        and failed again)."""
+        with patch(
+            "ralph_py.verify.git.get_diff_names",
+            return_value=["evil.py"],
+        ):
+            result = check_diff_scope(
+                tmp_path, "feat/retrospective-cleanup-2",
+                allowed_paths=["src/", "tests/"],
+            )
+        assert result.passed is False
+        assert "feat/retrospective-cleanup-2" in result.message
+        joined = "\n".join(result.details)
+        assert "Base branch: feat/retrospective-cleanup-2" in joined
+        assert "Allowed paths (complete list): src/, tests/" in joined
+
+    def test_retry_context_carries_base_and_full_allowed_paths(
+        self, tmp_path: Path,
+    ) -> None:
+        """The retry prompt is built via VerificationResult.as_context()
+        (which slices details[:10]) and IterationContext.format_for_prompt.
+        The base branch, EVERY allowed path, EVERY shown violation, and the
+        truncation marker must survive that pipeline verbatim."""
+        from ralph_py.context import IterationContext
+        from ralph_py.verify import VerificationResult
+
+        allowed = [f"pkg{i}/" for i in range(12)]
+        violations = [f"rogue{i}.py" for i in range(20)]
+        with patch(
+            "ralph_py.verify.git.get_diff_names", return_value=violations,
+        ):
+            result = check_diff_scope(tmp_path, "main", allowed_paths=allowed)
+
+        verification = VerificationResult(passed=False, checks=[result])
+        ctx = IterationContext()
+        ctx.add_verification_failure(verification.as_context())
+        prompt_text = ctx.format_for_prompt()
+
+        assert "Base branch: main" in prompt_text
+        for path in allowed:
+            assert path in prompt_text
+        for shown in violations[:15]:
+            assert shown in prompt_text
+        assert "and 5 more" in prompt_text
 
 
 class TestCheckBadPatterns:

@@ -272,6 +272,7 @@ def _run_component(
     component_id: str,
     prd_path_str: str,
     worktree_path_str: str,
+    root_dir_str: str,
     prompt_file_str: str,
     agent_cmd: str | None,
     model: str | None,
@@ -299,16 +300,23 @@ def _run_component(
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)
-    prd_path = Path(prd_path_str)
+    # R0.4: every copy source below resolves against root_dir, never the
+    # worker's inherited CWD. prompt.md and the PRD live under gitignored
+    # scripts/ralph/, so a fresh worktree NEVER contains them via git; if
+    # a CWD-relative lookup missed them (e.g. --root from another
+    # directory) the copies silently no-op'd and the engineer fell back
+    # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
+    root_dir = Path(root_dir_str)
 
     ui = PlainUI(no_color=True)
     agent = get_agent(agent_cmd, model, reasoning, agent_type)
 
     # Copy PRD into worktree if needed
     worktree_prd = worktree_path / prd_path_str
-    if not worktree_prd.exists() and prd_path.exists():
+    prd_source = root_dir / prd_path_str
+    if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
-        worktree_prd.write_text(prd_path.read_text())
+        worktree_prd.write_text(prd_source.read_text())
 
     # Note: the prompt template uses $prd_path which is substituted at runtime
     # by loop.py with config.prd_file, so the agent reads the correct component
@@ -316,30 +324,28 @@ def _run_component(
 
     # Copy prompt into worktree if needed
     worktree_prompt = worktree_path / prompt_file_str
-    prompt_source = Path(prompt_file_str)
+    prompt_source = root_dir / prompt_file_str
     if not worktree_prompt.exists() and prompt_source.exists():
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
         worktree_prompt.write_text(prompt_source.read_text())
 
-    # Copy CLAUDE.md into worktree. AGENTS.md is a symlink to CLAUDE.md,
-    # so copying CLAUDE.md and recreating the symlink gives the agent both.
-    # When use_worktrees=False, worktree_path IS the repo root so CLAUDE.md
-    # is already in place - the .exists() guards handle this correctly.
-    worktree_base = worktree_path / ".ralph" / "worktrees"
-    if worktree_base.exists() and worktree_path.name != worktree_path.parent.name:
-        # This is a real worktree: .ralph/worktrees/<id> -> root is 3 levels up
-        repo_root = worktree_path.parent.parent.parent
-    else:
-        # No worktree (use_worktrees=False) - worktree_path is the repo root
-        repo_root = worktree_path
+    # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
+    # use_worktrees=False, worktree_path IS the repo root so the files are
+    # already in place - the .exists() guards handle this correctly.
     claude_dest = worktree_path / "CLAUDE.md"
-    if not claude_dest.exists():
-        claude_src = repo_root / "CLAUDE.md"
-        if claude_src.exists():
-            claude_dest.write_text(claude_src.read_text())
+    claude_src = root_dir / "CLAUDE.md"
+    if not claude_dest.exists() and claude_src.exists():
+        claude_dest.write_text(claude_src.read_text())
     agents_dest = worktree_path / "AGENTS.md"
-    if not agents_dest.exists() and claude_dest.exists():
-        agents_dest.symlink_to("CLAUDE.md")
+    agents_src = root_dir / "AGENTS.md"
+    if not agents_dest.exists():
+        if agents_src.is_symlink() and claude_dest.exists():
+            # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
+            agents_dest.symlink_to("CLAUDE.md")
+        elif agents_src.exists():
+            agents_dest.write_text(agents_src.read_text())
+        elif claude_dest.exists():
+            agents_dest.symlink_to("CLAUDE.md")
 
     # Run scaffold script if configured
     if scaffold_cmd:
@@ -1103,7 +1109,7 @@ def run_factory(
             except Exception:
                 pass  # knowledge retrieval is non-fatal
         return (
-            comp.id, comp.prd_path, str(wt_path),
+            comp.id, comp.prd_path, str(wt_path), str(root_dir),
             prompt_file_rel, base_config.agent_cmd, base_config.model,
             base_config.model_reasoning_effort, base_config.agent_type,
             base_config.sleep_seconds, ctx_json,

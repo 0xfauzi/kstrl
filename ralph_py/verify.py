@@ -503,11 +503,37 @@ def check_diff_scope(
     violations = [f for f in changed if not path_is_allowed(f, allowed_paths)]
 
     if violations:
+        # R0.4: name the base branch and the FULL allowed-paths list in the
+        # failure details. Without them the retry agent has to guess both;
+        # the recorded e2e run guessed `main` as base and reverted
+        # base-branch content with `git checkout main -- ...`, failing
+        # again. Base branch and allowed paths are single detail entries at
+        # the head of the list so VerificationResult.as_context()'s
+        # details[:10] slice carries them into the retry prompt verbatim.
+        shown = violations[:15]
+        violation_lines = [f"  - {v}" for v in shown]
+        if len(violations) > len(shown):
+            violation_lines.append(
+                f"  ... and {len(violations) - len(shown)} more"
+            )
+        details = [
+            f"Base branch: {base_branch} "
+            f"(scope is judged on `git diff {base_branch}...HEAD`; "
+            f"do NOT `git checkout {base_branch} -- <path>`, revert only "
+            "your own out-of-scope commits/edits)",
+            f"Allowed paths (complete list): {', '.join(allowed_paths)}",
+            # One multi-line entry so as_context()'s details[:10] slice
+            # cannot drop violations or the truncation marker.
+            "Files outside allowed scope:\n" + "\n".join(violation_lines),
+        ]
         return CheckResult(
             name="diff_scope",
             passed=False,
-            message=f"{len(violations)} files outside allowed scope",
-            details=violations[:20],
+            message=(
+                f"{len(violations)} files outside allowed scope "
+                f"(diff vs base branch '{base_branch}')"
+            ),
+            details=details,
             duration_seconds=time.monotonic() - start,
         )
 

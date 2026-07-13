@@ -216,6 +216,23 @@ def run_loop(
                 f"({iteration_timeout}s); the agent process group was killed"
             )
 
+        # Enforce ALLOWED_PATHS BEFORE honoring the completion marker
+        # (R0.4): an agent that edits out-of-scope files and emits
+        # COMPLETE in the same iteration must not bypass enforcement.
+        # When enforcement fails the iteration is treated as failed even
+        # if the marker was seen.
+        if config.allowed_paths and is_repo:
+            ok, _ = guards.enforce_allowed_paths(config, ui, cwd)
+            if not ok:
+                return LoopResult(
+                    completed=False,
+                    iterations=iteration,
+                    exit_code=1,
+                    duration_seconds=time.monotonic() - loop_start,
+                    iteration_durations=iteration_durations,
+                    timed_out_iterations=timed_out_iterations,
+                )
+
         # Check for completion
         if completion_seen:
             ui.ok("Done")
@@ -228,12 +245,6 @@ def run_loop(
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,
             )
-
-        # Enforce ALLOWED_PATHS
-        if config.allowed_paths and is_repo:
-            ok, _ = guards.enforce_allowed_paths(config, ui, cwd)
-            if not ok:
-                return LoopResult(completed=False, iterations=iteration, exit_code=1)
 
         # Component wall clock: abort cleanly rather than start work that
         # is already past its budget. This is the "which limit fired"
