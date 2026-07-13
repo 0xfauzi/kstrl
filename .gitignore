@@ -56,3 +56,6 @@ scripts/ralph/progress.txt
 scripts/ralph/codebase_map.md
 scripts/ralph/prompt.md
 scripts/ralph/understand_prompt.md
+
+# Ralph - runtime state (journals, worktrees, knowledge, locks; R3.4)
+.ralph/
