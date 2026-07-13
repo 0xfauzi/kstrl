@@ -296,7 +296,7 @@ mocks itself. The spine tests are the regression net for every later phase, so
 they come before feature work. Target: zero load-bearing behaviors with
 mock-only coverage.
 
-- [ ] R4.1 (S) **Suite isolation** [H-18, T-19]
+- [x] R4.1 (S) **Suite isolation** [H-18, T-19]
   - Autouse conftest fixture routing evolution/experiments/knowledge paths to
     tmp_path; a guard fixture fails the run if the repo's real `.ralph/`
     mutates during tests; `clean_env` extended to FACTORY_*/RALPH_* families.
@@ -362,12 +362,20 @@ spending, (c) what do I do when I come back to a partial failure.
     journal distinguishes superseded findings from shipped ones.
   - Failure summary lists, per failed component: phase, check, evidence paths
     (worktree, raw outputs, journal offsets).
-- [ ] R3.4 (S) **Repo hygiene** [LOW hygiene]
+- [~] R3.4 (S) **Repo hygiene** [LOW hygiene]
   - `.gitignore` covers `.ralph/`; remove the 99MB stale worktree
     (`git worktree remove .claude/worktrees/tender-leakey` after confirming the
     branch has no unique commits: check first, it is a destructive step for the
     user to approve); commit or delete the untracked docs artifacts; track
     `ralph.toml.example`, ignore live `ralph.toml`.
+  - Partial (landed in the R4.1 PR): `.gitignore` covers `.ralph/`;
+    polluted journals archived to `.ralph/archive/` with a README. The
+    stale worktree `claude/tender-leakey` had 2 commits not on main
+    (6b41584, 917bde6: the pre-purge TUI work); after user approval the
+    worktree and branch were removed, with a local tag
+    `archive/tui-overhaul` left at 6b41584 so the commits stay
+    recoverable. Still open: the `ralph.toml.example` tracking question
+    and the remaining untracked docs artifacts.
 
 Done when: a deliberately failed 3-component run can be diagnosed and resumed
 using only `ralph status`, the failure summary, and `ralph retry`, without
