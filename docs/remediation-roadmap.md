@@ -132,7 +132,7 @@ item here is one of those three.
   - Verify: two-process concurrency test (real flock); custom-manifest
     round-trip test; single_pr parallel test.
 
-- [ ] R0.6 (S) **Input hygiene for LLM-emitted identifiers** [H-9]
+- [x] R0.6 (S) **Input hygiene for LLM-emitted identifiers** [H-9]
   - `manifest.py` + `decompose.py`: component ids match
     `^[a-z0-9][a-z0-9._-]{0,63}$`; branch names reject leading `-`, `..`, and
     whitespace; git invocations use `--` separators where refs meet argv.

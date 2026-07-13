@@ -28,8 +28,10 @@ def is_gh_available() -> bool:
 
 def push_branch(branch: str, cwd: Path) -> bool:
     """Push a branch to the remote with tracking."""
+    # "--" makes a crafted branch value an invalid refspec instead of a
+    # git option (R0.6).
     result = subprocess.run(
-        ["git", "push", "-u", "origin", branch],
+        ["git", "push", "-u", "--", "origin", branch],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -145,9 +147,10 @@ def push_create_and_merge_pr(
     # Wait for merge
     if wait_for_merge(pr_number, cwd, timeout=merge_timeout):
         ui.ok(f"  PR #{pr_number} merged")
-        # Pull main so downstream worktrees start from merged state
+        # Pull main so downstream worktrees start from merged state.
+        # "--" keeps a crafted base branch out of option position (R0.6).
         subprocess.run(
-            ["git", "pull", "origin", manifest.base_branch],
+            ["git", "pull", "--", "origin", manifest.base_branch],
             cwd=cwd, capture_output=True,
         )
         return (pr_number, pr_url)
@@ -222,13 +225,15 @@ def create_component_pr(
     body = _generate_pr_body(component, manifest)
     title = f"[{manifest.project_name}] {component.title}"
 
+    # --base=/--head= bind the branch values to their flags even if a
+    # crafted value starts with "-" (R0.6).
     result = subprocess.run(
         [
             "gh", "pr", "create",
             "--title", title,
             "--body", body,
-            "--base", manifest.base_branch,
-            "--head", component.branch_name,
+            f"--base={manifest.base_branch}",
+            f"--head={component.branch_name}",
         ],
         cwd=cwd,
         capture_output=True,
@@ -360,13 +365,15 @@ def create_single_pr(
     body = "\n".join(lines)
     title = f"[{manifest.project_name}] Factory: all components"
 
+    # --base=/--head= bind the branch values to their flags even if a
+    # crafted value starts with "-" (R0.6).
     result = subprocess.run(
         [
             "gh", "pr", "create",
             "--title", title,
             "--body", body,
-            "--base", manifest.base_branch,
-            "--head", branch,
+            f"--base={manifest.base_branch}",
+            f"--head={branch}",
         ],
         cwd=cwd,
         capture_output=True,

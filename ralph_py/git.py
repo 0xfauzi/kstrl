@@ -77,8 +77,12 @@ def checkout_branch(
     try:
         if branch_exists(branch, cwd, timeout=timeout):
             ui.info(f"Branch: checking out existing branch {branch}{source_suffix}")
+            # Trailing "--" pins the argument as a ref, never a pathspec
+            # (R0.6). Note "--" cannot stop git from parsing a leading
+            # "-" ref as an option here; that shape is rejected upstream
+            # by manifest.validate_branch_name.
             result = subprocess.run(
-                ["git", "checkout", branch],
+                ["git", "checkout", branch, "--"],
                 cwd=cwd,
                 capture_output=True,
                 text=True,
@@ -214,7 +218,7 @@ def get_diff_names(
     """Get list of changed file names compared to a base branch."""
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base_branch}...HEAD"],
+            ["git", "diff", "--name-only", f"{base_branch}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -239,7 +243,7 @@ def get_diff_content(
     """Get full diff content compared to a base branch."""
     try:
         result = subprocess.run(
-            ["git", "diff", f"{base_branch}...HEAD"],
+            ["git", "diff", f"{base_branch}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -312,8 +316,10 @@ def merge_branch(
 ) -> bool:
     """Merge a branch into the current branch (no-edit)."""
     try:
+        # "--" makes a crafted branch value an invalid ref instead of a
+        # git option (R0.6).
         result = subprocess.run(
-            ["git", "merge", "--no-edit", branch],
+            ["git", "merge", "--no-edit", "--", branch],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -332,8 +338,9 @@ def create_branch_from(
 ) -> bool:
     """Create and checkout a new branch from a base ref."""
     try:
+        # Trailing "--" pins *base* as a ref, never a pathspec (R0.6).
         result = subprocess.run(
-            ["git", "checkout", "-b", branch_name, base],
+            ["git", "checkout", "-b", branch_name, base, "--"],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -353,8 +360,10 @@ def delete_branch(
     """Delete a local branch."""
     flag = "-D" if force else "-d"
     try:
+        # "--" makes a crafted branch value an unknown ref instead of a
+        # git option (R0.6).
         result = subprocess.run(
-            ["git", "branch", flag, branch_name],
+            ["git", "branch", flag, "--", branch_name],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -372,8 +381,11 @@ def checkout_existing(
 ) -> bool:
     """Checkout an existing branch without creating it."""
     try:
+        # Trailing "--" pins the argument as a ref, never a pathspec
+        # (R0.6); leading "-" shapes are rejected upstream by
+        # manifest.validate_branch_name.
         result = subprocess.run(
-            ["git", "checkout", branch],
+            ["git", "checkout", branch, "--"],
             cwd=cwd,
             capture_output=True,
             text=True,
