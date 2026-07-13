@@ -1821,6 +1821,45 @@ class TestFactoryDistillIntegration:
 
         mock_distill.assert_not_called()
 
+    def test_factory_passes_microsecond_run_id_to_distill(
+        self, tmp_path: Path,
+    ) -> None:
+        """R1.6 follow-up: run_factory sources its run id from
+        knowledge.current_run_id(), so knowledge run dirs carry
+        microsecond precision and same-second factory invocations order
+        by creation time, not by random nonce."""
+        import re
+
+        root = _setup_factory_project(tmp_path, "comp-a")
+        manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
+        manifest.components[0].prd_path = (
+            "scripts/ralph/feature/comp-a/prd.json"
+        )
+        config = FactoryConfig(
+            use_worktrees=False, create_prs=False, max_parallel=1,
+            review_mode="skip",
+            verify_config=VerifyConfig(
+                test_command="true", typecheck_command="true",
+                lint_command="true", check_diff_scope=False,
+                check_bad_patterns=False, subprocess_timeout=5.0,
+            ),
+        )
+        base = _factory_base_config(root)
+        ui = PlainUI(no_color=True)
+        success = ComponentResult("comp-a", success=True, iterations=2)
+
+        with patch(
+            "ralph_py.factory._run_component", return_value=success,
+        ), patch(
+            "ralph_py.factory.distill_facts", return_value=(1, "ok"),
+        ) as mock_distill:
+            run_factory(manifest, config, base, ui, root)
+
+        run_id = mock_distill.call_args.args[5]
+        assert re.fullmatch(
+            r"factory-\d{8}-\d{6}\.\d{6}-[0-9a-f]{6}", run_id,
+        ), f"factory run id lacks microsecond precision: {run_id!r}"
+
 
 # ---------------------------------------------------------------------------
 # Per-fact-id supersede handles contract-breaker rollback scenario
