@@ -377,13 +377,14 @@ class TestGitArgvSeparators:
             ["git", "checkout", "-qb", "ralph/factory/comp-a"],
             cwd=repo, check=True,
         )
-        assert push_branch("ralph/factory/comp-a", repo) is True
+        # R0.2: push_branch returns None on success, an error otherwise.
+        assert push_branch("ralph/factory/comp-a", repo) is None
 
     def test_push_branch_option_shape_fails_closed(
         self, git_repo_with_origin: Path,
     ) -> None:
         # With "--", "-evil" is an unknown refspec, not a push option.
-        assert push_branch("-evil", git_repo_with_origin) is False
+        assert push_branch("-evil", git_repo_with_origin) is not None
 
     def test_merge_branch_legitimate(self, git_repo_with_origin: Path) -> None:
         repo = git_repo_with_origin
@@ -490,6 +491,7 @@ class TestPrArgvShapes:
 
         monkeypatch.setattr(pr_module.subprocess, "run", fake_run)
 
-        assert push_branch("ralph/factory/comp-a", tmp_path) is True
+        # R0.2: push_branch returns None on success, an error otherwise.
+        assert push_branch("ralph/factory/comp-a", tmp_path) is None
         (argv,) = captured
         assert argv.index("--") < argv.index("ralph/factory/comp-a")
