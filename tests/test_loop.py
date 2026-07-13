@@ -21,7 +21,9 @@ class MockAgent:
     def name(self) -> str:
         return "mock"
 
-    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
         yield from self._output
         if self._output:
             self._final_message = self._output[-1]

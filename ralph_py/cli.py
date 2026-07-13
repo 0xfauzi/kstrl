@@ -23,6 +23,7 @@ from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from ralph_py.loop import run_loop
 from ralph_py.manifest import Manifest
 from ralph_py.prd import PRD
+from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui import get_ui
 
 
@@ -341,6 +342,7 @@ def run(
         review_mode="advisory",
         contract_config=None,
         feedforward_config=ff_config,
+        timeout_config=TimeoutConfig.load(root_dir),
     )
 
     factory_result = run_factory(manifest, factory_cfg, config, ui_impl, root_dir)
@@ -560,7 +562,10 @@ def understand(
 
     agent = get_agent(config.agent_cmd, config.model, config.model_reasoning_effort)
 
-    result = run_loop(config, ui_impl, agent, root_dir)
+    result = run_loop(
+        config, ui_impl, agent, root_dir,
+        timeouts=TimeoutConfig.load(root_dir),
+    )
     sys.exit(result.exit_code)
 
 
@@ -882,9 +887,13 @@ def feature(
         understand_config.ralph_branch = branch
         understand_config.ralph_branch_explicit = True
 
+    timeouts = TimeoutConfig.load(root_dir)
+
     understand_log = log_path("understand")
     understand_agent = LoggingAgent(agent, understand_log)
-    understand_result = run_loop(understand_config, ui_impl, understand_agent, root_dir)
+    understand_result = run_loop(
+        understand_config, ui_impl, understand_agent, root_dir, timeouts=timeouts,
+    )
     if understand_result.exit_code != 0:
         sys.exit(understand_result.exit_code)
 
@@ -925,7 +934,7 @@ def feature(
 
     run_log = log_path("run")
     run_agent = LoggingAgent(agent, run_log)
-    result = run_loop(run_config, ui_impl, run_agent, root_dir)
+    result = run_loop(run_config, ui_impl, run_agent, root_dir, timeouts=timeouts)
     if result.exit_code == 0 or repair_max_runs == 0 or result.iterations == 0:
         sys.exit(result.exit_code)
 
@@ -949,7 +958,9 @@ def feature(
             base_config.model_reasoning_effort,
         )
         repair_agent = LoggingAgent(repair_agent_base, repair_log)
-        repair_result = run_loop(repair_config, ui_impl, repair_agent, root_dir)
+        repair_result = run_loop(
+            repair_config, ui_impl, repair_agent, root_dir, timeouts=timeouts,
+        )
         if repair_result.exit_code == 0:
             sys.exit(0)
         last_log = repair_log
@@ -1215,13 +1226,17 @@ def decompose(
     "--agent-timeout",
     type=float,
     default=1800.0,
-    help="Timeout per agent iteration in seconds (default: 1800)",
+    help="Timeout per agent iteration in seconds; 0 disables "
+         "(default: 1800, or RALPH_TIMEOUT_AGENT_ITERATION / "
+         "[timeout].agent_iteration in ralph.toml)",
 )
 @click.option(
     "--component-timeout",
     type=float,
     default=7200.0,
-    help="Timeout per component total in seconds (default: 7200)",
+    help="Timeout per component total in seconds; 0 disables "
+         "(default: 7200, or RALPH_TIMEOUT_COMPONENT / "
+         "[timeout].component_total in ralph.toml)",
 )
 @click.option(
     "--progress-log",
@@ -1439,6 +1454,16 @@ def factory(
         fail_threshold=security_fail_threshold,
     )
 
+    # R0.1: TimeoutConfig is the single source for timeout values.
+    # Precedence: explicit CLI flag > env > ralph.toml > defaults (the
+    # click defaults on the two flags only document the dataclass
+    # defaults; they are applied solely when the flag is passed).
+    timeout_config = TimeoutConfig.load(root_dir)
+    if _use_cli_value(ctx, "agent_timeout"):
+        timeout_config.agent_iteration = agent_timeout
+    if _use_cli_value(ctx, "component_timeout"):
+        timeout_config.component_total = component_timeout
+
     factory_config = FactoryConfig(
         max_parallel=max_parallel,
         max_retries=max_retries,
@@ -1453,6 +1478,7 @@ def factory(
         security_config=s_config,
         contract_config=c_config,
         progress_log_path=progress_log,
+        timeout_config=timeout_config,
     )
 
     ralph_dir = root_dir / "scripts" / "ralph"

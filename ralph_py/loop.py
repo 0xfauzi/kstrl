@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git, guards
+from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from ralph_py.prd import PRD
+from ralph_py.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -27,6 +29,13 @@ class LoopResult:
     exit_code: int
     duration_seconds: float = 0.0
     iteration_durations: list[float] = field(default_factory=list)
+    # R0.1: which limit aborted the loop, if any. "component" means the
+    # component_total wall clock was exceeded across iterations.
+    timeout_limit: str | None = None
+    # How many iterations were killed by the per-iteration agent timeout.
+    # Derived from the adapters' timeout error line - a reporting hint,
+    # never a control-flow gate.
+    timed_out_iterations: int = 0
 
 
 def run_loop(
@@ -35,6 +44,7 @@ def run_loop(
     agent: Agent,
     cwd: Path | None = None,
     context_prefix: str | None = None,
+    timeouts: TimeoutConfig | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -43,12 +53,18 @@ def run_loop(
         ui: UI implementation for output
         agent: Agent to run
         cwd: Working directory (defaults to current)
+        context_prefix: Optional context prepended to the prompt
+        timeouts: Timeout limits (agent_iteration is passed into every
+            agent.run call; component_total is enforced as a wall clock
+            across iterations). Defaults to TimeoutConfig.from_env().
 
     Returns:
         LoopResult with completion status and exit code
     """
     if cwd is None:
         cwd = Path.cwd()
+    if timeouts is None:
+        timeouts = TimeoutConfig.from_env()
 
     ui.startup_art()
 
@@ -70,6 +86,14 @@ def run_loop(
     ui.kv("Allowed paths", allowed_paths)
     ui.kv("Reasoning", config.model_reasoning_effort or "<default>")
     ui.kv("UI", config.ui_mode)
+    ui.kv(
+        "Agent timeout",
+        f"{timeouts.agent_iteration}s" if timeouts.agent_iteration > 0 else "<disabled>",
+    )
+    ui.kv(
+        "Component timeout",
+        f"{timeouts.component_total}s" if timeouts.component_total > 0 else "<disabled>",
+    )
 
     # Resolve the prompt template. If the explicit prompt file does not
     # exist, fall back to the H3-protected DEFAULT_PROMPT from
@@ -144,16 +168,35 @@ def run_loop(
 
     loop_start = time.monotonic()
     iteration_durations: list[float] = []
+    timed_out_iterations = 0
+    component_budget = timeouts.component_total
 
     for iteration in range(1, config.max_iterations + 1):
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
         iter_start = time.monotonic()
 
+        # Bound the iteration by the per-iteration limit AND the remaining
+        # component budget, so one iteration cannot blow far past the
+        # component wall clock (the adapters kill the agent's process
+        # group when the passed timeout expires).
+        iteration_timeout: float | None = (
+            timeouts.agent_iteration if timeouts.agent_iteration > 0 else None
+        )
+        if component_budget > 0:
+            remaining = component_budget - (iter_start - loop_start)
+            iteration_timeout = (
+                min(iteration_timeout, remaining)
+                if iteration_timeout is not None else remaining
+            )
+
         # Run agent
         completion_seen = False
-        for line in agent.run(prompt, cwd):
+        iteration_timed_out = False
+        for line in agent.run(prompt, cwd, timeout=iteration_timeout):
             if line.strip() == COMPLETION_MARKER:
                 completion_seen = True
+            if line.startswith(TIMEOUT_MESSAGE_PREFIX):
+                iteration_timed_out = True
             ui.stream_line("AI", line)
 
         final_message = agent.final_message
@@ -166,6 +209,13 @@ def run_loop(
         iter_duration = time.monotonic() - iter_start
         iteration_durations.append(iter_duration)
 
+        if iteration_timed_out:
+            timed_out_iterations += 1
+            ui.warn(
+                f"Iteration {iteration} hit the agent iteration timeout "
+                f"({iteration_timeout}s); the agent process group was killed"
+            )
+
         # Check for completion
         if completion_seen:
             ui.ok("Done")
@@ -176,6 +226,7 @@ def run_loop(
                 exit_code=0,
                 duration_seconds=total_duration,
                 iteration_durations=iteration_durations,
+                timed_out_iterations=timed_out_iterations,
             )
 
         # Enforce ALLOWED_PATHS
@@ -183,6 +234,25 @@ def run_loop(
             ok, _ = guards.enforce_allowed_paths(config, ui, cwd)
             if not ok:
                 return LoopResult(completed=False, iterations=iteration, exit_code=1)
+
+        # Component wall clock: abort cleanly rather than start work that
+        # is already past its budget. This is the "which limit fired"
+        # signal for the factory (timeout_limit="component").
+        elapsed = time.monotonic() - loop_start
+        if component_budget > 0 and elapsed >= component_budget:
+            ui.err(
+                f"Component timeout: {component_budget}s wall clock exceeded "
+                f"after {iteration} iteration(s); aborting loop"
+            )
+            return LoopResult(
+                completed=False,
+                iterations=iteration,
+                exit_code=1,
+                duration_seconds=elapsed,
+                iteration_durations=iteration_durations,
+                timeout_limit="component",
+                timed_out_iterations=timed_out_iterations,
+            )
 
         # Interactive pause
         if config.interactive and ui.can_prompt():
@@ -202,7 +272,13 @@ def run_loop(
             time.sleep(config.sleep_seconds)
 
     # Max iterations reached
-    ui.warn(f"Max iterations reached (no {COMPLETION_MARKER} seen)")
+    if timed_out_iterations:
+        ui.warn(
+            f"Max iterations reached (no {COMPLETION_MARKER} seen; "
+            f"{timed_out_iterations} iteration(s) hit the agent timeout)"
+        )
+    else:
+        ui.warn(f"Max iterations reached (no {COMPLETION_MARKER} seen)")
     total_duration = time.monotonic() - loop_start
     return LoopResult(
         completed=False,
@@ -210,6 +286,7 @@ def run_loop(
         exit_code=1,
         duration_seconds=total_duration,
         iteration_durations=iteration_durations,
+        timed_out_iterations=timed_out_iterations,
     )
 
 

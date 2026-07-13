@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from collections.abc import Mapping
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -26,6 +27,7 @@ from ralph_py.pr import create_prs_in_order, create_single_pr
 from ralph_py.prd import PRD
 from ralph_py.review import ReviewMode, run_review
 from ralph_py.security import SecurityConfig, SecurityMode, run_security_review
+from ralph_py.timeout import TimeoutConfig
 from ralph_py.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:
@@ -67,6 +69,10 @@ class FactoryConfig:
     # E6: when True, pause and prompt the user before each component's
     # PR creation step. Off by default; opt-in for sensitive projects.
     pause_before_pr_merge: bool = False
+    # R0.1: timeout limits (agent iteration, component wall clock,
+    # scheduler backstop margin). None means run_factory loads
+    # TimeoutConfig.load(root_dir) - toml [timeout] section + env.
+    timeout_config: TimeoutConfig | None = None
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -136,11 +142,29 @@ class FactoryResult:
     exit_code: int = 0
 
 
+def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:
+    """Remove a stale index.lock left behind by a killed git operation.
+
+    A timed-out agent is SIGKILLed and can die mid-git-op inside its
+    worktree; git then refuses every subsequent operation there. The lock
+    for a worktree lives under the MAIN repo's .git/worktrees/<name>/.
+    Only the component's own lock is touched - the main repo's
+    .git/index.lock may belong to a live operator process and is left
+    alone.
+    """
+    lock = root_dir / ".git" / "worktrees" / component_id / "index.lock"
+    try:
+        lock.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _setup_worktree(
     component_id: str,
     branch_name: str,
     base_branch: str,
     root_dir: Path,
+    fresh_from_base: bool = False,
 ) -> Path:
     """Create a git worktree for a component.
 
@@ -148,6 +172,11 @@ def _setup_worktree(
     serializes setup across concurrent factory invocations on the same
     machine. Without it, two simultaneously-running factories could
     clobber each other's worktree at the same path.
+
+    ``fresh_from_base=True`` (used for retries after a timeout kill)
+    additionally deletes the component branch so the worktree is recreated
+    from ``base_branch`` instead of silently reusing possibly-dirty state
+    from the killed attempt (R0.1).
 
     POSIX only. On Windows the fcntl import fails; we degrade to the
     pre-lock behavior and document the limitation in the runbook.
@@ -171,9 +200,20 @@ def _setup_worktree(
             # caveat.
             lock_fp = None
 
+        # A killed prior attempt may have left git mid-operation.
+        _remove_stale_index_lock(root_dir, component_id)
+
         if worktree_path.exists():
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(worktree_path)],
+                cwd=root_dir, capture_output=True, timeout=30,
+            )
+
+        if fresh_from_base:
+            # Delete the branch from the killed attempt so the add below
+            # recreates it from base rather than reusing its commits.
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
                 cwd=root_dir, capture_output=True, timeout=30,
             )
 
@@ -233,6 +273,8 @@ def _run_component(
     knowledge_prefix: str = "",
     progress_file_str: str = "scripts/ralph/progress.txt",
     codebase_map_file_str: str = "scripts/ralph/codebase_map.md",
+    agent_iteration_timeout: float = 1800.0,
+    component_timeout: float = 7200.0,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -343,13 +385,37 @@ def _run_component(
         no_color=True,
     )
 
+    timeouts = TimeoutConfig(
+        agent_iteration=agent_iteration_timeout,
+        component_total=component_timeout,
+    )
+
     try:
-        result = run_loop(config, ui, agent, worktree_path, context_prefix=context_prefix)
+        result = run_loop(
+            config, ui, agent, worktree_path,
+            context_prefix=context_prefix, timeouts=timeouts,
+        )
+        # Report which limit fired so the retry/fail path can act on it
+        # (timeout errors trigger the recreate-from-base retry hygiene).
+        if result.completed:
+            error = None
+        elif result.timeout_limit == "component":
+            error = (
+                f"component timeout: exceeded {component_timeout}s wall clock "
+                f"after {result.iterations} iteration(s)"
+            )
+        elif result.timed_out_iterations:
+            error = (
+                f"Did not complete ({result.timed_out_iterations} iteration(s) "
+                f"hit the {agent_iteration_timeout}s agent iteration timeout)"
+            )
+        else:
+            error = "Did not complete"
         return ComponentResult(
             component_id=component_id,
             success=result.completed,
             iterations=result.iterations,
-            error=None if result.completed else "Did not complete",
+            error=error,
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
         )
@@ -362,6 +428,32 @@ def _run_component(
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
         )
+
+
+def _next_backstop_wait(
+    running: Mapping[Future[ComponentResult], str],
+    deadlines: Mapping[Future[ComponentResult], float],
+    now: float,
+) -> float | None:
+    """Seconds until the nearest scheduler-backstop deadline among running
+    futures. None means no deadline is armed (wait indefinitely for the
+    next completion, the pre-R0.1 behavior)."""
+    pending = [deadlines[f] for f in running if f in deadlines]
+    if not pending:
+        return None
+    return max(0.0, min(pending) - now)
+
+
+def _expired_futures(
+    running: Mapping[Future[ComponentResult], str],
+    deadlines: Mapping[Future[ComponentResult], float],
+    now: float,
+) -> list[Future[ComponentResult]]:
+    """Running futures whose scheduler-backstop deadline has passed."""
+    return [
+        f for f in running
+        if not f.done() and f in deadlines and now >= deadlines[f]
+    ]
 
 
 def run_factory(
@@ -429,6 +521,17 @@ def run_factory(
         max_parallel = 1
         ui.info("Worktrees disabled: running sequentially")
 
+    # R0.1: TimeoutConfig is the single source for the agent-iteration and
+    # component wall-clock limits. Enforcement layers: the adapters kill
+    # their subprocess group, run_loop aborts on the component wall clock,
+    # and the scheduler backstop below catches a worker that hangs outside
+    # both (e.g. a stuck scaffold or feedforward step).
+    timeout_cfg = factory_config.timeout_config or TimeoutConfig.load(root_dir)
+    backstop_seconds = (
+        timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
+        if timeout_cfg.component_total > 0 else 0.0
+    )
+
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))
     ui.kv("Max retries", str(factory_config.max_retries))
@@ -438,11 +541,27 @@ def run_factory(
         if factory_config.contract_config else "skip"
     )
     ui.kv("Contract check", contract_mode)
+    ui.kv(
+        "Agent timeout",
+        f"{timeout_cfg.agent_iteration}s"
+        if timeout_cfg.agent_iteration > 0 else "<disabled>",
+    )
+    ui.kv(
+        "Component timeout",
+        f"{timeout_cfg.component_total}s"
+        if timeout_cfg.component_total > 0 else "<disabled>",
+    )
 
     # Scheduling state
     running_futures: dict[Future[ComponentResult], str] = {}
     worktree_paths: dict[str, Path] = {}
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
+    # Components whose last failure was a timeout kill: their retry must
+    # not trust the surviving worktree/branch state (R0.1 requirement 5).
+    timeout_retry_ids: set[str] = set()
+    # Components abandoned by the scheduler backstop; their workers may
+    # still be alive, so their worktrees are never cleaned up here.
+    leaked_component_ids: set[str] = set()
 
     # E4: adversarial-call counter shared across review / security /
     # knowledge phases. When max_adversarial_calls is 0 the budget is
@@ -480,6 +599,17 @@ def run_factory(
     def _retry_or_fail(comp: Component, error: str, context_json: str | None) -> None:
         """Retry a component or mark it as failed."""
         if comp.retries < factory_config.max_retries:
+            # A timeout failure means the agent was killed mid-flight: the
+            # worktree/branch state cannot be trusted. Note the hygiene
+            # behavior in the error string so the audit trail explains why
+            # the retry does not resume from the killed attempt's commits.
+            if "timeout" in error.lower() and factory_config.use_worktrees:
+                timeout_retry_ids.add(comp.id)
+                error = (
+                    error
+                    + " [timeout retry: worktree recreated from base; "
+                    "stale index.lock removed]"
+                )
             comp.retries += 1
             comp.status = ComponentStatus.PENDING.value
             comp.error = error
@@ -918,8 +1048,11 @@ def run_factory(
         """Set up worktree for a component. Returns worktree path or None."""
         try:
             if factory_config.use_worktrees:
+                fresh_from_base = comp.id in timeout_retry_ids
+                timeout_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
                     comp.id, comp.branch_name, manifest.base_branch, root_dir,
+                    fresh_from_base=fresh_from_base,
                 )
             else:
                 wt_path = root_dir
@@ -972,6 +1105,8 @@ def run_factory(
             knowledge_prefix,
             progress_file_rel,
             codebase_map_file_rel,
+            timeout_cfg.agent_iteration,
+            timeout_cfg.component_total,
         )
 
     # Main scheduling loop
@@ -1002,7 +1137,12 @@ def run_factory(
 
             _handle_result(comp.id, comp_result)
     else:
-        with ProcessPoolExecutor(max_workers=max_parallel) as executor:
+        # Manual executor lifecycle: on a backstop breach we must NOT wait
+        # for the (possibly hung) worker at shutdown, which the
+        # `with ProcessPoolExecutor(...)` form would do.
+        executor = ProcessPoolExecutor(max_workers=max_parallel)
+        future_deadlines: dict[Future[ComponentResult], float] = {}
+        try:
             while True:
                 ready = manifest.get_ready_components()
                 slots = max_parallel - len(running_futures)
@@ -1023,32 +1163,94 @@ def run_factory(
                     args = _submit_args(comp, wt_path)
                     future = executor.submit(_run_component, *args)
                     running_futures[future] = comp.id
+                    if backstop_seconds > 0:
+                        future_deadlines[future] = (
+                            time.monotonic() + backstop_seconds
+                        )
 
                 if not running_futures:
                     break
 
-                done_futures: set[Future[ComponentResult]] = set()
-                for future in as_completed(running_futures):
-                    done_futures.add(future)
-                    comp_id = running_futures[future]
+                # Wait for the next completion, bounded by the nearest
+                # backstop deadline. The worker enforces its own timeouts
+                # (adapter kill + loop wall clock); this scheduler-side
+                # deadline is the last line of defense when a worker hangs
+                # outside those layers.
+                wait_timeout = _next_backstop_wait(
+                    running_futures, future_deadlines, time.monotonic(),
+                )
+                done, _pending = wait(
+                    set(running_futures),
+                    timeout=wait_timeout,
+                    return_when=FIRST_COMPLETED,
+                )
 
+                if done:
+                    # Preserve pre-R0.1 semantics: process one completion
+                    # per pass so freed slots are refilled promptly.
+                    future = next(iter(done))
+                    comp_id = running_futures.pop(future)
+                    future_deadlines.pop(future, None)
                     try:
                         comp_result = future.result()
                     except Exception as exc:
                         comp_result = ComponentResult(
                             component_id=comp_id, success=False, error=str(exc),
                         )
-
                     _handle_result(comp_id, comp_result)
-                    break
+                    continue
 
-                for future in done_futures:
-                    del running_futures[future]
+                # Nothing completed inside the window: fail every
+                # component past its backstop deadline and keep going.
+                now = time.monotonic()
+                for future in _expired_futures(
+                    running_futures, future_deadlines, now,
+                ):
+                    comp_id = running_futures.pop(future)
+                    future_deadlines.pop(future, None)
+                    leaked_component_ids.add(comp_id)
+                    timed_out_comp = manifest.get_component(comp_id)
+                    if timed_out_comp is not None:
+                        timed_out_comp.status = ComponentStatus.FAILED.value
+                        timed_out_comp.error = "component timeout"
+                        skipped = manifest.cascade_skip(comp_id)
+                        factory_result.failed.append(comp_id)
+                        factory_result.skipped.extend(skipped)
+                        progress_log.component_failed(
+                            comp_id, "component timeout",
+                        )
+                    ui.err(
+                        f"  Failed: {comp_id}: component timeout "
+                        f"(scheduler backstop after {backstop_seconds:.0f}s)"
+                    )
+                    ui.warn(
+                        f"  A worker process for '{comp_id}' may be leaked; "
+                        f"its worktree is left in place"
+                    )
+                    manifest.save(manifest_path)
+        finally:
+            if leaked_component_ids:
+                ui.warn(
+                    "Shutting down worker pool without waiting: "
+                    f"{len(leaked_component_ids)} worker(s) may still be running"
+                )
+                executor.shutdown(wait=False, cancel_futures=True)
+            else:
+                executor.shutdown(wait=True)
 
     # Cleanup worktrees
     if factory_config.use_worktrees:
         ui.section("Factory: Cleanup")
         for comp_id in worktree_paths:
+            if comp_id in leaked_component_ids:
+                # A possibly-live worker still owns this worktree; removing
+                # it under the worker risks corrupting the main repo's
+                # worktree metadata.
+                ui.warn(
+                    f"  Keeping worktree for '{comp_id}' "
+                    f"(leaked worker may still be running)"
+                )
+                continue
             _cleanup_worktree(comp_id, root_dir)
         ui.ok("Worktrees cleaned up")
 

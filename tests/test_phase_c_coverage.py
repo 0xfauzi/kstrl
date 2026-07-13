@@ -347,22 +347,25 @@ class TestC6ConcurrentFactory:
         def go(root: Path) -> None:
             try:
                 manifest = _make_manifest([_component("comp-a")])
-                with patch(
-                    "ralph_py.factory._run_component", return_value=success,
-                ):
-                    run_factory(
-                        manifest, config, _base_config(root),
-                        PlainUI(no_color=True), root,
-                    )
+                run_factory(
+                    manifest, config, _base_config(root),
+                    PlainUI(no_color=True), root,
+                )
             except Exception as e:  # noqa: BLE001
                 errors.append(e)
 
-        t1 = threading.Thread(target=go, args=(root_a,))
-        t2 = threading.Thread(target=go, args=(root_b,))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        # Patch ONCE around both threads. Entering/exiting the same patch
+        # target concurrently from two threads is racy and leaked the mock
+        # into ralph_py.factory._run_component for the rest of the pytest
+        # process (t2 restored t1's mock as the "original"), breaking any
+        # later test that needs the real function.
+        with patch("ralph_py.factory._run_component", return_value=success):
+            t1 = threading.Thread(target=go, args=(root_a,))
+            t2 = threading.Thread(target=go, args=(root_b,))
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
         assert errors == []
 
 

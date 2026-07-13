@@ -58,10 +58,9 @@ class RalphConfig:
     model_reasoning_effort: str | None = None
     agent_type: str | None = None  # "claude-code", "codex", "auto", or None
 
-    # Timeout config
-    agent_iteration_timeout: float = 1800.0   # 30 min per agent.run() call
-    component_timeout: float = 7200.0         # 2 hours per component total
-    subprocess_timeout: float = 60.0          # general subprocess default
+    # Timeouts live in ralph_py.timeout.TimeoutConfig (the single source
+    # for agent_iteration / component_total; R0.1). RalphConfig used to
+    # duplicate them as dead fields - deliberately deleted, do not re-add.
 
     # UI config
     ui_mode: str = "auto"  # auto|rich|plain
@@ -272,14 +271,6 @@ def _apply_env_overrides(config: RalphConfig, root_dir: Path) -> None:
         config.model_reasoning_effort = os.environ["MODEL_REASONING_EFFORT"]
     if "RALPH_AGENT_TYPE" in os.environ:
         config.agent_type = os.environ["RALPH_AGENT_TYPE"]
-    if "RALPH_TIMEOUT_AGENT_ITERATION" in os.environ:
-        config.agent_iteration_timeout = float(
-            os.environ["RALPH_TIMEOUT_AGENT_ITERATION"]
-        )
-    if "RALPH_TIMEOUT_COMPONENT" in os.environ:
-        config.component_timeout = float(os.environ["RALPH_TIMEOUT_COMPONENT"])
-    if "RALPH_TIMEOUT_DEFAULT" in os.environ:
-        config.subprocess_timeout = float(os.environ["RALPH_TIMEOUT_DEFAULT"])
     if "RALPH_UI" in os.environ:
         config.ui_mode = os.environ["RALPH_UI"]
     if "NO_COLOR" in os.environ:

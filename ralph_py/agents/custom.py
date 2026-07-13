@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+
+from ralph_py.agents.proc import DeadlineStreamer, timeout_message
 
 
 class CustomAgent:
@@ -30,7 +31,9 @@ class CustomAgent:
     ) -> Iterator[str]:
         """Run command with prompt piped to stdin.
 
-        Yields output lines as they arrive.
+        Yields output lines as they arrive. When ``timeout`` is set and the
+        command hangs (with or without output), its process group is killed
+        and a timeout error line is yielded last.
         """
         self._final_message = None
 
@@ -41,33 +44,26 @@ class CustomAgent:
             # Fallback to /bin/sh when bash is unavailable.
             cmd = self._command
 
-        proc = subprocess.Popen(
+        streamer = DeadlineStreamer(
             cmd,
             shell=not use_bash,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
             cwd=cwd,
+            stdin_text=prompt,
+            timeout=timeout,
         )
 
-        # Write prompt to stdin
-        if proc.stdin:
-            try:
-                proc.stdin.write(prompt)
-                proc.stdin.close()
-            except BrokenPipeError:
-                pass
-
-        # Stream output
         output_lines: list[str] = []
-        if proc.stdout:
-            for line in proc.stdout:
-                line = line.rstrip("\n")
-                output_lines.append(line)
-                yield line
+        for line in streamer.lines():
+            output_lines.append(line)
+            yield line
 
-        proc.wait()
+        if streamer.timed_out:
+            # Killed mid-run: partial output is not a trustworthy final
+            # message, so leave it unset.
+            yield timeout_message(timeout)
+            return
+
+        streamer.finish()
 
         # Store last output as "final message" for consistency
         if output_lines:
