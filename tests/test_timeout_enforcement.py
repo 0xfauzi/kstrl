@@ -265,6 +265,87 @@ class TestCodexAgentDeadline:
         assert _wait_pid_dead(_read_pid(pidfile))
 
 
+class TestSignalGroupSafety:
+    """_signal_group must never group-kill a pathological pgid.
+
+    Regression: a mocked Popen's pid coerces to 1 via MagicMock.__index__,
+    so os.getpgid(pid) did NOT raise TypeError as assumed; killpg(1, sig)
+    is kill(-1, sig) ("signal everything this user can") and took down the
+    whole CI runner. The guard must fall back to signalling the direct
+    child for any non-int pid, pid <= 1, resolved pgid <= 1, or our own
+    process group.
+    """
+
+    def _streamer_with_fake_proc(self, pid: object) -> tuple[object, object]:
+        from unittest.mock import MagicMock, patch
+
+        from ralph_py.agents.proc import DeadlineStreamer
+
+        fake_proc = MagicMock()
+        fake_proc.pid = pid
+        fake_proc.stdout = iter([])
+        fake_proc.stdin = MagicMock()
+        with patch("subprocess.Popen", return_value=fake_proc):
+            streamer = DeadlineStreamer(["true"])
+        return streamer, fake_proc
+
+    @pytest.mark.parametrize("bad_pid", [None, 0, 1, -1])
+    def test_never_killpg_for_unsafe_pids(
+        self, bad_pid: object, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import signal as _signal
+
+        killpg_calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            os, "killpg",
+            lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        )
+        streamer, fake_proc = self._streamer_with_fake_proc(bad_pid)
+
+        streamer._signal_group(_signal.SIGTERM)
+
+        assert killpg_calls == []
+        fake_proc.terminate.assert_called_once()
+
+    def test_mock_pid_falls_back_to_terminate(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The exact CI-killer shape: MagicMock pid (coerces to 1)."""
+        import signal as _signal
+        from unittest.mock import MagicMock
+
+        killpg_calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            os, "killpg",
+            lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        )
+        streamer, fake_proc = self._streamer_with_fake_proc(MagicMock())
+
+        streamer._signal_group(_signal.SIGTERM)
+
+        assert killpg_calls == []
+        fake_proc.terminate.assert_called_once()
+
+    def test_own_process_group_is_never_group_killed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A pid resolving to the harness's own pgid must not be killpg'd."""
+        import signal as _signal
+
+        killpg_calls: list[tuple[int, int]] = []
+        monkeypatch.setattr(
+            os, "killpg",
+            lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        )
+        monkeypatch.setattr(os, "getpgid", lambda pid: os.getpgrp())
+        streamer, fake_proc = self._streamer_with_fake_proc(os.getpid())
+
+        streamer._signal_group(_signal.SIGTERM)
+
+        assert killpg_calls == []
+        fake_proc.terminate.assert_called_once()
+
+
 class _RecordingAgent:
     """In-process fake that records the timeout passed by run_loop."""
 

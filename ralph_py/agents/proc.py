@@ -137,20 +137,36 @@ class DeadlineStreamer:
         self.kill()
 
     def _signal_group(self, sig: signal.Signals) -> None:
+        pid = self._proc.pid
         try:
-            pgid = os.getpgid(self._proc.pid)
-            os.killpg(pgid, sig)
-        except (ProcessLookupError, PermissionError, TypeError,
-                AttributeError, OSError):
-            # Group already gone, non-POSIX platform, or a mocked proc in
-            # tests: fall back to signalling the direct child only.
-            try:
-                if sig == signal.SIGKILL:
-                    self._proc.kill()
-                else:
-                    self._proc.terminate()
-            except (ProcessLookupError, OSError):
-                pass
+            # `isinstance(pid, int)` is load-bearing: a mocked Popen's pid
+            # coerces to 1 via MagicMock.__index__, and killpg(1, sig) is
+            # kill(-1, sig) - "signal every process this user can" - which
+            # kills the harness and its whole session. Same reason for the
+            # pgid > 1 and not-our-own-group guards: start_new_session=True
+            # makes the child its own group leader (pgid == child pid), so
+            # any pgid at or below 1, or equal to ours, means something is
+            # wrong and group-kill must not proceed.
+            if (
+                hasattr(os, "killpg")
+                and isinstance(pid, int)
+                and pid > 1
+            ):
+                pgid = os.getpgid(pid)
+                if pgid > 1 and pgid != os.getpgrp():
+                    os.killpg(pgid, sig)
+                    return
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        # Group already gone, non-POSIX platform, unsafe pgid, or a mocked
+        # proc in tests: fall back to signalling the direct child only.
+        try:
+            if sig == signal.SIGKILL:
+                self._proc.kill()
+            else:
+                self._proc.terminate()
+        except (ProcessLookupError, OSError):
+            pass
 
     def _write_stdin(self, stdin_text: str | None) -> None:
         stdin = self._proc.stdin
