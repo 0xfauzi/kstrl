@@ -106,7 +106,7 @@ item here is one of those three.
   - Verify: real-git tests: conflicted tier leaves user checkout untouched and
     recovers; breaker re-runs; exit code nonzero on unresolved contract failure.
 
-- [ ] R0.4 (S) **Fix the e2e-evidenced pair: provisioning + blind retries** [CRIT-10, MED cwd-paths, MED repo-root-heuristic, MED loop-guard]
+- [x] R0.4 (S) **Fix the e2e-evidenced pair: provisioning + blind retries** [CRIT-10, MED cwd-paths, MED repo-root-heuristic, MED loop-guard]
   - `factory._run_component`: copy `prompt.md` (and CLAUDE.md/AGENTS.md) into
     the worktree alongside the PRD; fix the inverted repo-root heuristic
     (`factory.py:274-280`); resolve all root-relative paths against `root_dir`,
