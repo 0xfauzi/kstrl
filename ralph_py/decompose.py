@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ralph_py.manifest import Component, ComponentStatus, Manifest
+from ralph_py.manifest import (
+    Component,
+    ComponentStatus,
+    Manifest,
+    validate_branch_name,
+    validate_component_id,
+)
 from ralph_py.prd import PRD
 
 if TYPE_CHECKING:
@@ -382,12 +388,21 @@ def _validate_decompose_output(data: Any) -> list[str]:
             continue
 
         comp_id = comp.get("id")
-        if not isinstance(comp_id, str) or not comp_id:
+        if not isinstance(comp_id, str):
             errors.append(f"{prefix}.id: must be a non-empty string")
-        elif comp_id in seen_ids:
-            errors.append(f"{prefix}.id: duplicate ID '{comp_id}'")
         else:
-            seen_ids.add(comp_id)
+            # R0.6: the id becomes a filesystem path segment
+            # (scripts/ralph/feature/<id>/, .ralph/worktrees/<id>) and a
+            # branch segment (ralph/factory/<id>), so a traversal id
+            # like "../../repo" must be rejected here, where the error
+            # feeds back into the decompose retry loop.
+            id_error = validate_component_id(comp_id)
+            if id_error:
+                errors.append(f"{prefix}.id: {id_error}")
+            elif comp_id in seen_ids:
+                errors.append(f"{prefix}.id: duplicate ID '{comp_id}'")
+            else:
+                seen_ids.add(comp_id)
 
         if not isinstance(comp.get("title"), str):
             errors.append(f"{prefix}.title: must be a string")
@@ -688,6 +703,17 @@ def decompose_spec(
             branch = f"ralph/factory/{project_name}"
         else:
             branch = f"ralph/factory/{comp_id}"
+
+        # Component ids were validated in the retry loop; this can only
+        # fire for a project_name (user input) that is not branch-safe.
+        # Reject rather than sanitize so the caller sees exactly what
+        # was wrong (R0.6).
+        branch_error = validate_branch_name(branch)
+        if branch_error:
+            raise ValueError(
+                f"Cannot derive a git branch for component '{comp_id}': "
+                f"{branch_error}"
+            )
 
         prd_path = _generate_component_prd(comp_data, root_dir, branch)
         rel_prd = prd_path.relative_to(root_dir).as_posix()
