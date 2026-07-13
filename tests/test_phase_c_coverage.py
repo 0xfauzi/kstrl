@@ -256,11 +256,13 @@ class TestC4ContractBreaker:
         success_a = ComponentResult("comp-a", success=True, iterations=1)
         success_b = ComponentResult("comp-b", success=True, iterations=1)
 
-        # First contract call fails with breaker=comp-a; verify the
-        # status is reset to PENDING for re-run.
+        # First contract call fails with breaker=comp-a. R0.3: the
+        # breaker reset must actually re-enter scheduling (a third
+        # _run_component call) and the second, passing contract call
+        # completes the run cleanly.
         contract_calls = {"count": 0}
 
-        def fake_contract(manifest, root, cfg, ui):
+        def fake_contract(manifest, root, cfg, ui, components_merged=False):
             contract_calls["count"] += 1
             if contract_calls["count"] == 1:
                 return [ContractResult(
@@ -274,18 +276,22 @@ class TestC4ContractBreaker:
 
         with patch(
             "ralph_py.factory._run_component",
-            side_effect=[success_a, success_b],
-        ), patch(
+            side_effect=[success_a, success_b, success_a],
+        ) as mock_run, patch(
             "ralph_py.factory.run_contract_testing", side_effect=fake_contract,
         ):
-            run_factory(
+            result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
             )
-        # We don't assert on final completion (the manifest state is
-        # mutated mid-test); we only assert the contract phase fired
-        # and the breaker reset path was exercised.
-        assert contract_calls["count"] >= 1
+        assert contract_calls["count"] == 2
+        assert mock_run.call_count == 3
+        assert "comp-a" in result.completed
+        assert result.contract_failures == []
+        assert result.exit_code == 0
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        assert comp.retries == 1
 
 
 # ---------------------------------------------------------------------------
