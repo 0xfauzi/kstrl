@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+
+from ralph_py.agents.proc import DeadlineStreamer, timeout_message
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
@@ -52,11 +52,12 @@ class ClaudeCodeAgent:
 
         Uses stream-json output format to capture tool calls in real-time.
         Yields human-readable lines describing what the agent is doing.
+        When ``timeout`` is set and the CLI hangs (with or without output),
+        its process group is killed and a timeout error line is yielded last.
         """
         self._final_message = None
         self._saw_result = False
         accumulated_text: list[str] = []
-        start = time.monotonic()
 
         cmd = [
             "claude", "--print",
@@ -70,67 +71,40 @@ class ClaudeCodeAgent:
             cmd.extend(["--effort", self._effort])
 
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=cwd,
+            streamer = DeadlineStreamer(
+                cmd, cwd=cwd, stdin_text=prompt, timeout=timeout,
             )
-
-            if proc.stdin:
-                try:
-                    proc.stdin.write(prompt)
-                    proc.stdin.close()
-                except BrokenPipeError:
-                    pass
-
-            if proc.stdout:
-                for raw_line in proc.stdout:
-                    if timeout and (time.monotonic() - start) > timeout:
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                        yield f"ERROR: agent timed out after {timeout}s"
-                        return
-
-                    raw_line = raw_line.rstrip("\n")
-                    if not raw_line.strip():
-                        continue
-
-                    # Check for result event (final output, process should exit soon)
-                    result_text = _extract_result_text(raw_line)
-                    if result_text is not None:
-                        self._saw_result = True
-                        self._final_message = result_text
-                        break
-
-                    # Parse stream-json events
-                    for display_line in _parse_stream_event(raw_line):
-                        if display_line.strip():
-                            accumulated_text.append(display_line)
-                        yield display_line
-
-            # Wait for process to exit, but don't hang forever
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-
-            # Set final_message from accumulated text if not already set by result event
-            if self._final_message is None and accumulated_text:
-                self._final_message = accumulated_text[-1]
-
         except FileNotFoundError:
             yield "ERROR: claude CLI not found in PATH"
+            return
+
+        for raw_line in streamer.lines():
+            if not raw_line.strip():
+                continue
+
+            # Check for result event (final output, process should exit soon)
+            result_text = _extract_result_text(raw_line)
+            if result_text is not None:
+                self._saw_result = True
+                self._final_message = result_text
+                break
+
+            # Parse stream-json events
+            for display_line in _parse_stream_event(raw_line):
+                if display_line.strip():
+                    accumulated_text.append(display_line)
+                yield display_line
+
+        if streamer.timed_out:
+            yield timeout_message(timeout)
+            return
+
+        # Wait for process to exit, but don't hang forever
+        streamer.finish(timeout=10)
+
+        # Set final_message from accumulated text if not already set by result event
+        if self._final_message is None and accumulated_text:
+            self._final_message = accumulated_text[-1]
 
     @property
     def final_message(self) -> str | None:

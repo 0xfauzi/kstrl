@@ -8,6 +8,8 @@ import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
+from ralph_py.agents.proc import DeadlineStreamer, timeout_message
+
 
 class CodexAgent:
     """Agent that uses the Codex CLI."""
@@ -46,7 +48,9 @@ class CodexAgent:
     ) -> Iterator[str]:
         """Run codex with prompt piped to stdin.
 
-        Yields output lines as they arrive.
+        Yields output lines as they arrive. When ``timeout`` is set and the
+        CLI hangs (with or without output), its process group is killed and
+        a timeout error line is yielded last.
         """
         self._final_message = None
         last_non_empty_line: str | None = None
@@ -70,32 +74,24 @@ class CodexAgent:
             cmd.extend(["--output-last-message", str(last_msg_file)])
 
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=cwd,
+            streamer = DeadlineStreamer(
+                cmd, cwd=cwd, stdin_text=prompt, timeout=timeout,
             )
 
-            # Write prompt to stdin
-            if proc.stdin:
-                try:
-                    proc.stdin.write(prompt)
-                    proc.stdin.close()
-                except BrokenPipeError:
-                    pass
-
             # Stream output
-            if proc.stdout:
-                for line in proc.stdout:
-                    line = line.rstrip("\n")
-                    if line.strip():
-                        last_non_empty_line = line
-                    yield line
+            for line in streamer.lines():
+                if line.strip():
+                    last_non_empty_line = line
+                yield line
 
-            proc.wait()
+            if streamer.timed_out:
+                # Killed mid-run: the last-message file was likely never
+                # written; partial output is not a trustworthy final
+                # message, so leave it unset.
+                yield timeout_message(timeout)
+                return
+
+            streamer.finish()
 
             # Read final message
             if last_msg_file and last_msg_file.exists():
@@ -131,6 +127,7 @@ class CodexAgent:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                timeout=15,
             )
             cls._supports_output_last_message = "--output-last-message" in result.stdout
         except Exception:

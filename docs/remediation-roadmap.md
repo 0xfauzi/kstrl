@@ -53,7 +53,7 @@ First principles: an unattended factory must be unable to hang forever, unable
 to report success on failure, and unable to corrupt the operator's repo. Every
 item here is one of those three.
 
-- [ ] R0.1 (L) **Enforce timeouts end to end** [CRIT-1]
+- [x] R0.1 (L) **Enforce timeouts end to end** [CRIT-1]
   - Agent adapters (`claude_code.py`, `codex.py`, `custom.py`): `Popen(...,
     start_new_session=True)`; reader thread + deadline so a silent hang is
     detected without a stdout line; on breach `killpg(SIGTERM)` then `SIGKILL`;
