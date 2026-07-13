@@ -89,7 +89,7 @@ item here is one of those three.
     refs shows phantom diffs; using `origin/<base>` everywhere removes the
     class. MERGE_PENDING needs the R3.3 resume story to be ergonomic.
 
-- [ ] R0.3 (M) **Contract phase cannot corrupt the repo; failures are loud** [CRIT-6]
+- [x] R0.3 (M) **Contract phase cannot corrupt the repo; failures are loud** [CRIT-6]
   - `contract.py`: perform tier merges in a detached temp worktree, never the
     user's checkout; `git merge --abort` in the recovery path; assert cleanup
     succeeded (fail loudly if not).

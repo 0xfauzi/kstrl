@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -13,7 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
-from ralph_py.contract import ContractConfig, ContractMode, run_contract_testing
+from ralph_py.contract import (
+    ContractCleanupError,
+    ContractConfig,
+    ContractMode,
+    ContractResult,
+    run_contract_testing,
+)
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.knowledge import (
     KnowledgeConfig,
@@ -140,6 +147,10 @@ class FactoryResult:
     failed: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     pr_urls: list[str] = field(default_factory=list)
+    # R0.3: unresolved contract failures (one human-readable line per
+    # failed check). Non-empty forces a nonzero exit code even when no
+    # single component could be blamed.
+    contract_failures: list[str] = field(default_factory=list)
     exit_code: int = 0
 
 
@@ -551,7 +562,6 @@ def run_factory(
     )
 
     # Scheduling state
-    running_futures: dict[Future[ComponentResult], str] = {}
     worktree_paths: dict[str, Path] = {}
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
     # Components whose last failure was a timeout kill: their retry must
@@ -1107,38 +1117,50 @@ def run_factory(
             timeout_cfg.component_total,
         )
 
-    # Main scheduling loop
-    if max_parallel <= 1:
-        while True:
-            ready = manifest.get_ready_components()
-            if not ready:
-                break
+    def _run_scheduling_pass() -> None:
+        """Run ready components until nothing is PENDING-and-ready.
 
-            comp = ready[0]
-            comp.status = ComponentStatus.RUNNING.value
-            comp.started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            manifest.save(manifest_path)
-            progress_log.component_started(comp.id)
-            ui.info(f"  Starting: {comp.id}")
+        Called once per contract pass: a contract breaker reset to
+        PENDING after a failed contract phase re-enters scheduling via
+        the outer loop in run_factory (R0.3) - previously the reset
+        happened after the only scheduling loop had exited, so the
+        promised retry never ran.
+        """
+        if max_parallel <= 1:
+            while True:
+                ready = manifest.get_ready_components()
+                if not ready:
+                    break
 
-            wt_path = _launch_component(comp)
-            if wt_path is None:
-                continue
-
-            args = _submit_args(comp, wt_path)
-            try:
-                comp_result = _run_component(*args)
-            except Exception as exc:
-                comp_result = ComponentResult(
-                    component_id=comp.id, success=False, error=str(exc),
+                comp = ready[0]
+                comp.status = ComponentStatus.RUNNING.value
+                comp.started_at = time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                 )
+                manifest.save(manifest_path)
+                progress_log.component_started(comp.id)
+                ui.info(f"  Starting: {comp.id}")
 
-            _handle_result(comp.id, comp_result)
-    else:
+                wt_path = _launch_component(comp)
+                if wt_path is None:
+                    continue
+
+                args = _submit_args(comp, wt_path)
+                try:
+                    comp_result = _run_component(*args)
+                except Exception as exc:
+                    comp_result = ComponentResult(
+                        component_id=comp.id, success=False, error=str(exc),
+                    )
+
+                _handle_result(comp.id, comp_result)
+            return
+
         # Manual executor lifecycle: on a backstop breach we must NOT wait
         # for the (possibly hung) worker at shutdown, which the
         # `with ProcessPoolExecutor(...)` form would do.
         executor = ProcessPoolExecutor(max_workers=max_parallel)
+        running_futures: dict[Future[ComponentResult], str] = {}
         future_deadlines: dict[Future[ComponentResult], float] = {}
         try:
             while True:
@@ -1236,8 +1258,10 @@ def run_factory(
             else:
                 executor.shutdown(wait=True)
 
-    # Cleanup worktrees
-    if factory_config.use_worktrees:
+    def _cleanup_pass_worktrees() -> None:
+        """Remove component worktrees left behind by a scheduling pass."""
+        if not factory_config.use_worktrees:
+            return
         ui.section("Factory: Cleanup")
         for comp_id in worktree_paths:
             if comp_id in leaked_component_ids:
@@ -1252,34 +1276,156 @@ def run_factory(
             _cleanup_worktree(comp_id, root_dir)
         ui.ok("Worktrees cleaned up")
 
-    # PHASE 3: Contract testing
-    contract_config = factory_config.contract_config
-    if contract_config and contract_config.mode != ContractMode.SKIP.value:
-        contract_results = run_contract_testing(
-            manifest, root_dir, contract_config, ui,
-        )
+    def _record_contract_event(cr: ContractResult) -> None:
+        """Append a contract_result event to the evolution journal.
+
+        Written for pass AND fail (R0.3): the journal is the audit trail
+        for every contract phase outcome, including intermediate failures
+        that a breaker retry later resolves. Non-fatal on I/O errors,
+        matching EvolutionJournal.record_run.
+        """
+        from ralph_py.evolution import EvolutionConfig
+
+        evo_config = EvolutionConfig()
+        if not evo_config.enabled:
+            return
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "run_id": run_id,
+            "project": manifest.project_name,
+            "component_id": cr.breaker or "",
+            "event_type": "contract_result",
+            "tier": cr.tier,
+            "passed": cr.passed,
+            "breaker": cr.breaker,
+            "components_tested": cr.components_tested,
+            "test_output": cr.test_output[:2000],
+            "duration_seconds": round(cr.duration_seconds, 2),
+        }
+        try:
+            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(evo_config.journal_path, "a") as f:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        except OSError:
+            pass  # evolution recording is non-fatal
+
+    # Per-component PRs are squash-merged into base as each component
+    # completes, so at contract time tier re-merges would be content
+    # no-ops and blame attribution would be meaningless: the contract
+    # phase instead tests the integrated base branch (R0.3). single_pr
+    # defers its one PR until after the contract phase, so it stays in
+    # deferred-merge (tier merge + bisection) mode.
+    components_merged = factory_config.create_prs and not factory_config.single_pr
+
+    # R0.3: scheduling + contract testing form one outer loop so a
+    # contract breaker reset to PENDING actually re-enters scheduling.
+    # Termination: every reset consumes one of the breaker's bounded
+    # retries, and any pass without a reset breaks out.
+    while True:
+        _run_scheduling_pass()
+        _cleanup_pass_worktrees()
+
+        # PHASE 3: Contract testing
+        contract_config = factory_config.contract_config
+        if (
+            contract_config is None
+            or contract_config.mode == ContractMode.SKIP.value
+        ):
+            break
+
+        try:
+            contract_results = run_contract_testing(
+                manifest, root_dir, contract_config, ui,
+                components_merged=components_merged,
+            )
+        except ContractCleanupError as exc:
+            # A contract temp worktree survived removal. The user's
+            # checkout is untouched, but .ralph/contract holds stale
+            # state - fail the run loudly instead of continuing.
+            ui.err(f"  Contract cleanup FAILED: {exc}")
+            factory_result.contract_failures.append(
+                f"contract cleanup failed: {exc}"
+            )
+            break
+
         for cr in contract_results:
             progress_log.contract_result(
                 cr.tier, cr.passed, cr.breaker, cr.duration_seconds,
             )
-            if not cr.passed and cr.breaker:
+            _record_contract_event(cr)
+
+        failures = [cr for cr in contract_results if not cr.passed]
+        if not failures:
+            break
+
+        # Reset retryable breakers to PENDING; the outer loop then
+        # re-enters scheduling so the promised retry actually runs.
+        any_breaker_reset = False
+        for cr in failures:
+            if not cr.breaker:
+                continue
+            breaker = manifest.get_component(cr.breaker)
+            if breaker and breaker.retries < factory_config.max_retries:
+                breaker.retries += 1
+                breaker.status = ComponentStatus.PENDING.value
+                breaker.error = f"Contract test failed at tier {cr.tier}"
+                # Remove from completed list
+                if cr.breaker in factory_result.completed:
+                    factory_result.completed.remove(cr.breaker)
+                ctx = IterationContext.from_json(
+                    component_contexts.get(cr.breaker, "{}")
+                )
+                ctx.add_contract_failure(cr.test_output[:500])
+                component_contexts[cr.breaker] = ctx.to_json()
+                manifest.save(manifest_path)
+                any_breaker_reset = True
+                ui.warn(
+                    f"  Contract breaker '{cr.breaker}' sent back for retry"
+                )
+
+        if any_breaker_reset:
+            continue
+
+        # Terminal contract failure: nothing left to retry. Record it in
+        # the run result so the summary shows it and the exit code is
+        # nonzero (previously this fell through silently and the run
+        # exited 0 with broken integrated code).
+        for cr in failures:
+            detail = (cr.test_output or "").strip()
+            summary_line = detail.splitlines()[-1][:200] if detail else ""
+            if cr.breaker:
                 breaker = manifest.get_component(cr.breaker)
-                if breaker and breaker.retries < factory_config.max_retries:
-                    breaker.retries += 1
-                    breaker.status = ComponentStatus.PENDING.value
-                    breaker.error = f"Contract test failed at tier {cr.tier}"
-                    # Remove from completed list
-                    if cr.breaker in factory_result.completed:
-                        factory_result.completed.remove(cr.breaker)
-                    ctx = IterationContext.from_json(
-                        component_contexts.get(cr.breaker, "{}")
+                if breaker is not None:
+                    breaker.status = ComponentStatus.FAILED.value
+                    breaker.error = (
+                        f"Contract test failed at tier {cr.tier} "
+                        f"(retries exhausted)"
                     )
-                    ctx.add_contract_failure(cr.test_output[:500])
-                    component_contexts[cr.breaker] = ctx.to_json()
-                    manifest.save(manifest_path)
-                    ui.warn(
-                        f"  Contract breaker '{cr.breaker}' sent back for retry"
-                    )
+                if cr.breaker in factory_result.completed:
+                    factory_result.completed.remove(cr.breaker)
+                if cr.breaker not in factory_result.failed:
+                    factory_result.failed.append(cr.breaker)
+                progress_log.component_failed(
+                    cr.breaker,
+                    f"Contract test failed at tier {cr.tier} "
+                    f"(retries exhausted)",
+                )
+                factory_result.contract_failures.append(
+                    f"tier {cr.tier}: breaker '{cr.breaker}' "
+                    f"(retries exhausted): {summary_line}"
+                )
+            else:
+                factory_result.contract_failures.append(
+                    f"tier {cr.tier}: contract tests failed, no blame "
+                    f"attributed (components: "
+                    f"{', '.join(cr.components_tested)}): {summary_line}"
+                )
+            ui.err(
+                f"  Contract failure recorded for tier {cr.tier}; "
+                f"run will exit nonzero"
+            )
+        manifest.save(manifest_path)
+        break
 
     # Create PRs for any remaining components that weren't handled per-component
     # (e.g. single-pr mode, or stragglers from parallel execution)
@@ -1313,13 +1459,17 @@ def run_factory(
     ui.kv("Completed", str(len(factory_result.completed)))
     ui.kv("Failed", str(len(factory_result.failed)))
     ui.kv("Skipped", str(len(factory_result.skipped)))
+    if factory_result.contract_failures:
+        ui.kv("Contract failures", str(len(factory_result.contract_failures)))
+        for line in factory_result.contract_failures:
+            ui.err(f"  {line}")
     ui.kv("Duration", f"{factory_duration:.0f}s")
     if factory_result.pr_urls:
         ui.kv("PRs created", str(len(factory_result.pr_urls)))
         for url in factory_result.pr_urls:
             ui.info(f"  {url}")
 
-    if factory_result.failed:
+    if factory_result.failed or factory_result.contract_failures:
         factory_result.exit_code = 1
     elif factory_result.skipped and not factory_result.completed:
         factory_result.exit_code = 1

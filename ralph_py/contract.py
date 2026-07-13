@@ -1,8 +1,33 @@
-"""Phase 3: Cross-component contract testing via temp merge branches."""
+"""Phase 3: Cross-component contract testing in detached temp worktrees.
+
+All tier merging happens in a throwaway worktree created with
+``git worktree add --detach`` under ``.ralph/contract/`` - never in the
+user's checkout (R0.3 / CRIT-6). The recovery path on any failure is
+``git merge --abort`` in the temp worktree followed by
+``git worktree remove --force``; if the worktree survives removal a
+:class:`ContractCleanupError` is raised so the run fails loudly instead
+of silently leaving stale state behind.
+
+Blame attribution (bisection) honesty:
+
+- Merge-order bisection only runs in deferred-merge mode (PRs not yet
+  merged to base). When components were already squash-merged to base
+  (``create_prs`` per-component mode), re-merging their branches is a
+  content no-op and bisection would blame the first component
+  unconditionally; in that mode a single integrated check of the base
+  branch runs instead, reporting pass/fail with the failing test output
+  and NO breaker attribution.
+- Known limitation of merge-order bisection: a failure caused by the
+  interaction of two components attributes to whichever component merges
+  later in topological order - the earlier component is never blamed
+  even if it contributed the incompatibility. Within a tier the merge
+  order follows the manifest's component order.
+"""
 
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import time
 from dataclasses import dataclass
@@ -21,6 +46,16 @@ class ContractMode(StrEnum):
     TIER = "tier"
     FINAL = "final"
     SKIP = "skip"
+
+
+class ContractCleanupError(RuntimeError):
+    """A contract temp worktree could not be removed.
+
+    Raised so the factory fails loudly: a surviving temp worktree means
+    ``.ralph/contract/`` holds stale state and git's worktree metadata
+    still references it, which would make every later contract pass
+    (and possibly component worktree setup) fail in confusing ways.
+    """
 
 
 @dataclass
@@ -97,25 +132,94 @@ def compute_tiers(manifest: Manifest) -> list[list[str]]:
     return manifest.compute_tiers()
 
 
-def _create_temp_branch(
-    branch_name: str,
+def _create_temp_worktree(
     base: str,
-    cwd: Path,
-    timeout: float = 30.0,
-) -> bool:
-    """Create and checkout a temporary branch from base."""
-    return git.create_branch_from(branch_name, base, cwd, timeout)
+    root_dir: Path,
+    label: str,
+    timeout: float = 60.0,
+) -> tuple[Path | None, str]:
+    """Create a detached throwaway worktree at ``base``.
+
+    Returns ``(path, "")`` on success or ``(None, error)`` on failure.
+    Detached HEAD means merges move only the temp worktree's HEAD; no
+    branch is created and the user's checkout is never touched.
+    """
+    contract_base = root_dir / ".ralph" / "contract"
+    contract_base.mkdir(parents=True, exist_ok=True)
+    worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "add", "--detach", str(worktree_path), base],
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None, f"git worktree add timed out after {timeout}s"
+    if result.returncode != 0:
+        return None, result.stderr.strip() or result.stdout.strip()
+    return worktree_path, ""
 
 
-def _cleanup_temp_branch(
-    branch_name: str,
-    base_branch: str,
-    cwd: Path,
-    timeout: float = 30.0,
+def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
+    """Abort any in-flight merge in the temp worktree.
+
+    Safe to call unconditionally: with no merge in progress git exits
+    nonzero and that is fine - the goal is only that no conflicted
+    index survives into worktree removal.
+    """
+    try:
+        subprocess.run(
+            ["git", "merge", "--abort"],
+            cwd=worktree_path,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        pass  # removal below is forced; a hung abort must not block it
+
+
+def _remove_temp_worktree(
+    worktree_path: Path,
+    root_dir: Path,
+    timeout: float = 60.0,
 ) -> None:
-    """Return to base branch and delete the temporary branch."""
-    git.checkout_existing(base_branch, cwd, timeout)
-    git.delete_branch(branch_name, cwd, force=True, timeout=timeout)
+    """Remove a contract temp worktree, asserting the removal succeeded.
+
+    Raises :class:`ContractCleanupError` when the worktree directory
+    survives the forced removal - the one case where silent continuation
+    would leave the repo's worktree metadata pointing at stale state.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "remove", "--force", str(worktree_path)],
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ContractCleanupError(
+            f"git worktree remove timed out after {timeout}s for "
+            f"{worktree_path}; remove it manually with "
+            f"'git worktree remove --force {worktree_path}'"
+        ) from exc
+    if worktree_path.exists():
+        raise ContractCleanupError(
+            f"Contract temp worktree {worktree_path} survived removal "
+            f"(git: {result.stderr.strip() or result.stdout.strip()}); "
+            f"remove it manually with "
+            f"'git worktree remove --force {worktree_path}'"
+        )
+    if result.returncode != 0:
+        # Directory is gone but git may still track it; prune metadata.
+        subprocess.run(
+            ["git", "worktree", "prune"],
+            cwd=root_dir,
+            capture_output=True,
+            timeout=timeout,
+        )
 
 
 def _run_tests(
@@ -147,6 +251,11 @@ def bisect_breaker(
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
+    Deferred-merge mode only: merges tier branches one at a time in
+    topological order inside a detached temp worktree, testing after
+    each. See the module docstring for the two-component-interaction
+    attribution limitation.
+
     Args:
         base_branch: Base branch to merge from
         prior_branches: Already-tested branches from prior tiers
@@ -158,30 +267,31 @@ def bisect_breaker(
     Returns:
         Component ID of the breaker, or None if unclear.
     """
-    ts = int(time.time())
-    bisect_branch = f"ralph/bisect-{ts}"
-
-    if not _create_temp_branch(bisect_branch, base_branch, root_dir):
+    worktree_path, _error = _create_temp_worktree(
+        base_branch, root_dir, "bisect",
+    )
+    if worktree_path is None:
         return None
 
     try:
         # Merge prior tier branches (should be clean)
         for branch in prior_branches:
-            if not git.merge_branch(branch, root_dir):
+            if not git.merge_branch(branch, worktree_path):
                 return None
 
         # Merge tier branches one at a time, test after each
         for comp_id, branch in tier_branches:
-            if not git.merge_branch(branch, root_dir):
+            if not git.merge_branch(branch, worktree_path):
                 return comp_id
 
-            passed, _ = _run_tests(root_dir, test_command, timeout)
+            passed, _ = _run_tests(worktree_path, test_command, timeout)
             if not passed:
                 return comp_id
 
         return None
     finally:
-        _cleanup_temp_branch(bisect_branch, base_branch, root_dir)
+        _abort_merge(worktree_path)
+        _remove_temp_worktree(worktree_path, root_dir)
 
 
 def run_tier_check(
@@ -193,14 +303,14 @@ def run_tier_check(
     ui: UI,
     tier_index: int = 0,
 ) -> ContractResult:
-    """Run contract test for one DAG tier.
+    """Run contract test for one DAG tier (deferred-merge mode).
 
-    Merges all prior + current tier branches, runs tests.
-    On failure, bisects to find the breaker.
+    Merges all prior + current tier branches into a detached temp
+    worktree, runs tests there. On failure, bisects to find the breaker.
+    The user's checkout is never touched; any merge conflict is aborted
+    in the temp worktree before it is removed.
     """
     start = time.monotonic()
-    ts = int(time.time())
-    merge_branch = f"ralph/contract-{tier_index}-{ts}"
 
     tier_branches: list[tuple[str, str]] = []
     for comp_id in tier_component_ids:
@@ -214,20 +324,23 @@ def run_tier_check(
         f"({', '.join(c for c, _ in tier_branches)})"
     )
 
-    # Create temp merge branch
-    if not _create_temp_branch(merge_branch, manifest.base_branch, root_dir):
+    worktree_path, error = _create_temp_worktree(
+        manifest.base_branch, root_dir, f"tier{tier_index}",
+    )
+    if worktree_path is None:
         return ContractResult(
             passed=False,
             tier=tier_index,
             components_tested=[c for c, _ in tier_branches],
-            test_output="Failed to create merge branch",
+            test_output=f"Failed to create contract worktree: {error}",
             duration_seconds=time.monotonic() - start,
         )
 
+    output = ""
     try:
         # Merge prior tiers
         for branch in prior_branches:
-            if not git.merge_branch(branch, root_dir):
+            if not git.merge_branch(branch, worktree_path):
                 return ContractResult(
                     passed=False,
                     tier=tier_index,
@@ -238,7 +351,7 @@ def run_tier_check(
 
         # Merge current tier
         for comp_id, branch in tier_branches:
-            if not git.merge_branch(branch, root_dir):
+            if not git.merge_branch(branch, worktree_path):
                 return ContractResult(
                     passed=False,
                     tier=tier_index,
@@ -249,7 +362,9 @@ def run_tier_check(
                 )
 
         # Run tests
-        passed, output = _run_tests(root_dir, config.test_command, config.timeout)
+        passed, output = _run_tests(
+            worktree_path, config.test_command, config.timeout,
+        )
 
         if passed:
             ui.ok(f"  Tier {tier_index}: contract tests passed")
@@ -264,9 +379,14 @@ def run_tier_check(
         ui.warn(f"  Tier {tier_index}: contract tests FAILED, bisecting...")
 
     finally:
-        _cleanup_temp_branch(merge_branch, manifest.base_branch, root_dir)
+        # Recovery path: abort any in-flight merge, then remove the temp
+        # worktree. _remove_temp_worktree raises ContractCleanupError if
+        # the worktree survives - fail loudly, never leave a conflicted
+        # checkout behind.
+        _abort_merge(worktree_path)
+        _remove_temp_worktree(worktree_path, root_dir)
 
-    # Bisect to find breaker
+    # Bisect to find breaker (fresh temp worktree of its own)
     breaker = bisect_breaker(
         manifest.base_branch, prior_branches, tier_branches,
         root_dir, config.test_command, config.timeout,
@@ -287,14 +407,80 @@ def run_tier_check(
     )
 
 
+def run_integrated_base_check(
+    manifest: Manifest,
+    component_ids: list[str],
+    root_dir: Path,
+    config: ContractConfig,
+    ui: UI,
+) -> ContractResult:
+    """Contract check for already-merged components (create_prs mode).
+
+    Per-component PRs were squash-merged into the base branch as each
+    component completed, so the integrated state IS the base branch:
+    re-merging component branches would be content no-ops and bisection
+    would blame the first component unconditionally. Instead, run the
+    test suite once against the base branch in a detached temp worktree
+    and report pass/fail with NO breaker attribution.
+    """
+    start = time.monotonic()
+    ui.info(
+        f"  Integrated check: testing '{manifest.base_branch}' with "
+        f"{len(component_ids)} merged components "
+        f"({', '.join(component_ids)})"
+    )
+
+    worktree_path, error = _create_temp_worktree(
+        manifest.base_branch, root_dir, "integrated",
+    )
+    if worktree_path is None:
+        return ContractResult(
+            passed=False,
+            tier=0,
+            components_tested=list(component_ids),
+            test_output=f"Failed to create contract worktree: {error}",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    try:
+        passed, output = _run_tests(
+            worktree_path, config.test_command, config.timeout,
+        )
+    finally:
+        _remove_temp_worktree(worktree_path, root_dir)
+
+    if passed:
+        ui.ok("  Integrated check: contract tests passed")
+    else:
+        ui.err(
+            "  Integrated check: tier failed (components already merged "
+            "to base; no blame attribution)"
+        )
+
+    return ContractResult(
+        passed=passed,
+        tier=0,
+        components_tested=list(component_ids),
+        breaker=None,
+        test_output=output[:2000],
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def run_contract_testing(
     manifest: Manifest,
     root_dir: Path,
     config: ContractConfig,
     ui: UI,
+    components_merged: bool = False,
 ) -> list[ContractResult]:
     """Run contract testing across DAG tiers.
 
+    ``components_merged=True`` (create_prs per-component mode) runs a
+    single integrated check of the base branch with no blame
+    attribution - see :func:`run_integrated_base_check`.
+
+    Otherwise (deferred-merge mode):
     In TIER mode: tests each tier incrementally.
     In FINAL mode: tests all completed components at once.
     In SKIP mode: returns empty list.
@@ -313,6 +499,18 @@ def run_contract_testing(
         return []
 
     tiers = compute_tiers(manifest)
+
+    if components_merged:
+        ordered_ids = [
+            comp_id for tier in tiers for comp_id in tier
+            if comp_id in completed_ids
+        ]
+        return [
+            run_integrated_base_check(
+                manifest, ordered_ids, root_dir, config, ui,
+            )
+        ]
+
     results: list[ContractResult] = []
 
     if config.mode == ContractMode.FINAL.value:
