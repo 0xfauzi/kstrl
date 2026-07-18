@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +16,38 @@ from typing import Any
 def _iso_now() -> str:
     """Return current time as ISO 8601 string."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def parse_event_ts(ts: str) -> datetime | None:
+    """Parse a progress-log ``ts`` field. None on malformed input."""
+    try:
+        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=UTC,
+        )
+    except ValueError:
+        return None
+
+
+def event_age_seconds(ts: str, now: datetime | None = None) -> float | None:
+    """Seconds between an event ``ts`` and ``now``. None on bad input."""
+    parsed = parse_event_ts(ts)
+    if parsed is None:
+        return None
+    if now is None:
+        now = datetime.now(UTC)
+    return (now - parsed).total_seconds()
+
+
+def format_age(seconds: float) -> str:
+    """Render an age in seconds as a compact human string."""
+    seconds = max(0.0, seconds)
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h{int(seconds % 3600 // 60):02d}m"
+    return f"{seconds / 86400:.1f}d"
 
 
 @dataclass
@@ -32,10 +68,15 @@ class ProgressLog:
 
     Each event is a single JSON line. JSONL is crash-safe since each line
     is a complete object - partial writes only lose the last event.
+
+    R3.2: ``run_id`` is stamped on every event so multiple runs appending
+    to the same default log stay distinguishable; consumers pick the
+    latest run via :func:`latest_run_id`.
     """
 
-    def __init__(self, log_path: Path) -> None:
+    def __init__(self, log_path: Path, run_id: str = "") -> None:
         self._path = log_path
+        self._run_id = run_id
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -53,6 +94,8 @@ class ProgressLog:
             "ts": _iso_now(),
             "event": event_type,
         }
+        if self._run_id:
+            event["run_id"] = self._run_id
         if component_id is not None:
             event["component"] = component_id
         if data:
@@ -179,15 +222,7 @@ class ProgressLog:
 
     def read_events(self) -> list[dict[str, Any]]:
         """Read all events from the log. Useful for testing."""
-        if not self._path.exists():
-            return []
-        events: list[dict[str, Any]] = []
-        with open(self._path) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    events.append(json.loads(line))
-        return events
+        return read_progress_events(self._path)
 
 
 class NullProgressLog(ProgressLog):
@@ -196,6 +231,7 @@ class NullProgressLog(ProgressLog):
     def __init__(self) -> None:
         # Do not call super().__init__() since we have no path
         self._path = Path("/dev/null")
+        self._run_id = ""
 
     def emit(
         self,
@@ -204,3 +240,284 @@ class NullProgressLog(ProgressLog):
         data: dict[str, Any] | None = None,
     ) -> None:
         pass
+
+
+def read_progress_events(path: Path) -> list[dict[str, Any]]:
+    """Read all events from a JSONL progress log.
+
+    Malformed lines (a crash mid-write leaves at most one) are skipped
+    rather than raised: the log is an observability surface and a torn
+    tail line must not make `ralph status` unusable.
+    """
+    if not path.exists():
+        return []
+    events: list[dict[str, Any]] = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    events.append(parsed)
+    except OSError:
+        return []
+    return events
+
+
+def latest_run_id(events: list[dict[str, Any]]) -> str:
+    """run_id of the most recent event that carries one, else ""."""
+    for event in reversed(events):
+        run_id = event.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            return run_id
+    return ""
+
+
+def _phase_for_event(event: dict[str, Any]) -> str | None:
+    """Map an event to the phase it implies; None keeps the prior phase."""
+    etype = event.get("event")
+    data = event.get("data") or {}
+    if etype == "component_started":
+        return "engineer"
+    if etype == "component_usage":
+        phase = data.get("phase")
+        return str(phase) if phase else None
+    if etype == "verification_result":
+        return "verify"
+    if etype == "review_result":
+        mode = str(data.get("mode") or "")
+        return "security" if mode.startswith("security") else "review"
+    if etype == "component_retrying":
+        return "retrying"
+    if etype == "component_failed":
+        return "failed"
+    if etype == "component_completed":
+        return "done"
+    if etype == "budget_exceeded":
+        return "budget-halt"
+    return None
+
+
+@dataclass
+class ComponentActivity:
+    """Per-component view derived from one run's progress-log events."""
+
+    component_id: str
+    phase: str = ""
+    attempt: int = 0
+    last_event: str = ""
+    last_event_ts: str = ""
+    usage_calls: int = 0
+    unreported_calls: int = 0
+    total_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+@dataclass
+class RunActivity:
+    """One factory run's progress-log events, joined per component."""
+
+    run_id: str = ""
+    started_ts: str = ""
+    last_event_ts: str = ""
+    finished: bool = False
+    components: dict[str, ComponentActivity] = field(default_factory=dict)
+
+
+def _as_int_field(data: dict[str, Any], key: str) -> int:
+    value = data.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def summarize_events(
+    events: list[dict[str, Any]], run_id: str = "",
+) -> RunActivity:
+    """Fold progress-log events into a per-component activity summary.
+
+    ``run_id`` non-empty filters to that run's events; empty includes
+    everything (pre-R3.2 logs have no run_id to filter on).
+    """
+    activity = RunActivity(run_id=run_id)
+    for event in events:
+        if run_id and event.get("run_id") != run_id:
+            continue
+        ts = str(event.get("ts") or "")
+        etype = str(event.get("event") or "")
+        if not activity.started_ts:
+            activity.started_ts = ts
+        activity.last_event_ts = ts
+        if etype == "factory_completed":
+            activity.finished = True
+        comp_id = event.get("component")
+        if not isinstance(comp_id, str) or not comp_id:
+            continue
+        comp = activity.components.setdefault(
+            comp_id, ComponentActivity(component_id=comp_id),
+        )
+        comp.last_event = etype
+        comp.last_event_ts = ts
+        phase = _phase_for_event(event)
+        if phase:
+            comp.phase = phase
+        data = event.get("data") or {}
+        if not isinstance(data, dict):
+            continue
+        if etype == "component_retrying":
+            comp.attempt = max(comp.attempt, _as_int_field(data, "attempt"))
+        elif etype == "component_usage":
+            comp.usage_calls += _as_int_field(data, "calls")
+            comp.unreported_calls += _as_int_field(data, "unreported_calls")
+            comp.total_tokens += _as_int_field(data, "total_tokens")
+            cost = data.get("cost_usd")
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+                comp.cost_usd += float(cost)
+    return activity
+
+
+@dataclass
+class NotifyConfig:
+    """R3.2 ``[notify]`` section: shell commands fired on run milestones.
+
+    Example one-liners for ralph.toml::
+
+        [notify]
+        # Terminal bell when the run finishes:
+        on_complete = "printf '\\a'"
+        # Webhook ping the moment something needs attention:
+        on_first_failure = "curl -fsS -X POST -d \\"$RALPH_NOTIFY_EVENT $RALPH_NOTIFY_COMPONENT\\" https://example.com/hook"
+
+    The commands run via the shell with these context variables set:
+    ``RALPH_NOTIFY_EVENT`` (run_complete | first_failure | merge_pending),
+    ``RALPH_NOTIFY_RUN_ID``, ``RALPH_NOTIFY_PROJECT``,
+    ``RALPH_NOTIFY_COMPONENT`` and ``RALPH_NOTIFY_DETAIL``.
+    """
+
+    on_complete: str = ""
+    on_first_failure: str = ""
+    hook_timeout: float = 30.0
+
+    @classmethod
+    def from_env(cls) -> NotifyConfig:
+        """Load notify config from environment variables only."""
+        config = cls()
+        _apply_notify_env(config)
+        return config
+
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> NotifyConfig:
+        """Load notify config with precedence: env > toml > defaults."""
+        from ralph_py.config import load_toml_section
+
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "notify")
+        if isinstance(section.get("on_complete"), str):
+            config.on_complete = section["on_complete"]
+        if isinstance(section.get("on_first_failure"), str):
+            config.on_first_failure = section["on_first_failure"]
+        if "hook_timeout" in section:
+            config.hook_timeout = float(section["hook_timeout"])
+        _apply_notify_env(config)
+        return config
+
+
+def _apply_notify_env(config: NotifyConfig) -> None:
+    if "RALPH_NOTIFY_ON_COMPLETE" in os.environ:
+        config.on_complete = os.environ["RALPH_NOTIFY_ON_COMPLETE"]
+    if "RALPH_NOTIFY_ON_FIRST_FAILURE" in os.environ:
+        config.on_first_failure = os.environ["RALPH_NOTIFY_ON_FIRST_FAILURE"]
+    if "RALPH_NOTIFY_HOOK_TIMEOUT" in os.environ:
+        config.hook_timeout = float(os.environ["RALPH_NOTIFY_HOOK_TIMEOUT"])
+
+
+class NotifyHooks:
+    """Fires user-configured shell commands on factory-run milestones.
+
+    Three conditions, each fired at most once per run (R3.2):
+
+    - run completion -> ``on_complete``
+    - first component failure -> ``on_first_failure``
+    - first MERGE_PENDING park -> ``on_first_failure`` (the attention
+      channel: the run is blocked on a human confirming a merge). The
+      hook can tell the conditions apart via ``RALPH_NOTIFY_EVENT``.
+
+    Hooks are observability, never control flow: a hook that fails to
+    launch, exits nonzero, or times out produces a warning and nothing
+    else. Output is NOT captured - a terminal bell must reach the tty.
+    """
+
+    def __init__(
+        self,
+        config: NotifyConfig,
+        run_id: str = "",
+        project: str = "",
+        warn: Callable[[str], None] | None = None,
+    ) -> None:
+        self._config = config
+        self._run_id = run_id
+        self._project = project
+        self._warn = warn or (lambda _msg: None)
+        self._fired: set[str] = set()
+
+    def fire_complete(self, detail: str = "") -> None:
+        self._fire("run_complete", self._config.on_complete, detail=detail)
+
+    def fire_first_failure(self, component_id: str, error: str) -> None:
+        self._fire(
+            "first_failure", self._config.on_first_failure,
+            component_id=component_id, detail=error,
+        )
+
+    def fire_merge_pending(self, component_id: str, detail: str = "") -> None:
+        self._fire(
+            "merge_pending", self._config.on_first_failure,
+            component_id=component_id, detail=detail,
+        )
+
+    def _fire(
+        self,
+        condition: str,
+        command: str,
+        component_id: str = "",
+        detail: str = "",
+    ) -> None:
+        if not command or condition in self._fired:
+            return
+        # Marked before launching: a hook that crashes must not get a
+        # second chance on the next failure - once means once.
+        self._fired.add(condition)
+        env = dict(os.environ)
+        env.update({
+            "RALPH_NOTIFY_EVENT": condition,
+            "RALPH_NOTIFY_RUN_ID": self._run_id,
+            "RALPH_NOTIFY_PROJECT": self._project,
+            "RALPH_NOTIFY_COMPONENT": component_id,
+            "RALPH_NOTIFY_DETAIL": detail,
+        })
+        try:
+            proc = subprocess.run(
+                command, shell=True, env=env,
+                stdin=subprocess.DEVNULL,
+                timeout=self._config.hook_timeout,
+            )
+            if proc.returncode != 0:
+                self._warn(
+                    f"notify hook '{condition}' exited "
+                    f"{proc.returncode} (non-fatal)"
+                )
+        except subprocess.TimeoutExpired:
+            self._warn(
+                f"notify hook '{condition}' timed out after "
+                f"{self._config.hook_timeout}s (non-fatal)"
+            )
+        except OSError as exc:
+            self._warn(
+                f"notify hook '{condition}' failed to launch: {exc} "
+                f"(non-fatal)"
+            )

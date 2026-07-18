@@ -34,7 +34,12 @@ from ralph_py.knowledge import (
     measure_fact_utilization,
 )
 from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.observability import NullProgressLog, ProgressLog
+from ralph_py.observability import (
+    NotifyConfig,
+    NotifyHooks,
+    NullProgressLog,
+    ProgressLog,
+)
 from ralph_py.pr import create_prs_in_order, create_single_pr
 from ralph_py.prd import PRD
 from ralph_py.review import (
@@ -91,8 +96,15 @@ class FactoryConfig:
     contract_config: ContractConfig | None = None
     # Phase 0: feedforward
     feedforward_config: FeedforwardConfig | None = None
-    # Observability
+    # Observability. R3.2: the progress log defaults ON so a walk-away
+    # run always leaves a consumable event trail; progress_log_enabled
+    # = false (toml/env) turns it off. progress_log_path=None means the
+    # default <root>/.ralph/progress.jsonl.
     progress_log_path: Path | None = None
+    progress_log_enabled: bool = True
+    # R3.2: [notify] hooks (on_complete / on_first_failure shell
+    # commands). None means run_factory loads NotifyConfig.load(root_dir).
+    notify_config: NotifyConfig | None = None
     # E4: per-run hard cap on adversarial LLM calls (review + security
     # + knowledge distill). 0 means unbounded. Once exceeded the
     # remaining components skip those phases with an informational log
@@ -143,6 +155,9 @@ class FactoryConfig:
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
+            progress_log_enabled=_parse_bool(
+                os.environ.get("RALPH_FACTORY_PROGRESS_LOG_ENABLED", "1")
+            ),
         )
 
     @classmethod
@@ -181,6 +196,8 @@ class FactoryConfig:
             config.max_total_tokens = int(section["max_total_tokens"])
         if "pause_before_pr_merge" in section:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
+        if "progress_log_enabled" in section:
+            config.progress_log_enabled = bool(section["progress_log_enabled"])
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -201,6 +218,10 @@ class FactoryConfig:
         if "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
                 os.environ["RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE"]
+            )
+        if "RALPH_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
+            config.progress_log_enabled = _parse_bool(
+                os.environ["RALPH_FACTORY_PROGRESS_LOG_ENABLED"]
             )
         return config
 
@@ -924,11 +945,29 @@ def _run_factory_locked(
     # by creation time, not by nonce).
     run_id = current_run_id()
 
-    # Set up progress log
-    if factory_config.progress_log_path:
-        progress_log = ProgressLog(factory_config.progress_log_path)
-    else:
+    # Set up progress log. R3.2: defaults ON under .ralph/ so a
+    # walk-away run always leaves an event trail `ralph status` can
+    # join; [factory] progress_log_enabled = false (or env) opts out.
+    # Every event carries run_id so runs sharing the default file stay
+    # distinguishable.
+    progress_log: ProgressLog
+    if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
+    else:
+        log_path = (
+            factory_config.progress_log_path
+            or root_dir / ".ralph" / "progress.jsonl"
+        )
+        progress_log = ProgressLog(log_path, run_id=run_id)
+
+    # R3.2: notification hooks - each condition fires at most once per
+    # run, and hook failures only ever warn.
+    notify = NotifyHooks(
+        factory_config.notify_config or NotifyConfig.load(root_dir),
+        run_id=run_id,
+        project=manifest.project_name,
+        warn=ui.warn,
+    )
 
     progress_log.factory_started(manifest.project_name, len(manifest.components))
 
@@ -1004,6 +1043,7 @@ def _run_factory_locked(
                     factory_result.failed.append(comp.id)
                     factory_result.skipped.extend(skipped)
                     progress_log.component_failed(comp.id, comp.error)
+                    notify.fire_first_failure(comp.id, comp.error)
                     ui.err(f"  Failed: {comp.id}: {comp.error}")
                 else:
                     ui.warn(
@@ -1220,6 +1260,7 @@ def _run_factory_locked(
         factory_result.failed.append(comp.id)
         factory_result.skipped.extend(skipped)
         progress_log.component_failed(comp.id, error)
+        notify.fire_first_failure(comp.id, error)
         ui.err(f"  Failed: {comp.id}: {error[:80]}")
         manifest.save(manifest_path)
 
@@ -2021,6 +2062,11 @@ def _run_factory_locked(
                         comp.error = (
                             outcome.error or "PR merge not confirmed"
                         )
+                        progress_log.emit(
+                            "merge_pending", comp_id,
+                            {"pr_url": comp.pr_url, "error": comp.error},
+                        )
+                        notify.fire_merge_pending(comp_id, comp.error)
                         ui.warn(
                             f"  MERGE PENDING: {comp_id}: {comp.error}; "
                             f"dependents stay blocked; a factory re-run "
@@ -2033,6 +2079,7 @@ def _run_factory_locked(
                         factory_result.failed.append(comp_id)
                         factory_result.skipped.extend(skipped)
                         progress_log.component_failed(comp_id, comp.error)
+                        notify.fire_first_failure(comp_id, comp.error)
                         ui.err(f"  Failed: {comp_id}: {comp.error[:120]}")
                     manifest.save(manifest_path)
                     return
@@ -2085,6 +2132,8 @@ def _run_factory_locked(
             skipped = manifest.cascade_skip(comp.id)
             factory_result.failed.append(comp.id)
             factory_result.skipped.extend(skipped)
+            progress_log.component_failed(comp.id, comp.error)
+            notify.fire_first_failure(comp.id, comp.error)
             manifest.save(manifest_path)
             return None
 
@@ -2267,6 +2316,7 @@ def _run_factory_locked(
                         progress_log.component_failed(
                             comp_id, "component timeout",
                         )
+                        notify.fire_first_failure(comp_id, "component timeout")
                     ui.err(
                         f"  Failed: {comp_id}: component timeout "
                         f"(scheduler backstop after {backstop_seconds:.0f}s)"
@@ -2447,6 +2497,11 @@ def _run_factory_locked(
                     f"Contract test failed at tier {cr.tier} "
                     f"(retries exhausted)",
                 )
+                notify.fire_first_failure(
+                    cr.breaker,
+                    f"Contract test failed at tier {cr.tier} "
+                    f"(retries exhausted)",
+                )
                 factory_result.contract_failures.append(
                     f"tier {cr.tier}: breaker '{cr.breaker}' "
                     f"(retries exhausted): {summary_line}"
@@ -2539,6 +2594,17 @@ def _run_factory_locked(
         factory_result.exit_code = 1
     elif factory_result.skipped and not factory_result.completed:
         factory_result.exit_code = 1
+
+    # R3.2: run-end notification. Fires on every run that reached the
+    # summary, whatever the outcome; early refusals (invalid DAG, held
+    # lock, stale branches) never notify because no work was started.
+    notify.fire_complete(
+        f"completed={len(factory_result.completed)} "
+        f"failed={len(factory_result.failed)} "
+        f"skipped={len(factory_result.skipped)} "
+        f"merge_pending={len(factory_result.merge_pending)} "
+        f"exit_code={factory_result.exit_code}"
+    )
 
     # Record run to evolution journal
     try:
