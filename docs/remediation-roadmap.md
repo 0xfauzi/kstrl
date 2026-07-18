@@ -398,7 +398,7 @@ spending, (c) what do I do when I come back to a partial failure.
     (toml/env/`--max-total-tokens`) fails the current component with a
     synthetic finding and gates scheduling. Enforcement granularity is
     the phase boundary; unreported calls make totals lower bounds.
-- [ ] R3.2 (M) **Status + notification** [P-4, D-status]
+- [x] R3.2 (M) **Status + notification** [P-4, D-status]
   - ProgressLog defaults on; `ralph status` renders manifest + log (per
     component: phase, attempt, last event age, evidence paths).
   - Notification hook: configurable shell command (`[notify] on_complete /

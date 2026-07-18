@@ -18,6 +18,7 @@ ALL_SECTIONS = [
     "[agent]", "[run]", "[paths]", "[git]", "[ui]",
     "[factory]", "[verify]", "[security]", "[contract]",
     "[feedforward]", "[knowledge]", "[evolution]", "[timeout]",
+    "[notify]",
 ]
 
 

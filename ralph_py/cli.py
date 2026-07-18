@@ -25,6 +25,14 @@ from ralph_py.factory import FactoryConfig, run_factory
 from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from ralph_py.loop import run_loop
 from ralph_py.manifest import Manifest
+from ralph_py.observability import (
+    RunActivity,
+    event_age_seconds,
+    format_age,
+    latest_run_id,
+    read_progress_events,
+    summarize_events,
+)
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui import get_ui
@@ -1521,7 +1529,10 @@ def decompose(
 @click.option(
     "--progress-log",
     type=click.Path(path_type=Path),
-    help="Path for JSONL progress log",
+    help="Path for the JSONL progress log (default: .ralph/progress.jsonl; "
+         "the log is on by default, disable via "
+         "[factory].progress_log_enabled = false or "
+         "RALPH_FACTORY_PROGRESS_LOG_ENABLED=0)",
 )
 @click.option(
     "--no-worktrees",
@@ -1743,6 +1754,10 @@ def factory(
     factory_config.review_agent_cmd = review_agent_cmd
     factory_config.review_model = review_model
     factory_config.progress_log_path = progress_log
+    if progress_log is not None:
+        # An explicit --progress-log path is an explicit opt-in; it wins
+        # over a toml/env progress_log_enabled = false.
+        factory_config.progress_log_enabled = True
     factory_config.force_lock = force_lock
     # R2.3: --no-verify is an explicit skip sentinel that run_factory
     # honors; verify_config=None alone would substitute default checks.
@@ -2044,6 +2059,7 @@ def config_show(
     from ralph_py.evolution import EvolutionConfig
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.knowledge import KnowledgeConfig
+    from ralph_py.observability import NotifyConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.verify import VerifyConfig
 
@@ -2053,7 +2069,7 @@ def config_show(
             "max_parallel", "max_retries", "retry_delay", "use_worktrees",
             "single_pr", "create_prs", "review_mode", "merge_timeout",
             "max_adversarial_calls", "max_total_tokens",
-            "pause_before_pr_merge",
+            "pause_before_pr_merge", "progress_log_enabled",
         ]),
         ("verify", VerifyConfig.load, [
             "test_command", "typecheck_command", "lint_command",
@@ -2083,6 +2099,9 @@ def config_show(
         ]),
         ("timeout", TimeoutConfig.load, [
             f.name for f in dataclass_fields(TimeoutConfig)
+        ]),
+        ("notify", NotifyConfig.load, [
+            "on_complete", "on_first_failure", "hook_timeout",
         ]),
     ]
 
@@ -2158,17 +2177,44 @@ def config_show(
     sys.exit(0)
 
 
-def _render_status(manifest: Manifest, manifest_file: Path, ui_impl: UI) -> None:
+def _age_label(ts: str) -> str:
+    """"5m ago" for an event timestamp, or "" when unparseable."""
+    age = event_age_seconds(ts)
+    if age is None:
+        return ""
+    return f"{format_age(age)} ago"
+
+
+def _render_status(
+    manifest: Manifest,
+    manifest_file: Path,
+    ui_impl: UI,
+    activity: RunActivity | None = None,
+    log_path: Path | None = None,
+    root_dir: Path | None = None,
+) -> None:
     """Render the per-component status view from a manifest.
 
-    Deliberately a standalone helper: Session 7B (R3.2) extends this to
-    join ProgressLog events (phase, attempt, last-event age, cost totals)
-    onto the same per-component skeleton.
+    ``activity`` is an observability.RunActivity joined onto the same
+    per-component skeleton (R3.2): phase, attempt, last-event age, cost
+    totals and evidence paths ride along when a progress log exists.
     """
     ui_impl.section("Ralph status")
     ui_impl.kv("Project", manifest.project_name)
     ui_impl.kv("Manifest", str(manifest_file))
     ui_impl.kv("Base branch", manifest.base_branch)
+
+    if activity is not None and log_path is not None:
+        ui_impl.kv("Progress log", str(log_path))
+        if activity.run_id:
+            ui_impl.kv("Run id", activity.run_id)
+        if activity.last_event_ts:
+            age = _age_label(activity.last_event_ts)
+            state = "finished" if activity.finished else "in flight"
+            ui_impl.kv(
+                "Run state",
+                f"{state} (last event {age})" if age else state,
+            )
 
     counts: dict[str, int] = {}
     for comp in manifest.components:
@@ -2190,6 +2236,47 @@ def _render_status(manifest: Manifest, manifest_file: Path, ui_impl: UI) -> None
         if comp.error:
             ui_impl.kv("  error", comp.error)
 
+        comp_activity = (
+            activity.components.get(comp.id) if activity is not None else None
+        )
+        if comp_activity is not None:
+            if comp_activity.phase:
+                ui_impl.kv("  phase", comp_activity.phase)
+            attempt = comp_activity.attempt or comp.retries + 1
+            ui_impl.kv("  attempt", str(attempt))
+            if comp_activity.last_event:
+                age = _age_label(comp_activity.last_event_ts)
+                ui_impl.kv(
+                    "  last event",
+                    f"{comp_activity.last_event} ({age})"
+                    if age else comp_activity.last_event,
+                )
+            if comp_activity.usage_calls:
+                note = (
+                    f" (lower bound: {comp_activity.unreported_calls} "
+                    f"call(s) unreported)"
+                    if comp_activity.unreported_calls else ""
+                )
+                ui_impl.kv(
+                    "  usage",
+                    f"{comp_activity.total_tokens} tokens, "
+                    f"${comp_activity.cost_usd:.4f}, "
+                    f"{comp_activity.usage_calls} calls{note}",
+                )
+        # Evidence paths: whatever this run left on disk for the
+        # component (worktree kept after a failure, adversarial raw
+        # outputs under .ralph/debug/).
+        if root_dir is not None and activity is not None and activity.run_id:
+            evidence = [
+                path for path in (
+                    root_dir / ".ralph" / "worktrees" / activity.run_id / comp.id,
+                    root_dir / ".ralph" / "debug" / activity.run_id / comp.id,
+                )
+                if path.exists()
+            ]
+            for path in evidence:
+                ui_impl.kv("  evidence", str(path))
+
 
 @cli.command()
 @click.option(
@@ -2205,6 +2292,24 @@ def _render_status(manifest: Manifest, manifest_file: Path, ui_impl: UI) -> None
          "back to scripts/ralph/run-manifest.json)",
 )
 @click.option(
+    "--progress-log",
+    "progress_log_path",
+    type=click.Path(path_type=Path),
+    help="Progress log to join onto the manifest "
+         "(default: <root>/.ralph/progress.jsonl)",
+)
+@click.option(
+    "--watch",
+    is_flag=True,
+    help="Re-render on an interval until interrupted",
+)
+@click.option(
+    "--interval",
+    type=float,
+    default=5.0,
+    help="Polling interval in seconds for --watch (default: 5)",
+)
+@click.option(
     "--ui",
     type=click.Choice(["auto", "rich", "plain", "gum"]),
     default="auto",
@@ -2218,15 +2323,22 @@ def _render_status(manifest: Manifest, manifest_file: Path, ui_impl: UI) -> None
 def status(
     root: Path | None,
     manifest_path: Path | None,
+    progress_log_path: Path | None,
+    watch: bool,
+    interval: float,
     ui: str,
     no_color: bool,
 ) -> None:
-    """Show per-component status from the factory manifest.
+    """Show per-component status from the manifest + progress log.
 
-    Minimal manifest-backed view (R2.4): status, retries, branch, and
-    timestamps per component. The ProgressLog-backed detail view lands
-    with R3.2.
+    R3.2: joins the factory manifest with the ProgressLog (default
+    .ralph/progress.jsonl): per component status, retries, branch,
+    timestamps, plus phase, attempt, last-event age, usage totals and
+    evidence paths for the latest run found in the log. Works
+    manifest-only when no log exists.
     """
+    import time as _time
+
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
@@ -2241,23 +2353,48 @@ def status(
             root_dir / "scripts" / "ralph" / "run-manifest.json",
         ]
 
-    manifest_file = next((p for p in candidates if p.exists()), None)
-    if manifest_file is None:
-        looked = ", ".join(str(p) for p in candidates)
-        ui_impl.err(f"No manifest found (looked for: {looked})")
-        ui_impl.info(
-            "Run `ralph factory` or `ralph run` first, or pass --manifest."
+    log_path = progress_log_path or root_dir / ".ralph" / "progress.jsonl"
+
+    def _load_and_render() -> int:
+        manifest_file = next((p for p in candidates if p.exists()), None)
+        if manifest_file is None:
+            looked = ", ".join(str(p) for p in candidates)
+            ui_impl.err(f"No manifest found (looked for: {looked})")
+            ui_impl.info(
+                "Run `ralph factory` or `ralph run` first, or pass --manifest."
+            )
+            return 1
+
+        try:
+            manifest = Manifest.load(manifest_file)
+        except (OSError, ValueError) as exc:
+            ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
+            return 1
+
+        events = read_progress_events(log_path)
+        activity: RunActivity | None = None
+        if events:
+            activity = summarize_events(events, latest_run_id(events))
+
+        _render_status(
+            manifest, manifest_file, ui_impl,
+            activity=activity, log_path=log_path if events else None,
+            root_dir=root_dir,
         )
-        sys.exit(1)
+        return 0
+
+    if not watch:
+        sys.exit(_load_and_render())
 
     try:
-        manifest = Manifest.load(manifest_file)
-    except (OSError, ValueError) as exc:
-        ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
-        sys.exit(1)
-
-    _render_status(manifest, manifest_file, ui_impl)
-    sys.exit(0)
+        while True:
+            click.clear()
+            exit_code = _load_and_render()
+            if exit_code != 0:
+                sys.exit(exit_code)
+            _time.sleep(max(0.5, interval))
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 
 @cli.command()
