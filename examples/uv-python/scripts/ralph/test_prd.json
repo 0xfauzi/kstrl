@@ -1,5 +1,6 @@
 {
   "branchName": "ralph/test-migration",
+  "allowedPaths": ["src/", "tests/", "scripts/ralph/"],
   "userStories": [
     {
       "id": "TEST-001",

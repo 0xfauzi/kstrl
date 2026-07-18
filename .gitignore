@@ -59,3 +59,6 @@ scripts/ralph/understand_prompt.md
 
 # Ralph - runtime state (journals, worktrees, knowledge, locks; R3.4)
 .ralph/
+
+# Live per-checkout config; ralph.toml.example is the tracked template (R3.4)
+/ralph.toml

@@ -27,6 +27,17 @@ auto_checkout = true
 [ui]
 ascii = false
 
+# Timeout limits in seconds (R0.1). A value of 0 or less disables that limit.
+[timeout]
+git_operation = 30.0               # per git subprocess
+agent_iteration = 1800.0           # one engineer iteration
+component_total = 7200.0           # wall clock per component across iterations
+verification_check = 300.0         # each Phase 1 check subprocess
+review_agent = 600.0               # Phase 2 reviewer call
+contract_test = 600.0              # Phase 3 contract test run
+subprocess_default = 60.0          # any other subprocess
+scheduler_backstop_margin = 60.0   # extra slack before the scheduler declares a worker dead
+
 # Per-component semantic knowledge layer.
 # A third memory surface (alongside .ralph/evolution.jsonl and progress.txt)
 # that captures durable facts about WHAT WAS BUILT: interfaces, invariants,
@@ -64,7 +75,9 @@ use_worktrees = true               # branch each component into .ralph/worktrees
 single_pr = false                  # one PR for the whole factory vs per-component
 create_prs = true                  # call `gh` to push + merge per component
 review_mode = "hard"               # hard | advisory | skip
+merge_timeout = 300.0              # seconds to wait for PR merge confirmation (R0.2)
 max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
+max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1)
 pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
 
 # Phase 1 mechanical verification.
@@ -74,8 +87,10 @@ pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+
 check_diff_scope = true
 check_bad_patterns = true
 dead_code_cleanup = false
+dead_code_command = ""             # empty = smart default when dead_code_cleanup is on
 mutation_testing = false
 mutation_threshold = 50.0
+mutation_timeout = 600.0
 subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
@@ -111,3 +126,5 @@ journal_path = ".ralph/evolution.jsonl"
 experiments_path = ".ralph/experiments.tsv"
 min_pattern_frequency = 2
 lookback_runs = 10
+auto_propose = true                # generate proposals after each factory run
+auto_apply_computational = false   # auto-apply computational proposals

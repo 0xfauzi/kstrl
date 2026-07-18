@@ -18,7 +18,7 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 | **Code reviewer** | `ralph_py/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
 | **Security reviewer** | `ralph_py/security.py` | `SECURITY_PROMPT` | Phase 2.5 | Threat-model framing: injection, auth_bypass, hardcoded_secret, unsafe_deserialization, broken_crypto, predictable_randomness, missing_input_validation, race_condition, SSRF, XSS, open_redirect, information_disclosure, denial_of_service. Each category mapped to OWASP Top 10 + CWE via `SECURITY_CATEGORY_MAP`. |
 | **Contract tester** | `ralph_py/contract.py` | (no LLM) | Phase 3 | Cross-component integration tests on merged tier branches. Failing tier identifies a breaker component, sent back through Phase 1+ for retry. |
-| **Knowledge distiller** | `ralph_py/knowledge.py` | `DISTILL_PROMPT` | Post-merge | Captures durable facts about the artifact for downstream components. Voyager-style write gate: only fires when Phase 2 review passed. |
+| **Knowledge distiller** | `ralph_py/knowledge.py` | `DISTILL_PROMPT` | Pre-PR | Captures durable facts about the artifact for downstream components. Runs after the Phase 2/2.5 gates pass and BEFORE the PR is created, so the distilled diff is the component's true delta (not polluted by the merge pulling main in). Voyager-style write gate: only fires when Phase 2 review passed. |
 | **Human checkpoint (E6)** | `ralph_py/factory.py` | (interactive) | Pre-merge | Optional. When `FactoryConfig.pause_before_pr_merge=True` and UI is interactive, prompts a human to approve or reject before PR creation. Off by default. |
 
 ## Findings model (E3)
@@ -71,9 +71,9 @@ spec.md
        -> [Phase 1] mechanical verify (incl. optional self-critique check)
        -> [Phase 2] code reviewer (criteria + concerns)
        -> [Phase 2.5] security reviewer
+       -> [Knowledge distiller] pre-PR write
        -> [HITL checkpoint] if enabled
        -> create + merge PR
-       -> [Knowledge distiller] post-merge write
   -> [Phase 3] contract testing across merged tiers
   -> evolution journal recorded
 ```
