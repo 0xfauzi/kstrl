@@ -372,3 +372,79 @@ class TestRunFactoryExecution:
         comp = manifest.get_component("a")
         assert comp is not None
         assert comp.retries == 1
+
+
+class TestEvolutionRecording:
+    """R6.1 + R6.4 end to end: a real factory run journals structured
+    failure signatures and a nonzero attempt duration."""
+
+    def test_failure_signature_and_duration_reach_journal(
+        self, tmp_path: Path,
+    ) -> None:
+        root = _setup_project(tmp_path)
+        prd_rel = "scripts/ralph/feature/a/prd.json"
+        manifest = _make_manifest([
+            Component("a", "A", "", [], prd_rel, "b/a"),
+        ])
+        config = FactoryConfig(
+            use_worktrees=False, create_prs=False, max_parallel=1,
+            max_retries=0, retry_delay=0, review_mode="skip",
+            verify_config=VerifyConfig(
+                test_command="false",  # tests will fail
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
+            ),
+        )
+        base = _make_base_config(root)
+        ui = PlainUI(no_color=True)
+
+        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        feature_dir.mkdir(parents=True)
+        (feature_dir / "prd.json").write_text(json.dumps({
+            "branchName": "test",
+            "userStories": [{
+                "id": "US-001", "title": "Test",
+                "acceptanceCriteria": ["AC1"],
+                "priority": 1, "passes": True, "notes": "",
+            }],
+        }))
+
+        success_result = ComponentResult("a", success=True, iterations=1)
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            result = run_factory(manifest, config, base, ui, root)
+
+        assert "a" in result.failed
+
+        journal_path = root / ".ralph" / "evolution.jsonl"
+        entries = [
+            json.loads(line)
+            for line in journal_path.read_text().strip().splitlines()
+        ]
+        comp_entries = [
+            e for e in entries
+            if e.get("event_type") == "component_result"
+            and e.get("component_id") == "a"
+        ]
+        assert comp_entries, f"no component_result entry in {entries}"
+        entry = comp_entries[-1]
+        # R6.4: journal format is versioned.
+        assert entry["schema_version"] == 2
+        # R6.1: the structured signature from the failing check, not a
+        # slug of "Mechanical verification failed".
+        assert entry["failure_signatures"] == [
+            "test_suite:tests-failed-exit-code",
+        ]
+        assert entry["check_name"] == "test_suite"
+        assert entry["error_signature"] == "tests-failed-exit-code"
+        # R6.4: duration is the attempt wall clock, not 0.0. The mocked
+        # engineer returns instantly, so any nonzero value proves the
+        # stamp comes from the factory's own attempt clock.
+        assert entry["duration_seconds"] > 0
+        comp = manifest.get_component("a")
+        assert comp is not None
+        assert comp.duration_seconds > 0

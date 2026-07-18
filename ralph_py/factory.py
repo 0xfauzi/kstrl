@@ -1025,6 +1025,19 @@ def _run_factory_locked(
     # by creation time, not by nonce).
     run_id = current_run_id()
 
+    # R6.1: structured "<check>:<code>" failure signatures per component
+    # (e.g. "linter:E501", "review:scope_creep"), recorded at each
+    # failure site from the parser/finding stream and handed to the
+    # evolution journal at record_run. In-memory only: the manifest
+    # already persists failed_phase/failed_check; the full signature
+    # list is a journal concern.
+    component_failure_signatures: dict[str, list[str]] = {}
+    # R6.4: monotonic start of each component's current attempt, so the
+    # recorded duration covers the whole attempt (engineer loop +
+    # verify + review + security + PR flow), not just the engineer loop,
+    # and backstop-timeout failures stop recording 0.0.
+    attempt_started_monotonic: dict[str, float] = {}
+
     # Set up progress log. R3.2: defaults ON under .ralph/ so a
     # walk-away run always leaves an event trail `ralph status` can
     # join; [factory] progress_log_enabled = false (or env) opts out.
@@ -1119,6 +1132,7 @@ def _run_factory_locked(
                     fetch_base_branch(manifest.base_branch, root_dir)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
+                    component_failure_signatures.pop(comp.id, None)
                     comp.completed_at = _iso_now()
                     factory_result.completed.append(comp.id)
                     progress_log.component_completed(
@@ -1131,6 +1145,9 @@ def _run_factory_locked(
                     comp.completed_at = _iso_now()
                     comp.failed_phase = "pr"
                     comp.failed_check = "pr_closed"
+                    component_failure_signatures[comp.id] = [
+                        "pr:closed-without-merge",
+                    ]
                     skipped = manifest.cascade_skip(comp.id)
                     factory_result.failed.append(comp.id)
                     factory_result.skipped.extend(skipped)
@@ -1318,12 +1335,21 @@ def _run_factory_locked(
         comp.journal_offset_end = -1
         comp.status = ComponentStatus.RUNNING.value
         comp.started_at = _iso_now()
+        component_failure_signatures.pop(comp.id, None)
+        attempt_started_monotonic[comp.id] = time.monotonic()
 
     def _end_attempt(comp: Component) -> None:
         """Stamp the attempt's evidence pointers when it stops running:
         the progress-log slice end, and the debug dir when any phase
-        dumped raw output there (R3.3)."""
+        dumped raw output there (R3.3). Also stamp the attempt's full
+        wall-clock duration (R6.4): every terminal transition (retry,
+        fail, merge-pending, completed, scheduler backstop) routes
+        through here, so duration_seconds covers engineer + verify +
+        review + security + PR instead of the engineer loop only."""
         comp.journal_offset_end = _journal_offset()
+        started = attempt_started_monotonic.get(comp.id)
+        if started is not None:
+            comp.duration_seconds = time.monotonic() - started
         debug_dir = _debug_dir_for(comp.id)
         if debug_dir.exists():
             comp.evidence_debug_dir = str(debug_dir)
@@ -1337,26 +1363,31 @@ def _run_factory_locked(
         Non-fatal on I/O errors, matching _record_contract_event."""
         if not comp.findings:
             return
-        from ralph_py.evolution import EvolutionConfig
+        from ralph_py.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
 
         evo_config = EvolutionConfig.load(root_dir)
         if not evo_config.enabled:
             return
         entry = {
+            "schema_version": JOURNAL_SCHEMA_VERSION,
             "timestamp": _iso_now(),
             "run_id": run_id,
             "project": manifest.project_name,
             "component_id": comp.id,
             "event_type": "findings_superseded",
             "attempt": comp.retries + 1,
+            "failure_signatures": component_failure_signatures.get(comp.id, []),
             "findings": [f.to_dict() for f in comp.findings],
         }
         try:
             evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
             with open(evo_config.journal_path, "a") as f:
                 f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-        except OSError:
-            pass  # evolution recording is non-fatal
+        except OSError as exc:
+            # Evolution recording is non-fatal, but never silent (R6.1).
+            ui.warn(
+                f"  Evolution journal write failed (non-fatal): {exc}"
+            )
 
     def _fail_component_for_budget(comp: Component, phase: str) -> None:
         """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
@@ -1377,7 +1408,10 @@ def _run_factory_locked(
         progress_log.budget_exceeded(
             comp.id, run_usage.total_tokens, factory_config.max_total_tokens,
         )
-        _fail_component(comp, error, phase=phase, check="token_budget")
+        _fail_component(
+            comp, error, phase=phase, check="token_budget",
+            signatures=["token_budget:exceeded"],
+        )
 
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
@@ -1397,16 +1431,36 @@ def _run_factory_locked(
     progress_file_rel = _path_relative_to_root(base_config.progress_file)
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
+    def _record_failure_signatures(
+        comp: Component, phase: str, error: str, signatures: list[str] | None,
+    ) -> None:
+        """R6.1: remember the structured signatures for this failure so
+        record_run journals real "<check>:<code>" identifiers instead of
+        re-deriving a degenerate slug from the flattened error string.
+        Sites without parser-level codes fall back to a slug of the
+        error text under the failing phase."""
+        from ralph_py.evolution import signature_for_error
+
+        if signatures:
+            component_failure_signatures[comp.id] = list(signatures)
+        else:
+            component_failure_signatures[comp.id] = [
+                signature_for_error(phase or "unknown", error),
+            ]
+
     def _retry_or_fail(
         comp: Component,
         error: str,
         context_json: str | None,
         phase: str = "",
         check: str = "",
+        signatures: list[str] | None = None,
     ) -> None:
         """Retry a component or mark it as failed. ``phase``/``check``
         name the gate that fired (R3.3); on a retry they describe the
-        superseded attempt until the next attempt clears them."""
+        superseded attempt until the next attempt clears them.
+        ``signatures`` are the structured failure signatures (R6.1)."""
+        _record_failure_signatures(comp, phase, error, signatures)
         if comp.retries < factory_config.max_retries:
             # A timeout failure means the agent was killed mid-flight: the
             # worktree/branch state cannot be trusted. Note the hygiene
@@ -1441,16 +1495,20 @@ def _run_factory_locked(
             time.sleep(factory_config.retry_delay)
             manifest.save(manifest_path)
         else:
-            _fail_component(comp, error, phase=phase, check=check)
+            _fail_component(
+                comp, error, phase=phase, check=check, signatures=signatures,
+            )
 
     def _fail_component(
         comp: Component, error: str, phase: str = "", check: str = "",
+        signatures: list[str] | None = None,
     ) -> None:
         """Mark a component FAILED with no retry. Direct callers are
         conditions a retry can never fix (R1.4: chunked-review budget
         insufficiency - the adversarial budget only shrinks, so
         re-running the engineer would burn LLM calls to hit the same
         wall); _retry_or_fail routes here once retries are exhausted."""
+        _record_failure_signatures(comp, phase, error, signatures)
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
         comp.completed_at = _iso_now()
@@ -1592,10 +1650,17 @@ def _run_factory_locked(
                     comp_result.context_json or "{}",
                 )
                 ctx.add_verification_failure(verification.as_context())
+                # R6.1: carry the parser's structured codes (ruff rule,
+                # mypy error code, pytest exception type) into the
+                # journal instead of the flattened string.
+                from ralph_py.evolution import signatures_from_verification
                 _retry_or_fail(
                     comp, "Mechanical verification failed", ctx.to_json(),
                     phase="verify",
                     check=", ".join(c.name for c in failing),
+                    signatures=signatures_from_verification(
+                        verification.checks,
+                    ),
                 )
                 return
 
@@ -1634,6 +1699,7 @@ def _run_factory_locked(
             _retry_or_fail(
                 comp, f"Diff fetch failed (infrastructure): {exc}",
                 ctx.to_json(), phase="diff", check="git_diff",
+                signatures=["diff:fetch-failed"],
             )
             return
 
@@ -1706,6 +1772,7 @@ def _run_factory_locked(
                     comp,
                     f"Review diff unsplittable at the prompt cap: {exc}",
                     ctx.to_json(), phase="review", check="diff_chunking",
+                    signatures=["review:diff-unsplittable"],
                 )
                 return
             progress_log.emit(
@@ -1765,6 +1832,7 @@ def _run_factory_locked(
                 _fail_component(
                     comp, f"Review infrastructure error: {error}",
                     phase="review", check="adversarial_budget",
+                    signatures=["review:chunk-budget-insufficient"],
                 )
                 return
         if review_mode != ReviewMode.SKIP:
@@ -1864,11 +1932,18 @@ def _run_factory_locked(
                 )
                 ctx = IterationContext.from_json(comp_result.context_json or "{}")
                 ctx.add_review_finding(review_result.as_retry_context())
+                # R6.1: journal the finding categories that failed the
+                # gate ("review:scope_creep", "review:prd_criterion",
+                # "review:infrastructure"), not the flattened reason.
+                from ralph_py.evolution import signatures_from_findings
                 _retry_or_fail(
                     comp, reason, ctx.to_json(), phase="review",
                     check=(
                         "infrastructure"
                         if review_result.infrastructure_error else "criteria"
+                    ),
+                    signatures=signatures_from_findings(
+                        "review", review_result.as_findings(),
                     ),
                 )
                 return
@@ -1943,6 +2018,7 @@ def _run_factory_locked(
                 _fail_component(
                     comp, f"Security review infrastructure error: {error}",
                     phase="security", check="adversarial_budget",
+                    signatures=["security:chunk-budget-insufficient"],
                 )
                 return
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
@@ -2074,12 +2150,18 @@ def _run_factory_locked(
                         or "Security review infrastructure error: "
                         + sec_result.overall_notes
                     )
+                    # R6.1: journal the vuln categories that failed the
+                    # gate ("security:injection", ...), not the reason.
+                    from ralph_py.evolution import signatures_from_findings
                     _retry_or_fail(
                         comp, reason, ctx.to_json(), phase="security",
                         check=(
                             "infrastructure"
                             if sec_result.infrastructure_error
                             else "findings"
+                        ),
+                        signatures=signatures_from_findings(
+                            "security", sec_result.as_findings(),
                         ),
                     )
                     return
@@ -2307,6 +2389,9 @@ def _run_factory_locked(
                         comp.completed_at = _iso_now()
                         comp.failed_phase = "pr"
                         comp.failed_check = "pr_flow"
+                        _record_failure_signatures(
+                            comp, "pr", comp.error, None,
+                        )
                         _end_attempt(comp)
                         skipped = manifest.cascade_skip(comp_id)
                         factory_result.failed.append(comp_id)
@@ -2333,6 +2418,7 @@ def _run_factory_locked(
         # Mark completed
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
+        component_failure_signatures.pop(comp_id, None)
         comp.completed_at = _iso_now()
         _end_attempt(comp)
         factory_result.completed.append(comp_id)
@@ -2539,6 +2625,9 @@ def _run_factory_locked(
                         timed_out_comp.completed_at = _iso_now()
                         timed_out_comp.failed_phase = "engineer"
                         timed_out_comp.failed_check = "scheduler_backstop"
+                        component_failure_signatures[comp_id] = [
+                            "engineer:component-timeout",
+                        ]
                         _end_attempt(timed_out_comp)
                         # The worktree stays (leaked worker may own it);
                         # point the evidence at it (R3.3).
@@ -2627,7 +2716,7 @@ def _run_factory_locked(
         that a breaker retry later resolves. Non-fatal on I/O errors,
         matching EvolutionJournal.record_run.
         """
-        from ralph_py.evolution import EvolutionConfig
+        from ralph_py.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
 
         # R2.1: honor [evolution] in ralph.toml + env, resolved against
         # the factory root rather than whatever the process CWD is.
@@ -2635,6 +2724,7 @@ def _run_factory_locked(
         if not evo_config.enabled:
             return
         entry = {
+            "schema_version": JOURNAL_SCHEMA_VERSION,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "run_id": run_id,
             "project": manifest.project_name,
@@ -2651,8 +2741,11 @@ def _run_factory_locked(
             evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
             with open(evo_config.journal_path, "a") as f:
                 f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-        except OSError:
-            pass  # evolution recording is non-fatal
+        except OSError as exc:
+            # Evolution recording is non-fatal, but never silent (R6.1).
+            ui.warn(
+                f"  Evolution journal write failed (non-fatal): {exc}"
+            )
 
     # Per-component PRs are squash-merged into base as each component
     # completes, so at contract time tier re-merges would be content
@@ -2718,6 +2811,9 @@ def _run_factory_locked(
                 breaker.retries += 1
                 breaker.status = ComponentStatus.PENDING.value
                 breaker.error = f"Contract test failed at tier {cr.tier}"
+                component_failure_signatures[cr.breaker] = [
+                    f"contract:tier_{cr.tier}",
+                ]
                 # Remove from completed list
                 if cr.breaker in factory_result.completed:
                     factory_result.completed.remove(cr.breaker)
@@ -2753,6 +2849,9 @@ def _run_factory_locked(
                     breaker.completed_at = _iso_now()
                     breaker.failed_phase = "contract"
                     breaker.failed_check = f"tier_{cr.tier}"
+                    component_failure_signatures[cr.breaker] = [
+                        f"contract:tier_{cr.tier}",
+                    ]
                 if cr.breaker in factory_result.completed:
                     factory_result.completed.remove(cr.breaker)
                 if cr.breaker not in factory_result.failed:
@@ -2938,8 +3037,10 @@ def _run_factory_locked(
                     for comp_id, phases in usage_meter.items()
                 },
                 run_usage=run_usage.to_dict(),
+                failure_signatures=component_failure_signatures,
             )
-    except Exception:
-        pass  # evolution recording is non-fatal
+    except Exception as exc:
+        # Evolution recording is non-fatal, but never silent (R6.1).
+        ui.warn(f"Evolution journal recording failed (non-fatal): {exc}")
 
     return factory_result
