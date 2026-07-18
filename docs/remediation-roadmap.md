@@ -179,7 +179,7 @@ reviewers' output as much as it distrusts the engineer's.
     run multiple review passes (bounded by budget), or fail with an infra
     finding. Advisory mode: annotate PASS as partial.
   - Strip the Self-Critique block for the security reviewer too (`security.py:377`).
-- [ ] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
+- [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.
   - `decompose._validate_decompose_output`: validate allowedPaths CONTENT
@@ -188,6 +188,12 @@ reviewers' output as much as it distrusts the engineer's.
     reject and retry-with-error like other validation failures.
   - `factory.py:554-558`: PRD load failure fails the diff-scope check closed
     (infra failure) instead of silently disabling scope.
+  - Note (2026-07-18, session 3C): `get_diff_names` now runs
+    `--name-status -z -M -C` and returns both sides of renames/copies;
+    the validator enforces the prompt's EXCLUDE list verbatim plus
+    absolute/`..`/whole-repo entries; the factory forwards PRD load
+    failures as `allowed_paths_error`, which `check_diff_scope` fails
+    closed. Covered by `tests/test_scope_hardening.py`.
 - [x] R1.6 (M) **Knowledge retention + read-side defense** [CRIT-4, H-3, MED knowledge-trust, LOW nonce-order]
   - Retrieval: union across run dirs with per-fact-id latest-wins (supersede by
     fact id, not by directory). The DISTILL rule "do not duplicate existing

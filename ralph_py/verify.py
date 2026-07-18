@@ -487,9 +487,36 @@ def check_diff_scope(
     cwd: Path,
     base_branch: str,
     allowed_paths: list[str] | None = None,
+    allowed_paths_error: str | None = None,
 ) -> CheckResult:
-    """Check that git diff is within expected scope."""
+    """Check that git diff is within expected scope.
+
+    ``allowed_paths_error`` marks an infrastructure failure loading the
+    scope configuration (the PRD carrying allowedPaths was missing or
+    unparseable). The check then fails CLOSED: the diff cannot be
+    proven in-scope, and silently skipping the guard is exactly the
+    hole R1.5 closes. This is distinct from ``allowed_paths=None``,
+    which means no scope was configured -- a legitimate pass.
+    """
     start = time.monotonic()
+
+    if allowed_paths_error:
+        return CheckResult(
+            name="diff_scope",
+            passed=False,
+            message=(
+                "Scope configuration could not be loaded; failing closed "
+                "(infrastructure error, not a diff violation)"
+            ),
+            details=[
+                f"Error: {allowed_paths_error}",
+                "The PRD carrying allowedPaths failed to load, so the "
+                "diff cannot be proven in-scope. Restore a valid PRD "
+                "file; do not treat this as permission to widen the "
+                "diff.",
+            ],
+            duration_seconds=time.monotonic() - start,
+        )
 
     if not allowed_paths:
         return CheckResult(
@@ -859,6 +886,7 @@ def run_mechanical_verification(
     base_branch: str,
     allowed_paths: list[str] | None,
     config: VerifyConfig,
+    allowed_paths_error: str | None = None,
 ) -> VerificationResult:
     """Run all 6 mechanical checks. All checks run even if earlier ones fail."""
     checks: list[CheckResult] = []
@@ -880,6 +908,7 @@ def run_mechanical_verification(
     if config.check_diff_scope:
         checks.append(check_diff_scope(
             worktree_path, base_branch, allowed_paths,
+            allowed_paths_error=allowed_paths_error,
         ))
 
     if config.check_bad_patterns:
