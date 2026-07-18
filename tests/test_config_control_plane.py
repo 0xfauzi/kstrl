@@ -507,6 +507,29 @@ class TestSafetyKnobs:
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_adversarial_calls == 1
 
+    def test_max_total_tokens_all_surfaces(
+        self,
+        tmp_path: Path,
+        captured: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """R3.1: the token budget is reachable via flag > env > toml."""
+        (tmp_path / "ralph.toml").write_text(
+            "[factory]\nmax_total_tokens = 100\n"
+        )
+        monkeypatch.setenv("RALPH_FACTORY_MAX_TOTAL_TOKENS", "200")
+        result = _invoke_factory(tmp_path, "--max-total-tokens", "300")
+        assert result.exit_code == 0, result.output
+        assert captured["factory_config"].max_total_tokens == 300
+
+        result = _invoke_factory(tmp_path)
+        assert captured["factory_config"].max_total_tokens == 200
+
+        monkeypatch.delenv("RALPH_FACTORY_MAX_TOTAL_TOKENS")
+        result = _invoke_factory(tmp_path)
+        assert result.exit_code == 0, result.output
+        assert captured["factory_config"].max_total_tokens == 100
+
     def test_pause_before_pr_merge_all_surfaces(
         self,
         tmp_path: Path,

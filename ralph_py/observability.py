@@ -122,6 +122,33 @@ class ProgressLog:
             "duration_seconds": round(duration, 2),
         })
 
+    def component_usage(
+        self,
+        component_id: str,
+        phase: str,
+        usage: dict[str, Any],
+    ) -> None:
+        """R3.1: one event per (component, phase) usage capture. ``usage``
+        is a UsageTotals.to_dict() - token/cost values are CLI
+        self-reports and lower bounds when ``unreported_calls`` > 0."""
+        self.emit("component_usage", component_id=component_id, data={
+            "phase": phase,
+            **usage,
+        })
+
+    def budget_exceeded(
+        self,
+        component_id: str,
+        total_tokens: int,
+        max_total_tokens: int,
+    ) -> None:
+        """R3.1: the run-level token budget tripped; the named component
+        was failed with a synthetic budget finding."""
+        self.emit("budget_exceeded", component_id=component_id, data={
+            "total_tokens": total_tokens,
+            "max_total_tokens": max_total_tokens,
+        })
+
     def contract_result(
         self,
         tier: int,

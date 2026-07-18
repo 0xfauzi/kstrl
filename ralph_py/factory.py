@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
+from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
 from ralph_py.contract import (
@@ -101,6 +102,15 @@ class FactoryConfig:
     # E6: when True, pause and prompt the user before each component's
     # PR creation step. Off by default; opt-in for sensitive projects.
     pause_before_pr_merge: bool = False
+    # R3.1: run-level token budget. 0 means unbounded. Compared against
+    # the run's aggregated total_tokens (a lower bound when some calls
+    # report no usage); on breach the factory halts LOUDLY - the current
+    # component fails with a synthetic budget finding and pending
+    # components fail at scheduling instead of burning more spend.
+    # Enforcement granularity is the phase boundary: an in-flight
+    # engineer loop or review call can overshoot before the parent sees
+    # its usage.
+    max_total_tokens: int = 0
     # R0.1: timeout limits (agent iteration, component wall clock,
     # scheduler backstop margin). None means run_factory loads
     # TimeoutConfig.load(root_dir) - toml [timeout] section + env.
@@ -126,6 +136,9 @@ class FactoryConfig:
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(
                 os.environ.get("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
+            ),
+            max_total_tokens=int(
+                os.environ.get("RALPH_FACTORY_MAX_TOTAL_TOKENS", "0")
             ),
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE")
@@ -164,6 +177,8 @@ class FactoryConfig:
         # (below) and CLI flags (cli.py factory command).
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
+        if "max_total_tokens" in section:
+            config.max_total_tokens = int(section["max_total_tokens"])
         if "pause_before_pr_merge" in section:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         # Env overrides (consistent with from_env)
@@ -178,6 +193,10 @@ class FactoryConfig:
         if "RALPH_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(
                 os.environ["RALPH_FACTORY_MAX_ADVERSARIAL_CALLS"]
+            )
+        if "RALPH_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
+            config.max_total_tokens = int(
+                os.environ["RALPH_FACTORY_MAX_TOTAL_TOKENS"]
             )
         if "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
@@ -196,6 +215,10 @@ class ComponentResult:
     error: str | None = None
     duration_seconds: float = 0.0
     context_json: str | None = None
+    # R3.1: engineer-loop usage aggregated by the worker; pickled back
+    # across the ProcessPoolExecutor boundary. None means the worker
+    # predates the meter or crashed before the loop started.
+    usage: UsageTotals | None = None
 
 
 @dataclass
@@ -737,6 +760,7 @@ def _run_component(
             error=error,
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
+            usage=result.usage,
         )
     except Exception as exc:
         return ComponentResult(
@@ -746,6 +770,9 @@ def _run_component(
             error=str(exc),
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
+            # The loop crashed, but any iterations that did run still
+            # cost tokens; collect what the agent recorded (R3.1).
+            usage=collect_usage(agent),
         )
 
 
@@ -773,6 +800,63 @@ def _expired_futures(
         f for f in running
         if not f.done() and f in deadlines and now >= deadlines[f]
     ]
+
+
+# Rollup row order for the R3.1 usage table; phases outside this list
+# (future additions) sort after, alphabetically.
+_USAGE_PHASE_ORDER = ("engineer", "review", "security", "distill")
+
+
+def _format_usage_rollup(
+    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
+    run_usage: UsageTotals,
+) -> list[str]:
+    """Render the per-component, per-phase usage table (R3.1).
+
+    Token and cost columns are sums of CLI self-reports: codex reports
+    only a total (in/out columns stay 0), CustomAgent reports nothing.
+    Whenever some calls reported no usage the footer says so explicitly -
+    the totals are then lower bounds, not measurements (H4).
+    """
+    header = (
+        f"{'component':<24} {'phase':<10} {'calls':>5} "
+        f"{'tokens_in':>11} {'tokens_out':>11} {'tokens_total':>13} "
+        f"{'cost_usd':>9} {'time_s':>8}"
+    )
+    lines = [header]
+
+    def _phase_sort_key(phase: str) -> tuple[int, str]:
+        try:
+            return (_USAGE_PHASE_ORDER.index(phase), phase)
+        except ValueError:
+            return (len(_USAGE_PHASE_ORDER), phase)
+
+    def _row(label: str, phase: str, totals: UsageTotals) -> str:
+        if totals.known_calls > 0:
+            tokens_in = f"{totals.input_tokens:,}"
+            tokens_out = f"{totals.output_tokens:,}"
+            tokens_total = f"{totals.total_tokens:,}"
+            cost = f"{totals.cost_usd:.4f}" if totals.cost_usd > 0 else "-"
+        else:
+            tokens_in = tokens_out = tokens_total = cost = "-"
+        return (
+            f"{label:<24} {phase:<10} {totals.calls:>5} "
+            f"{tokens_in:>11} {tokens_out:>11} {tokens_total:>13} "
+            f"{cost:>9} {totals.duration_seconds:>8.0f}"
+        )
+
+    for comp_id in sorted(usage_meter):
+        phases = usage_meter[comp_id]
+        for phase in sorted(phases, key=_phase_sort_key):
+            lines.append(_row(comp_id, phase, phases[phase]))
+    lines.append(_row("TOTAL", "", run_usage))
+    if run_usage.unreported_calls > 0:
+        lines.append(
+            f"note: {run_usage.unreported_calls} of {run_usage.calls} "
+            "call(s) reported no token/cost data; token and cost totals "
+            "are lower bounds"
+        )
+    return lines
 
 
 def run_factory(
@@ -1031,6 +1115,51 @@ def _run_factory_locked(
             return None
         return max(0, cap - adversarial_calls["count"])
 
+    # R3.1 cost meter: per-component, per-phase usage rollup plus a
+    # run-level total. Phases: "engineer" (loop iterations, reported by
+    # the worker), "review", "security", "distill" (fresh agent instance
+    # per phase, so an instance's accumulated usage_records ARE that
+    # phase's spend - chunked reviews reuse one instance for N calls and
+    # land here as N records). Retried attempts accumulate: every attempt
+    # cost real tokens, so the meter never forgets a failed attempt.
+    usage_meter: dict[str, dict[str, UsageTotals]] = {}
+    run_usage = UsageTotals()
+
+    def _record_usage(comp_id: str, phase: str, totals: UsageTotals) -> None:
+        if totals.calls == 0:
+            return
+        slot = usage_meter.setdefault(comp_id, {}).setdefault(
+            phase, UsageTotals(),
+        )
+        slot.merge(totals)
+        run_usage.merge(totals)
+        progress_log.component_usage(comp_id, phase, totals.to_dict())
+
+    def _token_budget_exceeded() -> bool:
+        cap = factory_config.max_total_tokens
+        return cap > 0 and run_usage.total_tokens >= cap
+
+    def _fail_component_for_budget(comp: Component, phase: str) -> None:
+        """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
+        R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
+        typed Finding in the stream, a progress-log event, and a FAILED
+        component - never a silent degrade. Retrying cannot un-spend
+        tokens, so this fails directly instead of burning retries."""
+        error = (
+            f"token budget exceeded: {run_usage.total_tokens} total tokens "
+            f"recorded >= max_total_tokens "
+            f"({factory_config.max_total_tokens}); halting instead of "
+            "spending further (R3.1)"
+        )
+        ui.err(f"  TOKEN BUDGET EXCEEDED for {comp.id}: {error}")
+        comp.findings.append(Finding.infrastructure_error(
+            phase=phase, explanation=error,
+        ))
+        progress_log.budget_exceeded(
+            comp.id, run_usage.total_tokens, factory_config.max_total_tokens,
+        )
+        _fail_component(comp, error)
+
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
         worktrees. Falls back to the absolute path string when relativization
@@ -1103,6 +1232,18 @@ def _run_factory_locked(
         # Record timing
         comp.duration_seconds = comp_result.duration_seconds
         comp.iteration_count = comp_result.iterations
+
+        # R3.1: engineer-loop spend counts BEFORE the success branch -
+        # failed attempts cost real tokens too.
+        if comp_result.usage is not None:
+            _record_usage(comp_id, "engineer", comp_result.usage)
+
+        # R3.1 budget checkpoint: the engineer loop just reported the
+        # dominant spend; halt before starting adversarial phases (or a
+        # retry) when the run-level cap is blown.
+        if _token_budget_exceeded():
+            _fail_component_for_budget(comp, "engineer")
+            return
 
         if not comp_result.success:
             from ralph_py.context import IterationRecord
@@ -1393,6 +1534,7 @@ def _run_factory_locked(
             # R1.2: wrap the agent-driven work like Phase 2.5 does. A
             # reviewer crash degrades to a per-component infrastructure
             # failure; it must never abort the whole factory run.
+            review_agent: Any = None
             try:
                 review_agent = get_agent(
                     factory_config.review_agent_cmd,
@@ -1436,6 +1578,15 @@ def _run_factory_locked(
                     overall_notes=f"Review agent crashed: {exc}",
                     infrastructure_error=True,
                 )
+            # R3.1: the instance is fresh per phase, so its accumulated
+            # records are exactly this review's spend (N records for a
+            # chunked review). Recorded before pass/fail handling so a
+            # failed or crashed review still counts.
+            if review_agent is not None:
+                _record_usage(comp_id, "review", collect_usage(review_agent))
+            if _token_budget_exceeded():
+                _fail_component_for_budget(comp, "review")
+                return
             comp.review_passed = review_result.passed
             # E3: typed findings are the source of truth; the rendered
             # string is a derived view kept for backward-compat consumers.
@@ -1555,6 +1706,7 @@ def _run_factory_locked(
                 f"({sec_config.mode}{chunk_note}) for {comp_id}..."
             )
             sec_result = None
+            sec_agent: Any = None
             # The try/except deliberately wraps ONLY the agent-driven
             # work (getting the agent + running the review). Errors in
             # the retry-or-fail path below must NOT be swallowed - if
@@ -1615,6 +1767,14 @@ def _run_factory_locked(
                     ),
                     infrastructure_error=True,
                 )
+
+            # R3.1: record security spend before pass/fail handling so
+            # failed and crashed passes still count toward the meter.
+            if sec_agent is not None:
+                _record_usage(comp_id, "security", collect_usage(sec_agent))
+            if _token_budget_exceeded():
+                _fail_component_for_budget(comp, "security")
+                return
 
             if sec_result is not None:
                 progress_log.review_result(
@@ -1689,8 +1849,22 @@ def _run_factory_locked(
             _record_phase_skip(
                 "knowledge", "adversarial LLM budget exhausted",
             )
+        elif knowledge_config.enabled and _token_budget_exceeded():
+            # R3.1: the gates all passed before the cap tripped, so the
+            # component proceeds to PR - but no further LLM spend. The
+            # skip is recorded, and the scheduling gate stops any
+            # remaining components loudly.
+            ui.warn(
+                f"  Knowledge: skipped for {comp_id} "
+                f"(token budget exceeded: {run_usage.total_tokens} >= "
+                f"{factory_config.max_total_tokens})"
+            )
+            _record_phase_skip(
+                "knowledge", "token budget (max_total_tokens) exceeded",
+            )
         elif knowledge_config.enabled:
             _adversarial_budget_consume()
+            distill_agent: Any = None
             try:
                 from ralph_py.agents import get_agent as _get_agent
 
@@ -1725,6 +1899,13 @@ def _run_factory_locked(
                     ui.info(f"  Knowledge: {status}")
             except Exception as exc:  # noqa: BLE001 - non-fatal
                 ui.warn(f"  Knowledge distillation failed: {exc}")
+
+            # R3.1: distillation spend (recorded even when the distill
+            # failed - the call still cost tokens). No fail-the-component
+            # checkpoint here: every gate already passed; the scheduling
+            # gate halts the run before any FURTHER spend.
+            if distill_agent is not None:
+                _record_usage(comp_id, "distill", collect_usage(distill_agent))
 
             # Fact-utilization metric: did the agent reference any of
             # the facts we injected at the top of the worker prompt?
@@ -1970,6 +2151,12 @@ def _run_factory_locked(
                     break
 
                 comp = ready[0]
+                # R3.1 scheduling gate: a blown token budget fails
+                # pending components loudly instead of launching an
+                # engineer loop that would only add spend.
+                if _token_budget_exceeded():
+                    _fail_component_for_budget(comp, "scheduling")
+                    continue
                 comp.status = ComponentStatus.RUNNING.value
                 comp.started_at = time.strftime(
                     "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
@@ -2005,6 +2192,10 @@ def _run_factory_locked(
                 slots = max_parallel - len(running_futures)
 
                 for comp in ready[:slots]:
+                    # R3.1 scheduling gate (see sequential path above).
+                    if _token_budget_exceeded():
+                        _fail_component_for_budget(comp, "scheduling")
+                        continue
                     comp.status = ComponentStatus.RUNNING.value
                     comp.started_at = time.strftime(
                         "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
@@ -2320,6 +2511,16 @@ def _run_factory_locked(
     if factory_result.merge_pending:
         ui.kv("Merge pending", str(len(factory_result.merge_pending)))
     ui.kv("Duration", f"{factory_duration:.0f}s")
+    # R3.1 usage rollup: per component, per phase, plus the run total.
+    if run_usage.calls > 0:
+        ui.subsection("Usage rollup")
+        for line in _format_usage_rollup(usage_meter, run_usage):
+            ui.info(f"  {line}")
+    if _token_budget_exceeded():
+        ui.err(
+            f"TOKEN BUDGET EXCEEDED: {run_usage.total_tokens} total tokens "
+            f"recorded >= max_total_tokens ({factory_config.max_total_tokens})"
+        )
     if factory_result.pr_urls:
         ui.kv("PRs created", str(len(factory_result.pr_urls)))
         for url in factory_result.pr_urls:
@@ -2346,7 +2547,17 @@ def _run_factory_locked(
         evo_config = EvolutionConfig.load(root_dir)
         if evo_config.enabled:
             journal = EvolutionJournal(evo_config)
-            journal.record_run(run_id, manifest, factory_result)
+            journal.record_run(
+                run_id, manifest, factory_result,
+                usage_by_component={
+                    comp_id: {
+                        phase: totals.to_dict()
+                        for phase, totals in phases.items()
+                    }
+                    for comp_id, phases in usage_meter.items()
+                },
+                run_usage=run_usage.to_dict(),
+            )
     except Exception:
         pass  # evolution recording is non-fatal
 

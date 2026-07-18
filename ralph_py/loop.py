@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ralph_py import git, guards
+from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
@@ -36,6 +37,10 @@ class LoopResult:
     # Derived from the adapters' timeout error line - a reporting hint,
     # never a control-flow gate.
     timed_out_iterations: int = 0
+    # R3.1: aggregated engineer-loop usage (one record per agent.run
+    # call, collected from the agent's usage_records). Token/cost fields
+    # are CLI self-reports - lower bounds whenever unreported_calls > 0.
+    usage: UsageTotals = field(default_factory=UsageTotals)
 
 
 def run_loop(
@@ -231,6 +236,7 @@ def run_loop(
                     duration_seconds=time.monotonic() - loop_start,
                     iteration_durations=iteration_durations,
                     timed_out_iterations=timed_out_iterations,
+                    usage=collect_usage(agent),
                 )
 
         # Check for completion
@@ -244,6 +250,7 @@ def run_loop(
                 duration_seconds=total_duration,
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(agent),
             )
 
         # Component wall clock: abort cleanly rather than start work that
@@ -263,6 +270,7 @@ def run_loop(
                 iteration_durations=iteration_durations,
                 timeout_limit="component",
                 timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(agent),
             )
 
         # Interactive pause
@@ -276,7 +284,10 @@ def run_loop(
                 # Disable interactive for remaining iterations
                 config.interactive = False
             elif choice == 2:
-                return LoopResult(completed=False, iterations=iteration, exit_code=0)
+                return LoopResult(
+                    completed=False, iterations=iteration, exit_code=0,
+                    usage=collect_usage(agent),
+                )
 
         # Sleep before next iteration (except on last)
         if iteration < config.max_iterations:
@@ -298,6 +309,7 @@ def run_loop(
         duration_seconds=total_duration,
         iteration_durations=iteration_durations,
         timed_out_iterations=timed_out_iterations,
+        usage=collect_usage(agent),
     )
 
 

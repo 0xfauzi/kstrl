@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from ralph_py.agents.base import UsageRecord
 from ralph_py.agents.proc import DeadlineStreamer, timeout_message
+
+logger = logging.getLogger(__name__)
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
@@ -32,6 +37,7 @@ class ClaudeCodeAgent:
         self._effort = effort
         self._final_message: str | None = None
         self._saw_result: bool = False
+        self._usage_records: list[UsageRecord] = []
 
     @property
     def name(self) -> str:
@@ -58,6 +64,8 @@ class ClaudeCodeAgent:
         self._final_message = None
         self._saw_result = False
         accumulated_text: list[str] = []
+        started = time.monotonic()
+        result_event_line: str | None = None
 
         cmd = [
             "claude", "--print",
@@ -75,6 +83,7 @@ class ClaudeCodeAgent:
                 cmd, cwd=cwd, stdin_text=prompt, timeout=timeout,
             )
         except FileNotFoundError:
+            self._usage_records.append(UsageRecord(source="unavailable"))
             yield "ERROR: claude CLI not found in PATH"
             return
 
@@ -87,6 +96,9 @@ class ClaudeCodeAgent:
             if result_text is not None:
                 self._saw_result = True
                 self._final_message = result_text
+                # The same event carries the usage/cost self-report
+                # (measured against claude CLI 2.1.214; see base.py).
+                result_event_line = raw_line
                 break
 
             # Parse stream-json events
@@ -96,11 +108,19 @@ class ClaudeCodeAgent:
                 yield display_line
 
         if streamer.timed_out:
+            self._usage_records.append(UsageRecord(
+                duration_seconds=time.monotonic() - started,
+                source="timeout",
+            ))
             yield timeout_message(timeout)
             return
 
         # Wait for process to exit, but don't hang forever
         streamer.finish(timeout=10)
+
+        self._usage_records.append(_usage_from_result_event(
+            result_event_line, time.monotonic() - started,
+        ))
 
         # Set final_message from accumulated text if not already set by result event
         if self._final_message is None and accumulated_text:
@@ -110,6 +130,90 @@ class ClaudeCodeAgent:
     def final_message(self) -> str | None:
         """Return last non-empty output line."""
         return self._final_message
+
+    @property
+    def usage_records(self) -> list[UsageRecord]:
+        """One usage record per ``run`` call, accumulated (R3.1)."""
+        return list(self._usage_records)
+
+
+def _usage_from_result_event(
+    raw_line: str | None, fallback_duration: float,
+) -> UsageRecord:
+    """Build a UsageRecord from the stream-json ``result`` event.
+
+    Measured shape (claude CLI 2.1.214): the event carries a ``usage``
+    dict (``input_tokens``, ``output_tokens``, ``cache_read_input_tokens``,
+    ``cache_creation_input_tokens``), a ``total_cost_usd`` float, and
+    ``duration_ms``. Formats drift across CLI versions, so every field
+    is optional: a parse failure logs a warning and records unknown -
+    the meter never gates correctness (R3.1 requirement 4).
+    """
+    duration = fallback_duration
+    if raw_line is None:
+        # Stream ended without a result event (e.g. CLI died early or a
+        # non-stream-json fake in tests): calls + wall time only.
+        return UsageRecord(duration_seconds=duration, source="unavailable")
+    try:
+        evt = json.loads(raw_line)
+        duration_ms = evt.get("duration_ms")
+        if (
+            isinstance(duration_ms, (int, float))
+            and not isinstance(duration_ms, bool)
+            and duration_ms >= 0
+        ):
+            duration = float(duration_ms) / 1000.0
+
+        usage = evt.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
+
+        def _tok(key: str) -> int | None:
+            value = usage.get(key)
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            return value if value >= 0 else None
+
+        input_tokens = _tok("input_tokens")
+        output_tokens = _tok("output_tokens")
+        cache_read = _tok("cache_read_input_tokens")
+        cache_creation = _tok("cache_creation_input_tokens")
+
+        cost_raw = evt.get("total_cost_usd")
+        cost: float | None = None
+        if (
+            isinstance(cost_raw, (int, float))
+            and not isinstance(cost_raw, bool)
+            and cost_raw >= 0
+        ):
+            cost = float(cost_raw)
+
+        parts = [
+            p for p in (input_tokens, output_tokens, cache_read, cache_creation)
+            if p is not None
+        ]
+        if not parts and cost is None:
+            logger.warning(
+                "claude result event carried no parsable usage fields; "
+                "recording unknown usage for this call"
+            )
+            return UsageRecord(duration_seconds=duration, source="parse-error")
+
+        return UsageRecord(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_creation,
+            total_tokens=sum(parts) if parts else None,
+            cost_usd=cost,
+            duration_seconds=duration,
+            source="claude-stream-json",
+        )
+    except Exception as exc:  # noqa: BLE001 - meter must never crash a run
+        logger.warning("Failed to parse claude usage: %s", exc)
+        return UsageRecord(
+            duration_seconds=fallback_duration, source="parse-error",
+        )
 
 
 def _extract_result_text(raw_line: str) -> str | None:

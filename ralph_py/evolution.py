@@ -263,15 +263,25 @@ class EvolutionJournal:
         run_id: str,
         manifest: Manifest,
         factory_result: FactoryResult,
+        usage_by_component: dict[str, dict[str, dict[str, Any]]] | None = None,
+        run_usage: dict[str, Any] | None = None,
     ) -> None:
         """Record a completed factory run to the journal.
 
         Writes individual component outcomes as JSONL entries.
         Also appends a summary line to experiments.tsv.
+
+        R3.1: ``usage_by_component`` maps component id -> phase ->
+        UsageTotals.to_dict() and lands on each component's journal
+        entry; ``run_usage`` is the run-level UsageTotals.to_dict() and
+        feeds the TSV totals columns. Both optional so pre-R3.1 callers
+        keep working; token/cost figures are CLI self-reports and are
+        lower bounds whenever ``unreported_calls`` > 0.
         """
         from ralph_py.manifest import ComponentStatus
 
         timestamp = _timestamp_now()
+        usage_by_component = usage_by_component or {}
 
         # --- JSONL entries per component ---
         entries: list[dict[str, Any]] = []
@@ -307,6 +317,7 @@ class EvolutionJournal:
                 "iteration_count": comp.iteration_count,
                 "findings": findings_serialized,
                 "findings_summary": findings_summary,
+                "usage": usage_by_component.get(comp.id, {}),
             }
             entries.append(entry)
 
@@ -343,14 +354,29 @@ class EvolutionJournal:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]
 
+        # R3.1 totals columns. Empty string (not 0) when no usage was
+        # tracked for the run - zero would misread as "measured, free".
+        # unreported_calls > 0 marks the token/cost figures as lower
+        # bounds. Files written before R3.1 keep their shorter header;
+        # csv.DictReader in get_experiment_trends drops the extra values
+        # rather than crashing.
+        if run_usage:
+            total_tokens_col = str(run_usage.get("total_tokens", ""))
+            total_cost_col = str(run_usage.get("cost_usd", ""))
+            unreported_col = str(run_usage.get("unreported_calls", ""))
+        else:
+            total_tokens_col = total_cost_col = unreported_col = ""
+
         header = (
             "run_id\ttimestamp\tproject\tcomponents_total\tcompleted\tfailed\t"
-            "skipped\tavg_iterations\tavg_duration_s\tretry_rate\tcommon_failure"
+            "skipped\tavg_iterations\tavg_duration_s\tretry_rate\tcommon_failure\t"
+            "total_tokens\ttotal_cost_usd\tunreported_calls"
         )
         row = (
             f"{run_id}\t{timestamp}\t{manifest.project_name}\t{total}\t"
             f"{completed}\t{failed}\t{skipped}\t{avg_iterations:.2f}\t"
-            f"{avg_duration:.1f}\t{retry_rate:.2f}\t{common_failure}"
+            f"{avg_duration:.1f}\t{retry_rate:.2f}\t{common_failure}\t"
+            f"{total_tokens_col}\t{total_cost_col}\t{unreported_col}"
         )
 
         try:
