@@ -210,15 +210,23 @@ reviewers' output as much as it distrusts the engineer's.
     id to `knowledge.current_run_id()`, removing the last nonce-order
     edge; wiring proven by
     `test_factory_passes_microsecond_run_id_to_distill`.
-- [ ] R1.7 (S) **Persist the architect's red-team output** [MED spec-issues-lost]
+- [x] R1.7 (S) **Persist the architect's red-team output** [MED spec-issues-lost]
   - Write `spec_issues` (all severities) to `scripts/ralph/spec-issues.json`
     and a journal event; on SpecBlockerError, print the file path so the user
     iterates against a durable artifact, not scrollback.
-- [ ] R1.8 (S) **Decompose validation ordering** [MED prd-validate-late, LOW vacuous-prd]
+  - Note (2026-07-18, session 3D): `decompose.persist_spec_issues` writes the
+    artifact atomically on halt, success, and clean audit; `spec_issues`
+    journal event added; `SpecBlockerError.artifact_path` printed by both CLI
+    call sites.
+- [x] R1.8 (S) **Decompose validation ordering** [MED prd-validate-late, LOW vacuous-prd]
   - Run PRD schema validation inside the decompose retry loop (before files are
     written) so the LLM gets the error; clean up partial files on failure.
   - Reject empty `userStories`, empty `acceptanceCriteria`, and `passes: true`
     at decompose time.
+  - Note (2026-07-18, session 3D): PRD schema validation is a retry-loop stage;
+    all writes (PRDs + manifest) happen post-validation inside a cleanup scope
+    that removes partial files on failure; the three vacuous shapes are
+    rejected with retryable messages.
 
 Done when: a new adversarial-parser test class proves each of: empty review
 fails hard mode; `"FAIL"`/`"Blocked"` verdicts block; oversized review output is

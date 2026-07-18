@@ -171,3 +171,45 @@ class TestCliValidation:
         )
         assert result.exit_code == 0
         assert (feature_dir / "understand.md").exists()
+
+
+class TestDecomposeBlockerOutput:
+    """R1.7: the CLI points the user at the persisted spec-issues file."""
+
+    def test_prints_artifact_path_on_halt(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        import ralph_py.cli as cli_mod
+        from ralph_py.decompose import SpecBlockerError, SpecIssue
+
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Vague spec")
+        artifact = tmp_path / "scripts" / "ralph" / "spec-issues.json"
+
+        def fake_decompose(**kwargs: object) -> None:
+            raise SpecBlockerError(
+                [SpecIssue(
+                    severity="blocker",
+                    kind="ambiguity",
+                    summary="spec is too vague",
+                )],
+                artifact_path=artifact,
+            )
+
+        monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "decompose",
+                "--spec", str(spec_file),
+                "--project-name", "test",
+                "--agent-cmd", "true",
+                "--ui", "plain",
+                "--no-color",
+            ],
+        )
+        assert result.exit_code == 2
+        assert "spec is too vague" in result.output
+        assert str(artifact) in result.output
