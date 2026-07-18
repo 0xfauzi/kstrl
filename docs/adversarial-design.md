@@ -96,9 +96,41 @@ To run:
 RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
 ```
 
-Each run writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` with per-role detection rates. Fixtures cover security (5), reviewer concerns (3), and vague specs (3).
+Each run executes every fixture `RALPH_CALIBRATION_RUNS` times (default 3, R5.1) and writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` in the v2 format defined by `ralph_py/calibration.py`: per-fixture *consistency* (fraction of completed runs that caught the planted issue; agent-infrastructure errors are excluded from the denominator, unparseable model output counts as a miss), per-role and per-category (per-CWE for security) detection rates, the run count, and the model id. Fixtures cover security (5), reviewer concerns (3), and vague specs (3), plus one non-halting allowedPaths fixture.
 
 The fixtures themselves live in `tests/adversarial_fixtures/{security,concerns,specs}/` with paired `.meta.json` files describing the planted bug and the must-detect category.
+
+### Threshold gates instead of hard asserts (R5.1)
+
+A truth signal that is expected to be red is not a signal, so the suite no longer hard-asserts each single run. A fixture test passes when a majority of its completed runs detect the planted issue (`FIXTURE_DETECTION_THRESHOLD = 0.5`, i.e. 2 of 3 at the default run count): one flaky miss is reported as reduced consistency, a fixture that misses most runs fails the suite. Set `RALPH_CALIBRATION_RUNS=1` for a cheap single-run smoke (it degrades to the old hard-assert behavior and is too coarse for baseline capture).
+
+### Comparing baselines (H2's "compare" step, concretely)
+
+```bash
+uv run python -m ralph_py.calibration compare \
+  tests/adversarial_fixtures/_results/baseline-<old>.json \
+  tests/adversarial_fixtures/_results/baseline-<new>.json
+```
+
+Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `ralph_py/calibration.py` with sizing rationale inline:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `MAX_ROLE_DETECTION_DROP` | 0.15 | A role's mean detection rate may not drop more than this between baselines. Sized so one run flipping on a 3-fixture role (drop ~0.11) is variance, an entire fixture going dark (~0.33) is a regression. |
+| `MAX_CATEGORY_DETECTION_DROP` | 0.40 | Same per category (per-CWE categories usually hold one fixture: one run flip ~0.33 tolerated, two flips fail). Only meaningful at 3+ runs. |
+| `MIN_ROLE_DETECTION_RATE` | security 0.80, reviewer/architect 0.65, allowed_paths 0.50 | Absolute floors on the new baseline so successive comparisons cannot ratchet a role downward. |
+| `FIXTURE_DETECTION_THRESHOLD` | 0.5 | Majority-of-completed-runs gate used by the suite and by per-fixture `detected`. |
+| `DEFAULT_CALIBRATION_RUNS` | 3 | Default runs per fixture for baseline capture. |
+
+Partial runs (a role present in the old baseline but not exercised in the new one) and cross-model comparisons produce warnings, not failures - the latter because a cross-model delta measures the model change, not a prompt change.
+
+### Kind synonyms (matcher de-brittling, R5.1)
+
+The architect matcher's `must_include_kind` used to demand exact taxonomy labels, but every architect miss in the recorded 20260527 baselines was the planted issue reported under a sibling label (`missing_detail` instead of `undefined_failure_mode` / `unstated_assumption`) - a matcher artifact, not a detection failure. `calibration.KIND_SYNONYM_GROUPS` documents the one symmetric family that collapses: `{missing_detail, unstated_assumption, undefined_failure_mode}` ("the spec is silent about X"). `ambiguity`, `contradiction`, `out_of_scope_creep`, and `other` still require exact labels - ambiguity is about vague language that IS present, not absence. Exact-label matching is still recorded in run details (`exact_kind_match=`) as a non-gating signal so taxonomy drift stays visible.
+
+### Model drift (R5.5, H2-extended)
+
+Baselines record the model id, and an always-run structural test (`tests/test_calibration.py::TestFixtureStructure::test_warns_when_calibration_model_differs_from_newest_baseline`) warns - never fails - when `RALPH_CALIBRATION_MODEL` differs from the newest baseline's recorded model. H2 extended: calibration re-runs on model change, not just prompt change; a detection rate measured against an older model does not transfer.
 
 ## Feedforward vs knowledge (E7)
 
@@ -130,7 +162,7 @@ Healthy state: empty file. Persistent non-zero values per build are the signal t
 1. **Correlated failure.** The architect, engineer, reviewer, security reviewer, and distiller can all be the same model. They will fail on the same inputs in the same way. Multi-model rotation (roadmap E1) was deliberately deferred; until it lands, treat "all roles agree" as one data point, not several.
 2. **`exhaustively_searched` is self-reported.** Both reviewer and security results expose the flag, but it cannot be verified at runtime. The trustworthy signal is calibration rate, not the flag.
 3. **Fact-utilization is a lower bound.** `measure_fact_utilization` uses a 30-character case-insensitive substring match. LLMs paraphrase, so a false negative just means we under-count.
-4. **Calibration baseline is non-deterministic.** LLMs vary; a single calibration run is one data point. Aggregate across multiple runs before trusting a detection rate as a stable measurement.
+4. **Calibration baseline is non-deterministic.** LLMs vary; the suite now runs each fixture `RALPH_CALIBRATION_RUNS` times (default 3) and reports per-fixture consistency (R5.1), but 3 runs is still a small sample - treat a consistency of 2/3 as "flaky", not as a precise 0.67.
 5. **Windows is not supported for concurrent worktrees.** `fcntl.flock` is POSIX-only (Phase A4); on Windows the lock is silently skipped and concurrent factory invocations against the same worktree directory can clobber each other.
 6. **The fact-injection prompt is trusted code.** A future model that ignores the engineer prompt's "treat as ground truth" framing could be misled by injected facts. The Phase A1 sanitizer is a defense-in-depth pattern, not a guarantee.
 

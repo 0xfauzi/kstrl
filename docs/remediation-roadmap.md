@@ -447,7 +447,11 @@ First principles: calibration must be able to detect a regression before we
 change the prompts it guards. So: tooling first, fixtures second, prompt edits
 third, all in one measured cycle.
 
-- [ ] R5.1 (M) **Calibration tooling** [T-cal findings]
+- [~] R5.1 (M) **Calibration tooling** [T-cal findings]
+  (tooling + threshold gates + synonym matcher landed; stays partial until
+  the user captures a baseline in the new v2 format with
+  `RALPH_RUN_CALIBRATION=1` - the assistant cannot run the real-LLM suite,
+  so green-at-baseline is asserted from recorded runs, not re-measured)
   - Baseline diff tool: `python -m ralph_py.calibration compare <old> <new>`
     with codified per-role thresholds; N-run mode (default 3) reporting
     per-fixture consistency; per-category (per-CWE for security) rates in the
@@ -495,7 +499,7 @@ third, all in one measured cycle.
     boundary-break so unrelated bullets stop inflating the count; fuzz corpus
     extended with the regression cases. (Substance stays out of scope: shape
     checks are documented as shape checks, per H4.)
-- [ ] R5.5 (S) **Model-bump trigger** [research topic 4]
+- [x] R5.5 (S) **Model-bump trigger** [research topic 4]
   - Baselines record the model id; a structural test warns when the configured
     calibration model differs from the latest baseline's, prompting a re-run.
     H2 extended: calibration re-runs on model change, not just prompt change.
