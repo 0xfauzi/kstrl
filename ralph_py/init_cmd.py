@@ -363,6 +363,130 @@ Otherwise end normally.
 """
 
 
+# Scaffolded ralph.toml (R2.1): the project's discoverable config
+# surface. Every key is commented out and shows its built-in default, so
+# scaffolding changes no effective value; uncommenting a line is the
+# explicit opt-in. Content mirrors ralph.toml.example trimmed to keys the
+# loaders actually read, plus the [timeout] section wired in R0.1.
+DEFAULT_RALPH_TOML = """\
+# Ralph configuration (scaffolded by `ralph init`).
+# Every key is commented out and shows its built-in default: uncomment a
+# line to override it. Precedence: CLI flag > environment variable > this
+# file > built-in default. See docs/env-vars.md for the env-var mapping.
+
+[agent]
+# type = ""                        # "claude" | "codex" | "custom" (empty = auto-detect)
+# command = ""                     # shell command (only used when type = "custom")
+# model = ""                       # e.g. "sonnet" for claude, "o3" for codex (empty = agent default)
+# reasoning_effort = ""            # low|medium|high|max
+
+[run]
+# max_iterations = 10
+# sleep_seconds = 2
+# interactive = false
+
+[paths]
+# prompt = "scripts/ralph/prompt.md"
+# prd = "scripts/ralph/prd.json"
+# progress = "scripts/ralph/progress.txt"
+# codebase_map = "scripts/ralph/codebase_map.md"
+# allowed = []                     # e.g. ["scripts/ralph/", "src/"]
+
+[git]
+# branch = ""                      # override branch (empty = use PRD branchName)
+# auto_checkout = true
+
+[ui]
+# ascii = false
+
+# Factory orchestrator settings (Phase 0-3 pipeline coordination).
+[factory]
+# max_parallel = 4                 # concurrent component workers
+# max_retries = 3                  # per-component retry budget across all phases
+# retry_delay = 5.0                # seconds between retry attempts
+# use_worktrees = true             # branch each component into .ralph/worktrees/<id>
+# single_pr = false                # one PR for the whole factory vs per-component
+# create_prs = true                # call `gh` to push + merge per component
+# review_mode = "hard"             # hard | advisory | skip
+# merge_timeout = 300.0            # seconds to wait for PR merge confirmation
+# max_adversarial_calls = 0        # 0 = unbounded; caps review+security+distill LLM calls per run
+# pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge
+
+# Phase 1 mechanical verification.
+[verify]
+# test_command = "uv run pytest"   # empty/omitted = project-type default
+# typecheck_command = "uv run mypy ."
+# lint_command = "uv run ruff check ."
+# check_diff_scope = true
+# check_bad_patterns = true
+# dead_code_cleanup = false
+# dead_code_command = ""           # custom dead-code detector (default: vulture)
+# mutation_testing = false
+# mutation_threshold = 50.0
+# mutation_timeout = 600.0
+# subprocess_timeout = 300.0
+# require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse
+# self_critique_min_bullets = 3
+# progress_file_path = "scripts/ralph/progress.txt"
+
+# Phase 2.5 security review (independent adversarial pass focused on vulns).
+[security]
+# mode = "skip"                    # skip | advisory | hard (skip = default, opt in explicitly)
+# fail_threshold = "high"          # critical | high | medium | low (hard mode only)
+# timeout_seconds = 600.0
+# agent_cmd = ""                   # leave blank to inherit from [agent]
+# agent_type = ""
+# model = ""
+
+# Phase 3 cross-component contract testing.
+[contract]
+# mode = "tier"                    # tier | final | skip
+# test_command = "uv run pytest"
+# timeout = 600.0
+
+# Phase 0 feedforward (computational structural scan; no LLM).
+[feedforward]
+# enabled = true
+# module_map = true
+# public_interfaces = true
+# dependency_graph = true
+# conventions = true
+# max_context_tokens = 4000
+
+# Per-component semantic knowledge layer: durable facts about WHAT WAS
+# BUILT (interfaces, invariants, contracts, gotchas), written after the
+# review passes and read by downstream components automatically.
+[knowledge]
+# enabled = true
+# max_core_tokens = 2000           # current component's facts (full text)
+# max_dependency_tokens = 1000     # dependency facts (full text)
+# max_sibling_tokens = 500         # other components' facts (first sentence only)
+# distill_timeout_seconds = 300
+# distill_model = ""               # empty = falls back to [agent].model
+# max_facts_per_distill = 7
+# dependency_scope = "direct"      # direct | transitive
+
+# Continuous-learning journal.
+[evolution]
+# enabled = true
+# journal_path = ".ralph/evolution.jsonl"
+# experiments_path = ".ralph/experiments.tsv"
+# min_pattern_frequency = 2
+# lookback_runs = 10
+
+# Timeouts in seconds; 0 or less disables that limit.
+[timeout]
+# git_operation = 30.0
+# agent_iteration = 1800.0         # per agent iteration
+# component_total = 7200.0         # wall clock per component
+# verification_check = 300.0
+# review_agent = 600.0
+# contract_test = 600.0
+# subprocess_default = 60.0
+# scheduler_backstop_margin = 60.0
+"""
+
+
 def run_init(directory: Path, ui: UI) -> int:
     """Initialize Ralph harness in a project directory.
 
@@ -400,6 +524,7 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.ok("scripts/ralph/ exists")
 
     ui.section("Create defaults")
+    _create_if_missing(root / "ralph.toml", DEFAULT_RALPH_TOML, ui)
     _create_if_missing(ralph_dir / "prompt.md", DEFAULT_PROMPT, ui)
     _create_if_missing(ralph_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
     _create_if_missing(ralph_dir / "progress.txt", DEFAULT_PROGRESS, ui)

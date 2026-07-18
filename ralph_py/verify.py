@@ -127,10 +127,14 @@ class VerifyConfig:
             config.check_bad_patterns = bool(section["check_bad_patterns"])
         if "dead_code_cleanup" in section:
             config.dead_code_cleanup = bool(section["dead_code_cleanup"])
+        if "dead_code_command" in section:
+            config.dead_code_command = str(section["dead_code_command"]) or None
         if "mutation_testing" in section:
             config.mutation_testing = bool(section["mutation_testing"])
         if "mutation_threshold" in section:
             config.mutation_threshold = float(section["mutation_threshold"])
+        if "mutation_timeout" in section:
+            config.mutation_timeout = float(section["mutation_timeout"])
         if "subprocess_timeout" in section:
             config.subprocess_timeout = float(section["subprocess_timeout"])
         if "require_self_critique" in section:
@@ -141,20 +145,30 @@ class VerifyConfig:
             )
         if "progress_file_path" in section:
             config.progress_file_path = str(section["progress_file_path"])
-        # Env overrides
+        # Env overrides. Each var is applied only when it is explicitly
+        # set in the environment: the previous compare-against-default
+        # heuristic silently dropped an env value that happened to equal
+        # the dataclass default (e.g. RALPH_MUTATION_THRESHOLD=50 could
+        # not override a toml mutation_threshold), breaking the
+        # env-beats-toml precedence contract (R2.1).
         env = cls.from_env()
-        for f in (
-            "test_command", "typecheck_command", "lint_command",
-            "dead_code_cleanup", "dead_code_command", "mutation_testing",
-            "mutation_threshold", "mutation_timeout", "subprocess_timeout",
-            "require_self_critique", "self_critique_min_bullets",
-            "progress_file_path",
-        ):
-            # only override when env-derived value differs from default()
-            env_val = getattr(env, f)
-            default_val = getattr(cls(), f)
-            if env_val != default_val:
-                setattr(config, f, env_val)
+        env_var_to_field = {
+            "RALPH_VERIFY_TEST_CMD": "test_command",
+            "RALPH_VERIFY_TYPECHECK_CMD": "typecheck_command",
+            "RALPH_VERIFY_LINT_CMD": "lint_command",
+            "RALPH_DEAD_CODE_CLEANUP": "dead_code_cleanup",
+            "RALPH_DEAD_CODE_CMD": "dead_code_command",
+            "RALPH_MUTATION_TESTING": "mutation_testing",
+            "RALPH_MUTATION_THRESHOLD": "mutation_threshold",
+            "RALPH_MUTATION_TIMEOUT": "mutation_timeout",
+            "RALPH_TIMEOUT_VERIFY": "subprocess_timeout",
+            "RALPH_VERIFY_REQUIRE_SELF_CRITIQUE": "require_self_critique",
+            "RALPH_VERIFY_SELF_CRITIQUE_MIN_BULLETS": "self_critique_min_bullets",
+            "RALPH_VERIFY_PROGRESS_FILE": "progress_file_path",
+        }
+        for env_var, field_name in env_var_to_field.items():
+            if env_var in os.environ:
+                setattr(config, field_name, getattr(env, field_name))
         return config
 
 

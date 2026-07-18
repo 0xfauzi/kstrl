@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -37,10 +38,22 @@ class EvolutionConfig:
     auto_apply_computational: bool = False
 
     @classmethod
+    def from_env(cls, root_dir: Path | None = None) -> EvolutionConfig:
+        """Load evolution config from environment variables only.
+
+        Relative journal/experiments paths resolve against ``root_dir``
+        (the project root), not the process CWD, matching :meth:`load`.
+        """
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        _apply_env_overrides(config, root_dir)
+        _resolve_relative_paths(config, root_dir)
+        return config
+
+    @classmethod
     def load(cls, root_dir: Path | None = None) -> EvolutionConfig:
         """Load evolution config with precedence: env > toml > defaults."""
-        import os
-
         from ralph_py.config import load_toml_section
         if root_dir is None:
             root_dir = Path.cwd()
@@ -68,19 +81,39 @@ class EvolutionConfig:
             config.auto_apply_computational = bool(
                 section["auto_apply_computational"]
             )
-        # Env overrides
-        if "RALPH_EVOLUTION_ENABLED" in os.environ:
-            config.enabled = os.environ["RALPH_EVOLUTION_ENABLED"].lower() in {
-                "1", "true", "yes",
-            }
-        if "RALPH_EVOLUTION_JOURNAL_PATH" in os.environ:
-            raw = os.environ["RALPH_EVOLUTION_JOURNAL_PATH"]
-            config.journal_path = (
-                Path(raw) if Path(raw).is_absolute() else root_dir / raw
-            )
-        if "RALPH_EVOLUTION_LOOKBACK_RUNS" in os.environ:
-            config.lookback_runs = int(os.environ["RALPH_EVOLUTION_LOOKBACK_RUNS"])
+        _apply_env_overrides(config, root_dir)
+        _resolve_relative_paths(config, root_dir)
         return config
+
+
+def _apply_env_overrides(config: EvolutionConfig, root_dir: Path) -> None:
+    """Overlay env vars that are explicitly set; unset vars leave the
+    existing value untouched (so toml values survive the overlay)."""
+    if "RALPH_EVOLUTION_ENABLED" in os.environ:
+        config.enabled = os.environ["RALPH_EVOLUTION_ENABLED"].lower() in {
+            "1", "true", "yes",
+        }
+    if "RALPH_EVOLUTION_JOURNAL_PATH" in os.environ:
+        raw = os.environ["RALPH_EVOLUTION_JOURNAL_PATH"]
+        config.journal_path = (
+            Path(raw) if Path(raw).is_absolute() else root_dir / raw
+        )
+    if "RALPH_EVOLUTION_LOOKBACK_RUNS" in os.environ:
+        config.lookback_runs = int(os.environ["RALPH_EVOLUTION_LOOKBACK_RUNS"])
+
+
+def _resolve_relative_paths(config: EvolutionConfig, root_dir: Path) -> None:
+    """Anchor relative journal/experiments paths to the project root.
+
+    The bare ``EvolutionConfig()`` constructor keeps its historical
+    CWD-relative defaults; the load/from_env paths always hand back
+    absolute paths so ``ralph factory --root X`` run from elsewhere
+    cannot scatter ``.ralph/`` state into the operator's CWD.
+    """
+    if not config.journal_path.is_absolute():
+        config.journal_path = root_dir / config.journal_path
+    if not config.experiments_path.is_absolute():
+        config.experiments_path = root_dir / config.experiments_path
 
 
 @dataclass

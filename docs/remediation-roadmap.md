@@ -249,7 +249,7 @@ First principles: for a solo tool, the author-in-six-months is the primary
 user. Every knob must be reachable, every documented command must exist, and
 every flag must do what it says or fail loudly.
 
-- [ ] R2.1 (M) **Wire the six config loaders** [CRIT-7, D-precedence]
+- [x] R2.1 (M) **Wire the six config loaders** [CRIT-7, D-precedence]
   - CLI resolution order: explicit CLI flag > env > ralph.toml > dataclass
     default. Click flags get `default=None` sentinels so "not passed" is
     distinguishable from "passed the default value".
@@ -260,7 +260,7 @@ every flag must do what it says or fail loudly.
   - Failure mode: changed effective defaults for existing setups (e.g. a toml
     `review_mode` now taking effect). Mitigation: `ralph config show` (R2.4)
     prints the resolved config + source of each value; release note.
-- [ ] R2.2 (S) **Expose the safety knobs** [CRIT-7]
+- [x] R2.2 (S) **Expose the safety knobs** [CRIT-7]
   - `max_adversarial_calls` and `pause_before_pr_merge`: toml keys, env vars,
     CLI flags, documented. Budget exhaustion emits the R1.2 synthetic finding.
 - [x] R2.3 (M) **Make `ralph run` and factory flags honest** [CRIT-8, H-10, H-11]

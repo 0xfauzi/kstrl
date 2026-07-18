@@ -69,8 +69,10 @@ VALID_SECURITY_OUTPUT = json.dumps({
 
 class TestSecurityConfigDefaults:
     def test_defaults(self) -> None:
+        # R2.1: default aligned with the documented product default -
+        # security review is an opt-in extra LLM call.
         c = SecurityConfig()
-        assert c.mode == "advisory"
+        assert c.mode == "skip"
         assert c.timeout_seconds == 600.0
         assert c.fail_threshold == "high"
 

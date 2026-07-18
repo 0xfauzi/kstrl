@@ -111,11 +111,19 @@ class FactoryConfig:
     @classmethod
     def from_env(cls) -> FactoryConfig:
         """Load factory config from environment variables."""
+        from ralph_py.config import _parse_bool
+
         return cls(
             max_parallel=int(os.environ.get("FACTORY_MAX_PARALLEL", "4")),
             max_retries=int(os.environ.get("FACTORY_MAX_RETRIES", "3")),
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
+            max_adversarial_calls=int(
+                os.environ.get("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
+            ),
+            pause_before_pr_merge=_parse_bool(
+                os.environ.get("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE")
+            ),
         )
 
     @classmethod
@@ -125,7 +133,7 @@ class FactoryConfig:
         Reads the ``[factory]`` section from ``<root_dir>/ralph.toml`` if
         present, then overlays any matching env vars on top.
         """
-        from ralph_py.config import load_toml_section
+        from ralph_py.config import _parse_bool, load_toml_section
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -146,6 +154,12 @@ class FactoryConfig:
             config.review_mode = str(section["review_mode"])
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
+        # R2.2: the two safety knobs are reachable via toml (here), env
+        # (below) and CLI flags (cli.py factory command).
+        if "max_adversarial_calls" in section:
+            config.max_adversarial_calls = int(section["max_adversarial_calls"])
+        if "pause_before_pr_merge" in section:
+            config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -155,6 +169,14 @@ class FactoryConfig:
             config.retry_delay = float(os.environ["FACTORY_RETRY_DELAY"])
         if "FACTORY_MERGE_TIMEOUT" in os.environ:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
+        if "RALPH_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
+            config.max_adversarial_calls = int(
+                os.environ["RALPH_FACTORY_MAX_ADVERSARIAL_CALLS"]
+            )
+        if "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
+            config.pause_before_pr_merge = _parse_bool(
+                os.environ["RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE"]
+            )
         return config
 
 
@@ -1860,7 +1882,9 @@ def _run_factory_locked(
         """
         from ralph_py.evolution import EvolutionConfig
 
-        evo_config = EvolutionConfig()
+        # R2.1: honor [evolution] in ralph.toml + env, resolved against
+        # the factory root rather than whatever the process CWD is.
+        evo_config = EvolutionConfig.load(root_dir)
         if not evo_config.enabled:
             return
         entry = {
@@ -2071,7 +2095,7 @@ def _run_factory_locked(
     try:
         from ralph_py.evolution import EvolutionConfig, EvolutionJournal
 
-        evo_config = EvolutionConfig()
+        evo_config = EvolutionConfig.load(root_dir)
         if evo_config.enabled:
             journal = EvolutionJournal(evo_config)
             journal.record_run(run_id, manifest, factory_result)

@@ -201,9 +201,18 @@ class SecurityResult:
 
 @dataclass
 class SecurityConfig:
-    """Configuration for the security review phase."""
+    """Configuration for the security review phase.
 
-    mode: str = SecurityMode.ADVISORY.value
+    The default mode is "skip": the security pass is an extra LLM call
+    per component and is opt-in everywhere it is documented (CLI
+    --security-mode default, ralph.toml.example, README). Before R2.1
+    the dataclass default was "advisory", but no product path consumed
+    it - the CLI always passed an explicit mode and run_factory treats
+    a missing config as skip - so aligning it with the documented
+    default cannot change a working setup.
+    """
+
+    mode: str = SecurityMode.SKIP.value
     agent_cmd: str | None = None
     agent_type: str | None = None
     model: str | None = None
@@ -231,7 +240,7 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> SecurityConfig:
         return cls(
-            mode=os.environ.get("RALPH_SECURITY_MODE", SecurityMode.ADVISORY.value),
+            mode=os.environ.get("RALPH_SECURITY_MODE", SecurityMode.SKIP.value),
             agent_cmd=os.environ.get("RALPH_SECURITY_AGENT_CMD") or None,
             agent_type=os.environ.get("RALPH_SECURITY_AGENT_TYPE") or None,
             model=os.environ.get("RALPH_SECURITY_MODEL") or None,

@@ -41,10 +41,15 @@ class FeedforwardConfig:
     max_context_tokens: int = 4000   # rough cap (estimate 4 chars per token)
 
     @classmethod
+    def from_env(cls) -> FeedforwardConfig:
+        """Load feedforward config from environment variables only."""
+        config = cls()
+        _apply_env_overrides(config)
+        return config
+
+    @classmethod
     def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
         """Load feedforward config with precedence: env > toml > defaults."""
-        import os
-
         from ralph_py.config import load_toml_section
         if root_dir is None:
             root_dir = Path.cwd()
@@ -58,23 +63,32 @@ class FeedforwardConfig:
                 setattr(config, key, bool(section[key]))
         if "max_context_tokens" in section:
             config.max_context_tokens = int(section["max_context_tokens"])
-        # Env overrides
-        env_map = {
-            "RALPH_FEEDFORWARD_ENABLED": ("enabled", bool),
-            "RALPH_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
-            "RALPH_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
-            "RALPH_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
-            "RALPH_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
-            "RALPH_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
-        }
-        for env_key, (field_name, caster) in env_map.items():
-            if env_key in os.environ:
-                raw = os.environ[env_key]
-                if caster is bool:
-                    setattr(config, field_name, raw.lower() in {"1", "true", "yes"})
-                else:
-                    setattr(config, field_name, caster(raw))
+        _apply_env_overrides(config)
         return config
+
+
+_ENV_MAP: dict[str, tuple[str, type]] = {
+    "RALPH_FEEDFORWARD_ENABLED": ("enabled", bool),
+    "RALPH_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
+    "RALPH_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
+    "RALPH_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
+    "RALPH_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
+    "RALPH_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
+}
+
+
+def _apply_env_overrides(config: FeedforwardConfig) -> None:
+    """Overlay env vars that are explicitly set; unset vars leave the
+    existing value untouched (so toml values survive the overlay)."""
+    import os
+
+    for env_key, (field_name, caster) in _ENV_MAP.items():
+        if env_key in os.environ:
+            raw = os.environ[env_key]
+            if caster is bool:
+                setattr(config, field_name, raw.lower() in {"1", "true", "yes"})
+            else:
+                setattr(config, field_name, caster(raw))
 
 
 def _is_hidden(name: str) -> bool:

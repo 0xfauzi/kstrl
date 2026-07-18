@@ -7,8 +7,10 @@ import json
 import os
 import sys
 from collections.abc import Iterator
+from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import click
 from click.core import ParameterSource
@@ -29,6 +31,37 @@ from ralph_py.ui import get_ui
 
 def _use_cli_value(ctx: click.Context, name: str) -> bool:
     return ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+
+
+def _collect_toml_notes(
+    notes: list[str],
+    section: str,
+    loaded: Any,
+    baseline: Any,
+    flag_overridden: set[str],
+) -> None:
+    """Record which effective values ralph.toml moved off the CLI default.
+
+    Before R2.1 six ralph.toml sections were silently ignored by the
+    factory command, so a value that now takes effect is a behavior
+    change for existing setups; the collected NOTE lines make that
+    visible at startup. Comparing the loaded config against an env-only
+    baseline isolates the toml contribution (env overlays are applied
+    identically on both sides, so they cancel out). Fields whose CLI
+    flag was explicitly passed are excluded: the flag wins, so the toml
+    value is not effective.
+    """
+    for f in dataclass_fields(loaded):
+        if f.name in flag_overridden:
+            continue
+        loaded_val = getattr(loaded, f.name)
+        baseline_val = getattr(baseline, f.name)
+        if loaded_val != baseline_val:
+            notes.append(
+                f"NOTE: [{section}] {f.name} = {loaded_val!r} from "
+                f"ralph.toml (built-in default: {baseline_val!r}; "
+                f"this section was ignored before R2.1)"
+            )
 
 
 def _resolve_root(root: Path | None, prompt: Path | None, prd: Path | None) -> Path:
@@ -292,8 +325,10 @@ def run(
         sys.exit(1)
 
     # Single-component factory invocation
+    from ralph_py.config import load_toml_section
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.manifest import Manifest
+    from ralph_py.security import SecurityConfig
     from ralph_py.verify import VerifyConfig
 
     # Determine branch from config or PRD
@@ -335,25 +370,31 @@ def run(
         base_branch=detected_base,
     )
 
-    # Build factory config for single-component mode.
+    # Build factory config for single-component mode (R2.1): tunables
+    # resolve through the loaders (ralph.toml overlaid with env); the
+    # structural fields below are forced because `ralph run` is by
+    # definition a local, single-component, no-PR invocation.
     # R2.3: --no-verify sets the explicit skip sentinel; passing
     # verify_config=None meant "use defaults" in run_factory and Phase 1
-    # ran anyway. Feedforward is loaded from the toml/env control plane
-    # and is independent of --no-verify (it builds context, not checks).
-    factory_cfg = FactoryConfig(
-        max_parallel=1,
-        max_retries=3,
-        use_worktrees=False,
-        single_pr=False,
-        create_prs=False,
-        verify_config=None if no_verify else VerifyConfig(),
-        skip_verification=no_verify,
-        review_mode="advisory",
-        contract_config=None,
-        feedforward_config=FeedforwardConfig.load(root_dir),
-        timeout_config=TimeoutConfig.load(root_dir),
-        force_lock=force_lock,
-    )
+    # ran anyway. Feedforward is independent of --no-verify (it builds
+    # context, not checks).
+    factory_cfg = FactoryConfig.load(root_dir)
+    factory_cfg.max_parallel = 1
+    factory_cfg.use_worktrees = False
+    factory_cfg.single_pr = False
+    factory_cfg.create_prs = False
+    factory_cfg.verify_config = None if no_verify else VerifyConfig.load(root_dir)
+    factory_cfg.skip_verification = no_verify
+    factory_cfg.security_config = SecurityConfig.load(root_dir)
+    factory_cfg.contract_config = None
+    factory_cfg.feedforward_config = FeedforwardConfig.load(root_dir)
+    factory_cfg.timeout_config = TimeoutConfig.load(root_dir)
+    factory_cfg.force_lock = force_lock
+    # `ralph run` reviews in advisory mode unless the project's
+    # ralph.toml explicitly opts into a different review_mode (there is
+    # no review_mode env var, so the toml section check is exhaustive).
+    if "review_mode" not in load_toml_section(root_dir / "ralph.toml", "factory"):
+        factory_cfg.review_mode = "advisory"
 
     # R0.5 (H-15): `ralph run` persists to its own run-manifest.json so
     # it can never clobber a factory run's resumable manifest.json.
@@ -1135,19 +1176,19 @@ def decompose(
 @click.option(
     "--max-parallel",
     type=int,
-    default=4,
-    help="Maximum parallel components",
+    default=None,
+    help="Maximum parallel components (default: 4)",
 )
 @click.option(
     "--max-retries",
     type=int,
-    default=3,
-    help="Maximum retries per component",
+    default=None,
+    help="Maximum retries per component (default: 3)",
 )
 @click.option(
     "--create-prs/--no-prs",
-    default=True,
-    help="Create PRs for completed components",
+    default=None,
+    help="Create PRs for completed components (default: on)",
 )
 @click.option(
     "--verify-command",
@@ -1173,6 +1214,7 @@ def decompose(
 @click.option(
     "--dead-code-cleanup",
     is_flag=True,
+    default=None,
     help=(
         "Enable dead code cleanup: ruff auto-fixes unused "
         "imports/variables, vulture detects remaining dead code"
@@ -1185,19 +1227,21 @@ def decompose(
 @click.option(
     "--mutation-testing",
     is_flag=True,
+    default=None,
     help="Enable mutation testing (requires mutmut, off by default)",
 )
 @click.option(
     "--mutation-threshold",
     type=float,
-    default=50.0,
+    default=None,
     help="Mutation score threshold percent (default: 50)",
 )
 @click.option(
     "--review-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
-    default="hard",
-    help="Phase 2 review: hard (block), advisory (warn), skip",
+    default=None,
+    help="Phase 2 review: hard (block), advisory (warn), skip "
+         "(default: hard)",
 )
 @click.option(
     "--review-agent-cmd",
@@ -1210,7 +1254,7 @@ def decompose(
 @click.option(
     "--security-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
-    default="skip",
+    default=None,
     help="Phase 2.5 security review: hard (block on critical+high), "
          "advisory (warn only), skip (default - opt in explicitly)",
 )
@@ -1227,15 +1271,16 @@ def decompose(
 @click.option(
     "--security-fail-threshold",
     type=click.Choice(["critical", "high", "medium", "low"]),
-    default="high",
+    default=None,
     help="In hard mode, findings at or above this severity block "
          "(default: high - critical+high fail)",
 )
 @click.option(
     "--contract-check",
     type=click.Choice(["tier", "final", "skip"]),
-    default="tier",
-    help="Phase 3 contract testing: tier (per-tier), final (end-only), skip",
+    default=None,
+    help="Phase 3 contract testing: tier (per-tier), final (end-only), "
+         "skip (default: tier)",
 )
 @click.option(
     "--contract-test-cmd",
@@ -1244,7 +1289,7 @@ def decompose(
 @click.option(
     "--agent-timeout",
     type=float,
-    default=1800.0,
+    default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
          "(default: 1800, or RALPH_TIMEOUT_AGENT_ITERATION / "
          "[timeout].agent_iteration in ralph.toml)",
@@ -1252,10 +1297,27 @@ def decompose(
 @click.option(
     "--component-timeout",
     type=float,
-    default=7200.0,
+    default=None,
     help="Timeout per component total in seconds; 0 disables "
          "(default: 7200, or RALPH_TIMEOUT_COMPONENT / "
          "[timeout].component_total in ralph.toml)",
+)
+@click.option(
+    "--max-adversarial-calls",
+    type=int,
+    default=None,
+    help="Hard cap on adversarial LLM calls (review + security + "
+         "distill) per run; 0 = unbounded (default: 0, or "
+         "RALPH_FACTORY_MAX_ADVERSARIAL_CALLS / "
+         "[factory].max_adversarial_calls in ralph.toml)",
+)
+@click.option(
+    "--pause-before-pr-merge/--no-pause-before-pr-merge",
+    default=None,
+    help="Pause for human approval before each component's PR "
+         "push+merge (default: off, or "
+         "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE / "
+         "[factory].pause_before_pr_merge in ralph.toml)",
 )
 @click.option(
     "--progress-log",
@@ -1320,29 +1382,31 @@ def factory(
     project_name: str | None,
     base_branch: str,
     single_pr: bool,
-    max_parallel: int,
-    max_retries: int,
-    create_prs: bool,
+    max_parallel: int | None,
+    max_retries: int | None,
+    create_prs: bool | None,
     verify_command: str | None,
     test_command: str | None,
     typecheck_command: str | None,
     lint_command: str | None,
     no_verify: bool,
-    dead_code_cleanup: bool,
+    dead_code_cleanup: bool | None,
     dead_code_command: str | None,
-    mutation_testing: bool,
-    mutation_threshold: float,
-    review_mode: str,
+    mutation_testing: bool | None,
+    mutation_threshold: float | None,
+    review_mode: str | None,
     review_agent_cmd: str | None,
     review_model: str | None,
-    security_mode: str,
+    security_mode: str | None,
     security_agent_cmd: str | None,
     security_model: str | None,
-    security_fail_threshold: str,
-    contract_check: str,
+    security_fail_threshold: str | None,
+    contract_check: str | None,
     contract_test_cmd: str | None,
-    agent_timeout: float,
-    component_timeout: float,
+    agent_timeout: float | None,
+    component_timeout: float | None,
+    max_adversarial_calls: int | None,
+    pause_before_pr_merge: bool | None,
     progress_log: Path | None,
     no_worktrees: bool,
     force_lock: bool,
@@ -1424,14 +1488,196 @@ def factory(
             ui_impl.err(str(exc))
             sys.exit(1)
 
-    # Display summary and confirm
+    # Build configs (R2.1). Resolution order for every phase config:
+    # explicit CLI flag > env > ralph.toml > dataclass default. The
+    # loaders handle env-over-toml-over-default; flags use None
+    # sentinels so "not passed" is distinguishable from "passed the
+    # default value", and an explicitly-passed flag is applied on top.
+    from ralph_py.contract import ContractConfig
+    from ralph_py.evolution import EvolutionConfig
+    from ralph_py.feedforward import FeedforwardConfig
+    from ralph_py.security import SecurityConfig
+    from ralph_py.verify import VerifyConfig
+
+    toml_notes: list[str] = []
+
+    factory_config = FactoryConfig.load(root_dir)
+    _collect_toml_notes(
+        toml_notes, "factory", factory_config, FactoryConfig.from_env(),
+        flag_overridden={
+            name
+            for name, passed in (
+                ("max_parallel", max_parallel is not None),
+                ("max_retries", max_retries is not None),
+                ("create_prs", create_prs is not None),
+                ("review_mode", review_mode is not None),
+                ("max_adversarial_calls", max_adversarial_calls is not None),
+                ("pause_before_pr_merge", pause_before_pr_merge is not None),
+                ("use_worktrees", no_worktrees),
+                # The manifest is authoritative for single_pr, so a toml
+                # value never becomes effective in this command.
+                ("single_pr", True),
+            )
+            if passed
+        },
+    )
+    if max_parallel is not None:
+        factory_config.max_parallel = max_parallel
+    if max_retries is not None:
+        factory_config.max_retries = max_retries
+    if create_prs is not None:
+        factory_config.create_prs = create_prs
+    if review_mode is not None:
+        factory_config.review_mode = review_mode
+    if max_adversarial_calls is not None:
+        factory_config.max_adversarial_calls = max_adversarial_calls
+    if pause_before_pr_merge is not None:
+        factory_config.pause_before_pr_merge = pause_before_pr_merge
+    if no_worktrees:
+        factory_config.use_worktrees = False
+    factory_config.single_pr = manifest.single_pr
+    factory_config.verify_command = verify_command
+    factory_config.review_agent_cmd = review_agent_cmd
+    factory_config.review_model = review_model
+    factory_config.progress_log_path = progress_log
+    factory_config.force_lock = force_lock
+    # R2.3: --no-verify is an explicit skip sentinel that run_factory
+    # honors; verify_config=None alone would substitute default checks.
+    factory_config.skip_verification = no_verify
+
+    v_config: VerifyConfig | None = None
+    if not no_verify:
+        v_config = VerifyConfig.load(root_dir)
+        _collect_toml_notes(
+            toml_notes, "verify", v_config, VerifyConfig.from_env(),
+            flag_overridden={
+                name
+                for name, passed in (
+                    ("test_command", test_command is not None),
+                    ("typecheck_command", typecheck_command is not None),
+                    ("lint_command", lint_command is not None),
+                    ("dead_code_cleanup", dead_code_cleanup is not None),
+                    ("dead_code_command", dead_code_command is not None),
+                    ("mutation_testing", mutation_testing is not None),
+                    ("mutation_threshold", mutation_threshold is not None),
+                )
+                if passed
+            },
+        )
+        if test_command is not None:
+            v_config.test_command = test_command
+        if typecheck_command is not None:
+            v_config.typecheck_command = typecheck_command
+        if lint_command is not None:
+            v_config.lint_command = lint_command
+        if dead_code_cleanup is not None:
+            v_config.dead_code_cleanup = dead_code_cleanup
+        if dead_code_command is not None:
+            v_config.dead_code_command = dead_code_command
+        if mutation_testing is not None:
+            v_config.mutation_testing = mutation_testing
+        if mutation_threshold is not None:
+            v_config.mutation_threshold = mutation_threshold
+
+    s_config = SecurityConfig.load(root_dir)
+    _collect_toml_notes(
+        toml_notes, "security", s_config, SecurityConfig.from_env(),
+        flag_overridden={
+            name
+            for name, passed in (
+                ("mode", security_mode is not None),
+                ("agent_cmd", security_agent_cmd is not None),
+                ("model", security_model is not None),
+                ("fail_threshold", security_fail_threshold is not None),
+            )
+            if passed
+        },
+    )
+    if security_mode is not None:
+        s_config.mode = security_mode
+    if security_agent_cmd is not None:
+        s_config.agent_cmd = security_agent_cmd
+    if security_model is not None:
+        s_config.model = security_model
+    if security_fail_threshold is not None:
+        s_config.fail_threshold = security_fail_threshold
+
+    # --test-command historically flowed through to contract testing
+    # when --contract-test-cmd was absent; both are explicit CLI input,
+    # so either beats env/toml.
+    cli_contract_cmd = contract_test_cmd or test_command
+    contract_resolved = ContractConfig.load(root_dir)
+    _collect_toml_notes(
+        toml_notes, "contract", contract_resolved, ContractConfig.from_env(),
+        flag_overridden={
+            name
+            for name, passed in (
+                ("mode", contract_check is not None),
+                ("test_command", cli_contract_cmd is not None),
+            )
+            if passed
+        },
+    )
+    if contract_check is not None:
+        contract_resolved.mode = contract_check
+    if cli_contract_cmd is not None:
+        contract_resolved.test_command = cli_contract_cmd
+    # mode == "skip" keeps the historical contract of passing no config.
+    c_config: ContractConfig | None = (
+        contract_resolved if contract_resolved.mode != "skip" else None
+    )
+
+    ff_config = FeedforwardConfig.load(root_dir)
+    _collect_toml_notes(
+        toml_notes, "feedforward", ff_config, FeedforwardConfig.from_env(),
+        flag_overridden=set(),
+    )
+
+    # Evolution config is consumed inside run_factory via
+    # EvolutionConfig.load(root_dir); loaded here only for the NOTE sweep.
+    _collect_toml_notes(
+        toml_notes, "evolution", EvolutionConfig.load(root_dir),
+        EvolutionConfig.from_env(root_dir), flag_overridden=set(),
+    )
+
+    # R0.1: TimeoutConfig is the single source for timeout values.
+    timeout_config = TimeoutConfig.load(root_dir)
+    _collect_toml_notes(
+        toml_notes, "timeout", timeout_config, TimeoutConfig.from_env(),
+        flag_overridden={
+            name
+            for name, passed in (
+                ("agent_iteration", agent_timeout is not None),
+                ("component_total", component_timeout is not None),
+            )
+            if passed
+        },
+    )
+    if agent_timeout is not None:
+        timeout_config.agent_iteration = agent_timeout
+    if component_timeout is not None:
+        timeout_config.component_total = component_timeout
+
+    factory_config.verify_config = v_config
+    factory_config.security_config = s_config
+    factory_config.contract_config = c_config
+    factory_config.feedforward_config = ff_config
+    factory_config.timeout_config = timeout_config
+
+    # Display summary and confirm (resolved values, not raw flags)
     ui_impl.section("Factory Plan")
     ui_impl.kv("Project", manifest.project_name)
     ui_impl.kv("Components", str(len(manifest.components)))
     ui_impl.kv("Base branch", manifest.base_branch)
     ui_impl.kv("Single PR", "yes" if manifest.single_pr else "no")
-    ui_impl.kv("Max parallel", str(max_parallel))
-    ui_impl.kv("Create PRs", "yes" if create_prs else "no")
+    ui_impl.kv("Max parallel", str(factory_config.max_parallel))
+    ui_impl.kv("Create PRs", "yes" if factory_config.create_prs else "no")
+
+    # R2.1 behavior change: ralph.toml sections that used to be silently
+    # ignored now take effect. Surface every value a toml section moved
+    # away from the CLI default so existing setups see the change.
+    for note in toml_notes:
+        ui_impl.info(note)
 
     topo = manifest.topological_order()
     ui_impl.info("")
@@ -1451,73 +1697,6 @@ def factory(
         )
         if choice != 0:
             sys.exit(0)
-
-    # Build configs
-    from ralph_py.contract import ContractConfig
-    from ralph_py.feedforward import FeedforwardConfig
-    from ralph_py.verify import VerifyConfig
-
-    v_config: VerifyConfig | None = None
-    if not no_verify:
-        v_config = VerifyConfig(
-            test_command=test_command,
-            typecheck_command=typecheck_command,
-            lint_command=lint_command,
-            dead_code_cleanup=dead_code_cleanup,
-            dead_code_command=dead_code_command,
-            mutation_testing=mutation_testing,
-            mutation_threshold=mutation_threshold,
-        )
-
-    c_config: ContractConfig | None = None
-    if contract_check != "skip":
-        c_config = ContractConfig(
-            mode=contract_check,
-            test_command=contract_test_cmd or test_command or "uv run pytest",
-        )
-
-    from ralph_py.security import SecurityConfig as _SecurityConfig
-    s_config = _SecurityConfig(
-        mode=security_mode,
-        agent_cmd=security_agent_cmd,
-        model=security_model,
-        fail_threshold=security_fail_threshold,
-    )
-
-    # R0.1: TimeoutConfig is the single source for timeout values.
-    # Precedence: explicit CLI flag > env > ralph.toml > defaults (the
-    # click defaults on the two flags only document the dataclass
-    # defaults; they are applied solely when the flag is passed).
-    timeout_config = TimeoutConfig.load(root_dir)
-    if _use_cli_value(ctx, "agent_timeout"):
-        timeout_config.agent_iteration = agent_timeout
-    if _use_cli_value(ctx, "component_timeout"):
-        timeout_config.component_total = component_timeout
-
-    factory_config = FactoryConfig(
-        max_parallel=max_parallel,
-        max_retries=max_retries,
-        use_worktrees=not no_worktrees,
-        single_pr=manifest.single_pr,
-        create_prs=create_prs,
-        verify_command=verify_command,
-        verify_config=v_config,
-        # R2.3: --no-verify is an explicit skip sentinel that run_factory
-        # honors; v_config=None alone would substitute default checks.
-        skip_verification=no_verify,
-        review_mode=review_mode,
-        review_agent_cmd=review_agent_cmd,
-        review_model=review_model,
-        security_config=s_config,
-        contract_config=c_config,
-        # R2.3 (H-10): feedforward was never wired into this command, so
-        # ff_config_dict stayed None and Phase 0 silently never ran under
-        # `ralph factory`. Loaded via the toml/env control plane.
-        feedforward_config=FeedforwardConfig.load(root_dir),
-        progress_log_path=progress_log,
-        timeout_config=timeout_config,
-        force_lock=force_lock,
-    )
 
     ralph_dir = root_dir / "scripts" / "ralph"
     base_config = RalphConfig.load(root_dir)
@@ -1599,7 +1778,8 @@ def evolve(
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
-    evo_config = EvolutionConfig()
+    # R2.1: honor [evolution] in ralph.toml + env, anchored to --root.
+    evo_config = EvolutionConfig.load(root_dir)
 
     if not evo_config.enabled:
         ui_impl.err("Evolution is disabled in config")
