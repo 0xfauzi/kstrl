@@ -495,6 +495,127 @@ class TestCheckSelfCritique:
                 f"line {line!r} should not be treated as heading"
             )
 
+    def test_missing_block_in_latest_iteration_fails(
+        self, tmp_path: Path,
+    ) -> None:
+        """R5.4 regression: an earlier iteration's Self-Critique block
+        must not satisfy the check when the LATEST entry omits it."""
+        earlier_entries = [
+            # Documented '## [YYYY-MM-DD] - [Story ID]' form
+            "## [2026-07-17] - US-001\n",
+            # Unbracketed date form
+            "## 2026-07-17 - US-001\n",
+            # Loose 'Iteration N' form
+            "## Iteration 1\n",
+        ]
+        for earlier in earlier_entries:
+            progress = tmp_path / "progress.txt"
+            progress.write_text(
+                f"{earlier}"
+                "- implemented the parser\n"
+                "- **Self-Critique:**\n"
+                "  - Failure mode 1: realistic detail\n"
+                "  - Failure mode 2: realistic detail\n"
+                "  - Failure mode 3: realistic detail\n"
+                "---\n"
+                "## [2026-07-18] - US-002\n"
+                "- implemented the serializer\n"
+                "- ran the tests\n"
+                "---\n"
+            )
+            result = check_self_critique(progress, min_bullets=3)
+            assert result.passed is False, (
+                f"earlier entry {earlier!r} must not mask the latest "
+                "entry's missing block"
+            )
+            assert "latest iteration entry" in result.message
+
+    def test_next_section_bullets_do_not_inflate_count(
+        self, tmp_path: Path,
+    ) -> None:
+        """R5.4 regression: bullets belonging to a FOLLOWING bold-label
+        section (e.g. Interpretations in the engineer prompt's format)
+        must not count toward min_bullets."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## [2026-07-18] - US-002\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: only one substantive failure mode\n"
+            "- **Interpretations** (PRD was ambiguous): assumed idempotency\n"
+            "- **Learnings:**\n"
+            "  - discovered a pattern\n"
+            "  - hit a gotcha\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is False
+        assert "1 bullets" in result.message
+
+    def test_default_prompt_entry_format_counts_exact_bullets(
+        self, tmp_path: Path,
+    ) -> None:
+        """Positive control: a full entry in the engineer prompt's
+        documented Progress Format passes with EXACTLY the critique
+        bullets counted - surrounding sections contribute nothing."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "# Ralph Progress Log\n\n"
+            "## Codebase Patterns\n"
+            "- (add reusable patterns here)\n\n"
+            "## Iteration Notes\n"
+            "- (append entries below using the format in prompt.md)\n\n"
+            "---\n"
+            "## [2026-07-18] - US-002\n"
+            "- What was implemented: the serializer\n"
+            "- Files changed: serializer.py\n"
+            "- Verification run: uv run pytest -q\n"
+            "- **Learnings:**\n"
+            "  - Patterns discovered: registry pattern\n"
+            "  - Gotchas encountered: import cycle\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: malformed input crashes the encoder\n"
+            "  - Failure mode 2: concurrent flushes interleave\n"
+            "  - Failure mode 3: timeout error swallowed silently\n"
+            "- **Interpretations** (only if PRD was ambiguous): assumed utf-8\n"
+            "---\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is True
+        assert "3 failure modes" in result.message
+
+    def test_entry_separator_terminates_bullet_count(
+        self, tmp_path: Path,
+    ) -> None:
+        """Bullets after the closing `---` belong to no entry and must
+        not count."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "## [2026-07-18] - US-002\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: realistic detail\n"
+            "---\n"
+            "- stray bullet after the separator\n"
+            "- another stray bullet\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is False
+        assert "1 bullets" in result.message
+
+    def test_no_iteration_heading_falls_back_to_whole_file(
+        self, tmp_path: Path,
+    ) -> None:
+        """Free-form progress files without a recognized iteration
+        heading are treated as a single entry (documented fallback)."""
+        progress = tmp_path / "progress.txt"
+        progress.write_text(
+            "Free-form notes, no iteration headings anywhere.\n"
+            "- **Self-Critique:**\n"
+            "  - Failure mode 1: realistic detail\n"
+            "  - Failure mode 2: realistic detail\n"
+            "  - Failure mode 3: realistic detail\n"
+        )
+        result = check_self_critique(progress, min_bullets=3)
+        assert result.passed is True
+
 
 class TestCheckMutationScore:
     def test_skips_when_mutmut_not_installed(self, tmp_path: Path) -> None:
