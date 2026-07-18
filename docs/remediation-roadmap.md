@@ -533,25 +533,33 @@ First principles: a learning loop is only as good as its input signal. Fix the
 signal, then the metrics, then re-baseline: proposals stay untrusted until all
 three are done.
 
-- [ ] R6.1 (M) **Real error signatures** [MED evolution-signal]
+- [x] R6.1 (M) **Real error signatures** [MED evolution-signal]
   - Component failures record `check_name` + the parser's structured failure
     signature (e.g. `linter:E501`, `typecheck:arg-type`, `diff_scope:rename`)
     instead of flattened "Review failed" strings; review/security failures
     record finding categories.
   - `factory.py:1131`: use `EvolutionConfig.load(root_dir)`; journal paths
     resolve against root; drop the `except OSError: pass` for a logged warning.
-- [ ] R6.2 (S) **Metrics read the typed stream** [MED concern-hit-rate, LOW proposal-clobber]
+  - NOTE: `EvolutionConfig.load` + root-anchored paths had already landed via
+    R2.1/wave 4B; this session added the signature plumbing (every failure
+    site records `"<check>:<code>"`) and converted the remaining silent
+    excepts (journal/TSV/proposal writes, record_run wrapper) to warnings.
+- [x] R6.2 (S) **Metrics read the typed stream** [MED concern-hit-rate, LOW proposal-clobber]
   - `get_concern_hit_rate` consumes `findings_summary`; proposals derive from
     finding taxonomies + error signatures; proposal IDs are monotonic and
     prior proposal files are never clobbered.
-- [ ] R6.3 (S) **`evolve --apply` honesty** [D-evolve]
+- [x] R6.3 (S) **`evolve --apply` honesty** [D-evolve]
   - Implement the minimal real path: applying a convention-type proposal
     appends to the project CLAUDE.md Agent Learnings section after explicit
     confirmation; everything else prints "manual". Honor `auto_propose`.
-- [ ] R6.4 (S) **Re-baseline** [H-18 follow-through]
+- [x] R6.4 (S) **Re-baseline** [H-18 follow-through]
   - After R4.1 isolation: define `retry_rate` and duration semantics in
     `docs/`, fix duration recording (currently 0.0), start fresh journals, and
     keep the polluted archive for forensic reference only.
+  - Landed as `docs/evolution-metrics.md` (every experiments.tsv column,
+    retry_rate = avg retries per component, duration = last-attempt wall
+    clock stamped in `_end_attempt`); journal entries carry `schema_version`
+    (v2) so future migrations are detectable.
 
 Done when: after two real factory runs post-fix, `ralph evolve` produces at
 least one proposal traceable to a real recorded signature, and

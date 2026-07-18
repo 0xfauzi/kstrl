@@ -9,8 +9,10 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +22,16 @@ if TYPE_CHECKING:
     from ralph_py.factory import FactoryResult
     from ralph_py.findings import Finding
     from ralph_py.manifest import Component, Manifest
+    from ralph_py.verify import CheckResult
+
+logger = logging.getLogger("ralph.evolution")
+
+# R6.4: journal entries carry an explicit schema version so future
+# format migrations are detectable. Version 2 = structured failure
+# signatures (R6.1). Entries without the field are version 1 (the
+# pre-R6 shape); wave 1 (R4.1) archived the polluted v1 journals to
+# .ralph/archive/, so fresh journals contain v2 entries only.
+JOURNAL_SCHEMA_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +135,11 @@ class FailurePattern:
     total_components: int
     affected_components: list[str]
     check_name: str  # e.g. "test_suite", "typecheck", "linter", "review"
-    # normalized error pattern (e.g. "S608" for ruff, "missing-argument" for pytest)
+    # structured failure code (e.g. "S608" for ruff, "arg-type" for mypy,
+    # "scope_creep" for a review concern) - the part after the colon in
+    # the full "<check>:<code>" signature
     error_signature: str
-    category: str  # "verification", "review", "contract", "iteration"
+    category: str  # "verification", "review", "security", "contract", "iteration"
 
 
 @dataclass
@@ -214,6 +228,129 @@ def _classify_check(error: str) -> tuple[str, str]:
     return "unknown", "iteration"
 
 
+# ---------------------------------------------------------------------------
+# Structured failure signatures (R6.1)
+#
+# A failure signature is "<check_name>:<code>", e.g. "linter:E501",
+# "typecheck:arg-type", "review:scope_creep", "diff_scope:files-outside-
+# allowed-scope". The check prefix comes from the gate that fired; the
+# code comes from the tool's parser (ruff rule, mypy error code, finding
+# category) rather than from re-parsing a flattened error string, so
+# cross-run grouping is on real, stable identifiers.
+# ---------------------------------------------------------------------------
+
+# Digit runs are counts/limits ("3 files outside scope", "600s wall
+# clock") - stripping them keeps slugs stable across runs whose only
+# difference is the number.
+_DIGIT_RUN_RE = re.compile(r"\d+")
+
+# Leading Python exception name in a pytest failure message.
+_EXC_NAME_RE = re.compile(
+    r"^([A-Z][A-Za-z0-9]*(?:Error|Exception|Failure|Warning|Exit|Interrupt))\b"
+)
+
+_CATEGORY_BY_CHECK = {
+    "linter": "verification",
+    "typecheck": "verification",
+    "test_suite": "verification",
+    "diff_scope": "verification",
+    "bad_patterns": "verification",
+    "self_critique": "verification",
+    "dead_code": "verification",
+    "mutation_testing": "verification",
+    "prd_stories": "verification",
+    "verification": "verification",
+    "review": "review",
+    "security": "security",
+    "contract": "contract",
+}
+
+# Cap on distinct per-check signatures so one catastrophic run (e.g. 40
+# distinct ruff rules) cannot flood the journal entry.
+_MAX_SIGNATURES_PER_CHECK = 5
+
+
+def signature_slug(text: str) -> str:
+    """Stable low-cardinality slug for a failure message.
+
+    Strips file paths, line/column numbers, quoted names, and standalone
+    counts, then slugifies the first line. Unlike ``_normalize_error``
+    this never extracts linter codes (callers get those from the parser
+    directly) and never keeps varying counts."""
+    if not text:
+        return ""
+    normalized = _PATH_RE.sub("", text)
+    normalized = _LINENO_RE.sub("", normalized)
+    normalized = _QUOTED_NAME_RE.sub("", normalized)
+    normalized = _DIGIT_RUN_RE.sub("", normalized)
+    first_line = normalized.strip().split("\n")[0].strip()
+    slug = re.sub(r"[^a-z0-9]+", "-", first_line.lower()).strip("-")
+    return slug[:60]
+
+
+def signature_for_error(check_name: str, error: str) -> str:
+    """Fallback signature when no parser-level codes are available."""
+    slug = signature_slug(error) or "failed"
+    return f"{check_name or 'unknown'}:{slug}"
+
+
+def split_signature(signature: str) -> tuple[str, str]:
+    """Split "check:code" into (check_name, code)."""
+    check, sep, code = signature.partition(":")
+    if not sep:
+        return "unknown", signature
+    return check or "unknown", code or "failed"
+
+
+def category_for_check(check_name: str) -> str:
+    """Map a check/gate name to a FailurePattern category."""
+    return _CATEGORY_BY_CHECK.get(check_name, "iteration")
+
+
+def signatures_from_verification(checks: Iterable[CheckResult]) -> list[str]:
+    """Derive structured signatures from failed mechanical checks.
+
+    Prefers the parser's structured codes (ruff rule, mypy error code,
+    pytest exception type); falls back to a slug of the check message
+    when no parse is available."""
+    signatures: list[str] = []
+    for check in checks:
+        if check.passed:
+            continue
+        codes: list[str] = []
+        parsed = check.parsed
+        if parsed is not None and parsed.failures:
+            if parsed.tool in ("ruff", "mypy"):
+                codes = [f.rule_or_test for f in parsed.failures if f.rule_or_test]
+            elif parsed.tool == "pytest":
+                for failure in parsed.failures:
+                    m = _EXC_NAME_RE.match(failure.message or "")
+                    if m:
+                        codes.append(
+                            re.sub(r"(?<!^)(?=[A-Z])", "-", m.group(1)).lower()
+                        )
+        if codes:
+            distinct = list(dict.fromkeys(codes))[:_MAX_SIGNATURES_PER_CHECK]
+            signatures.extend(f"{check.name}:{code}" for code in distinct)
+        else:
+            signatures.append(signature_for_error(check.name, check.message))
+    return list(dict.fromkeys(signatures))
+
+
+def signatures_from_findings(phase: str, findings: Iterable[Finding]) -> list[str]:
+    """Derive signatures from the typed findings that failed a review or
+    security gate: "<phase>:<category>" for every gating finding
+    (severity fail/critical/high) and "<phase>:infrastructure" when the
+    role itself failed to run."""
+    signatures: list[str] = []
+    for finding in findings:
+        if finding.is_infrastructure_error:
+            signatures.append(f"{phase}:infrastructure")
+        elif finding.severity in ("fail", "critical", "high"):
+            signatures.append(f"{phase}:{finding.category}")
+    return list(dict.fromkeys(signatures))[:_MAX_SIGNATURES_PER_CHECK]
+
+
 def _timestamp_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -265,6 +402,7 @@ class EvolutionJournal:
         factory_result: FactoryResult,
         usage_by_component: dict[str, dict[str, dict[str, Any]]] | None = None,
         run_usage: dict[str, Any] | None = None,
+        failure_signatures: dict[str, list[str]] | None = None,
     ) -> None:
         """Record a completed factory run to the journal.
 
@@ -277,11 +415,19 @@ class EvolutionJournal:
         feeds the TSV totals columns. Both optional so pre-R3.1 callers
         keep working; token/cost figures are CLI self-reports and are
         lower bounds whenever ``unreported_calls`` > 0.
+
+        R6.1: ``failure_signatures`` maps component id -> the structured
+        "<check>:<code>" signatures the factory recorded when the
+        component's last attempt failed (e.g. "linter:E501",
+        "review:scope_creep"). When absent for a failed component, the
+        legacy flattened-string classification is the fallback so
+        journal entries never lose the signature fields entirely.
         """
         from ralph_py.manifest import ComponentStatus
 
         timestamp = _timestamp_now()
         usage_by_component = usage_by_component or {}
+        failure_signatures = failure_signatures or {}
 
         # --- JSONL entries per component ---
         entries: list[dict[str, Any]] = []
@@ -290,11 +436,19 @@ class EvolutionJournal:
                 ComponentStatus.FAILED.value,
                 ComponentStatus.PENDING.value,  # retried components reset to pending
             )
+            comp_signatures: list[str] = []
             check_name = ""
             error_sig = ""
             if has_error:
-                check_name, _ = _classify_check(comp.error)
-                error_sig = _normalize_error(comp.error)
+                comp_signatures = list(failure_signatures.get(comp.id) or [])
+                if not comp_signatures:
+                    # Legacy fallback: classify the flattened string.
+                    legacy_check, _ = _classify_check(comp.error)
+                    legacy_sig = _normalize_error(comp.error)
+                    if legacy_sig:
+                        comp_signatures = [f"{legacy_check}:{legacy_sig}"]
+                if comp_signatures:
+                    check_name, error_sig = split_signature(comp_signatures[0])
             # E3-consume: include typed findings in the journal so
             # downstream aggregations (concern hit-rate, OWASP-bucket
             # frequency, infrastructure_error rate) can query the
@@ -303,6 +457,7 @@ class EvolutionJournal:
             findings_serialized = [f.to_dict() for f in comp.findings]
             findings_summary = _summarize_findings(comp.findings)
             entry = {
+                "schema_version": JOURNAL_SCHEMA_VERSION,
                 "timestamp": timestamp,
                 "run_id": run_id,
                 "project": manifest.project_name,
@@ -313,6 +468,9 @@ class EvolutionJournal:
                 "error": comp.error,
                 "check_name": check_name,
                 "error_signature": error_sig,
+                "failure_signatures": comp_signatures,
+                "failed_phase": comp.failed_phase,
+                "failed_check": comp.failed_check,
                 "duration_seconds": comp.duration_seconds,
                 "iteration_count": comp.iteration_count,
                 "findings": findings_serialized,
@@ -326,8 +484,11 @@ class EvolutionJournal:
             with open(self.config.journal_path, "a") as f:
                 for entry in entries:
                     f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "evolution journal write failed (non-fatal): %s: %s",
+                self.config.journal_path, exc,
+            )
 
         # --- Experiments TSV summary line ---
         total = len(manifest.components)
@@ -346,11 +507,17 @@ class EvolutionJournal:
         retry_total = sum(c.retries for c in manifest.components)
         retry_rate = retry_total / total if total > 0 else 0.0
 
-        # Most common failure signature
+        # Most common failure signature (full "<check>:<code>" form).
         failure_sigs: dict[str, int] = {}
         for comp in manifest.components:
-            if comp.status == ComponentStatus.FAILED.value and comp.error:
-                sig = _normalize_error(comp.error)
+            if comp.status != ComponentStatus.FAILED.value or not comp.error:
+                continue
+            sigs = list(failure_signatures.get(comp.id) or [])
+            if not sigs:
+                sigs = [signature_for_error(
+                    _classify_check(comp.error)[0], comp.error,
+                )]
+            for sig in sigs:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]
 
@@ -389,8 +556,11 @@ class EvolutionJournal:
                 if needs_header:
                     f.write(header + "\n")
                 f.write(row + "\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "experiments.tsv write failed (non-fatal): %s: %s",
+                self.config.experiments_path, exc,
+            )
 
     # ------------------------------------------------------------------
     # extract_failure_patterns (single run)
@@ -400,13 +570,19 @@ class EvolutionJournal:
         self,
         manifest: Manifest,
         min_frequency: int = 2,
+        signatures_by_component: dict[str, list[str]] | None = None,
     ) -> list[FailurePattern]:
         """Extract recurring failure patterns from a single run.
 
-        Looks at failed/retried components to find common error signatures.
-        Groups by check_name and error_signature.
+        Looks at failed/retried components to find common failure
+        signatures, grouped by the full "<check>:<code>" signature.
+        ``signatures_by_component`` carries the factory's structured
+        signatures (R6.1); components absent from it fall back to
+        classifying their flattened error string.
         """
         from ralph_py.manifest import ComponentStatus
+
+        signatures_by_component = signatures_by_component or {}
 
         # Collect components that failed or were retried.
         troubled: list[Component] = [
@@ -418,35 +594,38 @@ class EvolutionJournal:
         if not troubled:
             return []
 
-        # Group by (check_name, error_signature).
-        groups: dict[tuple[str, str], list[str]] = {}
-        sig_errors: dict[tuple[str, str], str] = {}
+        # Group by full signature string.
+        groups: dict[str, list[str]] = {}
         for comp in troubled:
             if not comp.error:
                 continue
-            check_name, category = _classify_check(comp.error)
-            sig = _normalize_error(comp.error)
-            key = (check_name, sig)
-            groups.setdefault(key, []).append(comp.id)
-            sig_errors.setdefault(key, comp.error)
+            sigs = list(signatures_by_component.get(comp.id) or [])
+            if not sigs:
+                legacy_check, _ = _classify_check(comp.error)
+                legacy_sig = _normalize_error(comp.error)
+                if not legacy_sig:
+                    continue
+                sigs = [f"{legacy_check}:{legacy_sig}"]
+            for sig in sigs:
+                groups.setdefault(sig, []).append(comp.id)
 
         total = len(manifest.components)
         patterns: list[FailurePattern] = []
-        for (check_name, sig), comp_ids in groups.items():
+        for full_sig, comp_ids in groups.items():
             if len(comp_ids) < min_frequency:
                 continue
-            _, category = _classify_check(sig_errors[(check_name, sig)])
+            check_name, code = split_signature(full_sig)
             patterns.append(
                 FailurePattern(
                     description=(
-                        f"{check_name} failure '{sig}' in {len(comp_ids)}/{total} components"
+                        f"{check_name} failure '{code}' in {len(comp_ids)}/{total} components"
                     ),
                     frequency=len(comp_ids),
                     total_components=total,
                     affected_components=comp_ids,
                     check_name=check_name,
-                    error_signature=sig,
-                    category=category,
+                    error_signature=code,
+                    category=category_for_check(check_name),
                 )
             )
 
@@ -463,40 +642,49 @@ class EvolutionJournal:
     ) -> list[FailurePattern]:
         """Get patterns that recur across multiple factory runs.
 
-        Reads the journal, groups entries by error_signature,
-        returns patterns that appear in >= min_pattern_frequency runs.
+        Reads the journal, groups entries by their structured failure
+        signatures ("<check>:<code>", R6.1), and returns patterns that
+        appear in >= min_pattern_frequency distinct runs. Legacy v1
+        entries without ``failure_signatures`` fall back to composing
+        the signature from their check_name/error_signature fields.
         """
         entries = self._read_journal_entries(lookback_runs)
         if not entries:
             return []
 
-        # Group by error_signature across distinct run_ids.
+        # Group by full signature across distinct run_ids.
         sig_runs: dict[str, set[str]] = {}
         sig_components: dict[str, list[str]] = {}
-        sig_check: dict[str, str] = {}
-        sig_error: dict[str, str] = {}
 
         for entry in entries:
-            sig = entry.get("error_signature", "")
-            if not sig:
+            if entry.get("event_type", "component_result") != "component_result":
                 continue
+            sigs = entry.get("failure_signatures") or []
+            if not sigs:
+                # v1 fallback: compose from the legacy scalar fields.
+                legacy_sig = entry.get("error_signature", "")
+                if not legacy_sig:
+                    continue
+                legacy_check = entry.get("check_name") or "unknown"
+                sigs = [f"{legacy_check}:{legacy_sig}"]
             run_id = entry.get("run_id", "")
             comp_id = entry.get("component_id", "")
-            check = entry.get("check_name", "unknown")
-            error = entry.get("error", "")
+            for sig in sigs:
+                if not isinstance(sig, str) or not sig:
+                    continue
+                sig_runs.setdefault(sig, set()).add(run_id)
+                sig_components.setdefault(sig, []).append(comp_id)
 
-            sig_runs.setdefault(sig, set()).add(run_id)
-            sig_components.setdefault(sig, []).append(comp_id)
-            sig_check.setdefault(sig, check)
-            sig_error.setdefault(sig, error)
-
-        total_runs = len({e.get("run_id") for e in entries})
+        total_runs = len({
+            e.get("run_id") for e in entries
+            if e.get("event_type", "component_result") == "component_result"
+        })
         patterns: list[FailurePattern] = []
 
         for sig, run_ids in sig_runs.items():
             if len(run_ids) < self.config.min_pattern_frequency:
                 continue
-            _, category = _classify_check(sig_error.get(sig, ""))
+            check_name, code = split_signature(sig)
             unique_comps = list(dict.fromkeys(sig_components.get(sig, [])))
             patterns.append(
                 FailurePattern(
@@ -507,9 +695,9 @@ class EvolutionJournal:
                     frequency=len(run_ids),
                     total_components=total_runs,
                     affected_components=unique_comps,
-                    check_name=sig_check.get(sig, "unknown"),
-                    error_signature=sig,
-                    category=category,
+                    check_name=check_name,
+                    error_signature=code,
+                    category=category_for_check(check_name),
                 )
             )
 
@@ -523,6 +711,7 @@ class EvolutionJournal:
     def propose_improvements(
         self,
         patterns: list[FailurePattern],
+        starting_number: int = 1,
     ) -> list[HarnessProposal]:
         """Generate concrete harness improvement proposals from patterns.
 
@@ -530,9 +719,16 @@ class EvolutionJournal:
         - Recurring linter errors - suggest CLAUDE.md convention entry
         - Recurring typecheck patterns - suggest config change
         - Recurring test failures on same module - suggest feedforward focus
+        - Recurring review/security finding categories - suggest CLAUDE.md
+          guidance derived from the finding taxonomy
+
+        R6.2: IDs are monotonic across runs - pass
+        ``next_proposal_number(output_dir)`` as ``starting_number`` so a
+        second `ralph evolve` continues numbering instead of restarting
+        at PROP-001 and clobbering earlier files.
         """
         proposals: list[HarnessProposal] = []
-        counter = 0
+        counter = starting_number - 1
 
         for pattern in patterns:
             counter += 1
@@ -612,7 +808,8 @@ class EvolutionJournal:
                         id=proposal_id,
                         title=f"Add review guidance for '{pattern.error_signature}'",
                         description=(
-                            f"Review finding '{pattern.error_signature}' appeared in "
+                            f"Review finding category '{pattern.error_signature}' "
+                            f"(reviewer concern taxonomy) appeared in "
                             f"{pattern.frequency} components. Adding explicit guidance to "
                             f"CLAUDE.md can help the agent avoid this in the first pass."
                         ),
@@ -622,6 +819,33 @@ class EvolutionJournal:
                             f"Add to CLAUDE.md:\n"
                             f"> Reviewer repeatedly flags '{pattern.error_signature}'. "
                             f"Address this pattern proactively."
+                        ),
+                        source_patterns=[pattern.description],
+                    )
+                )
+
+            elif pattern.check_name == "security":
+                proposals.append(
+                    HarnessProposal(
+                        id=proposal_id,
+                        title=(
+                            f"Add security guidance for "
+                            f"'{pattern.error_signature}'"
+                        ),
+                        description=(
+                            f"Security finding category '{pattern.error_signature}' "
+                            f"(OWASP-mapped taxonomy) appeared in "
+                            f"{pattern.frequency} components. Adding an explicit "
+                            f"convention to CLAUDE.md can prevent the vulnerability "
+                            f"class from being introduced at all."
+                        ),
+                        proposal_type="computational",
+                        target="claude_md",
+                        suggested_change=(
+                            f"Add to CLAUDE.md:\n"
+                            f"> Security reviewer repeatedly flags "
+                            f"'{pattern.error_signature}'. Follow the secure "
+                            f"pattern for this category from the start."
                         ),
                         source_patterns=[pattern.description],
                     )
@@ -655,6 +879,21 @@ class EvolutionJournal:
     # save_proposals
     # ------------------------------------------------------------------
 
+    def next_proposal_number(self, output_dir: Path) -> int:
+        """Next monotonic proposal number: max existing PROP number in
+        ``output_dir`` plus one (R6.2). 1 when the directory is empty or
+        missing."""
+        highest = 0
+        try:
+            candidates = list(output_dir.glob("prop-*.md"))
+        except OSError:
+            return 1
+        for path in candidates:
+            m = re.fullmatch(r"prop-(\d+)\.md", path.name)
+            if m:
+                highest = max(highest, int(m.group(1)))
+        return highest + 1
+
     def save_proposals(
         self,
         proposals: list[HarnessProposal],
@@ -662,17 +901,32 @@ class EvolutionJournal:
     ) -> list[Path]:
         """Write proposals as markdown files to output_dir.
 
-        Returns list of written file paths.
+        Returns list of written file paths. Never overwrites an existing
+        proposal file (R6.2): a filename collision means the caller
+        numbered the batch wrong (see ``next_proposal_number``), and
+        clobbering would silently rewrite audit history - skip and warn
+        instead.
         """
         written: list[Path] = []
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "proposal dir creation failed (non-fatal): %s: %s",
+                output_dir, exc,
+            )
             return written
 
         for proposal in proposals:
             filename = f"{proposal.id.lower()}.md"
             filepath = output_dir / filename
+
+            if filepath.exists():
+                logger.warning(
+                    "refusing to overwrite existing proposal %s; "
+                    "renumber with next_proposal_number()", filepath,
+                )
+                continue
 
             sources_block = "\n".join(
                 f"- {s}" for s in proposal.source_patterns
@@ -698,8 +952,11 @@ class EvolutionJournal:
             try:
                 filepath.write_text(content)
                 written.append(filepath)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning(
+                    "proposal write failed (non-fatal): %s: %s",
+                    filepath, exc,
+                )
 
         return written
 
@@ -708,39 +965,48 @@ class EvolutionJournal:
     # ------------------------------------------------------------------
 
     def get_concern_hit_rate(self, lookback_runs: int = 10) -> dict[str, Any]:
-        """Aggregate reviewer-concern signal across recent factory runs.
+        """Aggregate reviewer/security finding signal across recent runs.
 
         Returns ``{"runs": N, "components": M, "with_concern": K,
         "by_category": {...}}`` so dashboards can ask "did the
-        adversarial reviewer surface anything across the last N runs?"
+        adversarial reviewers surface anything across the last N runs?"
 
-        Today the evolution journal does not persist concerns as a
-        structured field (concerns are rendered into ``component.error``
-        or PR-body text). This method returns the LOWER BOUND of
-        concern surface based on the existing journal shape; a richer
-        implementation would write a dedicated concerns entry per
-        component. Tracked as a follow-up in
-        docs/adversarial-roadmap.md (Phase E3 - structured findings).
+        R6.2: consumes the typed ``findings_summary`` that record_run
+        writes on every component_result entry (E3 stream), replacing
+        the old error-string scan that was structurally zero (concern
+        categories never appeared in ``component.error``). A component
+        counts as "with concern" when its summary has at least one
+        finding in a real category - the synthetic
+        ``infrastructure_error`` and ``phase_skipped`` categories mark
+        non-execution, not adversarial signal, and are excluded.
         """
-        entries = self._read_journal_entries(lookback_runs)
+        entries = [
+            e for e in self._read_journal_entries(lookback_runs)
+            if e.get("event_type", "component_result") == "component_result"
+        ]
         runs = len({e.get("run_id", "") for e in entries})
         components = len(entries)
         with_concern = 0
         by_category: dict[str, int] = {}
         for entry in entries:
-            error = (entry.get("error") or "").lower()
-            # Recognize concern-shaped errors by the reviewer prefix
-            # that as_retry_context emits ("FAIL <category>:" or
-            # "ADVISORY <category>:"). Best-effort signal only.
-            for category in (
-                "scope_creep", "security_concern", "test_quality",
-                "unrelated_change", "dead_code", "error_handling",
-                "copy_paste",
-            ):
-                if category in error:
-                    with_concern += 1
-                    by_category[category] = by_category.get(category, 0) + 1
-                    break
+            summary = entry.get("findings_summary") or {}
+            cat_counts = summary.get("by_category") or {}
+            if not isinstance(cat_counts, dict):
+                continue
+            hit = False
+            for category, count in cat_counts.items():
+                if category in ("infrastructure_error", "phase_skipped"):
+                    continue
+                try:
+                    n = int(count)
+                except (TypeError, ValueError):
+                    continue
+                if n <= 0:
+                    continue
+                hit = True
+                by_category[category] = by_category.get(category, 0) + n
+            if hit:
+                with_concern += 1
         return {
             "runs": runs,
             "components": components,

@@ -5,13 +5,17 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ralph_py.evolution import EvolutionConfig
 
 import click
 from click.core import ParameterSource
@@ -2661,7 +2665,10 @@ def evolve(
 
     Without arguments, analyzes recent runs and shows proposals.
     Use --status to see experiment trends.
-    Use --apply to apply proposals.
+    Use --apply PROP-NNN (or 'all') to apply proposals: convention-type
+    proposals (target claude_md) are appended to the project CLAUDE.md
+    Agent Learnings section after confirmation; every other target
+    prints manual instructions.
     """
     from ralph_py.evolution import EvolutionConfig, EvolutionJournal
 
@@ -2699,13 +2706,10 @@ def evolve(
         if not proposals_dir.exists():
             ui_impl.err("No proposals found. Run `ralph evolve` first.")
             sys.exit(1)
-
-        ui_impl.info(f"Applying proposal: {apply_id}")
-        ui_impl.warn(
-            "Proposal application is not yet automated. "
-            "Review proposals in .ralph/proposals/ and apply manually."
+        exit_code = _evolve_apply(
+            apply_id, proposals_dir, root_dir, evo_config, ui_impl,
         )
-        sys.exit(0)
+        sys.exit(exit_code)
 
     # Default: analyze and propose
     ui_impl.section("Evolution: Analyzing Runs")
@@ -2723,19 +2727,203 @@ def evolve(
             f"(seen in {pattern.frequency} components)"
         )
 
+    # R6.3: honor [evolution] auto_propose - when disabled, evolve only
+    # reports patterns and never writes proposal files.
+    if not evo_config.auto_propose:
+        ui_impl.info(
+            "auto_propose is disabled ([evolution] auto_propose = false); "
+            "patterns reported, no proposals generated."
+        )
+        sys.exit(0)
+
+    proposals_dir = root_dir / ".ralph" / "proposals"
     proposals = journal.propose_improvements(patterns)
-    if proposals:
-        proposals_dir = root_dir / ".ralph" / "proposals"
-        paths = journal.save_proposals(proposals, proposals_dir)
+    # Idempotence across repeated `ralph evolve` runs: a proposal whose
+    # title already exists on disk is the same pattern re-detected, not
+    # new signal - skip it rather than duplicating files.
+    existing_titles = _existing_proposal_titles(proposals_dir)
+    fresh = [p for p in proposals if p.title not in existing_titles]
+    already = len(proposals) - len(fresh)
+    # R6.2: monotonic IDs across invocations - number only the fresh
+    # proposals, continuing after the highest PROP number on disk, so a
+    # deduped batch never burns or reuses an existing number.
+    start = journal.next_proposal_number(proposals_dir)
+    for offset, proposal in enumerate(fresh):
+        proposal.id = f"PROP-{start + offset:03d}"
+    if fresh:
+        paths = journal.save_proposals(fresh, proposals_dir)
         ui_impl.section("Proposals Generated")
         for path in paths:
             ui_impl.info(f"  {path}")
+        if already:
+            ui_impl.info(
+                f"  ({already} proposal(s) already on disk; not duplicated)"
+            )
         ui_impl.info("")
         ui_impl.info("Review proposals and apply with `ralph evolve --apply <ID>`")
+    elif already:
+        ui_impl.info(
+            f"All {already} proposal(s) for these patterns already exist "
+            f"in {proposals_dir}."
+        )
     else:
         ui_impl.info("No actionable proposals generated from current patterns.")
 
     sys.exit(0)
+
+
+_PROPOSAL_TITLE_RE = re.compile(r"^# (PROP-\d+): (.+)$")
+_PROPOSAL_FIELD_RE = re.compile(r"^\*\*(Type|Target)\*\*: (.+)$")
+_PROPOSAL_APPLIED_RE = re.compile(r"^\*\*Applied\*\*: (.+)$")
+
+
+def _existing_proposal_titles(proposals_dir: Path) -> set[str]:
+    """Titles of every proposal already saved to disk."""
+    titles: set[str] = set()
+    if not proposals_dir.is_dir():
+        return titles
+    for path in sorted(proposals_dir.glob("prop-*.md")):
+        try:
+            first_line = path.read_text().splitlines()[0]
+        except (OSError, IndexError):
+            continue
+        m = _PROPOSAL_TITLE_RE.match(first_line)
+        if m:
+            titles.add(m.group(2))
+    return titles
+
+
+def _parse_proposal_file(path: Path) -> dict[str, str]:
+    """Parse the structured fields save_proposals writes.
+
+    Returns keys: id, title, type, target, convention (the blockquote
+    body of the suggested change, "" when none), applied (timestamp or
+    "")."""
+    parsed = {
+        "id": "", "title": "", "type": "", "target": "",
+        "convention": "", "applied": "",
+    }
+    convention_lines: list[str] = []
+    for line in path.read_text().splitlines():
+        m = _PROPOSAL_TITLE_RE.match(line)
+        if m and not parsed["id"]:
+            parsed["id"], parsed["title"] = m.group(1), m.group(2)
+            continue
+        m = _PROPOSAL_FIELD_RE.match(line)
+        if m:
+            parsed[m.group(1).lower()] = m.group(2).strip()
+            continue
+        m = _PROPOSAL_APPLIED_RE.match(line)
+        if m:
+            parsed["applied"] = m.group(1).strip()
+            continue
+        if line.startswith("> "):
+            convention_lines.append(line[2:].strip())
+    parsed["convention"] = " ".join(convention_lines).strip()
+    return parsed
+
+
+def _append_to_agent_learnings(
+    claude_md: Path, proposal_id: str, convention: str,
+) -> bool:
+    """Append one convention bullet to the end of the "## Agent
+    Learnings" section of the project CLAUDE.md. Returns False (no
+    write) when the file or the section is missing - the caller then
+    falls back to honest manual instructions instead of guessing a
+    location."""
+    try:
+        content = claude_md.read_text()
+    except OSError:
+        return False
+    marker = "## Agent Learnings"
+    idx = content.find(marker)
+    if idx == -1:
+        return False
+    # End of the section = next level-2 header after it, else EOF.
+    next_header = content.find("\n## ", idx + len(marker))
+    insert_at = len(content) if next_header == -1 else next_header
+    entry = f"- {convention} (applied from {proposal_id} by ralph evolve)\n"
+    head = content[:insert_at]
+    if not head.endswith("\n"):
+        head += "\n"
+    claude_md.write_text(head + entry + content[insert_at:])
+    return True
+
+
+def _evolve_apply(
+    apply_id: str,
+    proposals_dir: Path,
+    root_dir: Path,
+    evo_config: EvolutionConfig,
+    ui_impl: UI,
+) -> int:
+    """R6.3: the minimal REAL apply path. Convention-type proposals
+    (computational, target=claude_md) append to the project CLAUDE.md
+    Agent Learnings section after explicit confirmation
+    (auto_apply_computational=true skips the prompt); every other
+    proposal type prints honest manual instructions - no false
+    "applied" claims."""
+    if apply_id.lower() == "all":
+        paths = sorted(proposals_dir.glob("prop-*.md"))
+        if not paths:
+            ui_impl.err(f"No proposal files in {proposals_dir}.")
+            return 1
+    else:
+        candidate = proposals_dir / f"{apply_id.lower()}.md"
+        if not candidate.exists():
+            ui_impl.err(
+                f"Proposal '{apply_id}' not found "
+                f"(expected {candidate})."
+            )
+            return 1
+        paths = [candidate]
+
+    claude_md = root_dir / "CLAUDE.md"
+    failures = 0
+    for path in paths:
+        proposal = _parse_proposal_file(path)
+        pid = proposal["id"] or path.stem.upper()
+        if proposal["applied"]:
+            ui_impl.info(
+                f"{pid} already applied at {proposal['applied']}; skipping."
+            )
+            continue
+        is_convention = (
+            proposal["type"] == "computational"
+            and proposal["target"] == "claude_md"
+            and bool(proposal["convention"])
+        )
+        if not is_convention:
+            ui_impl.info(f"{pid}: {proposal['title']}")
+            ui_impl.warn(
+                f"  Automated apply only covers convention-type proposals "
+                f"(target claude_md). This one targets "
+                f"'{proposal['target'] or 'unknown'}': review {path} and "
+                f"apply it manually."
+            )
+            continue
+        ui_impl.info(f"{pid}: {proposal['title']}")
+        ui_impl.info(f"  Convention: {proposal['convention']}")
+        if not evo_config.auto_apply_computational and not click.confirm(
+            f"Append this convention to {claude_md}?", default=False,
+        ):
+            ui_impl.info(f"  {pid} not applied (declined).")
+            continue
+        if not _append_to_agent_learnings(
+            claude_md, pid, proposal["convention"],
+        ):
+            ui_impl.err(
+                f"  Could not apply {pid}: {claude_md} is missing or has "
+                f"no '## Agent Learnings' section. Add the section or "
+                f"apply manually from {path}."
+            )
+            failures += 1
+            continue
+        applied_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(path, "a") as f:
+            f.write(f"\n**Applied**: {applied_at}\n")
+        ui_impl.ok(f"  {pid} appended to {claude_md}.")
+    return 1 if failures else 0
 
 
 def main() -> None:

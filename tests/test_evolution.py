@@ -6,9 +6,14 @@ import json
 from pathlib import Path
 
 from ralph_py.evolution import (
+    JOURNAL_SCHEMA_VERSION,
     EvolutionConfig,
     EvolutionJournal,
     FailurePattern,
+    signature_for_error,
+    signatures_from_findings,
+    signatures_from_verification,
+    split_signature,
 )
 from ralph_py.factory import FactoryResult
 from ralph_py.manifest import Component, ComponentStatus, Manifest
@@ -247,23 +252,61 @@ class TestConcernHitRate:
             "runs": 0, "components": 0, "with_concern": 0, "by_category": {},
         }
 
-    def test_counts_categories(self, tmp_path: Path) -> None:
+    def test_counts_categories_from_findings_summary(
+        self, tmp_path: Path,
+    ) -> None:
+        """R6.2: the hit rate consumes the typed findings_summary that
+        record_run writes, not the error string (concern categories
+        never appear there, so the old scan was structurally zero)."""
         journal_path = tmp_path / "evolution.jsonl"
         self._write_entries(journal_path, [
-            {"run_id": "run-1", "component_id": "a", "error": "FAIL scope_creep: x"},
-            {"run_id": "run-1", "component_id": "b", "error": "ADVISORY test_quality: y"},
-            {"run_id": "run-2", "component_id": "c", "error": "FAIL security_concern: hardcoded key"},
-            {"run_id": "run-2", "component_id": "d", "error": ""},
+            {
+                "run_id": "run-1", "component_id": "a",
+                "event_type": "component_result",
+                "findings_summary": {
+                    "total": 2,
+                    "by_category": {"scope_creep": 1, "test_quality": 1},
+                },
+            },
+            {
+                "run_id": "run-1", "component_id": "b",
+                "event_type": "component_result",
+                # Infrastructure-only summaries are non-execution, not
+                # adversarial signal.
+                "findings_summary": {
+                    "total": 1,
+                    "by_category": {"infrastructure_error": 1},
+                },
+            },
+            {
+                "run_id": "run-2", "component_id": "c",
+                "event_type": "component_result",
+                "findings_summary": {
+                    "total": 1,
+                    "by_category": {"security_concern": 1},
+                },
+            },
+            {
+                "run_id": "run-2", "component_id": "d",
+                "event_type": "component_result",
+                "findings_summary": {"total": 0, "by_category": {}},
+            },
+            # Non-component entries are excluded from the denominator.
+            {
+                "run_id": "run-2", "component_id": "",
+                "event_type": "contract_result", "tier": 1, "passed": True,
+            },
         ])
         config = EvolutionConfig(journal_path=journal_path)
         journal = EvolutionJournal(config)
         result = journal.get_concern_hit_rate()
         assert result["runs"] == 2
         assert result["components"] == 4
-        assert result["with_concern"] == 3
-        assert result["by_category"]["scope_creep"] == 1
-        assert result["by_category"]["test_quality"] == 1
-        assert result["by_category"]["security_concern"] == 1
+        assert result["with_concern"] == 2
+        assert result["by_category"] == {
+            "scope_creep": 1, "test_quality": 1, "security_concern": 1,
+        }
+        assert "infrastructure_error" not in result["by_category"]
 
 
 # ---------------------------------------------------------------------------
@@ -342,3 +385,298 @@ class TestSaveProposals:
         assert "PROP-001" in content
         assert "E501" in content
         assert "computational" in content
+
+
+# ---------------------------------------------------------------------------
+# R6.1: structured failure signatures
+# ---------------------------------------------------------------------------
+
+
+class TestSignatureHelpers:
+    def test_signatures_from_verification_uses_parser_codes(self) -> None:
+        from ralph_py.parsers import ParsedFailure, ParsedOutput
+        from ralph_py.verify import CheckResult
+
+        ruff = ParsedOutput(tool="ruff", failures=[
+            ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
+            ParsedFailure(file="b.py", line=2, rule_or_test="S608", message="y"),
+            ParsedFailure(file="c.py", line=3, rule_or_test="E501", message="z"),
+        ])
+        mypy = ParsedOutput(tool="mypy", failures=[
+            ParsedFailure(file="a.py", line=4, rule_or_test="arg-type", message="m"),
+        ])
+        pytest_out = ParsedOutput(tool="pytest", failures=[
+            ParsedFailure(
+                file="tests/test_a.py", rule_or_test="test_x",
+                message="AssertionError: assert 1 == 2",
+            ),
+        ])
+        checks = [
+            CheckResult(name="linter", passed=False, message="Linter failed",
+                        parsed=ruff),
+            CheckResult(name="typecheck", passed=False,
+                        message="Typecheck failed", parsed=mypy),
+            CheckResult(name="test_suite", passed=False,
+                        message="Tests failed", parsed=pytest_out),
+            CheckResult(name="bad_patterns", passed=True, message="ok"),
+        ]
+        sigs = signatures_from_verification(checks)
+        assert "linter:E501" in sigs
+        assert "linter:S608" in sigs
+        assert "typecheck:arg-type" in sigs
+        assert "test_suite:assertion-error" in sigs
+        # Passing checks contribute nothing; duplicates collapse.
+        assert sigs.count("linter:E501") == 1
+        assert not any(s.startswith("bad_patterns") for s in sigs)
+
+    def test_signatures_from_verification_fallback_slug(self) -> None:
+        from ralph_py.verify import CheckResult
+
+        checks = [CheckResult(
+            name="diff_scope", passed=False,
+            message="3 files outside allowed scope (diff vs base branch 'main')",
+        )]
+        sigs = signatures_from_verification(checks)
+        assert len(sigs) == 1
+        check, code = split_signature(sigs[0])
+        assert check == "diff_scope"
+        # Counts and quoted names are stripped so the slug is stable
+        # across runs with different violation counts.
+        assert "3" not in code
+        assert "main" not in code
+        assert "outside-allowed-scope" in code
+
+    def test_signatures_from_findings(self) -> None:
+        from ralph_py.findings import Finding
+
+        findings = [
+            Finding.from_review_concern(
+                category="scope_creep", severity="fail",
+                location="a.py", explanation="x",
+            ),
+            Finding.from_review_concern(
+                category="test_quality", severity="advisory",
+                location="b.py", explanation="y",
+            ),
+        ]
+        assert signatures_from_findings("review", findings) == [
+            "review:scope_creep",
+        ]
+
+    def test_signatures_from_findings_infrastructure(self) -> None:
+        from ralph_py.findings import Finding
+
+        findings = [Finding.infrastructure_error("review", "crashed")]
+        assert signatures_from_findings("review", findings) == [
+            "review:infrastructure",
+        ]
+
+    def test_signature_for_error_stable(self) -> None:
+        sig1 = signature_for_error(
+            "engineer", "component timeout: exceeded 600s wall clock",
+        )
+        sig2 = signature_for_error(
+            "engineer", "component timeout: exceeded 1200s wall clock",
+        )
+        assert sig1 == sig2
+        assert sig1.startswith("engineer:")
+
+
+class TestRecordRunSignatures:
+    def test_journal_entry_carries_structured_signatures(
+        self, tmp_path: Path,
+    ) -> None:
+        config = EvolutionConfig(
+            journal_path=tmp_path / "evolution.jsonl",
+            experiments_path=tmp_path / "experiments.tsv",
+        )
+        journal = EvolutionJournal(config)
+        comp = _make_component(
+            "b", status=ComponentStatus.FAILED.value,
+            error="Mechanical verification failed", retries=1,
+        )
+        comp.failed_phase = "verify"
+        comp.failed_check = "linter"
+        manifest = _make_manifest([comp])
+        factory_result = FactoryResult(completed=[], failed=["b"], skipped=[])
+
+        journal.record_run(
+            "run-001", manifest, factory_result,
+            failure_signatures={"b": ["linter:S608", "linter:E501"]},
+        )
+
+        entry = json.loads(config.journal_path.read_text().strip())
+        assert entry["schema_version"] == JOURNAL_SCHEMA_VERSION
+        assert entry["failure_signatures"] == ["linter:S608", "linter:E501"]
+        assert entry["check_name"] == "linter"
+        assert entry["error_signature"] == "S608"
+        assert entry["failed_phase"] == "verify"
+        assert entry["failed_check"] == "linter"
+        # TSV common_failure carries the full signature, not a slug of
+        # the flattened string.
+        tsv = config.experiments_path.read_text()
+        assert "linter:S608" in tsv
+
+    def test_legacy_fallback_without_signatures(self, tmp_path: Path) -> None:
+        """A failed component with no recorded signatures still gets a
+        classified signature from its error string, so entries never
+        lose the fields entirely."""
+        config = EvolutionConfig(
+            journal_path=tmp_path / "evolution.jsonl",
+            experiments_path=tmp_path / "experiments.tsv",
+        )
+        journal = EvolutionJournal(config)
+        comp = _make_component(
+            "b", status=ComponentStatus.FAILED.value,
+            error="ruff: S608 violation",
+        )
+        manifest = _make_manifest([comp])
+        journal.record_run(
+            "run-001", manifest,
+            FactoryResult(completed=[], failed=["b"], skipped=[]),
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        assert entry["failure_signatures"] == ["linter:S608"]
+
+
+class TestEvolutionIntegration:
+    """R6 'done when': a synthetic-but-realistic journal (real signature
+    strings, typed findings) yields a proposal traceable to a recorded
+    signature and a nonzero concern hit rate."""
+
+    def _failed_component(self, comp_id: str) -> Component:
+        from ralph_py.findings import Finding
+
+        comp = _make_component(
+            comp_id, status=ComponentStatus.FAILED.value,
+            error="Review failed", retries=1, duration_seconds=42.0,
+            iteration_count=3,
+        )
+        comp.failed_phase = "review"
+        comp.failed_check = "criteria"
+        comp.findings = [
+            Finding.from_review_concern(
+                category="scope_creep", severity="fail",
+                location=f"{comp_id}.py", explanation="touched other files",
+            ),
+        ]
+        return comp
+
+    def test_journal_to_traceable_proposal(self, tmp_path: Path) -> None:
+        config = EvolutionConfig(
+            journal_path=tmp_path / "evolution.jsonl",
+            experiments_path=tmp_path / "experiments.tsv",
+            min_pattern_frequency=2,
+        )
+        journal = EvolutionJournal(config)
+
+        # Two runs, each with one linter:S608 failure and one review
+        # scope_creep failure - the shapes record_run actually writes.
+        for run_id in ("run-001", "run-002"):
+            lint_comp = _make_component(
+                "comp-lint", status=ComponentStatus.FAILED.value,
+                error="Mechanical verification failed", retries=2,
+                duration_seconds=30.0, iteration_count=2,
+            )
+            lint_comp.failed_phase = "verify"
+            lint_comp.failed_check = "linter"
+            review_comp = self._failed_component("comp-review")
+            manifest = _make_manifest([lint_comp, review_comp])
+            journal.record_run(
+                run_id, manifest,
+                FactoryResult(
+                    completed=[], failed=["comp-lint", "comp-review"],
+                    skipped=[],
+                ),
+                failure_signatures={
+                    "comp-lint": ["linter:S608"],
+                    "comp-review": ["review:scope_creep"],
+                },
+            )
+
+        patterns = journal.get_cross_run_patterns(lookback_runs=10)
+        linter_patterns = [
+            p for p in patterns
+            if p.check_name == "linter" and p.error_signature == "S608"
+        ]
+        assert linter_patterns, (
+            f"expected a linter:S608 pattern, got "
+            f"{[(p.check_name, p.error_signature) for p in patterns]}"
+        )
+        assert linter_patterns[0].frequency == 2
+        review_patterns = [
+            p for p in patterns
+            if p.check_name == "review" and p.error_signature == "scope_creep"
+        ]
+        assert review_patterns
+
+        # Proposals trace back to the recorded signature: the S608
+        # linter fast path fires, and the review proposal derives from
+        # the finding taxonomy.
+        proposals = journal.propose_improvements(patterns)
+        s608 = [p for p in proposals if "S608" in p.title]
+        assert s608 and s608[0].target == "claude_md"
+        assert any("S608" in src for src in s608[0].source_patterns)
+        assert any("scope_creep" in p.title for p in proposals)
+
+        # Concern hit rate is nonzero because findings_summary carries
+        # the scope_creep finding.
+        hit_rate = journal.get_concern_hit_rate()
+        assert hit_rate["with_concern"] > 0
+        assert hit_rate["by_category"].get("scope_creep", 0) > 0
+
+
+class TestProposalIdMonotonicity:
+    def test_ids_continue_across_invocations(self, tmp_path: Path) -> None:
+        """R6.2: a second `evolve` run continues numbering after the
+        files already on disk and never clobbers them."""
+        config = EvolutionConfig()
+        journal = EvolutionJournal(config)
+        output_dir = tmp_path / "proposals"
+
+        def _pattern(sig: str) -> FailurePattern:
+            return FailurePattern(
+                description=f"linter failure '{sig}' in 2/4 components",
+                frequency=2, total_components=4,
+                affected_components=["a", "b"],
+                check_name="linter", error_signature=sig,
+                category="verification",
+            )
+
+        first = journal.propose_improvements(
+            [_pattern("S608")],
+            starting_number=journal.next_proposal_number(output_dir),
+        )
+        assert first[0].id == "PROP-001"
+        journal.save_proposals(first, output_dir)
+        first_content = (output_dir / "prop-001.md").read_text()
+
+        second = journal.propose_improvements(
+            [_pattern("E501")],
+            starting_number=journal.next_proposal_number(output_dir),
+        )
+        assert second[0].id == "PROP-002"
+        written = journal.save_proposals(second, output_dir)
+        assert [p.name for p in written] == ["prop-002.md"]
+        # Prior file untouched.
+        assert (output_dir / "prop-001.md").read_text() == first_content
+
+    def test_save_never_clobbers_existing_file(self, tmp_path: Path) -> None:
+        config = EvolutionConfig()
+        journal = EvolutionJournal(config)
+        output_dir = tmp_path / "proposals"
+        output_dir.mkdir()
+        (output_dir / "prop-001.md").write_text("# PROP-001: original\n")
+
+        clashing = journal.propose_improvements([
+            FailurePattern(
+                description="linter failure 'E501' in 2/4 components",
+                frequency=2, total_components=4,
+                affected_components=["a", "b"],
+                check_name="linter", error_signature="E501",
+                category="verification",
+            ),
+        ])
+        written = journal.save_proposals(clashing, output_dir)
+        assert written == []
+        assert (output_dir / "prop-001.md").read_text() == "# PROP-001: original\n"
