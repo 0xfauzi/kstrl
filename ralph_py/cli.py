@@ -185,6 +185,12 @@ def cli() -> None:
     is_flag=True,
     help="Skip mechanical verification (raw loop, no post-checks)",
 )
+@click.option(
+    "--force-lock",
+    is_flag=True,
+    help="Proceed even if another ralph invocation holds "
+         ".ralph/factory.lock (may corrupt the other run's state)",
+)
 def run(
     max_iterations: int,
     root: Path | None,
@@ -201,6 +207,7 @@ def run(
     no_color: bool,
     ascii: bool,
     no_verify: bool,
+    force_lock: bool,
 ) -> None:
     """Run the agentic loop as a single-component factory invocation.
 
@@ -343,9 +350,15 @@ def run(
         contract_config=None,
         feedforward_config=ff_config,
         timeout_config=TimeoutConfig.load(root_dir),
+        force_lock=force_lock,
     )
 
-    factory_result = run_factory(manifest, factory_cfg, config, ui_impl, root_dir)
+    # R0.5 (H-15): `ralph run` persists to its own run-manifest.json so
+    # it can never clobber a factory run's resumable manifest.json.
+    factory_result = run_factory(
+        manifest, factory_cfg, config, ui_impl, root_dir,
+        manifest_path=root_dir / "scripts" / "ralph" / "run-manifest.json",
+    )
     sys.exit(factory_result.exit_code)
 
 
@@ -1249,6 +1262,12 @@ def decompose(
     help="Disable git worktrees (forces sequential execution)",
 )
 @click.option(
+    "--force-lock",
+    is_flag=True,
+    help="Proceed even if another ralph invocation holds "
+         ".ralph/factory.lock (may corrupt the other run's state)",
+)
+@click.option(
     "--yes", "-y",
     is_flag=True,
     help="Skip confirmation prompt",
@@ -1320,6 +1339,7 @@ def factory(
     component_timeout: float,
     progress_log: Path | None,
     no_worktrees: bool,
+    force_lock: bool,
     yes: bool,
     agent_cmd: str | None,
     model: str | None,
@@ -1479,6 +1499,7 @@ def factory(
         contract_config=c_config,
         progress_log_path=progress_log,
         timeout_config=timeout_config,
+        force_lock=force_lock,
     )
 
     ralph_dir = root_dir / "scripts" / "ralph"
@@ -1502,7 +1523,13 @@ def factory(
         if default_prompt.exists():
             base_config.prompt_file = default_prompt
 
-    result = run_factory(manifest, factory_config, base_config, ui_impl, root_dir)
+    # R0.5 (H-15): state saves back to the file it was loaded from.
+    # --manifest /custom.json persists to /custom.json; --spec runs keep
+    # the default scripts/ralph/manifest.json that decompose wrote.
+    result = run_factory(
+        manifest, factory_config, base_config, ui_impl, root_dir,
+        manifest_path=manifest_path,
+    )
     sys.exit(result.exit_code)
 
 

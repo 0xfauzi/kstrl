@@ -119,7 +119,7 @@ item here is one of those three.
     prompt; unit test asserting the diff-scope failure message names the base
     branch and allowed paths.
 
-- [ ] R0.5 (M) **Instance and state safety** [H-7, H-8, H-15]
+- [x] R0.5 (M) **Instance and state safety** [H-7, H-8, H-15]
   - Run-level flock on `.ralph/factory.lock`: a second invocation on the same
     root refuses to start (override flag for intentional use).
   - Worktrees keyed `.ralph/worktrees/<run_id>/<component_id>`; stale branch

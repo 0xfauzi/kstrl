@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
@@ -85,6 +86,11 @@ class FactoryConfig:
     # R0.2: how long push_create_and_merge_pr waits for merge
     # confirmation before the component is parked as MERGE_PENDING.
     merge_timeout: float = 300.0
+    # R0.5: proceed even when another invocation holds the run-level
+    # .ralph/factory.lock. Deliberately CLI-only (no toml/env source):
+    # forcing past the lock can corrupt a live run's worktrees and
+    # manifest, so it must be an explicit per-invocation decision.
+    force_lock: bool = False
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -167,6 +173,100 @@ class FactoryResult:
     exit_code: int = 0
 
 
+class FactoryLockHeldError(RuntimeError):
+    """Another factory invocation holds the run-level lock on this root."""
+
+
+@dataclass
+class _RunLock:
+    """Handle for the run-level factory lock.
+
+    ``held=True`` means we hold an exclusive flock for the whole run and
+    may safely prune state left by previous runs. ``held=False`` means we
+    are running WITHOUT exclusion (Windows/no-fcntl degrade, or
+    ``--force-lock``): stale-state cleanup must be skipped because another
+    live invocation may own it.
+    """
+
+    fp: IO[str] | None
+    held: bool
+
+    def release(self) -> None:
+        if self.fp is None:
+            return
+        try:
+            import fcntl
+            fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
+        except (ImportError, OSError):
+            pass
+        self.fp.close()
+        self.fp = None
+
+
+def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
+    """Take the run-level flock on ``.ralph/factory.lock`` (R0.5, H-7).
+
+    Held for the entire run so a second ``ralph factory`` / ``ralph run``
+    on the same root refuses to start instead of destroying the first
+    invocation's in-flight worktrees and clobbering its manifest. flock
+    releases automatically if the holder dies, so a crashed run never
+    wedges the root.
+
+    POSIX only, like the A4 per-component lock: without fcntl we degrade
+    to no exclusion with a warning. ``force=True`` proceeds past a held
+    lock with a warning instead of raising FactoryLockHeldError.
+    """
+    lock_path = root_dir / ".ralph" / "factory.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl
+    except ImportError:
+        ui.warn(
+            "Run-level factory lock unavailable on this platform (no "
+            "fcntl); concurrent invocations on this root are not excluded"
+        )
+        return _RunLock(fp=None, held=False)
+
+    # "a+" so a refused attempt can read the holder's pid without
+    # truncating it.
+    fp = open(lock_path, "a+")
+    try:
+        fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        holder = ""
+        try:
+            fp.seek(0)
+            holder = fp.read(64).strip()
+        except OSError:
+            pass
+        fp.close()
+        holder_note = f" (pid {holder})" if holder else ""
+        if force:
+            ui.warn(
+                f"--force-lock: proceeding while {lock_path} is held"
+                f"{holder_note}; concurrent runs can corrupt each "
+                f"other's worktrees and manifest"
+            )
+            return _RunLock(fp=None, held=False)
+        raise FactoryLockHeldError(
+            f"Another ralph invocation{holder_note} holds {lock_path}; "
+            f"refusing to start a second factory run on this root. "
+            f"Wait for it to finish, or re-run with --force-lock to "
+            f"override."
+        ) from None
+
+    # Holder pid is diagnostic only (shown in the refusal message of a
+    # contending invocation); the flock itself is the exclusion.
+    try:
+        fp.seek(0)
+        fp.truncate()
+        fp.write(f"{os.getpid()}\n")
+        fp.flush()
+    except OSError:
+        pass
+    return _RunLock(fp=fp, held=True)
+
+
 def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:
     """Remove a stale index.lock left behind by a killed git operation.
 
@@ -189,14 +289,22 @@ def _setup_worktree(
     branch_name: str,
     base_branch: str,
     root_dir: Path,
+    run_id: str,
     fresh_from_base: bool = False,
 ) -> Path:
     """Create a git worktree for a component.
 
+    Worktrees are keyed ``.ralph/worktrees/<run_id>/<component_id>``
+    (R0.5, H-7): two invocations never share a worktree path, so setup
+    can only ever remove a leftover from an earlier attempt of THIS run
+    (a retry), never another invocation's in-flight worktree. Run-level
+    exclusion itself is the ``.ralph/factory.lock`` flock in run_factory.
+
     A per-host fcntl flock on ``.ralph/worktrees/<component_id>.lock``
-    serializes setup across concurrent factory invocations on the same
-    machine. Without it, two simultaneously-running factories could
-    clobber each other's worktree at the same path.
+    (run-agnostic on purpose) still serializes the git commands here for
+    the degraded modes that run without the run-level lock (Windows,
+    ``--force-lock``), where two invocations could otherwise race on the
+    shared branch and .git metadata.
 
     ``fresh_from_base=True`` (used for retries after a timeout kill)
     additionally deletes the component branch so the worktree is recreated
@@ -206,10 +314,10 @@ def _setup_worktree(
     POSIX only. On Windows the fcntl import fails; we degrade to the
     pre-lock behavior and document the limitation in the runbook.
     """
-    worktree_base = root_dir / ".ralph" / "worktrees"
+    worktree_base = root_dir / ".ralph" / "worktrees" / run_id
     worktree_base.mkdir(parents=True, exist_ok=True)
     worktree_path = worktree_base / component_id
-    lock_path = worktree_base / f"{component_id}.lock"
+    lock_path = root_dir / ".ralph" / "worktrees" / f"{component_id}.lock"
 
     lock_fp = None
     try:
@@ -256,6 +364,13 @@ def _setup_worktree(
         )
 
         if result.returncode != 0:
+            # Branch already exists: reuse it WITH its commits. After the
+            # run-start preflight (_preflight_component_branches) this can
+            # only be a branch created during THIS run - a non-timeout
+            # retry resuming its own progress, or single_pr components
+            # stacking on the shared branch. Stale branches from previous
+            # runs were deleted (fully merged) or refused at preflight,
+            # never silently reused here (R0.5).
             result = subprocess.run(
                 ["git", "worktree", "add", str(worktree_path), branch_name],
                 cwd=root_dir, capture_output=True, text=True, timeout=30,
@@ -278,15 +393,126 @@ def _setup_worktree(
             lock_fp.close()
 
 
-def _cleanup_worktree(component_id: str, root_dir: Path) -> None:
-    """Remove a git worktree for a component."""
-    worktree_path = root_dir / ".ralph" / "worktrees" / component_id
+def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> None:
+    """Remove a git worktree for a component of the current run."""
+    worktree_path = root_dir / ".ralph" / "worktrees" / run_id / component_id
     if not worktree_path.exists():
         return
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
         cwd=root_dir, capture_output=True, timeout=30,
     )
+
+
+def _prune_stale_worktrees(root_dir: Path, run_id: str, ui: UI) -> None:
+    """Remove worktrees left behind by previous (crashed/aborted) runs.
+
+    Only called when the run-level flock is genuinely held: any prior
+    holder has exited (flock dies with its process), so everything under
+    ``.ralph/worktrees/`` that is not ours - other runs' ``<run_id>/``
+    dirs, and pre-R0.5 flat-layout ``<component_id>/`` worktrees - is
+    orphaned and safe to remove. Includes worktrees kept for leaked
+    workers (R0.1): their owning run is gone, so by the next invocation
+    they are stale state, matching the pre-R0.5 force-remove behavior.
+    """
+    worktree_root = root_dir / ".ralph" / "worktrees"
+    if not worktree_root.exists():
+        return
+    removed = 0
+    for entry in sorted(worktree_root.iterdir()):
+        if entry.name == run_id or not entry.is_dir():
+            continue  # our own run dir, or a per-component .lock file
+        if (entry / ".git").exists():
+            # Pre-R0.5 flat layout: the entry itself is a worktree.
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(entry)],
+                cwd=root_dir, capture_output=True, timeout=30,
+            )
+            removed += 1
+        else:
+            # <run_id>/ dir from a previous run: remove each component
+            # worktree inside it.
+            for wt in sorted(entry.iterdir()):
+                if wt.is_dir():
+                    subprocess.run(
+                        ["git", "worktree", "remove", "--force", str(wt)],
+                        cwd=root_dir, capture_output=True, timeout=30,
+                    )
+                    removed += 1
+        # Whatever git could not remove (or non-worktree debris) goes
+        # with the dir; `git worktree prune` below drops any metadata
+        # orphaned by this.
+        shutil.rmtree(entry, ignore_errors=True)
+    if removed:
+        subprocess.run(
+            ["git", "worktree", "prune"],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        ui.info(f"  Pruned {removed} stale worktree(s) from previous runs")
+
+
+def _preflight_component_branches(
+    manifest: Manifest, root_dir: Path, ui: UI,
+) -> list[str]:
+    """Refuse to silently reuse component branches from previous runs.
+
+    For every branch a PENDING component would be provisioned on: if it
+    already exists and is fully merged into the base branch, delete it
+    (setup recreates it from base); if it exists with unmerged commits,
+    return an error naming it - the caller refuses the run and the
+    operator decides (merge or ``git branch -D``). Previously such
+    branches were silently reused with their old commits via the
+    worktree-add fallback (R0.5, H-7).
+
+    Note: a squash-merged branch is NOT an ancestor of base (the squash
+    rewrites history), so leftovers from squash-merge flows are refused
+    rather than auto-deleted. Loud beats lossy.
+    """
+    errors: list[str] = []
+    fetch_base_branch(manifest.base_branch, root_dir, timeout=60.0)
+    base_ref = resolve_base_ref(manifest.base_branch, root_dir)
+    seen: set[str] = set()
+    for comp in manifest.components:
+        if comp.status != ComponentStatus.PENDING.value:
+            continue
+        branch = comp.branch_name
+        if branch in seen:
+            continue  # single_pr: all components share one branch
+        seen.add(branch)
+        exists = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        if exists.returncode != 0:
+            continue
+        merged = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", branch, base_ref],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        if merged.returncode == 0:
+            deleted = subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=root_dir, capture_output=True, text=True, timeout=30,
+            )
+            if deleted.returncode == 0:
+                ui.info(
+                    f"  Deleted stale branch '{branch}' from a previous "
+                    f"run (fully merged into {manifest.base_branch})"
+                )
+            else:
+                errors.append(
+                    f"stale branch '{branch}' (component '{comp.id}') is "
+                    f"fully merged but could not be deleted: "
+                    f"{deleted.stderr.strip()}"
+                )
+        else:
+            errors.append(
+                f"branch '{branch}' (component '{comp.id}') already exists "
+                f"with commits not merged into '{manifest.base_branch}'; "
+                f"refusing to silently reuse it. Merge it or delete it "
+                f"(git branch -D {branch}) and re-run."
+            )
+    return errors
 
 
 def _run_component(
@@ -501,13 +727,53 @@ def run_factory(
     base_config: RalphConfig,
     ui: UI,
     root_dir: Path,
+    manifest_path: Path | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
     Phase 1: Mechanical verification (tests, typecheck, lint, PRD, diff scope)
     Phase 2: Second-opinion review (separate agent reviews diff against spec)
     Phase 3: Contract testing (merge tier branches, run integration tests)
+
+    ``manifest_path`` is where run state is SAVED as well as where it was
+    loaded from (R0.5, H-15): ``--manifest /custom.json`` must persist to
+    /custom.json and ``ralph run`` to its own run-manifest.json, never to
+    another invocation's resumable ``scripts/ralph/manifest.json``. None
+    keeps the historical default of ``<root>/scripts/ralph/manifest.json``.
+
+    Holds the run-level ``.ralph/factory.lock`` flock for the whole run
+    (R0.5, H-7); a contending invocation is refused with exit code 2
+    unless it passes ``--force-lock``.
     """
+    try:
+        run_lock = _acquire_run_lock(
+            root_dir, ui, force=factory_config.force_lock,
+        )
+    except FactoryLockHeldError as exc:
+        ui.err(str(exc))
+        refused = FactoryResult()
+        refused.exit_code = 2
+        return refused
+    try:
+        return _run_factory_locked(
+            manifest, factory_config, base_config, ui, root_dir,
+            manifest_path=manifest_path, lock_held=run_lock.held,
+        )
+    finally:
+        run_lock.release()
+
+
+def _run_factory_locked(
+    manifest: Manifest,
+    factory_config: FactoryConfig,
+    base_config: RalphConfig,
+    ui: UI,
+    root_dir: Path,
+    manifest_path: Path | None,
+    lock_held: bool,
+) -> FactoryResult:
+    """run_factory body; runs with the run-level lock resolved (held, or
+    explicitly degraded via --force-lock / no-fcntl platforms)."""
     from ralph_py.agents import get_agent
 
     factory_start = time.monotonic()
@@ -549,7 +815,8 @@ def run_factory(
             ui.info(f"  Resetting '{comp.id}' from {comp.status} to PENDING")
             comp.status = ComponentStatus.PENDING.value
 
-    manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
+    if manifest_path is None:
+        manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
 
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed. A
     # prior run initiated the merge but could not confirm it; check the
@@ -612,6 +879,16 @@ def run_factory(
     if not factory_config.use_worktrees:
         max_parallel = 1
         ui.info("Worktrees disabled: running sequentially")
+    if factory_config.single_pr and max_parallel > 1:
+        # R0.5 (H-8): single_pr components all live on ONE branch, and a
+        # branch can only be checked out in one worktree at a time -
+        # parallel same-tier components would hard-fail on "already
+        # checked out". Sequential is the only layout that works.
+        max_parallel = 1
+        ui.info(
+            "single_pr mode: components share one branch; "
+            "forcing max_parallel=1"
+        )
 
     # R0.1: TimeoutConfig is the single source for the agent-iteration and
     # component wall-clock limits. Enforcement layers: the adapters kill
@@ -623,6 +900,25 @@ def run_factory(
         timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
         if timeout_cfg.component_total > 0 else 0.0
     )
+
+    # R0.5 worktree crash recovery + stale-branch policy. Both only
+    # apply to worktree mode: without worktrees the factory neither
+    # creates branches nor worktree dirs.
+    if factory_config.use_worktrees:
+        if lock_held:
+            _prune_stale_worktrees(root_dir, run_id, ui)
+        else:
+            ui.warn(
+                "  Run lock not held; skipping stale-worktree cleanup "
+                "(another live invocation may own them)"
+            )
+        branch_errors = _preflight_component_branches(manifest, root_dir, ui)
+        if branch_errors:
+            ui.err("Refusing to run: stale component branches found")
+            for line in branch_errors:
+                ui.err(f"  {line}")
+            factory_result.exit_code = 2
+            return factory_result
 
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))
@@ -1155,7 +1451,7 @@ def run_factory(
 
         # Clean up worktree now that code is merged
         if factory_config.use_worktrees and comp_id in worktree_paths:
-            _cleanup_worktree(comp_id, root_dir)
+            _cleanup_worktree(comp_id, root_dir, run_id)
             del worktree_paths[comp_id]
 
         # Mark completed
@@ -1180,7 +1476,7 @@ def run_factory(
                 timeout_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
                     comp.id, comp.branch_name, manifest.base_branch, root_dir,
-                    fresh_from_base=fresh_from_base,
+                    run_id, fresh_from_base=fresh_from_base,
                 )
             else:
                 wt_path = root_dir
@@ -1393,7 +1689,14 @@ def run_factory(
                     f"(leaked worker may still be running)"
                 )
                 continue
-            _cleanup_worktree(comp_id, root_dir)
+            _cleanup_worktree(comp_id, root_dir, run_id)
+        # Drop the run's now-empty worktree dir; leaked workers' kept
+        # worktrees leave it non-empty and it stays for the next run's
+        # prune pass.
+        try:
+            os.rmdir(root_dir / ".ralph" / "worktrees" / run_id)
+        except OSError:
+            pass
         ui.ok("Worktrees cleaned up")
 
     def _record_contract_event(cr: ContractResult) -> None:

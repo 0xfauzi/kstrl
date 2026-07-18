@@ -571,7 +571,7 @@ class TestWorktreeTimeoutHygiene:
 
     def test_fresh_from_base_resets_branch(self, tmp_path: Path) -> None:
         _init_repo(tmp_path)
-        wt = _setup_worktree("a", "b/a", "main", tmp_path)
+        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1")
 
         # Simulate a killed attempt that left a commit on the branch.
         (wt / "leftover.txt").write_text("dirty state from killed attempt")
@@ -592,7 +592,9 @@ class TestWorktreeTimeoutHygiene:
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text("")
 
-        wt2 = _setup_worktree("a", "b/a", "main", tmp_path, fresh_from_base=True)
+        wt2 = _setup_worktree(
+            "a", "b/a", "main", tmp_path, "run1", fresh_from_base=True,
+        )
 
         new_tip = subprocess.run(
             ["git", "rev-parse", "b/a"], cwd=tmp_path,
@@ -606,7 +608,7 @@ class TestWorktreeTimeoutHygiene:
         """Without fresh_from_base the existing branch is reused (the
         pre-R0.1 retry behavior for non-timeout failures is preserved)."""
         _init_repo(tmp_path)
-        wt = _setup_worktree("a", "b/a", "main", tmp_path)
+        wt = _setup_worktree("a", "b/a", "main", tmp_path, "run1")
         (wt / "progress.txt").write_text("legit progress")
         _git("add", "-A", cwd=wt)
         _git("commit", "-q", "-m", "progress", cwd=wt)
@@ -615,7 +617,7 @@ class TestWorktreeTimeoutHygiene:
             capture_output=True, text=True, timeout=30,
         ).stdout.strip()
 
-        _setup_worktree("a", "b/a", "main", tmp_path)
+        _setup_worktree("a", "b/a", "main", tmp_path, "run1")
 
         new_tip = subprocess.run(
             ["git", "rev-parse", "b/a"], cwd=tmp_path,
@@ -712,7 +714,9 @@ class TestSchedulerBackstop:
         assert comp.status == "failed"
         assert comp.error == "component timeout"
         # Leaked worker's worktree is kept, not ripped out from under it.
-        assert (tmp_path / ".ralph" / "worktrees" / "a").exists()
+        # R0.5: worktrees are keyed .ralph/worktrees/<run_id>/<component_id>
+        leaked = list((tmp_path / ".ralph" / "worktrees").glob("*/a"))
+        assert leaked, "leaked worker's worktree was removed"
 
 
 class TestTimeoutConfigLoading:
