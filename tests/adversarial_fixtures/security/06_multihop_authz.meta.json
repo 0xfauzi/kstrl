@@ -1,0 +1,23 @@
+{
+  "fixture_id": "sec-06-multihop-authz",
+  "role": "security",
+  "difficulty": "hard",
+  "prd": "### US-014: Comment moderation\n- A post author can delete any comment that belongs to their own post.\n- A user who is neither the post author nor the comment author receives 403.\n- Deleting a comment whose post_id does not match the path post_id returns 404 (the comment does not belong to that post).",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (14 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "3 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "3 failure modes listed"}
+  ],
+  "must_detect": {
+    "category_any_of": ["authz_bypass", "auth_bypass"],
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/blog/moderation.py"
+  },
+  "owasp": "A01:2021 - Broken Access Control",
+  "cwe": "CWE-639",
+  "description": "remove_comment authorizes on the WRONG object. It loads the post from the path post_id and checks post.author_id == actor.user_id, but then deletes comment_id without ever verifying comment.post_id == post_id. Any user who authors a single post can pass their own post_id plus an arbitrary victim comment_id and delete any comment on the platform. The permission check is present and looks correct at a glance; the multi-hop link between the authorized object (post) and the acted-on object (comment) is missing.",
+  "why_hard": "The permission check exists and reads as correct. Catching this requires noticing that comment_id is fetched independently and never re-bound to the authorized post, not that a check is absent.",
+  "expected_fix": "After loading the comment, require comment.post_id == post_id (return NotFound otherwise) so the authorized post and the acted-on comment are the same object graph."
+}

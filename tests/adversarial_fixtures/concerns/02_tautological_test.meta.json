@@ -2,6 +2,13 @@
   "fixture_id": "concern-02-tautological-test",
   "role": "reviewer",
   "prd": "Add an `add(a: int, b: int) -> int` helper to the calculator module. Tests pass.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (2 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "2 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "1 failure modes listed"}
+  ],
   "must_detect": {
     "category": "test_quality",
     "severity_at_least": "fail",

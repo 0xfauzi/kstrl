@@ -1,6 +1,14 @@
 {
   "fixture_id": "sec-01-sql-injection",
   "role": "security",
+  "prd": "### US-001: User lookup\n- find_user_by_name(conn, name) returns the (id, email, role) of the user with that display name, or None.\n- Names are user-supplied search input.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (4 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
   "must_detect": {
     "category": "injection",
     "severity_at_least": "high",

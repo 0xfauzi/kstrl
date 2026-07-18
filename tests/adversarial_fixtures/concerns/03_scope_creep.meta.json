@@ -2,6 +2,13 @@
   "fixture_id": "concern-03-scope-creep",
   "role": "reviewer",
   "prd": "Add a `greet(name: str) -> str` function to src/sandbox/greeter.py that returns 'Hello, {name}!'.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (3 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "2 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "1 failure modes listed"}
+  ],
   "must_detect": {
     "category": "scope_creep",
     "severity_at_least": "advisory",

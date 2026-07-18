@@ -1,0 +1,20 @@
+{
+  "fixture_id": "sec-neg-02-constant-time-compare",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-055: Password reset tokens\n- Reset tokens are unguessable and single-use.\n- Tokens are stored hashed so a database leak does not expose usable tokens.\n- Token verification must not leak matching progress through timing.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (8 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["broken_crypto", "information_disclosure", "predictable_randomness", "auth_bypass"],
+    "severity_at_least": "medium"
+  },
+  "description": "This is the correct counterpart to sec-09 (timing oracle) and sec-04 (predictable token). Tokens come from secrets.token_urlsafe (CSPRNG), are stored as a SHA-256 digest, and are verified with hmac.compare_digest (constant-time). Nothing here is a vulnerability. A reviewer that pattern-matches on 'token comparison' or 'hashlib' without noting compare_digest / secrets would false-positive.",
+  "why_clean": "secrets.token_urlsafe is a CSPRNG; hmac.compare_digest is constant-time; SHA-256 is used for at-rest hashing of a high-entropy value (not for passwords), which is appropriate.",
+  "trap": "Sits adjacent to two real planted bugs; distinguishing it requires recognizing the correct primitives rather than the surface topic (tokens + hashing + comparison)."
+}

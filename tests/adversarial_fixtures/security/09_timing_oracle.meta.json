@@ -1,0 +1,23 @@
+{
+  "fixture_id": "sec-09-timing-oracle",
+  "role": "security",
+  "difficulty": "hard",
+  "prd": "### US-042: Webhook signature verification\n- Every inbound webhook is HMAC-SHA256 signed; requests with an invalid signature are rejected before dispatch.\n- The signing secret is shared out-of-band with the sender.\n- A missing signature header is rejected.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (7 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "2 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_detect": {
+    "category_any_of": ["broken_crypto", "information_disclosure", "auth_bypass"],
+    "severity_at_least": "medium",
+    "evidence_path_contains": "src/webhooks/signing.py"
+  },
+  "owasp": "A02:2021 - Cryptographic Failures",
+  "cwe": "CWE-208",
+  "description": "Timing side channel in signature verification. The HMAC itself is computed correctly with hmac.new, but _secure_equals compares the expected and provided signatures with an early-return loop: it returns on the first differing character (and on length mismatch). Comparison time is proportional to the length of the matching prefix, so an attacker can recover a valid signature byte-by-byte by measuring response latency, then forge webhook events. The helper is named _secure_equals, which invites the reviewer to trust it.",
+  "why_hard": "The cryptographic primitive (HMAC-SHA256) is correct and the comparison is wrapped in a helper whose name asserts safety. The flaw is that the comparison is data-dependent in time; there is no textbook-bad token or literal to grep for. Catching it requires knowing that secret comparisons must be constant-time.",
+  "expected_fix": "Replace _secure_equals with hmac.compare_digest(expected, provided), which runs in time independent of the matching prefix length."
+}

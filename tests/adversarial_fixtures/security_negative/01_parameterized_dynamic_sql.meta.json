@@ -1,0 +1,20 @@
+{
+  "fixture_id": "sec-neg-01-parameterized-dynamic-sql",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-050: Product search\n- Clients filter products by an allowlisted set of fields (category, brand, in_stock).\n- Unknown filter fields are ignored rather than erroring.\n- Results are capped by a caller-supplied limit.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (12 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "3 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["injection"],
+    "severity_at_least": "medium"
+  },
+  "description": "Dynamic SQL that LOOKS injectable but is not. The WHERE clause is assembled at runtime, which superficially resembles the sec-01 injection fixture, but the column names are chosen only from the _FILTERABLE allowlist (constant strings, never user input) and every value is passed as a bound parameter. A trigger-happy reviewer may flag 'string-built SQL' as injection; that is a false positive.",
+  "why_clean": "The only interpolated tokens are allowlisted constant column names and '?' placeholders. User-controlled values reach the driver exclusively via the params list.",
+  "trap": "The f-string SELECT and the AND-joined clause list mimic the shape of an injection sink without being one."
+}

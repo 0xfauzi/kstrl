@@ -1,6 +1,14 @@
 {
   "fixture_id": "sec-02-command-injection",
   "role": "security",
+  "prd": "### US-005: Directory backup\n- archive_directory(path, output) tar-gzips a directory to an output file and returns the process exit code.\n- path and output originate from an admin-triggered backup request.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (3 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
   "must_detect": {
     "category": "injection",
     "severity_at_least": "high",

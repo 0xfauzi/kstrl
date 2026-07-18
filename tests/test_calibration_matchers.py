@@ -31,8 +31,12 @@ from ralph_py.review import (
 from ralph_py.security import SecurityFinding, SecurityMode, SecurityResult
 from tests.test_calibration import (
     architect_caught,
+    build_fp_summary,
+    render_verification,
     reviewer_caught,
+    reviewer_false_positive,
     security_caught,
+    security_false_positive,
 )
 
 
@@ -509,3 +513,320 @@ class TestKindSynonyms:
                 f"synonym group {sorted(group)} contains kinds outside "
                 f"the DECOMPOSE taxonomy {sorted(_VALID_KINDS)}"
             )
+
+
+# ---------------------------------------------------------------------------
+# category_any_of (R5.2): subtle fixtures whose finding could be labelled
+# under more than one taxonomy bucket
+# ---------------------------------------------------------------------------
+
+
+class TestCategoryAnyOf:
+    def test_security_matches_any_listed_category(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="information_disclosure", severity="high",
+                location="src/webhooks/signing.py:20", explanation="timing",
+            ),
+        )
+        caught, detail = security_caught(result, {
+            "category_any_of": ["broken_crypto", "information_disclosure"],
+            "severity_at_least": "medium",
+        })
+        assert caught
+        assert "information_disclosure" in detail
+
+    def test_security_rejects_category_outside_the_list(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="xss", severity="critical",
+                location="src/webhooks/signing.py:20", explanation="...",
+            ),
+        )
+        caught, _ = security_caught(result, {
+            "category_any_of": ["broken_crypto", "information_disclosure"],
+            "severity_at_least": "medium",
+        })
+        assert not caught
+
+    def test_security_any_of_still_honors_severity_floor(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="broken_crypto", severity="low",
+                location="src/webhooks/signing.py:20", explanation="...",
+            ),
+        )
+        caught, _ = security_caught(result, {
+            "category_any_of": ["broken_crypto", "information_disclosure"],
+            "severity_at_least": "high",
+        })
+        assert not caught
+
+    def test_security_any_of_still_honors_path_filter(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="broken_crypto", severity="high",
+                location="src/other.py:1", explanation="...",
+            ),
+        )
+        caught, _ = security_caught(result, {
+            "category_any_of": ["broken_crypto"],
+            "severity_at_least": "high",
+            "evidence_path_contains": "src/webhooks/signing.py",
+        })
+        assert not caught
+
+    def test_reviewer_matches_any_listed_category(self) -> None:
+        result = _review_result(
+            ReviewConcern(
+                category="scope_creep", severity="fail",
+                location="src/x.py:1", explanation="...",
+            ),
+        )
+        caught, _ = reviewer_caught(result, {
+            "category_any_of": ["dead_code", "scope_creep"],
+            "severity_at_least": "fail",
+        })
+        assert caught
+
+
+# ---------------------------------------------------------------------------
+# False-positive matchers (R5.2 negatives)
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityFalsePositive:
+    def test_forbidden_category_at_floor_is_fp(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="injection", severity="high",
+                location="src/search/query.py:40", explanation="...",
+            ),
+        )
+        is_fp, detail = security_false_positive(result, {
+            "categories": ["injection"],
+            "severity_at_least": "medium",
+        })
+        assert is_fp
+        assert "injection" in detail
+
+    def test_forbidden_category_below_floor_is_not_fp(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="injection", severity="low",
+                location="src/search/query.py:40", explanation="nit",
+            ),
+        )
+        is_fp, _ = security_false_positive(result, {
+            "categories": ["injection"],
+            "severity_at_least": "high",
+        })
+        assert not is_fp
+
+    def test_non_forbidden_category_is_not_fp(self) -> None:
+        result = _security_result(
+            SecurityFinding(
+                category="other", severity="critical",
+                location="src/search/query.py:40", explanation="style",
+            ),
+        )
+        is_fp, _ = security_false_positive(result, {
+            "categories": ["injection"],
+            "severity_at_least": "medium",
+        })
+        assert not is_fp
+
+    def test_empty_findings_is_not_fp(self) -> None:
+        is_fp, detail = security_false_positive(_security_result(), {
+            "categories": ["injection"],
+            "severity_at_least": "medium",
+        })
+        assert not is_fp
+        assert detail == ""
+
+    def test_default_floor_is_high(self) -> None:
+        """With no severity_at_least, a medium forbidden finding is below
+        the default 'high' floor and does not count."""
+        result = _security_result(
+            SecurityFinding(
+                category="injection", severity="medium",
+                location="src/x.py:1", explanation="...",
+            ),
+        )
+        assert not security_false_positive(result, {"categories": ["injection"]})[0]
+
+
+class TestReviewerFalsePositive:
+    def test_blocking_forbidden_concern_is_fp(self) -> None:
+        result = _review_result(
+            ReviewConcern(
+                category="dead_code", severity="fail",
+                location="src/sandbox/config.py:15", explanation="...",
+            ),
+        )
+        is_fp, detail = reviewer_false_positive(result, {
+            "categories": ["dead_code", "scope_creep"],
+            "severity_at_least": "fail",
+        })
+        assert is_fp
+        assert "dead_code" in detail
+
+    def test_advisory_forbidden_concern_not_fp_when_floor_is_fail(self) -> None:
+        result = _review_result(
+            ReviewConcern(
+                category="dead_code", severity="advisory",
+                location="src/sandbox/config.py:15", explanation="...",
+            ),
+        )
+        is_fp, _ = reviewer_false_positive(result, {
+            "categories": ["dead_code"],
+            "severity_at_least": "fail",
+        })
+        assert not is_fp
+
+    def test_advisory_counts_when_floor_is_not_fail(self) -> None:
+        result = _review_result(
+            ReviewConcern(
+                category="dead_code", severity="advisory",
+                location="src/sandbox/config.py:15", explanation="...",
+            ),
+        )
+        is_fp, _ = reviewer_false_positive(result, {
+            "categories": ["dead_code"],
+            "severity_at_least": "advisory",
+        })
+        assert is_fp
+
+    def test_non_forbidden_concern_not_fp(self) -> None:
+        result = _review_result(
+            ReviewConcern(
+                category="test_quality", severity="fail",
+                location="tests/test_x.py:1", explanation="...",
+            ),
+        )
+        is_fp, _ = reviewer_false_positive(result, {
+            "categories": ["dead_code"],
+            "severity_at_least": "fail",
+        })
+        assert not is_fp
+
+    def test_empty_concerns_not_fp(self) -> None:
+        is_fp, detail = reviewer_false_positive(_review_result(), {
+            "categories": ["dead_code"],
+            "severity_at_least": "fail",
+        })
+        assert not is_fp
+        assert detail == ""
+
+
+# ---------------------------------------------------------------------------
+# FP summary math (R5.2): per-run negative records -> per-role fp_rate.
+# Mirrors the detection side: a fixture is a false positive by majority
+# vote over its completed runs; role fp_rate = fp_fixtures / total.
+# ---------------------------------------------------------------------------
+
+
+def _fp_runs(role: str, fixture_id: str, flags: list[bool],
+             errors: list[bool] | None = None) -> list[dict]:
+    errs = errors or [False] * len(flags)
+    return [
+        {"role": role, "fixture_id": fixture_id,
+         "false_positive": f, "error": e, "detail": ""}
+        for f, e in zip(flags, errs, strict=True)
+    ]
+
+
+class TestBuildFpSummary:
+    def test_majority_flag_marks_fixture_false_positive(self) -> None:
+        records = _fp_runs("security_negative", "n1", [True, True, False])
+        summary = build_fp_summary(records)
+        role = summary["roles"]["security_negative"]
+        assert role["fixtures_total"] == 1
+        assert role["fixtures_false_positive"] == 1
+        assert role["fp_rate"] == 1.0
+        fx = role["fixtures"][0]
+        assert fx["runs_flagged"] == 2
+        assert fx["false_positive"] is True
+
+    def test_minority_flag_is_not_false_positive(self) -> None:
+        records = _fp_runs("security_negative", "n1", [True, False, False])
+        role = build_fp_summary(records)["roles"]["security_negative"]
+        assert role["fixtures_false_positive"] == 0
+        assert role["fp_rate"] == 0.0
+
+    def test_fp_rate_is_fraction_of_fixtures(self) -> None:
+        records = (
+            _fp_runs("security_negative", "n1", [True, True])
+            + _fp_runs("security_negative", "n2", [False, False])
+            + _fp_runs("security_negative", "n3", [False, False])
+            + _fp_runs("security_negative", "n4", [False, False])
+        )
+        role = build_fp_summary(records)["roles"]["security_negative"]
+        assert role["fixtures_total"] == 4
+        assert role["fixtures_false_positive"] == 1
+        assert role["fp_rate"] == 0.25
+
+    def test_errored_runs_excluded_from_denominator(self) -> None:
+        # one real flag, two infra errors -> completed=1, flagged=1 -> FP
+        records = _fp_runs(
+            "reviewer_negative", "n1", [True, False, False],
+            errors=[False, True, True],
+        )
+        role = build_fp_summary(records)["roles"]["reviewer_negative"]
+        fx = role["fixtures"][0]
+        assert fx["runs_errored"] == 2
+        assert fx["fp_consistency"] == 1.0
+        assert fx["false_positive"] is True
+
+    def test_all_errored_fixture_is_not_false_positive(self) -> None:
+        records = _fp_runs(
+            "reviewer_negative", "n1", [False, False],
+            errors=[True, True],
+        )
+        role = build_fp_summary(records)["roles"]["reviewer_negative"]
+        assert role["fixtures_false_positive"] == 0
+
+    def test_meets_threshold_flag(self) -> None:
+        clean = build_fp_summary(
+            _fp_runs("n", "a", [False, False])
+            + _fp_runs("n", "b", [False, False])
+        )["roles"]["n"]
+        assert clean["fp_rate"] == 0.0
+        assert clean["meets_threshold"] is True
+
+        noisy = build_fp_summary(
+            _fp_runs("n", "a", [True, True])
+            + _fp_runs("n", "b", [True, True])
+        )["roles"]["n"]
+        assert noisy["fp_rate"] == 1.0
+        assert noisy["meets_threshold"] is False
+
+    def test_empty_records_yield_empty_roles(self) -> None:
+        summary = build_fp_summary([])
+        assert summary["roles"] == {}
+        assert "fp_rate_max" in summary
+
+
+# ---------------------------------------------------------------------------
+# Verification rendering (R5.2 context realism)
+# ---------------------------------------------------------------------------
+
+
+class TestRenderVerification:
+    def test_default_when_absent_is_production_shaped(self) -> None:
+        rendered = render_verification({})
+        lines = rendered.splitlines()
+        assert lines
+        assert all(line.startswith("- ") for line in lines)
+        assert any("test_suite: PASS - " in line for line in lines)
+        # The old stub used check names the harness never emits.
+        assert "tests: PASS" not in rendered
+
+    def test_uses_fixture_supplied_checks(self) -> None:
+        meta = {"verification": [
+            {"name": "test_suite", "passed": False, "message": "2 failed"},
+            {"name": "typecheck", "passed": True, "message": "ok"},
+        ]}
+        rendered = render_verification(meta)
+        assert "- test_suite: FAIL - 2 failed" in rendered
+        assert "- typecheck: PASS - ok" in rendered

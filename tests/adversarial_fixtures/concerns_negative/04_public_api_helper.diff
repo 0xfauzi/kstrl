@@ -1,0 +1,41 @@
+diff --git a/src/textkit/__init__.py b/src/textkit/__init__.py
+index 3c4d5e6..4d5e6f7 100644
+--- a/src/textkit/__init__.py
++++ b/src/textkit/__init__.py
+@@ -1,5 +1,7 @@
+ """textkit public API."""
+
+ from __future__ import annotations
+
+-__all__ = ["truncate"]
++from src.textkit.slug import slugify
++
++__all__ = ["slugify", "truncate"]
+diff --git a/src/textkit/slug.py b/src/textkit/slug.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/textkit/slug.py
+@@ -0,0 +1,29 @@
++"""URL slug helpers (public API)."""
++
++from __future__ import annotations
++
++import re
++import unicodedata
++
++_NON_WORD = re.compile(r"[^a-z0-9]+")
++
++
++def slugify(text: str) -> str:
++    """Return a lowercase, hyphen-separated slug for ``text``.
++
++    Accents are stripped, runs of non-word characters collapse to a
++    single hyphen, and leading/trailing hyphens are trimmed. Exported
++    as part of the textkit public API for downstream callers.
++    """
++    normalized = unicodedata.normalize("NFKD", text)
++    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
++    lowered = ascii_text.lower()
++    hyphenated = _NON_WORD.sub("-", lowered)
++    return hyphenated.strip("-")

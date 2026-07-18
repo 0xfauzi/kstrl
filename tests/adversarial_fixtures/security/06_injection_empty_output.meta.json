@@ -1,6 +1,7 @@
 {
   "fixture_id": "sec-06-injection-empty-output",
   "role": "security",
+  "prd": "### US-025: Session load\n- load_session(raw) deserializes a client-supplied session blob and returns the session dict.\n- Sessions are issued by the server and returned by the client on each request.",
   "must_detect": {
     "category": "unsafe_deserialization",
     "severity_at_least": "high",

@@ -1,0 +1,20 @@
+{
+  "fixture_id": "rev-neg-04-public-api-helper",
+  "role": "reviewer",
+  "kind": "negative",
+  "prd": "### US-095: Public slugify helper\n- Add slugify(text) to the textkit public API (exported via __all__).\n- Slugs are lowercase, accent-stripped, hyphen-separated, with no leading/trailing hyphens.\n- The function is a library entry point; callers live in downstream packages, not in this diff.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (5 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "2 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["dead_code", "unrelated_change"],
+    "severity_at_least": "fail"
+  },
+  "description": "slugify has no caller inside the diff, which superficially resembles dead code. But the PRD explicitly requests it as a public API entry point and the diff exports it via __all__ and the package __init__. Intentional public surface is not dead code. Editing __init__.py to register the export is required, not an unrelated change. A reviewer that flags the uncalled function as dead_code or the __init__ edit as unrelated_change would false-positive.",
+  "why_clean": "Uncalled-within-diff is expected for a library public API; the export wiring (__all__ + __init__ import) demonstrates deliberate public exposure tied to the acceptance criteria.",
+  "trap": "A new function with zero in-diff call sites is the classic dead_code shape, but here the acceptance criterion is 'expose it publicly'."
+}

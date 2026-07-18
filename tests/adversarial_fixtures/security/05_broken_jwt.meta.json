@@ -1,6 +1,14 @@
 {
   "fixture_id": "sec-05-broken-jwt-verify",
   "role": "security",
+  "prd": "### US-020: Session identity from JWT\n- decode_jwt(token) returns the token's claims; get_user_id(token) returns the subject.\n- The token authenticates the caller for subsequent authorization decisions.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (5 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
   "must_detect": {
     "category": "auth_bypass",
     "severity_at_least": "critical",

@@ -1,0 +1,104 @@
+diff --git a/src/projects/validation.py b/src/projects/validation.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/projects/validation.py
+@@ -0,0 +1,33 @@
++"""Input validation for project names."""
++
++from __future__ import annotations
++
++
++class InvalidName(ValueError):
++    """Raised when a project name fails validation."""
++
++
++_MAX_LEN = 80
++_FORBIDDEN = (";", "<", ">", "\n", "\r", "\x00")
++
++
++def normalize_project_name(raw: str) -> str:
++    """Validate and normalize a user-supplied project name.
++
++    Trims surrounding whitespace, enforces a length cap, and rejects
++    control characters and statement separators. Returns the cleaned
++    name ready for storage.
++    """
++    name = raw.strip()
++    if not name:
++        raise InvalidName("project name must not be empty")
++    if len(name) > _MAX_LEN:
++        raise InvalidName(f"project name exceeds {_MAX_LEN} characters")
++    for bad in _FORBIDDEN:
++        if bad in name:
++            raise InvalidName("project name contains a forbidden character")
++    return name
+diff --git a/src/projects/store.py b/src/projects/store.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/projects/store.py
+@@ -0,0 +1,38 @@
++"""Persistence for projects."""
++
++from __future__ import annotations
++
++import sqlite3
++
++from src.projects.validation import normalize_project_name
++
++
++def create_project(conn: sqlite3.Connection, owner_id: int, raw_name: str) -> int:
++    """Create a project, returning its new id.
++
++    The name is normalized on the way in and stored via a bound
++    parameter, so the write path is not injectable.
++    """
++    name = normalize_project_name(raw_name)
++    cur = conn.execute(
++        "INSERT INTO projects (owner_id, name) VALUES (?, ?)",
++        (owner_id, name),
++    )
++    conn.commit()
++    return int(cur.lastrowid or 0)
++
++
++def get_project_name(conn: sqlite3.Connection, project_id: int) -> str | None:
++    row = conn.execute(
++        "SELECT name FROM projects WHERE id = ?", (project_id,)
++    ).fetchone()
++    return None if row is None else str(row[0])
+diff --git a/src/projects/analytics.py b/src/projects/analytics.py
+new file mode 100644
+index 0000000..3c4d5e6
+--- /dev/null
++++ b/src/projects/analytics.py
+@@ -0,0 +1,36 @@
++"""Per-project analytics rollups."""
++
++from __future__ import annotations
++
++import sqlite3
++
++from src.projects.store import get_project_name
++
++
++def rows_for_project(
++    conn: sqlite3.Connection, project_id: int
++) -> list[tuple[str, int]]:
++    """Return (day, hits) rows for a project from the analytics table.
++
++    The analytics table keys rows by the project's display name rather
++    than its id (a legacy schema decision). We look the name up from
++    the projects table and filter on it.
++    """
++    name = get_project_name(conn, project_id)
++    if name is None:
++        return []
++
++    # name came from our own projects table, so we build the filter inline.
++    query = (
++        "SELECT day, hits FROM analytics "
++        f"WHERE label = '{name}' ORDER BY day"
++    )
++    return [(str(r[0]), int(r[1])) for r in conn.execute(query).fetchall()]

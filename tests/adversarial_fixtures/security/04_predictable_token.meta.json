@@ -1,6 +1,14 @@
 {
   "fixture_id": "sec-04-predictable-token",
   "role": "security",
+  "prd": "### US-015: Password-reset tokens\n- generate_reset_token(length) returns a single-use token emailed to the user as a reset link.\n- Tokens must be unguessable by an attacker who has observed prior tokens.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (3 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
   "must_detect": {
     "category": "predictable_randomness",
     "severity_at_least": "high",

@@ -462,7 +462,7 @@ third, all in one measured cycle.
   - Fix matcher brittleness: `must_include_kind` accepts a documented synonym
     map (e.g. `unstated_assumption` ~ `missing_detail`) OR grades kind
     separately from detection so a paraphrased kind is a partial hit, not a miss.
-- [ ] R5.2 (M) **Fixture expansion** [T-cal, research topic 4]
+- [~] R5.2 (M) **Fixture expansion** [T-cal, research topic 4]
   - Hard positives: multi-hop authz bug, second-order injection, TOCTOU race,
     subtle timing oracle: at least 4 that Haiku does NOT trivially catch
     (validated empirically during authoring: if the baseline catches all
@@ -471,6 +471,20 @@ third, all in one measured cycle.
     rate joins detection rate in the report and the thresholds.
   - Context realism: fixtures gain a real PRD and real verification output in
     the harness (replace the all-PASS stub) so measured detection transfers.
+  - STATUS (2026-07-18): fixtures + harness landed on top of R5.1's N-run
+    tooling. 4 hard security positives (`security/06-09`), 4 security negatives
+    (`security_negative/`), 4 reviewer negatives (`concerns_negative/`); real
+    PRD + production-shaped verification on every fixture (all-PASS stub
+    removed via `render_verification`); matchers gained `category_any_of` + FP
+    variants. Hard positives are recorded under role `security_hard` and
+    MEASURED, not gated (a miss is the hardness signal); negatives feed a
+    `false_positive_analysis` block (per-role `fp_rate` vs `FP_RATE_MAX`)
+    injected into the R5.1 v2 report test-side (ralph_py/calibration untouched,
+    out of scope). Structural + FP-math tests are green with zero LLM calls.
+    `[~]` PENDING the empirical ACCEPTANCE check: the user runs calibration
+    (commands in the PR body) and confirms the baseline does NOT trivially
+    catch all 4 hard positives, i.e. `summary.security_hard.detection_rate
+    < 1.0`. If it is 1.0, the fixtures are too easy and need another iteration.
 - [~] R5.3 (M) **The prompt-edit batch** (one calibration cycle; H2 + H3 apply)
   NOTE: code + prompt edits landed (all four prompts bumped + snapshotted;
   per-run delimiters unit-tested; injection-efficacy fixtures added). `[~]`

@@ -1,0 +1,59 @@
+diff --git a/src/sandbox/mathops.py b/src/sandbox/mathops.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/mathops.py
+@@ -0,0 +1,18 @@
++"""Small arithmetic helpers."""
++
++from __future__ import annotations
++
++
++def add(a: int, b: int) -> int:
++    """Return the sum of two integers."""
++    return a + b
++
++
++def divide(a: int, b: int) -> float:
++    """Return a / b as a float. Raises ZeroDivisionError on b == 0."""
++    if b == 0:
++        raise ZeroDivisionError("division by zero")
++    return a / b
+diff --git a/tests/test_mathops.py b/tests/test_mathops.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/tests/test_mathops.py
+@@ -0,0 +1,34 @@
++"""Tests for mathops."""
++
++from __future__ import annotations
++
++import pytest
++
++from src.sandbox.mathops import add, divide
++
++
++def test_add_positive() -> None:
++    assert add(2, 3) == 5
++
++
++def test_add_negative_operands() -> None:
++    assert add(-4, 1) == -3
++
++
++def test_add_identity() -> None:
++    assert add(7, 0) == 7
++
++
++def test_divide_exact() -> None:
++    assert divide(9, 3) == 3.0
++
++
++def test_divide_fractional() -> None:
++    assert divide(1, 4) == 0.25
++
++
++def test_divide_by_zero_raises() -> None:
++    with pytest.raises(ZeroDivisionError):
++        divide(1, 0)

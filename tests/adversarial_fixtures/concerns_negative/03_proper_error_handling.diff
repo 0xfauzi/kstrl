@@ -1,0 +1,47 @@
+diff --git a/src/sandbox/records.py b/src/sandbox/records.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/records.py
+@@ -0,0 +1,46 @@
++"""Load user records from JSON files."""
++
++from __future__ import annotations
++
++import json
++import logging
++from pathlib import Path
++
++logger = logging.getLogger(__name__)
++
++
++class RecordNotFound(Exception):
++    """Raised when a record file does not exist."""
++
++
++class MalformedRecord(Exception):
++    """Raised when a record file is not valid JSON."""
++
++
++def load_user_record(path: Path) -> dict:
++    """Load and return the user record stored at ``path``.
++
++    Raises RecordNotFound if the file is missing and MalformedRecord if
++    the contents are not valid JSON, preserving the underlying cause.
++    """
++    try:
++        text = path.read_text(encoding="utf-8")
++    except FileNotFoundError as exc:
++        raise RecordNotFound(f"no record at {path}") from exc
++
++    try:
++        data = json.loads(text)
++    except json.JSONDecodeError as exc:
++        logger.warning("record %s failed to parse at line %d", path, exc.lineno)
++        raise MalformedRecord(
++            f"record {path} is not valid JSON: {exc.msg}"
++        ) from exc
++
++    if not isinstance(data, dict):
++        raise MalformedRecord(f"record {path} must be a JSON object")
++    return data
