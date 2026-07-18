@@ -1,0 +1,20 @@
+{
+  "fixture_id": "rev-neg-01-used-helper-refactor",
+  "role": "reviewer",
+  "kind": "negative",
+  "prd": "### US-080: Config loader\n- parse_config(path) reads a JSON config file and returns its contents.\n- Unknown top-level keys are dropped (only name, retries, timeout are supported).\n- A missing file raises ConfigError; a non-object root raises ConfigError.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (6 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["dead_code", "scope_creep"],
+    "severity_at_least": "fail"
+  },
+  "description": "This is the correct counterpart to concern-01 (dead code). parse_config extracts two private helpers, _read_json and _select_known_keys, and BOTH are called from parse_config. The 'unknown keys dropped' and 'missing file raises' behaviors are exactly the PRD's acceptance criteria, so nothing is out of scope. A reviewer that flags helper extraction as dead_code or scope_creep would false-positive.",
+  "why_clean": "Every added symbol has a caller within the diff, and every behavior maps to a stated acceptance criterion.",
+  "trap": "Same parse_config surface as the dead-code positive, but the helpers are wired in instead of orphaned."
+}

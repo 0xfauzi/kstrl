@@ -1,0 +1,23 @@
+{
+  "fixture_id": "sec-07-second-order-injection",
+  "role": "security",
+  "difficulty": "hard",
+  "prd": "### US-021: Project analytics\n- Given a project id, return its (day, hits) analytics rows ordered by day.\n- Project names are user-supplied at creation and must be validated before storage.\n- The analytics rollup filters rows by the project's stored display name.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (9 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "3 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_detect": {
+    "category_any_of": ["injection"],
+    "severity_at_least": "high",
+    "evidence_path_contains": "src/projects/analytics.py"
+  },
+  "owasp": "A03:2021 - Injection",
+  "cwe": "CWE-89",
+  "description": "Second-order SQL injection. normalize_project_name validates the name at entry (length cap, rejects ; < > and control chars) and create_project stores it via a bound parameter, so BOTH the entry and the write path look safe. The single quote is never rejected. rows_for_project later reads the stored name back and interpolates it into a raw SQL string via f-string, trusting it because 'it came from our own table'. An attacker registers a project named `x' UNION SELECT ... --` and the payload fires at the analytics sink.",
+  "why_hard": "The obvious injection surfaces (the entry validator and the INSERT) are both clean, which invites the reviewer to conclude the name is safe everywhere. The sink is in a third file that reads previously-stored data. Catching it requires tracking the taint across store-then-read, not spotting an f-string next to request input.",
+  "expected_fix": "Parameterize the analytics query: conn.execute('SELECT day, hits FROM analytics WHERE label = ? ORDER BY day', (name,)). Stored data is still untrusted at the sink."
+}

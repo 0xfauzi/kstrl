@@ -1,0 +1,96 @@
+diff --git a/src/wallet/store.py b/src/wallet/store.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/wallet/store.py
+@@ -0,0 +1,29 @@
++"""Credit-balance persistence."""
++
++from __future__ import annotations
++
++import sqlite3
++
++
++def get_balance(conn: sqlite3.Connection, user_id: int) -> int:
++    row = conn.execute(
++        "SELECT credits FROM wallets WHERE user_id = ?", (user_id,)
++    ).fetchone()
++    if row is None:
++        return 0
++    return int(row[0])
++
++
++def set_balance(conn: sqlite3.Connection, user_id: int, credits: int) -> None:
++    conn.execute(
++        "UPDATE wallets SET credits = ? WHERE user_id = ?",
++        (credits, user_id),
++    )
++    conn.commit()
+diff --git a/src/wallet/redeem.py b/src/wallet/redeem.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/wallet/redeem.py
+@@ -0,0 +1,47 @@
++"""Spend credits from a user's wallet.
++
++This handler is invoked from the threaded HTTP server; a single user
++may have several in-flight requests (mobile app retries, multiple tabs).
++"""
++
++from __future__ import annotations
++
++import sqlite3
++
++from src.wallet.store import get_balance, set_balance
++
++
++class InsufficientCredits(Exception):
++    """Raised when the wallet cannot cover the requested spend."""
++
++
++def spend_credits(
++    conn: sqlite3.Connection, user_id: int, amount: int
++) -> int:
++    """Deduct ``amount`` credits from ``user_id`` and return the new balance.
++
++    Raises InsufficientCredits when the balance would go negative.
++    """
++    if amount <= 0:
++        raise ValueError("amount must be positive")
++
++    balance = get_balance(conn, user_id)
++    if balance < amount:
++        raise InsufficientCredits(
++            f"balance {balance} cannot cover spend {amount}"
++        )
++
++    new_balance = balance - amount
++    set_balance(conn, user_id, new_balance)
++    return new_balance
+diff --git a/src/wallet/routes.py b/src/wallet/routes.py
+new file mode 100644
+index 0000000..3c4d5e6
+--- /dev/null
++++ b/src/wallet/routes.py
+@@ -0,0 +1,26 @@
++"""HTTP glue for the spend endpoint."""
++
++from __future__ import annotations
++
++import sqlite3
++
++from src.wallet.redeem import InsufficientCredits, spend_credits
++
++
++def handle_spend(
++    conn: sqlite3.Connection, session_user_id: int, amount: int
++) -> tuple[int, str]:
++    """Route POST /wallet/spend."""
++    try:
++        new_balance = spend_credits(conn, session_user_id, amount)
++    except ValueError as exc:
++        return 400, str(exc)
++    except InsufficientCredits as exc:
++        return 402, str(exc)
++    return 200, f'{{"balance": {new_balance}}}'

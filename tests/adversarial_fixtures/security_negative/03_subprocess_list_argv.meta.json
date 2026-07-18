@@ -1,0 +1,20 @@
+{
+  "fixture_id": "sec-neg-03-subprocess-list-argv",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-061: Thumbnails\n- Generate a resized thumbnail for an uploaded image using ImageMagick's convert.\n- Requested dimensions are bounded to a sane range.\n- A failed conversion surfaces the tool's stderr.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (10 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["injection"],
+    "severity_at_least": "medium"
+  },
+  "description": "This is the correct counterpart to sec-02 (shell=True command injection). subprocess.run is called with an explicit argument vector and shell=False, so path/dimension values are passed as distinct argv entries and cannot be interpreted as shell metacharacters. Dimensions are range-checked and a timeout is set. A reviewer that flags any subprocess.run over user-influenced paths as command injection would false-positive.",
+  "why_clean": "shell=False + list argv means no shell parsing; there is no string concatenation into a command line. Arguments are data, not shell script.",
+  "trap": "Uses subprocess.run on user-supplied file paths - the same API family as the real shell-injection fixture - but in the safe mode."
+}

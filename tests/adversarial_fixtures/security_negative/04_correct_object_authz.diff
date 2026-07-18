@@ -1,0 +1,67 @@
+diff --git a/src/docs/sharing.py b/src/docs/sharing.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/docs/sharing.py
+@@ -0,0 +1,58 @@
++"""Revoke a share grant on a document."""
++
++from __future__ import annotations
++
++import sqlite3
++from dataclasses import dataclass
++
++
++class NotFound(Exception):
++    """Raised when a document or share grant does not exist."""
++
++
++class Forbidden(Exception):
++    """Raised when the caller may not perform the action."""
++
++
++@dataclass(frozen=True)
++class Document:
++    id: int
++    owner_id: int
++
++
++@dataclass(frozen=True)
++class Share:
++    id: int
++    document_id: int
++    grantee_id: int
++
++
++def revoke_share(
++    conn: sqlite3.Connection, actor_id: int, document_id: int, share_id: int
++) -> None:
++    """Revoke ``share_id`` on ``document_id`` on behalf of ``actor_id``.
++
++    Only the document owner may revoke shares on it.
++    """
++    doc_row = conn.execute(
++        "SELECT id, owner_id FROM documents WHERE id = ?", (document_id,)
++    ).fetchone()
++    if doc_row is None:
++        raise NotFound(f"document {document_id} does not exist")
++    document = Document(id=doc_row[0], owner_id=doc_row[1])
++
++    share_row = conn.execute(
++        "SELECT id, document_id, grantee_id FROM shares WHERE id = ?",
++        (share_id,),
++    ).fetchone()
++    if share_row is None:
++        raise NotFound(f"share {share_id} does not exist")
++    share = Share(id=share_row[0], document_id=share_row[1], grantee_id=share_row[2])
++
++    # Re-bind the acted-on object to the authorized object: the share
++    # must belong to the document named in the path.
++    if share.document_id != document.id:
++        raise NotFound("share does not belong to this document")
++
++    if document.owner_id != actor_id:
++        raise Forbidden("only the document owner may revoke shares")
++
++    conn.execute("DELETE FROM shares WHERE id = ?", (share_id,))
++    conn.commit()

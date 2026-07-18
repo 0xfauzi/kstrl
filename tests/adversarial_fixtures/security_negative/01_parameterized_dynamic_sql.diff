@@ -1,0 +1,50 @@
+diff --git a/src/search/query.py b/src/search/query.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/search/query.py
+@@ -0,0 +1,54 @@
++"""Build a filtered product search query from user-supplied filters."""
++
++from __future__ import annotations
++
++import sqlite3
++from dataclasses import dataclass
++
++# Columns a client is allowed to filter on. The column name itself is
++# never taken from user input - only chosen from this allowlist - so
++# the fragment we concatenate is a constant, and every value is bound.
++_FILTERABLE = {
++    "category": "category",
++    "brand": "brand",
++    "in_stock": "in_stock",
++}
++
++
++@dataclass(frozen=True)
++class Filter:
++    field: str
++    value: str
++
++
++def search_products(
++    conn: sqlite3.Connection, filters: list[Filter], limit: int
++) -> list[tuple[int, str]]:
++    """Return (id, name) rows matching all ``filters``.
++
++    Unknown filter fields are ignored. Values are always passed as bound
++    parameters; only allowlisted, constant column names are interpolated.
++    """
++    clauses: list[str] = []
++    params: list[object] = []
++    for f in filters:
++        column = _FILTERABLE.get(f.field)
++        if column is None:
++            continue
++        clauses.append(f"{column} = ?")
++        params.append(f.value)
++
++    where = " AND ".join(clauses) if clauses else "1 = 1"
++    params.append(int(limit))
++    sql = f"SELECT id, name FROM products WHERE {where} LIMIT ?"
++    return [(int(r[0]), str(r[1])) for r in conn.execute(sql, params).fetchall()]

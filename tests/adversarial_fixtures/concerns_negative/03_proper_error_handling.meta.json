@@ -1,0 +1,20 @@
+{
+  "fixture_id": "rev-neg-03-proper-error-handling",
+  "role": "reviewer",
+  "kind": "negative",
+  "prd": "### US-090: Load user record\n- load_user_record(path) returns the parsed JSON object at path.\n- A missing file raises RecordNotFound; malformed JSON raises MalformedRecord, preserving the underlying cause.\n- A non-object root raises MalformedRecord.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (7 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "3 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["error_handling"],
+    "severity_at_least": "fail"
+  },
+  "description": "Correct, specific error handling. Each except clause names a concrete exception (FileNotFoundError, json.JSONDecodeError), re-raises a domain exception with an informative message, and chains the cause with 'from exc' so no context is lost. Nothing is silenced with a bare except or pass. A reviewer that flags this as poor error handling would false-positive.",
+  "why_clean": "Specific exception types, message-preserving re-raise with cause chaining, no bare except, no silent pass.",
+  "trap": "Multiple try/except blocks and a logger.warning can read as 'error-prone' to a reviewer scanning for exception smells, but the handling is exemplary."
+}

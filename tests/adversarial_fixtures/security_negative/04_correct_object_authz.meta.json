@@ -1,0 +1,20 @@
+{
+  "fixture_id": "sec-neg-04-correct-object-authz",
+  "role": "security",
+  "kind": "negative",
+  "prd": "### US-070: Revoke a document share\n- Only a document's owner may revoke a share grant on that document.\n- Revoking a share whose document_id does not match the path document returns 404.\n- Missing document or share returns 404.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (13 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "1 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "3 failure modes listed"}
+  ],
+  "must_not_flag": {
+    "categories": ["authz_bypass", "auth_bypass"],
+    "severity_at_least": "medium"
+  },
+  "description": "This is the correct counterpart to sec-06 (multi-hop authz). revoke_share loads both objects by id, then re-binds the acted-on object to the authorized one (share.document_id == document.id) BEFORE the owner check and the delete. There is no IDOR: an attacker cannot revoke a share on a document they do not own, and cannot target a share from another document. A reviewer that flags any endpoint taking two path ids as broken access control would false-positive.",
+  "why_clean": "The ownership check is on the correct object graph (document owner), and the child (share) is verified to belong to the authorized parent (document) before the mutation.",
+  "trap": "Same two-id shape and same object-lookup pattern as the real multi-hop authz bug, but with the missing re-bind check present."
+}

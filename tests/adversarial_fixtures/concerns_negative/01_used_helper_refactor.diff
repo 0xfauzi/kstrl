@@ -1,0 +1,45 @@
+diff --git a/src/sandbox/config.py b/src/sandbox/config.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/sandbox/config.py
+@@ -0,0 +1,45 @@
++"""Configuration loading."""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++
++class ConfigError(Exception):
++    """Raised when a config file cannot be loaded."""
++
++
++_KNOWN_KEYS = ("name", "retries", "timeout")
++
++
++def _read_json(path: Path) -> dict:
++    """Read and parse a JSON object from ``path``."""
++    try:
++        text = path.read_text(encoding="utf-8")
++    except FileNotFoundError as exc:
++        raise ConfigError(f"config file not found: {path}") from exc
++    return json.loads(text)
++
++
++def _select_known_keys(raw: dict) -> dict:
++    """Drop keys that are not part of the supported schema."""
++    return {k: raw[k] for k in _KNOWN_KEYS if k in raw}
++
++
++def parse_config(path: Path) -> dict:
++    """Read a JSON config file and return its supported contents.
++
++    Unknown top-level keys are dropped. A missing file raises
++    ConfigError.
++    """
++    raw = _read_json(path)
++    if not isinstance(raw, dict):
++        raise ConfigError("config root must be a JSON object")
++    return _select_known_keys(raw)

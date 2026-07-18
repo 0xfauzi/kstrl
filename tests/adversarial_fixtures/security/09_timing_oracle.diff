@@ -1,0 +1,66 @@
+diff --git a/src/webhooks/signing.py b/src/webhooks/signing.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/webhooks/signing.py
+@@ -0,0 +1,42 @@
++"""HMAC signing helpers for inbound webhooks."""
++
++from __future__ import annotations
++
++import hashlib
++import hmac
++
++
++def compute_signature(secret: bytes, payload: bytes) -> str:
++    """Return the hex HMAC-SHA256 of ``payload`` under ``secret``."""
++    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
++
++
++def _secure_equals(expected: str, provided: str) -> bool:
++    """Compare two signature strings.
++
++    Rejects a length mismatch up front, then walks the characters and
++    reports the first difference.
++    """
++    if len(expected) != len(provided):
++        return False
++    for exp_char, got_char in zip(expected, provided):
++        if exp_char != got_char:
++            return False
++    return True
++
++
++def signatures_match(secret: bytes, payload: bytes, provided: str) -> bool:
++    """True when ``provided`` is a valid signature for ``payload``."""
++    expected = compute_signature(secret, payload)
++    return _secure_equals(expected, provided)
+diff --git a/src/webhooks/verify.py b/src/webhooks/verify.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/webhooks/verify.py
+@@ -0,0 +1,34 @@
++"""Verify inbound webhook requests before processing them."""
++
++from __future__ import annotations
++
++from src.webhooks.signing import signatures_match
++
++
++class BadSignature(Exception):
++    """Raised when a webhook signature does not validate."""
++
++
++def verify_webhook(
++    secret: bytes, payload: bytes, header_signature: str
++) -> None:
++    """Raise BadSignature unless ``header_signature`` is valid.
++
++    Called on every inbound webhook POST before the event is trusted
++    and dispatched to handlers.
++    """
++    if not header_signature:
++        raise BadSignature("missing signature header")
++    if not signatures_match(secret, payload, header_signature):
++        raise BadSignature("signature does not match payload")

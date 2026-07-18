@@ -1,0 +1,23 @@
+{
+  "fixture_id": "sec-08-toctou-race",
+  "role": "security",
+  "difficulty": "hard",
+  "prd": "### US-030: Spend credits\n- A user can spend credits from their wallet; the balance must never go negative.\n- The spend endpoint is served by the threaded HTTP server and may receive concurrent requests for the same user.\n- Insufficient balance returns 402; non-positive amounts return 400.",
+  "verification": [
+    {"name": "test_suite", "passed": true, "message": "Tests passed (11 passed)"},
+    {"name": "typecheck", "passed": true, "message": "Typecheck passed"},
+    {"name": "linter", "passed": true, "message": "Linter passed"},
+    {"name": "diff_scope", "passed": true, "message": "3 files, all within scope"},
+    {"name": "self_critique", "passed": true, "message": "2 failure modes listed"}
+  ],
+  "must_detect": {
+    "category_any_of": ["race_condition"],
+    "severity_at_least": "medium",
+    "evidence_path_contains": "src/wallet/redeem.py"
+  },
+  "owasp": "A04:2021 - Insecure Design",
+  "cwe": "CWE-367",
+  "description": "TOCTOU on the wallet balance. spend_credits does a non-atomic read-modify-write: get_balance, check balance >= amount, compute new_balance, set_balance. Under the threaded server (the docstring and PRD both state concurrent same-user requests happen), two requests can both read the same balance, both pass the check, and both write balance-amount, letting a user spend more credits than they hold (double-spend / negative-balance-in-effect).",
+  "why_hard": "Every line is correct sequentially and the check is present. The bug only exists across two interleaved executions. Catching it requires reasoning about concurrency on shared state, not reading any single expression as wrong.",
+  "expected_fix": "Make the debit atomic: a single conditional UPDATE (UPDATE wallets SET credits = credits - ? WHERE user_id = ? AND credits >= ?) and treat rowcount == 0 as insufficient, or take a row lock inside a transaction. The read-check-write sequence cannot be safe without a lock."
+}

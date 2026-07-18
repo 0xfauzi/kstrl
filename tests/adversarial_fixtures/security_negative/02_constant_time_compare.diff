@@ -1,0 +1,40 @@
+diff --git a/src/auth/reset_token.py b/src/auth/reset_token.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/auth/reset_token.py
+@@ -0,0 +1,44 @@
++"""Password-reset token generation and verification."""
++
++from __future__ import annotations
++
++import hashlib
++import hmac
++import secrets
++
++_TOKEN_BYTES = 32
++
++
++def issue_token() -> str:
++    """Return a fresh, unguessable reset token (URL-safe)."""
++    return secrets.token_urlsafe(_TOKEN_BYTES)
++
++
++def _digest(token: str) -> str:
++    """Hash a token for at-rest storage so a DB leak is not usable."""
++    return hashlib.sha256(token.encode("utf-8")).hexdigest()
++
++
++def store_digest(token: str) -> str:
++    """Return the value to persist for ``token``."""
++    return _digest(token)
++
++
++def token_is_valid(presented: str, stored_digest: str) -> bool:
++    """Return True when ``presented`` hashes to ``stored_digest``.
++
++    The comparison is constant-time so verification latency cannot leak
++    how many leading characters of the digest matched.
++    """
++    candidate = _digest(presented)
++    return hmac.compare_digest(candidate, stored_digest)

@@ -1,0 +1,136 @@
+diff --git a/src/blog/repository.py b/src/blog/repository.py
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/src/blog/repository.py
+@@ -0,0 +1,44 @@
++"""Data-access helpers for posts and comments."""
++
++from __future__ import annotations
++
++import sqlite3
++from dataclasses import dataclass
++
++
++@dataclass(frozen=True)
++class Post:
++    id: int
++    author_id: int
++    title: str
++
++
++@dataclass(frozen=True)
++class Comment:
++    id: int
++    post_id: int
++    author_id: int
++    body: str
++
++
++def get_post(conn: sqlite3.Connection, post_id: int) -> Post | None:
++    row = conn.execute(
++        "SELECT id, author_id, title FROM posts WHERE id = ?", (post_id,)
++    ).fetchone()
++    if row is None:
++        return None
++    return Post(id=row[0], author_id=row[1], title=row[2])
++
++
++def get_comment(conn: sqlite3.Connection, comment_id: int) -> Comment | None:
++    row = conn.execute(
++        "SELECT id, post_id, author_id, body FROM comments WHERE id = ?",
++        (comment_id,),
++    ).fetchone()
++    if row is None:
++        return None
++    return Comment(id=row[0], post_id=row[1], author_id=row[2], body=row[3])
++
++
++def delete_comment(conn: sqlite3.Connection, comment_id: int) -> None:
++    conn.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
++    conn.commit()
+diff --git a/src/blog/moderation.py b/src/blog/moderation.py
+new file mode 100644
+index 0000000..2b3c4d5
+--- /dev/null
++++ b/src/blog/moderation.py
+@@ -0,0 +1,52 @@
++"""Comment moderation service.
++
++A post author may remove comments on their own post (US-014).
++"""
++
++from __future__ import annotations
++
++import sqlite3
++from dataclasses import dataclass
++
++from src.blog.repository import delete_comment, get_comment, get_post
++
++
++class NotFound(Exception):
++    """Raised when a post or comment does not exist."""
++
++
++class Forbidden(Exception):
++    """Raised when the caller may not perform the action."""
++
++
++@dataclass(frozen=True)
++class Actor:
++    user_id: int
++
++
++def remove_comment(
++    conn: sqlite3.Connection,
++    actor: Actor,
++    post_id: int,
++    comment_id: int,
++) -> None:
++    """Delete ``comment_id`` from ``post_id`` on behalf of ``actor``.
++
++    Only the author of the post may moderate comments on it.
++    """
++    post = get_post(conn, post_id)
++    if post is None:
++        raise NotFound(f"post {post_id} does not exist")
++
++    comment = get_comment(conn, comment_id)
++    if comment is None:
++        raise NotFound(f"comment {comment_id} does not exist")
++
++    # Only the post author may moderate discussion on their post.
++    if post.author_id != actor.user_id:
++        raise Forbidden("only the post author may remove comments")
++
++    delete_comment(conn, comment_id)
+diff --git a/src/blog/routes.py b/src/blog/routes.py
+new file mode 100644
+index 0000000..3c4d5e6
+--- /dev/null
++++ b/src/blog/routes.py
+@@ -0,0 +1,29 @@
++"""HTTP glue for the moderation endpoint."""
++
++from __future__ import annotations
++
++import sqlite3
++
++from src.blog.moderation import Actor, Forbidden, NotFound, remove_comment
++
++
++def handle_delete_comment(
++    conn: sqlite3.Connection,
++    session_user_id: int,
++    post_id: int,
++    comment_id: int,
++) -> tuple[int, str]:
++    """Route DELETE /posts/<post_id>/comments/<comment_id>."""
++    actor = Actor(user_id=session_user_id)
++    try:
++        remove_comment(conn, actor, post_id, comment_id)
++    except NotFound as exc:
++        return 404, str(exc)
++    except Forbidden as exc:
++        return 403, str(exc)
++    return 204, ""
