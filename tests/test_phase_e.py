@@ -127,7 +127,9 @@ class TestE4BudgetCap:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.run_review", return_value=passing_review,
-        ) as mock_review:
+        ) as mock_review, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             run_factory(
                 manifest, config, self._base_config(root),
                 PlainUI(no_color=True), root,
@@ -164,7 +166,9 @@ class TestE4BudgetCap:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.run_review", return_value=passing_review,
-        ) as mock_review:
+        ) as mock_review, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             run_factory(
                 manifest, config, self._base_config(root),
                 PlainUI(no_color=True), root,
@@ -228,7 +232,9 @@ class TestE6HitlCheckpoint:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
             "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.pr.is_gh_available", return_value=False):
+        ), patch(
+            "ralph_py.pr.is_gh_available", return_value=False,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, base, PlainUI(no_color=True), tmp_path,
             )

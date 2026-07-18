@@ -23,7 +23,8 @@ from ralph_py.contract import (
     run_contract_testing,
 )
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
-from ralph_py.git import fetch_base_branch, resolve_base_ref
+from ralph_py.findings import Finding
+from ralph_py.git import GitDiffError, fetch_base_branch, resolve_base_ref
 from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
@@ -35,8 +36,13 @@ from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
 from ralph_py.prd import PRD
-from ralph_py.review import ReviewMode, run_review
-from ralph_py.security import SecurityConfig, SecurityMode, run_security_review
+from ralph_py.review import ReviewMode, ReviewResult, run_review
+from ralph_py.security import (
+    SecurityConfig,
+    SecurityMode,
+    SecurityResult,
+    run_security_review,
+)
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.verify import VerifyConfig, run_mechanical_verification
 
@@ -1108,39 +1114,102 @@ def _run_factory_locked(
         # Phase 2.5, and knowledge distillation. Without this each phase
         # would shell out to `git diff` independently, redundantly
         # rebuilding the same patch on every component.
+        #
+        # R1.3 (H-14): a git failure here used to yield "" and all three
+        # consumers silently reviewed an empty diff and passed. Now it
+        # is an infrastructure failure for the component: record the
+        # infra finding, journal it, and retry/fail closed.
         from ralph_py import git as _git_for_diff
-        shared_diff = _git_for_diff.get_diff_content(
-            manifest.base_branch, wt_path,
+        try:
+            shared_diff = _git_for_diff.get_diff_content(
+                manifest.base_branch, wt_path,
+            )
+        except GitDiffError as exc:
+            ui.err(f"  Diff fetch FAILED for {comp_id}: {exc}")
+            comp.findings.append(Finding.infrastructure_error(
+                phase="diff",
+                explanation=(
+                    f"git diff against {manifest.base_branch} failed; "
+                    f"review/security/knowledge cannot run: {exc}"
+                ),
+            ))
+            progress_log.emit(
+                "diff_fetch_failed", comp_id, {"error": str(exc)},
+            )
+            ctx = IterationContext.from_json(comp_result.context_json or "{}")
+            ctx.add_verification_failure(
+                f"git diff against {manifest.base_branch} failed: {exc}"
+            )
+            _retry_or_fail(
+                comp, f"Diff fetch failed (infrastructure): {exc}",
+                ctx.to_json(),
+            )
+            return
+
+        # Forensic home for full raw reviewer output on parse failures
+        # (R1.2; mirrors knowledge.py's _debug/<run_id>/ layout).
+        adversarial_debug_dir = (
+            root_dir / ".ralph" / "debug" / run_id / comp_id
         )
+
+        def _record_phase_skip(phase: str, reason: str) -> None:
+            """R1.2: a phase that never ran must leave a trace in both
+            the findings stream and the journal, so "ran clean" and
+            "never ran" are distinguishable downstream."""
+            comp.findings.append(Finding.phase_skipped(phase, reason))
+            progress_log.emit(
+                "phase_skipped", comp_id,
+                {"phase": phase, "reason": reason},
+            )
 
         # PHASE 2: Second-opinion review
         review_mode = ReviewMode(factory_config.review_mode)
-        if review_mode != ReviewMode.SKIP and not _adversarial_budget_ok():
+        review_skip_reason: str | None = None
+        if review_mode == ReviewMode.SKIP:
+            review_skip_reason = "review disabled (mode=skip)"
+        elif not _adversarial_budget_ok():
             ui.warn(
                 f"  Phase 2 SKIPPED for {comp_id}: "
                 f"adversarial LLM budget ({factory_config.max_adversarial_calls}) exhausted"
+            )
+            review_skip_reason = (
+                f"adversarial LLM budget "
+                f"({factory_config.max_adversarial_calls}) exhausted"
             )
             review_mode = ReviewMode.SKIP
         if review_mode != ReviewMode.SKIP:
             _adversarial_budget_consume()
             ui.info(f"  Phase 2: review ({review_mode.value}) for {comp_id}...")
 
-            review_agent = get_agent(
-                factory_config.review_agent_cmd,
-                factory_config.review_model,
-                None,
-                factory_config.review_agent_type or base_config.agent_type,
-            )
-            review_result = run_review(
-                review_agent,
-                wt_path / comp.prd_path,
-                wt_path,
-                manifest.base_branch,
-                verification,
-                review_mode,
-                ui,
-                diff_content=shared_diff,
-            )
+            # R1.2: wrap the agent-driven work like Phase 2.5 does. A
+            # reviewer crash degrades to a per-component infrastructure
+            # failure; it must never abort the whole factory run.
+            try:
+                review_agent = get_agent(
+                    factory_config.review_agent_cmd,
+                    factory_config.review_model,
+                    None,
+                    factory_config.review_agent_type or base_config.agent_type,
+                )
+                review_result = run_review(
+                    review_agent,
+                    wt_path / comp.prd_path,
+                    wt_path,
+                    manifest.base_branch,
+                    verification,
+                    review_mode,
+                    ui,
+                    diff_content=shared_diff,
+                    debug_dir=adversarial_debug_dir,
+                )
+            except Exception as exc:  # noqa: BLE001
+                ui.warn(f"  Review crashed: {exc}")
+                review_result = ReviewResult(
+                    passed=review_mode != ReviewMode.HARD,
+                    mode=review_mode.value,
+                    overall_notes=f"Review agent crashed: {exc}",
+                    infrastructure_error=True,
+                )
             comp.review_passed = review_result.passed
             # E3: typed findings are the source of truth; the rendered
             # string is a derived view kept for backward-compat consumers.
@@ -1159,18 +1228,26 @@ def _run_factory_locked(
             )
 
             if not review_result.passed:
+                reason = (
+                    "Review infrastructure error"
+                    if review_result.infrastructure_error
+                    else "Review failed"
+                )
                 ui.warn(
                     f"  Phase 2 FAILED for {comp_id}: "
                     f"{review_result.fail_count} failures"
                 )
                 ctx = IterationContext.from_json(comp_result.context_json or "{}")
                 ctx.add_review_finding(review_result.as_retry_context())
-                _retry_or_fail(comp, "Review failed", ctx.to_json())
+                _retry_or_fail(comp, reason, ctx.to_json())
                 return
 
             ui.ok(f"  Phase 2 passed for {comp_id}")
         else:
             comp.review_passed = None
+            _record_phase_skip(
+                "review", review_skip_reason or "review skipped",
+            )
 
         # PHASE 2.5: Security review (adversarial pass focused on vulns).
         # Runs as a separate LLM call with its own threat-model framing so
@@ -1178,13 +1255,21 @@ def _run_factory_locked(
         # fails the component on findings at or above
         # SecurityConfig.fail_threshold OR on infrastructure errors.
         sec_config = factory_config.security_config
-        if (
-            sec_config and sec_config.mode != SecurityMode.SKIP.value
-            and not _adversarial_budget_ok()
-        ):
+        if sec_config is None:
+            _record_phase_skip(
+                "security", "security review not configured",
+            )
+        elif sec_config.mode == SecurityMode.SKIP.value:
+            _record_phase_skip(
+                "security", "security review disabled (mode=skip)",
+            )
+        elif not _adversarial_budget_ok():
             ui.warn(
                 f"  Phase 2.5 SKIPPED for {comp_id}: "
                 f"adversarial LLM budget exhausted"
+            )
+            _record_phase_skip(
+                "security", "adversarial LLM budget exhausted",
             )
             sec_config = None
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
@@ -1216,25 +1301,25 @@ def _run_factory_locked(
                     sec_config,
                     ui,
                     diff_content=shared_diff,
+                    debug_dir=adversarial_debug_dir,
                 )
             except Exception as exc:  # noqa: BLE001
                 # Agent infrastructure failed before run_security_review
-                # could classify the outcome. Hard mode must block;
-                # advisory passes through.
+                # could classify the outcome. Synthesize an infra result
+                # and fall through to the shared recording block below:
+                # hard mode blocks via passed=False, advisory continues
+                # but the infra finding stays in the findings stream and
+                # the PR body instead of vanishing (R1.2, sec-pr-body).
                 ui.warn(f"  Security review crashed: {exc}")
-                if sec_config.mode == SecurityMode.HARD.value:
-                    ctx = IterationContext.from_json(
-                        comp_result.context_json or "{}",
-                    )
-                    ctx.add_review_finding(
-                        f"Security review infrastructure error: {exc}",
-                    )
-                    _retry_or_fail(
-                        comp,
-                        f"Security review crashed: {exc}",
-                        ctx.to_json(),
-                    )
-                    return
+                sec_result = SecurityResult(
+                    passed=sec_config.mode != SecurityMode.HARD.value,
+                    mode=sec_config.mode,
+                    overall_notes=(
+                        f"Security review agent failed before "
+                        f"completion: {exc}"
+                    ),
+                    infrastructure_error=True,
+                )
 
             if sec_result is not None:
                 progress_log.review_result(
@@ -1271,7 +1356,14 @@ def _run_factory_locked(
                     ctx = IterationContext.from_json(
                         comp_result.context_json or "{}",
                     )
-                    ctx.add_review_finding(sec_result.as_retry_context())
+                    # as_retry_context is empty for infra results (no
+                    # findings list); fall back to the notes so the
+                    # retry prompt still says what went wrong.
+                    ctx.add_review_finding(
+                        sec_result.as_retry_context()
+                        or "Security review infrastructure error: "
+                        + sec_result.overall_notes
+                    )
                     _retry_or_fail(comp, reason, ctx.to_json())
                     return
 
@@ -1290,10 +1382,17 @@ def _run_factory_locked(
                 f"  Knowledge: skipped for {comp_id} "
                 f"(single_pr mode produces a polluted per-component diff)"
             )
+            _record_phase_skip(
+                "knowledge",
+                "single_pr mode produces a polluted per-component diff",
+            )
         elif knowledge_config.enabled and not _adversarial_budget_ok():
             ui.info(
                 f"  Knowledge: skipped for {comp_id} "
                 f"(adversarial budget exhausted)"
+            )
+            _record_phase_skip(
+                "knowledge", "adversarial LLM budget exhausted",
             )
         elif knowledge_config.enabled:
             _adversarial_budget_consume()

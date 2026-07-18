@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -15,7 +16,7 @@ from ralph_py.decompose import (
     _select_agent_output,
     collect_agent_output,
 )
-from ralph_py.findings import Finding
+from ralph_py.findings import Finding, dump_raw_debug
 from ralph_py.prd import PRD
 from ralph_py.verify import VerificationResult
 
@@ -45,6 +46,17 @@ VALID_CONCERN_CATEGORIES = frozenset({
     "error_handling",
     "copy_paste",
     "other",
+})
+
+# R1.1: whitelist of criterion verdicts accepted from the reviewer,
+# compared case-insensitively after stripping. The prompt schema
+# promises pass|fail|advisory; anything else ("Blocked", "n/a", a
+# missing key) is a parse failure - infrastructure error, never a
+# silently non-blocking advisory.
+VALID_CRITERION_VERDICTS = frozenset({
+    ReviewVerdict.PASS.value,
+    ReviewVerdict.FAIL.value,
+    ReviewVerdict.ADVISORY.value,
 })
 
 
@@ -403,43 +415,113 @@ def build_review_prompt(
     )
 
 
-def parse_review_output(raw_output: str) -> ReviewResult:
-    """Parse structured JSON from reviewer agent output."""
-    try:
-        data = _extract_json(raw_output)
-    except ValueError:
+def parse_review_output(
+    raw_output: str,
+    expected_story_ids: Sequence[str] | None = None,
+    *,
+    debug_dir: Path | None = None,
+) -> ReviewResult:
+    """Parse structured JSON from reviewer agent output.
+
+    ``expected_story_ids`` enables the R1.1 criterion-coverage gate:
+    every PRD story id must receive at least one criterion verdict or
+    the result is an infrastructure error - a partial or empty review
+    (``{"stories": [], "concerns": []}``) is a review that did not
+    happen, not a clean pass (CRIT-5). Matching is by story id
+    (case-insensitive, whitespace-stripped), never by criterion text.
+    ``None`` skips the check for callers that have no PRD.
+
+    ``debug_dir`` enables a full raw-output dump on parse failure via
+    :func:`ralph_py.findings.dump_raw_debug`; the result's
+    ``raw_output`` field stays truncated to 2000 chars to bound
+    manifest/journal size.
+    """
+
+    def _infra(notes: str, label: str) -> ReviewResult:
+        dump_path = dump_raw_debug(debug_dir, "review", raw_output, label)
+        if dump_path:
+            notes = f"{notes} [full raw output: {dump_path}]"
         return ReviewResult(
             passed=False,
             mode="",
-            overall_notes="Failed to parse reviewer output as JSON",
+            overall_notes=notes,
             raw_output=raw_output[:2000],
             infrastructure_error=True,
+        )
+
+    try:
+        data = _extract_json(raw_output)
+    except ValueError:
+        return _infra("Failed to parse reviewer output as JSON", "no_json")
+
+    # R1.2: _extract_json returns whatever json.loads produced - null,
+    # a list, a bare string. Anything but an object would crash the
+    # .get() calls below with AttributeError.
+    if not isinstance(data, dict):
+        return _infra(
+            f"Review output was not a JSON object (got {type(data).__name__})",
+            "non_dict_json",
         )
 
     criteria: list[CriterionReview] = []
 
     stories = data.get("stories", [])
     if not isinstance(stories, list):
-        return ReviewResult(
-            passed=False,
-            mode="",
-            overall_notes="Invalid review output: 'stories' is not an array",
-            raw_output=raw_output[:2000],
-            infrastructure_error=True,
+        return _infra(
+            "Invalid review output: 'stories' is not an array",
+            "stories_not_array",
         )
 
+    covered_story_ids: set[str] = set()
+    invalid_verdicts: list[str] = []
     for story in stories:
         if not isinstance(story, dict):
             continue
-        for crit_data in story.get("criteria", []):
+        story_id = str(story.get("storyId", "")).strip()
+        raw_criteria = story.get("criteria", [])
+        if not isinstance(raw_criteria, list):
+            continue
+        for crit_data in raw_criteria:
             if not isinstance(crit_data, dict):
+                continue
+            # R1.1: normalize then whitelist. Verbatim storage meant
+            # "FAIL" matched neither the fail gate nor the pass gate
+            # and became a non-blocking advisory-alike.
+            verdict = str(crit_data.get("verdict", "")).strip().lower()
+            if verdict not in VALID_CRITERION_VERDICTS:
+                invalid_verdicts.append(
+                    str(crit_data.get("verdict", ""))[:40] or "<missing>"
+                )
                 continue
             criteria.append(CriterionReview(
                 criterion=str(crit_data.get("criterion", "")),
-                verdict=str(crit_data.get("verdict", "fail")),
+                verdict=verdict,
                 explanation=str(crit_data.get("explanation", "")),
                 suggestion=str(crit_data.get("suggestion", "")),
             ))
+            if story_id:
+                covered_story_ids.add(story_id.lower())
+
+    if invalid_verdicts:
+        return _infra(
+            "Review output contained unrecognized verdicts: "
+            + ", ".join(repr(v) for v in invalid_verdicts)
+            + " (valid: pass/fail/advisory)",
+            "invalid_verdict",
+        )
+
+    if expected_story_ids:
+        missing = [
+            sid for sid in expected_story_ids
+            if sid.strip().lower() not in covered_story_ids
+        ]
+        if missing:
+            return _infra(
+                "Review coverage incomplete: no verdict for story ids "
+                + ", ".join(missing)
+                + " (CRIT-5: a partial or empty review cannot pass)",
+                "coverage_gap",
+            )
 
     concerns: list[ReviewConcern] = []
     raw_concerns = data.get("concerns", [])
@@ -495,10 +577,17 @@ def run_review(
     ui: UI,
     timeout: float = 600.0,
     diff_content: str | None = None,
+    *,
+    debug_dir: Path | None = None,
 ) -> ReviewResult:
     """Run the full review: build prompt, run agent, parse output.
 
     In advisory mode, all FAILs are downgraded and passed=True is returned.
+
+    Never raises: any agent/prompt failure degrades to a ReviewResult
+    with ``infrastructure_error=True`` so one broken reviewer fails one
+    component instead of aborting the whole factory run (R1.2, mirrors
+    ``run_security_review``).
     """
     if mode == ReviewMode.SKIP:
         return ReviewResult(passed=True, mode=mode.value)
@@ -506,28 +595,50 @@ def run_review(
     ui.info("  Running second-opinion review...")
     start = time.monotonic()
 
-    prompt = build_review_prompt(
-        prd_path, worktree_path, base_branch, verification_result,
-        diff_content=diff_content,
-    )
-
     try:
+        prompt = build_review_prompt(
+            prd_path, worktree_path, base_branch, verification_result,
+            diff_content=diff_content,
+        )
+        # R1.1: the coverage gate needs the ground-truth story ids from
+        # the PRD, not whatever ids the reviewer chose to mention.
+        expected_story_ids = [
+            story.id for story in PRD.load(prd_path).user_stories
+        ]
         output_lines = collect_agent_output(
             agent, prompt, cwd=worktree_path, timeout=timeout,
         )
     except AgentOutputTooLarge as exc:
-        # Hostile/buggy agent flooding output. In hard mode this needs
-        # to surface as a review failure; advisory passes but logs.
+        # Hostile/buggy agent flooding output. The review never
+        # happened: infrastructure error (H-13), which hard mode blocks
+        # on; advisory passes but the infra finding stays visible.
+        ui.warn(f"  Reviewer agent output too large: {exc}")
         result = ReviewResult(
             passed=mode != ReviewMode.HARD,
             mode=mode.value,
             overall_notes=f"Reviewer agent output too large: {exc}",
+            infrastructure_error=True,
+        )
+        result.duration_seconds = time.monotonic() - start
+        return result
+    except Exception as exc:  # noqa: BLE001
+        # Reviewer agent crashed (or the PRD/diff could not be read).
+        # Degrade to a per-component infrastructure failure - never
+        # propagate and abort the run (R1.2).
+        ui.warn(f"  Reviewer agent failed: {exc}")
+        result = ReviewResult(
+            passed=mode != ReviewMode.HARD,
+            mode=mode.value,
+            overall_notes=f"Reviewer agent failed: {exc}",
+            infrastructure_error=True,
         )
         result.duration_seconds = time.monotonic() - start
         return result
 
     raw_output = _select_agent_output(agent, output_lines)
-    result = parse_review_output(raw_output)
+    result = parse_review_output(
+        raw_output, expected_story_ids, debug_dir=debug_dir,
+    )
     result.mode = mode.value
     result.duration_seconds = time.monotonic() - start
 

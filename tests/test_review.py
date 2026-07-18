@@ -321,6 +321,7 @@ class TestConcerns:
         result = run_review(
             agent, prd_path, tmp_path, "main",
             verification, ReviewMode.ADVISORY, ui,
+            diff_content="+change\n",
         )
         # Concern was downgraded; review passes; concern survives as advisory
         assert result.passed is True
@@ -362,6 +363,7 @@ class TestRunReview:
         result = run_review(
             agent, prd_path, tmp_path, "main",
             verification, ReviewMode.HARD, ui,
+            diff_content="+change\n",
         )
         assert result.passed is False
         assert result.mode == "hard"
@@ -387,6 +389,7 @@ class TestRunReview:
         result = run_review(
             agent, prd_path, tmp_path, "main",
             verification, ReviewMode.ADVISORY, ui,
+            diff_content="+change\n",
         )
         assert result.passed is True
         assert result.mode == "advisory"

@@ -345,6 +345,14 @@ def _parse_name_status_z(output: str) -> list[str]:
     return unique
 
 
+class GitDiffError(RuntimeError):
+    """Raised when ``git diff`` cannot produce a diff (nonzero exit,
+    e.g. bad ref or not a repository, or a timeout). Callers must treat
+    this as an infrastructure failure: before R1.3 (H-14) these errors
+    returned an empty string, and review/security/knowledge silently
+    "reviewed" a diff of nothing and passed."""
+
+
 def get_diff_content(
     base_branch: str,
     cwd: Path | None = None,
@@ -354,6 +362,10 @@ def get_diff_content(
 
     The base is resolved through :func:`resolve_base_ref` so diffs
     measure against ``origin/<base>`` whenever a remote exists (R0.2).
+
+    Raises :class:`GitDiffError` on git failure or timeout (R1.3). An
+    empty return string therefore always means a genuinely empty diff,
+    never a swallowed error.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
@@ -364,11 +376,16 @@ def get_diff_content(
             text=True,
             timeout=timeout,
         )
-        if result.returncode == 0:
-            return result.stdout
-    except subprocess.TimeoutExpired:
-        pass
-    return ""
+    except subprocess.TimeoutExpired as exc:
+        raise GitDiffError(
+            f"git diff against {base_ref} timed out after {timeout}s"
+        ) from exc
+    if result.returncode != 0:
+        raise GitDiffError(
+            f"git diff against {base_ref} exited "
+            f"{result.returncode}: {result.stderr.strip()[:500]}"
+        )
+    return result.stdout
 
 
 # Shared budget for diff content injected into LLM prompts. Centralized
