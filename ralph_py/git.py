@@ -407,6 +407,112 @@ def truncate_diff_for_prompt(
     return diff_content[:limit] + f"\n... (diff truncated at {limit // 1000}KB)"
 
 
+class DiffUnsplittableError(ValueError):
+    """An oversized diff cannot be split into <=limit chunks on file
+    boundaries: a single file's diff alone exceeds the limit (or the
+    diff has no ``diff --git`` boundaries at all).
+
+    R1.4 (H-16): hard-mode callers must treat this as fail-closed - the
+    diff cannot be fully reviewed, so it must not merge."""
+
+
+# Start of a per-file segment in `git diff` output. Anchored to line
+# start so a "diff --git" string INSIDE a hunk (e.g. a diff quoted in a
+# test fixture) only splits when it begins a line - the worst case of a
+# crafted in-hunk marker is a smaller-than-necessary chunk, never
+# dropped content, because chunks are contiguous slices of the input.
+_DIFF_FILE_BOUNDARY_RE = _re.compile(r"^diff --git ", _re.MULTILINE)
+
+# Headroom reserved inside each chunk for the one-line provenance
+# header split_diff_for_prompt prepends, so header + content <= limit.
+_CHUNK_HEADER_RESERVE = 120
+
+
+def split_diff_for_prompt(
+    diff_content: str, limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
+) -> list[str]:
+    """R1.4 (H-16): split an oversized diff into chunks on ``diff --git``
+    file boundaries, each at most ``limit`` chars including a one-line
+    provenance header, so every byte of the diff can be reviewed across
+    multiple passes instead of head-truncating (which lets a rogue
+    engineer pad the first 50KB with benign churn and land a malicious
+    hunk after the cut).
+
+    Returns ``[diff_content]`` unchanged when it already fits. Raises
+    :class:`DiffUnsplittableError` when file-boundary splitting cannot
+    produce compliant chunks (single file over the limit, or no file
+    boundaries found).
+
+    Invariant: concatenating the chunks with their header lines removed
+    reproduces the input exactly - chunking never drops content.
+    """
+    if limit <= _CHUNK_HEADER_RESERVE:
+        raise ValueError(
+            f"limit must exceed the {_CHUNK_HEADER_RESERVE}-char header "
+            f"reserve, got {limit}"
+        )
+    if len(diff_content) <= limit:
+        return [diff_content]
+
+    boundaries = [
+        m.start() for m in _DIFF_FILE_BOUNDARY_RE.finditer(diff_content)
+    ]
+    if not boundaries:
+        raise DiffUnsplittableError(
+            f"diff is {len(diff_content)} chars (limit {limit}) but "
+            "contains no 'diff --git' file boundaries to split on"
+        )
+
+    # Per-file segments; any preamble before the first boundary becomes
+    # its own leading segment so no content is lost.
+    starts = [0] if boundaries[0] != 0 else []
+    starts.extend(boundaries)
+    segments = [
+        diff_content[start:end]
+        for start, end in zip(
+            starts, starts[1:] + [len(diff_content)], strict=True,
+        )
+    ]
+
+    budget = limit - _CHUNK_HEADER_RESERVE
+    for seg in segments:
+        if len(seg) > budget:
+            first_line = seg.split("\n", 1)[0][:200]
+            raise DiffUnsplittableError(
+                f"single-file diff segment is {len(seg)} chars, over the "
+                f"{budget}-char per-chunk budget; cannot split on file "
+                f"boundaries ({first_line})"
+            )
+
+    # Greedy packing preserves segment order, so contiguity (and the
+    # reassembly invariant) holds.
+    packed: list[list[str]] = [[]]
+    size = 0
+    for seg in segments:
+        if packed[-1] and size + len(seg) > budget:
+            packed.append([])
+            size = 0
+        packed[-1].append(seg)
+        size += len(seg)
+
+    total = len(packed)
+    chunks = []
+    for i, group in enumerate(packed, 1):
+        # Provenance only, no reviewer directives: prompt-body guidance
+        # about truncated/chunked diffs is Session 8C's calibrated change.
+        header = (
+            f"# [ralph R1.4] diff chunk {i} of {total}: oversized diff "
+            f"split on file boundaries; other files are in other chunks\n"
+        )
+        chunk = header + "".join(group)
+        if len(chunk) > limit:  # defensive: budget math above prevents this
+            raise DiffUnsplittableError(
+                f"chunk {i}/{total} is {len(chunk)} chars, over limit {limit}"
+            )
+        chunks.append(chunk)
+    return chunks
+
+
 # E2: regex matches a Self-Critique block in a diff. Used by the
 # reviewer-prep step to remove the engineer's self-reported failure
 # modes from what the reviewer sees, so the reviewer is not biased

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -111,6 +111,13 @@ class ReviewResult:
     # downstream callers can distinguish "clean review found nothing"
     # from "review never actually happened".
     infrastructure_error: bool = False
+    # R1.4 (H-16): True when the reviewed diff was truncated at the
+    # prompt cap, i.e. the verdict covers only a prefix of the change.
+    # Advisory mode may pass a partial review, but the pass must be
+    # visibly partial (PR body annotation + an advisory concern);
+    # hard mode never accepts a partial review - the factory chunks
+    # the diff and runs one pass per chunk instead.
+    partial: bool = False
 
     def as_retry_context(self) -> str:
         """Format failing/advisory findings for injection into retry prompt."""
@@ -154,6 +161,12 @@ class ReviewResult:
             f"{criterion_adv} advisory; "
             f"{len(self.concerns)} additional concerns**"
         )
+        if self.partial:
+            lines.append("")
+            lines.append(
+                "**PARTIAL REVIEW (R1.4): the diff exceeded the prompt "
+                "size cap; only a truncated prefix was reviewed**"
+            )
         lines.append("")
 
         for cr in self.criteria:
@@ -383,9 +396,12 @@ def build_review_prompt(
     """Assemble the full reviewer prompt.
 
     ``diff_content`` may be pre-fetched by the caller (e.g. the factory
-    hoists git.get_diff_content to component scope and reuses the result
-    across Phase 2, 2.5, and knowledge distillation). When None, the
-    diff is fetched here for backward compatibility.
+    hoists git.get_diff_content to component scope, strips the
+    Self-Critique block ONCE, and shares the result with Phase 2 and
+    2.5). A provided diff is used as-is apart from the size cap: the
+    caller owns Self-Critique hygiene (R1.4 - one strip in the factory
+    instead of one per phase). When None, the diff is fetched AND
+    stripped here (E2).
     """
     prd = PRD.load(prd_path)
     prd_lines: list[str] = []
@@ -397,10 +413,10 @@ def build_review_prompt(
 
     if diff_content is None:
         diff_content = git.get_diff_content(base_branch, worktree_path)
-    # E2: hide the engineer's Self-Critique block from the reviewer.
-    # Otherwise the reviewer sees "Failure mode 1: X" inline and may
-    # uncritically conclude X is handled.
-    diff_content = git.strip_self_critique_from_diff(diff_content)
+        # E2: hide the engineer's Self-Critique block from the reviewer.
+        # Otherwise the reviewer sees "Failure mode 1: X" inline and may
+        # uncritically conclude X is handled.
+        diff_content = git.strip_self_critique_from_diff(diff_content)
     diff_content = git.truncate_diff_for_prompt(diff_content)
 
     verify_lines: list[str] = []
@@ -595,7 +611,16 @@ def run_review(
     ui.info("  Running second-opinion review...")
     start = time.monotonic()
 
+    truncated = False
     try:
+        if diff_content is None:
+            # Same fallback contract as build_review_prompt: fetch AND
+            # strip the Self-Critique block (E2) when the caller did
+            # not provide a pre-stripped diff.
+            diff_content = git.get_diff_content(base_branch, worktree_path)
+            diff_content = git.strip_self_critique_from_diff(diff_content)
+        # R1.4: anything past the cap is invisible to the reviewer.
+        truncated = len(diff_content) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         prompt = build_review_prompt(
             prd_path, worktree_path, base_branch, verification_result,
             diff_content=diff_content,
@@ -642,6 +667,42 @@ def run_review(
     result.mode = mode.value
     result.duration_seconds = time.monotonic() - start
 
+    if truncated and not result.infrastructure_error:
+        # R1.4: the verdict covers only a prefix of the diff. Advisory
+        # mode may pass, but visibly: flag the result and inject an
+        # advisory concern so the PR body, findings stream, and retry
+        # context all say "partial".
+        result.partial = True
+        result.concerns.append(ReviewConcern(
+            category="other",
+            severity="advisory",
+            location="",
+            explanation=(
+                "Partial review (R1.4): the diff exceeded the "
+                f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
+                "cap and only the truncated prefix was reviewed; "
+                "anything past the cut is unreviewed."
+            ),
+            suggestion=(
+                "Split the component or reduce the diff so the full "
+                "change fits one review pass."
+            ),
+        ))
+        if mode == ReviewMode.HARD:
+            # Backstop, not the primary path: the factory chunks
+            # oversized diffs before calling us (run_chunked_review).
+            # Reaching this branch means a caller bypassed that policy,
+            # and hard mode must never approve a partially visible diff
+            # (H-16: the unreviewed tail would merge). Fail closed as
+            # infrastructure - the review did not fully happen.
+            result.passed = False
+            result.infrastructure_error = True
+            result.overall_notes = (
+                "Hard-mode review received an oversized diff without "
+                "chunking; the unreviewed tail cannot be approved "
+                "(R1.4). " + result.overall_notes
+            ).strip()
+
     # In advisory mode, downgrade all FAILs and force pass
     if mode == ReviewMode.ADVISORY:
         for cr in result.criteria:
@@ -653,9 +714,107 @@ def run_review(
         result.passed = True
 
     status = "passed" if result.passed else "FAILED"
+    partial_note = " (PARTIAL: diff truncated)" if result.partial else ""
     ui.info(
-        f"  Review {status}: "
+        f"  Review {status}{partial_note}: "
         f"{result.fail_count} fail, {result.advisory_count} advisory"
     )
 
     return result
+
+
+def merge_review_results(
+    results: list[ReviewResult], mode: str,
+) -> ReviewResult:
+    """R1.4: merge the per-chunk results of a chunked review into one.
+
+    Policy (H-16): any chunk failure fails the merged result; criteria
+    and concerns concatenate; any chunk infrastructure error marks the
+    merged result as an infrastructure error (the review did not fully
+    happen). ``exhaustively_searched`` survives only when every chunk
+    claimed it (hint, never a gate).
+
+    Known limitation, documented on purpose: when a chunk infra-errors,
+    ``as_findings()`` renders only the infrastructure finding (its
+    contract: an errored review has no trustworthy findings), while the
+    concatenated criteria/concerns stay visible in the PR body and
+    retry context via ``as_pr_body_section``/``as_retry_context``.
+    """
+    if not results:
+        raise ValueError("merge_review_results requires at least one result")
+    n = len(results)
+    merged = ReviewResult(
+        passed=all(r.passed for r in results),
+        mode=mode,
+        infrastructure_error=any(r.infrastructure_error for r in results),
+        exhaustively_searched=all(r.exhaustively_searched for r in results),
+        partial=any(r.partial for r in results),
+    )
+    notes = [f"Chunked review: {n} passes over an oversized diff (R1.4)."]
+    raw_parts: list[str] = []
+    for i, r in enumerate(results, 1):
+        merged.criteria.extend(r.criteria)
+        merged.concerns.extend(r.concerns)
+        merged.duration_seconds += r.duration_seconds
+        if r.overall_notes:
+            notes.append(f"[chunk {i}/{n}] {r.overall_notes}")
+        raw_parts.append(f"--- chunk {i}/{n} ---\n{r.raw_output}")
+    merged.overall_notes = "\n".join(notes)
+    merged.raw_output = "\n".join(raw_parts)
+    return merged
+
+
+def run_chunked_review(
+    agent: Agent,
+    prd_path: Path,
+    worktree_path: Path,
+    base_branch: str,
+    verification_result: VerificationResult,
+    mode: ReviewMode,
+    ui: UI,
+    diff_chunks: list[str],
+    timeout: float = 600.0,
+    *,
+    budget_remaining: int | None = None,
+    consume_budget: Callable[[], None] | None = None,
+    debug_dir: Path | None = None,
+) -> ReviewResult:
+    """R1.4 (H-16): review an oversized diff chunk by chunk, one agent
+    pass per chunk, and merge the verdicts.
+
+    Every pass counts against the adversarial budget via
+    ``consume_budget``. When ``budget_remaining`` cannot cover one pass
+    per chunk, NO pass runs and an infrastructure-error result is
+    returned: a diff that cannot be fully reviewed must fail loudly,
+    never pass partially. ``budget_remaining=None`` means unbounded.
+    """
+    n = len(diff_chunks)
+    if n == 0:
+        raise ValueError("run_chunked_review requires at least one chunk")
+    if budget_remaining is not None and budget_remaining < n:
+        return ReviewResult(
+            passed=False,
+            mode=mode.value,
+            overall_notes=(
+                f"Chunked review needs {n} adversarial calls for "
+                f"{n} diff chunks but only {budget_remaining} remain in "
+                "max_adversarial_calls; refusing to review the diff "
+                "partially (R1.4)"
+            ),
+            infrastructure_error=True,
+        )
+    results: list[ReviewResult] = []
+    for i, chunk in enumerate(diff_chunks, 1):
+        if consume_budget is not None:
+            consume_budget()
+        ui.info(f"    Review chunk {i}/{n}...")
+        results.append(run_review(
+            agent, prd_path, worktree_path, base_branch,
+            verification_result, mode, ui,
+            timeout=timeout,
+            diff_content=chunk,
+            # Per-chunk subdir: dump_raw_debug writes fixed filenames,
+            # so sharing one dir would overwrite earlier chunks' dumps.
+            debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+        ))
+    return merge_review_results(results, mode.value)

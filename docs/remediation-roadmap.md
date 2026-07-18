@@ -174,11 +174,24 @@ reviewers' output as much as it distrusts the engineer's.
   - `git.get_diff_content` returns a result object (content | error) or raises;
     `factory.py:593` maps error to `infrastructure_error` for all three
     consumers instead of reviewing an empty string.
-- [ ] R1.4 (M) **Truncated-diff policy + security parity** [H-16]
+- [x] R1.4 (M) **Truncated-diff policy + security parity** [H-16]
   - Hard mode: a truncated diff is not silently reviewable. Chunk the diff and
     run multiple review passes (bounded by budget), or fail with an infra
     finding. Advisory mode: annotate PASS as partial.
   - Strip the Self-Critique block for the security reviewer too (`security.py:377`).
+  - Note (2026-07-18, session 4A): `git.split_diff_for_prompt` chunks on file
+    boundaries (reassembly-lossless; single file over the cap raises
+    `DiffUnsplittableError` and fails the component closed). Hard mode runs
+    `run_chunked_review` / `run_chunked_security_review`: one budget call per
+    chunk, any chunk failure fails, budget-insufficient chunking is a direct
+    infra-fail with zero passes run (no retries: budget only shrinks).
+    Advisory results carry `partial=True` + an injected finding + a PARTIAL
+    PR-body banner. Factory strips Self-Critique once into a shared reviewer
+    diff for Phase 2 AND 2.5; both phase entrypoints strip on their
+    fetch-fallback path and fail closed (backstop) if handed an unchunked
+    oversized diff in hard mode. Knowledge distiller input (still head-
+    truncated, unstripped) stays out of scope per the session prompt.
+    Reviewer-facing chunk/truncation DIRECTIVE remains Session 8C's.
 - [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.
