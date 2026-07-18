@@ -378,7 +378,7 @@ tests (enforced by the guard fixture).
 First principles: walking away requires knowing (a) is it stuck, (b) what is it
 spending, (c) what do I do when I come back to a partial failure.
 
-- [ ] R3.1 (M) **Cost meter** [H-17, P-3]
+- [x] R3.1 (M) **Cost meter** [H-17, P-3]
   - Parse token usage from the claude CLI stream-json result events; measure
     what codex exposes (this needs to be measured, not assumed: spike first);
     fall back to call counts + wall time where usage is unavailable.
@@ -387,6 +387,17 @@ spending, (c) what do I do when I come back to a partial failure.
     synthetic finding per R1.2's pattern).
   - Failure mode: usage formats drift with CLI versions: parse defensively,
     never gate correctness on the meter.
+  - Landed: measured claude CLI 2.1.214 (result-event `usage` +
+    `total_cost_usd`) and codex CLI 0.134.0 (plain "tokens used" trailer,
+    total only; `codex exec --json` exposes an in/out split but needs a
+    streaming-display rework - noted as follow-up). Adapters append one
+    UsageRecord per run; the factory rolls up
+    engineer/review/security/distill per component; journal entries gain
+    `usage`, experiments.tsv gains
+    total_tokens/total_cost_usd/unreported_calls; `max_total_tokens`
+    (toml/env/`--max-total-tokens`) fails the current component with a
+    synthetic finding and gates scheduling. Enforcement granularity is
+    the phase boundary; unreported calls make totals lower bounds.
 - [ ] R3.2 (M) **Status + notification** [P-4, D-status]
   - ProgressLog defaults on; `ralph status` renders manifest + log (per
     component: phase, attempt, last event age, evidence paths).

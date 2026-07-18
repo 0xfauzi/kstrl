@@ -2,13 +2,34 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
+from ralph_py.agents.base import UsageRecord
 from ralph_py.agents.proc import DeadlineStreamer, timeout_message
+
+# Measured against codex CLI 0.134.0 (R3.1): plain `codex exec` output
+# ends with a two-line trailer - a line reading "tokens used" followed by
+# a comma-formatted integer line ("14,511"). That is the ONLY usage data
+# codex emits with the flags this adapter uses: a TOTAL, no in/out split,
+# no cost. (`codex exec --json` exposes a structured turn.completed
+# usage event, but switching to it would rework streaming display and
+# the plain-text COMPLETION_MARKER detection - noted as follow-up.)
+_TOKENS_USED_LINE = re.compile(r"^tokens used:?\s*(?P<total>[\d,]+)?$", re.IGNORECASE)
+_TOKENS_COUNT_LINE = re.compile(r"^[\d,]{1,20}$")
+
+
+def _parse_token_count(text: str) -> int | None:
+    """Parse a comma-formatted token count; None on any mismatch."""
+    try:
+        return int(text.replace(",", ""))
+    except ValueError:
+        return None
 
 
 class CodexAgent:
@@ -30,6 +51,7 @@ class CodexAgent:
         self._model = model
         self._reasoning_effort = reasoning_effort
         self._final_message: str | None = None
+        self._usage_records: list[UsageRecord] = []
 
     @property
     def name(self) -> str:
@@ -54,6 +76,9 @@ class CodexAgent:
         """
         self._final_message = None
         last_non_empty_line: str | None = None
+        started = time.monotonic()
+        trailer_total: int | None = None
+        expect_token_count = False
 
         # Build command (non-interactive)
         cmd = ["codex", "exec"]
@@ -80,18 +105,44 @@ class CodexAgent:
 
             # Stream output
             for line in streamer.lines():
-                if line.strip():
+                stripped = line.strip()
+                if stripped:
                     last_non_empty_line = line
+                # Track the "tokens used" trailer (last match wins - the
+                # real trailer is at end-of-stream; an agent echoing the
+                # same text earlier is overwritten). This is a hint for
+                # the cost meter, never a gate.
+                if expect_token_count:
+                    expect_token_count = False
+                    if _TOKENS_COUNT_LINE.match(stripped):
+                        trailer_total = _parse_token_count(stripped)
+                match = _TOKENS_USED_LINE.match(stripped)
+                if match:
+                    if match.group("total"):
+                        trailer_total = _parse_token_count(match.group("total"))
+                    else:
+                        expect_token_count = True
                 yield line
 
             if streamer.timed_out:
                 # Killed mid-run: the last-message file was likely never
                 # written; partial output is not a trustworthy final
-                # message, so leave it unset.
+                # message, so leave it unset. The trailer never printed
+                # either, so only wall time is recorded.
+                self._usage_records.append(UsageRecord(
+                    duration_seconds=time.monotonic() - started,
+                    source="timeout",
+                ))
                 yield timeout_message(timeout)
                 return
 
             streamer.finish()
+
+            self._usage_records.append(UsageRecord(
+                total_tokens=trailer_total,
+                duration_seconds=time.monotonic() - started,
+                source="codex-text" if trailer_total is not None else "unavailable",
+            ))
 
             # Read final message
             if last_msg_file and last_msg_file.exists():
@@ -113,6 +164,11 @@ class CodexAgent:
     def final_message(self) -> str | None:
         """Return final message from --output-last-message."""
         return self._final_message
+
+    @property
+    def usage_records(self) -> list[UsageRecord]:
+        """One usage record per ``run`` call, accumulated (R3.1)."""
+        return list(self._usage_records)
 
     @classmethod
     def _codex_supports_output_last_message(cls) -> bool:

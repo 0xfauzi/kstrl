@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import shutil
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
+from ralph_py.agents.base import UsageRecord
 from ralph_py.agents.proc import DeadlineStreamer, timeout_message
 
 
@@ -20,6 +22,7 @@ class CustomAgent:
         """
         self._command = command
         self._final_message: str | None = None
+        self._usage_records: list[UsageRecord] = []
 
     @property
     def name(self) -> str:
@@ -36,6 +39,7 @@ class CustomAgent:
         and a timeout error line is yielded last.
         """
         self._final_message = None
+        started = time.monotonic()
 
         use_bash = shutil.which("bash") is not None
         if use_bash:
@@ -60,10 +64,21 @@ class CustomAgent:
         if streamer.timed_out:
             # Killed mid-run: partial output is not a trustworthy final
             # message, so leave it unset.
+            self._usage_records.append(UsageRecord(
+                duration_seconds=time.monotonic() - started,
+                source="timeout",
+            ))
             yield timeout_message(timeout)
             return
 
         streamer.finish()
+
+        # R3.1: an arbitrary shell command exposes no token accounting;
+        # the fallback the roadmap mandates is call counts + wall time.
+        self._usage_records.append(UsageRecord(
+            duration_seconds=time.monotonic() - started,
+            source="unavailable",
+        ))
 
         # Store last output as "final message" for consistency
         if output_lines:
@@ -73,3 +88,8 @@ class CustomAgent:
     def final_message(self) -> str | None:
         """Return last output line."""
         return self._final_message
+
+    @property
+    def usage_records(self) -> list[UsageRecord]:
+        """One usage record per ``run`` call, accumulated (R3.1)."""
+        return list(self._usage_records)

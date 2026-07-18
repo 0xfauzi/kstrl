@@ -18,7 +18,7 @@ from click.core import ParameterSource
 
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
-from ralph_py.agents.base import Agent
+from ralph_py.agents.base import Agent, UsageRecord
 from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
@@ -351,6 +351,12 @@ class LoggingAgent:
     @property
     def final_message(self) -> str | None:
         return self._agent.final_message
+
+    @property
+    def usage_records(self) -> list[UsageRecord]:
+        """R3.1: forward the wrapped agent's usage records."""
+        records = getattr(self._agent, "usage_records", None)
+        return list(records) if records is not None else []
 
 
 def _timestamp() -> str:
@@ -1495,6 +1501,16 @@ def decompose(
          "[factory].max_adversarial_calls in ralph.toml)",
 )
 @click.option(
+    "--max-total-tokens",
+    type=int,
+    default=None,
+    help="Run-level token budget across ALL phases (engineer + review "
+         "+ security + distill); 0 = unbounded. On breach the current "
+         "component fails with a synthetic budget finding and pending "
+         "components halt (default: 0, or RALPH_FACTORY_MAX_TOTAL_TOKENS "
+         "/ [factory].max_total_tokens in ralph.toml)",
+)
+@click.option(
     "--pause-before-pr-merge/--no-pause-before-pr-merge",
     default=None,
     help="Pause for human approval before each component's PR "
@@ -1589,6 +1605,7 @@ def factory(
     agent_timeout: float | None,
     component_timeout: float | None,
     max_adversarial_calls: int | None,
+    max_total_tokens: int | None,
     pause_before_pr_merge: bool | None,
     progress_log: Path | None,
     no_worktrees: bool,
@@ -1695,6 +1712,7 @@ def factory(
                 ("create_prs", create_prs is not None),
                 ("review_mode", review_mode is not None),
                 ("max_adversarial_calls", max_adversarial_calls is not None),
+                ("max_total_tokens", max_total_tokens is not None),
                 ("pause_before_pr_merge", pause_before_pr_merge is not None),
                 ("use_worktrees", no_worktrees),
                 # The manifest is authoritative for single_pr, so a toml
@@ -1714,6 +1732,8 @@ def factory(
         factory_config.review_mode = review_mode
     if max_adversarial_calls is not None:
         factory_config.max_adversarial_calls = max_adversarial_calls
+    if max_total_tokens is not None:
+        factory_config.max_total_tokens = max_total_tokens
     if pause_before_pr_merge is not None:
         factory_config.pause_before_pr_merge = pause_before_pr_merge
     if no_worktrees:
@@ -2032,7 +2052,8 @@ def config_show(
         ("factory", FactoryConfig.load, [
             "max_parallel", "max_retries", "retry_delay", "use_worktrees",
             "single_pr", "create_prs", "review_mode", "merge_timeout",
-            "max_adversarial_calls", "pause_before_pr_merge",
+            "max_adversarial_calls", "max_total_tokens",
+            "pause_before_pr_merge",
         ]),
         ("verify", VerifyConfig.load, [
             "test_command", "typecheck_command", "lint_command",
