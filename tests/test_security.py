@@ -403,11 +403,12 @@ class TestResultFormatting:
 
 
 def test_prompt_renders_with_placeholders() -> None:
-    """The SECURITY_PROMPT must format cleanly with the only two
-    placeholders the runner provides."""
+    """The SECURITY_PROMPT must format cleanly with the three
+    placeholders the runner provides (R5.3 added data_delimiter)."""
     rendered = SECURITY_PROMPT.format(
         prd_content="some prd",
         diff_content="some diff",
+        data_delimiter="RALPH-DATA-test",
     )
     assert "some prd" in rendered
     assert "some diff" in rendered

@@ -1652,6 +1652,7 @@ def test_distill_prompt_includes_all_placeholders() -> None:
         prd_content="prd",
         existing_facts="(none)",
         diff_content="diff",
+        data_delimiter="RALPH-DATA-test",
     )
     assert "comp-a" in rendered
     assert "prd" in rendered

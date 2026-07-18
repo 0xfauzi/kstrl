@@ -30,17 +30,18 @@ from pathlib import Path
 import pytest
 
 from ralph_py.decompose import (
-    DECOMPOSE_PROMPT,
     SpecIssue,
     _extract_agent_json,
     _parse_spec_issues,
     _select_agent_output,
+    build_decompose_prompt,
+    generate_data_delimiter,
 )
 from ralph_py.review import REVIEWER_PROMPT, ReviewResult, parse_review_output
 from ralph_py.security import (
-    SECURITY_PROMPT,
     SecurityMode,
     SecurityResult,
+    _build_security_prompt,
     parse_security_output,
 )
 
@@ -381,9 +382,10 @@ def test_security_role_catches_planted_bug(
     artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
 ) -> None:
     diff_content = artifact.read_text(encoding="utf-8")
-    prompt = SECURITY_PROMPT.format(
-        prd_content="(synthetic fixture; PRD intentionally omitted)",
-        diff_content=diff_content,
+    # R5.3: build through the harness path so calibration exercises the
+    # per-run data delimiters exactly as production does.
+    prompt = _build_security_prompt(
+        "(synthetic fixture; PRD intentionally omitted)", diff_content,
     )
 
     agent = _get_calibration_agent()
@@ -420,10 +422,13 @@ def test_reviewer_role_catches_planted_concern(
 ) -> None:
     diff_content = artifact.read_text(encoding="utf-8")
     prd_text = meta.get("prd", "(no PRD)")
+    # R5.3: build_review_prompt needs a PRD file on disk, so calibration
+    # formats the template directly but with a real per-run delimiter.
     prompt = REVIEWER_PROMPT.format(
         prd_content=prd_text,
         diff_content=diff_content,
         verification_summary=_VERIFICATION_STUB,
+        data_delimiter=generate_data_delimiter(),
     )
 
     agent = _get_calibration_agent()
@@ -459,10 +464,7 @@ def test_architect_role_flags_vague_spec(
     artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
 ) -> None:
     spec_content = artifact.read_text(encoding="utf-8")
-    prompt = DECOMPOSE_PROMPT.format(
-        project_name=meta["fixture_id"],
-        spec_content=spec_content,
-    )
+    prompt = build_decompose_prompt(meta["fixture_id"], spec_content)
 
     agent = _get_calibration_agent()
     output: list[str] = []
@@ -524,10 +526,7 @@ def test_architect_emits_sensible_allowed_paths(
     fixture the v1.2.0 prompt's rule #12 is unmeasured.
     """
     spec_content = artifact.read_text(encoding="utf-8")
-    prompt = DECOMPOSE_PROMPT.format(
-        project_name=meta["fixture_id"],
-        spec_content=spec_content,
-    )
+    prompt = build_decompose_prompt(meta["fixture_id"], spec_content)
 
     agent = _get_calibration_agent()
     output: list[str] = []
@@ -592,12 +591,14 @@ class TestFixtureStructure:
             )
 
     def test_security_fixtures_count(self) -> None:
+        # 5 planted-vuln fixtures + 1 R5.3 injection-efficacy fixture
         fixtures = list((FIXTURES_DIR / "security").glob("*.diff"))
-        assert len(fixtures) == 5, "Expected 5 security fixtures"
+        assert len(fixtures) == 6, "Expected 6 security fixtures"
 
     def test_concern_fixtures_count(self) -> None:
+        # 3 planted-concern fixtures + 1 R5.3 injection-efficacy fixture
         fixtures = list((FIXTURES_DIR / "concerns").glob("*.diff"))
-        assert len(fixtures) == 3, "Expected 3 concern fixtures"
+        assert len(fixtures) == 4, "Expected 4 concern fixtures"
 
     def test_spec_fixtures_count(self) -> None:
         fixtures = list((FIXTURES_DIR / "specs").glob("*.md"))
