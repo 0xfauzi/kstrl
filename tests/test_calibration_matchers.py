@@ -14,11 +14,13 @@ guarantees they at least *evaluate correctly* against the input shape
 they expect, even when nobody runs the LLM-driven integration.
 
 Tests are organized by role: TestSecurityMatcher / TestReviewerMatcher /
-TestArchitectMatcher.
+TestArchitectMatcher, plus TestKindSynonyms for the R5.1 synonym map
+that de-brittles the architect's ``must_include_kind`` matching.
 """
 
 from __future__ import annotations
 
+from ralph_py import calibration
 from ralph_py.decompose import SpecIssue
 from ralph_py.review import (
     CriterionReview,
@@ -323,19 +325,66 @@ class TestArchitectMatcher:
         })
         assert not caught
 
-    def test_no_match_when_required_kind_not_present(self) -> None:
+    def test_paraphrased_kind_within_synonym_family_is_a_hit(self) -> None:
         """This is the spec-01 case from the F5 baseline -- 8 blocker
-        issues but no ``undefined_failure_mode``. Strict matcher fails."""
+        issues, the planted failure-mode issue reported as
+        ``missing_detail`` instead of ``undefined_failure_mode``. The
+        strict matcher graded taxonomy vocabulary and failed; under the
+        R5.1 synonym map the paraphrase is a hit."""
         issues = [
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
             SpecIssue(kind="ambiguity", severity="blocker", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
+        caught, detail = architect_caught(issues, {
             "spec_issues_min": 2,
             "must_include_kind": ["undefined_failure_mode", "missing_detail"],
         })
+        assert caught
+        # The exact-label signal stays visible in the detail (non-gating).
+        assert "exact_kind_match=False" in detail
+
+    def test_spec_02_unstated_assumption_paraphrase_is_a_hit(self) -> None:
+        """The other recorded matcher artifact: spec-02 requires
+        ``unstated_assumption`` and the model reports it as
+        ``missing_detail`` (baselines 20260527-191337 / -195157)."""
+        issues = [
+            SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
+            SpecIssue(kind="missing_detail", severity="major", summary="..."),
+        ]
+        caught, _ = architect_caught(issues, {
+            "spec_issues_min": 2,
+            "must_include_kind": ["missing_detail", "unstated_assumption"],
+            "blocker_or_major": True,
+        })
+        assert caught
+
+    def test_no_match_when_required_kind_outside_synonym_family(self) -> None:
+        """Kinds outside the spec-silence family still demand an exact
+        label: a required ``contradiction`` is NOT satisfied by any
+        number of missing_detail / ambiguity issues."""
+        issues = [
+            SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
+            SpecIssue(kind="ambiguity", severity="blocker", summary="..."),
+        ]
+        caught, _ = architect_caught(issues, {
+            "spec_issues_min": 2,
+            "must_include_kind": ["contradiction"],
+        })
         assert not caught
+
+    def test_exact_kind_match_reported_true_when_labels_exact(self) -> None:
+        issues = [
+            SpecIssue(
+                kind="undefined_failure_mode", severity="blocker", summary="...",
+            ),
+        ]
+        caught, detail = architect_caught(issues, {
+            "spec_issues_min": 1,
+            "must_include_kind": ["undefined_failure_mode"],
+        })
+        assert caught
+        assert "exact_kind_match=True" in detail
 
     def test_no_match_when_blocker_or_major_required_but_only_minor(self) -> None:
         issues = [
@@ -388,3 +437,75 @@ class TestArchitectMatcher:
         empty: list[SpecIssue] = []
         caught_empty, _ = architect_caught(empty, {})
         assert not caught_empty
+
+
+# ---------------------------------------------------------------------------
+# Kind synonym map (R5.1)
+# ---------------------------------------------------------------------------
+
+
+class TestKindSynonyms:
+    """Unit tests for ``calibration.KIND_SYNONYM_GROUPS`` and its helpers.
+
+    The map exists because the boundary inside the "spec is silent
+    about X" family (missing_detail / unstated_assumption /
+    undefined_failure_mode) is a judgment call the model makes
+    differently run to run; every architect miss in the recorded
+    baselines is a paraphrase within that family.
+    """
+
+    def test_family_members_accept_each_other(self) -> None:
+        family = {"missing_detail", "unstated_assumption", "undefined_failure_mode"}
+        for required in family:
+            for actual in family:
+                assert calibration.required_kinds_satisfied([required], [actual]), (
+                    f"{required} should be satisfied by {actual}"
+                )
+
+    def test_non_family_kinds_only_match_themselves(self) -> None:
+        for kind in ("ambiguity", "contradiction", "out_of_scope_creep", "other"):
+            assert calibration.acceptable_kinds(kind) == frozenset({kind})
+            assert not calibration.required_kinds_satisfied(
+                [kind], ["missing_detail"],
+            )
+            assert calibration.required_kinds_satisfied([kind], [kind])
+
+    def test_ambiguity_not_satisfied_by_silence_family(self) -> None:
+        """Ambiguity is about vague language that IS present, not
+        absence: it deliberately stays outside the synonym family."""
+        assert not calibration.required_kinds_satisfied(
+            ["ambiguity"], ["missing_detail", "unstated_assumption"],
+        )
+
+    def test_all_required_kinds_must_be_satisfied(self) -> None:
+        assert not calibration.required_kinds_satisfied(
+            ["missing_detail", "contradiction"], ["missing_detail"],
+        )
+        assert calibration.required_kinds_satisfied(
+            ["missing_detail", "contradiction"],
+            ["unstated_assumption", "contradiction"],
+        )
+
+    def test_empty_required_kinds_always_satisfied(self) -> None:
+        assert calibration.required_kinds_satisfied([], [])
+        assert calibration.required_kinds_satisfied([], ["anything"])
+
+    def test_exact_kinds_present_ignores_synonyms(self) -> None:
+        assert not calibration.exact_kinds_present(
+            ["undefined_failure_mode"], ["missing_detail"],
+        )
+        assert calibration.exact_kinds_present(
+            ["undefined_failure_mode"], ["undefined_failure_mode"],
+        )
+
+    def test_synonym_groups_stay_within_decompose_taxonomy(self) -> None:
+        """Guard against a synonym group drifting away from the
+        DECOMPOSE taxonomy: every member must be a valid spec-issue
+        kind that ``_parse_spec_issues`` would accept."""
+        from ralph_py.decompose import _VALID_KINDS
+
+        for group in calibration.KIND_SYNONYM_GROUPS:
+            assert group <= _VALID_KINDS, (
+                f"synonym group {sorted(group)} contains kinds outside "
+                f"the DECOMPOSE taxonomy {sorted(_VALID_KINDS)}"
+            )

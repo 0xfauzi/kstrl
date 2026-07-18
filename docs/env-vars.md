@@ -121,7 +121,8 @@ Invalid mode or threshold raises ValueError (Phase B8). Note: the `ralph_py fact
 | Env var | Default | Notes |
 |---|---|---|
 | `RALPH_RUN_CALIBRATION` | unset | Set to `1` to enable real-LLM calibration tests under `tests/test_calibration.py` |
-| `RALPH_CALIBRATION_MODEL` | `haiku` | Fast model used by the calibration suite |
+| `RALPH_CALIBRATION_MODEL` | `haiku` | Fast model used by the calibration suite. Changing it triggers the R5.5 model-drift warning until a fresh baseline is captured (H2-extended) |
+| `RALPH_CALIBRATION_RUNS` | `3` | Runs per fixture (R5.1). The suite gates on majority-of-runs consistency; use `1` for a cheap smoke, keep `3` for baseline capture |
 
 ## Patterns
 

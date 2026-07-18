@@ -9,10 +9,18 @@ burn API tokens.
 When run, the suite iterates over fixtures in
 ``tests/adversarial_fixtures/{security,concerns,specs}/``, feeds each
 fixture's diff or spec to the corresponding role prompt against a
-fast model (Haiku-class), and asserts the planted issue is caught.
-Per-role detection rates are written to
-``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` so
-future prompt edits can be compared against the baseline.
+fast model (Haiku-class), and gates on detection over
+``RALPH_CALIBRATION_RUNS`` runs per fixture (default 3, R5.1): a
+fixture passes when a majority of its completed runs catch the
+planted issue (``calibration.FIXTURE_DETECTION_THRESHOLD``), so
+single-run LLM variance is reported as consistency instead of
+failing the suite, while a fixture that misses most runs is a
+regression and fails. Results (per-fixture consistency, per-role and
+per-category detection rates, the model id) are written to
+``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` in
+the v2 format defined by :mod:`ralph_py.calibration`; compare against
+a previous baseline with
+``python -m ralph_py.calibration compare <old.json> <new.json>``.
 
 Why this matters: the entire adversarial-roles design relies on the
 LLM actually behaving adversarially under the framing. Without
@@ -23,12 +31,14 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterator
+import warnings
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from ralph_py import calibration
 from ralph_py.decompose import (
     DECOMPOSE_PROMPT,
     SpecIssue,
@@ -46,6 +56,11 @@ from ralph_py.security import (
 
 CALIBRATION_ENABLED = os.environ.get("RALPH_RUN_CALIBRATION") == "1"
 CALIBRATION_MODEL = os.environ.get("RALPH_CALIBRATION_MODEL", "haiku")
+CALIBRATION_RUNS = int(
+    os.environ.get(
+        "RALPH_CALIBRATION_RUNS", str(calibration.DEFAULT_CALIBRATION_RUNS),
+    )
+)
 
 FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
 RESULTS_DIR = FIXTURES_DIR / "_results"
@@ -209,22 +224,31 @@ def architect_caught(
     """Return ``(caught, detail)`` for the architect spec-issue matcher.
 
     Catches when: total issue count >= ``spec_issues_min``, every kind
-    in ``must_include_kind`` is present, and (when
-    ``blocker_or_major == True``) at least one issue is blocker or
-    major severity.
+    in ``must_include_kind`` is present *up to the documented synonym
+    map* (``calibration.KIND_SYNONYM_GROUPS`` - R5.1: the recorded
+    baselines show the model paraphrases within the spec-silence
+    family, so an exact-label demand grades taxonomy vocabulary, not
+    detection), and (when ``blocker_or_major == True``) at least one
+    issue is blocker or major severity. Whether the exact labels were
+    used is reported in the detail as a non-gating signal.
     """
     min_count = requirement.get("spec_issues_min", 1)
-    required_kinds = set(requirement.get("must_include_kind", []))
+    required_kinds = list(requirement.get("must_include_kind", []))
     must_be_major_or_blocker = requirement.get("blocker_or_major", False)
+    actual_kinds = {i.kind for i in issues}
     caught = (
         len(issues) >= min_count
-        and (not required_kinds or required_kinds.issubset({i.kind for i in issues}))
+        and calibration.required_kinds_satisfied(required_kinds, actual_kinds)
         and (
             not must_be_major_or_blocker
             or any(i.severity in {"blocker", "major"} for i in issues)
         )
     )
-    detail = f"got {len(issues)} issues: {[(i.severity, i.kind) for i in issues]}"
+    exact = calibration.exact_kinds_present(required_kinds, actual_kinds)
+    detail = (
+        f"got {len(issues)} issues (exact_kind_match={exact}): "
+        f"{[(i.severity, i.kind) for i in issues]}"
+    )
     return caught, detail
 
 
@@ -318,46 +342,49 @@ def architect_allowed_paths_caught(
 
 
 # ---------------------------------------------------------------------------
-# Detection rate report
+# Detection report (v2 format, built by ralph_py.calibration)
 # ---------------------------------------------------------------------------
 
 
 class _DetectionReport:
+    """Accumulates one record per RUN (not per fixture) and delegates
+    aggregation + the on-disk format to :mod:`ralph_py.calibration`."""
+
     def __init__(self) -> None:
-        self.results: list[dict] = []
+        self.records: list[dict] = []
 
     def record(
-        self, role: str, fixture_id: str, caught: bool, detail: str = "",
+        self,
+        role: str,
+        fixture_id: str,
+        caught: bool,
+        detail: str = "",
+        *,
+        category: str | None = None,
+        cwe: str | None = None,
+        error: bool = False,
     ) -> None:
-        self.results.append({
+        self.records.append({
             "role": role,
             "fixture_id": fixture_id,
+            "category": category,
+            "cwe": cwe,
             "caught": caught,
+            "error": error,
             "detail": detail,
         })
 
-    def save(self) -> Path:
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    def save(self) -> Path | None:
+        if not self.records:
+            return None
         date_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        out = RESULTS_DIR / f"baseline-{date_str}.json"
-        summary: dict[str, dict] = {}
-        for entry in self.results:
-            role = entry["role"]
-            s = summary.setdefault(role, {"total": 0, "caught": 0})
-            s["total"] += 1
-            if entry["caught"]:
-                s["caught"] += 1
-        for counts in summary.values():
-            counts["detection_rate"] = (
-                counts["caught"] / counts["total"] if counts["total"] else 0.0
-            )
-        out.write_text(json.dumps({
-            "model": CALIBRATION_MODEL,
-            "timestamp": date_str,
-            "summary": summary,
-            "fixtures": self.results,
-        }, indent=2))
-        return out
+        report_data = calibration.build_report(
+            self.records,
+            model=CALIBRATION_MODEL,
+            timestamp=date_str,
+            runs_per_fixture=CALIBRATION_RUNS,
+        )
+        return calibration.save_report(report_data, RESULTS_DIR)
 
 
 @pytest.fixture(scope="module")
@@ -365,7 +392,64 @@ def report() -> Iterator[_DetectionReport]:
     r = _DetectionReport()
     yield r
     saved = r.save()
-    print(f"\nCalibration report saved to {saved}")
+    if saved is not None:
+        print(f"\nCalibration report saved to {saved}")
+
+
+# ---------------------------------------------------------------------------
+# N-run threshold gate (R5.1)
+#
+# Each fixture test runs the role CALIBRATION_RUNS times and gates on
+# consistency (fraction of completed runs that caught the planted
+# issue) instead of hard-asserting a single run. Agent-infrastructure
+# errors (the CLI is unavailable, the process dies) are excluded from
+# the denominator; unparseable model output is a completed miss - a
+# role that emits garbage failed to behave, which is exactly what
+# calibration measures.
+# ---------------------------------------------------------------------------
+
+
+class _AgentUnavailable(Exception):
+    """The agent could not run at all (infrastructure, not behavior)."""
+
+
+def _gate_on_consistency(
+    role: str,
+    fixture_id: str,
+    report: _DetectionReport,
+    run_once: Callable[[], tuple[bool, str]],
+    *,
+    category: str | None = None,
+    cwe: str | None = None,
+) -> None:
+    """Run ``run_once`` CALIBRATION_RUNS times, record every run, then
+    assert the fixture's consistency meets the codified threshold."""
+    detected = 0
+    errored = 0
+    details: list[str] = []
+    for run_index in range(CALIBRATION_RUNS):
+        try:
+            caught, detail = run_once()
+            error = False
+        except _AgentUnavailable as exc:
+            caught, detail, error = False, f"agent error: {exc}", True
+            errored += 1
+        if caught:
+            detected += 1
+        details.append(f"run {run_index + 1}: caught={caught} {detail}")
+        report.record(
+            role, fixture_id, caught, detail,
+            category=category, cwe=cwe, error=error,
+        )
+    completed = CALIBRATION_RUNS - errored
+    if completed == 0:
+        pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
+    observed = calibration.consistency(detected, completed)
+    assert observed >= calibration.FIXTURE_DETECTION_THRESHOLD, (
+        f"{role} missed planted issue {fixture_id} in most runs: "
+        f"consistency {detected}/{completed} = {observed:.2f} < "
+        f"{calibration.FIXTURE_DETECTION_THRESHOLD}\n" + "\n".join(details)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -386,23 +470,19 @@ def test_security_role_catches_planted_bug(
         diff_content=diff_content,
     )
 
-    agent = _get_calibration_agent()
-    output: list[str] = []
-    try:
-        output = _collect(agent, prompt, tmp_path)
-    except Exception as exc:  # noqa: BLE001
-        report.record("security", meta["fixture_id"], False, f"agent error: {exc}")
-        pytest.skip(f"agent unavailable: {exc}")
+    def run_once() -> tuple[bool, str]:
+        agent = _get_calibration_agent()
+        try:
+            output = _collect(agent, prompt, tmp_path)
+        except Exception as exc:  # noqa: BLE001
+            raise _AgentUnavailable(str(exc)) from exc
+        raw = _select_agent_output(agent, output)
+        result = parse_security_output(raw, SecurityMode.ADVISORY.value)
+        return security_caught(result, meta["must_detect"])
 
-    raw = _select_agent_output(agent, output)
-    result = parse_security_output(raw, SecurityMode.ADVISORY.value)
-
-    caught, detail = security_caught(result, meta["must_detect"])
-    report.record("security", meta["fixture_id"], caught, detail)
-    assert caught, (
-        f"Security role missed planted bug {meta['fixture_id']}: "
-        f"expected category={meta['must_detect']['category']}, "
-        f"got findings={[f.category for f in result.findings]}"
+    _gate_on_consistency(
+        "security", meta["fixture_id"], report, run_once,
+        category=meta["must_detect"]["category"], cwe=meta.get("cwe"),
     )
 
 
@@ -426,23 +506,19 @@ def test_reviewer_role_catches_planted_concern(
         verification_summary=_VERIFICATION_STUB,
     )
 
-    agent = _get_calibration_agent()
-    output: list[str] = []
-    try:
-        output = _collect(agent, prompt, tmp_path)
-    except Exception as exc:  # noqa: BLE001
-        report.record("reviewer", meta["fixture_id"], False, f"agent error: {exc}")
-        pytest.skip(f"agent unavailable: {exc}")
+    def run_once() -> tuple[bool, str]:
+        agent = _get_calibration_agent()
+        try:
+            output = _collect(agent, prompt, tmp_path)
+        except Exception as exc:  # noqa: BLE001
+            raise _AgentUnavailable(str(exc)) from exc
+        raw = _select_agent_output(agent, output)
+        result = parse_review_output(raw)
+        return reviewer_caught(result, meta["must_detect"])
 
-    raw = _select_agent_output(agent, output)
-    result = parse_review_output(raw)
-
-    caught, detail = reviewer_caught(result, meta["must_detect"])
-    report.record("reviewer", meta["fixture_id"], caught, detail)
-    assert caught, (
-        f"Reviewer missed planted concern {meta['fixture_id']}: "
-        f"expected category={meta['must_detect']['category']}, "
-        f"got concerns={[(c.category, c.severity) for c in result.concerns]}"
+    _gate_on_consistency(
+        "reviewer", meta["fixture_id"], report, run_once,
+        category=meta["must_detect"]["category"],
     )
 
 
@@ -464,27 +540,24 @@ def test_architect_role_flags_vague_spec(
         spec_content=spec_content,
     )
 
-    agent = _get_calibration_agent()
-    output: list[str] = []
-    try:
-        output = _collect(agent, prompt, tmp_path)
-    except Exception as exc:  # noqa: BLE001
-        report.record("architect", meta["fixture_id"], False, f"agent error: {exc}")
-        pytest.skip(f"agent unavailable: {exc}")
+    def run_once() -> tuple[bool, str]:
+        agent = _get_calibration_agent()
+        try:
+            output = _collect(agent, prompt, tmp_path)
+        except Exception as exc:  # noqa: BLE001
+            raise _AgentUnavailable(str(exc)) from exc
+        try:
+            data = _extract_agent_json(agent, output)
+        except ValueError as exc:
+            # Unparseable output is a completed behavioral miss, not
+            # an infrastructure error.
+            return False, f"json parse: {exc}"
+        issues = _parse_spec_issues(data)
+        return architect_caught(issues, meta["must_detect"])
 
-    try:
-        data = _extract_agent_json(agent, output)
-    except ValueError as exc:
-        report.record("architect", meta["fixture_id"], False, f"json parse: {exc}")
-        pytest.fail(f"Architect output did not parse for {meta['fixture_id']}: {exc}")
-        return  # unreachable but satisfies the type-checker
-
-    issues = _parse_spec_issues(data)
-
-    caught, detail = architect_caught(issues, meta["must_detect"])
-    report.record("architect", meta["fixture_id"], caught, detail)
-    assert caught, (
-        f"Architect missed planted vagueness in {meta['fixture_id']}: {detail}"
+    _gate_on_consistency(
+        "architect", meta["fixture_id"], report, run_once,
+        category="spec_issues",
     )
 
 
@@ -529,35 +602,23 @@ def test_architect_emits_sensible_allowed_paths(
         spec_content=spec_content,
     )
 
-    agent = _get_calibration_agent()
-    output: list[str] = []
-    try:
-        output = _collect(agent, prompt, tmp_path)
-    except Exception as exc:  # noqa: BLE001
-        report.record(
-            "architect_allowed_paths", meta["fixture_id"], False,
-            f"agent error: {exc}",
+    def run_once() -> tuple[bool, str]:
+        agent = _get_calibration_agent()
+        try:
+            output = _collect(agent, prompt, tmp_path)
+        except Exception as exc:  # noqa: BLE001
+            raise _AgentUnavailable(str(exc)) from exc
+        try:
+            data = _extract_agent_json(agent, output)
+        except ValueError as exc:
+            return False, f"json parse: {exc}"
+        return architect_allowed_paths_caught(
+            data, meta["must_emit_allowed_paths"],
         )
-        pytest.skip(f"agent unavailable: {exc}")
 
-    try:
-        data = _extract_agent_json(agent, output)
-    except ValueError as exc:
-        report.record(
-            "architect_allowed_paths", meta["fixture_id"], False,
-            f"json parse: {exc}",
-        )
-        pytest.fail(
-            f"Architect output did not parse for {meta['fixture_id']}: {exc}",
-        )
-        return
-
-    caught, detail = architect_allowed_paths_caught(
-        data, meta["must_emit_allowed_paths"],
-    )
-    report.record("architect_allowed_paths", meta["fixture_id"], caught, detail)
-    assert caught, (
-        f"Architect allowedPaths regression on {meta['fixture_id']}: {detail}"
+    _gate_on_consistency(
+        "architect_allowed_paths", meta["fixture_id"], report, run_once,
+        category="allowed_paths",
     )
 
 
@@ -645,4 +706,19 @@ class TestFixtureStructure:
                 assert "non_halting" in req
                 assert "every_component_has_allowed_paths" in req
 
-
+    def test_warns_when_calibration_model_differs_from_newest_baseline(
+        self,
+    ) -> None:
+        """R5.5 / H2-extended: calibration re-runs on model change, not
+        just prompt change. This structural check WARNS (never fails)
+        when the configured calibration model differs from the model
+        recorded in the newest baseline, because every recorded
+        detection rate was measured against that older model and does
+        not transfer."""
+        message = calibration.model_drift_message(RESULTS_DIR, CALIBRATION_MODEL)
+        if message is not None:
+            warnings.warn(
+                message,
+                calibration.CalibrationModelDriftWarning,
+                stacklevel=1,
+            )
