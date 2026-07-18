@@ -1,11 +1,14 @@
 """Phase C: integration tests filling untested code paths.
 
-C1 - parallel ProcessPoolExecutor execution
+C1 - parallel ProcessPoolExecutor execution (spine: real git worktrees,
+     two workers proven concurrent via a filesystem barrier)
 C2 - Phase 2 review retry path
 C3 - Phase 2.5 security review retry path
 C4 - Phase 3 contract testing tier-breaker
 C5 - single_pr mode integration
-C6 - concurrent factory invocation against same root_dir
+C6 - concurrent factory invocation against the SAME root_dir (spine:
+     second invocation refused by the run-level flock, wave-3 R0.5
+     semantics; fails if the flock is deleted)
 C8 - pickling round-trip for every config dataclass
 C9 - agent factory returns the right type for each agent_type
 
@@ -25,6 +28,7 @@ import pickle  # Safe: we pickle and immediately unpickle objects we
 # This guards the ProcessPoolExecutor compat surface.
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,6 +40,7 @@ from ralph_py.evolution import EvolutionConfig
 from ralph_py.factory import (
     ComponentResult,
     FactoryConfig,
+    FactoryResult,
     run_factory,
 )
 from ralph_py.feedforward import FeedforwardConfig
@@ -45,6 +50,7 @@ from ralph_py.review import ReviewResult
 from ralph_py.security import SecurityConfig, SecurityMode
 from ralph_py.ui.plain import PlainUI
 from ralph_py.verify import VerifyConfig
+from tests import spine_utils
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -120,36 +126,62 @@ def _verify_passing() -> VerifyConfig:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spine
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="POSIX shell fake agents")
 class TestC1ParallelExecution:
-    """Confirm the ProcessPoolExecutor path runs cleanly with
-    max_parallel > 1, not just the sequential max_parallel=1 path that
-    most existing tests use."""
+    """R4.3: true two-worker execution through the ProcessPoolExecutor
+    path - real git repo, real worktrees, real fake-agent subprocesses,
+    no mocks.
 
-    def test_two_independent_components_parallel(self, tmp_path: Path) -> None:
-        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
-        manifest = _make_manifest([
-            _component("comp-a"), _component("comp-b"),
-        ])
-        # We mock _run_component so we don't actually need worktrees; max_parallel=2
-        # combined with use_worktrees=False still routes through the parallel
-        # branch when max_parallel > 1 ... but use_worktrees=False forces
-        # max_parallel=1 inside run_factory. Test the codepath with worktrees
-        # disabled for simplicity; the ProcessPoolExecutor path itself is
-        # tested via the live factory under examples/.
-        config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
-            verify_config=_verify_passing(),
+    Concurrency proof: the two engineers rendezvous at a filesystem
+    barrier. Each records its start marker, then waits (bounded) until
+    BOTH markers exist before emitting the completion promise. If the
+    factory ran them sequentially, the first engineer would exhaust the
+    barrier wait and leave a ``.barrier-timeout`` marker, failing the
+    test - so this cannot pass without two engineers alive at once."""
+
+    def test_two_components_run_concurrently_in_worktrees(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        root = tmp_path / "repo"
+        spine_utils.init_ralph_repo(root, ("comp-a", "comp-b"))
+        sync = tmp_path / "sync"
+        sync.mkdir()
+
+        # The engineer's cwd is its worktree, whose basename is the
+        # component id. 300 * 0.05s = 15s barrier bound, far above the
+        # sub-second rendezvous when both workers are genuinely live.
+        barrier_agent = (
+            f'comp=$(basename "$PWD"); '
+            f'touch "{sync}/$comp.started"; n=0; '
+            f'while [ "$(ls "{sync}" | grep -c ".started$")" -lt 2 ]; do '
+            f'n=$((n+1)); '
+            f'if [ "$n" -gt 300 ]; then '
+            f'touch "{sync}/$comp.barrier-timeout"; break; fi; '
+            f"sleep 0.05; done; {spine_utils.COMPLETE_LINE}"
         )
-        success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
-            result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
-            )
-        assert "comp-a" in result.completed or "comp-b" in result.completed
+
+        manifest = spine_utils.make_manifest([
+            spine_utils.component("comp-a"), spine_utils.component("comp-b"),
+        ])
+        config = spine_utils.factory_config(max_parallel=2)
+        result = run_factory(
+            manifest, config,
+            spine_utils.base_config(root, agent_cmd=barrier_agent),
+            PlainUI(no_color=True), root,
+        )
+
+        started = sorted(p.name for p in sync.glob("*.started"))
+        assert started == ["comp-a.started", "comp-b.started"]
+        barrier_timeouts = sorted(p.name for p in sync.glob("*.barrier-timeout"))
+        assert barrier_timeouts == [], (
+            "an engineer exhausted the rendezvous barrier: the factory "
+            "did not run the two components concurrently"
+        )
+        assert sorted(result.completed) == ["comp-a", "comp-b"]
+        assert result.exit_code == 0
 
 
 # ---------------------------------------------------------------------------
@@ -332,49 +364,84 @@ class TestC5SinglePrMode:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.spine
 @pytest.mark.skipif(sys.platform == "win32",
-                    reason="flock is POSIX-only; concurrent worktree test")
+                    reason="flock is POSIX-only; concurrent factory test")
 class TestC6ConcurrentFactory:
-    def test_two_run_factory_calls_in_parallel(self, tmp_path: Path) -> None:
-        """Two threads call run_factory in parallel against the same
-        root_dir. With A4's flock the worktrees serialize per component."""
-        root_a = _setup_project(tmp_path / "a", ["comp-a"])
-        root_b = _setup_project(tmp_path / "b", ["comp-a"])
+    """R4.3: two real run_factory invocations against the SAME root_dir,
+    no mocks. The first invocation is held mid-run by a gated engineer;
+    while it is live, a second invocation on the same root must be
+    refused with exit code 2 (wave-3 R0.5 semantics: the run-level
+    ``.ralph/factory.lock`` flock refuses, it does not queue). Deleting
+    the flock from _acquire_run_lock makes the second invocation proceed
+    instead, so this test fails without it.
 
-        # We use separate root_dirs (rather than the SAME root_dir, which
-        # would race on manifest.json) but the same component_id, so the
-        # worktree base path collision A4 guards against would manifest
-        # if both run_factory calls happened to share storage.
-        config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            review_mode="skip", verify_config=_verify_passing(),
+    flock exclusion applies between two separate open()s of the lock
+    file even within one process (verified: second LOCK_EX|LOCK_NB is
+    denied with EWOULDBLOCK), so the first invocation can run on a
+    thread while the contender runs on the test thread."""
+
+    def test_second_invocation_on_same_root_is_refused_while_first_runs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        root = tmp_path / "repo"
+        spine_utils.init_ralph_repo(root, ("comp-a",))
+        started = tmp_path / "engineer.started"
+        release = tmp_path / "engineer.release"
+
+        # Gated engineer: proves the first invocation is mid-run, then
+        # holds until released. 600 * 0.05s = 30s bound.
+        gated_agent = (
+            f'touch "{started}"; n=0; '
+            f'while [ ! -e "{release}" ]; do n=$((n+1)); '
+            f'if [ "$n" -gt 600 ]; then exit 1; fi; sleep 0.05; done; '
+            f"{spine_utils.COMPLETE_LINE}"
         )
-        success = ComponentResult("comp-a", success=True, iterations=1)
-        errors: list[Exception] = []
 
-        def go(root: Path) -> None:
-            try:
-                manifest = _make_manifest([_component("comp-a")])
-                run_factory(
-                    manifest, config, _base_config(root),
-                    PlainUI(no_color=True), root,
+        first_results: list[FactoryResult] = []
+
+        def first_invocation() -> None:
+            first_results.append(run_factory(
+                spine_utils.make_manifest([spine_utils.component("comp-a")]),
+                spine_utils.factory_config(),
+                spine_utils.base_config(root, agent_cmd=gated_agent),
+                PlainUI(no_color=True), root,
+            ))
+
+        holder = threading.Thread(target=first_invocation)
+        holder.start()
+        try:
+            deadline = time.monotonic() + 30
+            while not started.exists():
+                assert time.monotonic() < deadline, (
+                    "first invocation never reached its engineer"
                 )
-            except Exception as e:  # noqa: BLE001
-                errors.append(e)
+                assert holder.is_alive(), (
+                    "first invocation died before its engineer started"
+                )
+                time.sleep(0.01)
 
-        # Patch ONCE around both threads. Entering/exiting the same patch
-        # target concurrently from two threads is racy and leaked the mock
-        # into ralph_py.factory._run_component for the rest of the pytest
-        # process (t2 restored t1's mock as the "original"), breaking any
-        # later test that needs the real function.
-        with patch("ralph_py.factory._run_component", return_value=success):
-            t1 = threading.Thread(target=go, args=(root_a,))
-            t2 = threading.Thread(target=go, args=(root_b,))
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
-        assert errors == []
+            # First invocation is now mid-engineer and holds the run
+            # lock. A contender on the SAME root must be refused without
+            # scheduling anything.
+            contender_manifest = spine_utils.make_manifest(
+                [spine_utils.component("comp-a")],
+            )
+            refused = run_factory(
+                contender_manifest, spine_utils.factory_config(),
+                spine_utils.base_config(root), PlainUI(no_color=True), root,
+            )
+            assert refused.exit_code == 2
+            assert refused.completed == []
+            assert contender_manifest.components[0].status == "pending"
+        finally:
+            release.write_text("go")
+            holder.join(timeout=60)
+
+        assert not holder.is_alive(), "first invocation did not finish"
+        assert first_results and first_results[0].exit_code == 0
+        assert first_results[0].completed == ["comp-a"]
 
 
 # ---------------------------------------------------------------------------

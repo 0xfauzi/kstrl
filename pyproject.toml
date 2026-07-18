@@ -18,6 +18,7 @@ ralph = "ralph_py.cli:main"
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
     "ruff>=0.6.0",
     "mypy>=1.10.0",
 ]
@@ -35,6 +36,18 @@ asyncio_mode = "auto"
 markers = [
     "spine: real-git spine tier (R4.2) - unmocked worktree/PR/lock paths; deselect with -m 'not spine' to keep the fast tier fast",
 ]
+
+# R4.4 coverage measurement. relative_files lets CI combine data files
+# recorded in different checkouts (fast tier + spine tier jobs) and lets
+# the report resolve paths from the repo root. The ratchet baseline CI
+# enforces lives in .github/coverage-baseline.txt - a MEASURED number,
+# updated only upward (or deliberately, with justification in the PR).
+[tool.coverage.run]
+source = ["ralph_py"]
+relative_files = true
+
+[tool.coverage.report]
+precision = 2
 
 [tool.ruff]
 line-length = 100

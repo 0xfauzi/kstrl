@@ -360,8 +360,15 @@ class TestRunFactoryExecution:
 
         with patch(
             "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+        ) as mock_run, patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         # Should fail because tests fail, and retries are exhausted
         assert "a" in result.failed
+        # R4.3: assert the retry actually happened, not just the final
+        # failure. max_retries=1 means two attempts (initial + one
+        # retry) before the component fails for good.
+        assert mock_run.call_count == 2
+        comp = manifest.get_component("a")
+        assert comp is not None
+        assert comp.retries == 1

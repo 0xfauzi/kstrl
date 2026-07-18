@@ -344,10 +344,11 @@ mock-only coverage.
     agent writes its received prompt to a file; assert the diff-scope failure
     details from attempt 1 appear in attempt 2's prompt).
   - Spine I landed (marker + worktree lifecycle incl. two-process flock
-    exclusion + PR failure paths with an unmocked engineer). Spine II
-    (session 6C: contract merge/conflict recovery, crash recovery,
-    retry-context propagation e2e) remains, plus the CI job split.
-- [ ] R4.3 (M) **Fix misleading tests** [T-5, T-6, T-8, T-9, T-10, T-11, T-15]
+    exclusion + PR failure paths with an unmocked engineer). The CI job
+    split landed with R4.3/R4.4 (fast job `-m "not spine"`, spine job
+    `-m spine`). Spine II (session 6C: contract merge/conflict recovery,
+    crash recovery, retry-context propagation e2e) remains.
+- [x] R4.3 (M) **Fix misleading tests** [T-5, T-6, T-8, T-9, T-10, T-11, T-15]
   - C1 becomes a true 2-worker worktree test; C6 uses the same root and proves
     serialization (fails if the flock is removed); C4 asserts the breaker was
     reset AND re-ran; verification-retry test counts attempts.
@@ -356,7 +357,7 @@ mock-only coverage.
     fail) or correct the docstring: implement the test, it is cheap.
   - Codex live-contract test becomes opt-in (`RALPH_RUN_LIVE_CONTRACT=1`), so
     the default suite makes zero network calls.
-- [ ] R4.4 (S) **Coverage measurement** [T-16]
+- [x] R4.4 (S) **Coverage measurement** [T-16]
   - pytest-cov in dev deps; CI reports coverage; ratchet gate (fail if coverage
     drops below the last recorded value) rather than an arbitrary threshold.
     Measured, not guessed: capture the baseline in the PR that adds it.
