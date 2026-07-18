@@ -15,14 +15,15 @@ What this file protects against:
    constant without updating the recorded snapshot, the snapshot test
    fails -- because the recorded version no longer matches the live one.
 
-3. **Hash-without-version drift.** If a developer updates the recorded
-   snapshot's hash but keeps the version pinned at the previous value
-   (effectively claiming "this is the same version"), the snapshot test
-   passes -- but ``test_no_silent_version_pin`` catches the case where
-   the *prompt body* changed (compared to the snapshot's prior recorded
-   hash, tracked via git history in the PR diff) without the version
-   moving. This is the weakest enforcement layer; it relies on the
-   reviewer noticing the diff. See H3-NOTE below for the limit.
+3. **Hash-without-version drift (silent version pin).** If a developer
+   edits a prompt body (the live hash moves) while leaving the version
+   constant pinned at its old value, the snapshot check fails on the
+   hash mismatch alone -- the pinned version cannot mask the edit.
+   ``test_no_silent_version_pin`` regression-guards exactly this
+   failure mode by mutating a live prompt body and asserting the check
+   raises on the hash while the version columns still agree. The
+   residual bypass (updating the RECORDED snapshot hash while pinning
+   both version stores) is out of in-process reach; see H3-NOTE below.
 
 4. **New prompt without enrollment.** ``test_no_unenrolled_prompt_constants``
    AST-walks ralph_py/ for any module-level ``*_PROMPT`` constant and
@@ -43,6 +44,8 @@ import ast
 import hashlib
 import re
 from pathlib import Path
+
+import pytest
 
 from ralph_py.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
 from ralph_py.init_cmd import (
@@ -184,6 +187,28 @@ def test_default_engineer_prompt_snapshot_unchanged() -> None:
     _check_snapshot("DEFAULT_PROMPT")
 
 
+def test_no_silent_version_pin(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R4.3: a prompt-body edit with the version left pinned MUST fail.
+
+    Simulates the exact drift the H3 policy exists to catch: the live
+    prompt body changes (its hash moves) while the ``*_PROMPT_VERSION``
+    constant stays at the recorded value. The snapshot check must raise
+    on the hash mismatch alone -- the agreeing versions must not let
+    the edit slip through -- and its message must direct the developer
+    at the hash, not the version."""
+    name = "REVIEWER_PROMPT"
+    monkeypatch.setitem(_PROMPTS, name, _PROMPTS[name] + "\nsilent edit")
+    with pytest.raises(AssertionError) as exc_info:
+        _check_snapshot(name)
+    message = str(exc_info.value)
+    assert "Hash:" in message, (
+        "snapshot failure must name the hash drift"
+    )
+    assert "Version:" not in message, (
+        "version columns still agree; only the hash moved"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Structural integrity
 # ---------------------------------------------------------------------------
@@ -255,10 +280,12 @@ def _is_prompt_value(value: ast.expr | None) -> bool:
     return False
 
 
-def _module_level_prompt_constants() -> dict[str, list[str]]:
-    """Walk ralph_py/*.py and find every assignment of a string literal
-    or f-string to a ``NAME`` ending in ``_PROMPT``. Returns
-    ``{module_filename: [const_name, ...]}``.
+def _module_level_prompt_constants(
+    package_root: Path | None = None,
+) -> dict[str, list[str]]:
+    """Walk ``package_root`` (default: the real ralph_py/) and find every
+    assignment of a string literal or f-string to a ``NAME`` ending in
+    ``_PROMPT``. Returns ``{module_filename: [const_name, ...]}``.
 
     Catches **all** forms a developer might use to declare a prompt:
 
@@ -272,9 +299,15 @@ def _module_level_prompt_constants() -> dict[str, list[str]]:
     ``_PROMPTS``. The walker errs on the side of inclusion -- a const
     that ``ends in _PROMPT`` and has a string-shaped value is treated
     as a prompt regardless of nesting depth or annotation style.
+
+    ``package_root`` exists so the regression-guard tests below can
+    exercise THIS function against synthetic modules instead of
+    re-implementing the walk inline (which would guard nothing).
     """
     found: dict[str, list[str]] = {}
-    ralph_py = Path(__file__).resolve().parent.parent / "ralph_py"
+    ralph_py = package_root or (
+        Path(__file__).resolve().parent.parent / "ralph_py"
+    )
     for py_file in sorted(ralph_py.rglob("*.py")):
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
@@ -342,47 +375,62 @@ def test_no_unenrolled_prompt_constants() -> None:
     )
 
 
-def test_ast_walker_catches_typed_assignment() -> None:
-    """Regression guard: the walker must catch ``NAME: str = "..."``
+def _synthetic_module(tmp_path: Path, source: str) -> Path:
+    """Write ``source`` as a module inside a synthetic package root and
+    return the root, so the REAL walker can be pointed at it."""
+    pkg = tmp_path / "synth_pkg"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text(source)
+    return pkg
+
+
+def test_ast_walker_catches_plain_assignment(tmp_path: Path) -> None:
+    """Baseline regression guard for the real walker: the plain
+    ``NAME = "..."`` form is discovered."""
+    pkg = _synthetic_module(tmp_path, 'PLAIN_PROMPT = "you are a hostile reviewer"\n')
+    assert _module_level_prompt_constants(pkg) == {
+        "synth_pkg/mod.py": ["PLAIN_PROMPT"],
+    }
+
+
+def test_ast_walker_catches_typed_assignment(tmp_path: Path) -> None:
+    """Regression guard: the REAL walker must catch ``NAME: str = "..."``
     in addition to ``NAME = "..."``. Without this, a developer can
     type-annotate the assignment and bypass H3 protection."""
-    source = 'TYPED_PROMPT: str = "you are a hostile reviewer"\n'
-    tree = ast.parse(source)
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign):
-            if not _is_prompt_value(node.value):
-                continue
-            target = node.target
-            if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
-                found.append(target.id)
-    assert found == ["TYPED_PROMPT"], (
-        "AST walker failed to catch typed-assignment prompt declaration."
+    pkg = _synthetic_module(
+        tmp_path, 'TYPED_PROMPT: str = "you are a hostile reviewer"\n',
     )
+    assert _module_level_prompt_constants(pkg) == {
+        "synth_pkg/mod.py": ["TYPED_PROMPT"],
+    }, "AST walker failed to catch typed-assignment prompt declaration."
 
 
-def test_ast_walker_catches_nested_declaration() -> None:
-    """Regression guard: the walker must catch ``NAME = "..."`` declared
-    inside a function or class body, not just at module level. Without
-    this, wrapping a prompt declaration in ``def _build_default(): ...``
-    bypasses H3."""
-    source = (
+def test_ast_walker_catches_nested_declaration(tmp_path: Path) -> None:
+    """Regression guard: the REAL walker must catch ``NAME = "..."``
+    declared inside a function or class body, not just at module level.
+    Without this, wrapping a prompt declaration in
+    ``def _build_default(): ...`` bypasses H3."""
+    pkg = _synthetic_module(tmp_path, (
         "def _build_default():\n"
         '    NESTED_PROMPT = "you are a hostile reviewer"\n'
         "    return NESTED_PROMPT\n"
-    )
-    tree = ast.parse(source)
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            if not _is_prompt_value(node.value):
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
-                    found.append(target.id)
-    assert "NESTED_PROMPT" in found, (
-        "AST walker failed to catch nested prompt declaration."
-    )
+    ))
+    assert _module_level_prompt_constants(pkg) == {
+        "synth_pkg/mod.py": ["NESTED_PROMPT"],
+    }, "AST walker failed to catch nested prompt declaration."
+
+
+def test_ast_walker_skips_enrollment_exempt_names(tmp_path: Path) -> None:
+    """The REAL walker must honor _ENROLLMENT_EXEMPT_NAMES (exempt
+    scaffolding templates are not flagged) while still catching a
+    non-exempt prompt in the same module."""
+    pkg = _synthetic_module(tmp_path, (
+        'DEFAULT_UNDERSTAND_PROMPT = "scaffolding template"\n'
+        'REAL_PROMPT = "you are a hostile reviewer"\n'
+    ))
+    assert _module_level_prompt_constants(pkg) == {
+        "synth_pkg/mod.py": ["REAL_PROMPT"],
+    }
 
 
 def test_enrollment_exempt_names_are_not_stale() -> None:
@@ -426,16 +474,11 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
     )
 
 
-def test_ast_walker_ignores_typed_assignment_without_value() -> None:
+def test_ast_walker_ignores_typed_assignment_without_value(
+    tmp_path: Path,
+) -> None:
     """``NAME: str`` with no right-hand side is not a prompt
-    declaration -- ``_is_prompt_value(None)`` returns False."""
-    source = "EMPTY_PROMPT: str\n"
-    tree = ast.parse(source)
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AnnAssign):
-            if _is_prompt_value(node.value):
-                target = node.target
-                if isinstance(target, ast.Name) and target.id.endswith("_PROMPT"):
-                    found.append(target.id)
-    assert found == []
+    declaration -- ``_is_prompt_value(None)`` returns False, so the
+    REAL walker reports nothing for it."""
+    pkg = _synthetic_module(tmp_path, "EMPTY_PROMPT: str\n")
+    assert _module_level_prompt_constants(pkg) == {}

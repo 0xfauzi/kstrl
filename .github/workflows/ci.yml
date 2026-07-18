@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   test:
+    # Fast tier: everything except the real-git spine tier (R4.2).
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -30,10 +31,101 @@ jobs:
       - name: Install project
         run: uv sync --frozen --all-extras --dev
 
-      - name: pytest
-        # Calibration tests are gated behind RALPH_RUN_CALIBRATION=1
-        # and require real LLM keys; they stay skipped in CI by design.
-        run: uv run pytest tests/ -v --tb=short
+      - name: pytest (fast tier)
+        # Calibration tests are gated behind RALPH_RUN_CALIBRATION=1 and
+        # codex live-contract tests behind RALPH_RUN_LIVE_CONTRACT=1;
+        # both require real LLM access and stay skipped in CI by design,
+        # so this job is network-free (R4.3).
+        run: >
+          uv run pytest tests/ -v --tb=short -m "not spine"
+          --cov=ralph_py --cov-report=
+
+      - name: Stash coverage data
+        run: mv .coverage coverage-fast
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-fast
+          path: coverage-fast
+          retention-days: 1
+
+  spine:
+    # Real-git spine tier (R4.2): unmocked worktree / PR / lock paths.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: pytest (spine tier)
+        run: >
+          uv run pytest tests/ -v --tb=short -m spine
+          --cov=ralph_py --cov-report=
+
+      - name: Stash coverage data
+        run: mv .coverage coverage-spine
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-spine
+          path: coverage-spine
+          retention-days: 1
+
+  coverage:
+    # R4.4: combine both tiers, publish a summary, enforce the ratchet.
+    # The baseline in .github/coverage-baseline.txt is a MEASURED number;
+    # raise it when coverage rises, never lower it without justification
+    # in the PR that does so.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test, spine]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-fast
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-spine
+
+      - name: Combine tiers
+        run: uv run coverage combine coverage-fast coverage-spine
+
+      - name: Coverage summary
+        run: |
+          echo '## Coverage (fast + spine tiers)' >> "$GITHUB_STEP_SUMMARY"
+          uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ratchet gate
+        run: |
+          BASELINE="$(cat .github/coverage-baseline.txt)"
+          echo "Ratchet baseline: ${BASELINE}%"
+          uv run coverage report --fail-under="$BASELINE"
 
   lint:
     runs-on: ubuntu-latest
