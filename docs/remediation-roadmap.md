@@ -336,7 +336,7 @@ mock-only coverage.
   - Archive (do not delete) the polluted `.ralph/evolution.jsonl` +
     `experiments.tsv` to `.ralph/archive/` and start clean journals (R6.4
     re-baselines).
-- [~] R4.2 (L) **Real-git spine tier** [T-1..T-7, T-14]
+- [x] R4.2 (L) **Real-git spine tier** [T-1..T-7, T-14]
   - New marked tier (`-m spine`, in CI as a separate job): worktree lifecycle
     incl. two-process flock contention; PR failure paths against a stub `gh`
     binary on PATH; contract merge + conflict recovery; crash recovery with
@@ -346,8 +346,11 @@ mock-only coverage.
   - Spine I landed (marker + worktree lifecycle incl. two-process flock
     exclusion + PR failure paths with an unmocked engineer). The CI job
     split landed with R4.3/R4.4 (fast job `-m "not spine"`, spine job
-    `-m spine`). Spine II (session 6C: contract merge/conflict recovery,
-    crash recovery, retry-context propagation e2e) remains.
+    `-m spine`). Spine II landed (session 6C: contract passing/conflicted
+    tier + breaker re-run against real branches, SIGKILL-mid-verify crash
+    recovery incl. the loud refusal path for a crashed branch with
+    commits, diff-scope retry-context propagation e2e, and an unmocked
+    `_run_component` plumbing smoke). Spine complete.
 - [x] R4.3 (M) **Fix misleading tests** [T-5, T-6, T-8, T-9, T-10, T-11, T-15]
   - C1 becomes a true 2-worker worktree test; C6 uses the same root and proves
     serialization (fails if the flock is removed); C4 asserts the breaker was
