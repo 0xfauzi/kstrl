@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -113,6 +114,12 @@ class SecurityResult:
     # never actually happened" so hard-mode can fail loudly instead of
     # accidentally passing on infrastructure errors.
     infrastructure_error: bool = False
+    # R1.4 (H-16): True when the reviewed diff was truncated at the
+    # prompt cap - the verdict covers only a prefix of the change.
+    # Advisory mode may pass a partial review, but visibly (PR body
+    # annotation + a low-severity marker finding); hard mode never
+    # accepts one - the factory chunks the diff instead.
+    partial: bool = False
 
     def as_retry_context(self) -> str:
         """Format failing findings for injection into the implementer's
@@ -131,11 +138,17 @@ class SecurityResult:
         return "\n".join(lines)
 
     def as_pr_body_section(self) -> str:
+        partial_note = (
+            "\n\n**PARTIAL SECURITY REVIEW (R1.4): the diff exceeded the "
+            "prompt size cap; only a truncated prefix was reviewed**"
+            if self.partial else ""
+        )
         if not self.findings:
             return (
                 "## Security Review\n\n"
                 f"**No findings ({self.mode} mode, "
                 f"{'exhaustively' if self.exhaustively_searched else 'briefly'} searched)**"
+                + partial_note
             )
         lines = ["## Security Review", ""]
         crit = sum(1 for f in self.findings if f.severity == "critical")
@@ -146,6 +159,12 @@ class SecurityResult:
             f"**{crit} critical, {high} high, {med} medium, {low} low "
             f"({self.mode} mode)**"
         )
+        if self.partial:
+            lines.append("")
+            lines.append(
+                "**PARTIAL SECURITY REVIEW (R1.4): the diff exceeded the "
+                "prompt size cap; only a truncated prefix was reviewed**"
+            )
         lines.append("")
         for f in self.findings:
             lines.append(
@@ -511,6 +530,13 @@ def run_security_review(
 
     if diff_content is None:
         diff_content = git.get_diff_content(base_branch, worktree_path)
+        # R1.4: parity with Phase 2 (E2 anti-anchoring) - the security
+        # reviewer must not see the engineer's Self-Critique block
+        # either. The factory strips once and passes diff_content in;
+        # this covers direct callers on the fetch-it-myself path.
+        diff_content = git.strip_self_critique_from_diff(diff_content)
+    # R1.4: anything past the cap is invisible to the reviewer.
+    truncated = len(diff_content) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
     prompt = _build_security_prompt(prd_text, diff_content)
 
     try:
@@ -544,12 +570,144 @@ def run_security_review(
         result.passed = _passes_threshold(
             result.findings, mode, config.fail_threshold,
         )
+
+    if truncated and not result.infrastructure_error:
+        # R1.4: the verdict covers only a prefix of the diff. Mark the
+        # result and inject a low-severity marker finding so the PR
+        # body, findings stream, and retry context all say "partial"
+        # (low never trips the hard-mode threshold on its own).
+        result.partial = True
+        result.findings.append(SecurityFinding(
+            category="other",
+            severity="low",
+            location="",
+            explanation=(
+                "Partial security review (R1.4): the diff exceeded the "
+                f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
+                "cap and only the truncated prefix was reviewed; "
+                "anything past the cut is unreviewed."
+            ),
+            suggestion=(
+                "Split the component or reduce the diff so the full "
+                "change fits one review pass."
+            ),
+        ))
+        if mode == SecurityMode.HARD.value:
+            # Backstop, not the primary path: the factory chunks
+            # oversized diffs before calling us
+            # (run_chunked_security_review). Hard mode must never
+            # approve a partially visible diff (H-16). Fail closed as
+            # infrastructure - the review did not fully happen.
+            result.passed = False
+            result.infrastructure_error = True
+            result.overall_notes = (
+                "Hard-mode security review received an oversized diff "
+                "without chunking; the unreviewed tail cannot be "
+                "approved (R1.4). " + result.overall_notes
+            ).strip()
     result.duration_seconds = time.monotonic() - start
 
     status = "passed" if result.passed else "FAILED"
+    partial_note = " (PARTIAL: diff truncated)" if result.partial else ""
     ui.info(
-        f"  Security review {status}: "
+        f"  Security review {status}{partial_note}: "
         f"{result.critical_count} critical, {result.high_count} high, "
         f"{len(result.findings)} total"
     )
     return result
+
+
+def merge_security_results(
+    results: list[SecurityResult], mode: str,
+) -> SecurityResult:
+    """R1.4: merge the per-chunk results of a chunked security review.
+
+    Policy (H-16): any chunk failure fails the merged result; findings
+    concatenate; any chunk infrastructure error marks the merged result
+    as an infrastructure error (the review did not fully happen).
+    ``exhaustively_searched`` survives only when every chunk claimed it
+    (hint, never a gate). Same ``as_findings()`` limitation as
+    ``review.merge_review_results``: an infra-errored merge renders
+    only the infrastructure finding in the typed stream, while the
+    concatenated findings stay visible via ``as_pr_body_section``.
+    """
+    if not results:
+        raise ValueError(
+            "merge_security_results requires at least one result"
+        )
+    n = len(results)
+    merged = SecurityResult(
+        passed=all(r.passed for r in results),
+        mode=mode,
+        infrastructure_error=any(r.infrastructure_error for r in results),
+        exhaustively_searched=all(r.exhaustively_searched for r in results),
+        partial=any(r.partial for r in results),
+    )
+    notes = [
+        f"Chunked security review: {n} passes over an oversized diff "
+        "(R1.4)."
+    ]
+    raw_parts: list[str] = []
+    for i, r in enumerate(results, 1):
+        merged.findings.extend(r.findings)
+        merged.duration_seconds += r.duration_seconds
+        if r.overall_notes:
+            notes.append(f"[chunk {i}/{n}] {r.overall_notes}")
+        raw_parts.append(f"--- chunk {i}/{n} ---\n{r.raw_output}")
+    merged.overall_notes = "\n".join(notes)
+    merged.raw_output = "\n".join(raw_parts)
+    return merged
+
+
+def run_chunked_security_review(
+    agent: Agent,
+    prd_path: Path,
+    worktree_path: Path,
+    base_branch: str,
+    config: SecurityConfig,
+    ui: UI,
+    diff_chunks: list[str],
+    *,
+    budget_remaining: int | None = None,
+    consume_budget: Callable[[], None] | None = None,
+    debug_dir: Path | None = None,
+) -> SecurityResult:
+    """R1.4 (H-16): security-review an oversized diff chunk by chunk,
+    one agent pass per chunk, and merge the verdicts.
+
+    Every pass counts against the adversarial budget via
+    ``consume_budget``. When ``budget_remaining`` cannot cover one pass
+    per chunk, NO pass runs and an infrastructure-error result is
+    returned: a diff that cannot be fully reviewed must fail loudly,
+    never pass partially. ``budget_remaining=None`` means unbounded.
+    """
+    n = len(diff_chunks)
+    if n == 0:
+        raise ValueError(
+            "run_chunked_security_review requires at least one chunk"
+        )
+    if budget_remaining is not None and budget_remaining < n:
+        return SecurityResult(
+            passed=False,
+            mode=config.mode,
+            overall_notes=(
+                f"Chunked security review needs {n} adversarial calls "
+                f"for {n} diff chunks but only {budget_remaining} remain "
+                "in max_adversarial_calls; refusing to review the diff "
+                "partially (R1.4)"
+            ),
+            infrastructure_error=True,
+        )
+    results: list[SecurityResult] = []
+    for i, chunk in enumerate(diff_chunks, 1):
+        if consume_budget is not None:
+            consume_budget()
+        ui.info(f"    Security review chunk {i}/{n}...")
+        results.append(run_security_review(
+            agent, prd_path, worktree_path, base_branch, config, ui,
+            diff_content=chunk,
+            # Per-chunk subdir: dump_raw_debug writes fixed filenames,
+            # so sharing one dir would overwrite earlier chunks' dumps.
+            debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+        ))
+    return merge_security_results(results, config.mode)

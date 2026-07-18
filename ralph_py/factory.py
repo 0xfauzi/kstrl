@@ -36,11 +36,17 @@ from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NullProgressLog, ProgressLog
 from ralph_py.pr import create_prs_in_order, create_single_pr
 from ralph_py.prd import PRD
-from ralph_py.review import ReviewMode, ReviewResult, run_review
+from ralph_py.review import (
+    ReviewMode,
+    ReviewResult,
+    run_chunked_review,
+    run_review,
+)
 from ralph_py.security import (
     SecurityConfig,
     SecurityMode,
     SecurityResult,
+    run_chunked_security_review,
     run_security_review,
 )
 from ralph_py.timeout import TimeoutConfig
@@ -1002,6 +1008,9 @@ def _run_factory_locked(
     # knowledge phases. When max_adversarial_calls is 0 the budget is
     # unbounded (current behavior); otherwise we skip the LLM phase
     # once the budget is exhausted, with an informational log line.
+    # R1.4 exception: hard-mode chunked reviews never skip-on-exhausted;
+    # they either cover every chunk (one call each) or fail the
+    # component as an infrastructure error.
     adversarial_calls: dict[str, int] = {"count": 0}
 
     def _adversarial_budget_ok() -> bool:
@@ -1012,6 +1021,15 @@ def _run_factory_locked(
 
     def _adversarial_budget_consume() -> None:
         adversarial_calls["count"] += 1
+
+    def _adversarial_budget_remaining() -> int | None:
+        """Calls left in the budget, or None when unbounded (R1.4:
+        chunked reviews need one call per chunk and must know whether
+        the whole diff can be covered before starting)."""
+        cap = factory_config.max_adversarial_calls
+        if cap <= 0:
+            return None
+        return max(0, cap - adversarial_calls["count"])
 
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
@@ -1057,14 +1075,23 @@ def _run_factory_locked(
                 f"{error[:80]}"
             )
             time.sleep(factory_config.retry_delay)
+            manifest.save(manifest_path)
         else:
-            comp.status = ComponentStatus.FAILED.value
-            comp.error = error
-            skipped = manifest.cascade_skip(comp.id)
-            factory_result.failed.append(comp.id)
-            factory_result.skipped.extend(skipped)
-            progress_log.component_failed(comp.id, error)
-            ui.err(f"  Failed: {comp.id}: {error[:80]}")
+            _fail_component(comp, error)
+
+    def _fail_component(comp: Component, error: str) -> None:
+        """Mark a component FAILED with no retry. Direct callers are
+        conditions a retry can never fix (R1.4: chunked-review budget
+        insufficiency - the adversarial budget only shrinks, so
+        re-running the engineer would burn LLM calls to hit the same
+        wall); _retry_or_fail routes here once retries are exhausted."""
+        comp.status = ComponentStatus.FAILED.value
+        comp.error = error
+        skipped = manifest.cascade_skip(comp.id)
+        factory_result.failed.append(comp.id)
+        factory_result.skipped.extend(skipped)
+        progress_log.component_failed(comp.id, error)
+        ui.err(f"  Failed: {comp.id}: {error[:80]}")
         manifest.save(manifest_path)
 
     def _handle_result(comp_id: str, comp_result: ComponentResult) -> None:
@@ -1228,12 +1255,90 @@ def _run_factory_locked(
             root_dir / ".ralph" / "debug" / run_id / comp_id
         )
 
-        # PHASE 2: Second-opinion review
+        # R1.4: strip the engineer's Self-Critique block ONCE and share
+        # the stripped diff with BOTH reviewers (E2 anti-anchoring now
+        # applies to Phase 2.5 too, not just Phase 2). The knowledge
+        # distiller keeps the unstripped shared_diff: the self-critique
+        # is the engineer's own account, and anti-anchoring targets
+        # adversarial reviewers, not the distiller.
+        review_diff = _git_for_diff.strip_self_critique_from_diff(shared_diff)
+
+        # R1.4 (H-16): a diff over the prompt cap must never be
+        # partially reviewed in hard mode - a rogue engineer could pad
+        # the first 50KB with benign churn and land a malicious hunk
+        # after the cut. Split once on file boundaries; both hard-mode
+        # phases reuse the same chunks (one budget call per chunk).
+        # Advisory phases keep the single truncated pass, which
+        # run_review/run_security_review annotate as PARTIAL.
         review_mode = ReviewMode(factory_config.review_mode)
+        sec_config = factory_config.security_config
+        oversized = (
+            len(review_diff) > _git_for_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        )
+        needs_chunks = oversized and (
+            review_mode == ReviewMode.HARD
+            or (
+                sec_config is not None
+                and sec_config.mode == SecurityMode.HARD.value
+            )
+        )
+        review_chunks: list[str] | None = None
+        if needs_chunks:
+            try:
+                review_chunks = _git_for_diff.split_diff_for_prompt(
+                    review_diff,
+                )
+            except _git_for_diff.DiffUnsplittableError as exc:
+                # Fail closed via the retry path: unlike budget
+                # exhaustion, the engineer CAN fix this by producing a
+                # smaller diff, so the retry context carries the signal.
+                ui.err(f"  Diff unsplittable for {comp_id}: {exc}")
+                comp.findings.append(Finding.infrastructure_error(
+                    phase="review",
+                    explanation=(
+                        "Hard-mode review requires chunking the "
+                        f"oversized diff, but it cannot be split: {exc} "
+                        "(R1.4: an unreviewable diff must not merge)"
+                    ),
+                ))
+                progress_log.emit(
+                    "diff_unsplittable", comp_id,
+                    {"error": str(exc), "diff_chars": len(review_diff)},
+                )
+                ctx = IterationContext.from_json(
+                    comp_result.context_json or "{}",
+                )
+                ctx.add_review_finding(
+                    f"The diff is too large to review ({exc}). Reduce "
+                    "the change so each file's diff fits the "
+                    f"{_git_for_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
+                    "KB review cap."
+                )
+                _retry_or_fail(
+                    comp,
+                    f"Review diff unsplittable at the prompt cap: {exc}",
+                    ctx.to_json(),
+                )
+                return
+            progress_log.emit(
+                "diff_chunked", comp_id,
+                {
+                    "chunks": len(review_chunks),
+                    "diff_chars": len(review_diff),
+                },
+            )
+
+        # PHASE 2: Second-opinion review
+        chunked_review = (
+            review_mode == ReviewMode.HARD and review_chunks is not None
+        )
         review_skip_reason: str | None = None
         if review_mode == ReviewMode.SKIP:
             review_skip_reason = "review disabled (mode=skip)"
-        elif not _adversarial_budget_ok():
+        elif not chunked_review and not _adversarial_budget_ok():
+            # Chunked hard-mode reviews never downgrade to SKIP on an
+            # exhausted budget: their budget rule is "cover every chunk
+            # or fail as infrastructure" (handled below).
             ui.warn(
                 f"  Phase 2 SKIPPED for {comp_id}: "
                 f"adversarial LLM budget ({factory_config.max_adversarial_calls}) exhausted"
@@ -1243,9 +1348,47 @@ def _run_factory_locked(
                 f"({factory_config.max_adversarial_calls}) exhausted"
             )
             review_mode = ReviewMode.SKIP
+        if review_mode == ReviewMode.HARD and review_chunks is not None:
+            remaining = _adversarial_budget_remaining()
+            if remaining is not None and remaining < len(review_chunks):
+                # R1.4: the budget cannot cover the chunks. Retrying
+                # cannot recover budget, so fail directly instead of
+                # burning engineer iterations on a deterministic wall.
+                error = (
+                    f"Chunked review needs {len(review_chunks)} "
+                    f"adversarial calls but only {remaining} remain in "
+                    f"max_adversarial_calls "
+                    f"({factory_config.max_adversarial_calls}); refusing "
+                    "a partial hard-mode review (R1.4)"
+                )
+                ui.err(f"  Phase 2 FAILED for {comp_id}: {error}")
+                comp.review_passed = False
+                comp.findings.append(Finding.infrastructure_error(
+                    phase="review", explanation=error,
+                ))
+                progress_log.emit(
+                    "chunk_budget_insufficient", comp_id,
+                    {
+                        "phase": "review",
+                        "chunks": len(review_chunks),
+                        "remaining": remaining,
+                    },
+                )
+                _fail_component(
+                    comp, f"Review infrastructure error: {error}",
+                )
+                return
         if review_mode != ReviewMode.SKIP:
-            _adversarial_budget_consume()
-            ui.info(f"  Phase 2: review ({review_mode.value}) for {comp_id}...")
+            if not chunked_review:
+                _adversarial_budget_consume()
+            chunk_note = (
+                f", {len(review_chunks)} chunks"
+                if chunked_review and review_chunks is not None else ""
+            )
+            ui.info(
+                f"  Phase 2: review ({review_mode.value}{chunk_note}) "
+                f"for {comp_id}..."
+            )
 
             # R1.2: wrap the agent-driven work like Phase 2.5 does. A
             # reviewer crash degrades to a per-component infrastructure
@@ -1257,17 +1400,34 @@ def _run_factory_locked(
                     None,
                     factory_config.review_agent_type or base_config.agent_type,
                 )
-                review_result = run_review(
-                    review_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    manifest.base_branch,
-                    verification,
-                    review_mode,
-                    ui,
-                    diff_content=shared_diff,
-                    debug_dir=adversarial_debug_dir,
-                )
+                if review_mode == ReviewMode.HARD and review_chunks is not None:
+                    # R1.4: one pass per chunk, each consuming budget;
+                    # any chunk failure fails the merged result.
+                    review_result = run_chunked_review(
+                        review_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        manifest.base_branch,
+                        verification,
+                        review_mode,
+                        ui,
+                        diff_chunks=review_chunks,
+                        budget_remaining=_adversarial_budget_remaining(),
+                        consume_budget=_adversarial_budget_consume,
+                        debug_dir=adversarial_debug_dir,
+                    )
+                else:
+                    review_result = run_review(
+                        review_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        manifest.base_branch,
+                        verification,
+                        review_mode,
+                        ui,
+                        diff_content=review_diff,
+                        debug_dir=adversarial_debug_dir,
+                    )
             except Exception as exc:  # noqa: BLE001
                 ui.warn(f"  Review crashed: {exc}")
                 review_result = ReviewResult(
@@ -1320,7 +1480,13 @@ def _run_factory_locked(
         # it catches what the correctness reviewer misses. Hard-mode
         # fails the component on findings at or above
         # SecurityConfig.fail_threshold OR on infrastructure errors.
-        sec_config = factory_config.security_config
+        # (sec_config was resolved above, where the R1.4 chunking
+        # decision needed it.)
+        chunked_security = (
+            sec_config is not None
+            and sec_config.mode == SecurityMode.HARD.value
+            and review_chunks is not None
+        )
         if sec_config is None:
             _record_phase_skip(
                 "security", "security review not configured",
@@ -1329,7 +1495,10 @@ def _run_factory_locked(
             _record_phase_skip(
                 "security", "security review disabled (mode=skip)",
             )
-        elif not _adversarial_budget_ok():
+        elif not chunked_security and not _adversarial_budget_ok():
+            # As with Phase 2: chunked hard-mode security never
+            # downgrades to SKIP on an exhausted budget - it covers
+            # every chunk or fails as infrastructure below.
             ui.warn(
                 f"  Phase 2.5 SKIPPED for {comp_id}: "
                 f"adversarial LLM budget exhausted"
@@ -1338,12 +1507,52 @@ def _run_factory_locked(
                 "security", "adversarial LLM budget exhausted",
             )
             sec_config = None
+        if (
+            sec_config is not None
+            and sec_config.mode == SecurityMode.HARD.value
+            and review_chunks is not None
+        ):
+            remaining = _adversarial_budget_remaining()
+            if remaining is not None and remaining < len(review_chunks):
+                # R1.4: same rule as Phase 2 - budget cannot cover the
+                # chunks, and retrying cannot recover budget.
+                error = (
+                    f"Chunked security review needs {len(review_chunks)} "
+                    f"adversarial calls but only {remaining} remain in "
+                    f"max_adversarial_calls "
+                    f"({factory_config.max_adversarial_calls}); refusing "
+                    "a partial hard-mode security review (R1.4)"
+                )
+                ui.err(f"  Phase 2.5 FAILED for {comp_id}: {error}")
+                comp.findings.append(Finding.infrastructure_error(
+                    phase="security", explanation=error,
+                ))
+                progress_log.emit(
+                    "chunk_budget_insufficient", comp_id,
+                    {
+                        "phase": "security",
+                        "chunks": len(review_chunks),
+                        "remaining": remaining,
+                    },
+                )
+                _fail_component(
+                    comp, f"Security review infrastructure error: {error}",
+                )
+                return
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
-            _adversarial_budget_consume()
+            if not chunked_security:
+                # Chunked passes consume per-chunk inside
+                # run_chunked_security_review instead.
+                _adversarial_budget_consume()
             from ralph_py.agents import get_agent as _get_sec_agent
 
+            chunk_note = (
+                f", {len(review_chunks)} chunks"
+                if chunked_security and review_chunks is not None else ""
+            )
             ui.info(
-                f"  Phase 2.5: security review ({sec_config.mode}) for {comp_id}..."
+                f"  Phase 2.5: security review "
+                f"({sec_config.mode}{chunk_note}) for {comp_id}..."
             )
             sec_result = None
             # The try/except deliberately wraps ONLY the agent-driven
@@ -1359,16 +1568,36 @@ def _run_factory_locked(
                     base_config.model_reasoning_effort,
                     sec_config.agent_type or base_config.agent_type,
                 )
-                sec_result = run_security_review(
-                    sec_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    manifest.base_branch,
-                    sec_config,
-                    ui,
-                    diff_content=shared_diff,
-                    debug_dir=adversarial_debug_dir,
-                )
+                if (
+                    sec_config.mode == SecurityMode.HARD.value
+                    and review_chunks is not None
+                ):
+                    # R1.4: one pass per chunk, each consuming budget
+                    # via consume_budget; any chunk failure fails the
+                    # merged result.
+                    sec_result = run_chunked_security_review(
+                        sec_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        manifest.base_branch,
+                        sec_config,
+                        ui,
+                        diff_chunks=review_chunks,
+                        budget_remaining=_adversarial_budget_remaining(),
+                        consume_budget=_adversarial_budget_consume,
+                        debug_dir=adversarial_debug_dir,
+                    )
+                else:
+                    sec_result = run_security_review(
+                        sec_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        manifest.base_branch,
+                        sec_config,
+                        ui,
+                        diff_content=review_diff,
+                        debug_dir=adversarial_debug_dir,
+                    )
             except Exception as exc:  # noqa: BLE001
                 # Agent infrastructure failed before run_security_review
                 # could classify the outcome. Synthesize an infra result
