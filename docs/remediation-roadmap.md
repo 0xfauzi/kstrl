@@ -263,7 +263,7 @@ every flag must do what it says or fail loudly.
 - [ ] R2.2 (S) **Expose the safety knobs** [CRIT-7]
   - `max_adversarial_calls` and `pause_before_pr_merge`: toml keys, env vars,
     CLI flags, documented. Budget exhaustion emits the R1.2 synthetic finding.
-- [ ] R2.3 (M) **Make `ralph run` and factory flags honest** [CRIT-8, H-10, H-11]
+- [x] R2.3 (M) **Make `ralph run` and factory flags honest** [CRIT-8, H-10, H-11]
   - Forward `max_iterations` (N), `interactive`, and `allowed_paths` through
     `_submit_args` into `_run_component`; delete the hardcoded 30.
   - `--no-verify` actually skips Phase 1 (explicit `skip` sentinel instead of
