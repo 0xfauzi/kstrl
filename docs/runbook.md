@@ -9,7 +9,7 @@ Recovery procedures for the failure modes that actually happen during factory ru
 **Diagnose**:
 
 - `prd_stories`: the agent never set `passes: true` on its assigned story. Either the iteration ran out, or the agent didn't understand the PRD.
-- `test_suite`, `typecheck`, `linter`: the project's commands failed. Check the worktree at `.ralph/worktrees/<comp_id>/` and rerun the command manually.
+- `test_suite`, `typecheck`, `linter`: the project's commands failed. To inspect the failed state, re-run with `--keep-worktrees-on-failure`: by default cleanup removes component worktrees at the end of the run, so `.ralph/worktrees/<comp_id>/` will not survive a failed run without the flag. With the flag set, check the preserved worktree and rerun the command manually.
 - `diff_scope`: the agent wrote files outside `ALLOWED_PATHS`. Tighten the allowlist or relax it as appropriate.
 - `bad_patterns`: a secret-like pattern landed in the diff.
 - `dead_code` / `mutation`: the optional advanced checks failed.
@@ -19,7 +19,7 @@ Recovery procedures for the failure modes that actually happen during factory ru
 
 1. Edit the PRD to clarify the story; re-run.
 2. Increase `--max-retries`.
-3. Run the agent loop manually against the worktree to debug interactively.
+3. Re-run with `--keep-worktrees-on-failure`, then run the agent loop manually against the preserved worktree to debug interactively.
 
 ## Phase 2: review failed (hard mode)
 

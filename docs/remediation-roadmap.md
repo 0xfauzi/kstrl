@@ -292,7 +292,7 @@ every flag must do what it says or fail loudly.
   - `prd.json` existence + schema preflight BEFORE any agent spend.
   - Add `ralph config show` (resolved config with per-value source) and
     `ralph status` stub (full version in R3.2): both are README-promised.
-- [ ] R2.5 (M) **Docs regeneration + packaging truth** [CRIT-9, D-*]
+- [x] R2.5 (M) **Docs regeneration + packaging truth** [CRIT-9, D-*]
   - Generate the README CLI reference and config reference from click
     introspection + dataclass fields (script under `scripts/`), so drift is
     structurally impossible; CI check that the generated sections are current.
@@ -426,8 +426,10 @@ spending, (c) what do I do when I come back to a partial failure.
     (6b41584, 917bde6: the pre-purge TUI work); after user approval the
     worktree and branch were removed, with a local tag
     `archive/tui-overhaul` left at 6b41584 so the commits stay
-    recoverable. Still open: the `ralph.toml.example` tracking question
-    and the remaining untracked docs artifacts.
+    recoverable. The `ralph.toml.example` tracking question was resolved
+    in the R2.5 PR: `ralph.toml.example` is tracked and the live
+    `ralph.toml` is gitignored. Still open: the remaining untracked docs
+    artifacts (a user commit-or-delete decision).
 
 Done when: a deliberately failed 3-component run can be diagnosed and resumed
 using only `ralph status`, the failure summary, and `ralph retry`, without

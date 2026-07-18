@@ -150,3 +150,9 @@ jobs:
 
       - name: mypy
         run: uv run mypy ralph_py/ --strict
+
+      - name: doc drift (R2.5)
+        # The README CLI/config reference sections are generated from the
+        # click command tree and the config dataclasses. Regeneration must
+        # produce no diff; run scripts/gen_docs.py and commit if this fails.
+        run: uv run python scripts/gen_docs.py --check
