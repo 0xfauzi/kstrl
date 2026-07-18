@@ -306,7 +306,7 @@ every flag must do what it says or fail loudly.
     worktree note aligned with keep-worktree-on-failure (R3.3), test count,
     `[sensors]`/`[fixtures]` sections removed or implemented, `ralph evolve
     --apply` promise aligned with R6.3.
-- [ ] R2.6 (S) **HITL semantics + subprocess env hygiene** [MED hitl-abort, MED env-leak, MED process-group]
+- [x] R2.6 (S) **HITL semantics + subprocess env hygiene** [MED hitl-abort, MED env-leak, MED process-group]
   - E6 "Reject" marks the component FAILED immediately (no retry loop, no
     re-prompt); "Retry" is a separate choice.
   - Verification/contract/fixture subprocesses run with a scrubbed env

@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from ralph_py import git
 from ralph_py.manifest import Manifest
+from ralph_py.verify import run_scrubbed
 
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
@@ -148,11 +149,9 @@ def _create_temp_worktree(
     contract_base.mkdir(parents=True, exist_ok=True)
     worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
     try:
-        result = subprocess.run(
+        result = run_scrubbed(
             ["git", "worktree", "add", "--detach", str(worktree_path), base],
             cwd=root_dir,
-            capture_output=True,
-            text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -170,10 +169,9 @@ def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
     index survives into worktree removal.
     """
     try:
-        subprocess.run(
+        run_scrubbed(
             ["git", "merge", "--abort"],
             cwd=worktree_path,
-            capture_output=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -192,11 +190,9 @@ def _remove_temp_worktree(
     would leave the repo's worktree metadata pointing at stale state.
     """
     try:
-        result = subprocess.run(
+        result = run_scrubbed(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
             cwd=root_dir,
-            capture_output=True,
-            text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
@@ -214,10 +210,9 @@ def _remove_temp_worktree(
         )
     if result.returncode != 0:
         # Directory is gone but git may still track it; prune metadata.
-        subprocess.run(
+        run_scrubbed(
             ["git", "worktree", "prune"],
             cwd=root_dir,
-            capture_output=True,
             timeout=timeout,
         )
 
@@ -227,14 +222,7 @@ def _run_tests(
 ) -> tuple[bool, str]:
     """Run test suite and return (passed, output)."""
     try:
-        result = subprocess.run(
-            test_command,
-            shell=True,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = run_scrubbed(test_command, cwd=cwd, timeout=timeout)
         output = (result.stdout + result.stderr).strip()
         return result.returncode == 0, output
     except subprocess.TimeoutExpired:

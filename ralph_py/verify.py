@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import py_compile
 import re
+import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,136 @@ from ralph_py.parsers import (
     parse_ruff_output,
 )
 from ralph_py.prd import PRD
+
+# R2.6 env scrub: verification subprocesses execute agent-authored code
+# (the project's tests, linters run over agent files, CLI fixtures), so
+# they must never inherit the harness's secrets. Allowlist, not denylist:
+# only names below (or matching a prefix below) pass through, everything
+# else - ANTHROPIC_API_KEY, OPENAI_API_KEY, cloud credentials, gh tokens -
+# is dropped. The set was determined empirically: `uv run pytest` with a
+# fresh venv succeeds under env -i with only PATH/HOME/TMPDIR/TERM/LANG
+# (uv locates its cache via HOME); the rest are the locale, venv, uv, and
+# CPython knobs a project's own commands legitimately consume, plus the
+# XDG cache/data paths uv honors when set.
+SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset({
+    "PATH",
+    "HOME",
+    "LANG",
+    "TMPDIR",
+    "TERM",
+    "VIRTUAL_ENV",
+    "CI",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+})
+SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_", "UV_", "PYTHON")
+
+# Belt over the allowlist's braces: an allowed prefix must never smuggle a
+# secret through (UV_PUBLISH_TOKEN matches UV_*). Any name containing one
+# of these fragments is dropped even when the allowlist admits it.
+_SCRUB_ENV_SENSITIVE_FRAGMENTS: tuple[str, ...] = (
+    "API_KEY",
+    "SECRET",
+    "TOKEN",
+    "PASSWORD",
+    "CREDENTIAL",
+)
+
+
+def scrubbed_subprocess_env() -> dict[str, str]:
+    """Allowlist-filtered copy of ``os.environ`` for verification subprocesses."""
+    env: dict[str, str] = {}
+    for name, value in os.environ.items():
+        if name not in SCRUB_ENV_ALLOWED_NAMES and not name.startswith(
+            SCRUB_ENV_ALLOWED_PREFIXES
+        ):
+            continue
+        if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
+            continue
+        env[name] = value
+    return env
+
+
+_SCRUB_TERM_GRACE_SECONDS = 5.0
+
+
+def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
+    """Signal the child's whole process group, direct-child fallback.
+
+    The pid/pgid guards are load-bearing: a mocked Popen's pid coerces to
+    1 via ``MagicMock.__index__`` and ``killpg(1, sig)`` is ``kill(-1,
+    sig)`` - signal every process this user owns. ``start_new_session=True``
+    makes the child its own group leader, so a pgid at or below 1 or equal
+    to ours means something is wrong and the group kill must not proceed.
+    """
+    pid = proc.pid
+    try:
+        if hasattr(os, "killpg") and isinstance(pid, int) and pid > 1:
+            pgid = os.getpgid(pid)
+            if pgid > 1 and pgid != os.getpgrp():
+                os.killpg(pgid, sig)
+                return
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        if sig == signal.SIGKILL:
+            proc.kill()
+        else:
+            proc.terminate()
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def run_scrubbed(
+    cmd: str | list[str],
+    *,
+    cwd: Path,
+    timeout: float,
+    term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
+) -> subprocess.CompletedProcess[str]:
+    """Run a verification subprocess: scrubbed env, own process group.
+
+    Drop-in for the ``subprocess.run(..., capture_output=True, text=True,
+    timeout=...)`` calls verification used to make, with two differences
+    (R2.6): the child gets :func:`scrubbed_subprocess_env` instead of the
+    harness environment, and on timeout the ENTIRE process group is
+    signalled (SIGTERM, grace, SIGKILL) so a test that backgrounds a
+    server cannot leak it past the deadline. A string ``cmd`` runs through
+    the shell exactly as before; a list does not.
+
+    Raises :class:`subprocess.TimeoutExpired` after the group is dead so
+    existing callers' timeout handling keeps working unchanged.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        shell=isinstance(cmd, str),
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=scrubbed_subprocess_env(),
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_process_group(proc, signal.SIGTERM)
+        try:
+            proc.wait(timeout=term_grace)
+        except subprocess.TimeoutExpired:
+            pass
+        # SIGKILL the group even when the direct child honored SIGTERM: a
+        # grandchild that ignored it can hold the pipes open and would
+        # otherwise block the drain below indefinitely.
+        _signal_process_group(proc, signal.SIGKILL)
+        try:
+            stdout, stderr = proc.communicate(timeout=term_grace)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        raise subprocess.TimeoutExpired(
+            cmd, timeout, output=stdout, stderr=stderr,
+        ) from None
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
 @dataclass
@@ -333,10 +464,7 @@ def check_test_suite(
     cmd = command or "uv run pytest"
 
     try:
-        result = subprocess.run(
-            cmd, shell=True, cwd=cwd,
-            capture_output=True, text=True, timeout=timeout,
-        )
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
             name="test_suite",
@@ -417,10 +545,7 @@ def check_typecheck(
     cmd = command or _default_typecheck_command(cwd)
 
     try:
-        result = subprocess.run(
-            cmd, shell=True, cwd=cwd,
-            capture_output=True, text=True, timeout=timeout,
-        )
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
             name="typecheck",
@@ -461,10 +586,7 @@ def check_linter(
     cmd = command or "uv run ruff check ."
 
     try:
-        result = subprocess.run(
-            cmd, shell=True, cwd=cwd,
-            capture_output=True, text=True, timeout=timeout,
-        )
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
             name="linter",
@@ -672,12 +794,9 @@ def check_mutation_score(
     # Run mutmut on changed files only
     paths_arg = " ".join(py_files)
     try:
-        result = subprocess.run(
+        result = run_scrubbed(
             f"mutmut run --paths-to-mutate={paths_arg} --no-progress",
-            shell=True,
             cwd=cwd,
-            capture_output=True,
-            text=True,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -690,14 +809,7 @@ def check_mutation_score(
 
     # Parse mutmut results
     try:
-        results_proc = subprocess.run(
-            "mutmut results",
-            shell=True,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        results_proc = run_scrubbed("mutmut results", cwd=cwd, timeout=30)
         output = results_proc.stdout
     except subprocess.TimeoutExpired:
         output = result.stdout
@@ -785,10 +897,7 @@ def check_dead_code(
 
     if shutil.which("ruff"):
         try:
-            ruff_result = subprocess.run(
-                ruff_cmd, shell=True, cwd=cwd,
-                capture_output=True, text=True, timeout=timeout,
-            )
+            ruff_result = run_scrubbed(ruff_cmd, cwd=cwd, timeout=timeout)
             # Count fixes from ruff output (lines like "Found X errors (Y fixed, ...)")
             for line in (ruff_result.stdout + ruff_result.stderr).splitlines():
                 if "fixed" in line.lower():
@@ -803,14 +912,10 @@ def check_dead_code(
         if ruff_fixed_count > 0:
             try:
                 # Stage all changes ruff made
-                subprocess.run(
-                    "git add -A", shell=True, cwd=cwd,
-                    capture_output=True, text=True, timeout=30,
-                )
-                subprocess.run(
+                run_scrubbed("git add -A", cwd=cwd, timeout=30)
+                run_scrubbed(
                     'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
-                    shell=True, cwd=cwd,
-                    capture_output=True, text=True, timeout=30,
+                    cwd=cwd, timeout=30,
                 )
             except subprocess.TimeoutExpired:
                 pass  # Non-fatal
@@ -849,10 +954,7 @@ def check_dead_code(
         )
 
     try:
-        result = subprocess.run(
-            detect_cmd, shell=True, cwd=cwd,
-            capture_output=True, text=True, timeout=timeout,
-        )
+        result = run_scrubbed(detect_cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
             name="dead_code",

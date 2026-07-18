@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     pass
 
-from ralph_py.verify import CheckResult
+from ralph_py.verify import CheckResult, run_scrubbed
 
 
 @dataclass
@@ -66,14 +66,7 @@ def run_cli_fixture(
         )
 
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = run_scrubbed(command, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return FixtureResult(
             fixture=fixture,
