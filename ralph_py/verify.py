@@ -335,17 +335,68 @@ _SELF_CRITIQUE_HEADING_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+# An iteration entry boundary in progress.txt. The engineer prompt's
+# documented format starts each appended entry with
+# `## [YYYY-MM-DD] - [Story ID]`; agents also commonly write
+# `## Iteration N`. Exactly two hashes: H3 sub-headings inside an
+# entry must not be mistaken for a new entry.
+_ITERATION_HEADING_RE = re.compile(
+    r"""^\#\#\s+
+    (?:
+        \[?\d{4}-\d{2}-\d{2}        # '## [YYYY-MM-DD] - ...' (documented form)
+      | Iteration\b                 # '## Iteration N' (loose variant)
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+# An UNINDENTED bullet opening with a closed bold label, e.g.
+# `- **Learnings:**` or `- **Interpretations** (only if ...): ...`.
+# In the engineer prompt's entry format these are sibling sections of
+# `- **Self-Critique:**`, so one of them terminates the bullet count.
+# Applied to the raw line: the Self-Critique block's own nested bullets
+# are indented and therefore never match.
+_SECTION_BULLET_RE = re.compile(r"^[\-*]\s+\*{2}[^*]+\*{2}")
+
+# Thematic break: the engineer prompt's entry format ends each entry
+# with `---`.
+_ENTRY_SEPARATOR_RE = re.compile(r"^-{3,}$")
+
 
 def check_self_critique(
     progress_path: Path, min_bullets: int = 3,
 ) -> CheckResult:
-    """Confirm the latest progress.txt entry contains a Self-Critique
-    block with at least ``min_bullets`` bullet points.
+    """Confirm the CURRENT (latest) progress.txt entry contains a
+    Self-Critique block with at least ``min_bullets`` bullet points.
 
-    The check looks at the LAST occurrence of a Self-Critique heading
-    (line matching `_SELF_CRITIQUE_HEADING_RE`, e.g. `## Self-Critique`
-    or `- **Self-Critique:**`) and counts the bullet lines that follow
-    until the next heading or end-of-file.
+    Shape check only (H4): this verifies that a Self-Critique block of
+    the right shape exists in the right place. It does NOT verify the
+    substance of the bullets - vacuous-but-plausible failure modes
+    pass. Substance is the reviewer's job.
+
+    Format assumption (from the engineer prompt's Progress Format):
+    each iteration appends an entry starting with an H2 heading of the
+    form `## [YYYY-MM-DD] - [Story ID]` (the loose `## Iteration N`
+    variant is also recognized), containing `- **Self-Critique:**` (or
+    `## Self-Critique`) followed by bullets, sibling bold-label
+    sections such as `- **Interpretations:**`, and a closing `---`.
+
+    The check first locates the latest iteration boundary (the LAST
+    line matching ``_ITERATION_HEADING_RE``), then requires a
+    Self-Critique heading within that entry - a block written by an
+    EARLIER iteration does not satisfy the check for the current one.
+    If no iteration heading exists anywhere, the whole file is treated
+    as a single entry (fallback for free-form progress files; per-
+    iteration association is not possible there).
+
+    Bullet counting stops at the next `##` heading, a `---` entry
+    separator, or an unindented bold-label bullet (a sibling section
+    like `- **Interpretations:**`), so bullets belonging to later
+    sections do not inflate the count. Consequence of the format
+    assumption: critique bullets themselves must either be indented
+    under the `- **Self-Critique:**` bullet (the documented format) or
+    not open with a bold label, otherwise they read as a sibling
+    section and the check fails loudly rather than over-counting.
 
     Without this mechanical check, the engineer prompt's mandate to
     list >=3 failure modes can silently rot - the only enforcement
@@ -363,29 +414,46 @@ def check_self_critique(
         )
 
     lines = text.splitlines()
-    # Find the LAST self-critique heading. Walking from the end lets
-    # multiple iterations accumulate without earlier ones masking the
-    # current iteration's block.
-    heading_idx: int | None = None
+    # Locate the latest iteration entry: entries are appended, so the
+    # LAST iteration heading starts the current iteration's entry.
+    entry_start = 0
+    entry_found = False
     for i in range(len(lines) - 1, -1, -1):
+        if _ITERATION_HEADING_RE.match(lines[i]):
+            entry_start = i
+            entry_found = True
+            break
+
+    # Find the LAST self-critique heading WITHIN the latest entry, so
+    # an earlier iteration's block cannot satisfy the current one and
+    # repeated blocks inside one entry resolve to the newest.
+    heading_idx: int | None = None
+    for i in range(len(lines) - 1, entry_start - 1, -1):
         if _SELF_CRITIQUE_HEADING_RE.match(lines[i]):
             heading_idx = i
             break
 
     if heading_idx is None:
+        where = (
+            f"in the latest iteration entry (line {entry_start + 1}: "
+            f"{lines[entry_start].strip()[:60]!r})"
+            if entry_found
+            else "in progress file"
+        )
         return CheckResult(
             name="self_critique",
             passed=False,
             message=(
-                "No '## Self-Critique' block found in progress file. "
+                f"No '## Self-Critique' block found {where}. "
                 "Engineer prompt mandates >=3 failure-mode bullets "
                 "before declaring done."
             ),
             duration_seconds=time.monotonic() - start,
         )
 
-    # Count bullets after the heading until the next heading (^##) or
-    # the next list-style heading (e.g. - **Learnings:**).
+    # Count bullets after the heading until the entry's content ends:
+    # next `##` heading, `---` separator, or a sibling bold-label
+    # bullet section (e.g. `- **Interpretations:**`).
     bullet_count = 0
     bullet_lines: list[str] = []
     for line in lines[heading_idx + 1:]:
@@ -393,10 +461,13 @@ def check_self_critique(
         # Stop at next major heading
         if stripped.startswith("##"):
             break
-        # Stop at the next labeled bullet header (e.g. "- **Interpretations:**")
-        if stripped.startswith("- **") and stripped.rstrip(":*").lower().endswith(
-            ("**", "**:"),
-        ) and "self" not in stripped.lower():
+        # Stop at the entry separator
+        if _ENTRY_SEPARATOR_RE.match(stripped):
+            break
+        # Stop at the next sibling section: an UNINDENTED bold-label
+        # bullet (matched on the raw line so the block's own indented
+        # bullets never terminate the count).
+        if _SECTION_BULLET_RE.match(line):
             break
         # Count substantive bullets (require non-trivial content after the marker)
         if stripped.startswith("- ") or stripped.startswith("* "):
