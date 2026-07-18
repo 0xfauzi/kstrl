@@ -275,11 +275,20 @@ class TestCliWiring:
         monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
         return captured
 
+    def _write_run_prd(self, root: Path) -> None:
+        """R2.4: `ralph run` preflights prd.json before run_factory."""
+        prd_path = root / "scripts" / "ralph" / "prd.json"
+        prd_path.parent.mkdir(parents=True, exist_ok=True)
+        prd_path.write_text(
+            json.dumps({"branchName": "ralph/test", "userStories": []})
+        )
+
     def test_run_no_verify_sets_skip_sentinel(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         captured = self._capture_run_factory(monkeypatch)
         monkeypatch.setenv("AGENT_CMD", "echo hi")
+        self._write_run_prd(tmp_path)
 
         result = CliRunner().invoke(
             cli_mod.cli,
@@ -298,6 +307,7 @@ class TestCliWiring:
     ) -> None:
         captured = self._capture_run_factory(monkeypatch)
         monkeypatch.setenv("AGENT_CMD", "echo hi")
+        self._write_run_prd(tmp_path)
 
         result = CliRunner().invoke(
             cli_mod.cli, ["run", "2", "--root", str(tmp_path)],
