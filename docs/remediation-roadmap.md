@@ -483,7 +483,7 @@ third, all in one measured cycle.
     add only if the R5.2 fixtures show they are detectable without FP cost.
   - Every edited prompt: version bump + snapshot + before/after calibration
     delta recorded in `docs/` (H2/H3 audit trail).
-- [ ] R5.4 (S) **Self-critique check correctness** [MED self-critique]
+- [x] R5.4 (S) **Self-critique check correctness** [MED self-critique]
   - Associate the block with the CURRENT iteration's entry; fix the dead
     boundary-break so unrelated bullets stop inflating the count; fuzz corpus
     extended with the regression cases. (Substance stays out of scope: shape
