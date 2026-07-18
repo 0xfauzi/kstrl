@@ -1076,6 +1076,10 @@ def decompose(
         ui_impl.ok(f"Decomposed into {len(manifest.components)} components")
     except SpecBlockerError as exc:
         ui_impl.err(str(exc))
+        # R1.7: point at the durable artifact so the user iterates
+        # against a file, not scrollback.
+        if exc.artifact_path is not None:
+            ui_impl.info(f"Spec issues written to: {exc.artifact_path}")
         sys.exit(2)
     except ValueError as exc:
         ui_impl.err(str(exc))
@@ -1388,8 +1392,11 @@ def factory(
             )
         except SpecBlockerError as exc:
             # Architect halted: spec has blocker-severity issues. Surface
-            # them and exit cleanly. The user fixes the spec and re-runs.
+            # them and exit cleanly. The user fixes the spec and re-runs,
+            # iterating against the persisted artifact (R1.7).
             ui_impl.err(str(exc))
+            if exc.artifact_path is not None:
+                ui_impl.info(f"Spec issues written to: {exc.artifact_path}")
             sys.exit(2)
         except ValueError as exc:
             ui_impl.err(str(exc))

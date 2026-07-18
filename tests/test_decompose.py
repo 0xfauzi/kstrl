@@ -258,6 +258,8 @@ class TestValidateDecomposeOutput:
         assert any("allowedPaths" in e for e in errors)
 
     def test_allowed_paths_valid(self) -> None:
+        # userStories must be non-empty since R1.8's vacuous-PRD gate,
+        # so this fixture carries one real story.
         data = {
             "components": [
                 {
@@ -270,7 +272,16 @@ class TestValidateDecomposeOutput:
                         "tests/",
                         "scripts/ralph/feature/comp-a/",
                     ],
-                    "userStories": [],
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "S1",
+                            "acceptanceCriteria": ["AC1", "AC2"],
+                            "priority": 1,
+                            "passes": False,
+                            "notes": "",
+                        }
+                    ],
                 }
             ]
         }
@@ -572,3 +583,368 @@ class TestDecomposeSpec:
                 root_dir=tmp_path,
                 max_retries=2,
             )
+
+
+class SequenceAgent:
+    """Agent returning one canned output per invocation, recording prompts."""
+
+    def __init__(self, outputs: list[str]):
+        self._outputs = outputs
+        self._final_message: str | None = None
+        self.prompts: list[str] = []
+
+    @property
+    def name(self) -> str:
+        return "sequence-agent"
+
+    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+        self.prompts.append(prompt)
+        output = self._outputs[min(len(self.prompts) - 1, len(self._outputs) - 1)]
+        self._final_message = output
+        yield from output.splitlines()
+
+    @property
+    def final_message(self) -> str | None:
+        return self._final_message
+
+
+def _story(**overrides: object) -> dict[str, object]:
+    story: dict[str, object] = {
+        "id": "US-001",
+        "title": "S1",
+        "acceptanceCriteria": ["AC1", "AC2"],
+        "priority": 1,
+        "passes": False,
+        "notes": "",
+    }
+    story.update(overrides)
+    return story
+
+
+def _single_component_output(
+    stories: list[dict[str, object]],
+    spec_issues: list[dict[str, object]] | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "components": [
+            {
+                "id": "comp-a",
+                "title": "A",
+                "description": "x",
+                "dependencies": [],
+                "allowedPaths": [
+                    "src/", "tests/", "scripts/ralph/feature/comp-a/",
+                ],
+                "userStories": stories,
+            }
+        ],
+    }
+    if spec_issues is not None:
+        payload["spec_issues"] = spec_issues
+    return json.dumps(payload)
+
+
+class TestVacuousPrdRejection:
+    """R1.8: vacuous shapes that previously sailed through validation."""
+
+    def test_empty_user_stories_rejected(self) -> None:
+        data = json.loads(_single_component_output([]))
+        errors = _validate_decompose_output(data)
+        assert any(
+            "userStories" in e and "must not be empty" in e for e in errors
+        )
+
+    def test_empty_acceptance_criteria_rejected(self) -> None:
+        data = json.loads(
+            _single_component_output([_story(acceptanceCriteria=[])])
+        )
+        errors = _validate_decompose_output(data)
+        assert any(
+            "acceptanceCriteria" in e and "must not be empty" in e
+            for e in errors
+        )
+
+    def test_passes_true_rejected(self) -> None:
+        data = json.loads(_single_component_output([_story(passes=True)]))
+        errors = _validate_decompose_output(data)
+        assert any("passes" in e and "must be false" in e for e in errors)
+
+    def test_vacuous_output_is_retryable(self, tmp_path: Path) -> None:
+        """passes:true fails attempt 1; the retry prompt carries the
+        error and attempt 2 succeeds."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        agent = SequenceAgent([
+            _single_component_output([_story(passes=True)]),
+            _single_component_output([_story()]),
+        ])
+        manifest = decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=agent,
+            ui=PlainUI(no_color=True),
+            root_dir=tmp_path,
+        )
+
+        assert len(agent.prompts) == 2
+        assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
+        assert "passes" in agent.prompts[1]
+        assert len(manifest.components) == 1
+
+
+BLOCKER_ISSUE: dict[str, object] = {
+    "severity": "blocker",
+    "kind": "ambiguity",
+    "summary": "What 'fast' means is not defined",
+    "location": "Performance section",
+    "suggestion": "Specify a P95 latency budget",
+}
+
+MINOR_ISSUE: dict[str, object] = {
+    "severity": "minor",
+    "kind": "missing_detail",
+    "summary": "Edge case unspecified",
+    "location": "API section",
+    "suggestion": "Document the empty-input path",
+}
+
+
+class TestSpecIssuesPersistence:
+    """R1.7: red-team output becomes a durable artifact + journal event."""
+
+    def _run(
+        self,
+        tmp_path: Path,
+        output: str,
+    ) -> Path:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec\nBuild it.")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True, exist_ok=True)
+        decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=MockDecomposeAgent(output),
+            ui=PlainUI(no_color=True),
+            root_dir=tmp_path,
+        )
+        return tmp_path / "scripts" / "ralph" / "spec-issues.json"
+
+    def test_artifact_written_on_halt(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Vague spec")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        with pytest.raises(SpecBlockerError) as exc_info:
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=MockDecomposeAgent(output),
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+
+        artifact = tmp_path / "scripts" / "ralph" / "spec-issues.json"
+        assert artifact.exists()
+        assert exc_info.value.artifact_path == artifact
+
+        content = json.loads(artifact.read_text())
+        assert content["project"] == "test"
+        assert content["specFile"] == "spec.md"
+        assert content["halted"] is True
+        assert content["counts"] == {"blocker": 1, "major": 0, "minor": 0}
+        assert content["issues"] == [
+            {
+                "severity": "blocker",
+                "kind": "ambiguity",
+                "summary": "What 'fast' means is not defined",
+                "location": "Performance section",
+                "suggestion": "Specify a P95 latency budget",
+            }
+        ]
+
+    def test_artifact_written_on_success(self, tmp_path: Path) -> None:
+        artifact = self._run(
+            tmp_path,
+            _single_component_output([_story()], spec_issues=[MINOR_ISSUE]),
+        )
+        assert artifact.exists()
+        content = json.loads(artifact.read_text())
+        assert content["halted"] is False
+        assert content["counts"] == {"blocker": 0, "major": 0, "minor": 1}
+        assert content["issues"][0]["summary"] == "Edge case unspecified"
+        assert content["issues"][0]["location"] == "API section"
+
+    def test_artifact_written_on_clean_audit(self, tmp_path: Path) -> None:
+        """An empty issues array is the record that the audit ran and
+        found nothing - distinct from no record at all."""
+        artifact = self._run(
+            tmp_path, _single_component_output([_story()], spec_issues=[]),
+        )
+        assert artifact.exists()
+        content = json.loads(artifact.read_text())
+        assert content["halted"] is False
+        assert content["issues"] == []
+
+    def _read_journal_events(self, tmp_path: Path) -> list[dict[str, object]]:
+        journal = tmp_path / ".ralph" / "evolution.jsonl"
+        assert journal.exists(), "journal event was not written"
+        entries = [
+            json.loads(line)
+            for line in journal.read_text().splitlines()
+            if line.strip()
+        ]
+        return [e for e in entries if e.get("event_type") == "spec_issues"]
+
+    def test_journal_event_on_halt(self, tmp_path: Path) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Vague spec")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        with pytest.raises(SpecBlockerError):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=MockDecomposeAgent(output),
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+
+        events = self._read_journal_events(tmp_path)
+        assert len(events) == 1
+        assert events[0]["halted"] is True
+        assert events[0]["counts"] == {"blocker": 1, "major": 0, "minor": 0}
+        assert events[0]["artifact"] == "scripts/ralph/spec-issues.json"
+
+    def test_journal_event_on_success(self, tmp_path: Path) -> None:
+        self._run(
+            tmp_path,
+            _single_component_output([_story()], spec_issues=[MINOR_ISSUE]),
+        )
+        events = self._read_journal_events(tmp_path)
+        assert len(events) == 1
+        assert events[0]["halted"] is False
+        assert events[0]["counts"] == {"blocker": 0, "major": 0, "minor": 1}
+
+
+class TestPrdValidationInsideRetryLoop:
+    """R1.8: PRD schema errors are retryable and never leave partial files."""
+
+    def test_malformed_story_triggers_retry(self, tmp_path: Path) -> None:
+        """A story missing the 'notes' key passes decompose-output
+        validation but fails PRD schema validation; the error must feed
+        back through the retry loop instead of crashing after it."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        malformed = _story()
+        del malformed["notes"]
+        agent = SequenceAgent([
+            _single_component_output([malformed]),
+            _single_component_output([_story()]),
+        ])
+        manifest = decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=agent,
+            ui=PlainUI(no_color=True),
+            root_dir=tmp_path,
+        )
+
+        assert len(agent.prompts) == 2
+        assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
+        assert "notes" in agent.prompts[1]
+        assert len(manifest.components) == 1
+        prd_path = (
+            tmp_path / "scripts" / "ralph" / "feature" / "comp-a" / "prd.json"
+        )
+        assert prd_path.exists()
+        assert PRD.load(prd_path).user_stories[0].id == "US-001"
+
+    def test_no_partial_files_after_terminal_failure(
+        self, tmp_path: Path
+    ) -> None:
+        """Terminal validation failure must not leave prd.json, feature
+        dirs, or a manifest behind."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        malformed = _story()
+        del malformed["notes"]
+        agent = MockDecomposeAgent(_single_component_output([malformed]))
+        with pytest.raises(ValueError, match="Failed to decompose"):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=agent,
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+                max_retries=2,
+            )
+
+        assert not (tmp_path / "scripts" / "ralph" / "feature").exists()
+        assert not (tmp_path / "scripts" / "ralph" / "manifest.json").exists()
+        assert list(tmp_path.rglob("prd.json")) == []
+
+    def test_write_failure_cleans_up_partial_prds(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If writing component 2's PRD fails, component 1's already
+        written PRD and the directories created for it are removed; the
+        spec-issues audit artifact survives."""
+        import ralph_py.decompose as decompose_mod
+
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature")
+        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+
+        real_generate = decompose_mod._generate_component_prd
+        calls: list[str] = []
+
+        def flaky_generate(
+            comp_data: dict[str, object], root_dir: Path, branch_name: str
+        ) -> Path:
+            calls.append(str(comp_data["id"]))
+            if len(calls) == 2:
+                raise OSError("disk full")
+            return real_generate(comp_data, root_dir, branch_name)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(
+            decompose_mod, "_generate_component_prd", flaky_generate
+        )
+
+        agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
+        with pytest.raises(OSError, match="disk full"):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=agent,
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+
+        assert calls == ["database", "api"]
+        assert list(tmp_path.rglob("prd.json")) == []
+        assert not (tmp_path / "scripts" / "ralph" / "feature").exists()
+        assert not (tmp_path / "scripts" / "ralph" / "manifest.json").exists()
+        # The audit artifact is deliberately kept.
+        assert (tmp_path / "scripts" / "ralph" / "spec-issues.json").exists()

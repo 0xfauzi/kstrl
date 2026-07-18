@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -38,11 +41,17 @@ class SpecBlockerError(Exception):
 
     The decompose pipeline halts until the human resolves the spec
     rather than letting a vague spec produce a brittle implementation.
-    The blocking issues are attached via ``issues``.
+    The blocking issues are attached via ``issues``; ``artifact_path``
+    points at the persisted spec-issues.json (R1.7) when the write
+    succeeded, so callers can direct the user at a durable record
+    instead of scrollback.
     """
 
-    def __init__(self, issues: list[SpecIssue]):
+    def __init__(
+        self, issues: list[SpecIssue], artifact_path: Path | None = None
+    ):
         self.issues = issues
+        self.artifact_path = artifact_path
         summary_lines = [f"- [{i.severity}/{i.kind}] {i.summary}" for i in issues]
         super().__init__(
             "Spec has blocker-severity issues; resolve before re-running:\n"
@@ -524,6 +533,16 @@ def _validate_decompose_output(data: Any) -> list[str]:
             errors.append(f"{prefix}.userStories: must be an array")
             continue
 
+        if not stories:
+            # R1.8: a component with zero stories has nothing for the
+            # engineer to implement and nothing for the reviewer to
+            # fail against - it auto-passes downstream. Vacuous, not
+            # minimal; reject with a retryable message.
+            errors.append(
+                f"{prefix}.userStories: must not be empty -- every "
+                "component needs at least one user story"
+            )
+
         for j, story in enumerate(stories):
             sp = f"{prefix}.userStories[{j}]"
             if not isinstance(story, dict):
@@ -535,6 +554,23 @@ def _validate_decompose_output(data: Any) -> list[str]:
                 if story_id in seen_story_ids:
                     errors.append(f"{sp}.id: duplicate story ID '{story_id}'")
                 seen_story_ids.add(story_id)
+
+            # R1.8 vacuous-PRD gates. Type errors (non-list criteria,
+            # non-bool passes) are caught by the PRD schema validation
+            # stage of the retry loop; these two checks reject shapes
+            # that are type-valid but semantically empty.
+            criteria = story.get("acceptanceCriteria")
+            if isinstance(criteria, list) and not criteria:
+                errors.append(
+                    f"{sp}.acceptanceCriteria: must not be empty -- a "
+                    "story with no criteria is vacuously satisfiable"
+                )
+            if story.get("passes") is True:
+                errors.append(
+                    f"{sp}.passes: must be false -- stories start "
+                    "unimplemented; passes:true would skip the story "
+                    "and auto-pass review"
+                )
 
     # Check dependency references
     for comp in components:
@@ -622,19 +658,135 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
                 ui.info(f"    suggestion: {issue.suggestion}")
 
 
-def _generate_component_prd(
-    comp_data: dict[str, Any],
+# Relative location of the persisted red-team artifact (R1.7). Lives
+# next to manifest.json so one directory holds the decompose outputs.
+SPEC_ISSUES_REL_PATH = Path("scripts") / "ralph" / "spec-issues.json"
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Atomic JSON write: temp file in the same directory then
+    ``os.replace`` (same pattern as ``Manifest.save`` and
+    ``knowledge.write_facts``)."""
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-"
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+        os.replace(tmp_name, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
+    return [
+        {
+            "severity": i.severity,
+            "kind": i.kind,
+            "summary": i.summary,
+            "location": i.location,
+            "suggestion": i.suggestion,
+        }
+        for i in issues
+    ]
+
+
+def _issue_counts(issues: list[SpecIssue]) -> dict[str, int]:
+    return {
+        sev: sum(1 for i in issues if i.severity == sev)
+        for sev in ("blocker", "major", "minor")
+    }
+
+
+def persist_spec_issues(
+    issues: list[SpecIssue],
     root_dir: Path,
-    branch_name: str,
+    project_name: str,
+    spec_file: str,
+    *,
+    halted: bool,
 ) -> Path:
-    """Generate a standard PRD file for one component.
+    """Persist the architect's red-team findings to a durable artifact (R1.7).
 
-    Returns the path to the generated prd.json.
+    Written on every decompose that produced parseable output, including
+    a clean audit: an empty ``issues`` array is the record that the
+    audit ran and found nothing, which is a different fact from "no
+    record". Returns the artifact path; raises ``OSError`` on write
+    failure so the caller can surface it loudly.
     """
-    comp_id: str = comp_data["id"]
-    feature_dir: Path = root_dir / "scripts" / "ralph" / "feature" / comp_id
-    feature_dir.mkdir(parents=True, exist_ok=True)
+    path = root_dir / SPEC_ISSUES_REL_PATH
+    payload: dict[str, Any] = {
+        "project": project_name,
+        "specFile": spec_file,
+        "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "halted": halted,
+        "counts": _issue_counts(issues),
+        "issues": _issue_dicts(issues),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(path, payload)
+    return path
 
+
+def _record_spec_issues_event(
+    issues: list[SpecIssue],
+    root_dir: Path,
+    project_name: str,
+    spec_file: str,
+    halted: bool,
+    ui: UI,
+) -> None:
+    """Append a spec_issues event to the evolution journal (R1.7).
+
+    Non-fatal on I/O errors, matching ``EvolutionJournal.record_run``,
+    but the failure is surfaced as a warning rather than swallowed:
+    the journal is an audit trail, so a silent skip would defeat it.
+    No ``run_id`` field: decompose runs before a factory run id exists.
+    """
+    from ralph_py.evolution import EvolutionConfig
+
+    evo_config = EvolutionConfig.load(root_dir)
+    if not evo_config.enabled:
+        return
+    journal_path = evo_config.journal_path
+    if not journal_path.is_absolute():
+        journal_path = root_dir / journal_path
+    entry: dict[str, Any] = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "project": project_name,
+        "event_type": "spec_issues",
+        "spec_file": spec_file,
+        "halted": halted,
+        "counts": _issue_counts(issues),
+        "issues": _issue_dicts(issues),
+        "artifact": SPEC_ISSUES_REL_PATH.as_posix(),
+    }
+    try:
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(journal_path, "a") as f:
+            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except OSError as exc:
+        ui.warn(f"Failed to record spec_issues journal event: {exc}")
+
+
+def _component_branch(comp_id: str, project_name: str, single_pr: bool) -> str:
+    """Branch a component's PRD will target."""
+    if single_pr:
+        return f"ralph/factory/{project_name}"
+    return f"ralph/factory/{comp_id}"
+
+
+def _build_prd_data(comp_data: dict[str, Any], branch_name: str) -> dict[str, Any]:
+    """Assemble the PRD payload for one component.
+
+    Shared by the retry-loop validation stage and the write phase so
+    what gets validated is byte-for-byte what gets written (R1.8).
+    """
     prd_data: dict[str, Any] = {
         "branchName": branch_name,
         "userStories": comp_data["userStories"],
@@ -647,19 +799,37 @@ def _generate_component_prd(
     # "scope unconstrained" (the previous global behavior).
     if "allowedPaths" in comp_data:
         prd_data["allowedPaths"] = comp_data["allowedPaths"]
+    return prd_data
 
-    prd_path = feature_dir / "prd.json"
-    with open(prd_path, "w") as f:
-        json.dump(prd_data, f, indent=2)
-        f.write("\n")
 
-    # Validate the generated PRD
+def _generate_component_prd(
+    comp_data: dict[str, Any],
+    root_dir: Path,
+    branch_name: str,
+) -> Path:
+    """Generate a standard PRD file for one component.
+
+    Validates BEFORE touching disk (R1.8): the retry loop has already
+    validated this payload, so a failure here indicates a harness bug,
+    but the guard preserves the write-only-validated invariant. The
+    write itself is atomic, so a crash mid-write never leaves a
+    truncated prd.json.
+
+    Returns the path to the generated prd.json.
+    """
+    comp_id: str = comp_data["id"]
+    prd_data = _build_prd_data(comp_data, branch_name)
+
     errors = PRD.validate_schema(prd_data)
     if errors:
         raise ValueError(
             f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}"
         )
 
+    feature_dir: Path = root_dir / "scripts" / "ralph" / "feature" / comp_id
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    prd_path = feature_dir / "prd.json"
+    _atomic_write_json(prd_path, prd_data)
     return prd_path
 
 
@@ -746,82 +916,162 @@ def decompose_spec(
             data = None
             continue
 
+        # R1.8: PRD schema validation runs INSIDE the retry loop so a
+        # malformed story is a retryable error the LLM gets to fix,
+        # not a post-loop crash. Nothing is written to disk until every
+        # component's PRD payload validates.
+        prd_errors: list[str] = []
+        for comp_data in data["components"]:
+            branch = _component_branch(comp_data["id"], project_name, single_pr)
+            schema_errors = PRD.validate_schema(_build_prd_data(comp_data, branch))
+            if schema_errors:
+                prd_errors.append(
+                    f"component '{comp_data['id']}' PRD schema: "
+                    + "; ".join(schema_errors)
+                )
+        if prd_errors:
+            last_error = "; ".join(prd_errors)
+            ui.warn(f"PRD validation failed: {last_error}")
+            data = None
+            continue
+
         last_error = None
         break
 
     if data is None:
+        # No files were written in the retry loop, so terminal failure
+        # leaves no partial state behind (R1.8).
         raise ValueError(
             f"Failed to decompose spec after {max_retries} attempts. "
             f"Last error: {last_error}"
         )
 
-    # Surface red-team findings before doing any further work. If any
-    # are blockers, halt before generating PRDs - the architect
-    # explicitly judged the spec un-decomposable.
+    # Surface AND persist red-team findings before doing any further
+    # work (R1.7): the artifact and journal event are written for halt,
+    # success, and clean-audit outcomes alike. If any issue is a
+    # blocker, halt before generating PRDs - the architect explicitly
+    # judged the spec un-decomposable.
     spec_issues = _parse_spec_issues(data)
     _surface_spec_issues(spec_issues, ui)
     blockers = [i for i in spec_issues if i.severity == "blocker"]
+    artifact_path: Path | None = None
+    try:
+        artifact_path = persist_spec_issues(
+            spec_issues,
+            root_dir=root_dir,
+            project_name=project_name,
+            spec_file=spec_path.name,
+            halted=bool(blockers),
+        )
+        ui.ok(f"Spec audit written: {artifact_path}")
+    except OSError as exc:
+        # Loud but non-masking: the blocker halt (or the decompose
+        # result) matters more than the artifact write failing.
+        ui.err(f"Failed to persist spec issues to disk: {exc}")
+    _record_spec_issues_event(
+        spec_issues,
+        root_dir=root_dir,
+        project_name=project_name,
+        spec_file=spec_path.name,
+        halted=bool(blockers),
+        ui=ui,
+    )
     if blockers:
-        raise SpecBlockerError(blockers)
+        raise SpecBlockerError(blockers, artifact_path=artifact_path)
 
-    # Generate PRDs and build manifest components
-    ui.section("Generating PRDs")
-    manifest_components: list[Component] = []
-
+    # Pre-validate every branch name before any file is written.
+    # Component ids were validated in the retry loop; this can only
+    # fire for a project_name (user input) that is not branch-safe.
+    # Reject rather than sanitize so the caller sees exactly what
+    # was wrong (R0.6).
+    component_branches: dict[str, str] = {}
     for comp_data in data["components"]:
         comp_id = comp_data["id"]
-        if single_pr:
-            branch = f"ralph/factory/{project_name}"
-        else:
-            branch = f"ralph/factory/{comp_id}"
-
-        # Component ids were validated in the retry loop; this can only
-        # fire for a project_name (user input) that is not branch-safe.
-        # Reject rather than sanitize so the caller sees exactly what
-        # was wrong (R0.6).
+        branch = _component_branch(comp_id, project_name, single_pr)
         branch_error = validate_branch_name(branch)
         if branch_error:
             raise ValueError(
                 f"Cannot derive a git branch for component '{comp_id}': "
                 f"{branch_error}"
             )
+        component_branches[comp_id] = branch
 
-        prd_path = _generate_component_prd(comp_data, root_dir, branch)
-        rel_prd = prd_path.relative_to(root_dir).as_posix()
+    # Generate PRDs and build manifest components. Everything below has
+    # already validated, so a failure here is an I/O problem or a
+    # harness bug; either way, remove the files written so far rather
+    # than leaving partial decompose state for the next run to trip
+    # over (R1.8). The spec-issues artifact is deliberately NOT cleaned
+    # up - it is the audit record.
+    ui.section("Generating PRDs")
+    manifest_components: list[Component] = []
+    written_prds: list[Path] = []
+    created_dirs: list[Path] = []
+    try:
+        for comp_data in data["components"]:
+            comp_id = comp_data["id"]
+            branch = component_branches[comp_id]
 
-        manifest_components.append(
-            Component(
-                id=comp_id,
-                title=comp_data["title"],
-                description=comp_data["description"],
-                dependencies=comp_data.get("dependencies", []),
-                prd_path=rel_prd,
-                branch_name=branch,
-                status=ComponentStatus.PENDING.value,
+            # Track directories this run creates so cleanup can remove
+            # them; pre-existing directories are left alone.
+            probe = root_dir / "scripts" / "ralph" / "feature" / comp_id
+            while not probe.exists() and probe != root_dir:
+                created_dirs.append(probe)
+                probe = probe.parent
+
+            prd_path = _generate_component_prd(comp_data, root_dir, branch)
+            written_prds.append(prd_path)
+            rel_prd = prd_path.relative_to(root_dir).as_posix()
+
+            manifest_components.append(
+                Component(
+                    id=comp_id,
+                    title=comp_data["title"],
+                    description=comp_data["description"],
+                    dependencies=comp_data.get("dependencies", []),
+                    prd_path=rel_prd,
+                    branch_name=branch,
+                    status=ComponentStatus.PENDING.value,
+                )
             )
+            ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
+
+        manifest = Manifest(
+            version="1",
+            spec_file=spec_path.name,
+            project_name=project_name,
+            base_branch=base_branch,
+            single_pr=single_pr,
+            components=manifest_components,
         )
-        ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
 
-    manifest = Manifest(
-        version="1",
-        spec_file=spec_path.name,
-        project_name=project_name,
-        base_branch=base_branch,
-        single_pr=single_pr,
-        components=manifest_components,
-    )
+        # Validate DAG
+        dag_errors = manifest.validate_dag()
+        if dag_errors:
+            ui.warn("DAG validation warnings:")
+            for err in dag_errors:
+                ui.warn(f"  {err}")
 
-    # Validate DAG
-    dag_errors = manifest.validate_dag()
-    if dag_errors:
-        ui.warn("DAG validation warnings:")
-        for err in dag_errors:
-            ui.warn(f"  {err}")
-
-    # Save manifest
-    manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
-    manifest.save(manifest_path)
-    ui.ok(f"Manifest saved: {manifest_path}")
+        # Save manifest (atomic write; covered by the cleanup scope so
+        # a save failure does not strand PRDs without a manifest)
+        manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
+        manifest.save(manifest_path)
+        ui.ok(f"Manifest saved: {manifest_path}")
+    except BaseException:
+        for prd_file in written_prds:
+            try:
+                prd_file.unlink()
+            except OSError:
+                pass
+        # Deepest-first so children go before parents; rmdir refuses
+        # non-empty directories, which protects anything user-owned.
+        for created in sorted(
+            set(created_dirs), key=lambda p: len(p.parts), reverse=True
+        ):
+            try:
+                created.rmdir()
+            except OSError:
+                pass
+        raise
 
     ui.section("Decomposition Summary")
     ui.kv("Components", str(len(manifest.components)))
