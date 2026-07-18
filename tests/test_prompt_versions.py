@@ -81,20 +81,20 @@ _VERSIONS: dict[str, str] = {
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DECOMPOSE_PROMPT": (
-        "c20cd2fad257df33d3b5ce28a79c1c7752c0780fc667dc8255fd591eac2abad3",
-        "1.2.0",
+        "9fddb3faf8509503f4a00b2e84ddf9be90e398c007a77a85720b371097a3627f",
+        "1.3.0",
     ),
     "REVIEWER_PROMPT": (
-        "9307260aee8aedeea22d7fcb8e28131421013a915ec697d71f3428996bc434ca",
-        "1.0.0",
+        "4ba50b9ab16a8597459b0b5e15b70cb0b57f8c04d1b238d4340b5293388674a9",
+        "1.1.0",
     ),
     "SECURITY_PROMPT": (
-        "b70df9754eef21179f83dfbc772dd16490d89557fabc8faa6f31ae2646fae946",
-        "1.0.0",
+        "ad8fa39294e1adf3304c90af891286839c5dbe95b41ad29e222b2a45191c7be9",
+        "1.1.0",
     ),
     "DISTILL_PROMPT": (
-        "489219257322678f22dfdf22cedec2be0173e2685402314a081f9d31834205ed",
-        "1.0.0",
+        "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
+        "1.1.0",
     ),
     "DEFAULT_PROMPT": (
         "aa7fa6acb045dc6105d1a4c4ce8b687e1e04289c7b751eb0373b7c59dca3f7ae",
