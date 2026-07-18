@@ -335,20 +335,22 @@ def run(
         base_branch=detected_base,
     )
 
-    # Build factory config for single-component mode
-    v_config = None if no_verify else VerifyConfig()
-    ff_config = FeedforwardConfig() if not no_verify else None
-
+    # Build factory config for single-component mode.
+    # R2.3: --no-verify sets the explicit skip sentinel; passing
+    # verify_config=None meant "use defaults" in run_factory and Phase 1
+    # ran anyway. Feedforward is loaded from the toml/env control plane
+    # and is independent of --no-verify (it builds context, not checks).
     factory_cfg = FactoryConfig(
         max_parallel=1,
         max_retries=3,
         use_worktrees=False,
         single_pr=False,
         create_prs=False,
-        verify_config=v_config,
+        verify_config=None if no_verify else VerifyConfig(),
+        skip_verification=no_verify,
         review_mode="advisory",
         contract_config=None,
-        feedforward_config=ff_config,
+        feedforward_config=FeedforwardConfig.load(root_dir),
         timeout_config=TimeoutConfig.load(root_dir),
         force_lock=force_lock,
     )
@@ -1452,6 +1454,7 @@ def factory(
 
     # Build configs
     from ralph_py.contract import ContractConfig
+    from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.verify import VerifyConfig
 
     v_config: VerifyConfig | None = None
@@ -1499,11 +1502,18 @@ def factory(
         create_prs=create_prs,
         verify_command=verify_command,
         verify_config=v_config,
+        # R2.3: --no-verify is an explicit skip sentinel that run_factory
+        # honors; v_config=None alone would substitute default checks.
+        skip_verification=no_verify,
         review_mode=review_mode,
         review_agent_cmd=review_agent_cmd,
         review_model=review_model,
         security_config=s_config,
         contract_config=c_config,
+        # R2.3 (H-10): feedforward was never wired into this command, so
+        # ff_config_dict stayed None and Phase 0 silently never ran under
+        # `ralph factory`. Loaded via the toml/env control plane.
+        feedforward_config=FeedforwardConfig.load(root_dir),
         progress_log_path=progress_log,
         timeout_config=timeout_config,
         force_lock=force_lock,

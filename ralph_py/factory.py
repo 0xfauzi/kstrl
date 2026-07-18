@@ -44,7 +44,11 @@ from ralph_py.security import (
     run_security_review,
 )
 from ralph_py.timeout import TimeoutConfig
-from ralph_py.verify import VerifyConfig, run_mechanical_verification
+from ralph_py.verify import (
+    VerificationResult,
+    VerifyConfig,
+    run_mechanical_verification,
+)
 
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
@@ -63,6 +67,12 @@ class FactoryConfig:
     verify_command: str | None = None
     # Phase 1: mechanical verification
     verify_config: VerifyConfig | None = None
+    # R2.3 (CRIT-8): explicit skip sentinel for Phase 1. verify_config=None
+    # keeps its historical meaning of "use the default checks"; only this
+    # flag (set by --no-verify) genuinely skips mechanical verification.
+    # The skip is stated in the run output and recorded as a phase_skipped
+    # finding so "ran clean" and "never ran" stay distinguishable.
+    skip_verification: bool = False
     # Phase 2: reviewer agent
     review_mode: str = ReviewMode.HARD.value
     review_agent_cmd: str | None = None
@@ -541,6 +551,9 @@ def _run_component(
     codebase_map_file_str: str = "scripts/ralph/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
+    max_iterations: int = 10,
+    interactive: bool = False,
+    allowed_paths: list[str] | None = None,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -571,9 +584,11 @@ def _run_component(
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         worktree_prd.write_text(prd_source.read_text())
 
-    # Note: the prompt template uses $prd_path which is substituted at runtime
-    # by loop.py with config.prd_file, so the agent reads the correct component
-    # PRD without needing to overwrite scripts/ralph/prd.json.
+    # The prompt template's $prd_path placeholder (shipped in
+    # DEFAULT_PROMPT >= 1.1.0 and the scaffolded prompt.md) is substituted
+    # at runtime by loop.py with config.prd_file, so the agent reads the
+    # SAME per-component PRD that check_prd_stories re-reads (R2.3, H-11)
+    # without overwriting scripts/ralph/prd.json.
 
     # Copy prompt into worktree if needed
     worktree_prompt = worktree_path / prompt_file_str
@@ -638,14 +653,19 @@ def _run_component(
     if parts:
         context_prefix = "\n\n".join(parts)
 
+    # R2.3 (CRIT-8): max_iterations, interactive, and allowed_paths come
+    # from the invoking config via _submit_args. They were previously
+    # hardcoded here (30 / False / unset), which made `ralph run N`, -i,
+    # and --allowed-paths silent no-ops under the factory pipeline.
     config = RalphConfig(
-        max_iterations=30,
+        max_iterations=max_iterations,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
         progress_file=worktree_path / progress_file_str,
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
-        interactive=False,
+        interactive=interactive,
+        allowed_paths=list(allowed_paths) if allowed_paths else [],
         ralph_branch="",
         ralph_branch_explicit=True,
         agent_cmd=agent_cmd,
@@ -1048,67 +1068,101 @@ def _run_factory_locked(
 
         wt_path = worktree_paths.get(comp_id, root_dir)
 
+        def _record_phase_skip(phase: str, reason: str) -> None:
+            """R1.2: a phase that never ran must leave a trace in both
+            the findings stream and the journal, so "ran clean" and
+            "never ran" are distinguishable downstream."""
+            comp.findings.append(Finding.phase_skipped(phase, reason))
+            progress_log.emit(
+                "phase_skipped", comp_id,
+                {"phase": phase, "reason": reason},
+            )
+
         # PHASE 1: Mechanical verification
         comp.status = ComponentStatus.VERIFYING.value
         manifest.save(manifest_path)
 
-        verify_config = factory_config.verify_config or VerifyConfig()
-        ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
-        verify_start = time.monotonic()
-        # Per-component allowed_paths comes from the PRD (architect-emitted
-        # via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+). Without
-        # this, the diff-scope check silently passes and a rogue agent
-        # can touch anything in the worktree -- the end-to-end validation
-        # run on 2026-05-27 caught an agent editing factory internals
-        # because allowed_paths was always None here. Legacy PRDs without
-        # the field load with allowed_paths=None which preserves the
-        # prior "no constraint" behavior; v1.2.0+ architect outputs are
-        # gated upstream in decompose._validate_decompose_output.
-        #
-        # R1.5: a PRD that fails to LOAD is not the same as a PRD with
-        # no allowedPaths. Swallowing the load error into
-        # allowed_paths=None silently disabled the scope check -- an
-        # agent that corrupts or deletes its own PRD would unbind its
-        # write scope. Load failure now flows into check_diff_scope as
-        # allowed_paths_error, which fails the check closed.
-        component_allowed_paths: list[str] | None = None
-        allowed_paths_error: str | None = None
-        try:
-            prd_for_scope = PRD.load(wt_path / comp.prd_path)
-            component_allowed_paths = prd_for_scope.allowed_paths
-        except FileNotFoundError as exc:
-            allowed_paths_error = f"PRD not found: {exc}"
-        except ValueError as exc:
-            allowed_paths_error = f"PRD failed to parse: {exc}"
-        verification = run_mechanical_verification(
-            wt_path,
-            wt_path / comp.prd_path,
-            manifest.base_branch,
-            component_allowed_paths,
-            verify_config,
-            allowed_paths_error=allowed_paths_error,
-        )
-        verify_duration = time.monotonic() - verify_start
-        comp.verification_passed = verification.passed
-        progress_log.verification_result(
-            comp_id, verification.passed,
-            check_names=[c.name for c in verification.checks],
-            failures=[c.message for c in verification.checks if not c.passed],
-            duration=verify_duration,
-        )
-
-        if not verification.passed:
-            failing = [c for c in verification.checks if not c.passed]
-            ui.warn(
-                f"  Phase 1 FAILED for {comp_id}: "
-                f"{', '.join(c.name for c in failing)}"
+        if factory_config.skip_verification:
+            # R2.3: --no-verify. Previously verify_config=None fell
+            # through to VerifyConfig() defaults here and Phase 1 ran
+            # anyway - on a non-Python repo that burned every retry
+            # against checks that could never pass. The empty
+            # VerificationResult below is what downstream reviewers see:
+            # no checks ran, none are claimed.
+            ui.info(
+                f"  Phase 1 SKIPPED for {comp_id}: mechanical "
+                f"verification disabled (--no-verify)"
             )
-            ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_verification_failure(verification.as_context())
-            _retry_or_fail(comp, "Mechanical verification failed", ctx.to_json())
-            return
+            comp.verification_passed = None
+            _record_phase_skip(
+                "verify", "mechanical verification disabled (--no-verify)",
+            )
+            verification = VerificationResult(passed=True, checks=[])
+        else:
+            verify_config = factory_config.verify_config or VerifyConfig()
+            ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
+            verify_start = time.monotonic()
+            # Per-component allowed_paths comes from the PRD (architect-
+            # emitted via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+).
+            # Without this, the diff-scope check silently passes and a
+            # rogue agent can touch anything in the worktree -- the
+            # end-to-end validation run on 2026-05-27 caught an agent
+            # editing factory internals because allowed_paths was always
+            # None here. Legacy PRDs without the field load with
+            # allowed_paths=None which preserves the prior "no constraint"
+            # behavior; v1.2.0+ architect outputs are gated upstream in
+            # decompose._validate_decompose_output.
+            #
+            # R1.5: a PRD that fails to LOAD is not the same as a PRD with
+            # no allowedPaths. Swallowing the load error into
+            # allowed_paths=None silently disabled the scope check -- an
+            # agent that corrupts or deletes its own PRD would unbind its
+            # write scope. Load failure now flows into check_diff_scope as
+            # allowed_paths_error, which fails the check closed.
+            component_allowed_paths: list[str] | None = None
+            allowed_paths_error: str | None = None
+            try:
+                prd_for_scope = PRD.load(wt_path / comp.prd_path)
+                component_allowed_paths = prd_for_scope.allowed_paths
+            except FileNotFoundError as exc:
+                allowed_paths_error = f"PRD not found: {exc}"
+            except ValueError as exc:
+                allowed_paths_error = f"PRD failed to parse: {exc}"
+            verification = run_mechanical_verification(
+                wt_path,
+                wt_path / comp.prd_path,
+                manifest.base_branch,
+                component_allowed_paths,
+                verify_config,
+                allowed_paths_error=allowed_paths_error,
+            )
+            verify_duration = time.monotonic() - verify_start
+            comp.verification_passed = verification.passed
+            progress_log.verification_result(
+                comp_id, verification.passed,
+                check_names=[c.name for c in verification.checks],
+                failures=[
+                    c.message for c in verification.checks if not c.passed
+                ],
+                duration=verify_duration,
+            )
 
-        ui.ok(f"  Phase 1 passed for {comp_id}")
+            if not verification.passed:
+                failing = [c for c in verification.checks if not c.passed]
+                ui.warn(
+                    f"  Phase 1 FAILED for {comp_id}: "
+                    f"{', '.join(c.name for c in failing)}"
+                )
+                ctx = IterationContext.from_json(
+                    comp_result.context_json or "{}",
+                )
+                ctx.add_verification_failure(verification.as_context())
+                _retry_or_fail(
+                    comp, "Mechanical verification failed", ctx.to_json(),
+                )
+                return
+
+            ui.ok(f"  Phase 1 passed for {comp_id}")
 
         # Fetch the component diff once and share it across Phase 2,
         # Phase 2.5, and knowledge distillation. Without this each phase
@@ -1151,16 +1205,6 @@ def _run_factory_locked(
         adversarial_debug_dir = (
             root_dir / ".ralph" / "debug" / run_id / comp_id
         )
-
-        def _record_phase_skip(phase: str, reason: str) -> None:
-            """R1.2: a phase that never ran must leave a trace in both
-            the findings stream and the journal, so "ran clean" and
-            "never ran" are distinguishable downstream."""
-            comp.findings.append(Finding.phase_skipped(phase, reason))
-            progress_log.emit(
-                "phase_skipped", comp_id,
-                {"phase": phase, "reason": reason},
-            )
 
         # PHASE 2: Second-opinion review
         review_mode = ReviewMode(factory_config.review_mode)
@@ -1632,6 +1676,12 @@ def _run_factory_locked(
             codebase_map_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,
+            # R2.3 (CRIT-8): forward the invoking config's loop settings;
+            # they were previously dropped here and _run_component ran a
+            # hardcoded 30 non-interactive iterations with no path guard.
+            base_config.max_iterations,
+            base_config.interactive,
+            base_config.allowed_paths or None,
         )
 
     def _run_scheduling_pass() -> None:

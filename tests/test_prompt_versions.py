@@ -94,8 +94,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "1.0.0",
     ),
     "DEFAULT_PROMPT": (
-        "a4a3a090139c370d7eecd12e3ef98055352110722750bb7b4cbf9bc50b1b9125",
-        "1.0.0",
+        "aa7fa6acb045dc6105d1a4c4ce8b687e1e04289c7b751eb0373b7c59dca3f7ae",
+        "1.1.0",
     ),
 }
 

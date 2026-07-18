@@ -38,6 +38,7 @@ RALPH_ENV_PREFIXES: tuple[str, ...] = (
     "RALPH_VERIFY_",
     "RALPH_EVOLUTION_",
     "RALPH_KNOWLEDGE_",
+    "RALPH_FEEDFORWARD_",
 )
 
 # Legacy single-loop env vars (exact names, no shared prefix).

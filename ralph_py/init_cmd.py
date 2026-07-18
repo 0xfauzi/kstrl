@@ -18,8 +18,15 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.0.0"
+DEFAULT_PROMPT_VERSION = "1.1.0"
 
+# The $prd_path / $progress_path / $codebase_map_path placeholders are
+# substituted by loop.run_loop (string.Template.safe_substitute) with the
+# per-component paths, so a decomposed component's agent reads the SAME
+# PRD file that verify.check_prd_stories re-reads (R2.3, H-11). Before
+# v1.1.0 the body hardcoded scripts/ralph/prd.json while decomposed PRDs
+# live at scripts/ralph/feature/<id>/prd.json - the agent and the
+# verifier disagreed on which file mattered.
 DEFAULT_PROMPT = """# Ralph Agent Instructions
 
 You are the implementing engineer in a software factory. You will be
@@ -28,10 +35,10 @@ reviewer as already reading your diff while you write it.
 
 ## Your Task (one iteration)
 
-1. Read the PRD file for this run (default: `scripts/ralph/prd.json`)
-2. Read `scripts/ralph/progress.txt` (check `## Codebase Patterns` first)
+1. Read the PRD file for this run: `$prd_path`
+2. Read `$progress_path` (check `## Codebase Patterns` first)
 3. Derive a short list of keywords from the PRD intent, not just exact wording.
-4. If `scripts/ralph/codebase_map.md` exists, query it for sections relevant to your story
+4. If `$codebase_map_path` exists, query it for sections relevant to your story
    using those keywords.
    - Do not load the entire file.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
@@ -52,7 +59,7 @@ reviewer as already reading your diff while you write it.
    - Do NOT mark the story as done unless typecheck AND tests pass. If they fail, fix and rerun;
      only proceed when both are green.
 10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
-   `scripts/ralph/codebase_map.md` under **Iteration Notes** or update **Quick Facts**
+   `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
    (skip if nothing new).
 11. Update `AGENTS.md` files with reusable learnings
    (only if you discovered something worth preserving):
@@ -71,20 +78,20 @@ reviewer as already reading your diff while you write it.
     every new function and ask what could break it. Placeholders will
     fail the mechanical check.
 13. Commit with message: `feat: [ID] - [Title]`
-14. Update `scripts/ralph/prd.json`: set that story's `passes` to `true`
+14. Update `$prd_path`: set that story's `passes` to `true`
     (only after tests/typecheck pass AND the self-critique is written)
-15. Append learnings to `scripts/ralph/progress.txt`
+15. Append learnings to `$progress_path`
 
 ## PRD ambiguity
 
 If the PRD is too vague to implement responsibly, do NOT guess. Append an
-`## INTERPRETATION` block to `scripts/ralph/progress.txt` stating what
+`## INTERPRETATION` block to `$progress_path` stating what
 assumptions you are making and why. The reviewer will see this and can
 push back; silent guesses become silent bugs.
 
 ## Progress Format
 
-Append this to the END of `scripts/ralph/progress.txt`:
+Append this to the END of `$progress_path`:
 
 ## [YYYY-MM-DD] - [Story ID]
 - What was implemented
@@ -102,7 +109,7 @@ Append this to the END of `scripts/ralph/progress.txt`:
 
 ## Codebase Patterns
 
-Add reusable patterns to the TOP section in `scripts/ralph/progress.txt`
+Add reusable patterns to the TOP section in `$progress_path`
 under `## Codebase Patterns`.
 
 ## Stop Condition
