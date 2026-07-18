@@ -32,6 +32,9 @@ packages = ["ralph_py"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "spine: real-git spine tier (R4.2) - unmocked worktree/PR/lock paths; deselect with -m 'not spine' to keep the fast tier fast",
+]
 
 [tool.ruff]
 line-length = 100
