@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # and so newly added vars in a family are covered without editing this list.
 RALPH_ENV_PREFIXES: tuple[str, ...] = (
     "FACTORY_",
+    "RALPH_FACTORY_",
     "RALPH_TIMEOUT_",
     "RALPH_CONTRACT_",
     "RALPH_SECURITY_",
@@ -39,6 +40,8 @@ RALPH_ENV_PREFIXES: tuple[str, ...] = (
     "RALPH_EVOLUTION_",
     "RALPH_KNOWLEDGE_",
     "RALPH_FEEDFORWARD_",
+    "RALPH_MUTATION_",
+    "RALPH_DEAD_CODE_",
 )
 
 # Legacy single-loop env vars (exact names, no shared prefix).
@@ -75,12 +78,13 @@ def isolate_ralph_state(
 ) -> Path:
     """Redirect every evolution/experiments/knowledge write path to tmp_path.
 
-    Why chdir is the mechanism: ``EvolutionConfig`` defaults
-    ``journal_path``/``experiments_path`` to relative ``.ralph/...`` paths
-    resolved against CWD at write time, and ``run_factory`` constructs
-    ``EvolutionConfig()`` directly (neither env nor toml is consulted at
-    that call site), so env vars cannot redirect the factory's journal
-    writes. ``KnowledgeConfig`` likewise defaults ``knowledge_root`` to a
+    Why chdir is the mechanism: the bare ``EvolutionConfig()``
+    constructor defaults ``journal_path``/``experiments_path`` to
+    relative ``.ralph/...`` paths resolved against CWD at write time
+    (since R2.1 ``run_factory`` uses ``EvolutionConfig.load(root_dir)``,
+    which anchors them to the factory root, but direct constructions in
+    tests and legacy call sites remain CWD-relative).
+    ``KnowledgeConfig`` likewise defaults ``knowledge_root`` to a
     relative ``.ralph/knowledge`` and ``KnowledgeConfig.load(None)``
     resolves it against ``Path.cwd()``; there is no env override for the
     root. Pointing CWD at ``tmp_path`` therefore redirects every relative

@@ -125,42 +125,62 @@ class KnowledgeConfig:
             if "dependency_scope" in section:
                 config.dependency_scope = str(section["dependency_scope"])
 
-        # Env overrides
-        if "RALPH_KNOWLEDGE_ENABLED" in os.environ:
-            config.enabled = _parse_bool(os.environ["RALPH_KNOWLEDGE_ENABLED"])
-        if "RALPH_KNOWLEDGE_MAX_CORE_TOKENS" in os.environ:
-            config.max_core_tokens = int(os.environ["RALPH_KNOWLEDGE_MAX_CORE_TOKENS"])
-        if "RALPH_KNOWLEDGE_MAX_DEPENDENCY_TOKENS" in os.environ:
-            config.max_dependency_tokens = int(
-                os.environ["RALPH_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"]
-            )
-        if "RALPH_KNOWLEDGE_MAX_SIBLING_TOKENS" in os.environ:
-            config.max_sibling_tokens = int(
-                os.environ["RALPH_KNOWLEDGE_MAX_SIBLING_TOKENS"]
-            )
-        if "RALPH_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS" in os.environ:
-            config.distill_timeout_seconds = float(
-                os.environ["RALPH_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS"]
-            )
-        if "RALPH_KNOWLEDGE_DISTILL_MODEL" in os.environ:
-            config.distill_model = os.environ["RALPH_KNOWLEDGE_DISTILL_MODEL"]
-        if "RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL" in os.environ:
-            config.max_facts_per_distill = int(
-                os.environ["RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL"]
-            )
-        if "RALPH_KNOWLEDGE_DEPENDENCY_SCOPE" in os.environ:
-            config.dependency_scope = os.environ["RALPH_KNOWLEDGE_DEPENDENCY_SCOPE"]
-
-        # Re-run validation: env can supply a bad value that bypassed
-        # __post_init__ at construction time.
-        if config.dependency_scope not in _VALID_DEPENDENCY_SCOPES:
-            raise ValueError(
-                f"RALPH_KNOWLEDGE_DEPENDENCY_SCOPE must be one of "
-                f"{sorted(_VALID_DEPENDENCY_SCOPES)}, "
-                f"got {config.dependency_scope!r}"
-            )
-
+        _apply_knowledge_env_overrides(config)
         return config
+
+    @classmethod
+    def from_env(cls, root_dir: Path | None = None) -> KnowledgeConfig:
+        """Load knowledge config from environment variables only.
+
+        ``knowledge_root`` resolves against ``root_dir`` (the project
+        root), matching :meth:`load`; the toml file is not consulted.
+        """
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        config.knowledge_root = root_dir / ".ralph" / "knowledge"
+        _apply_knowledge_env_overrides(config)
+        return config
+
+
+def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:
+    """Overlay env vars that are explicitly set; unset vars leave the
+    existing value untouched (so toml values survive the overlay).
+
+    Re-validates dependency_scope afterwards: env can supply a bad value
+    that bypassed ``__post_init__`` at construction time.
+    """
+    if "RALPH_KNOWLEDGE_ENABLED" in os.environ:
+        config.enabled = _parse_bool(os.environ["RALPH_KNOWLEDGE_ENABLED"])
+    if "RALPH_KNOWLEDGE_MAX_CORE_TOKENS" in os.environ:
+        config.max_core_tokens = int(os.environ["RALPH_KNOWLEDGE_MAX_CORE_TOKENS"])
+    if "RALPH_KNOWLEDGE_MAX_DEPENDENCY_TOKENS" in os.environ:
+        config.max_dependency_tokens = int(
+            os.environ["RALPH_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"]
+        )
+    if "RALPH_KNOWLEDGE_MAX_SIBLING_TOKENS" in os.environ:
+        config.max_sibling_tokens = int(
+            os.environ["RALPH_KNOWLEDGE_MAX_SIBLING_TOKENS"]
+        )
+    if "RALPH_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS" in os.environ:
+        config.distill_timeout_seconds = float(
+            os.environ["RALPH_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS"]
+        )
+    if "RALPH_KNOWLEDGE_DISTILL_MODEL" in os.environ:
+        config.distill_model = os.environ["RALPH_KNOWLEDGE_DISTILL_MODEL"]
+    if "RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL" in os.environ:
+        config.max_facts_per_distill = int(
+            os.environ["RALPH_KNOWLEDGE_MAX_FACTS_PER_DISTILL"]
+        )
+    if "RALPH_KNOWLEDGE_DEPENDENCY_SCOPE" in os.environ:
+        config.dependency_scope = os.environ["RALPH_KNOWLEDGE_DEPENDENCY_SCOPE"]
+
+    if config.dependency_scope not in _VALID_DEPENDENCY_SCOPES:
+        raise ValueError(
+            f"RALPH_KNOWLEDGE_DEPENDENCY_SCOPE must be one of "
+            f"{sorted(_VALID_DEPENDENCY_SCOPES)}, "
+            f"got {config.dependency_scope!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

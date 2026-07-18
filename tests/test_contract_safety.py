@@ -151,11 +151,14 @@ def _tracked_changes(root: Path) -> list[str]:
     ]
 
 
-def _read_journal_events(event_type: str) -> list[dict[str, object]]:
-    """Read evolution-journal entries of one event type. The autouse
-    conftest fixture chdirs to tmp_path, so the default cwd-relative
-    journal path lands there."""
-    journal = Path(".ralph") / "evolution.jsonl"
+def _read_journal_events(
+    root: Path, event_type: str
+) -> list[dict[str, object]]:
+    """Read evolution-journal entries of one event type. Since R2.1
+    run_factory loads EvolutionConfig via ``load(root_dir)``, which
+    anchors the default journal path to the factory root (not the
+    process CWD)."""
+    journal = root / ".ralph" / "evolution.jsonl"
     if not journal.exists():
         return []
     entries = [
@@ -280,7 +283,7 @@ class TestContractFailureExitsNonzero:
         assert "retries exhausted" in comp.error
 
         # contract_result journal event recorded for the failure.
-        events = _read_journal_events("contract_result")
+        events = _read_journal_events(root, "contract_result")
         assert events, "expected a contract_result journal event"
         assert events[-1]["passed"] is False
         assert events[-1]["breaker"] == "a"
@@ -369,7 +372,7 @@ class TestBreakerRetryReentersScheduling:
         contract_events = [e for e in events if e["event"] == "contract_result"]
         assert [e["data"]["passed"] for e in contract_events] == [False, True]
         # Journal mirrors both outcomes (recorded for pass AND fail).
-        journal_events = _read_journal_events("contract_result")
+        journal_events = _read_journal_events(root, "contract_result")
         assert [e["passed"] for e in journal_events] == [False, True]
 
         # The user's checkout never saw the marker or any merge state.

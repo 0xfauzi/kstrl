@@ -36,8 +36,11 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `FACTORY_MAX_PARALLEL` | int | 4 |
 | `FACTORY_MAX_RETRIES` | int | 3 |
 | `FACTORY_RETRY_DELAY` | float | 5.0 |
+| `FACTORY_MERGE_TIMEOUT` | float | 300.0 |
+| `RALPH_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (unbounded) |
+| `RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
 
-Plus the new `max_adversarial_calls` (E4) and `pause_before_pr_merge` (E6) which are configured via CLI / programmatic construction; no env var today.
+The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in ralph.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
 ## VerifyConfig (`[verify]`)
 
