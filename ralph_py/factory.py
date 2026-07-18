@@ -1767,9 +1767,15 @@ def _run_factory_locked(
             # E6: human-in-the-loop checkpoint. When opt-in, prompt
             # before pushing+merging so a human can inspect the diff,
             # the review findings, and the security findings before
-            # the PR goes through. Skip the prompt when no UI is
-            # interactive - automation should fail loudly rather than
-            # block indefinitely.
+            # the PR goes through. Reject is terminal (R2.6): it marks
+            # the component FAILED and cascade-skips dependents with no
+            # retry and no re-prompt - routing it through the retry
+            # loop would re-run the full agent+review cycle and ask the
+            # human again, once per remaining retry. A human who wants
+            # a re-run says so explicitly via Retry, which consumes a
+            # retry like any other failure. Skip the prompt when no UI
+            # is interactive - automation should fail loudly rather
+            # than block indefinitely.
             proceed = True
             if factory_config.pause_before_pr_merge:
                 if ui.can_prompt():
@@ -1777,22 +1783,35 @@ def _run_factory_locked(
                     ui.info(comp.review_findings or "(no review findings)")
                     choice = ui.choose(
                         f"Approve PR creation and merge for {comp_id}?",
-                        ["Approve", "Reject and abort component"],
+                        [
+                            "Approve",
+                            "Reject (fail component, skip dependents)",
+                            "Retry (consume a retry, re-run component)",
+                        ],
                         default=0,
                     )
                     proceed = choice == 0
-                    if not proceed:
+                    if choice == 1:
                         ui.warn(
                             f"  Human rejected {comp_id} at PR checkpoint"
+                        )
+                        _fail_component(comp, "Rejected at HITL checkpoint")
+                        return
+                    if choice == 2:
+                        ui.warn(
+                            f"  Human requested retry for {comp_id} "
+                            f"at PR checkpoint"
                         )
                         ctx = IterationContext.from_json(
                             comp_result.context_json or "{}",
                         )
                         ctx.add_review_finding(
-                            "Human reviewer rejected at PR checkpoint",
+                            "Human reviewer requested changes at PR checkpoint",
                         )
                         _retry_or_fail(
-                            comp, "Rejected at HITL checkpoint", ctx.to_json(),
+                            comp,
+                            "Retry requested at HITL checkpoint",
+                            ctx.to_json(),
                         )
                         return
                 else:

@@ -532,7 +532,7 @@ class TestCheckMutationScore:
                 return_value=["src/main.py"],
             ),
             patch(
-                "ralph_py.verify.subprocess.run",
+                "ralph_py.verify.run_scrubbed",
                 side_effect=sp.TimeoutExpired("mutmut", 600),
             ),
         ):
@@ -573,7 +573,7 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
             patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py"]),
         ):
             result = check_dead_code(tmp_path, "main")
@@ -604,7 +604,7 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
             patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py", "src/utils.py"]),
         ):
             result = check_dead_code(tmp_path, "main")
@@ -626,7 +626,7 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", return_value="/usr/bin/ruff"),
-            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
         ):
             result = check_dead_code(tmp_path, "main", command="my-custom-checker src/")
 
@@ -646,7 +646,7 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.subprocess.run", side_effect=mock_run),
+            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
             patch("ralph_py.verify.git.get_diff_names", return_value=["README.md", "docs/spec.md"]),
         ):
             result = check_dead_code(tmp_path, "main")

@@ -458,7 +458,7 @@ class TestCleanupFailsLoudly:
         )
         assert worktree_path is not None, error
 
-        real_run = subprocess.run
+        real_run = contract_mod.run_scrubbed
 
         def failing_remove(cmd: list[str], **kwargs: object) -> object:
             if cmd[:3] == ["git", "worktree", "remove"]:
@@ -467,7 +467,7 @@ class TestCleanupFailsLoudly:
                 )
             return real_run(cmd, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(contract_mod.subprocess, "run", failing_remove)
+        monkeypatch.setattr(contract_mod, "run_scrubbed", failing_remove)
         with pytest.raises(ContractCleanupError, match="survived removal"):
             contract_mod._remove_temp_worktree(worktree_path, root)
         monkeypatch.undo()
