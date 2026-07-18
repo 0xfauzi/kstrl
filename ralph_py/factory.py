@@ -24,7 +24,7 @@ from ralph_py.contract import (
     run_contract_testing,
 )
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
-from ralph_py.findings import Finding
+from ralph_py.findings import Finding, tag_finding_with_attempt
 from ralph_py.git import GitDiffError, fetch_base_branch, resolve_base_ref
 from ralph_py.knowledge import (
     KnowledgeConfig,
@@ -64,6 +64,11 @@ from ralph_py.verify import (
 
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
+
+
+def _iso_now() -> str:
+    """Current UTC time as ISO 8601, matching the manifest timestamps."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 @dataclass
@@ -135,6 +140,12 @@ class FactoryConfig:
     # forcing past the lock can corrupt a live run's worktrees and
     # manifest, so it must be an explicit per-invocation decision.
     force_lock: bool = False
+    # R3.3: keep a FAILED component's worktree at end-of-run cleanup so
+    # the operator can post-mortem it (the failure summary points at
+    # it). Kept worktrees are recorded as evidence pointers in the
+    # manifest and survive the next run's stale-worktree prune for as
+    # long as the component stays FAILED.
+    keep_worktrees_on_failure: bool = False
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -157,6 +168,9 @@ class FactoryConfig:
             ),
             progress_log_enabled=_parse_bool(
                 os.environ.get("RALPH_FACTORY_PROGRESS_LOG_ENABLED", "1")
+            ),
+            keep_worktrees_on_failure=_parse_bool(
+                os.environ.get("RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
         )
 
@@ -198,6 +212,10 @@ class FactoryConfig:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         if "progress_log_enabled" in section:
             config.progress_log_enabled = bool(section["progress_log_enabled"])
+        if "keep_worktrees_on_failure" in section:
+            config.keep_worktrees_on_failure = bool(
+                section["keep_worktrees_on_failure"]
+            )
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -222,6 +240,10 @@ class FactoryConfig:
         if "RALPH_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
             config.progress_log_enabled = _parse_bool(
                 os.environ["RALPH_FACTORY_PROGRESS_LOG_ENABLED"]
+            )
+        if "RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE" in os.environ:
+            config.keep_worktrees_on_failure = _parse_bool(
+                os.environ["RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
         return config
 
@@ -492,7 +514,32 @@ def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> None:
     )
 
 
-def _prune_stale_worktrees(root_dir: Path, run_id: str, ui: UI) -> None:
+def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
+    """Worktree paths the stale-prune pass must preserve (R3.3).
+
+    A worktree kept by ``keep_worktrees_on_failure`` stays referenced as
+    the FAILED component's evidence pointer; once the component leaves
+    FAILED (retried, or reset) the reference is cleared and the next
+    prune removes it. Both the recorded and resolved spellings are
+    included so path normalization differences cannot defeat the match.
+    """
+    keep: set[str] = set()
+    for comp in manifest.components:
+        if (
+            comp.status == ComponentStatus.FAILED.value
+            and comp.evidence_worktree
+        ):
+            keep.add(comp.evidence_worktree)
+            try:
+                keep.add(str(Path(comp.evidence_worktree).resolve()))
+            except OSError:
+                pass
+    return keep
+
+
+def _prune_stale_worktrees(
+    root_dir: Path, run_id: str, ui: UI, keep: set[str] | None = None,
+) -> None:
     """Remove worktrees left behind by previous (crashed/aborted) runs.
 
     Only called when the run-level flock is genuinely held: any prior
@@ -502,16 +549,34 @@ def _prune_stale_worktrees(root_dir: Path, run_id: str, ui: UI) -> None:
     orphaned and safe to remove. Includes worktrees kept for leaked
     workers (R0.1): their owning run is gone, so by the next invocation
     they are stale state, matching the pre-R0.5 force-remove behavior.
+
+    ``keep`` (R3.3) lists evidence worktrees of still-FAILED components
+    (kept via keep_worktrees_on_failure); those are preserved so a
+    resume does not destroy the post-mortem state it exists to protect.
     """
+    keep = keep or set()
+
+    def _kept(path: Path) -> bool:
+        if str(path) in keep:
+            return True
+        try:
+            return str(path.resolve()) in keep
+        except OSError:
+            return False
+
     worktree_root = root_dir / ".ralph" / "worktrees"
     if not worktree_root.exists():
         return
     removed = 0
+    kept = 0
     for entry in sorted(worktree_root.iterdir()):
         if entry.name == run_id or not entry.is_dir():
             continue  # our own run dir, or a per-component .lock file
         if (entry / ".git").exists():
             # Pre-R0.5 flat layout: the entry itself is a worktree.
+            if _kept(entry):
+                kept += 1
+                continue
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(entry)],
                 cwd=root_dir, capture_output=True, timeout=30,
@@ -520,13 +585,23 @@ def _prune_stale_worktrees(root_dir: Path, run_id: str, ui: UI) -> None:
         else:
             # <run_id>/ dir from a previous run: remove each component
             # worktree inside it.
+            entry_kept = 0
             for wt in sorted(entry.iterdir()):
                 if wt.is_dir():
+                    if _kept(wt):
+                        entry_kept += 1
+                        continue
                     subprocess.run(
                         ["git", "worktree", "remove", "--force", str(wt)],
                         cwd=root_dir, capture_output=True, timeout=30,
                     )
+                    # Whatever git could not remove goes with the dir.
+                    shutil.rmtree(wt, ignore_errors=True)
                     removed += 1
+            kept += entry_kept
+            if entry_kept:
+                # Evidence lives inside: keep the run dir itself.
+                continue
         # Whatever git could not remove (or non-worktree debris) goes
         # with the dir; `git worktree prune` below drops any metadata
         # orphaned by this.
@@ -537,6 +612,11 @@ def _prune_stale_worktrees(root_dir: Path, run_id: str, ui: UI) -> None:
             cwd=root_dir, capture_output=True, timeout=30,
         )
         ui.info(f"  Pruned {removed} stale worktree(s) from previous runs")
+    if kept:
+        ui.info(
+            f"  Preserved {kept} evidence worktree(s) of failed "
+            f"components (keep_worktrees_on_failure)"
+        )
 
 
 def _preflight_component_branches(
@@ -995,6 +1075,14 @@ def _run_factory_locked(
     if manifest_path is None:
         manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
 
+    # R3.3: persist which run owns this manifest state. completed_at is
+    # blanked while the run is in flight and stamped in the summary
+    # epilogue, so "did the last run finish?" is answerable from the
+    # manifest alone (and later, from Linear).
+    manifest.run_id = run_id
+    manifest.completed_at = ""
+    manifest.save(manifest_path)
+
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed. A
     # prior run initiated the merge but could not confirm it; check the
     # PR state again before scheduling so confirmed merges unblock their
@@ -1031,6 +1119,7 @@ def _run_factory_locked(
                     fetch_base_branch(manifest.base_branch, root_dir)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
+                    comp.completed_at = _iso_now()
                     factory_result.completed.append(comp.id)
                     progress_log.component_completed(
                         comp.id, comp.duration_seconds, comp.iteration_count,
@@ -1039,6 +1128,9 @@ def _run_factory_locked(
                 elif merge_state == "closed":
                     comp.status = ComponentStatus.FAILED.value
                     comp.error = f"PR #{pr_number} closed without merge"
+                    comp.completed_at = _iso_now()
+                    comp.failed_phase = "pr"
+                    comp.failed_check = "pr_closed"
                     skipped = manifest.cascade_skip(comp.id)
                     factory_result.failed.append(comp.id)
                     factory_result.skipped.extend(skipped)
@@ -1084,7 +1176,10 @@ def _run_factory_locked(
     # creates branches nor worktree dirs.
     if factory_config.use_worktrees:
         if lock_held:
-            _prune_stale_worktrees(root_dir, run_id, ui)
+            _prune_stale_worktrees(
+                root_dir, run_id, ui,
+                keep=_evidence_worktrees_to_keep(manifest),
+            )
         else:
             ui.warn(
                 "  Run lock not held; skipping stale-worktree cleanup "
@@ -1179,6 +1274,90 @@ def _run_factory_locked(
         cap = factory_config.max_total_tokens
         return cap > 0 and run_usage.total_tokens >= cap
 
+    def _journal_offset() -> int:
+        """Current byte size of the progress log; used to bracket one
+        attempt's slice of events (R3.3). -1 when no real progress log
+        is configured for this run."""
+        if isinstance(progress_log, NullProgressLog):
+            return -1
+        try:
+            log_path = progress_log.path
+            return log_path.stat().st_size if log_path.exists() else 0
+        except OSError:
+            return -1
+
+    def _debug_dir_for(comp_id: str) -> Path:
+        """Forensic raw-output dir for this run's component (R1.2)."""
+        return root_dir / ".ralph" / "debug" / run_id / comp_id
+
+    def _add_findings(comp: Component, new_findings: list[Finding]) -> None:
+        """Append findings tagged ``attempt:<n>`` for the attempt in
+        flight (R3.3), so the journal can attribute every finding to the
+        attempt that produced it."""
+        attempt = comp.retries + 1
+        comp.findings.extend(
+            tag_finding_with_attempt(f, attempt) for f in new_findings
+        )
+
+    def _begin_attempt(comp: Component) -> None:
+        """PENDING -> RUNNING transition for one attempt (R3.3).
+
+        The prior attempt's findings were journaled when its retry was
+        scheduled (or by record_run when a previous run ended), so the
+        manifest carries only the current attempt's stream; the failure
+        and evidence pointers likewise describe only the attempt in
+        flight."""
+        comp.findings = []
+        comp.review_findings = ""
+        comp.failed_phase = ""
+        comp.failed_check = ""
+        comp.completed_at = ""
+        comp.evidence_worktree = ""
+        comp.evidence_debug_dir = ""
+        comp.journal_offset_start = _journal_offset()
+        comp.journal_offset_end = -1
+        comp.status = ComponentStatus.RUNNING.value
+        comp.started_at = _iso_now()
+
+    def _end_attempt(comp: Component) -> None:
+        """Stamp the attempt's evidence pointers when it stops running:
+        the progress-log slice end, and the debug dir when any phase
+        dumped raw output there (R3.3)."""
+        comp.journal_offset_end = _journal_offset()
+        debug_dir = _debug_dir_for(comp.id)
+        if debug_dir.exists():
+            comp.evidence_debug_dir = str(debug_dir)
+
+    def _journal_superseded_findings(comp: Component) -> None:
+        """A scheduled retry supersedes the current attempt's findings.
+        Record them in the evolution journal (attempt-tagged) before the
+        next attempt clears the manifest stream, so superseded and
+        shipped findings stay distinguishable (R3.3). The final
+        attempt's findings reach the journal via record_run instead.
+        Non-fatal on I/O errors, matching _record_contract_event."""
+        if not comp.findings:
+            return
+        from ralph_py.evolution import EvolutionConfig
+
+        evo_config = EvolutionConfig.load(root_dir)
+        if not evo_config.enabled:
+            return
+        entry = {
+            "timestamp": _iso_now(),
+            "run_id": run_id,
+            "project": manifest.project_name,
+            "component_id": comp.id,
+            "event_type": "findings_superseded",
+            "attempt": comp.retries + 1,
+            "findings": [f.to_dict() for f in comp.findings],
+        }
+        try:
+            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(evo_config.journal_path, "a") as f:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        except OSError:
+            pass  # evolution recording is non-fatal
+
     def _fail_component_for_budget(comp: Component, phase: str) -> None:
         """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
         R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
@@ -1192,13 +1371,13 @@ def _run_factory_locked(
             "spending further (R3.1)"
         )
         ui.err(f"  TOKEN BUDGET EXCEEDED for {comp.id}: {error}")
-        comp.findings.append(Finding.infrastructure_error(
+        _add_findings(comp, [Finding.infrastructure_error(
             phase=phase, explanation=error,
-        ))
+        )])
         progress_log.budget_exceeded(
             comp.id, run_usage.total_tokens, factory_config.max_total_tokens,
         )
-        _fail_component(comp, error)
+        _fail_component(comp, error, phase=phase, check="token_budget")
 
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
@@ -1218,8 +1397,16 @@ def _run_factory_locked(
     progress_file_rel = _path_relative_to_root(base_config.progress_file)
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
-    def _retry_or_fail(comp: Component, error: str, context_json: str | None) -> None:
-        """Retry a component or mark it as failed."""
+    def _retry_or_fail(
+        comp: Component,
+        error: str,
+        context_json: str | None,
+        phase: str = "",
+        check: str = "",
+    ) -> None:
+        """Retry a component or mark it as failed. ``phase``/``check``
+        name the gate that fired (R3.3); on a retry they describe the
+        superseded attempt until the next attempt clears them."""
         if comp.retries < factory_config.max_retries:
             # A timeout failure means the agent was killed mid-flight: the
             # worktree/branch state cannot be trusted. Note the hygiene
@@ -1232,6 +1419,14 @@ def _run_factory_locked(
                     + " [timeout retry: worktree recreated from base; "
                     "stale index.lock removed]"
                 )
+            # R3.3: journal this attempt's findings as superseded BEFORE
+            # the retry counter moves (the tag and the journal entry
+            # must agree on the attempt number), then stamp the
+            # attempt's evidence pointers.
+            _journal_superseded_findings(comp)
+            _end_attempt(comp)
+            comp.failed_phase = phase
+            comp.failed_check = check
             comp.retries += 1
             comp.status = ComponentStatus.PENDING.value
             comp.error = error
@@ -1246,9 +1441,11 @@ def _run_factory_locked(
             time.sleep(factory_config.retry_delay)
             manifest.save(manifest_path)
         else:
-            _fail_component(comp, error)
+            _fail_component(comp, error, phase=phase, check=check)
 
-    def _fail_component(comp: Component, error: str) -> None:
+    def _fail_component(
+        comp: Component, error: str, phase: str = "", check: str = "",
+    ) -> None:
         """Mark a component FAILED with no retry. Direct callers are
         conditions a retry can never fix (R1.4: chunked-review budget
         insufficiency - the adversarial budget only shrinks, so
@@ -1256,6 +1453,10 @@ def _run_factory_locked(
         wall); _retry_or_fail routes here once retries are exhausted."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
+        comp.completed_at = _iso_now()
+        comp.failed_phase = phase
+        comp.failed_check = check
+        _end_attempt(comp)
         skipped = manifest.cascade_skip(comp.id)
         factory_result.failed.append(comp.id)
         factory_result.skipped.extend(skipped)
@@ -1294,7 +1495,10 @@ def _run_factory_locked(
                 success=False,
                 error=comp_result.error,
             ))
-            _retry_or_fail(comp, comp_result.error or "Unknown error", ctx.to_json())
+            _retry_or_fail(
+                comp, comp_result.error or "Unknown error", ctx.to_json(),
+                phase="engineer", check="loop",
+            )
             return
 
         wt_path = worktree_paths.get(comp_id, root_dir)
@@ -1303,7 +1507,7 @@ def _run_factory_locked(
             """R1.2: a phase that never ran must leave a trace in both
             the findings stream and the journal, so "ran clean" and
             "never ran" are distinguishable downstream."""
-            comp.findings.append(Finding.phase_skipped(phase, reason))
+            _add_findings(comp, [Finding.phase_skipped(phase, reason)])
             progress_log.emit(
                 "phase_skipped", comp_id,
                 {"phase": phase, "reason": reason},
@@ -1390,6 +1594,8 @@ def _run_factory_locked(
                 ctx.add_verification_failure(verification.as_context())
                 _retry_or_fail(
                     comp, "Mechanical verification failed", ctx.to_json(),
+                    phase="verify",
+                    check=", ".join(c.name for c in failing),
                 )
                 return
 
@@ -1411,13 +1617,13 @@ def _run_factory_locked(
             )
         except GitDiffError as exc:
             ui.err(f"  Diff fetch FAILED for {comp_id}: {exc}")
-            comp.findings.append(Finding.infrastructure_error(
+            _add_findings(comp, [Finding.infrastructure_error(
                 phase="diff",
                 explanation=(
                     f"git diff against {manifest.base_branch} failed; "
                     f"review/security/knowledge cannot run: {exc}"
                 ),
-            ))
+            )])
             progress_log.emit(
                 "diff_fetch_failed", comp_id, {"error": str(exc)},
             )
@@ -1427,7 +1633,7 @@ def _run_factory_locked(
             )
             _retry_or_fail(
                 comp, f"Diff fetch failed (infrastructure): {exc}",
-                ctx.to_json(),
+                ctx.to_json(), phase="diff", check="git_diff",
             )
             return
 
@@ -1475,14 +1681,14 @@ def _run_factory_locked(
                 # exhaustion, the engineer CAN fix this by producing a
                 # smaller diff, so the retry context carries the signal.
                 ui.err(f"  Diff unsplittable for {comp_id}: {exc}")
-                comp.findings.append(Finding.infrastructure_error(
+                _add_findings(comp, [Finding.infrastructure_error(
                     phase="review",
                     explanation=(
                         "Hard-mode review requires chunking the "
                         f"oversized diff, but it cannot be split: {exc} "
                         "(R1.4: an unreviewable diff must not merge)"
                     ),
-                ))
+                )])
                 progress_log.emit(
                     "diff_unsplittable", comp_id,
                     {"error": str(exc), "diff_chars": len(review_diff)},
@@ -1499,7 +1705,7 @@ def _run_factory_locked(
                 _retry_or_fail(
                     comp,
                     f"Review diff unsplittable at the prompt cap: {exc}",
-                    ctx.to_json(),
+                    ctx.to_json(), phase="review", check="diff_chunking",
                 )
                 return
             progress_log.emit(
@@ -1545,9 +1751,9 @@ def _run_factory_locked(
                 )
                 ui.err(f"  Phase 2 FAILED for {comp_id}: {error}")
                 comp.review_passed = False
-                comp.findings.append(Finding.infrastructure_error(
+                _add_findings(comp, [Finding.infrastructure_error(
                     phase="review", explanation=error,
-                ))
+                )])
                 progress_log.emit(
                     "chunk_budget_insufficient", comp_id,
                     {
@@ -1558,6 +1764,7 @@ def _run_factory_locked(
                 )
                 _fail_component(
                     comp, f"Review infrastructure error: {error}",
+                    phase="review", check="adversarial_budget",
                 )
                 return
         if review_mode != ReviewMode.SKIP:
@@ -1631,7 +1838,7 @@ def _run_factory_locked(
             comp.review_passed = review_result.passed
             # E3: typed findings are the source of truth; the rendered
             # string is a derived view kept for backward-compat consumers.
-            comp.findings.extend(review_result.as_findings())
+            _add_findings(comp, review_result.as_findings())
             comp.review_findings = review_result.as_pr_body_section()
             # Observability gets criterion-only counts to preserve the
             # historical meaning of fail_count = "failed PRD criteria".
@@ -1657,7 +1864,13 @@ def _run_factory_locked(
                 )
                 ctx = IterationContext.from_json(comp_result.context_json or "{}")
                 ctx.add_review_finding(review_result.as_retry_context())
-                _retry_or_fail(comp, reason, ctx.to_json())
+                _retry_or_fail(
+                    comp, reason, ctx.to_json(), phase="review",
+                    check=(
+                        "infrastructure"
+                        if review_result.infrastructure_error else "criteria"
+                    ),
+                )
                 return
 
             ui.ok(f"  Phase 2 passed for {comp_id}")
@@ -1716,9 +1929,9 @@ def _run_factory_locked(
                     "a partial hard-mode security review (R1.4)"
                 )
                 ui.err(f"  Phase 2.5 FAILED for {comp_id}: {error}")
-                comp.findings.append(Finding.infrastructure_error(
+                _add_findings(comp, [Finding.infrastructure_error(
                     phase="security", explanation=error,
-                ))
+                )])
                 progress_log.emit(
                     "chunk_budget_insufficient", comp_id,
                     {
@@ -1729,6 +1942,7 @@ def _run_factory_locked(
                 )
                 _fail_component(
                     comp, f"Security review infrastructure error: {error}",
+                    phase="security", check="adversarial_budget",
                 )
                 return
         if sec_config and sec_config.mode != SecurityMode.SKIP.value:
@@ -1828,7 +2042,7 @@ def _run_factory_locked(
 
                 # E3: source-of-truth typed findings list, plus the
                 # legacy rendered string for PR body / manifest readers.
-                comp.findings.extend(sec_result.as_findings())
+                _add_findings(comp, sec_result.as_findings())
                 if sec_result.findings:
                     if comp.review_findings:
                         comp.review_findings = (
@@ -1860,7 +2074,14 @@ def _run_factory_locked(
                         or "Security review infrastructure error: "
                         + sec_result.overall_notes
                     )
-                    _retry_or_fail(comp, reason, ctx.to_json())
+                    _retry_or_fail(
+                        comp, reason, ctx.to_json(), phase="security",
+                        check=(
+                            "infrastructure"
+                            if sec_result.infrastructure_error
+                            else "findings"
+                        ),
+                    )
                     return
 
         # Knowledge distillation (Voyager-style post-gate write).
@@ -2017,7 +2238,10 @@ def _run_factory_locked(
                         ui.warn(
                             f"  Human rejected {comp_id} at PR checkpoint"
                         )
-                        _fail_component(comp, "Rejected at HITL checkpoint")
+                        _fail_component(
+                            comp, "Rejected at HITL checkpoint",
+                            phase="pr", check="hitl_reject",
+                        )
                         return
                     if choice == 2:
                         ui.warn(
@@ -2033,7 +2257,7 @@ def _run_factory_locked(
                         _retry_or_fail(
                             comp,
                             "Retry requested at HITL checkpoint",
-                            ctx.to_json(),
+                            ctx.to_json(), phase="pr", check="hitl_retry",
                         )
                         return
                 else:
@@ -2067,6 +2291,11 @@ def _run_factory_locked(
                             {"pr_url": comp.pr_url, "error": comp.error},
                         )
                         notify.fire_merge_pending(comp_id, comp.error)
+                        # Parked, not terminal: no completed_at, but the
+                        # attempt's journal slice is closed (R3.3) -
+                        # after the merge_pending event so the slice
+                        # includes it.
+                        _end_attempt(comp)
                         ui.warn(
                             f"  MERGE PENDING: {comp_id}: {comp.error}; "
                             f"dependents stay blocked; a factory re-run "
@@ -2075,6 +2304,10 @@ def _run_factory_locked(
                     else:
                         comp.status = ComponentStatus.FAILED.value
                         comp.error = outcome.error or "PR flow failed"
+                        comp.completed_at = _iso_now()
+                        comp.failed_phase = "pr"
+                        comp.failed_check = "pr_flow"
+                        _end_attempt(comp)
                         skipped = manifest.cascade_skip(comp_id)
                         factory_result.failed.append(comp_id)
                         factory_result.skipped.extend(skipped)
@@ -2100,6 +2333,8 @@ def _run_factory_locked(
         # Mark completed
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
+        comp.completed_at = _iso_now()
+        _end_attempt(comp)
         factory_result.completed.append(comp_id)
         progress_log.component_completed(
             comp_id, comp_result.duration_seconds, comp_result.iterations,
@@ -2127,14 +2362,11 @@ def _run_factory_locked(
             return wt_path
         except RuntimeError as exc:
             ui.err(f"  Worktree setup failed for '{comp.id}': {exc}")
-            comp.status = ComponentStatus.FAILED.value
-            comp.error = str(exc)
-            skipped = manifest.cascade_skip(comp.id)
-            factory_result.failed.append(comp.id)
-            factory_result.skipped.extend(skipped)
-            progress_log.component_failed(comp.id, comp.error)
-            notify.fire_first_failure(comp.id, comp.error)
-            manifest.save(manifest_path)
+            # _fail_component covers the R3.2 notify + progress-log
+            # calls and stamps the R3.3 failure/evidence fields.
+            _fail_component(
+                comp, str(exc), phase="provisioning", check="worktree_setup",
+            )
             return None
 
     # Build feedforward config dict for serialization to worker processes
@@ -2206,10 +2438,7 @@ def _run_factory_locked(
                 if _token_budget_exceeded():
                     _fail_component_for_budget(comp, "scheduling")
                     continue
-                comp.status = ComponentStatus.RUNNING.value
-                comp.started_at = time.strftime(
-                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
-                )
+                _begin_attempt(comp)
                 manifest.save(manifest_path)
                 progress_log.component_started(comp.id)
                 ui.info(f"  Starting: {comp.id}")
@@ -2245,10 +2474,7 @@ def _run_factory_locked(
                     if _token_budget_exceeded():
                         _fail_component_for_budget(comp, "scheduling")
                         continue
-                    comp.status = ComponentStatus.RUNNING.value
-                    comp.started_at = time.strftime(
-                        "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
-                    )
+                    _begin_attempt(comp)
                     manifest.save(manifest_path)
                     progress_log.component_started(comp.id)
                     ui.info(f"  Starting: {comp.id}")
@@ -2310,6 +2536,16 @@ def _run_factory_locked(
                     if timed_out_comp is not None:
                         timed_out_comp.status = ComponentStatus.FAILED.value
                         timed_out_comp.error = "component timeout"
+                        timed_out_comp.completed_at = _iso_now()
+                        timed_out_comp.failed_phase = "engineer"
+                        timed_out_comp.failed_check = "scheduler_backstop"
+                        _end_attempt(timed_out_comp)
+                        # The worktree stays (leaked worker may own it);
+                        # point the evidence at it (R3.3).
+                        if comp_id in worktree_paths:
+                            timed_out_comp.evidence_worktree = str(
+                                worktree_paths[comp_id]
+                            )
                         skipped = manifest.cascade_skip(comp_id)
                         factory_result.failed.append(comp_id)
                         factory_result.skipped.extend(skipped)
@@ -2337,10 +2573,16 @@ def _run_factory_locked(
                 executor.shutdown(wait=True)
 
     def _cleanup_pass_worktrees() -> None:
-        """Remove component worktrees left behind by a scheduling pass."""
+        """Remove component worktrees left behind by a scheduling pass.
+
+        With ``keep_worktrees_on_failure`` (R3.3), a FAILED component's
+        worktree is kept and recorded as its evidence pointer instead of
+        removed, so the failure summary can point the operator at it.
+        """
         if not factory_config.use_worktrees:
             return
         ui.section("Factory: Cleanup")
+        kept_evidence = False
         for comp_id in worktree_paths:
             if comp_id in leaked_component_ids:
                 # A possibly-live worker still owns this worktree; removing
@@ -2351,10 +2593,26 @@ def _run_factory_locked(
                     f"(leaked worker may still be running)"
                 )
                 continue
+            comp = manifest.get_component(comp_id)
+            if (
+                factory_config.keep_worktrees_on_failure
+                and comp is not None
+                and comp.status == ComponentStatus.FAILED.value
+            ):
+                comp.evidence_worktree = str(worktree_paths[comp_id])
+                kept_evidence = True
+                ui.info(
+                    f"  Keeping failed worktree for post-mortem: "
+                    f"{worktree_paths[comp_id]}"
+                )
+                continue
             _cleanup_worktree(comp_id, root_dir, run_id)
-        # Drop the run's now-empty worktree dir; leaked workers' kept
-        # worktrees leave it non-empty and it stays for the next run's
-        # prune pass.
+        if kept_evidence:
+            manifest.save(manifest_path)
+        # Drop the run's now-empty worktree dir; leaked workers' and
+        # failed components' kept worktrees leave it non-empty and it
+        # stays for the next run's prune pass (which preserves recorded
+        # evidence worktrees of still-FAILED components).
         try:
             os.rmdir(root_dir / ".ralph" / "worktrees" / run_id)
         except OSError:
@@ -2453,6 +2711,10 @@ def _run_factory_locked(
                 continue
             breaker = manifest.get_component(cr.breaker)
             if breaker and breaker.retries < factory_config.max_retries:
+                # R3.3: the completed attempt's findings are superseded
+                # by the contract-triggered re-run; journal them before
+                # the retry increments the attempt counter.
+                _journal_superseded_findings(breaker)
                 breaker.retries += 1
                 breaker.status = ComponentStatus.PENDING.value
                 breaker.error = f"Contract test failed at tier {cr.tier}"
@@ -2488,6 +2750,9 @@ def _run_factory_locked(
                         f"Contract test failed at tier {cr.tier} "
                         f"(retries exhausted)"
                     )
+                    breaker.completed_at = _iso_now()
+                    breaker.failed_phase = "contract"
+                    breaker.failed_check = f"tier_{cr.tier}"
                 if cr.breaker in factory_result.completed:
                     factory_result.completed.remove(cr.breaker)
                 if cr.breaker not in factory_result.failed:
@@ -2559,6 +2824,49 @@ def _run_factory_locked(
     ui.kv("Completed", str(len(factory_result.completed)))
     ui.kv("Failed", str(len(factory_result.failed)))
     ui.kv("Skipped", str(len(factory_result.skipped)))
+    # R3.3 failure summary: per failed component, which gate fired and
+    # where the last attempt's evidence lives, so the run is diagnosable
+    # without reading raw JSON.
+    if factory_result.failed:
+        ui.subsection("Failure summary")
+        for failed_id in factory_result.failed:
+            failed_comp = manifest.get_component(failed_id)
+            if failed_comp is None:
+                continue
+            ui.err(
+                f"  {failed_id}: "
+                f"phase={failed_comp.failed_phase or 'unknown'} "
+                f"check={failed_comp.failed_check or 'unknown'} "
+                f"(attempt {failed_comp.retries + 1})"
+            )
+            if failed_comp.error:
+                ui.info(f"    error: {failed_comp.error[:160]}")
+            if failed_comp.evidence_worktree:
+                ui.info(
+                    f"    worktree: {failed_comp.evidence_worktree}"
+                )
+            elif factory_config.use_worktrees:
+                ui.info(
+                    "    worktree: removed (re-run with "
+                    "--keep-worktrees-on-failure to keep it)"
+                )
+            if failed_comp.evidence_debug_dir:
+                ui.info(
+                    f"    raw outputs: {failed_comp.evidence_debug_dir}"
+                )
+            if (
+                failed_comp.journal_offset_start >= 0
+                and not isinstance(progress_log, NullProgressLog)
+            ):
+                end = (
+                    str(failed_comp.journal_offset_end)
+                    if failed_comp.journal_offset_end >= 0 else "end"
+                )
+                ui.info(
+                    f"    journal: {progress_log.path} bytes "
+                    f"[{failed_comp.journal_offset_start}:{end}]"
+                )
+            ui.info(f"    retry with: ralph retry {failed_id}")
     if factory_result.contract_failures:
         ui.kv("Contract failures", str(len(factory_result.contract_failures)))
         for line in factory_result.contract_failures:
@@ -2594,6 +2902,13 @@ def _run_factory_locked(
         factory_result.exit_code = 1
     elif factory_result.skipped and not factory_result.completed:
         factory_result.exit_code = 1
+
+    # R3.3: the run reached its terminal state; stamp the manifest so a
+    # resume (and Linear, later) can tell a finished run from a crash.
+    # Stamped BEFORE the completion notification so a hook that reads
+    # the manifest sees the terminal state.
+    manifest.completed_at = _iso_now()
+    manifest.save(manifest_path)
 
     # R3.2: run-end notification. Fires on every run that reached the
     # summary, whatever the outcome; early refusals (invalid DAG, held

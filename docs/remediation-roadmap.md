@@ -404,7 +404,7 @@ spending, (c) what do I do when I come back to a partial failure.
   - Notification hook: configurable shell command (`[notify] on_complete /
     on_first_failure` in ralph.toml) so desktop/webhook/email are one liner
     configs. Fires on completion, first failure, and MERGE_PENDING.
-- [ ] R3.3 (M) **Resume + partial-failure ergonomics** [P-5, LOW completed_at, LOW findings-accumulate]
+- [x] R3.3 (M) **Resume + partial-failure ergonomics** [P-5, LOW completed_at, LOW findings-accumulate]
   - Persist `run_id` in the manifest; set `completed_at`; per-component event
     history refs (journal offsets).
   - `ralph retry <component-id>`: resets FAILED component + cascade-skipped
@@ -414,6 +414,10 @@ spending, (c) what do I do when I come back to a partial failure.
     journal distinguishes superseded findings from shipped ones.
   - Failure summary lists, per failed component: phase, check, evidence paths
     (worktree, raw outputs, journal offsets).
+  - Landed note: runbook wording is owned by Session 7A (R2.5) per its
+    coordination note; superseded findings are journaled as
+    `findings_superseded` events (attempt-tagged) while `component_result`
+    carries only the final attempt's stream.
 - [~] R3.4 (S) **Repo hygiene** [LOW hygiene]
   - `.gitignore` covers `.ralph/`; remove the 99MB stale worktree
     (`git worktree remove .claude/worktrees/tender-leakey` after confirming the

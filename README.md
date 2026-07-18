@@ -227,8 +227,9 @@ ralph evolve                       Analyze factory runs and propose harness impr
 ralph factory                      Run the software factory - decompose and execute a spec.
 ralph feature                      Run feature understanding, then implementation.
 ralph init [DIRECTORY]             Initialize Ralph in a project directory.
+ralph retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ralph run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
-ralph status                       Show per-component status from the factory manifest.
+ralph status                       Show per-component status from the manifest + progress log.
 ralph understand [MAX_ITERATIONS]  Run codebase understanding loop (read-only mode).
 ```
 
@@ -288,17 +289,19 @@ scheduler_backstop_margin = 60.0  # extra slack before the scheduler declares a 
 
 # Factory orchestration (Phase 0-3 pipeline)
 [factory]
-max_parallel = 4               # concurrent component workers
-max_retries = 3                # per-component retry budget across all phases
-retry_delay = 5.0              # seconds between retry attempts
-use_worktrees = true           # isolate each component in .ralph/worktrees/<id>
-single_pr = false              # one PR for the whole run instead of per-component
-create_prs = true              # push + merge PRs via gh
-review_mode = "hard"           # hard | advisory | skip (Phase 2)
-merge_timeout = 300.0          # seconds to wait for PR merge confirmation
-max_adversarial_calls = 0      # cap on review+security+distill LLM calls; 0 = unbounded
-max_total_tokens = 0           # run-level token budget; 0 = unbounded
-pause_before_pr_merge = false  # human checkpoint before each PR (E6)
+max_parallel = 4                   # concurrent component workers
+max_retries = 3                    # per-component retry budget across all phases
+retry_delay = 5.0                  # seconds between retry attempts
+use_worktrees = true               # isolate each component in .ralph/worktrees/<id>
+single_pr = false                  # one PR for the whole run instead of per-component
+create_prs = true                  # push + merge PRs via gh
+review_mode = "hard"               # hard | advisory | skip (Phase 2)
+merge_timeout = 300.0              # seconds to wait for PR merge confirmation
+max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
+max_total_tokens = 0               # run-level token budget; 0 = unbounded
+pause_before_pr_merge = false      # human checkpoint before each PR (E6)
+progress_log_enabled = true        # JSONL event log at .ralph/progress.jsonl (R3.2)
+keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # Phase 1 mechanical verification
 [verify]

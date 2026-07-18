@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -13,6 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from ralph_py.findings import Finding
+
+
+def _iso_now() -> str:
+    """Current UTC time as ISO 8601, matching the factory's timestamps."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 # R0.6 input hygiene: component ids and branch names are LLM-emitted
 # (architect output) and flow into filesystem paths
@@ -157,6 +163,20 @@ class Component:
     review_findings: str = ""
     # Optional scaffold script to run before the agent
     scaffold: str = ""
+    # R3.3 post-mortem fields. failed_phase/failed_check name where the
+    # last failure happened (phase = engineer/verify/review/security/pr/
+    # contract/..., check = the specific gate within it). The evidence
+    # pointers say where the last attempt's artifacts live:
+    # evidence_worktree is the kept worktree path ("" when removed),
+    # evidence_debug_dir the .ralph/debug/<run>/<comp> raw-output dir,
+    # and the journal offsets bracket the attempt's slice of the
+    # progress log (byte offsets; -1 = not recorded).
+    failed_phase: str = ""
+    failed_check: str = ""
+    evidence_worktree: str = ""
+    evidence_debug_dir: str = ""
+    journal_offset_start: int = -1
+    journal_offset_end: int = -1
 
 
 @dataclass
@@ -169,6 +189,12 @@ class Manifest:
     base_branch: str
     single_pr: bool
     components: list[Component] = field(default_factory=list)
+    # R3.3: id of the factory run that last operated on this manifest,
+    # and when that run finished ("" while a run is in flight). Lets a
+    # resume - and later the Linear integration - correlate manifest
+    # state with the journals keyed by run_id.
+    run_id: str = ""
+    completed_at: str = ""
 
     @classmethod
     def from_prd(
@@ -257,6 +283,12 @@ class Manifest:
                 ],
                 review_findings=c.get("reviewFindings", ""),
                 scaffold=c.get("scaffold", ""),
+                failed_phase=c.get("failedPhase", ""),
+                failed_check=c.get("failedCheck", ""),
+                evidence_worktree=c.get("evidenceWorktree", ""),
+                evidence_debug_dir=c.get("evidenceDebugDir", ""),
+                journal_offset_start=c.get("journalOffsetStart", -1),
+                journal_offset_end=c.get("journalOffsetEnd", -1),
             )
             for c in data["components"]
         ]
@@ -268,6 +300,8 @@ class Manifest:
             base_branch=data["baseBranch"],
             single_pr=data["singlePr"],
             components=components,
+            run_id=data.get("runId", ""),
+            completed_at=data.get("completedAt", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -278,6 +312,8 @@ class Manifest:
             "projectName": self.project_name,
             "baseBranch": self.base_branch,
             "singlePr": self.single_pr,
+            "runId": self.run_id,
+            "completedAt": self.completed_at,
             "components": [
                 {
                     "id": c.id,
@@ -300,6 +336,12 @@ class Manifest:
                     "findings": [f.to_dict() for f in c.findings],
                     "reviewFindings": c.review_findings,
                     "scaffold": c.scaffold,
+                    "failedPhase": c.failed_phase,
+                    "failedCheck": c.failed_check,
+                    "evidenceWorktree": c.evidence_worktree,
+                    "evidenceDebugDir": c.evidence_debug_dir,
+                    "journalOffsetStart": c.journal_offset_start,
+                    "journalOffsetEnd": c.journal_offset_end,
                 }
                 for c in self.components
             ],
@@ -358,6 +400,10 @@ class Manifest:
                 errors.append(f"baseBranch: {base_error}")
         if not isinstance(data.get("singlePr"), bool):
             errors.append("singlePr must be a boolean")
+        if "runId" in data and not isinstance(data["runId"], str):
+            errors.append("runId must be a string")
+        if "completedAt" in data and not isinstance(data["completedAt"], str):
+            errors.append("completedAt must be a string")
 
         components = data.get("components")
         if not isinstance(components, list):
@@ -370,6 +416,8 @@ class Manifest:
             "startedAt", "completedAt", "durationSeconds", "iterationCount",
             "verificationPassed", "reviewPassed", "reviewFindings",
             "findings", "scaffold",
+            "failedPhase", "failedCheck", "evidenceWorktree",
+            "evidenceDebugDir", "journalOffsetStart", "journalOffsetEnd",
         }
         component_all = component_required | component_optional
 
@@ -563,10 +611,105 @@ class Manifest:
                 ):
                     dep_comp.status = ComponentStatus.SKIPPED.value
                     dep_comp.error = f"Dependency '{failed_id}' failed"
+                    # R3.3: SKIPPED is terminal for this run.
+                    dep_comp.completed_at = _iso_now()
                     skipped.append(dependent_id)
                     bfs_queue.append(dependent_id)
 
         return skipped
+
+    def _transitive_dependents(self, component_id: str) -> set[str]:
+        """All components that transitively depend on *component_id*."""
+        dependents: dict[str, list[str]] = {c.id: [] for c in self.components}
+        for comp in self.components:
+            for dep in comp.dependencies:
+                if dep in dependents:
+                    dependents[dep].append(comp.id)
+        found: set[str] = set()
+        queue: deque[str] = deque([component_id])
+        while queue:
+            current = queue.popleft()
+            for dependent_id in dependents.get(current, []):
+                if dependent_id not in found:
+                    found.add(dependent_id)
+                    queue.append(dependent_id)
+        return found
+
+    def reset_for_retry(self, component_id: str) -> list[str]:
+        """Reset a FAILED component and its cascade-SKIPPED dependents to
+        PENDING so a factory re-run schedules them again (R3.3).
+
+        A SKIPPED dependent is only reset when every one of its
+        dependencies will be runnable afterwards: COMPLETED, PENDING, or
+        itself part of this reset. A dependent that was also skipped
+        because of a DIFFERENT still-failed component stays SKIPPED -
+        resetting it would leave it permanently unschedulable.
+
+        Returns the ids of the reset dependents. Raises ValueError when
+        the component does not exist or is not FAILED.
+        """
+        comp = self.get_component(component_id)
+        if comp is None:
+            raise ValueError(f"Unknown component '{component_id}'")
+        if comp.status != ComponentStatus.FAILED.value:
+            raise ValueError(
+                f"Component '{component_id}' is '{comp.status}', not "
+                f"'{ComponentStatus.FAILED.value}'; only failed components "
+                f"can be retried"
+            )
+
+        dependents = self._transitive_dependents(component_id)
+        reset_ids = {component_id}
+        runnable = {
+            ComponentStatus.COMPLETED.value,
+            ComponentStatus.PENDING.value,
+        }
+        reset_dependents: list[str] = []
+        for cid in self.topological_order():
+            if cid not in dependents:
+                continue
+            dep_comp = self.get_component(cid)
+            if dep_comp is None or dep_comp.status != ComponentStatus.SKIPPED.value:
+                continue
+            if all(
+                dep in reset_ids
+                or (
+                    (d := self.get_component(dep)) is not None
+                    and d.status in runnable
+                )
+                for dep in dep_comp.dependencies
+            ):
+                reset_ids.add(cid)
+                reset_dependents.append(cid)
+
+        for cid in [component_id, *reset_dependents]:
+            target = self.get_component(cid)
+            assert target is not None
+            target.status = ComponentStatus.PENDING.value
+            target.error = ""
+            target.retries = 0
+            target.started_at = ""
+            target.completed_at = ""
+            target.duration_seconds = 0.0
+            target.iteration_count = 0
+            target.pr_number = None
+            target.pr_url = ""
+            target.verification_passed = None
+            target.review_passed = None
+            # Findings from the failed attempt are already in the
+            # evolution journal (record_run wrote them, attempt-tagged,
+            # when the failed run finished); the fresh attempt starts
+            # with a clean stream.
+            target.findings = []
+            target.review_findings = ""
+            target.failed_phase = ""
+            target.failed_check = ""
+            target.evidence_worktree = ""
+            target.evidence_debug_dir = ""
+            target.journal_offset_start = -1
+            target.journal_offset_end = -1
+
+        return reset_dependents
 
     def compute_tiers(self) -> list[list[str]]:
         """Compute DAG tier levels using Kahn's algorithm with level tracking.
