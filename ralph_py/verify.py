@@ -10,8 +10,12 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ralph_py import git
+
+if TYPE_CHECKING:
+    from ralph_py.fixtures import FixturesConfig
 from ralph_py.guards import path_is_allowed
 from ralph_py.parsers import (
     ParsedOutput,
@@ -1074,8 +1078,17 @@ def run_mechanical_verification(
     allowed_paths: list[str] | None,
     config: VerifyConfig,
     allowed_paths_error: str | None = None,
+    fixtures_config: FixturesConfig | None = None,
+    component_id: str | None = None,
 ) -> VerificationResult:
-    """Run all 6 mechanical checks. All checks run even if earlier ones fail."""
+    """Run all mechanical checks. All checks run even if earlier ones fail.
+
+    ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
+    the approved-fixtures oracle runs against the PRD's ``fixtures``
+    entries - sandboxed subprocess execution lives in
+    ``ralph_py.fixtures``. ``component_id`` keys the fixture snapshot
+    used for regression detection; None disables snapshotting only.
+    """
     checks: list[CheckResult] = []
 
     checks.append(check_prd_stories(prd_path))
@@ -1117,6 +1130,16 @@ def run_mechanical_verification(
         progress_path = worktree_path / config.progress_file_path
         checks.append(check_self_critique(
             progress_path, config.self_critique_min_bullets,
+        ))
+
+    if fixtures_config is not None and fixtures_config.enabled:
+        # Imported lazily: fixtures.py imports CheckResult/run_scrubbed
+        # from this module, so a module-level import would be a cycle.
+        from ralph_py.fixtures import check_fixtures_from_prd
+
+        checks.append(check_fixtures_from_prd(
+            prd_path, worktree_path, fixtures_config,
+            component_id=component_id,
         ))
 
     passed = all(c.passed for c in checks)

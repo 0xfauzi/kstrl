@@ -96,6 +96,16 @@ require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-
 self_critique_min_bullets = 3
 progress_file_path = "scripts/ralph/progress.txt"
 
+# Phase 1 approved fixtures (R7.2): PRD-defined input/output pairs run as an
+# oracle independent of agent-authored tests. Opt-in: fixtures execute
+# PRD-supplied commands (no shell) and import PRD-named modules (in a
+# scrubbed-env subprocess), so the operator must enable them explicitly.
+[fixtures]
+enabled = false
+snapshot_on_success = true         # save passing outputs for cross-run regression comparison
+snapshot_dir = ".ralph/snapshots"  # relative = against the repo root, not the worktree
+timeout = 30.0                     # seconds per fixture subprocess
+
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
 mode = "skip"                      # skip | advisory | hard

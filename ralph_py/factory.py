@@ -25,6 +25,7 @@ from ralph_py.contract import (
 )
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.findings import Finding, tag_finding_with_attempt
+from ralph_py.fixtures import FixturesConfig
 from ralph_py.git import GitDiffError, fetch_base_branch, resolve_base_ref
 from ralph_py.knowledge import (
     KnowledgeConfig,
@@ -146,6 +147,12 @@ class FactoryConfig:
     # manifest and survive the next run's stale-worktree prune for as
     # long as the component stays FAILED.
     keep_worktrees_on_failure: bool = False
+    # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
+    # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
+    # env - so `ralph factory` honors the config with no CLI wiring.
+    # Default-off ([fixtures].enabled = false, roadmap user decision 4):
+    # fixtures execute PRD-defined commands, so the operator opts in.
+    fixtures_config: FixturesConfig | None = None
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -1621,6 +1628,13 @@ def _run_factory_locked(
                 allowed_paths_error = f"PRD not found: {exc}"
             except ValueError as exc:
                 allowed_paths_error = f"PRD failed to parse: {exc}"
+            # R7.2: fixtures config resolves from toml/env when the
+            # caller did not inject one; enabled=false (the default)
+            # makes run_mechanical_verification skip the check entirely.
+            fixtures_cfg = (
+                factory_config.fixtures_config
+                or FixturesConfig.load(root_dir)
+            )
             verification = run_mechanical_verification(
                 wt_path,
                 wt_path / comp.prd_path,
@@ -1628,6 +1642,8 @@ def _run_factory_locked(
                 component_allowed_paths,
                 verify_config,
                 allowed_paths_error=allowed_paths_error,
+                fixtures_config=fixtures_cfg,
+                component_id=comp_id,
             )
             verify_duration = time.monotonic() - verify_start
             comp.verification_passed = verification.passed

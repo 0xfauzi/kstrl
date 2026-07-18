@@ -420,6 +420,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            fixtures_config: object | None = None,
+            component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error
@@ -453,6 +455,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            fixtures_config: object | None = None,
+            component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths_error"] = allowed_paths_error
             return VerificationResult(
@@ -497,6 +501,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            fixtures_config: object | None = None,
+            component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error

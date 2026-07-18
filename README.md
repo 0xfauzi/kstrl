@@ -168,11 +168,16 @@ flowchart TD
     Bisect --> Schedule
 ```
 
-## Approved fixtures - behavioral verification you control (not yet wired)
+## Approved fixtures - behavioral verification you control
 
-> **Status**: the fixture runner (`ralph_py/fixtures.py`) and the formats below exist, but they are not yet called from Phase 1 verification. Wiring lands with roadmap item R7.2 (sandboxed execution, off by default). Until then a `fixtures` array in a PRD is not executed, and there is no `[fixtures]` section in ralph.toml.
+Agent-generated tests can be written to pass trivially. Approved fixtures are input/output pairs, declared in the PRD, that the agent's code must satisfy - they run during Phase 1 mechanical verification, outside the project's own pytest, so a gamed conftest cannot deselect them.
 
-Agent-generated tests can be written to pass trivially. Approved fixtures are human-written input/output pairs that the agent's code must satisfy:
+Fixtures are **off by default**. Enable them in ralph.toml (they also do nothing unless the PRD has a `fixtures` array):
+
+```toml
+[fixtures]
+enabled = true
+```
 
 ```json
 {
@@ -201,7 +206,17 @@ Agent-generated tests can be written to pass trivially. Approved fixtures are hu
 }
 ```
 
-Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content).
+Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content). The schema is strict: unknown keys anywhere in a fixture entry are rejected at PRD validation, because a misspelled expectation key (`stdout_containz`) would otherwise be silently ignored and the fixture would pass vacuously.
+
+Because the PRD is LLM-emitted, fixture definitions are treated as untrusted input:
+
+- **`cli` fixtures run without a shell.** The command string is split with `shlex` and executed directly, so shell features - pipes, redirection, `&&`, `$VAR` expansion, globbing - are unsupported; metacharacters reach the program as literal arguments. Each command runs with a scrubbed environment (no API keys or tokens) in its own process group with a timeout.
+- **`function` fixtures run in a subprocess**, never in the harness process. The module/function spec travels as JSON to a `sys.executable` runner with cwd set to the component worktree, the same scrubbed environment, and a timeout. Two consequences: fixtures run under the harness's Python interpreter (not the project's venv), so keep them free of project-only third-party imports; and the `returns` comparison is JSON-shaped (dicts, lists, strings, numbers, booleans, null).
+- **`file` fixtures cannot leave the worktree.** Absolute paths, `..` components, and symlink escapes are rejected.
+
+**Snapshot regression**, behind the same `enabled` flag: when every fixture passes, actual outputs are saved to `snapshot_dir` keyed by component id; later runs fail Phase 1 if a previously-passing fixture fails or its output changes. If a change is intentional, delete `.ralph/snapshots/<component>.json` to reset the baseline. Snapshots resolve against the repo root, not the worktree, so they survive worktree recreation between runs.
+
+See the `[fixtures]` keys in the configuration reference below.
 
 ## Why not just use Claude Code directly?
 
@@ -319,6 +334,13 @@ subprocess_timeout = 300.0                         # seconds per verification su
 require_self_critique = false                      # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3                      # minimum substantive bullets in the block
 progress_file_path = "scripts/ralph/progress.txt"  # progress file the self-critique check reads
+
+# Phase 1 approved-fixtures oracle (R7.2; default off)
+[fixtures]
+enabled = false                    # run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)
+snapshot_on_success = true         # save passing outputs for cross-run regression comparison
+snapshot_dir = ".ralph/snapshots"  # relative paths resolve against the repo root
+timeout = 30.0                     # seconds per fixture subprocess
 
 # Phase 2.5 security review
 [security]

@@ -325,7 +325,7 @@ class TestFixturesIntegration:
             input_data={"module": "adder", "function": "add", "args": [2, 3]},
             expected={"returns": 5},
         )
-        result = run_function_fixture(f, tmp_path)
+        result = run_function_fixture(f, tmp_path, timeout=60.0)
         assert result.passed
 
     def test_function_fixture_wrong_return(self, tmp_path: Path) -> None:
@@ -338,7 +338,7 @@ class TestFixturesIntegration:
             input_data={"module": "adder", "function": "add", "args": [2, 3]},
             expected={"returns": 6},
         )
-        result = run_function_fixture(f, tmp_path)
+        result = run_function_fixture(f, tmp_path, timeout=60.0)
         assert not result.passed
         assert "Expected 6" in result.message
 
@@ -359,7 +359,7 @@ class TestFixturesIntegration:
             },
             expected={"returns": "hi alice"},
         )
-        result = run_function_fixture(f, tmp_path)
+        result = run_function_fixture(f, tmp_path, timeout=60.0)
         assert result.passed
 
     def test_check_fixtures_pipeline(self, tmp_path: Path) -> None:
