@@ -285,25 +285,64 @@ def get_diff_names(
 
     The base is resolved through :func:`resolve_base_ref` so diffs
     measure against ``origin/<base>`` whenever a remote exists (R0.2).
+
+    Rename/copy detection is explicit (`-M -C`) and BOTH sides of a
+    rename or copy count as changed paths. With `--name-only`, git's
+    rename detection reports only the destination, so
+    `git mv protected/gate.py allowed/gate.py` looked like a change
+    confined to `allowed/` and defeated the diff-scope guard
+    (R1.5 / H-5). For scope purposes the source changed too: content
+    left it.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{base_ref}...HEAD", "--"],
+            [
+                "git", "diff", "--name-status", "-z", "-M", "-C",
+                f"{base_ref}...HEAD", "--",
+            ],
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         if result.returncode == 0:
-            return [
-                line.strip()
-                for line in result.stdout.splitlines()
-                if line.strip()
-            ]
+            return _parse_name_status_z(result.stdout)
     except subprocess.TimeoutExpired:
         pass
     return []
+
+
+def _parse_name_status_z(output: str) -> list[str]:
+    """Parse `git diff --name-status -z` output into a flat path list.
+
+    Records are NUL-separated: a status token followed by one path,
+    except rename/copy statuses (`R<score>`/`C<score>`) which carry
+    source AND destination. Both are included. Order is preserved and
+    duplicates (e.g. a copy source that was also modified) collapse.
+    """
+    tokens = output.split("\0")
+    paths: list[str] = []
+    i = 0
+    while i < len(tokens):
+        status = tokens[i]
+        if not status:
+            i += 1
+            continue
+        if status[0] in ("R", "C"):
+            paths.extend(tokens[i + 1:i + 3])
+            i += 3
+        else:
+            if i + 1 < len(tokens):
+                paths.append(tokens[i + 1])
+            i += 2
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in paths:
+        if path and path not in seen:
+            seen.add(path)
+            unique.append(path)
+    return unique
 
 
 def get_diff_content(

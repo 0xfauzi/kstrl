@@ -763,26 +763,28 @@ def run_factory(
         # prior "no constraint" behavior; v1.2.0+ architect outputs are
         # gated upstream in decompose._validate_decompose_output.
         #
-        # Acknowledged limitation: the try/except below briefly masks
-        # real PRD problems by falling through to allowed_paths=None.
-        # The verifier surfaces real PRD problems on its own checks
-        # (check_prd_stories) so this is a one-iteration grace period,
-        # not silent forever -- but a downstream consumer reading
-        # comp.findings should not assume allowed_paths=None means
-        # "intentionally unconstrained" without cross-referencing the
-        # verifier's PRD check status.
+        # R1.5: a PRD that fails to LOAD is not the same as a PRD with
+        # no allowedPaths. Swallowing the load error into
+        # allowed_paths=None silently disabled the scope check -- an
+        # agent that corrupts or deletes its own PRD would unbind its
+        # write scope. Load failure now flows into check_diff_scope as
+        # allowed_paths_error, which fails the check closed.
         component_allowed_paths: list[str] | None = None
+        allowed_paths_error: str | None = None
         try:
             prd_for_scope = PRD.load(wt_path / comp.prd_path)
             component_allowed_paths = prd_for_scope.allowed_paths
-        except (FileNotFoundError, ValueError):
-            pass
+        except FileNotFoundError as exc:
+            allowed_paths_error = f"PRD not found: {exc}"
+        except ValueError as exc:
+            allowed_paths_error = f"PRD failed to parse: {exc}"
         verification = run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
             manifest.base_branch,
             component_allowed_paths,
             verify_config,
+            allowed_paths_error=allowed_paths_error,
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed

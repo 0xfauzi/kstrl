@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from ralph_py.manifest import (
@@ -336,6 +336,68 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
     raise last_error
 
 
+# R1.5 / H-4: DECOMPOSE_PROMPT rule #12 promises the harness rejects
+# allowedPaths entries that would reopen its own guardrails. This is
+# that enforcement -- exactly the prompt's EXCLUDE list. Entries are
+# compared after normalization (leading `./` and trailing `/` removed)
+# so `.ralph`, `.ralph/` and `./.ralph/` all match. Keep this set in
+# sync with the prompt body (which only Session 8C may edit).
+_ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset({
+    ".ralph",          # harness runtime state
+    ".github",         # CI configuration
+    "ralph_py",        # harness package
+    "src/ralph",       # legacy harness package
+    "scripts/ralph",   # bare prefix exposes the manifest + sibling features
+    "pyproject.toml",  # repo-root build manifests
+    "package.json",
+    "Cargo.toml",
+})
+
+
+def _validate_allowed_path_entry(entry: str) -> str | None:
+    """Return an error message if an allowedPaths entry is unacceptable.
+
+    Enforces the DECOMPOSE_PROMPT rule #12 EXCLUDE list plus structural
+    hazards: absolute paths, `..` traversal, and whole-repo scopes.
+    Returns None for acceptable entries. Errors feed the decompose
+    retry-with-error loop, so they address the architect directly.
+    """
+    stripped = entry.strip()
+    if stripped.startswith("/"):
+        if stripped.rstrip("/") == "":
+            return (
+                f"entry '{entry}' grants whole-repo scope; list specific "
+                "source/test/feature path prefixes instead"
+            )
+        return (
+            f"entry '{entry}' is an absolute path; entries must be "
+            "repo-relative prefixes"
+        )
+    if ".." in PurePosixPath(stripped).parts:
+        return (
+            f"entry '{entry}' contains '..'; path traversal outside the "
+            "worktree is not allowed"
+        )
+    normalized = stripped
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.rstrip("/")
+    if normalized in ("", "."):
+        return (
+            f"entry '{entry}' grants whole-repo scope; list specific "
+            "source/test/feature path prefixes instead"
+        )
+    if normalized in _ALLOWED_PATHS_EXCLUDE:
+        return (
+            f"entry '{entry}' is on the DECOMPOSE_PROMPT EXCLUDE list "
+            "(harness state, CI config, repo-root build manifests, and "
+            "the harness's own packages are never in scope; for "
+            "scripts/ralph list only this component's own "
+            "scripts/ralph/feature/<id>/ subtree)"
+        )
+    return None
+
+
 def _validate_decompose_output(data: Any) -> list[str]:
     """Validate the decomposition output structure.
 
@@ -447,6 +509,15 @@ def _validate_decompose_output(data: Any) -> list[str]:
                 errors.append(
                     f"{prefix}.allowedPaths: all items must be non-empty strings"
                 )
+            else:
+                # R1.5 / H-4: content validation. Without this, only
+                # the SHAPE was checked and the architect could emit
+                # `.ralph/` or `ralph_py/`, reopening the guardrail
+                # the prompt claims the harness enforces.
+                for p in ap:
+                    entry_error = _validate_allowed_path_entry(p)
+                    if entry_error:
+                        errors.append(f"{prefix}.allowedPaths: {entry_error}")
 
         stories = comp.get("userStories")
         if not isinstance(stories, list):
