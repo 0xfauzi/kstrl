@@ -144,7 +144,7 @@ class TestC1ParallelExecution:
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
             "ralph_py.factory._run_component", return_value=success,
-        ):
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -182,7 +182,7 @@ class TestC2ReviewRetry:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.run_review", side_effect=fake_run_review,
-        ):
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -223,7 +223,7 @@ class TestC3SecurityRetry:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.run_security_review", side_effect=fake_run_security,
-        ):
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -279,7 +279,7 @@ class TestC4ContractBreaker:
             side_effect=[success_a, success_b, success_a],
         ) as mock_run, patch(
             "ralph_py.factory.run_contract_testing", side_effect=fake_contract,
-        ):
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -315,7 +315,9 @@ class TestC5SinglePrMode:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.distill_facts", return_value=(0, "skipped"),
-        ) as mock_distill:
+        ) as mock_distill, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,

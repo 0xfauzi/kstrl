@@ -165,7 +165,9 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("comp-a", success=True, iterations=3)
 
-        with patch("ralph_py.factory._run_component", return_value=success_result):
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "comp-a" in result.completed
@@ -228,7 +230,9 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch("ralph_py.factory._run_component", return_value=success_result):
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -268,7 +272,9 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch("ralph_py.factory._run_component", return_value=success_result):
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -307,7 +313,9 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("a", success=True, iterations=1)
         manifest_path = root / "scripts" / "ralph" / "manifest.json"
 
-        with patch("ralph_py.factory._run_component", return_value=success_result):
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             run_factory(manifest, config, base, ui, root)
 
         assert manifest_path.exists()
@@ -350,7 +358,9 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch("ralph_py.factory._run_component", return_value=success_result):
+        with patch(
+            "ralph_py.factory._run_component", return_value=success_result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         # Should fail because tests fail, and retries are exhausted

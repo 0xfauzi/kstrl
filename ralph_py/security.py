@@ -29,7 +29,7 @@ from ralph_py.decompose import (
     _select_agent_output,
     collect_agent_output,
 )
-from ralph_py.findings import Finding
+from ralph_py.findings import Finding, dump_raw_debug
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -378,26 +378,42 @@ def _build_security_prompt(prd_text: str, diff_content: str) -> str:
     )
 
 
-def parse_security_output(raw_output: str, mode: str) -> SecurityResult:
-    """Parse structured JSON from the security reviewer agent."""
-    try:
-        data = _extract_json(raw_output)
-    except ValueError:
+def parse_security_output(
+    raw_output: str,
+    mode: str,
+    *,
+    debug_dir: Path | None = None,
+) -> SecurityResult:
+    """Parse structured JSON from the security reviewer agent.
+
+    ``debug_dir`` enables a full raw-output dump on parse failure via
+    :func:`ralph_py.findings.dump_raw_debug` (R1.2); the result's
+    ``raw_output`` field stays truncated to 2000 chars.
+    """
+
+    def _infra(notes: str, label: str) -> SecurityResult:
+        dump_path = dump_raw_debug(debug_dir, "security", raw_output, label)
+        if dump_path:
+            notes = f"{notes} [full raw output: {dump_path}]"
         return SecurityResult(
             passed=False,
             mode=mode,
-            overall_notes="Failed to parse security reviewer output as JSON",
+            overall_notes=notes,
             raw_output=raw_output[:2000],
             infrastructure_error=True,
         )
 
+    try:
+        data = _extract_json(raw_output)
+    except ValueError:
+        return _infra(
+            "Failed to parse security reviewer output as JSON", "no_json",
+        )
+
     if not isinstance(data, dict):
-        return SecurityResult(
-            passed=False,
-            mode=mode,
-            overall_notes="Security output was not a JSON object",
-            raw_output=raw_output[:2000],
-            infrastructure_error=True,
+        return _infra(
+            f"Security output was not a JSON object (got {type(data).__name__})",
+            "non_dict_json",
         )
 
     findings: list[SecurityFinding] = []
@@ -465,6 +481,8 @@ def run_security_review(
     config: SecurityConfig,
     ui: UI,
     diff_content: str | None = None,
+    *,
+    debug_dir: Path | None = None,
 ) -> SecurityResult:
     """Run the security review phase. Always non-fatal: on any
     infrastructure error returns a SecurityResult with empty findings
@@ -505,7 +523,7 @@ def run_security_review(
         )
 
     raw_output = _select_agent_output(agent, output_lines)
-    result = parse_security_output(raw_output, mode)
+    result = parse_security_output(raw_output, mode, debug_dir=debug_dir)
     if result.infrastructure_error:
         # Parsing failed - we have no usable findings list, so don't
         # let _passes_threshold overwrite passed=False with True. In

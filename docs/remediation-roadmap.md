@@ -153,12 +153,12 @@ First principles: a gate that can be passed by silence, case drift, or absence
 of data is not a gate. Every fix here makes the harness distrust its own
 reviewers' output as much as it distrusts the engineer's.
 
-- [ ] R1.1 (S) **Empty or partial reviews cannot pass hard mode** [CRIT-5]
+- [x] R1.1 (S) **Empty or partial reviews cannot pass hard mode** [CRIT-5]
   - `review.py`: criterion-coverage check: every PRD story id must receive a
     verdict or the result is `infrastructure_error=True` (id-based matching,
     not criterion-text string equality); verdict whitelist `{pass, fail}`
     case-insensitively, anything else is a parse failure, not an advisory.
-- [ ] R1.2 (S) **Close the E9 holes** [H-13, MED review-nondict, MED sec-pr-body]
+- [x] R1.2 (S) **Close the E9 holes** [H-13, MED review-nondict, MED sec-pr-body]
   - `review.py:518-527`: `AgentOutputTooLarge` sets `infrastructure_error=True`
     (mirror security.py).
   - Skipped and budget-exhausted phases emit a synthetic
@@ -170,7 +170,7 @@ reviewers' output as much as it distrusts the engineer's.
   - `pr.py` body: render an explicit "security review did not run
     (infrastructure error)" section when applicable (use
     `render_findings_markdown`'s existing callout).
-- [ ] R1.3 (S) **Empty diff from git error is an infrastructure failure** [H-14]
+- [x] R1.3 (S) **Empty diff from git error is an infrastructure failure** [H-14]
   - `git.get_diff_content` returns a result object (content | error) or raises;
     `factory.py:593` maps error to `infrastructure_error` for all three
     consumers instead of reviewing an empty string.

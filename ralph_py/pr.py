@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from ralph_py.findings import render_findings_markdown
 from ralph_py.git import fetch_base_branch
 
 if TYPE_CHECKING:
@@ -359,6 +360,21 @@ def _generate_pr_body(
     # render_findings_markdown remains available for ad-hoc dumping.
     if component.review_findings:
         lines.append(component.review_findings)
+        lines.append("")
+
+    # R1.2 (sec-pr-body): phases that never executed must be visible in
+    # the PR body. In advisory mode a security infrastructure error used
+    # to produce NO security section at all - "did not run" was
+    # indistinguishable from "ran clean". Render the existing
+    # render_findings_markdown callouts for exactly the non-execution
+    # subset (infra errors + deliberate skips); real findings stay with
+    # the richer review_findings string above.
+    non_execution = [
+        f for f in component.findings
+        if f.is_infrastructure_error or f.is_phase_skip
+    ]
+    if non_execution:
+        lines.append(render_findings_markdown(non_execution).rstrip())
         lines.append("")
 
     # PRD reference

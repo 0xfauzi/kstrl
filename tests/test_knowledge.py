@@ -1724,7 +1724,9 @@ class TestFactoryDistillIntegration:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.distill_facts", return_value=(2, "ok"),
-        ) as mock_distill:
+        ) as mock_distill, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "comp-a" in result.completed
@@ -1782,7 +1784,9 @@ class TestFactoryDistillIntegration:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.distill_facts", return_value=(0, "disabled"),
-        ) as mock_distill:
+        ) as mock_distill, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             run_factory(manifest, config, base, ui, root)
 
         mock_distill.assert_not_called()
@@ -1816,7 +1820,9 @@ class TestFactoryDistillIntegration:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.distill_facts", return_value=(0, "ok"),
-        ) as mock_distill:
+        ) as mock_distill, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             run_factory(manifest, config, base, ui, root)
 
         mock_distill.assert_not_called()
@@ -1852,7 +1858,9 @@ class TestFactoryDistillIntegration:
             "ralph_py.factory._run_component", return_value=success,
         ), patch(
             "ralph_py.factory.distill_facts", return_value=(1, "ok"),
-        ) as mock_distill:
+        ) as mock_distill, patch(
+            "ralph_py.git.get_diff_content", return_value="",
+        ):
             run_factory(manifest, config, base, ui, root)
 
         run_id = mock_distill.call_args.args[5]

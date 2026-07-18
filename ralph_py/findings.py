@@ -19,9 +19,11 @@ Phase tag examples: ``"review"`` (Phase 2 reviewer), ``"security"`` (Phase
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 _INFRASTRUCTURE_CATEGORY = "infrastructure_error"
+_PHASE_SKIPPED_CATEGORY = "phase_skipped"
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,16 @@ class Finding:
         cleanly"; ``[f for f in findings if not f.is_infrastructure_error]``
         gives the verified-clean subset (E3-infra)."""
         return self.category == _INFRASTRUCTURE_CATEGORY
+
+    @property
+    def is_phase_skip(self) -> bool:
+        """True when this finding records that a phase never executed
+        (mode=skip, budget exhausted). Deliberately NOT an
+        infrastructure error: nothing broke, the phase was skipped on
+        purpose. But like infra errors it marks non-execution, so
+        ``len(findings) == 0`` keeps meaning "every phase ran and found
+        nothing" (R1.2)."""
+        return self.category == _PHASE_SKIPPED_CATEGORY
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,6 +108,22 @@ class Finding:
             location="",
             explanation=explanation,
             tags=("infrastructure",),
+        )
+
+    @classmethod
+    def phase_skipped(cls, phase: str, reason: str) -> Finding:
+        """Build a synthetic Finding recording that the given phase was
+        deliberately not executed (mode=skip or adversarial budget
+        exhausted). Severity "skipped" keeps it out of every real
+        severity bucket; the ``non_execution`` tag is the machine-
+        readable marker (R1.2)."""
+        return cls(
+            phase=phase,
+            category=_PHASE_SKIPPED_CATEGORY,
+            severity="skipped",
+            location="",
+            explanation=reason,
+            tags=("non_execution", f"phase:{phase}"),
         )
 
     @classmethod
@@ -154,6 +182,34 @@ class Finding:
         )
 
 
+def dump_raw_debug(
+    debug_dir: Path | None,
+    phase: str,
+    raw_output: str,
+    label: str,
+) -> str | None:
+    """Persist the FULL raw agent output of a failed parse so the
+    forensic tail survives (R1.2; mirrors knowledge.py's
+    ``_distill_raw.txt`` pattern). The in-memory result keeps only a
+    2000-char sample to bound manifest/journal size; this dump is where
+    the rest lives.
+
+    Best-effort: returns the written path as a string, or None when
+    ``debug_dir`` is None or the write failed. Never raises."""
+    if debug_dir is None:
+        return None
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        raw_path = debug_dir / f"_{phase}_raw.txt"
+        raw_path.write_text(raw_output, encoding="utf-8")
+        (debug_dir / f"_{phase}_status.txt").write_text(
+            label, encoding="utf-8",
+        )
+        return str(raw_path)
+    except OSError:
+        return None
+
+
 def render_findings_markdown(findings: list[Finding]) -> str:
     """Render a list[Finding] as a markdown section. Returns empty
     string for empty input.
@@ -179,7 +235,11 @@ def render_findings_markdown(findings: list[Finding]) -> str:
     for phase in sorted(by_phase):
         items = by_phase[phase]
         infra = [f for f in items if f.is_infrastructure_error]
-        real = [f for f in items if not f.is_infrastructure_error]
+        skipped = [f for f in items if f.is_phase_skip]
+        real = [
+            f for f in items
+            if not f.is_infrastructure_error and not f.is_phase_skip
+        ]
 
         lines.append(f"### {phase.capitalize()} ({len(real)} findings)")
         lines.append("")
@@ -188,6 +248,13 @@ def render_findings_markdown(findings: list[Finding]) -> str:
                 lines.append(
                     f"- **INFRASTRUCTURE ERROR**: {f.explanation} "
                     "(this role did not actually run -- the PR is unverified for this phase)"
+                )
+            lines.append("")
+        if skipped:
+            for f in skipped:
+                lines.append(
+                    f"- **PHASE SKIPPED**: {f.explanation} "
+                    "(this role did not run for this PR)"
                 )
             lines.append("")
         for f in real:
