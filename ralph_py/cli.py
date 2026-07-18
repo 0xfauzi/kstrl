@@ -1540,6 +1540,14 @@ def decompose(
     help="Disable git worktrees (forces sequential execution)",
 )
 @click.option(
+    "--keep-worktrees-on-failure",
+    is_flag=True,
+    help="Keep a failed component's worktree for post-mortem instead of "
+         "removing it at cleanup; the failure summary points at it "
+         "(default: off, or RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+         "[factory].keep_worktrees_on_failure in ralph.toml)",
+)
+@click.option(
     "--force-lock",
     is_flag=True,
     help="Proceed even if another ralph invocation holds "
@@ -1620,6 +1628,7 @@ def factory(
     pause_before_pr_merge: bool | None,
     progress_log: Path | None,
     no_worktrees: bool,
+    keep_worktrees_on_failure: bool,
     force_lock: bool,
     yes: bool,
     agent_cmd: str | None,
@@ -1726,6 +1735,7 @@ def factory(
                 ("max_total_tokens", max_total_tokens is not None),
                 ("pause_before_pr_merge", pause_before_pr_merge is not None),
                 ("use_worktrees", no_worktrees),
+                ("keep_worktrees_on_failure", keep_worktrees_on_failure),
                 # The manifest is authoritative for single_pr, so a toml
                 # value never becomes effective in this command.
                 ("single_pr", True),
@@ -1749,6 +1759,8 @@ def factory(
         factory_config.pause_before_pr_merge = pause_before_pr_merge
     if no_worktrees:
         factory_config.use_worktrees = False
+    if keep_worktrees_on_failure:
+        factory_config.keep_worktrees_on_failure = True
     factory_config.single_pr = manifest.single_pr
     factory_config.verify_command = verify_command
     factory_config.review_agent_cmd = review_agent_cmd
@@ -2070,6 +2082,7 @@ def config_show(
             "single_pr", "create_prs", "review_mode", "merge_timeout",
             "max_adversarial_calls", "max_total_tokens",
             "pause_before_pr_merge", "progress_log_enabled",
+            "keep_worktrees_on_failure",
         ]),
         ("verify", VerifyConfig.load, [
             "test_command", "typecheck_command", "lint_command",
@@ -2395,6 +2408,216 @@ def status(
             _time.sleep(max(0.5, interval))
     except KeyboardInterrupt:
         sys.exit(0)
+
+
+@cli.command()
+@click.argument("component_id")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(path_type=Path),
+    help="Manifest file (default: scripts/ralph/manifest.json)",
+)
+@click.option(
+    "--progress-log",
+    type=click.Path(path_type=Path),
+    help="Path for JSONL progress log",
+)
+@click.option(
+    "--keep-worktrees-on-failure",
+    is_flag=True,
+    help="Keep a failed component's worktree for post-mortem instead of "
+         "removing it at cleanup (also via "
+         "RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+         "[factory].keep_worktrees_on_failure in ralph.toml)",
+)
+@click.option(
+    "--force-lock",
+    is_flag=True,
+    help="Proceed even if another ralph invocation holds "
+         ".ralph/factory.lock (may corrupt the other run's state)",
+)
+@click.option(
+    "--yes", "-y",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def retry(
+    component_id: str,
+    root: Path | None,
+    manifest_path: Path | None,
+    progress_log: Path | None,
+    keep_worktrees_on_failure: bool,
+    force_lock: bool,
+    yes: bool,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Retry a FAILED component from the factory manifest (R3.3).
+
+    Resets COMPONENT_ID and its cascade-skipped dependents to PENDING,
+    removes the failed attempt's kept worktree and branch (a retry
+    starts fresh from the base branch; the failed attempt's findings
+    stay in the evolution journal), then re-enters the factory with the
+    same manifest. Phase configs resolve env > ralph.toml > defaults,
+    exactly like `ralph factory` invoked without flags. The run-level
+    factory lock applies as usual.
+    """
+    import shutil as _shutil
+    import subprocess as _sp
+
+    root_dir = root.resolve() if root else Path.cwd()
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    manifest_file = (
+        manifest_path if manifest_path is not None
+        else root_dir / "scripts" / "ralph" / "manifest.json"
+    )
+    if not manifest_file.exists():
+        ui_impl.err(f"No manifest found at {manifest_file}")
+        ui_impl.info("Run `ralph factory` first, or pass --manifest.")
+        sys.exit(1)
+    try:
+        manifest = Manifest.load(manifest_file)
+    except (OSError, ValueError) as exc:
+        ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
+        sys.exit(1)
+
+    comp = manifest.get_component(component_id)
+    evidence_worktree = comp.evidence_worktree if comp else ""
+    failed_branch = comp.branch_name if comp else ""
+
+    try:
+        reset_dependents = manifest.reset_for_retry(component_id)
+    except ValueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+
+    ui_impl.section("Retry plan")
+    ui_impl.kv("Component", component_id)
+    ui_impl.kv(
+        "Cascade-skipped dependents reset",
+        ", ".join(reset_dependents) if reset_dependents else "(none)",
+    )
+    ui_impl.kv("Manifest", str(manifest_file))
+
+    # The failed attempt's worktree and branch are superseded by the
+    # fresh attempt; remove them so provisioning and the stale-branch
+    # preflight start clean. In single_pr mode every component shares
+    # one branch carrying completed components' commits - never delete
+    # it here.
+    if evidence_worktree and Path(evidence_worktree).exists():
+        _sp.run(
+            ["git", "worktree", "remove", "--force", evidence_worktree],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        _shutil.rmtree(evidence_worktree, ignore_errors=True)
+        _sp.run(
+            ["git", "worktree", "prune"],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        ui_impl.info(
+            f"Removed the failed attempt's evidence worktree: "
+            f"{evidence_worktree}"
+        )
+    if failed_branch and not manifest.single_pr:
+        branch_exists = _sp.run(
+            ["git", "rev-parse", "--verify", "--quiet",
+             f"refs/heads/{failed_branch}"],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
+        if branch_exists.returncode == 0:
+            deleted = _sp.run(
+                ["git", "branch", "-D", failed_branch],
+                cwd=root_dir, capture_output=True, text=True, timeout=30,
+            )
+            if deleted.returncode == 0:
+                ui_impl.info(
+                    f"Deleted branch '{failed_branch}' from the failed "
+                    f"attempt; the retry recreates it from "
+                    f"'{manifest.base_branch}'"
+                )
+            else:
+                ui_impl.err(
+                    f"Could not delete branch '{failed_branch}': "
+                    f"{deleted.stderr.strip()}"
+                )
+                ui_impl.info(
+                    "Delete it manually (git branch -D "
+                    f"{failed_branch}) and re-run; the factory refuses "
+                    "to silently reuse stale branches (R0.5)."
+                )
+                sys.exit(1)
+    elif manifest.single_pr:
+        ui_impl.warn(
+            "single_pr mode: the shared branch is left in place; if the "
+            "run is refused at branch preflight, resolve it manually"
+        )
+
+    manifest.save(manifest_file)
+
+    if not yes and ui_impl.can_prompt():
+        choice = ui_impl.choose(
+            f"Re-enter the factory to retry '{component_id}'?",
+            ["Start", "Quit"],
+            default=0,
+        )
+        if choice != 0:
+            sys.exit(0)
+
+    # Config assembly mirrors `ralph factory` with no flags: every phase
+    # config resolves env > ralph.toml > defaults (R2.1 control plane).
+    from ralph_py.contract import ContractConfig
+    from ralph_py.feedforward import FeedforwardConfig
+    from ralph_py.security import SecurityConfig
+    from ralph_py.verify import VerifyConfig
+
+    base_config = RalphConfig.load(root_dir)
+    base_config.ui_mode = "plain"
+    base_config.no_color = True
+    if not base_config.prompt_file.exists():
+        default_prompt = root_dir / "scripts" / "ralph" / "prompt.md"
+        if default_prompt.exists():
+            base_config.prompt_file = default_prompt
+    _check_agent_preflight(base_config, ui_impl)
+
+    factory_config = FactoryConfig.load(root_dir)
+    factory_config.single_pr = manifest.single_pr
+    factory_config.verify_config = VerifyConfig.load(root_dir)
+    factory_config.security_config = SecurityConfig.load(root_dir)
+    contract_resolved = ContractConfig.load(root_dir)
+    factory_config.contract_config = (
+        contract_resolved if contract_resolved.mode != "skip" else None
+    )
+    factory_config.feedforward_config = FeedforwardConfig.load(root_dir)
+    factory_config.timeout_config = TimeoutConfig.load(root_dir)
+    factory_config.progress_log_path = progress_log
+    factory_config.force_lock = force_lock
+    if keep_worktrees_on_failure:
+        factory_config.keep_worktrees_on_failure = True
+
+    result = run_factory(
+        manifest, factory_config, base_config, ui_impl, root_dir,
+        manifest_path=manifest_file,
+    )
+    sys.exit(result.exit_code)
 
 
 @cli.command()

@@ -18,12 +18,17 @@ Phase tag examples: ``"review"`` (Phase 2 reviewer), ``"security"`` (Phase
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 _INFRASTRUCTURE_CATEGORY = "infrastructure_error"
 _PHASE_SKIPPED_CATEGORY = "phase_skipped"
+
+# R3.3: every finding the factory records is tagged with the attempt
+# that produced it, so the journal can distinguish superseded findings
+# (an attempt that was retried) from the shipped attempt's findings.
+ATTEMPT_TAG_PREFIX = "attempt:"
 
 
 @dataclass(frozen=True)
@@ -180,6 +185,31 @@ class Finding:
             cwe=cwe,
             tags=tuple(tags),
         )
+
+
+def tag_finding_with_attempt(finding: Finding, attempt: int) -> Finding:
+    """Return a copy of *finding* tagged ``attempt:<n>`` (R3.3).
+
+    Idempotent: a finding already carrying an attempt tag is returned
+    unchanged, so re-tagging on a resumed manifest cannot stack
+    conflicting attempt numbers."""
+    if any(t.startswith(ATTEMPT_TAG_PREFIX) for t in finding.tags):
+        return finding
+    return replace(
+        finding, tags=finding.tags + (f"{ATTEMPT_TAG_PREFIX}{attempt}",),
+    )
+
+
+def finding_attempt(finding: Finding) -> int | None:
+    """The attempt number a finding was recorded on, or None for
+    findings that predate the R3.3 attempt tagging."""
+    for tag in finding.tags:
+        if tag.startswith(ATTEMPT_TAG_PREFIX):
+            try:
+                return int(tag[len(ATTEMPT_TAG_PREFIX):])
+            except ValueError:
+                return None
+    return None
 
 
 def dump_raw_debug(

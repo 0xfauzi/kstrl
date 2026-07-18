@@ -196,7 +196,8 @@ def _section_specs() -> list[SectionSpec]:
                 "max_parallel", "max_retries", "retry_delay", "use_worktrees",
                 "single_pr", "create_prs", "review_mode", "merge_timeout",
                 "max_adversarial_calls", "max_total_tokens",
-                "pause_before_pr_merge",
+                "pause_before_pr_merge", "progress_log_enabled",
+                "keep_worktrees_on_failure",
             ]),
             lambda root: FactoryConfig.load(root_dir=root),
             FactoryConfig(), probe_undocumented_fields=True,
@@ -286,6 +287,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "max_adversarial_calls"): "cap on review+security+distill LLM calls; 0 = unbounded",
     ("factory", "max_total_tokens"): "run-level token budget; 0 = unbounded",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
+    ("factory", "progress_log_enabled"):
+        "JSONL event log at .ralph/progress.jsonl (R3.2)",
+    ("factory", "keep_worktrees_on_failure"):
+        "keep failed components' worktrees for post-mortem (R3.3)",
     ("verify", "test_command"): "empty = smart default (uv run pytest)",
     ("verify", "typecheck_command"): "empty = smart default (uv run mypy)",
     ("verify", "lint_command"): "empty = smart default (uv run ruff check)",
