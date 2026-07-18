@@ -607,6 +607,49 @@ def format_comparison(comparison: Comparison) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reviewer-family override (R7.1)
+# ---------------------------------------------------------------------------
+
+
+def reviewer_override_from_env(
+    environ: Mapping[str, str],
+) -> tuple[str | None, str | None]:
+    """(agent_type, model) override for the reviewer and security
+    calibration agents (R7.1), read from
+    ``RALPH_CALIBRATION_REVIEWER_AGENT_TYPE`` /
+    ``RALPH_CALIBRATION_REVIEWER_MODEL``. Empty values mean unset.
+
+    The override exists so the calibration suite can measure the
+    same-family vs cross-family correlated-miss delta: one baseline with
+    no override (same family end to end), one with the reviewer roles on
+    the second family. The architect always keeps the base calibration
+    agent - rotation applies to reviewers, not the spec red-team."""
+    agent_type = environ.get("RALPH_CALIBRATION_REVIEWER_AGENT_TYPE") or None
+    model = environ.get("RALPH_CALIBRATION_REVIEWER_MODEL") or None
+    return agent_type, model
+
+
+def reviewer_override_label(
+    base_model: str,
+    reviewer_agent_type: str | None,
+    reviewer_model: str | None,
+) -> str:
+    """Baseline ``model`` label for a run with a reviewer override.
+
+    No override keeps the plain base model id. Override runs get
+    ``<base>+reviewer:<type>/<model>`` so ``compare_baselines``'s
+    cross-model warning fires exactly when the reviewer family differs
+    between the two baselines - that comparison measures the family
+    change, which is what R7.1 wants surfaced, not hidden."""
+    if not reviewer_agent_type and not reviewer_model:
+        return base_model
+    reviewer = "/".join(
+        part for part in (reviewer_agent_type, reviewer_model) if part
+    )
+    return f"{base_model}+reviewer:{reviewer}"
+
+
+# ---------------------------------------------------------------------------
 # Model drift (R5.5, H2-extended)
 # ---------------------------------------------------------------------------
 

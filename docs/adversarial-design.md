@@ -128,6 +128,28 @@ Partial runs (a role present in the old baseline but not exercised in the new on
 
 The architect matcher's `must_include_kind` used to demand exact taxonomy labels, but every architect miss in the recorded 20260527 baselines was the planted issue reported under a sibling label (`missing_detail` instead of `undefined_failure_mode` / `unstated_assumption`) - a matcher artifact, not a detection failure. `calibration.KIND_SYNONYM_GROUPS` documents the one symmetric family that collapses: `{missing_detail, unstated_assumption, undefined_failure_mode}` ("the spec is silent about X"). `ambiguity`, `contradiction`, `out_of_scope_creep`, and `other` still require exact labels - ambiguity is about vague language that IS present, not absence. Exact-label matching is still recorded in run details (`exact_kind_match=`) as a non-gating signal so taxonomy drift stays visible.
 
+### Reviewer-family override (R7.1)
+
+To measure the same-family vs cross-family correlated-miss delta, the calibration runner accepts a reviewer-family override that applies to the reviewer and security roles only (the architect keeps the base calibration agent - rotation applies to reviewers, not the spec red-team):
+
+```bash
+# Baseline 1: same family end to end
+RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
+  uv run pytest tests/test_calibration.py -v
+
+# Baseline 2: reviewer + security roles on the second family (codex CLI)
+RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
+  RALPH_CALIBRATION_REVIEWER_AGENT_TYPE=codex \
+  uv run pytest tests/test_calibration.py -v
+
+# Compare (the cross-model warning is expected: the delta measures the family change)
+uv run python -m ralph_py.calibration compare \
+  tests/adversarial_fixtures/_results/baseline-<same-family>.json \
+  tests/adversarial_fixtures/_results/baseline-<cross-family>.json
+```
+
+`RALPH_CALIBRATION_REVIEWER_MODEL` optionally pins the reviewer model within the overridden family. Override runs record their model id as `<base>+reviewer:<type>/<model>` so `compare` surfaces the family change as its cross-model warning instead of hiding it.
+
 ### Model drift (R5.5, H2-extended)
 
 Baselines record the model id, and an always-run structural test (`tests/test_calibration.py::TestFixtureStructure::test_warns_when_calibration_model_differs_from_newest_baseline`) warns - never fails - when `RALPH_CALIBRATION_MODEL` differs from the newest baseline's recorded model. H2 extended: calibration re-runs on model change, not just prompt change; a detection rate measured against an older model does not transfer.
@@ -159,7 +181,7 @@ Healthy state: empty file. Persistent non-zero values per build are the signal t
 
 ## Known limitations
 
-1. **Correlated failure.** The architect, engineer, reviewer, security reviewer, and distiller can all be the same model. They will fail on the same inputs in the same way. Multi-model rotation (roadmap E1) was deliberately deferred; until it lands, treat "all roles agree" as one data point, not several.
+1. **Correlated failure (partially mitigated by R7.1 rotation).** The review and security phases now default to the OPPOSITE model family from the engineer when that CLI is available (user decision 2: the OpenAI family via the codex CLI reviews Claude-engineered code; a codex engineer flips the default to claude-code). Explicit reviewer config always wins; when the cross family's CLI is missing (or the engineer runs a custom command whose family is unknowable) the factory prints a homogeneity warning naming the self-preference risk and falls back to the old same-family behavior. Every reviewer-produced `Finding` carries a `model:<id>` tag, the PR body's findings sections name the reviewer model, and the journal serializes the tag - so same-family and cross-family review outcomes stay attributable and measurable. What REMAINS correlated: the architect, engineer, and knowledge distiller still run on the primary family, so a spec misreading or implementation blind spot shared by that family is not caught by rotation - treat architect+engineer+distiller agreement as one data point. The correlated-miss delta is measured, not assumed: capture same-family vs cross-family calibration baselines (see "Reviewer-family override" below) before trusting the rotation's effect size.
 2. **`exhaustively_searched` is self-reported.** Both reviewer and security results expose the flag, but it cannot be verified at runtime. The trustworthy signal is calibration rate, not the flag.
 3. **Fact-utilization is a lower bound.** `measure_fact_utilization` uses a 30-character case-insensitive substring match. LLMs paraphrase, so a false negative just means we under-count.
 4. **Calibration baseline is non-deterministic.** LLMs vary; the suite now runs each fixture `RALPH_CALIBRATION_RUNS` times (default 3) and reports per-fixture consistency (R5.1), but 3 runs is still a small sample - treat a consistency of 2/3 as "flaky", not as a precise 0.67.

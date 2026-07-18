@@ -30,6 +30,15 @@ _PHASE_SKIPPED_CATEGORY = "phase_skipped"
 # (an attempt that was retried) from the shipped attempt's findings.
 ATTEMPT_TAG_PREFIX = "attempt:"
 
+# R7.1: every finding a reviewer produces is tagged with the reviewing
+# model identity (e.g. "model:codex (gpt-5)"), so the journal and PR
+# body can attribute each finding to the model family that raised it -
+# the measurement substrate for the same-family vs cross-family
+# correlated-miss comparison. Findings recorded when NO reviewer ran
+# (phase_skipped, pre-agent budget failures) carry no model tag: there
+# is no reviewing model to attribute them to.
+MODEL_TAG_PREFIX = "model:"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -200,6 +209,32 @@ def tag_finding_with_attempt(finding: Finding, attempt: int) -> Finding:
     )
 
 
+def tag_finding_with_model(finding: Finding, model_id: str) -> Finding:
+    """Return a copy of *finding* tagged ``model:<id>`` (R7.1).
+
+    Idempotent: a finding already carrying a model tag is returned
+    unchanged, so merged chunk results and resumed manifests cannot
+    stack conflicting identities. An empty ``model_id`` is a no-op -
+    tagging with an unknown identity would be a fabricated claim."""
+    if not model_id:
+        return finding
+    if any(t.startswith(MODEL_TAG_PREFIX) for t in finding.tags):
+        return finding
+    return replace(
+        finding, tags=finding.tags + (f"{MODEL_TAG_PREFIX}{model_id}",),
+    )
+
+
+def finding_model(finding: Finding) -> str | None:
+    """The reviewing model identity a finding was recorded under, or
+    None for findings that predate R7.1 model tagging (or were recorded
+    without a reviewer having run)."""
+    for tag in finding.tags:
+        if tag.startswith(MODEL_TAG_PREFIX):
+            return tag[len(MODEL_TAG_PREFIX):] or None
+    return None
+
+
 def finding_attempt(finding: Finding) -> int | None:
     """The attempt number a finding was recorded on, or None for
     findings that predate the R3.3 attempt tagging."""
@@ -273,6 +308,12 @@ def render_findings_markdown(findings: list[Finding]) -> str:
 
         lines.append(f"### {phase.capitalize()} ({len(real)} findings)")
         lines.append("")
+        # R7.1: attribute the phase's findings to the model(s) that
+        # produced them so a PR reader can see who reviewed whom.
+        models = sorted({m for m in (finding_model(f) for f in items) if m})
+        if models:
+            lines.append(f"Reviewer model: {', '.join(models)}")
+            lines.append("")
         if infra:
             for f in infra:
                 lines.append(
