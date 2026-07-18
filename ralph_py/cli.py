@@ -7,6 +7,7 @@ import json
 import os
 import sys
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from click.core import ParameterSource
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
 from ralph_py.agents.base import Agent
-from ralph_py.config import RalphConfig, _parse_paths
+from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
 from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
@@ -27,10 +28,224 @@ from ralph_py.manifest import Manifest
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui import get_ui
+from ralph_py.ui.base import UI
 
 
 def _use_cli_value(ctx: click.Context, name: str) -> bool:
     return ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+
+
+# Accepted spellings for the agent type across the config surface.
+# ralph.toml documents "claude" | "codex" | "custom"; the --agent-type
+# flags and RALPH_AGENT_TYPE historically use "claude-code" | "codex" |
+# "auto". Both families resolve to get_agent's vocabulary here.
+_AGENT_TYPE_ALIASES: dict[str, str] = {
+    "": "auto",
+    "auto": "auto",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "codex": "codex",
+    "custom": "custom",
+}
+
+
+def _agent_preflight(
+    agent_cmd: str | None, agent_type: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Check that the agent the resolved config selects is reachable.
+
+    Mirrors the factory/decompose preflight (R2.4, H-12): the check must
+    look for whichever agent the config actually selects, not
+    hardcode codex. Returns ``(canonical_agent_type, error, hint)``:
+    ``canonical_agent_type`` is the get_agent-vocabulary spelling to
+    construct the agent with (so a toml ``type = "claude"`` selects
+    Claude Code rather than falling through to the codex default), and
+    ``error``/``hint`` are user-facing lines when the preflight fails.
+    """
+    if agent_cmd:
+        # Custom command takes precedence in get_agent regardless of
+        # type; there is nothing to look up in PATH.
+        return agent_type, None, None
+
+    normalized = (agent_type or "auto").strip().lower()
+    canonical = _AGENT_TYPE_ALIASES.get(normalized)
+
+    if canonical is None:
+        return (
+            agent_type,
+            f"Unknown agent type {agent_type!r} "
+            "(expected: claude, codex, custom, or auto)",
+            "Fix [agent].type in ralph.toml, RALPH_AGENT_TYPE, or --agent-type",
+        )
+    if canonical == "custom":
+        return (
+            agent_type,
+            'Agent type "custom" is configured but no agent command is set',
+            "Set [agent].command in ralph.toml, AGENT_CMD, or --agent-cmd",
+        )
+    if canonical == "claude-code":
+        if not ClaudeCodeAgent.is_available():
+            return (
+                agent_type,
+                "claude not found in PATH (config selects agent type 'claude')",
+                "Install Claude Code, or use --agent-cmd / change [agent].type",
+            )
+        return "claude-code", None, None
+    if canonical == "codex":
+        if not CodexAgent.is_available():
+            return (
+                agent_type,
+                "codex not found in PATH (config selects agent type 'codex')",
+                "Install codex, or use --agent-cmd / change [agent].type",
+            )
+        return "codex", None, None
+
+    # auto: accept whichever agent is installed, like the factory does.
+    if not ClaudeCodeAgent.is_available() and not CodexAgent.is_available():
+        return (
+            agent_type,
+            "No agent available (codex and claude not found in PATH)",
+            "Install an agent or use --agent-cmd to specify a custom one",
+        )
+    return "auto", None, None
+
+
+def _check_agent_preflight(config: RalphConfig, ui_impl: UI) -> None:
+    """Run the agent preflight against a resolved config; exit(1) on failure.
+
+    On success, canonicalizes ``config.agent_type`` in place so every
+    downstream ``get_agent`` call selects the same agent the preflight
+    verified.
+    """
+    canonical, error, hint = _agent_preflight(config.agent_cmd, config.agent_type)
+    if error is not None:
+        ui_impl.err(error)
+        if hint is not None:
+            ui_impl.info(hint)
+        sys.exit(1)
+    config.agent_type = canonical
+
+
+def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
+    """Validate prd.json existence + schema BEFORE any agent spend (R2.4).
+
+    Without this, the agent burns full iterations against a prompt
+    referencing a nonexistent PRD before Phase 1 reports "Failed to load
+    PRD". Error style mirrors ``ralph init``'s per-field messages.
+    """
+    if not prd_file.exists():
+        ui_impl.err(f"PRD file not found: {prd_file}")
+        ui_impl.info(
+            "Run `ralph init` to scaffold scripts/ralph/prd.json, "
+            "or point --prd / PRD_FILE at an existing PRD."
+        )
+        sys.exit(1)
+
+    try:
+        with open(prd_file) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        ui_impl.err(f"Invalid JSON in {prd_file}: {exc}")
+        sys.exit(1)
+    except OSError as exc:
+        ui_impl.err(f"Cannot read PRD file {prd_file}: {exc}")
+        sys.exit(1)
+
+    errors = PRD.validate_schema(data)
+    if errors:
+        ui_impl.err(f"PRD schema validation failed for {prd_file}:")
+        for error in errors:
+            ui_impl.info(f"  - {error}")
+        sys.exit(1)
+
+
+def _apply_cli_overrides(
+    ctx: click.Context,
+    config: RalphConfig,
+    root_dir: Path,
+    prompt_default: Path,
+    prd_default: Path,
+) -> set[str]:
+    """Overlay explicitly-passed CLI flags onto a loaded RalphConfig.
+
+    Shared by ``run`` and ``config show`` so what the observability
+    command prints is exactly what the run command executes. Only flags
+    the invoking command declares are considered (``ctx.params``), and
+    only when the user actually passed them. Returns the RalphConfig
+    field names a flag overrode, for per-value source reporting.
+    """
+    def passed(name: str) -> bool:
+        return name in ctx.params and _use_cli_value(ctx, name)
+
+    overridden: set[str] = set()
+    if passed("max_iterations"):
+        config.max_iterations = ctx.params["max_iterations"]
+        overridden.add("max_iterations")
+    if passed("prompt"):
+        config.prompt_file = _resolve_path(
+            root_dir, ctx.params["prompt"], prompt_default
+        )
+        overridden.add("prompt_file")
+    if passed("prd"):
+        config.prd_file = _resolve_path(root_dir, ctx.params["prd"], prd_default)
+        overridden.add("prd_file")
+    if passed("sleep"):
+        config.sleep_seconds = ctx.params["sleep"]
+        overridden.add("sleep_seconds")
+    if passed("interactive"):
+        config.interactive = ctx.params["interactive"]
+        overridden.add("interactive")
+    if passed("allowed_paths"):
+        config.allowed_paths = _parse_paths(ctx.params["allowed_paths"])
+        overridden.add("allowed_paths")
+    if passed("branch"):
+        config.ralph_branch = ctx.params["branch"]
+        config.ralph_branch_explicit = True
+        overridden.add("ralph_branch")
+    if passed("agent_cmd"):
+        config.agent_cmd = ctx.params["agent_cmd"]
+        overridden.add("agent_cmd")
+    if passed("model"):
+        config.model = ctx.params["model"]
+        overridden.add("model")
+    if passed("reasoning"):
+        config.model_reasoning_effort = ctx.params["reasoning"]
+        overridden.add("model_reasoning_effort")
+    if passed("agent_type"):
+        config.agent_type = ctx.params["agent_type"]
+        overridden.add("agent_type")
+    if passed("ui"):
+        config.ui_mode = _normalize_ui_mode(ctx.params["ui"])
+        overridden.add("ui_mode")
+    if passed("no_color"):
+        config.no_color = ctx.params["no_color"]
+        overridden.add("no_color")
+    if passed("ascii"):
+        config.ascii_only = ctx.params["ascii"]
+        overridden.add("ascii_only")
+    return overridden
+
+
+@contextmanager
+def _scrubbed_environ() -> Iterator[None]:
+    """Temporarily clear os.environ so a loader sees toml + defaults only.
+
+    Used by ``config show`` to isolate the env contribution: a field
+    whose value changes when the environment disappears was env-set.
+    """
+    saved = dict(os.environ)
+    os.environ.clear()
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def _format_config_value(value: Any) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    return repr(value)
 
 
 def _collect_toml_notes(
@@ -270,41 +485,14 @@ def run(
     config = RalphConfig.load(root_dir)
 
     # Apply CLI overrides when explicitly provided.
-    if _use_cli_value(ctx, "max_iterations"):
-        config.max_iterations = max_iterations
-    if _use_cli_value(ctx, "prompt"):
-        config.prompt_file = _resolve_path(
-            root_dir, prompt, root_dir / "scripts/ralph/prompt.md"
-        )
-    if _use_cli_value(ctx, "prd"):
-        config.prd_file = _resolve_path(
-            root_dir, prd, root_dir / "scripts/ralph/prd.json"
-        )
-    if _use_cli_value(ctx, "sleep"):
-        config.sleep_seconds = sleep
-    if _use_cli_value(ctx, "interactive"):
-        config.interactive = interactive
-    if _use_cli_value(ctx, "allowed_paths"):
-        config.allowed_paths = _parse_paths(allowed_paths)
-    if _use_cli_value(ctx, "branch"):
-        config.ralph_branch = branch
-        config.ralph_branch_explicit = True
-    if _use_cli_value(ctx, "agent_cmd"):
-        config.agent_cmd = agent_cmd
-    if _use_cli_value(ctx, "model"):
-        config.model = model
-    if _use_cli_value(ctx, "reasoning"):
-        config.model_reasoning_effort = reasoning
-    if _use_cli_value(ctx, "ui"):
-        config.ui_mode = _normalize_ui_mode(ui)
-    if _use_cli_value(ctx, "no_color"):
-        config.no_color = no_color
-    if _use_cli_value(ctx, "ascii"):
-        config.ascii_only = ascii
+    _apply_cli_overrides(
+        ctx, config, root_dir,
+        prompt_default=root_dir / "scripts/ralph/prompt.md",
+        prd_default=root_dir / "scripts/ralph/prd.json",
+    )
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    # Check codex availability if not using custom agent
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = get_ui(
         config.ui_mode,
@@ -319,10 +507,10 @@ def run(
         )
         sys.exit(2)
 
-    if not config.agent_cmd and not CodexAgent.is_available():
-        ui_impl.err("codex not found in PATH")
-        ui_impl.info("Install codex or use --agent-cmd to specify a custom agent")
-        sys.exit(1)
+    # R2.4 preflight: verify the agent the config selects is reachable,
+    # then validate the PRD - both BEFORE any agent invocation.
+    _check_agent_preflight(config, ui_impl)
+    _check_prd_preflight(config.prd_file, ui_impl)
 
     # Single-component factory invocation
     from ralph_py.config import load_toml_section
@@ -331,15 +519,10 @@ def run(
     from ralph_py.security import SecurityConfig
     from ralph_py.verify import VerifyConfig
 
-    # Determine branch from config or PRD
-    prd_branch = ""
-    if config.prd_file.exists():
-        try:
-            from ralph_py.prd import PRD as PRDLoader
-            prd_doc = PRDLoader.load(config.prd_file)
-            prd_branch = prd_doc.branch_name
-        except Exception:
-            pass
+    # Determine branch from config or PRD. The preflight above already
+    # validated existence + schema, so a load failure here is a real bug
+    # worth surfacing, not something to swallow.
+    prd_branch = PRD.load(config.prd_file).branch_name
 
     effective_branch = config.ralph_branch or prd_branch or "ralph/run"
 
@@ -596,7 +779,6 @@ def understand(
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
-    # Check codex availability
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = get_ui(
         config.ui_mode,
@@ -611,12 +793,13 @@ def understand(
         )
         sys.exit(2)
 
-    if not config.agent_cmd and not CodexAgent.is_available():
-        ui_impl.err("codex not found in PATH")
-        ui_impl.info("Install codex or use --agent-cmd to specify a custom agent")
-        sys.exit(1)
+    # R2.4 preflight: accept whichever agent the resolved config selects.
+    _check_agent_preflight(config, ui_impl)
 
-    agent = get_agent(config.agent_cmd, config.model, config.model_reasoning_effort)
+    agent = get_agent(
+        config.agent_cmd, config.model, config.model_reasoning_effort,
+        config.agent_type,
+    )
 
     result = run_loop(
         config, ui_impl, agent, root_dir,
@@ -916,15 +1099,14 @@ def feature(
 
         return repair_path
 
-    if not base_config.agent_cmd and not CodexAgent.is_available():
-        ui_impl.err("codex not found in PATH")
-        ui_impl.info("Install codex or use --agent-cmd to specify a custom agent")
-        sys.exit(1)
+    # R2.4 preflight: accept whichever agent the resolved config selects.
+    _check_agent_preflight(base_config, ui_impl)
 
     agent = get_agent(
         base_config.agent_cmd,
         base_config.model,
         base_config.model_reasoning_effort,
+        base_config.agent_type,
     )
 
     # Feature understanding phase
@@ -1012,6 +1194,7 @@ def feature(
             repair_agent_cmd or base_config.agent_cmd,
             base_config.model,
             base_config.model_reasoning_effort,
+            base_config.agent_type,
         )
         repair_agent = LoggingAgent(repair_agent_base, repair_log)
         repair_result = run_loop(
@@ -1727,6 +1910,333 @@ def factory(
         manifest_path=manifest_path,
     )
     sys.exit(result.exit_code)
+
+
+# Display structure for the RalphConfig-backed ralph.toml sections:
+# section -> [(toml_key, dataclass_field)]. Mirrors DEFAULT_RALPH_TOML in
+# init_cmd.py plus the env/flag-only UI knobs (ui_mode, no_color).
+_RALPH_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("agent", [
+        ("type", "agent_type"),
+        ("command", "agent_cmd"),
+        ("model", "model"),
+        ("reasoning_effort", "model_reasoning_effort"),
+    ]),
+    ("run", [
+        ("max_iterations", "max_iterations"),
+        ("sleep_seconds", "sleep_seconds"),
+        ("interactive", "interactive"),
+    ]),
+    ("paths", [
+        ("prompt", "prompt_file"),
+        ("prd", "prd_file"),
+        ("progress", "progress_file"),
+        ("codebase_map", "codebase_map_file"),
+        ("allowed", "allowed_paths"),
+    ]),
+    ("git", [
+        ("branch", "ralph_branch"),
+        ("auto_checkout", "auto_checkout"),
+    ]),
+    ("ui", [
+        ("ascii", "ascii_only"),
+        ("ui_mode", "ui_mode"),
+        ("no_color", "no_color"),
+    ]),
+]
+
+
+def _ralph_config_defaults(root_dir: Path) -> RalphConfig:
+    """Built-in RalphConfig defaults with paths anchored like load()."""
+    config = RalphConfig()
+    config.prompt_file = root_dir / "scripts/ralph/prompt.md"
+    config.prd_file = root_dir / "scripts/ralph/prd.json"
+    config.progress_file = root_dir / "scripts/ralph/progress.txt"
+    config.codebase_map_file = root_dir / "scripts/ralph/codebase_map.md"
+    return config
+
+
+@cli.group(name="config")
+def config_group() -> None:
+    """Inspect Ralph configuration."""
+
+
+@config_group.command(name="show")
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option("--max-iterations", type=int, help="Override [run] max_iterations")
+@click.option("--prompt", "-p", type=str, help="Override [paths] prompt")
+@click.option("--prd", type=str, help="Override [paths] prd")
+@click.option("--sleep", "-s", type=float, help="Override [run] sleep_seconds")
+@click.option("--interactive", "-i", is_flag=True, help="Override [run] interactive")
+@click.option("--allowed-paths", help="Override [paths] allowed")
+@click.option("--branch", help="Override [git] branch")
+@click.option("--agent-cmd", help="Override [agent] command")
+@click.option("--model", "-m", help="Override [agent] model")
+@click.option("--reasoning", help="Override [agent] reasoning_effort")
+@click.option("--agent-type", help="Override [agent] type")
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="Override [ui] ui_mode",
+)
+@click.option("--no-color", is_flag=True, help="Override [ui] no_color")
+@click.option("--ascii", is_flag=True, help="Override [ui] ascii")
+def config_show(
+    root: Path | None,
+    max_iterations: int | None,
+    prompt: str | None,
+    prd: str | None,
+    sleep: float | None,
+    interactive: bool,
+    allowed_paths: str | None,
+    branch: str | None,
+    agent_cmd: str | None,
+    model: str | None,
+    reasoning: str | None,
+    agent_type: str | None,
+    ui: str,
+    no_color: bool,
+    ascii: bool,
+) -> None:
+    """Print the fully resolved config with the source of each value.
+
+    Every value is tagged (flag), (env), (toml), or (default). Flags
+    mirror `ralph run`'s config-affecting options, so the output is what
+    a run invoked with the same flags would execute. Factory-phase
+    sections (factory/verify/security/...) have no flags here; their
+    values resolve from env > ralph.toml > defaults.
+
+    Source detection for env is behavioral: a value is tagged (env) when
+    removing the environment changes it. An env var that sets a value
+    identical to the toml/default value is therefore reported as the
+    lower-precedence source; the effective value is identical either way.
+    """
+    ctx = click.get_current_context()
+    root_dir = root.resolve() if root else Path.cwd()
+    toml_path = root_dir / "ralph.toml"
+
+    from ralph_py.contract import ContractConfig
+    from ralph_py.evolution import EvolutionConfig
+    from ralph_py.feedforward import FeedforwardConfig
+    from ralph_py.knowledge import KnowledgeConfig
+    from ralph_py.security import SecurityConfig
+    from ralph_py.verify import VerifyConfig
+
+    # (section, loader, knob fields) - the documented ralph.toml surface.
+    phase_sections: list[tuple[str, Any, list[str]]] = [
+        ("factory", FactoryConfig.load, [
+            "max_parallel", "max_retries", "retry_delay", "use_worktrees",
+            "single_pr", "create_prs", "review_mode", "merge_timeout",
+            "max_adversarial_calls", "pause_before_pr_merge",
+        ]),
+        ("verify", VerifyConfig.load, [
+            "test_command", "typecheck_command", "lint_command",
+            "check_diff_scope", "check_bad_patterns", "dead_code_cleanup",
+            "dead_code_command", "mutation_testing", "mutation_threshold",
+            "mutation_timeout", "subprocess_timeout", "require_self_critique",
+            "self_critique_min_bullets", "progress_file_path",
+        ]),
+        ("security", SecurityConfig.load, [
+            "mode", "fail_threshold", "timeout_seconds", "agent_cmd",
+            "agent_type", "model",
+        ]),
+        ("contract", ContractConfig.load, ["mode", "test_command", "timeout"]),
+        ("feedforward", FeedforwardConfig.load, [
+            "enabled", "module_map", "public_interfaces", "dependency_graph",
+            "conventions", "max_context_tokens",
+        ]),
+        ("knowledge", KnowledgeConfig.load, [
+            "enabled", "max_core_tokens", "max_dependency_tokens",
+            "max_sibling_tokens", "distill_timeout_seconds", "distill_model",
+            "max_facts_per_distill", "dependency_scope",
+        ]),
+        ("evolution", EvolutionConfig.load, [
+            "enabled", "journal_path", "experiments_path",
+            "min_pattern_frequency", "lookback_runs", "auto_propose",
+            "auto_apply_computational",
+        ]),
+        ("timeout", TimeoutConfig.load, [
+            f.name for f in dataclass_fields(TimeoutConfig)
+        ]),
+    ]
+
+    try:
+        resolved_ralph = RalphConfig.load(root_dir)
+        phase_resolved = {name: loader(root_dir) for name, loader, _ in phase_sections}
+        with _scrubbed_environ():
+            noenv_ralph = RalphConfig.load(root_dir)
+            phase_noenv = {
+                name: loader(root_dir) for name, loader, _ in phase_sections
+            }
+        phase_toml_keys = {
+            name: set(load_toml_section(toml_path, name).keys())
+            for name, _, _ in phase_sections
+        }
+    except ValueError as exc:
+        click.echo(f"error: {exc}", err=True)
+        sys.exit(1)
+
+    defaults_ralph = _ralph_config_defaults(root_dir)
+
+    # Per-field sources for RalphConfig, computed BEFORE flag overlay.
+    ralph_sources: dict[str, str] = {}
+    for f in dataclass_fields(RalphConfig):
+        if getattr(resolved_ralph, f.name) != getattr(noenv_ralph, f.name):
+            ralph_sources[f.name] = "env"
+        elif getattr(noenv_ralph, f.name) != getattr(defaults_ralph, f.name):
+            ralph_sources[f.name] = "toml"
+        else:
+            ralph_sources[f.name] = "default"
+
+    flag_fields = _apply_cli_overrides(
+        ctx, resolved_ralph, root_dir,
+        prompt_default=root_dir / "scripts/ralph/prompt.md",
+        prd_default=root_dir / "scripts/ralph/prd.json",
+    )
+    for name in flag_fields:
+        ralph_sources[name] = "flag"
+    resolved_ralph.ui_mode = _normalize_ui_mode(resolved_ralph.ui_mode)
+
+    click.echo(f"# Resolved Ralph config for {root_dir}")
+    click.echo(f"# ralph.toml: {toml_path if toml_path.exists() else '(absent)'}")
+    click.echo("")
+
+    for section, keys in _RALPH_SHOW_SECTIONS:
+        click.echo(f"[{section}]")
+        for toml_key, field_name in keys:
+            value = getattr(resolved_ralph, field_name)
+            source = ralph_sources[field_name]
+            click.echo(
+                f"  {toml_key} = {_format_config_value(value)}  ({source})"
+            )
+        click.echo("")
+
+    for section, _, knob_fields in phase_sections:
+        resolved = phase_resolved[section]
+        noenv = phase_noenv[section]
+        toml_keys = phase_toml_keys[section]
+        click.echo(f"[{section}]")
+        for field_name in knob_fields:
+            value = getattr(resolved, field_name)
+            if value != getattr(noenv, field_name):
+                source = "env"
+            elif field_name in toml_keys:
+                source = "toml"
+            else:
+                source = "default"
+            click.echo(
+                f"  {field_name} = {_format_config_value(value)}  ({source})"
+            )
+        click.echo("")
+
+    sys.exit(0)
+
+
+def _render_status(manifest: Manifest, manifest_file: Path, ui_impl: UI) -> None:
+    """Render the per-component status view from a manifest.
+
+    Deliberately a standalone helper: Session 7B (R3.2) extends this to
+    join ProgressLog events (phase, attempt, last-event age, cost totals)
+    onto the same per-component skeleton.
+    """
+    ui_impl.section("Ralph status")
+    ui_impl.kv("Project", manifest.project_name)
+    ui_impl.kv("Manifest", str(manifest_file))
+    ui_impl.kv("Base branch", manifest.base_branch)
+
+    counts: dict[str, int] = {}
+    for comp in manifest.components:
+        counts[comp.status] = counts.get(comp.status, 0) + 1
+    summary = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
+    ui_impl.kv("Components", f"{len(manifest.components)} ({summary})" if summary else "0")
+
+    for comp in manifest.components:
+        ui_impl.info("")
+        ui_impl.info(f"{comp.id}: {comp.status}")
+        ui_impl.kv("  branch", comp.branch_name)
+        ui_impl.kv("  retries", str(comp.retries))
+        if comp.started_at:
+            ui_impl.kv("  started_at", comp.started_at)
+        if comp.completed_at:
+            ui_impl.kv("  completed_at", comp.completed_at)
+        if comp.pr_url:
+            ui_impl.kv("  pr", comp.pr_url)
+        if comp.error:
+            ui_impl.kv("  error", comp.error)
+
+
+@cli.command()
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(path_type=Path),
+    help="Manifest file (default: scripts/ralph/manifest.json, falling "
+         "back to scripts/ralph/run-manifest.json)",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def status(
+    root: Path | None,
+    manifest_path: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Show per-component status from the factory manifest.
+
+    Minimal manifest-backed view (R2.4): status, retries, branch, and
+    timestamps per component. The ProgressLog-backed detail view lands
+    with R3.2.
+    """
+    root_dir = root.resolve() if root else Path.cwd()
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    if manifest_path is not None:
+        candidates = [manifest_path]
+    else:
+        # Factory runs persist to manifest.json; `ralph run` persists to
+        # run-manifest.json (R0.5, H-15). Prefer the factory manifest.
+        candidates = [
+            root_dir / "scripts" / "ralph" / "manifest.json",
+            root_dir / "scripts" / "ralph" / "run-manifest.json",
+        ]
+
+    manifest_file = next((p for p in candidates if p.exists()), None)
+    if manifest_file is None:
+        looked = ", ".join(str(p) for p in candidates)
+        ui_impl.err(f"No manifest found (looked for: {looked})")
+        ui_impl.info(
+            "Run `ralph factory` or `ralph run` first, or pass --manifest."
+        )
+        sys.exit(1)
+
+    try:
+        manifest = Manifest.load(manifest_file)
+    except (OSError, ValueError) as exc:
+        ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
+        sys.exit(1)
+
+    _render_status(manifest, manifest_file, ui_impl)
+    sys.exit(0)
 
 
 @cli.command()

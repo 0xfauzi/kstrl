@@ -286,7 +286,7 @@ every flag must do what it says or fail loudly.
     `$prd_path` placeholder; `loop.py` substitutes the per-component PRD path;
     add a test that the rendered prompt names the same file
     `check_prd_stories` reads.
-- [ ] R2.4 (S) **Preflight honesty** [H-12, D-preflight]
+- [x] R2.4 (S) **Preflight honesty** [H-12, D-preflight]
   - `run`/`understand`/`feature` preflight accepts whichever agent the config
     selects (claude/codex/custom), not codex-only.
   - `prd.json` existence + schema preflight BEFORE any agent spend.
