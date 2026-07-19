@@ -162,6 +162,10 @@ class PrDisposition(Enum):
     SKIPPED = "skipped"  # create_prs off, or single_pr defers to end-of-run
     MERGED = "merged"
     MERGE_PENDING = "merge_pending"
+    # R7.5: the PR conflicts with base; routed to the re-run doctrine
+    # (re-run the component against the freshly merged base) instead of
+    # a terminal failure.
+    CONFLICT = "conflict"
     FAILED = "failed"
     NO_GH = "no_gh"  # completes without a PR; code stays on its branch
 
@@ -215,7 +219,7 @@ class ComponentPipeline:
     component state transition (R7.3).
 
     Shared mutable structures (``worktree_paths``, ``component_contexts``,
-    ``timeout_retry_ids``, ``component_failure_signatures``,
+    ``fresh_base_retry_ids``, ``component_failure_signatures``,
     ``factory_result``) are passed in by the factory and shared with its
     scheduler; the pipeline is the only writer for transition-related
     fields, the scheduler for provisioning-related ones.
@@ -240,7 +244,7 @@ class ComponentPipeline:
         hooks: PipelineHooks,
         worktree_paths: dict[str, Path],
         component_contexts: dict[str, str],
-        timeout_retry_ids: set[str],
+        fresh_base_retry_ids: set[str],
         component_failure_signatures: dict[str, list[str]],
     ) -> None:
         self.manifest = manifest
@@ -259,7 +263,7 @@ class ComponentPipeline:
         self.hooks = hooks
         self.worktree_paths = worktree_paths
         self.component_contexts = component_contexts
-        self.timeout_retry_ids = timeout_retry_ids
+        self.fresh_base_retry_ids = fresh_base_retry_ids
         self.component_failure_signatures = component_failure_signatures
 
         # R3.1 cost meter: per-component, per-phase usage rollup plus a
@@ -465,19 +469,30 @@ class ComponentPipeline:
         phase: str = "",
         check: str = "",
         signatures: list[str] | None = None,
+        fresh_base: bool = False,
     ) -> Transition:
         """Retry a component or mark it as failed. ``phase``/``check``
         name the gate that fired (R3.3); on a retry they describe the
         superseded attempt until the next attempt clears them.
-        ``signatures`` are the structured failure signatures (R6.1)."""
+        ``signatures`` are the structured failure signatures (R6.1).
+        ``fresh_base=True`` (R7.5 merge-conflict doctrine) forces the
+        retry to recreate the worktree AND branch from the freshly
+        merged base instead of resuming the attempt's commits."""
         self._record_failure_signatures(comp, phase, error, signatures)
         if comp.retries < self.factory_config.max_retries:
+            if fresh_base and self.factory_config.use_worktrees:
+                self.fresh_base_retry_ids.add(comp.id)
+                error = (
+                    error
+                    + " [conflict retry: component re-run against the "
+                    "freshly merged base; agent output is not rebased]"
+                )
             # A timeout failure means the agent was killed mid-flight: the
             # worktree/branch state cannot be trusted. Note the hygiene
             # behavior in the error string so the audit trail explains why
             # the retry does not resume from the killed attempt's commits.
-            if "timeout" in error.lower() and self.factory_config.use_worktrees:
-                self.timeout_retry_ids.add(comp.id)
+            elif "timeout" in error.lower() and self.factory_config.use_worktrees:
+                self.fresh_base_retry_ids.add(comp.id)
                 error = (
                     error
                     + " [timeout retry: worktree recreated from base; "
@@ -607,6 +622,65 @@ class ComponentPipeline:
         )
         self.manifest.save(self.manifest_path)
         return Transition.MERGE_PENDING
+
+    def _retry_after_merge_conflict(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        pr: PrPhaseResult,
+    ) -> Transition:
+        """R7.5 merge-conflict doctrine: re-run, don't rebase.
+
+        A conflicting PR means the base moved under this component
+        (usually a sibling merged first). Rebasing agent output would
+        hand the conflict back to a model with no context on the other
+        side of it; re-running the component against the freshly merged
+        base lets the engineer implement WITH the sibling's code in
+        view. Mechanics: close the conflicting PR (audit comment) and
+        delete its remote branch, clear the manifest's PR pointers so
+        the retry creates a fresh PR instead of re-polling the closed
+        one, then route through the fresh-base retry path (worktree AND
+        branch recreated from origin/<base>).
+        """
+        from ralph_py.pr import close_pr_for_rerun, pr_number_from_url
+
+        error = pr.error or "PR conflicts with base"
+        self.ui.warn(
+            f"  MERGE CONFLICT: {comp.id}: {error[:120]}; re-running "
+            f"the component against the freshly merged base"
+        )
+        pr_number = comp.pr_number or pr_number_from_url(
+            comp.pr_url or pr.pr_url,
+        )
+        if pr_number:
+            close_error = close_pr_for_rerun(
+                pr_number, comp.branch_name, self.root_dir,
+            )
+            if close_error:
+                # Non-fatal: the re-run's own push fails loudly if the
+                # remote branch is still in the way.
+                self.ui.warn(
+                    f"  Conflicting-PR cleanup incomplete (non-fatal): "
+                    f"{close_error}"
+                )
+        comp.pr_number = None
+        comp.pr_url = ""
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        ctx.add_iteration(IterationRecord(
+            iteration=comp_result.iterations,
+            success=False,
+            error=(
+                "The previous attempt's PR hit a merge conflict with the "
+                "base branch; this attempt starts from the freshly merged "
+                "base, which already contains the sibling changes"
+            ),
+        ))
+        return self.retry_or_fail(
+            comp, error, ctx.to_json(),
+            phase="pr", check="merge_conflict",
+            signatures=["pr:merge-conflict"],
+            fresh_base=True,
+        )
 
     def _fail_pr_flow(self, comp: Component, error: str) -> Transition:
         """VERIFYING -> FAILED on a push/create/merge failure (R0.2:
@@ -903,6 +977,15 @@ class ComponentPipeline:
                 )
 
             pr = self._phase_pr(comp)
+            if pr.disposition == PrDisposition.CONFLICT:
+                return PipelineOutcome(
+                    transition=self._retry_after_merge_conflict(
+                        comp, comp_result, pr,
+                    ),
+                    verify=verify, diff=diff, review=review,
+                    security=security, distill=distill,
+                    checkpoint=checkpoint, pr=pr,
+                )
             if pr.disposition == PrDisposition.MERGE_PENDING:
                 return PipelineOutcome(
                     transition=self._park_merge_pending(comp, pr.error),
@@ -1882,6 +1965,13 @@ class ComponentPipeline:
         # Anything less and dependents would cut worktrees from
         # a base that lacks this component's code.
         if not outcome.merged:
+            if outcome.merge_conflict:
+                # R7.5: conflicts route to the re-run doctrine.
+                return PrPhaseResult(
+                    disposition=PrDisposition.CONFLICT,
+                    pr_url=outcome.pr_url,
+                    error=outcome.error or "PR conflicts with base",
+                )
             if outcome.merge_pending:
                 return PrPhaseResult(
                     disposition=PrDisposition.MERGE_PENDING,

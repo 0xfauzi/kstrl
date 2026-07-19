@@ -600,7 +600,8 @@ def _setup_worktree(
     ``--force-lock``), where two invocations could otherwise race on the
     shared branch and .git metadata.
 
-    ``fresh_from_base=True`` (used for retries after a timeout kill)
+    ``fresh_from_base=True`` (used for retries after a timeout kill, and
+    for merge-conflict re-runs under the R7.5 re-run doctrine)
     additionally deletes the component branch so the worktree is recreated
     from ``base_branch`` instead of silently reusing possibly-dirty state
     from the killed attempt (R0.1).
@@ -1395,7 +1396,7 @@ def _run_factory_locked(
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
     # Components whose last failure was a timeout kill: their retry must
     # not trust the surviving worktree/branch state (R0.1 requirement 5).
-    timeout_retry_ids: set[str] = set()
+    fresh_base_retry_ids: set[str] = set()
     # Components abandoned by the scheduler backstop; their workers may
     # still be alive, so their worktrees are never cleaned up here.
     leaked_component_ids: set[str] = set()
@@ -1432,7 +1433,7 @@ def _run_factory_locked(
         ),
         worktree_paths=worktree_paths,
         component_contexts=component_contexts,
-        timeout_retry_ids=timeout_retry_ids,
+        fresh_base_retry_ids=fresh_base_retry_ids,
         component_failure_signatures=component_failure_signatures,
     )
 
@@ -1560,8 +1561,8 @@ def _run_factory_locked(
         """Set up worktree for a component. Returns worktree path or None."""
         try:
             if factory_config.use_worktrees:
-                fresh_from_base = comp.id in timeout_retry_ids
-                timeout_retry_ids.discard(comp.id)
+                fresh_from_base = comp.id in fresh_base_retry_ids
+                fresh_base_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
                     comp.id, comp.branch_name, manifest.base_branch, root_dir,
                     run_id, fresh_from_base=fresh_from_base,
