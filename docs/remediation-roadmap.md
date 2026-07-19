@@ -625,21 +625,36 @@ by an integration test with a synthetic-but-realistic journal).
     (@-mention delegation) stays behind an adapter until GA.
   - Trigger direction (webhook on issue delegation -> factory run) is a
     follow-up once the sink is stable.
-- [ ] R7.5 (M) **Platform hardening** [research topics 1-2]
+- [~] R7.5 (M) **Platform hardening** [research topics 1-2]
+    (all five sub-items implemented across the two R7.5 PRs; [~] because
+    the EARS calibration capture and the SDK go/no-go are user actions:
+    re-run `RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
+    against the DECOMPOSE_PROMPT 1.4.0 baseline, and decide user
+    decision 5 from docs/sdk-spike.md)
   - No-progress circuit breaker: halt a component when N consecutive iterations
     produce an unchanged diff hash + test signature (the community's
-    single most-repeated Ralph-loop fix).
+    single most-repeated Ralph-loop fix). DONE: `ralph_py/breaker.py`,
+    `[breaker]` config, direct-FAIL routing + `circuit_breaker_tripped`
+    event, `tests/test_breaker.py`.
   - OS-level sandboxing for agent subprocesses: pass Claude Code sandbox
     settings (network/write scoping) through the adapter; document the codex
     equivalent; worktree isolation stops being the only boundary.
+    DONE: `ralph_py/sandbox.py` (`[sandbox]` config, measured CLI
+    mappings for claude 2.1.215 / codex 0.134.0), `tests/test_sandbox.py`.
   - Merge-conflict doctrine: on conflict, re-run the component against the
-    fresh merged base instead of rebasing agent output.
+    fresh merged base instead of rebasing agent output. DONE:
+    `PrOutcome.merge_conflict` -> `_retry_after_merge_conflict` fresh-base
+    re-run; doctrine recorded as invariant 7 in docs/adversarial-design.md.
   - SpecKit intake: accept spec.md/plan.md/tasks.md as architect input; the
     DECOMPOSE prompt demands EARS-style acceptance criteria (prompt change:
-    rides the next H2 calibration cycle, not R5's).
+    rides the next H2 calibration cycle, not R5's). DONE code-side
+    (`load_spec_input`, DECOMPOSE_PROMPT 1.4.0 + snapshot); calibration
+    capture pending (user).
   - Agent SDK spike (measure, then decide: user decision 5): structured
     streams, hooks, budget enforcement vs stdout parsing; a one-day spike with
-    a written comparison, per the measure-don't-assume rule.
+    a written comparison, per the measure-don't-assume rule. DONE:
+    docs/sdk-spike.md (measured; recommendation GO, scoped to a fourth
+    adapter); decision pending (user).
 
 Done when: cross-family review is the measured default; fixtures run sandboxed
 in Phase 1 on an opt-in project; a factory run appears in Linear end-to-end
