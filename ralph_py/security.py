@@ -31,7 +31,7 @@ from ralph_py.decompose import (
     collect_agent_output,
     generate_data_delimiter,
 )
-from ralph_py.findings import Finding, dump_raw_debug
+from ralph_py.findings import Finding, dump_raw_debug, tag_finding_with_model
 
 if TYPE_CHECKING:
     from ralph_py.agents.base import Agent
@@ -121,6 +121,11 @@ class SecurityResult:
     # annotation + a low-severity marker finding); hard mode never
     # accepts one - the factory chunks the diff instead.
     partial: bool = False
+    # R7.1: identity of the model that produced this security review
+    # (the agent's ``name``). Stamped by run_security_review; empty when
+    # no reviewer ran (mode=skip). Flows onto every Finding as a
+    # ``model:<id>`` tag and into the PR body.
+    reviewer_model: str = ""
 
     def as_retry_context(self) -> str:
         """Format failing findings for injection into the implementer's
@@ -144,11 +149,16 @@ class SecurityResult:
             "prompt size cap; only a truncated prefix was reviewed**"
             if self.partial else ""
         )
+        model_note = (
+            f"\n\n**Reviewer model**: {self.reviewer_model}"
+            if self.reviewer_model else ""
+        )
         if not self.findings:
             return (
                 "## Security Review\n\n"
                 f"**No findings ({self.mode} mode, "
                 f"{'exhaustively' if self.exhaustively_searched else 'briefly'} searched)**"
+                + model_note
                 + partial_note
             )
         lines = ["## Security Review", ""]
@@ -160,6 +170,9 @@ class SecurityResult:
             f"**{crit} critical, {high} high, {med} medium, {low} low "
             f"({self.mode} mode)**"
         )
+        if self.reviewer_model:
+            lines.append("")
+            lines.append(f"**Reviewer model**: {self.reviewer_model}")
         if self.partial:
             lines.append("")
             lines.append(
@@ -196,24 +209,33 @@ class SecurityResult:
         (security agent crashed, output unparseable, timeout) returns a
         single synthetic infrastructure_error Finding so downstream
         consumers can distinguish "clean security review" (empty list)
-        from "security review never ran" (one infra finding)."""
+        from "security review never ran" (one infra finding).
+
+        R7.1: every returned Finding is tagged ``model:<reviewer_model>``
+        when the reviewing model identity is known."""
         if self.infrastructure_error:
-            return [Finding.infrastructure_error(
-                phase="security",
-                explanation=(
-                    self.overall_notes
-                    or "Security reviewer agent did not produce parseable output"
+            return [tag_finding_with_model(
+                Finding.infrastructure_error(
+                    phase="security",
+                    explanation=(
+                        self.overall_notes
+                        or "Security reviewer agent did not produce parseable output"
+                    ),
                 ),
+                self.reviewer_model,
             )]
         return [
-            Finding.from_security_finding(
-                category=f.category,
-                severity=f.severity,
-                location=f.location,
-                explanation=f.explanation,
-                suggestion=f.suggestion,
-                owasp=category_owasp(f.category),
-                cwe=category_cwe(f.category),
+            tag_finding_with_model(
+                Finding.from_security_finding(
+                    category=f.category,
+                    severity=f.severity,
+                    location=f.location,
+                    explanation=f.explanation,
+                    suggestion=f.suggestion,
+                    owasp=category_owasp(f.category),
+                    cwe=category_cwe(f.category),
+                ),
+                self.reviewer_model,
             )
             for f in self.findings
         ]
@@ -567,6 +589,9 @@ def run_security_review(
 
     ui.info("  Running security review...")
     start = time.monotonic()
+    # R7.1: the agent's name IS the reviewing model identity. Captured
+    # up front so even crash results stay attributable.
+    reviewer_model = getattr(agent, "name", "") or ""
 
     prd_text = ""
     try:
@@ -601,10 +626,12 @@ def run_security_review(
             overall_notes=f"Security review agent failed: {exc}",
             duration_seconds=time.monotonic() - start,
             infrastructure_error=True,
+            reviewer_model=reviewer_model,
         )
 
     raw_output = _select_agent_output(agent, output_lines)
     result = parse_security_output(raw_output, mode, debug_dir=debug_dir)
+    result.reviewer_model = reviewer_model
     if result.infrastructure_error:
         # Parsing failed - we have no usable findings list, so don't
         # let _passes_threshold overwrite passed=False with True. In
@@ -688,6 +715,9 @@ def merge_security_results(
         infrastructure_error=any(r.infrastructure_error for r in results),
         exhaustively_searched=all(r.exhaustively_searched for r in results),
         partial=any(r.partial for r in results),
+        # R7.1: every chunk runs on the same agent instance, so the
+        # first chunk's identity is the merged review's identity.
+        reviewer_model=results[0].reviewer_model,
     )
     notes = [
         f"Chunked security review: {n} passes over an oversized diff "

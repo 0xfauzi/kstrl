@@ -87,6 +87,18 @@ CALIBRATION_RUNS = int(
         "RALPH_CALIBRATION_RUNS", str(calibration.DEFAULT_CALIBRATION_RUNS),
     )
 )
+# R7.1: optional reviewer-family override so the user can capture
+# same-family vs cross-family baselines with the same tooling. Applies
+# to the reviewer and security roles only; the architect keeps the base
+# calibration agent. The report's model label carries the override so
+# baseline comparisons surface the family change as a cross-model
+# warning instead of hiding it.
+REVIEWER_AGENT_TYPE, REVIEWER_MODEL = calibration.reviewer_override_from_env(
+    os.environ,
+)
+REPORT_MODEL_LABEL = calibration.reviewer_override_label(
+    CALIBRATION_MODEL, REVIEWER_AGENT_TYPE, REVIEWER_MODEL,
+)
 
 FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
 RESULTS_DIR = FIXTURES_DIR / "_results"
@@ -236,6 +248,20 @@ def _get_calibration_agent():
         model=CALIBRATION_MODEL,
         model_reasoning_effort=None,
         agent_type="claude-code",
+    )
+
+
+def _get_reviewer_calibration_agent():
+    """Agent for the reviewer and security roles: the base calibration
+    agent unless the R7.1 reviewer-family override
+    (RALPH_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
+    family for the same-family vs cross-family baseline comparison."""
+    from ralph_py.agents import get_agent
+    return get_agent(
+        agent_cmd=None,
+        model=REVIEWER_MODEL or CALIBRATION_MODEL,
+        model_reasoning_effort=None,
+        agent_type=REVIEWER_AGENT_TYPE or "claude-code",
     )
 
 
@@ -640,14 +666,14 @@ class _DetectionReport:
         if self.records:
             report_data: dict = calibration.build_report(
                 self.records,
-                model=CALIBRATION_MODEL,
+                model=REPORT_MODEL_LABEL,
                 timestamp=date_str,
                 runs_per_fixture=CALIBRATION_RUNS,
             )
         else:
             report_data = {
                 "format_version": calibration.REPORT_FORMAT_VERSION,
-                "model": CALIBRATION_MODEL,
+                "model": REPORT_MODEL_LABEL,
                 "timestamp": date_str,
                 "runs_per_fixture": CALIBRATION_RUNS,
                 "summary": {},
@@ -802,7 +828,8 @@ def _security_run_once(
     # R5.3: build through the harness path so calibration exercises the
     # per-run data delimiters exactly as production does.
     prompt = _build_security_prompt(prd_text, diff_content)
-    agent = _get_calibration_agent()
+    # R7.1: security is a reviewer role - it honors the family override.
+    agent = _get_reviewer_calibration_agent()
     try:
         output = _collect(agent, prompt, tmp_path)
     except Exception as exc:  # noqa: BLE001
@@ -902,7 +929,8 @@ def _reviewer_run_once(
         verification_summary=render_verification(meta),
         data_delimiter=generate_data_delimiter(),
     )
-    agent = _get_calibration_agent()
+    # R7.1: the reviewer role honors the family override.
+    agent = _get_reviewer_calibration_agent()
     try:
         output = _collect(agent, prompt, tmp_path)
     except Exception as exc:  # noqa: BLE001
@@ -1207,8 +1235,12 @@ class TestFixtureStructure:
         when the configured calibration model differs from the model
         recorded in the newest baseline, because every recorded
         detection rate was measured against that older model and does
-        not transfer."""
-        message = calibration.model_drift_message(RESULTS_DIR, CALIBRATION_MODEL)
+        not transfer. Compares the full R7.1 label (base model plus any
+        reviewer-family override) so a standing override does not warn
+        against its own baselines - and a dropped override does."""
+        message = calibration.model_drift_message(
+            RESULTS_DIR, REPORT_MODEL_LABEL,
+        )
         if message is not None:
             warnings.warn(
                 message,

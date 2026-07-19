@@ -17,7 +17,7 @@ from ralph_py.decompose import (
     collect_agent_output,
     generate_data_delimiter,
 )
-from ralph_py.findings import Finding, dump_raw_debug
+from ralph_py.findings import Finding, dump_raw_debug, tag_finding_with_model
 from ralph_py.prd import PRD
 from ralph_py.verify import VerificationResult
 
@@ -119,6 +119,12 @@ class ReviewResult:
     # hard mode never accepts a partial review - the factory chunks
     # the diff and runs one pass per chunk instead.
     partial: bool = False
+    # R7.1: identity of the model that produced this review (the
+    # agent's ``name``, e.g. "codex (gpt-5)"). Stamped by run_review;
+    # empty when no reviewer ran (mode=skip). Flows onto every Finding
+    # as a ``model:<id>`` tag and into the PR body, so same-family vs
+    # cross-family review outcomes stay attributable.
+    reviewer_model: str = ""
 
     def as_retry_context(self) -> str:
         """Format failing/advisory findings for injection into retry prompt."""
@@ -162,6 +168,9 @@ class ReviewResult:
             f"{criterion_adv} advisory; "
             f"{len(self.concerns)} additional concerns**"
         )
+        if self.reviewer_model:
+            lines.append("")
+            lines.append(f"**Reviewer model**: {self.reviewer_model}")
         if self.partial:
             lines.append("")
             lines.append(
@@ -249,14 +258,22 @@ class ReviewResult:
         single synthetic infrastructure_error Finding so downstream
         consumers can distinguish "clean review" (empty list) from
         "review never ran" (one infra finding).
+
+        R7.1: every returned Finding is tagged ``model:<reviewer_model>``
+        when the reviewing model identity is known, so the journal can
+        attribute findings (and misses) to the model family that
+        reviewed the diff.
         """
         if self.infrastructure_error:
-            return [Finding.infrastructure_error(
-                phase="review",
-                explanation=(
-                    self.overall_notes
-                    or "Reviewer agent did not produce parseable output"
+            return [tag_finding_with_model(
+                Finding.infrastructure_error(
+                    phase="review",
+                    explanation=(
+                        self.overall_notes
+                        or "Reviewer agent did not produce parseable output"
+                    ),
                 ),
+                self.reviewer_model,
             )]
         out: list[Finding] = []
         for cr in self.criteria:
@@ -278,7 +295,9 @@ class ReviewResult:
                 explanation=concern.explanation,
                 suggestion=concern.suggestion,
             ))
-        return out
+        return [
+            tag_finding_with_model(f, self.reviewer_model) for f in out
+        ]
 
 
 REVIEWER_PROMPT_VERSION = "1.1.0"
@@ -637,6 +656,10 @@ def run_review(
 
     ui.info("  Running second-opinion review...")
     start = time.monotonic()
+    # R7.1: the agent's name IS the reviewing model identity ("codex
+    # (gpt-5)", "claude-code (haiku)", "custom (<cmd>)"). Captured up
+    # front so even crash/oversize results stay attributable.
+    reviewer_model = getattr(agent, "name", "") or ""
 
     truncated = False
     try:
@@ -670,6 +693,7 @@ def run_review(
             mode=mode.value,
             overall_notes=f"Reviewer agent output too large: {exc}",
             infrastructure_error=True,
+            reviewer_model=reviewer_model,
         )
         result.duration_seconds = time.monotonic() - start
         return result
@@ -683,6 +707,7 @@ def run_review(
             mode=mode.value,
             overall_notes=f"Reviewer agent failed: {exc}",
             infrastructure_error=True,
+            reviewer_model=reviewer_model,
         )
         result.duration_seconds = time.monotonic() - start
         return result
@@ -692,6 +717,7 @@ def run_review(
         raw_output, expected_story_ids, debug_dir=debug_dir,
     )
     result.mode = mode.value
+    result.reviewer_model = reviewer_model
     result.duration_seconds = time.monotonic() - start
 
     if truncated and not result.infrastructure_error:
@@ -776,6 +802,9 @@ def merge_review_results(
         infrastructure_error=any(r.infrastructure_error for r in results),
         exhaustively_searched=all(r.exhaustively_searched for r in results),
         partial=any(r.partial for r in results),
+        # R7.1: every chunk runs on the same agent instance, so the
+        # first chunk's identity is the merged review's identity.
+        reviewer_model=results[0].reviewer_model,
     )
     notes = [f"Chunked review: {n} passes over an oversized diff (R1.4)."]
     raw_parts: list[str] = []

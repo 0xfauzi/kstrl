@@ -255,6 +255,188 @@ class FactoryConfig:
         return config
 
 
+# R7.1: cross-model review rotation. Self-preference bias means a
+# same-family reviewer systematically misses the bug classes its own
+# family produces, so when no explicit reviewer config is given the
+# review and security phases default to the OPPOSITE model family from
+# the engineer (user decision 2: the OpenAI family via the codex CLI
+# reviews Claude-engineered code; a codex engineer flips the default to
+# claude-code). The engineer always keeps the primary family.
+_CROSS_FAMILY_TYPE: dict[str, str] = {
+    "claude-code": "codex",
+    "codex": "claude-code",
+}
+
+
+def _cli_family(
+    agent_cmd: str | None,
+    agent_type: str | None,
+    claude_available: bool,
+) -> str | None:
+    """Which CLI family a (cmd, type) config resolves to, mirroring
+    ``agents.get_agent`` dispatch exactly: a custom command is an
+    unknown family (None); "auto"/None auto-detects claude-code first;
+    any unrecognized type string falls through to codex."""
+    if agent_cmd:
+        return None
+    if agent_type == "claude-code":
+        return "claude-code"
+    if agent_type in (None, "auto"):
+        return "claude-code" if claude_available else "codex"
+    return "codex"
+
+
+def _agent_identity(
+    agent_cmd: str | None,
+    agent_type: str | None,
+    model: str | None,
+    claude_available: bool,
+) -> str:
+    """Reviewing-model identity for a configuration, matching the agent
+    adapters' ``name`` property ("codex (gpt-5)", "claude-code",
+    "custom (<cmd>)") so findings attributed before an agent exists
+    match what a live run stamps on its results."""
+    if agent_cmd:
+        return f"custom ({agent_cmd})"
+    family = _cli_family(agent_cmd, agent_type, claude_available) or "unknown"
+    if model:
+        return f"{family} ({model})"
+    return family
+
+
+@dataclass(frozen=True)
+class AdversarialAgentSelection:
+    """Resolved agent configuration for one adversarial phase (R7.1).
+
+    ``source`` records how the resolution went: "explicit" (operator
+    config always wins), "cross-family-default" (the R7.1 rotation
+    default), or "same-family-fallback" (heterogeneity unavailable;
+    ``warning`` then carries the homogeneity risk statement to print).
+    """
+
+    phase: str
+    agent_cmd: str | None
+    agent_type: str | None
+    model: str | None
+    reasoning: str | None
+    source: str
+    identity: str
+    warning: str | None = None
+
+
+def resolve_adversarial_selection(
+    phase: str,
+    *,
+    explicit_cmd: str | None,
+    explicit_type: str | None,
+    explicit_model: str | None,
+    fallback_cmd: str | None,
+    fallback_type: str | None,
+    fallback_model: str | None,
+    fallback_reasoning: str | None,
+    engineer_cmd: str | None,
+    engineer_type: str | None,
+    claude_available: bool | None = None,
+    codex_available: bool | None = None,
+) -> AdversarialAgentSelection:
+    """Resolve which agent reviews this run's diffs (R7.1).
+
+    Precedence:
+    1. Any explicit field (cmd/type/model) makes the whole selection
+       explicit: each unset field falls back to the phase's historical
+       fallback, exactly as before R7.1. No warning - an operator who
+       pins a same-family reviewer has decided so deliberately.
+    2. Otherwise, when the engineer's family is known and the opposite
+       family's CLI is available, the reviewer defaults to that family
+       (adapter-default model; reasoning deliberately not inherited -
+       effort strings do not transfer across families).
+    3. Otherwise the reviewer falls back to the same configuration as
+       today (same family as the engineer) and ``warning`` names the
+       self-preference risk.
+
+    ``claude_available``/``codex_available`` default to probing the
+    real CLIs; tests inject both.
+    """
+    from ralph_py.agents import ClaudeCodeAgent, CodexAgent
+
+    if claude_available is None:
+        claude_available = ClaudeCodeAgent.is_available()
+    if codex_available is None:
+        codex_available = CodexAgent.is_available()
+
+    explicit = any(
+        v is not None for v in (explicit_cmd, explicit_type, explicit_model)
+    )
+    if explicit:
+        cmd = explicit_cmd if explicit_cmd is not None else fallback_cmd
+        agent_type = (
+            explicit_type if explicit_type is not None else fallback_type
+        )
+        model = explicit_model if explicit_model is not None else fallback_model
+        return AdversarialAgentSelection(
+            phase=phase,
+            agent_cmd=cmd,
+            agent_type=agent_type,
+            model=model,
+            reasoning=fallback_reasoning,
+            source="explicit",
+            identity=_agent_identity(cmd, agent_type, model, claude_available),
+        )
+
+    engineer_family = _cli_family(engineer_cmd, engineer_type, claude_available)
+    cross_type = (
+        _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
+    )
+    cross_available = (
+        codex_available if cross_type == "codex" else claude_available
+    )
+    if cross_type is not None and cross_available:
+        return AdversarialAgentSelection(
+            phase=phase,
+            agent_cmd=None,
+            agent_type=cross_type,
+            model=None,
+            reasoning=None,
+            source="cross-family-default",
+            identity=_agent_identity(None, cross_type, None, claude_available),
+        )
+
+    if engineer_family is None:
+        warning = (
+            f"Homogeneity risk (R7.1): the engineer runs a custom agent "
+            f"command, so its model family is unknown and the "
+            f"cross-family default cannot be applied; the {phase} "
+            f"reviewer falls back to the same configuration. "
+            "Self-preference bias means a same-family reviewer "
+            "systematically misses the bug classes its own family "
+            f"produces. Set an explicit {phase} agent config on a "
+            "different model family to restore cross-family review."
+        )
+    else:
+        warning = (
+            f"Homogeneity risk (R7.1): the {cross_type} CLI is not "
+            f"available, so the {phase} reviewer runs on the same model "
+            f"family as the engineer ({engineer_family}). "
+            "Self-preference bias means a same-family reviewer "
+            "systematically misses the bug classes its own family "
+            f"produces. Install the {cross_type} CLI for cross-family "
+            f"review, or set an explicit {phase} agent config to accept "
+            "the risk silently."
+        )
+    return AdversarialAgentSelection(
+        phase=phase,
+        agent_cmd=fallback_cmd,
+        agent_type=fallback_type,
+        model=fallback_model,
+        reasoning=fallback_reasoning,
+        source="same-family-fallback",
+        identity=_agent_identity(
+            fallback_cmd, fallback_type, fallback_model, claude_available,
+        ),
+        warning=warning,
+    )
+
+
 @dataclass
 class ComponentResult:
     """Result from running a single component."""
@@ -1071,6 +1253,67 @@ def _run_factory_locked(
 
     progress_log.factory_started(manifest.project_name, len(manifest.components))
 
+    # R7.1: resolve which model family reviews this run's diffs ONCE so
+    # the choice is stable across components and the homogeneity warning
+    # prints once per run, not per component. Explicit config always
+    # wins; otherwise review/security default to the opposite family
+    # from the engineer when that CLI is available. The selection is an
+    # audit-trail event: same-family and cross-family runs must stay
+    # distinguishable in the progress log.
+    review_selection = resolve_adversarial_selection(
+        "review",
+        explicit_cmd=factory_config.review_agent_cmd,
+        explicit_type=factory_config.review_agent_type,
+        explicit_model=factory_config.review_model,
+        fallback_cmd=None,
+        fallback_type=base_config.agent_type,
+        fallback_model=None,
+        fallback_reasoning=None,
+        engineer_cmd=base_config.agent_cmd,
+        engineer_type=base_config.agent_type,
+    )
+    security_selection: AdversarialAgentSelection | None = None
+    if factory_config.security_config is not None:
+        sec_cfg = factory_config.security_config
+        security_selection = resolve_adversarial_selection(
+            "security",
+            explicit_cmd=sec_cfg.agent_cmd,
+            explicit_type=sec_cfg.agent_type,
+            explicit_model=sec_cfg.model,
+            fallback_cmd=base_config.agent_cmd,
+            fallback_type=base_config.agent_type,
+            fallback_model=base_config.model,
+            fallback_reasoning=base_config.model_reasoning_effort,
+            engineer_cmd=base_config.agent_cmd,
+            engineer_type=base_config.agent_type,
+        )
+    _review_phase_enabled = (
+        factory_config.review_mode != ReviewMode.SKIP.value
+    )
+    _security_phase_enabled = (
+        factory_config.security_config is not None
+        and factory_config.security_config.mode != SecurityMode.SKIP.value
+    )
+    for _sel, _enabled in (
+        (review_selection, _review_phase_enabled),
+        (security_selection, _security_phase_enabled),
+    ):
+        if _sel is None or not _enabled:
+            continue
+        if _sel.warning:
+            ui.warn(f"  {_sel.warning}")
+        progress_log.emit(
+            "adversarial_agent_selected",
+            data={
+                "phase": _sel.phase,
+                "source": _sel.source,
+                "identity": _sel.identity,
+                "agent_type": _sel.agent_type,
+                "model": _sel.model,
+                "homogeneous": _sel.warning is not None,
+            },
+        )
+
     # Validate DAG
     ui.section("Factory: Validating DAG")
     dag_errors = manifest.validate_dag()
@@ -1868,11 +2111,14 @@ def _run_factory_locked(
             # failure; it must never abort the whole factory run.
             review_agent: Any = None
             try:
+                # R7.1: the run-level selection (explicit config, or the
+                # cross-family default, or the warned same-family
+                # fallback) decides who reviews.
                 review_agent = get_agent(
-                    factory_config.review_agent_cmd,
-                    factory_config.review_model,
-                    None,
-                    factory_config.review_agent_type or base_config.agent_type,
+                    review_selection.agent_cmd,
+                    review_selection.model,
+                    review_selection.reasoning,
+                    review_selection.agent_type,
                 )
                 if review_mode == ReviewMode.HARD and review_chunks is not None:
                     # R1.4: one pass per chunk, each consuming budget;
@@ -1909,6 +2155,9 @@ def _run_factory_locked(
                     mode=review_mode.value,
                     overall_notes=f"Review agent crashed: {exc}",
                     infrastructure_error=True,
+                    # R7.1: a crash before/inside the run is still
+                    # attributed to the selected reviewer identity.
+                    reviewer_model=review_selection.identity,
                 )
             # R3.1: the instance is fresh per phase, so its accumulated
             # records are exactly this review's spend (N records for a
@@ -2054,18 +2303,23 @@ def _run_factory_locked(
             )
             sec_result = None
             sec_agent: Any = None
+            # R7.1: the run-level selection already folded in the
+            # explicit sec_config fields and the engineer fallbacks (or
+            # picked the cross-family default). sec_config is non-None
+            # and non-skip here, so the selection was resolved at run
+            # start.
+            assert security_selection is not None
             # The try/except deliberately wraps ONLY the agent-driven
             # work (getting the agent + running the review). Errors in
             # the retry-or-fail path below must NOT be swallowed - if
             # they were, a hard-mode security failure could fall through
             # to PR creation as if it had passed.
             try:
-                sec_model = sec_config.model or base_config.model
                 sec_agent = _get_sec_agent(
-                    sec_config.agent_cmd or base_config.agent_cmd,
-                    sec_model,
-                    base_config.model_reasoning_effort,
-                    sec_config.agent_type or base_config.agent_type,
+                    security_selection.agent_cmd,
+                    security_selection.model,
+                    security_selection.reasoning,
+                    security_selection.agent_type,
                 )
                 if (
                     sec_config.mode == SecurityMode.HARD.value
@@ -2113,6 +2367,9 @@ def _run_factory_locked(
                         f"completion: {exc}"
                     ),
                     infrastructure_error=True,
+                    # R7.1: a crash before/inside the run is still
+                    # attributed to the selected reviewer identity.
+                    reviewer_model=security_selection.identity,
                 )
 
             # R3.1: record security spend before pass/fail handling so

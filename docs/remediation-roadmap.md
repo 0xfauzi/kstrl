@@ -33,6 +33,9 @@ Process rules that bind this plan:
 2. **Second model family for review rotation** (R7.1): which family reviews
    Claude-engineered code (codex CLI is already an adapter). Needed before the
    correlated-failure gate in the A+ criteria can be measured.
+   **Decided 2026-07-19: the OpenAI family via the codex CLI.** Review and
+   security default to codex when the CLI is available (a codex engineer
+   flips the default to claude-code); explicit config always wins.
 3. **Linear workspace admin approval** (R7.4): app-actor OAuth requires a
    workspace admin to approve the app identity.
 4. **PRD fixtures default** (R7.2): once wired and sandboxed, fixtures ship
@@ -570,13 +573,18 @@ by an integration test with a synthetic-but-realistic journal).
 
 ## Phase R7 - Strategic (the A+ differentiators)
 
-- [ ] R7.1 (M) **Cross-model review rotation** [research topic 3; user decision 2]
+- [~] R7.1 (M) **Cross-model review rotation** [research topic 3; user decision 2]
   - Default `review_model`/`security_model` to a different family than the
     engineer's when a second CLI is available; warn on homogeneity; record the
     reviewing model identity on every Finding and in the PR body.
   - Measure the correlated-miss delta: run calibration with same-family and
     cross-family configs and record both (this is the E1 decision revisited
     with 2026 evidence; independent passes, never committee deliberation).
+  - Partial (2026-07-19): rotation default, homogeneity warning, `model:<id>`
+    finding tags, PR-body/journal attribution, and the calibration
+    reviewer-family override all landed. Stays `[~]` until the user records
+    BOTH baselines (same-family and cross-family; commands in
+    docs/adversarial-design.md "Reviewer-family override").
 - [x] R7.2 (M) **Wire fixtures, sandboxed** [CRIT-3, H-6; user decision 4]
   - Function fixtures execute in a subprocess (`sys.executable -c`) with the
     R2.6 scrubbed env: never in the harness process.
