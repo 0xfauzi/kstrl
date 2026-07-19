@@ -1,22 +1,36 @@
 """Approved fixtures - pre-approved input/output pairs for behavioral verification.
 
 Provides behavioral verification independent of agent-generated tests.
-Fixtures are defined in the PRD and checked during Phase 1 mechanical verification.
+Fixtures are defined in the PRD and checked during Phase 1 mechanical
+verification when ``[fixtures].enabled`` is set (R7.2; default off per
+the roadmap user decision).
+
+Threat model (R7.2 / CRIT-3): the PRD is LLM-emitted, so every fixture
+definition is untrusted input. Function fixtures therefore execute in a
+subprocess with the R2.6 scrubbed environment - the harness process
+never imports agent code - and CLI fixtures run with ``shell=False`` so
+metacharacters in a PRD-supplied command are literal arguments, never
+shell syntax. What sandboxing does NOT claim: agent code runs inside the
+fixture subprocess and could forge the result line, but that grants no
+power beyond hardcoding the function's return value, which fixtures
+legitimately accept - they verify behavior, they are not a defense
+against a malicious implementation.
 """
 
 from __future__ import annotations
 
-import importlib
 import json
+import os
+import shlex
 import subprocess
+import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    pass
-
+from ralph_py.prd import PRD
 from ralph_py.verify import CheckResult, run_scrubbed
 
 
@@ -42,12 +56,70 @@ class FixtureResult:
 
 @dataclass
 class FixturesConfig:
-    """Configuration for the fixtures check."""
+    """Configuration for the fixtures check (``[fixtures]`` in ralph.toml).
+
+    ``enabled`` defaults to False (R7.2 user decision 4): fixtures run
+    PRD-defined commands and import PRD-named modules, so the operator
+    must opt in explicitly.
+    """
 
     enabled: bool = False
     snapshot_on_success: bool = True
     snapshot_dir: Path = field(default_factory=lambda: Path(".ralph/snapshots"))
     timeout: float = 30.0
+
+    @classmethod
+    def from_env(cls) -> FixturesConfig:
+        """Load fixtures config from environment variables."""
+        from ralph_py.config import _parse_bool
+
+        return cls(
+            enabled=_parse_bool(os.environ.get("RALPH_FIXTURES_ENABLED")),
+            snapshot_on_success=_parse_bool(
+                os.environ.get("RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
+            ),
+            snapshot_dir=Path(
+                os.environ.get("RALPH_FIXTURES_SNAPSHOT_DIR", ".ralph/snapshots")
+            ),
+            timeout=float(os.environ.get("RALPH_FIXTURES_TIMEOUT", "30")),
+        )
+
+    @classmethod
+    def load(cls, root_dir: Path | None = None) -> FixturesConfig:
+        """Load fixtures config with precedence: env > toml > defaults.
+
+        A relative ``snapshot_dir`` resolves against ``root_dir`` (the
+        operator's repo), NOT the component worktree: worktrees are
+        recreated across runs, so a worktree-relative snapshot would be
+        wiped before the next run could compare against it.
+        """
+        from ralph_py.config import _parse_bool, load_toml_section
+
+        if root_dir is None:
+            root_dir = Path.cwd()
+        config = cls()
+        section = load_toml_section(root_dir / "ralph.toml", "fixtures")
+        if "enabled" in section:
+            config.enabled = bool(section["enabled"])
+        if "snapshot_on_success" in section:
+            config.snapshot_on_success = bool(section["snapshot_on_success"])
+        if "snapshot_dir" in section:
+            config.snapshot_dir = Path(str(section["snapshot_dir"]))
+        if "timeout" in section:
+            config.timeout = float(section["timeout"])
+        if "RALPH_FIXTURES_ENABLED" in os.environ:
+            config.enabled = _parse_bool(os.environ["RALPH_FIXTURES_ENABLED"])
+        if "RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS" in os.environ:
+            config.snapshot_on_success = _parse_bool(
+                os.environ["RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS"]
+            )
+        if "RALPH_FIXTURES_SNAPSHOT_DIR" in os.environ:
+            config.snapshot_dir = Path(os.environ["RALPH_FIXTURES_SNAPSHOT_DIR"])
+        if "RALPH_FIXTURES_TIMEOUT" in os.environ:
+            config.timeout = float(os.environ["RALPH_FIXTURES_TIMEOUT"])
+        if not config.snapshot_dir.is_absolute():
+            config.snapshot_dir = root_dir / config.snapshot_dir
+        return config
 
 
 def run_cli_fixture(
@@ -56,9 +128,14 @@ def run_cli_fixture(
     """Run a CLI fixture by executing a command and checking output expectations.
 
     Checks exit_code, stdout_contains, and stdout_not_contains from expected.
+
+    The command string is tokenized with ``shlex.split`` and executed
+    with ``shell=False``: shell features (pipes, redirection, ``&&``,
+    variable expansion, globbing) are NOT supported, and metacharacters
+    in the PRD-supplied command reach the program as literal arguments.
     """
     command = fixture.input_data.get("command")
-    if not command:
+    if not command or not isinstance(command, str):
         return FixtureResult(
             fixture=fixture,
             passed=False,
@@ -66,7 +143,24 @@ def run_cli_fixture(
         )
 
     try:
-        result = run_scrubbed(command, cwd=cwd, timeout=timeout)
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=f"Could not parse command ({exc}); note that shell "
+            "features are unsupported - the command is split with shlex "
+            "and executed without a shell",
+        )
+    if not argv:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message="Command is empty after parsing",
+        )
+
+    try:
+        result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return FixtureResult(
             fixture=fixture,
@@ -117,13 +211,124 @@ def run_cli_fixture(
     )
 
 
-def run_function_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
-    """Run a function fixture by importing a module and calling a function.
+# Result line prefix the function-fixture runner prints. The parent scans
+# stdout for the LAST line with this prefix, so module-level prints from
+# agent code cannot shadow the runner's genuine verdict as long as the
+# runner completes (see the module docstring for the forgery equivalence
+# argument).
+_RESULT_MARKER = "RALPH-FIXTURE-RESULT-V1:"
 
-    Checks expected return value or expected exception type.
+# Source of the subprocess that imports and calls the agent-written
+# function. Composed with the marker constant so the two cannot drift.
+# It mirrors the pass/fail semantics the in-process runner used to have:
+# expected exception, unexpected exception, expected return, no expected
+# return (vacuous pass - rejected earlier by PRD validation).
+_FUNCTION_FIXTURE_RUNNER = (
+    "_MARKER = " + repr(_RESULT_MARKER) + "\n"
+    + '''
+import importlib
+import json
+import sys
+
+
+def _emit(passed, actual, message):
+    sys.stdout.flush()
+    sys.stdout.write(
+        "\\n" + _MARKER + json.dumps(
+            {"passed": passed, "actual": actual, "message": message}
+        ) + "\\n"
+    )
+    sys.stdout.flush()
+
+
+def _main():
+    spec = json.loads(sys.argv[1])
+    expected = spec.get("expected", {})
+    args = spec.get("args", [])
+    kwargs = spec.get("kwargs", {})
+    try:
+        mod = importlib.import_module(spec["module"])
+    except BaseException as exc:
+        _emit(False, "", "Failed to import module %r: %s: %s"
+              % (spec["module"], type(exc).__name__, exc))
+        return
+    func = getattr(mod, spec["function"], None)
+    if func is None:
+        _emit(False, "", "Function %r not found in module %r"
+              % (spec["function"], spec["module"]))
+        return
+    expected_raises = expected.get("raises")
+    if expected_raises:
+        try:
+            func(*args, **kwargs)
+        except Exception as exc:
+            name = type(exc).__name__
+            if name == expected_raises:
+                _emit(True, "raised " + name,
+                      "Function fixture passed - expected exception raised")
+            else:
+                _emit(False, "raised " + name,
+                      "Expected %s, got %s" % (expected_raises, name))
+            return
+        _emit(False, "no exception raised",
+              "Expected %s but no exception was raised" % expected_raises)
+        return
+    try:
+        actual = func(*args, **kwargs)
+    except Exception as exc:
+        _emit(False, "raised %s: %s" % (type(exc).__name__, exc),
+              "Unexpected exception: %s: %s" % (type(exc).__name__, exc))
+        return
+    if "returns" not in expected:
+        _emit(True, repr(actual),
+              "Function fixture passed (no expected return specified)")
+        return
+    expected_value = expected["returns"]
+    if actual == expected_value:
+        _emit(True, repr(actual), "Function fixture passed")
+    else:
+        _emit(False, repr(actual),
+              "Expected %r, got %r" % (expected_value, actual))
+
+
+_main()
+'''
+)
+
+
+def _parse_runner_result(stdout: str) -> dict[str, Any] | None:
+    """Extract the runner's verdict from subprocess stdout, last line wins."""
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(_RESULT_MARKER):
+            try:
+                payload = json.loads(line[len(_RESULT_MARKER):])
+            except json.JSONDecodeError:
+                return None
+            if isinstance(payload, dict):
+                return payload
+            return None
+    return None
+
+
+def run_function_fixture(
+    fixture: Fixture, cwd: Path, timeout: float,
+) -> FixtureResult:
+    """Run a function fixture in a subprocess and check its reported result.
+
+    The spec (module, function, args, kwargs, expected) travels as a JSON
+    argv argument to ``sys.executable -c <runner>``; the runner imports
+    the module from ``cwd`` (the worktree), calls the function, compares
+    against ``expected`` in-process (Python ``==``), and prints a single
+    marker-prefixed JSON verdict line. The harness process never imports
+    agent code; the subprocess gets the R2.6 scrubbed environment, runs
+    in its own session, and is group-killed on timeout (``run_scrubbed``).
+
+    Two documented limitations: the fixture runs under the HARNESS's
+    Python interpreter (``sys.executable``), not the project's venv, so
+    fixtures must not need project-only third-party imports; and the
+    ``returns`` comparison is JSON-shaped (a function returning a tuple
+    will not equal a JSON array).
     """
-    import sys
-
     module_name = fixture.input_data.get("module")
     function_name = fixture.input_data.get("function")
     args = fixture.input_data.get("args", [])
@@ -141,115 +346,108 @@ def run_function_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
             passed=False,
             message="Missing or invalid 'function' in input_data",
         )
+    if not isinstance(args, list):
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message="'args' must be an array",
+        )
+    if not isinstance(kwargs, dict):
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message="'kwargs' must be an object",
+        )
 
-    cwd_str = str(cwd)
-    added_to_path = cwd_str not in sys.path
-    if added_to_path:
-        sys.path.insert(0, cwd_str)
-
+    spec = {
+        "module": module_name,
+        "function": function_name,
+        "args": args,
+        "kwargs": kwargs,
+        "expected": fixture.expected,
+    }
     try:
-        mod = importlib.import_module(module_name)
-
-        func = getattr(mod, function_name, None)
-        if func is None:
-            return FixtureResult(
-                fixture=fixture,
-                passed=False,
-                message=f"Function '{function_name}' not found in module '{module_name}'",
-            )
-
-        # Check if we expect an exception
-        expected_raises = fixture.expected.get("raises")
-        if expected_raises:
-            try:
-                func(*args, **kwargs)
-            except Exception as exc:
-                exc_type_name = type(exc).__name__
-                if exc_type_name == expected_raises:
-                    return FixtureResult(
-                        fixture=fixture,
-                        passed=True,
-                        actual=f"raised {exc_type_name}",
-                        message="Function fixture passed - expected exception raised",
-                    )
-                return FixtureResult(
-                    fixture=fixture,
-                    passed=False,
-                    actual=f"raised {exc_type_name}",
-                    message=f"Expected {expected_raises}, got {exc_type_name}",
-                )
-            return FixtureResult(
-                fixture=fixture,
-                passed=False,
-                actual="no exception raised",
-                message=f"Expected {expected_raises} but no exception was raised",
-            )
-
-        # Normal return value check
-        try:
-            actual = func(*args, **kwargs)
-        except Exception as exc:
-            return FixtureResult(
-                fixture=fixture,
-                passed=False,
-                actual=f"raised {type(exc).__name__}: {exc}",
-                message=f"Unexpected exception: {type(exc).__name__}: {exc}",
-            )
-
-        if "returns" not in fixture.expected:
-            return FixtureResult(
-                fixture=fixture,
-                passed=True,
-                actual=repr(actual),
-                message="Function fixture passed (no expected return specified)",
-            )
-
-        expected_value = fixture.expected["returns"]
-        if actual == expected_value:
-            return FixtureResult(
-                fixture=fixture,
-                passed=True,
-                actual=repr(actual),
-                message="Function fixture passed",
-            )
+        spec_json = json.dumps(spec)
+    except (TypeError, ValueError) as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
-            actual=repr(actual),
-            message=f"Expected {expected_value!r}, got {actual!r}",
+            message=f"Fixture spec is not JSON-serializable: {exc}",
         )
 
-    except ImportError as exc:
+    argv = [sys.executable, "-c", _FUNCTION_FIXTURE_RUNNER, spec_json]
+    try:
+        result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
+    except subprocess.TimeoutExpired:
         return FixtureResult(
             fixture=fixture,
             passed=False,
-            message=f"Failed to import module '{module_name}': {exc}",
+            message=f"Function fixture timed out after {timeout}s",
         )
-    finally:
-        # Clean up sys.modules to force re-import on next call
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-        if added_to_path:
-            try:
-                sys.path.remove(cwd_str)
-            except ValueError:
-                pass
+    except OSError as exc:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=f"Failed to launch fixture subprocess: {exc}",
+        )
+
+    payload = _parse_runner_result(result.stdout)
+    if payload is None:
+        stderr_tail = result.stderr.strip()[-500:]
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=(
+                f"Fixture subprocess exited {result.returncode} without "
+                f"reporting a result (module-level crash or hard exit); "
+                f"stderr tail: {stderr_tail!r}"
+            ),
+        )
+    return FixtureResult(
+        fixture=fixture,
+        passed=bool(payload.get("passed", False)),
+        actual=str(payload.get("actual", "")),
+        message=str(payload.get("message", "")),
+    )
 
 
 def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
     """Run a file fixture by checking file existence and content.
 
     Checks expected existence, contains, and not_contains expectations.
+    The path must stay inside ``cwd``: PRD-supplied paths are untrusted,
+    and a traversal or symlink escape would leak file content outside
+    the worktree into ``actual`` (which flows into retry prompts and PR
+    bodies).
     """
     rel_path = fixture.input_data.get("path")
-    if not rel_path:
+    if not rel_path or not isinstance(rel_path, str):
         return FixtureResult(
             fixture=fixture,
             passed=False,
             message="No 'path' in input_data",
         )
 
-    full_path = cwd / rel_path
+    rel = Path(rel_path)
+    if rel.is_absolute() or ".." in rel.parts:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=(
+                f"Path {rel_path!r} must be relative to the worktree "
+                "with no '..' components"
+            ),
+        )
+
+    full_path = cwd / rel
+    resolved_cwd = cwd.resolve()
+    resolved = full_path.resolve()
+    if resolved != resolved_cwd and resolved_cwd not in resolved.parents:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=f"Path {rel_path!r} escapes the worktree (symlink?)",
+        )
     file_exists = full_path.exists()
 
     # Check existence expectation
@@ -321,7 +519,7 @@ def _dispatch_fixture(
     if fixture.fixture_type == "cli":
         return run_cli_fixture(fixture, cwd, timeout)
     if fixture.fixture_type == "function":
-        return run_function_fixture(fixture, cwd)
+        return run_function_fixture(fixture, cwd, timeout)
     if fixture.fixture_type == "file":
         return run_file_fixture(fixture, cwd)
     return FixtureResult(
@@ -335,11 +533,22 @@ def check_fixtures(
     fixtures: list[Fixture],
     cwd: Path,
     config: FixturesConfig,
+    component_id: str | None = None,
 ) -> CheckResult:
     """Run all fixtures and return a single CheckResult for the verification pipeline.
 
-    Each fixture is dispatched to the appropriate runner based on fixture_type.
-    Results are aggregated into one CheckResult compatible with verify.py.
+    Each fixture is dispatched to the appropriate runner based on
+    fixture_type. Results are aggregated into one CheckResult compatible
+    with verify.py; failure details name the fixture and what diverged
+    so ``VerificationResult.as_context()`` carries actionable retry
+    context.
+
+    When ``component_id`` is given, snapshot regression runs behind the
+    same ``[fixtures].enabled`` flag: current results are compared
+    against the component's saved snapshot (a previously-passing fixture
+    that now fails, or whose output changed, fails the check), and a
+    fully-passing run refreshes the snapshot when
+    ``config.snapshot_on_success`` is set.
     """
     start = time.monotonic()
 
@@ -359,31 +568,108 @@ def check_fixtures(
         results.append(result)
 
         status = "PASS" if result.passed else "FAIL"
-        details.append(f"[{status}] {fixture.description}: {result.message}")
+        line = f"[{status}] {fixture.description}: {result.message}"
+        if not result.passed and result.actual:
+            line += f" (actual: {result.actual[:200]!r})"
+        details.append(line)
 
     passed_count = sum(1 for r in results if r.passed)
     total = len(results)
     all_passed = passed_count == total
+    message = f"{passed_count}/{total} fixtures passed"
+
+    if component_id is not None:
+        snapshot_dir = (
+            config.snapshot_dir
+            if config.snapshot_dir.is_absolute()
+            else cwd / config.snapshot_dir
+        )
+        regressions = check_snapshot_regression(
+            component_id, results, snapshot_dir,
+        )
+        if regressions:
+            all_passed = False
+            message += f"; {len(regressions)} snapshot regression(s)"
+            details.extend(f"[REGRESSION] {r}" for r in regressions)
+            details.append(
+                "If the behavior change is intentional, delete "
+                f"{snapshot_dir / (component_id + '.json')} to reset the "
+                "baseline."
+            )
+        elif all_passed and config.snapshot_on_success:
+            save_snapshot(component_id, fixtures, results, snapshot_dir)
 
     return CheckResult(
         name="fixtures",
         passed=all_passed,
-        message=f"{passed_count}/{total} fixtures passed",
+        message=message,
         details=details,
         duration_seconds=time.monotonic() - start,
     )
 
 
+def check_fixtures_from_prd(
+    prd_path: Path,
+    cwd: Path,
+    config: FixturesConfig,
+    component_id: str | None = None,
+) -> CheckResult:
+    """Phase 1 entry point: load fixtures from the PRD on disk and run them.
+
+    Fails CLOSED on an unreadable or schema-invalid PRD: fixtures are the
+    independent oracle against agent-authored tests (H-6), so "could not
+    determine which fixtures to run" must never read as "fixtures
+    passed". A PRD without a ``fixtures`` key passes vacuously - that is
+    a legitimate "none defined", not an infrastructure failure.
+    """
+    start = time.monotonic()
+    try:
+        with open(prd_path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        return CheckResult(
+            name="fixtures",
+            passed=False,
+            message=(
+                "PRD could not be read for the fixtures check "
+                "(failing closed)"
+            ),
+            details=[f"Error: {exc}"],
+            duration_seconds=time.monotonic() - start,
+        )
+    errors = PRD.validate_schema(data)
+    if errors:
+        return CheckResult(
+            name="fixtures",
+            passed=False,
+            message=(
+                "PRD failed schema validation; fixture definitions cannot "
+                "be trusted (failing closed)"
+            ),
+            details=errors[:10],
+            duration_seconds=time.monotonic() - start,
+        )
+    fixtures = load_fixtures_from_prd_data(data)
+    return check_fixtures(fixtures, cwd, config, component_id=component_id)
+
+
 def load_fixtures_from_prd_data(prd_data: dict[str, Any]) -> list[Fixture]:
     """Parse the optional 'fixtures' array from PRD JSON data.
 
-    Returns an empty list if no fixtures field is present.
-    Each fixture entry should have: description, fixture_type, input_data, expected.
+    Returns an empty list if no fixtures field is present. Malformed
+    entries raise ``ValueError`` naming the entry - an oracle that
+    silently drops a fixture is a silent degradation, and this codebase
+    fails loudly instead. Callers that need full strict validation run
+    ``PRD.validate_schema`` first (as ``check_fixtures_from_prd`` does).
     """
-    raw_fixtures = prd_data.get("fixtures", [])
-    fixtures: list[Fixture] = []
+    raw_fixtures = prd_data.get("fixtures") or []
+    if not isinstance(raw_fixtures, list):
+        raise ValueError("'fixtures' must be an array")
 
-    for entry in raw_fixtures:
+    fixtures: list[Fixture] = []
+    for i, entry in enumerate(raw_fixtures):
+        if not isinstance(entry, dict):
+            raise ValueError(f"fixtures[{i}]: must be an object")
         try:
             fixture = Fixture(
                 description=entry["description"],
@@ -391,9 +677,11 @@ def load_fixtures_from_prd_data(prd_data: dict[str, Any]) -> list[Fixture]:
                 input_data=entry.get("input_data", {}),
                 expected=entry.get("expected", {}),
             )
-            fixtures.append(fixture)
-        except KeyError:
-            continue
+        except KeyError as exc:
+            raise ValueError(
+                f"fixtures[{i}]: missing required key {exc.args[0]!r}"
+            ) from exc
+        fixtures.append(fixture)
 
     return fixtures
 
@@ -407,7 +695,8 @@ def save_snapshot(
     """Save successful fixture outputs as a JSON snapshot for regression detection.
 
     Only saves results for fixtures that passed. The snapshot captures the actual
-    output so future runs can detect behavioral regressions.
+    output so future runs can detect behavioral regressions. Written
+    atomically (mkstemp + os.replace) per the codebase convention.
     """
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot_path = snapshot_dir / f"{component_id}.json"
@@ -427,7 +716,19 @@ def save_snapshot(
         "entries": snapshot_entries,
     }
 
-    snapshot_path.write_text(json.dumps(snapshot_data, indent=2) + "\n")
+    fd, tmp_name = tempfile.mkstemp(
+        dir=snapshot_dir, prefix=f".{component_id}-", suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(snapshot_data, indent=2) + "\n")
+        os.replace(tmp_name, snapshot_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def check_snapshot_regression(

@@ -577,7 +577,7 @@ by an integration test with a synthetic-but-realistic journal).
   - Measure the correlated-miss delta: run calibration with same-family and
     cross-family configs and record both (this is the E1 decision revisited
     with 2026 evidence; independent passes, never committee deliberation).
-- [ ] R7.2 (M) **Wire fixtures, sandboxed** [CRIT-3, H-6; user decision 4]
+- [x] R7.2 (M) **Wire fixtures, sandboxed** [CRIT-3, H-6; user decision 4]
   - Function fixtures execute in a subprocess (`sys.executable -c`) with the
     R2.6 scrubbed env: never in the harness process.
   - CLI fixtures: `shlex.split` + `shell=False`.

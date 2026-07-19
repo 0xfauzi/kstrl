@@ -122,6 +122,7 @@ def _section_specs() -> list[SectionSpec]:
     from ralph_py.evolution import EvolutionConfig
     from ralph_py.factory import FactoryConfig
     from ralph_py.feedforward import FeedforwardConfig
+    from ralph_py.fixtures import FixturesConfig
     from ralph_py.knowledge import KnowledgeConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.timeout import TimeoutConfig
@@ -207,6 +208,14 @@ def _section_specs() -> list[SectionSpec]:
             identity_keys(VerifyConfig, [f.name for f in dataclasses.fields(VerifyConfig)]),
             lambda root: VerifyConfig.load(root_dir=root),
             VerifyConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "fixtures", "Phase 1 approved-fixtures oracle (R7.2; default off)",
+            identity_keys(FixturesConfig, [
+                f.name for f in dataclasses.fields(FixturesConfig)
+            ]),
+            lambda root: FixturesConfig.load(root_dir=root),
+            FixturesConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "security", "Phase 2.5 security review",
@@ -306,6 +315,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "fail Phase 1 if the ## Self-Critique block is missing/sparse",
     ("verify", "self_critique_min_bullets"): "minimum substantive bullets in the block",
     ("verify", "progress_file_path"): "progress file the self-critique check reads",
+    ("fixtures", "enabled"):
+        "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
+    ("fixtures", "snapshot_on_success"):
+        "save passing outputs for cross-run regression comparison",
+    ("fixtures", "snapshot_dir"): "relative paths resolve against the repo root",
+    ("fixtures", "timeout"): "seconds per fixture subprocess",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
