@@ -37,7 +37,11 @@ Process rules that bind this plan:
    security default to codex when the CLI is available (a codex engineer
    flips the default to claude-code); explicit config always wins.
 3. **Linear workspace admin approval** (R7.4): app-actor OAuth requires a
-   workspace admin to approve the app identity.
+   workspace admin to approve the app identity. RESOLVED 2026-07-19: proceed
+   without blocking on app-actor - interim auth is a personal API key in
+   `RALPH_LINEAR_TOKEN`, team Excetra (`540e2302-e91c-42a7-92d7-e2f274bbf298`);
+   the app-actor setup steps for the user are in docs/linear-integration.md
+   and require no code change when adopted (`auth_mode` already speaks both).
 4. **PRD fixtures default** (R7.2): once wired and sandboxed, fixtures ship
    default-off (`[fixtures].enabled = false`) unless decided otherwise.
 5. **Agent SDK spike go/no-go** (R7.5): decide after the measurement spike, not
@@ -645,7 +649,7 @@ by an integration test with a synthetic-but-realistic journal).
     `tests/test_pipeline.py` covering every transition in isolation; PR 2
     unifies the scheduling loops behind `_InlineExecutor`
     (`tests/test_scheduler.py`).
-- [ ] R7.4 (L) **Linear integration** [P-6; user decision 3]
+- [x] R7.4 (L) **Linear integration** [P-6; user decision 3]
   - GraphQL + app-actor OAuth adapter implementing a `LinearSink` on the
     ProgressLog event bus (factory.py untouched); decompose output creates one
     project per manifest, one issue per component (stories as sub-issues),
@@ -658,6 +662,23 @@ by an integration test with a synthetic-but-realistic journal).
     (@-mention delegation) stays behind an adapter until GA.
   - Trigger direction (webhook on issue delegation -> factory run) is a
     follow-up once the sink is stable.
+  - DONE (design + rationale: docs/linear-integration.md). `ralph_py/linear.py`
+    ships `LinearClient` (one HTTP entry point over stdlib urllib, defensive
+    parsing, throttle, RATELIMITED-as-HTTP-400 handling, dry-run recording),
+    the decompose sync hook, and `LinearSink` on the new `ProgressSink`
+    fan-out in observability.py. One deviation from the sketch above, per
+    session authorization: stories land as a CHECKLIST in the component
+    issue, not sub-issues (no per-story branch/PR exists, so sub-issue
+    status could never transition - see doc). Idempotency = deterministic
+    client-generated UUIDs from `<sync_key>:<component_id>` plus manifest
+    persistence (`linearSyncKey`/`linearIssueId`); rate limits re-verified
+    2026-07-19 (2.5k/hr API key, 5k/hr OAuth). Interim auth is a personal
+    API key in `RALPH_LINEAR_TOKEN` (user decision 2026-07-19); app-actor
+    OAuth setup instructions are in the doc, client already speaks both.
+  - Re-land history: #91 merged into `refactor/r7-3-scheduler-reland` after
+    that branch had already reached main, so `ralph_py/linear.py` never landed.
+    Re-landed onto R7.5-era main by cherry-picking the #91 squash (see PR
+    "feat: R7.4 Linear integration re-land (#91 onto main)").
 - [~] R7.5 (M) **Platform hardening** [research topics 1-2]
     (all five sub-items implemented across the two R7.5 PRs; [~] because
     the EARS calibration capture and the SDK go/no-go are user actions:

@@ -397,6 +397,17 @@ min_pattern_frequency = 2                    # pattern must recur N times before
 lookback_runs = 10                           # past runs to analyze
 auto_propose = true                          # generate proposals after each factory run
 auto_apply_computational = false             # auto-apply computational proposals
+
+# Linear integration (R7.4; default off)
+[linear]
+enabled = false                             # mirror runs into Linear (project/issues/status via GitHub linking)
+team_id = ""                                # Linear team UUID (required when enabled)
+token_env = "RALPH_LINEAR_TOKEN"            # NAME of the env var holding the API token
+auth_mode = "auto"                          # auto | api_key | oauth (auto sniffs the lin_api_ prefix)
+api_url = "https://api.linear.app/graphql"  # GraphQL endpoint
+dry_run = false                             # record mutations instead of sending them
+timeout_seconds = 30.0                      # per-request timeout
+min_request_interval = 0.5                  # client-side throttle between requests (seconds)
 ```
 
 Environment variables override ralph.toml, and CLI flags override both.

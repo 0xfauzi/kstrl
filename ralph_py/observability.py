@@ -10,7 +10,20 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+
+class ProgressSink(Protocol):
+    """Observer of progress-log events (R7.4).
+
+    ``handle_event`` receives the exact dict written as the JSONL line
+    (``ts``/``event``/``run_id``/``component``/``data``), so a sink can
+    equally be fed live events or a replayed journal. Sinks are
+    observability, never control flow: ``ProgressLog.emit`` isolates
+    sink exceptions, and a sink must not mutate the event it receives.
+    """
+
+    def handle_event(self, event: dict[str, Any]) -> None: ...
 
 
 def _iso_now() -> str:
@@ -74,14 +87,25 @@ class ProgressLog:
     latest run via :func:`latest_run_id`.
     """
 
-    def __init__(self, log_path: Path, run_id: str = "") -> None:
+    def __init__(
+        self,
+        log_path: Path,
+        run_id: str = "",
+        warn: Callable[[str], None] | None = None,
+    ) -> None:
         self._path = log_path
         self._run_id = run_id
+        self._warn = warn or (lambda _msg: None)
+        self._sinks: list[ProgressSink] = []
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def path(self) -> Path:
         return self._path
+
+    def attach_sink(self, sink: ProgressSink) -> None:
+        """Register a sink to receive every subsequent event."""
+        self._sinks.append(sink)
 
     def emit(
         self,
@@ -102,6 +126,17 @@ class ProgressLog:
             event["data"] = data
         with open(self._path, "a") as f:
             f.write(json.dumps(event) + "\n")
+        # R7.4: sink fan-out AFTER the journal write - the JSONL line is
+        # the source of truth and must land even if every sink dies. A
+        # sink exception warns and never propagates into the run.
+        for sink in self._sinks:
+            try:
+                sink.handle_event(event)
+            except Exception as exc:  # noqa: BLE001 - isolation contract
+                self._warn(
+                    f"progress sink {type(sink).__name__} failed on "
+                    f"{event_type}: {exc} (non-fatal)"
+                )
 
     def factory_started(self, project_name: str, component_count: int) -> None:
         self.emit("factory_started", data={
@@ -243,6 +278,10 @@ class NullProgressLog(ProgressLog):
         # Do not call super().__init__() since we have no path
         self._path = Path("/dev/null")
         self._run_id = ""
+        self._warn = lambda _msg: None
+        # Sinks attached to a disabled log never fire: emit is a no-op,
+        # so a Linear sink requires progress_log_enabled (the default).
+        self._sinks = []
 
     def emit(
         self,
