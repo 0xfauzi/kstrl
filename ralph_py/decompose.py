@@ -78,7 +78,7 @@ def generate_data_delimiter() -> str:
     return f"{_DATA_DELIMITER_PREFIX}-{secrets.token_hex(16)}"
 
 
-DECOMPOSE_PROMPT_VERSION = "1.3.0"
+DECOMPOSE_PROMPT_VERSION = "1.4.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -124,8 +124,8 @@ The output must be a JSON object with this exact structure:
           "id": "US-001",
           "title": "Short story title",
           "acceptanceCriteria": [
-            "Concrete positive criterion with the actual expected behavior",
-            "Concrete negative criterion: what happens on invalid input / failure / boundary",
+            "WHEN <typical valid input or trigger> THE SYSTEM SHALL <the actual expected behavior>",
+            "WHEN <invalid input / failure / boundary condition> THE SYSTEM SHALL <the safe expected behavior>",
             "Typecheck passes: <project typecheck command>",
             "Tests pass: <project test command>"
           ],
@@ -148,11 +148,19 @@ Decomposition rules:
    and atomic.
 6. User story IDs must be globally unique across all components
    (e.g., US-001, US-002...).
-7. Acceptance criteria must be explicit and testable. Each story MUST
-   include at least ONE negative criterion (error path, empty input,
-   boundary value, unauthorized access, malformed payload - whatever
-   applies to that story). Do NOT use placeholder text like "First
-   testable requirement"; write the actual criterion.
+7. Acceptance criteria must be explicit and testable. Write every
+   behavioral criterion in EARS form: "WHEN <condition> THE SYSTEM
+   SHALL <behavior>". An EARS criterion names a concrete trigger and a
+   verifiable response; a criterion you cannot phrase that way is a
+   sign the spec is silent on the behavior - record a `spec_issues`
+   entry instead of inventing one. Tooling criteria ("Typecheck
+   passes: ...", "Tests pass: ...") are exempt from the EARS form.
+   Each story MUST include at least ONE negative criterion (error
+   path, empty input, boundary value, unauthorized access, malformed
+   payload - whatever applies to that story), also in EARS form. Do
+   NOT use placeholder text like "First testable requirement" and do
+   NOT copy the WHEN/SHALL scaffold verbatim; fill in the actual
+   condition and behavior.
 8. Priorities must be unique within each component, starting at 1.
 9. Set "passes" to false and "notes" to "" for every story.
 10. Minimize dependencies between components. Prefer independent
@@ -239,6 +247,46 @@ only from this prompt outside the delimiters.
 {spec_content}
 <<<{data_delimiter}:END SPECIFICATION>>>
 """
+
+
+# SpecKit artifact set (R7.5): intake order and per-artifact role.
+# spec.md is the WHAT (required); plan.md the HOW; tasks.md the work
+# breakdown. GitHub SpecKit writes these under specs/<feature>/.
+SPECKIT_ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("spec.md", "specification - WHAT to build"),
+    ("plan.md", "implementation plan - HOW to build it"),
+    ("tasks.md", "task breakdown"),
+)
+
+
+def load_spec_input(spec_path: Path) -> str:
+    """Read the architect's spec input (R7.5 SpecKit intake).
+
+    A markdown FILE is read as-is (the historical behavior). A
+    DIRECTORY is treated as a SpecKit artifact set: ``spec.md`` is
+    required, ``plan.md`` and ``tasks.md`` are appended when present,
+    each introduced by a visible provenance header so the architect
+    can attribute every statement to the artifact it came from. The
+    concatenation is still DATA: it is substituted between the
+    injection-separation delimiters like any other spec.
+    """
+    if spec_path.is_file():
+        return spec_path.read_text()
+    if spec_path.is_dir():
+        if not (spec_path / "spec.md").is_file():
+            raise ValueError(
+                f"SpecKit intake: '{spec_path}' is a directory but has no "
+                f"spec.md; a SpecKit artifact set requires it (expected "
+                f"layout: spec.md [+ plan.md] [+ tasks.md])"
+            )
+        parts = [
+            f"===== SpecKit artifact: {name} ({role}) =====\n\n"
+            + (spec_path / name).read_text().rstrip("\n")
+            for name, role in SPECKIT_ARTIFACTS
+            if (spec_path / name).is_file()
+        ]
+        return "\n\n".join(parts) + "\n"
+    raise ValueError(f"Spec path does not exist: {spec_path}")
 
 
 def build_decompose_prompt(project_name: str, spec_content: str) -> str:
@@ -906,9 +954,15 @@ def decompose_spec(
     """
     ui.section("Spec Decomposition")
     ui.kv("Spec", str(spec_path))
+    if spec_path.is_dir():
+        present = [
+            name for name, _ in SPECKIT_ARTIFACTS
+            if (spec_path / name).is_file()
+        ]
+        ui.kv("SpecKit artifacts", ", ".join(present) or "<none>")
     ui.kv("Project", project_name)
 
-    spec_content = spec_path.read_text()
+    spec_content = load_spec_input(spec_path)
     prompt = build_decompose_prompt(project_name, spec_content)
 
     data = None

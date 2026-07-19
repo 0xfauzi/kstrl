@@ -1230,7 +1230,10 @@ def feature(
     "--spec",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Markdown spec file to decompose",
+    help=(
+        "Markdown spec file, or a SpecKit artifact directory "
+        "(spec.md [+ plan.md] [+ tasks.md]) to decompose"
+    ),
 )
 @click.option(
     "--root",
@@ -1347,7 +1350,10 @@ def decompose(
 @click.option(
     "--spec",
     type=click.Path(exists=True, path_type=Path),
-    help="Markdown spec file (runs decompose first)",
+    help=(
+        "Markdown spec file or SpecKit artifact directory "
+        "(runs decompose first)"
+    ),
 )
 @click.option(
     "--manifest",
