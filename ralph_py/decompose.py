@@ -12,6 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from ralph_py.linear import (
+    LinearClient,
+    LinearConfig,
+    linear_branch_name,
+    sync_decompose,
+)
 from ralph_py.manifest import (
     Component,
     ComponentStatus,
@@ -1022,6 +1028,38 @@ def decompose_spec(
     if blockers:
         raise SpecBlockerError(blockers, artifact_path=artifact_path)
 
+    # R7.4: Linear hook - one project per manifest, one issue per
+    # component, non-blocker spec findings into Triage. Runs BEFORE
+    # branch derivation so issue identifiers can ride the branch names
+    # (Linear's GitHub integration links PRs by identifier-in-branch,
+    # so status transitions cost zero API calls). The hook never
+    # raises; any failure warns and decompose proceeds without Linear.
+    linear_config = LinearConfig.load(root_dir)
+    linear_sync = None
+    if linear_config.enabled:
+        ui.section("Syncing to Linear")
+        linear_sync = sync_decompose(
+            project_name=project_name,
+            components=data["components"],
+            spec_issues=spec_issues,
+            config=linear_config,
+            client=LinearClient(linear_config, warn=ui.warn, log=ui.info),
+            warn=ui.warn,
+        )
+        if linear_sync is not None:
+            ui.ok(
+                f"Linear project created with {len(linear_sync.issues)} "
+                f"component issue(s)"
+            )
+        if linear_sync is not None and single_pr:
+            # All components share one branch in single-PR mode, so a
+            # per-component identifier cannot ride the branch name.
+            ui.warn(
+                "linear: single_pr mode - branch names and PR bodies "
+                "are not issue-linked; issues and the progress sink "
+                "still work"
+            )
+
     # Pre-validate every branch name before any file is written.
     # Component ids were validated in the retry loop; this can only
     # fire for a project_name (user input) that is not branch-safe.
@@ -1031,6 +1069,25 @@ def decompose_spec(
     for comp_data in data["components"]:
         comp_id = comp_data["id"]
         branch = _component_branch(comp_id, project_name, single_pr)
+        issue_ref = (
+            linear_sync.issues.get(comp_id)
+            if linear_sync is not None and not single_pr
+            else None
+        )
+        if issue_ref is not None:
+            linear_branch = linear_branch_name(issue_ref.identifier, comp_id)
+            if validate_branch_name(linear_branch) is None:
+                branch = linear_branch
+            else:
+                # An identifier that breaks branch validation would be
+                # a Linear-side surprise; degrade to the default branch
+                # (losing auto-linking) rather than failing decompose.
+                ui.warn(
+                    f"linear: issue identifier "
+                    f"'{issue_ref.identifier}' does not form a valid "
+                    f"branch; component '{comp_id}' keeps its default "
+                    f"branch name"
+                )
         branch_error = validate_branch_name(branch)
         if branch_error:
             raise ValueError(
@@ -1065,6 +1122,11 @@ def decompose_spec(
             written_prds.append(prd_path)
             rel_prd = prd_path.relative_to(root_dir).as_posix()
 
+            issue_ref = (
+                linear_sync.issues.get(comp_id)
+                if linear_sync is not None
+                else None
+            )
             manifest_components.append(
                 Component(
                     id=comp_id,
@@ -1074,6 +1136,10 @@ def decompose_spec(
                     prd_path=rel_prd,
                     branch_name=branch,
                     status=ComponentStatus.PENDING.value,
+                    linear_issue_id=issue_ref.id if issue_ref else "",
+                    linear_issue_identifier=(
+                        issue_ref.identifier if issue_ref else ""
+                    ),
                 )
             )
             ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
@@ -1085,6 +1151,12 @@ def decompose_spec(
             base_branch=base_branch,
             single_pr=single_pr,
             components=manifest_components,
+            linear_project_id=(
+                linear_sync.project_id if linear_sync is not None else ""
+            ),
+            linear_sync_key=(
+                linear_sync.sync_key if linear_sync is not None else ""
+            ),
         )
 
         # Validate DAG

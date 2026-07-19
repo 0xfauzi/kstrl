@@ -146,6 +146,14 @@ class Component:
     retries: int = 0
     pr_number: int | None = None
     pr_url: str = ""
+    # R7.4: Linear issue mapping stamped by the decompose hook. The
+    # UUID is the mutation target for the sink; the human identifier
+    # (e.g. EXC-42) rides branch names and the PR "Fixes" trailer so
+    # Linear's GitHub integration drives status with zero API calls.
+    # Persisted here so retries and resumed runs UPDATE the same issue
+    # instead of duplicating it.
+    linear_issue_id: str = ""
+    linear_issue_identifier: str = ""
     # Observability fields
     started_at: str = ""
     completed_at: str = ""
@@ -195,6 +203,12 @@ class Manifest:
     # state with the journals keyed by run_id.
     run_id: str = ""
     completed_at: str = ""
+    # R7.4: Linear project mapping. linear_sync_key is the run id of
+    # the run that first synced this manifest to Linear - the seed for
+    # every derived idempotency UUID - and deliberately survives the
+    # per-run rewrite of run_id above.
+    linear_project_id: str = ""
+    linear_sync_key: str = ""
 
     @classmethod
     def from_prd(
@@ -270,6 +284,8 @@ class Manifest:
                 retries=c.get("retries", 0),
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
+                linear_issue_id=c.get("linearIssueId", ""),
+                linear_issue_identifier=c.get("linearIssueIdentifier", ""),
                 started_at=c.get("startedAt", ""),
                 completed_at=c.get("completedAt", ""),
                 duration_seconds=c.get("durationSeconds", 0.0),
@@ -302,6 +318,8 @@ class Manifest:
             components=components,
             run_id=data.get("runId", ""),
             completed_at=data.get("completedAt", ""),
+            linear_project_id=data.get("linearProjectId", ""),
+            linear_sync_key=data.get("linearSyncKey", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -314,6 +332,8 @@ class Manifest:
             "singlePr": self.single_pr,
             "runId": self.run_id,
             "completedAt": self.completed_at,
+            "linearProjectId": self.linear_project_id,
+            "linearSyncKey": self.linear_sync_key,
             "components": [
                 {
                     "id": c.id,
@@ -327,6 +347,8 @@ class Manifest:
                     "retries": c.retries,
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
+                    "linearIssueId": c.linear_issue_id,
+                    "linearIssueIdentifier": c.linear_issue_identifier,
                     "startedAt": c.started_at,
                     "completedAt": c.completed_at,
                     "durationSeconds": c.duration_seconds,
@@ -413,6 +435,7 @@ class Manifest:
         component_required = {"id", "title", "description", "dependencies", "prdPath", "branchName"}
         component_optional = {
             "status", "error", "retries", "prNumber", "prUrl",
+            "linearIssueId", "linearIssueIdentifier",
             "startedAt", "completedAt", "durationSeconds", "iterationCount",
             "verificationPassed", "reviewPassed", "reviewFindings",
             "findings", "scaffold",
