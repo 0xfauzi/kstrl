@@ -116,6 +116,20 @@ Invalid mode or threshold raises ValueError (Phase B8). Note: the `ralph_py fact
 | `RALPH_EVOLUTION_JOURNAL_PATH` | path | `.ralph/evolution.jsonl` |
 | `RALPH_EVOLUTION_LOOKBACK_RUNS` | int | 10 |
 
+## LinearConfig (`[linear]`)
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `RALPH_LINEAR_ENABLED` | bool | false | |
+| `RALPH_LINEAR_TEAM_ID` | str | empty | Linear team UUID; required when enabled |
+| `RALPH_LINEAR_TOKEN_ENV` | str | `RALPH_LINEAR_TOKEN` | NAME of the env var holding the token (indirection so the secret itself never appears in config) |
+| `RALPH_LINEAR_TOKEN` | secret | unset | The API key / OAuth token (default token env var; never logged) |
+| `RALPH_LINEAR_AUTH_MODE` | str | `auto` | `auto\|api_key\|oauth`; auto sniffs the `lin_api_` key prefix |
+| `RALPH_LINEAR_API_URL` | str | `https://api.linear.app/graphql` | |
+| `RALPH_LINEAR_DRY_RUN` | bool | false | Record mutations instead of sending |
+| `RALPH_LINEAR_TIMEOUT` | float | 30 | Per-request timeout (seconds) |
+| `RALPH_LINEAR_MIN_INTERVAL` | float | 0.5 | Client-side throttle between requests |
+
 ## Calibration
 
 | Env var | Default | Notes |

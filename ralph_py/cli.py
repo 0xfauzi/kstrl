@@ -2075,6 +2075,7 @@ def config_show(
     from ralph_py.evolution import EvolutionConfig
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.knowledge import KnowledgeConfig
+    from ralph_py.linear import LinearConfig
     from ralph_py.observability import NotifyConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.verify import VerifyConfig
@@ -2119,6 +2120,10 @@ def config_show(
         ]),
         ("notify", NotifyConfig.load, [
             "on_complete", "on_first_failure", "hook_timeout",
+        ]),
+        ("linear", LinearConfig.load, [
+            "enabled", "team_id", "token_env", "auth_mode", "api_url",
+            "dry_run", "timeout_seconds", "min_request_interval",
         ]),
     ]
 
