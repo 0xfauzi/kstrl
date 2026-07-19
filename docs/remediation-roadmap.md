@@ -595,7 +595,7 @@ by an integration test with a synthetic-but-realistic journal).
   - This restores the independent oracle against agent-authored tests (H-6's
     conftest gaming is also mitigated: fixtures do not run under the project's
     pytest and cannot be deselected by it).
-- [ ] R7.3 (L) **run_factory refactor: scheduler + ComponentPipeline** [architecture]
+- [x] R7.3 (L) **run_factory refactor: scheduler + ComponentPipeline** [architecture]
   - Extract the phase chain into a `ComponentPipeline` with typed phase
     results; single scheduling loop for sequential and parallel; the state
     machine becomes unit-testable; `knowledge_config` late-binding accident
@@ -605,6 +605,13 @@ by an integration test with a synthetic-but-realistic journal).
     machine. Failure mode: big-bang refactor risk: land it as a
     strangler (pipeline object first, scheduler swap second) with the R4 spine
     tests as the net.
+  - DONE (two PRs, strangler as planned): PR 1 extracts
+    `ralph_py/pipeline.py::ComponentPipeline` (typed phase results, single
+    transition dispatch, hooks-injected phase functions, late-binding fix,
+    distiller pinned PRE-PR as a named step) with
+    `tests/test_pipeline.py` covering every transition in isolation; PR 2
+    unifies the scheduling loops behind `_InlineExecutor`
+    (`tests/test_scheduler.py`).
 - [ ] R7.4 (L) **Linear integration** [P-6; user decision 3]
   - GraphQL + app-actor OAuth adapter implementing a `LinearSink` on the
     ProgressLog event bus (factory.py untouched); decompose output creates one
