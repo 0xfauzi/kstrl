@@ -215,24 +215,14 @@ class TestWorktreeLifecycle:
         assert head != crashed_sha
         assert not (wt2 / "poisoned.txt").exists()
 
-    # Product bug found by this spine test (report in the R4.2 PR body):
-    # when a crashed attempt's worktree DIRECTORY is gone (tmp cleaner,
-    # operator rm -rf) but its .git/worktrees/<comp>/ registration
-    # survives, _setup_worktree cannot recreate it: the exists() guard
-    # skips `git worktree remove`, and `git worktree add` then refuses
-    # with "missing but already registered worktree". Recovery needs a
-    # remove/prune of the registered-but-missing entry before the add
-    # (ralph_py/factory.py::_setup_worktree).
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "known product bug: _setup_worktree cannot recreate a "
-            "registered-but-missing worktree (dir deleted after crash)"
-        ),
-    )
     def test_recreate_when_crashed_worktree_dir_was_deleted(
         self, tmp_path: Path,
     ) -> None:
+        """A worktree directory deleted after a crash (tmp cleaner,
+        operator rm -rf) leaves a registered-but-missing entry under
+        .git/worktrees/<comp>/. Setup must clear the registration and
+        recreate the worktree on the same branch (reuse semantics, like
+        any other same-run retry)."""
         root = tmp_path / "repo"
         _init_plain_repo(root)
         wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)

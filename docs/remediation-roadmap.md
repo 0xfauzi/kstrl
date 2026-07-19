@@ -41,7 +41,27 @@ Process rules that bind this plan:
 4. **PRD fixtures default** (R7.2): once wired and sandboxed, fixtures ship
    default-off (`[fixtures].enabled = false`) unless decided otherwise.
 5. **Agent SDK spike go/no-go** (R7.5): decide after the measurement spike, not
-   before.
+   before. Spike is done: `docs/sdk-spike.md` recommends GO scoped to a
+   fourth adapter.
+6. **Untracked docs artifacts** (R3.4): commit or delete
+   `docs/end-to-end-flow.html`, `docs/phase-f-e2e-validation-v12.log`, and
+   `.claude/` in the main checkout.
+
+User-run measurements required (the other blocker class for `[~]` items;
+consolidated here 2026-07-19 - previously these lived only in item notes):
+
+- **Calibration v2 baseline capture** (R5.1/R5.2/R5.3):
+  `RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v` per
+  `docs/calibration-notes-r5.md`. Acceptance: green-at-baseline over 3 runs;
+  R5.2 hardness check `summary.security_hard.detection_rate < 1.0`; R5.3
+  before/after delta recorded.
+- **Reviewer-family baseline pair** (R7.1): same-family and cross-family
+  runs per `docs/adversarial-design.md` "Reviewer-family override".
+- **EARS/DECOMPOSE 1.4.0 capture** (R7.5): same calibration command against
+  the new prompt version.
+- **Two real factory runs** (knowledge + evolution A+ gates): knowledge
+  fact-utilization telemetry nonzero, and one `ralph evolve` proposal
+  traceable to a real recorded signature.
 
 Execution order: R0 -> R1 -> R2 -> R4 -> R3 -> R5 -> R6 -> R7.
 R4 (test spine) deliberately precedes R3/R5: the spine tests are the regression
@@ -354,6 +374,12 @@ mock-only coverage.
     recovery incl. the loud refusal path for a crashed branch with
     commits, diff-scope retry-context propagation e2e, and an unmocked
     `_run_component` plumbing smoke). Spine complete.
+  - The product bug the spine surfaced (registered-but-missing worktree:
+    dir deleted after a crash, `.git/worktrees/` entry survives,
+    `_setup_worktree` could not recreate) was fixed 2026-07-19 by making
+    the `worktree remove --force` unconditional (measured on git 2.47:
+    it clears the stale registration too); the strict xfail became a
+    passing spine test.
 - [x] R4.3 (M) **Fix misleading tests** [T-5, T-6, T-8, T-9, T-10, T-11, T-15]
   - C1 becomes a true 2-worker worktree test; C6 uses the same root and proves
     serialization (fails if the flock is removed); C4 asserts the breaker was
@@ -436,7 +462,14 @@ spending, (c) what do I do when I come back to a partial failure.
     recoverable. The `ralph.toml.example` tracking question was resolved
     in the R2.5 PR: `ralph.toml.example` is tracked and the live
     `ralph.toml` is gitignored. Still open: the remaining untracked docs
-    artifacts (a user commit-or-delete decision).
+    artifacts (user decision 6).
+  - Note (2026-07-19, gate re-run): the live `.ralph/evolution.jsonl` +
+    `experiments.tsv` had been re-polluted with synthetic test entries
+    (projects "test"/"t", pre-v2 schema) written between the R4.1
+    archive and the guard fixture landing; both were re-archived to
+    `.ralph/archive/` with a `-repolluted-20260713` suffix. The journals
+    now start empty; the first real post-fix factory runs are the
+    "User-run measurements" entry above.
 
 Done when: a deliberately failed 3-component run can be diagnosed and resumed
 using only `ralph status`, the failure summary, and `ralph retry`, without
@@ -672,14 +705,25 @@ listed gate is green and the claim is backed by a named test or measurement
 | Dimension (review grade) | A+ gate |
 |---|---|
 | Architect / decompose (B+) | R0.6 + R1.5 + R1.7 + R1.8 + R5.3 spec-as-data + calibration: architect detection >= baseline on hard fixtures, 0 hallucinated findings across 3 consecutive runs, spec_issues persisted |
-| Mechanical verification (B-) | R1.5 rename-aware scope + R2.6 env scrub + R5.4 self-critique correctness + R7.2 fixtures wired sandboxed: an adversarial-agent test battery (tautological test, conftest deselect, rename-move, sweep-in commit) all caught |
+| Mechanical verification (B-) | R1.5 rename-aware scope + R2.6 env scrub + R5.4 self-critique correctness + R7.2 fixtures wired sandboxed: an adversarial-agent test battery (tautological test, conftest deselect, rename-move, sweep-in commit) all caught - `tests/test_adversarial_battery.py` (first two; module docstring maps all four) + `tests/test_scope_hardening.py` / `tests/test_verify.py` (latter two). Caveat: the fixtures-oracle scenarios require `[fixtures].enabled`, which ships default-off (decision 4) |
 | LLM review + security (C+) | R1.1-R1.4 + R5.3: empty/partial/oversized/truncated outputs all fail closed; injection battery (in-diff instructions) does not flip a verdict on the calibration negatives; FP rate measured and under threshold |
 | Knowledge layer (C-) | R1.6: decay regression tests green; evidence-field injection battery rejected; utilization telemetry nonzero on a real run |
-| Factory orchestration (C) | R0.1-R0.6 + R2.3 + R7.3: induced hang/push-fail/conflict battery green; state machine unit-tested in isolation; no subprocess call without a timeout (enforced by a grep test) |
+| Factory orchestration (C) | R0.1-R0.6 + R2.3 + R7.3: induced hang/push-fail/conflict battery green; state machine unit-tested in isolation; no subprocess call without a timeout (enforced by `tests/test_timeout_enforcement.py::TestSubprocessTimeoutAudit`, an alias-aware AST audit with a Popen allowlist for the two deadline-managed runners) |
 | Evolution / learning (D) | R4.1 + R6.1-R6.4: journal clean, signatures real, hit-rate live, one traceable proposal from real runs |
 | Test suite (B) | R4.1-R4.4: five spine behaviors covered unmocked; suite network-free by default; coverage ratcheted; zero misleading-name tests from the T-findings list remain |
 | Calibration (C+) | R5.1-R5.2 + R5.5: green-at-baseline, FP + consistency + per-category measured over 3 runs, diff tool with codified thresholds, model-bump trigger |
 | Docs and product surface (C-) | R2.1-R2.5 + R3.1-R3.3: generated CLI/config docs CI-checked; every README command exists; config show/status live; cost + notify + retry shipped; install story resolved |
+
+Gate re-run 2026-07-19 (against origin/main 5423f0d): every mechanical gate
+green - fast tier 1427 passed / 28 skipped (all skips are the two opt-in env
+gates, so the suite is network-free), spine tier fully passing, mypy --strict
+and ruff clean, `gen_docs.py --check` current, `config show`/`status` live,
+subprocess-timeout audit green. Amber dimensions are exactly those whose
+final evidence is a user-run measurement (see "User-run measurements
+required" above): architect / review+security / calibration await the
+calibration captures; knowledge / evolution await the two real factory runs.
+Docs gate is green with decision 1 (install story) formally open;
+clone-install is documented truthfully as the interim.
 
 ---
 
