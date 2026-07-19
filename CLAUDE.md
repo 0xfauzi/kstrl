@@ -27,7 +27,7 @@ Ralph's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 | Code reviewer | `review.REVIEWER_PROMPT` | PRD criteria + concerns (scope_creep, security_concern, test_quality, etc.) |
 | Security reviewer | `security.SECURITY_PROMPT` | OWASP-mapped vuln categories |
 | Contract tester | `contract.run_contract_testing` (no LLM) | Cross-component integration tests on merged tier branches |
-| Knowledge distiller | `knowledge.DISTILL_PROMPT` | Durable facts about the artifact, written post-PR |
+| Knowledge distiller | `knowledge.DISTILL_PROMPT` | Durable facts about the artifact, written pre-PR (after the review gates pass, before the PR merges main in) |
 | Human checkpoint (E6) | interactive UI | Optional opt-in approval before PR merge |
 
 ## When working on this codebase

@@ -24,9 +24,8 @@ from ralph_py.contract import (
     run_contract_testing,
 )
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
-from ralph_py.findings import Finding, tag_finding_with_attempt
 from ralph_py.fixtures import FixturesConfig
-from ralph_py.git import GitDiffError, fetch_base_branch, resolve_base_ref
+from ralph_py.git import fetch_base_branch, resolve_base_ref
 from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
@@ -41,35 +40,24 @@ from ralph_py.observability import (
     NullProgressLog,
     ProgressLog,
 )
+from ralph_py.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from ralph_py.pr import create_prs_in_order, create_single_pr
-from ralph_py.prd import PRD
 from ralph_py.review import (
     ReviewMode,
-    ReviewResult,
     run_chunked_review,
     run_review,
 )
 from ralph_py.security import (
     SecurityConfig,
     SecurityMode,
-    SecurityResult,
     run_chunked_security_review,
     run_security_review,
 )
 from ralph_py.timeout import TimeoutConfig
-from ralph_py.verify import (
-    VerificationResult,
-    VerifyConfig,
-    run_mechanical_verification,
-)
+from ralph_py.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:
     from ralph_py.ui.base import UI
-
-
-def _iso_now() -> str:
-    """Current UTC time as ISO 8601, matching the manifest timestamps."""
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 @dataclass
@@ -1202,8 +1190,6 @@ def _run_factory_locked(
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
-    from ralph_py.agents import get_agent
-
     factory_start = time.monotonic()
     factory_result = FactoryResult()
     # Stable run id shared by evolution journal and knowledge layer.
@@ -1221,11 +1207,6 @@ def _run_factory_locked(
     # already persists failed_phase/failed_check; the full signature
     # list is a journal concern.
     component_failure_signatures: dict[str, list[str]] = {}
-    # R6.4: monotonic start of each component's current attempt, so the
-    # recorded duration covers the whole attempt (engineer loop +
-    # verify + review + security + PR flow), not just the engineer loop,
-    # and backstop-timeout failures stop recording 0.0.
-    attempt_started_monotonic: dict[str, float] = {}
 
     # Set up progress log. R3.2: defaults ON under .ralph/ so a
     # walk-away run always leaves an event trail `ralph status` can
@@ -1346,70 +1327,61 @@ def _run_factory_locked(
     manifest.completed_at = ""
     manifest.save(manifest_path)
 
-    # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed. A
-    # prior run initiated the merge but could not confirm it; check the
-    # PR state again before scheduling so confirmed merges unblock their
-    # dependents. Local imports keep the late binding tests rely on.
-    merge_pending_comps = [
-        c for c in manifest.components
-        if c.status == ComponentStatus.MERGE_PENDING.value
-    ]
-    if merge_pending_comps:
-        from ralph_py.pr import is_gh_available, pr_number_from_url, wait_for_merge
+    # Load knowledge config once for the entire factory run, BEFORE the
+    # pipeline is constructed. Binding it at construction removes the
+    # late-binding accident where the old _handle_result closure read a
+    # name that was only assigned further down the function (R7.3).
+    knowledge_config = KnowledgeConfig.load(root_dir)
 
-        if not factory_config.create_prs or not is_gh_available():
-            ui.warn(
-                f"  {len(merge_pending_comps)} component(s) are merge-pending "
-                f"but PR polling is unavailable (create_prs off or gh "
-                f"missing); their dependents stay blocked"
-            )
-        else:
-            for comp in merge_pending_comps:
-                pr_number = comp.pr_number or pr_number_from_url(comp.pr_url)
-                if not pr_number:
-                    ui.warn(
-                        f"  Cannot re-poll '{comp.id}': no PR number recorded"
-                    )
-                    continue
-                ui.info(
-                    f"  Re-polling merge state for '{comp.id}' "
-                    f"(PR #{pr_number})..."
-                )
-                merge_state = wait_for_merge(
-                    pr_number, root_dir, timeout=factory_config.merge_timeout,
-                )
-                if merge_state == "merged":
-                    fetch_base_branch(manifest.base_branch, root_dir)
-                    comp.status = ComponentStatus.COMPLETED.value
-                    comp.error = ""
-                    component_failure_signatures.pop(comp.id, None)
-                    comp.completed_at = _iso_now()
-                    factory_result.completed.append(comp.id)
-                    progress_log.component_completed(
-                        comp.id, comp.duration_seconds, comp.iteration_count,
-                    )
-                    ui.ok(f"  PR #{pr_number} merged; '{comp.id}' completed")
-                elif merge_state == "closed":
-                    comp.status = ComponentStatus.FAILED.value
-                    comp.error = f"PR #{pr_number} closed without merge"
-                    comp.completed_at = _iso_now()
-                    comp.failed_phase = "pr"
-                    comp.failed_check = "pr_closed"
-                    component_failure_signatures[comp.id] = [
-                        "pr:closed-without-merge",
-                    ]
-                    skipped = manifest.cascade_skip(comp.id)
-                    factory_result.failed.append(comp.id)
-                    factory_result.skipped.extend(skipped)
-                    progress_log.component_failed(comp.id, comp.error)
-                    notify.fire_first_failure(comp.id, comp.error)
-                    ui.err(f"  Failed: {comp.id}: {comp.error}")
-                else:
-                    ui.warn(
-                        f"  '{comp.id}' still awaiting merge of "
-                        f"PR #{pr_number}; dependents stay blocked"
-                    )
-        manifest.save(manifest_path)
+    # Scheduling state shared between the scheduler and the pipeline.
+    worktree_paths: dict[str, Path] = {}
+    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
+    # Components whose last failure was a timeout kill: their retry must
+    # not trust the surviving worktree/branch state (R0.1 requirement 5).
+    timeout_retry_ids: set[str] = set()
+    # Components abandoned by the scheduler backstop; their workers may
+    # still be alive, so their worktrees are never cleaned up here.
+    leaked_component_ids: set[str] = set()
+
+    # R7.3: the per-component phase chain and every component state
+    # transition live in ComponentPipeline. Hooks are resolved from this
+    # module's globals HERE, at run start, so tests patching
+    # ralph_py.factory.run_review (and friends) keep intercepting the
+    # phase functions.
+    pipeline = ComponentPipeline(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        factory_config=factory_config,
+        base_config=base_config,
+        ui=ui,
+        root_dir=root_dir,
+        run_id=run_id,
+        progress_log=progress_log,
+        notify=notify,
+        review_selection=review_selection,
+        security_selection=security_selection,
+        knowledge_config=knowledge_config,
+        factory_result=factory_result,
+        hooks=PipelineHooks(
+            run_mechanical_verification=run_mechanical_verification,
+            run_review=run_review,
+            run_chunked_review=run_chunked_review,
+            run_security_review=run_security_review,
+            run_chunked_security_review=run_chunked_security_review,
+            distill_facts=distill_facts,
+            build_knowledge_context=build_knowledge_context,
+            measure_fact_utilization=measure_fact_utilization,
+            cleanup_worktree=_cleanup_worktree,
+        ),
+        worktree_paths=worktree_paths,
+        component_contexts=component_contexts,
+        timeout_retry_ids=timeout_retry_ids,
+        component_failure_signatures=component_failure_signatures,
+    )
+
+    # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
+    # Re-poll before scheduling so confirmed merges unblock dependents.
+    pipeline.repoll_merge_pending()
 
     # Determine effective parallelism
     max_parallel = factory_config.max_parallel
@@ -1480,189 +1452,6 @@ def _run_factory_locked(
         if timeout_cfg.component_total > 0 else "<disabled>",
     )
 
-    # Scheduling state
-    worktree_paths: dict[str, Path] = {}
-    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
-    # Components whose last failure was a timeout kill: their retry must
-    # not trust the surviving worktree/branch state (R0.1 requirement 5).
-    timeout_retry_ids: set[str] = set()
-    # Components abandoned by the scheduler backstop; their workers may
-    # still be alive, so their worktrees are never cleaned up here.
-    leaked_component_ids: set[str] = set()
-
-    # E4: adversarial-call counter shared across review / security /
-    # knowledge phases. When max_adversarial_calls is 0 the budget is
-    # unbounded (current behavior); otherwise we skip the LLM phase
-    # once the budget is exhausted, with an informational log line.
-    # R1.4 exception: hard-mode chunked reviews never skip-on-exhausted;
-    # they either cover every chunk (one call each) or fail the
-    # component as an infrastructure error.
-    adversarial_calls: dict[str, int] = {"count": 0}
-
-    def _adversarial_budget_ok() -> bool:
-        cap = factory_config.max_adversarial_calls
-        if cap <= 0:
-            return True
-        return adversarial_calls["count"] < cap
-
-    def _adversarial_budget_consume() -> None:
-        adversarial_calls["count"] += 1
-
-    def _adversarial_budget_remaining() -> int | None:
-        """Calls left in the budget, or None when unbounded (R1.4:
-        chunked reviews need one call per chunk and must know whether
-        the whole diff can be covered before starting)."""
-        cap = factory_config.max_adversarial_calls
-        if cap <= 0:
-            return None
-        return max(0, cap - adversarial_calls["count"])
-
-    # R3.1 cost meter: per-component, per-phase usage rollup plus a
-    # run-level total. Phases: "engineer" (loop iterations, reported by
-    # the worker), "review", "security", "distill" (fresh agent instance
-    # per phase, so an instance's accumulated usage_records ARE that
-    # phase's spend - chunked reviews reuse one instance for N calls and
-    # land here as N records). Retried attempts accumulate: every attempt
-    # cost real tokens, so the meter never forgets a failed attempt.
-    usage_meter: dict[str, dict[str, UsageTotals]] = {}
-    run_usage = UsageTotals()
-
-    def _record_usage(comp_id: str, phase: str, totals: UsageTotals) -> None:
-        if totals.calls == 0:
-            return
-        slot = usage_meter.setdefault(comp_id, {}).setdefault(
-            phase, UsageTotals(),
-        )
-        slot.merge(totals)
-        run_usage.merge(totals)
-        progress_log.component_usage(comp_id, phase, totals.to_dict())
-
-    def _token_budget_exceeded() -> bool:
-        cap = factory_config.max_total_tokens
-        return cap > 0 and run_usage.total_tokens >= cap
-
-    def _journal_offset() -> int:
-        """Current byte size of the progress log; used to bracket one
-        attempt's slice of events (R3.3). -1 when no real progress log
-        is configured for this run."""
-        if isinstance(progress_log, NullProgressLog):
-            return -1
-        try:
-            log_path = progress_log.path
-            return log_path.stat().st_size if log_path.exists() else 0
-        except OSError:
-            return -1
-
-    def _debug_dir_for(comp_id: str) -> Path:
-        """Forensic raw-output dir for this run's component (R1.2)."""
-        return root_dir / ".ralph" / "debug" / run_id / comp_id
-
-    def _add_findings(comp: Component, new_findings: list[Finding]) -> None:
-        """Append findings tagged ``attempt:<n>`` for the attempt in
-        flight (R3.3), so the journal can attribute every finding to the
-        attempt that produced it."""
-        attempt = comp.retries + 1
-        comp.findings.extend(
-            tag_finding_with_attempt(f, attempt) for f in new_findings
-        )
-
-    def _begin_attempt(comp: Component) -> None:
-        """PENDING -> RUNNING transition for one attempt (R3.3).
-
-        The prior attempt's findings were journaled when its retry was
-        scheduled (or by record_run when a previous run ended), so the
-        manifest carries only the current attempt's stream; the failure
-        and evidence pointers likewise describe only the attempt in
-        flight."""
-        comp.findings = []
-        comp.review_findings = ""
-        comp.failed_phase = ""
-        comp.failed_check = ""
-        comp.completed_at = ""
-        comp.evidence_worktree = ""
-        comp.evidence_debug_dir = ""
-        comp.journal_offset_start = _journal_offset()
-        comp.journal_offset_end = -1
-        comp.status = ComponentStatus.RUNNING.value
-        comp.started_at = _iso_now()
-        component_failure_signatures.pop(comp.id, None)
-        attempt_started_monotonic[comp.id] = time.monotonic()
-
-    def _end_attempt(comp: Component) -> None:
-        """Stamp the attempt's evidence pointers when it stops running:
-        the progress-log slice end, and the debug dir when any phase
-        dumped raw output there (R3.3). Also stamp the attempt's full
-        wall-clock duration (R6.4): every terminal transition (retry,
-        fail, merge-pending, completed, scheduler backstop) routes
-        through here, so duration_seconds covers engineer + verify +
-        review + security + PR instead of the engineer loop only."""
-        comp.journal_offset_end = _journal_offset()
-        started = attempt_started_monotonic.get(comp.id)
-        if started is not None:
-            comp.duration_seconds = time.monotonic() - started
-        debug_dir = _debug_dir_for(comp.id)
-        if debug_dir.exists():
-            comp.evidence_debug_dir = str(debug_dir)
-
-    def _journal_superseded_findings(comp: Component) -> None:
-        """A scheduled retry supersedes the current attempt's findings.
-        Record them in the evolution journal (attempt-tagged) before the
-        next attempt clears the manifest stream, so superseded and
-        shipped findings stay distinguishable (R3.3). The final
-        attempt's findings reach the journal via record_run instead.
-        Non-fatal on I/O errors, matching _record_contract_event."""
-        if not comp.findings:
-            return
-        from ralph_py.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
-
-        evo_config = EvolutionConfig.load(root_dir)
-        if not evo_config.enabled:
-            return
-        entry = {
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "timestamp": _iso_now(),
-            "run_id": run_id,
-            "project": manifest.project_name,
-            "component_id": comp.id,
-            "event_type": "findings_superseded",
-            "attempt": comp.retries + 1,
-            "failure_signatures": component_failure_signatures.get(comp.id, []),
-            "findings": [f.to_dict() for f in comp.findings],
-        }
-        try:
-            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(evo_config.journal_path, "a") as f:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-        except OSError as exc:
-            # Evolution recording is non-fatal, but never silent (R6.1).
-            ui.warn(
-                f"  Evolution journal write failed (non-fatal): {exc}"
-            )
-
-    def _fail_component_for_budget(comp: Component, phase: str) -> None:
-        """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
-        R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
-        typed Finding in the stream, a progress-log event, and a FAILED
-        component - never a silent degrade. Retrying cannot un-spend
-        tokens, so this fails directly instead of burning retries."""
-        error = (
-            f"token budget exceeded: {run_usage.total_tokens} total tokens "
-            f"recorded >= max_total_tokens "
-            f"({factory_config.max_total_tokens}); halting instead of "
-            "spending further (R3.1)"
-        )
-        ui.err(f"  TOKEN BUDGET EXCEEDED for {comp.id}: {error}")
-        _add_findings(comp, [Finding.infrastructure_error(
-            phase=phase, explanation=error,
-        )])
-        progress_log.budget_exceeded(
-            comp.id, run_usage.total_tokens, factory_config.max_total_tokens,
-        )
-        _fail_component(
-            comp, error, phase=phase, check="token_budget",
-            signatures=["token_budget:exceeded"],
-        )
-
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
         worktrees. Falls back to the absolute path string when relativization
@@ -1681,1030 +1470,6 @@ def _run_factory_locked(
     progress_file_rel = _path_relative_to_root(base_config.progress_file)
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
-    def _record_failure_signatures(
-        comp: Component, phase: str, error: str, signatures: list[str] | None,
-    ) -> None:
-        """R6.1: remember the structured signatures for this failure so
-        record_run journals real "<check>:<code>" identifiers instead of
-        re-deriving a degenerate slug from the flattened error string.
-        Sites without parser-level codes fall back to a slug of the
-        error text under the failing phase."""
-        from ralph_py.evolution import signature_for_error
-
-        if signatures:
-            component_failure_signatures[comp.id] = list(signatures)
-        else:
-            component_failure_signatures[comp.id] = [
-                signature_for_error(phase or "unknown", error),
-            ]
-
-    def _retry_or_fail(
-        comp: Component,
-        error: str,
-        context_json: str | None,
-        phase: str = "",
-        check: str = "",
-        signatures: list[str] | None = None,
-    ) -> None:
-        """Retry a component or mark it as failed. ``phase``/``check``
-        name the gate that fired (R3.3); on a retry they describe the
-        superseded attempt until the next attempt clears them.
-        ``signatures`` are the structured failure signatures (R6.1)."""
-        _record_failure_signatures(comp, phase, error, signatures)
-        if comp.retries < factory_config.max_retries:
-            # A timeout failure means the agent was killed mid-flight: the
-            # worktree/branch state cannot be trusted. Note the hygiene
-            # behavior in the error string so the audit trail explains why
-            # the retry does not resume from the killed attempt's commits.
-            if "timeout" in error.lower() and factory_config.use_worktrees:
-                timeout_retry_ids.add(comp.id)
-                error = (
-                    error
-                    + " [timeout retry: worktree recreated from base; "
-                    "stale index.lock removed]"
-                )
-            # R3.3: journal this attempt's findings as superseded BEFORE
-            # the retry counter moves (the tag and the journal entry
-            # must agree on the attempt number), then stamp the
-            # attempt's evidence pointers.
-            _journal_superseded_findings(comp)
-            _end_attempt(comp)
-            comp.failed_phase = phase
-            comp.failed_check = check
-            comp.retries += 1
-            comp.status = ComponentStatus.PENDING.value
-            comp.error = error
-            if context_json:
-                component_contexts[comp.id] = context_json
-            progress_log.component_retrying(comp.id, comp.retries, error)
-            ui.info(
-                f"  Retrying '{comp.id}' "
-                f"(attempt {comp.retries}/{factory_config.max_retries}): "
-                f"{error[:80]}"
-            )
-            time.sleep(factory_config.retry_delay)
-            manifest.save(manifest_path)
-        else:
-            _fail_component(
-                comp, error, phase=phase, check=check, signatures=signatures,
-            )
-
-    def _fail_component(
-        comp: Component, error: str, phase: str = "", check: str = "",
-        signatures: list[str] | None = None,
-    ) -> None:
-        """Mark a component FAILED with no retry. Direct callers are
-        conditions a retry can never fix (R1.4: chunked-review budget
-        insufficiency - the adversarial budget only shrinks, so
-        re-running the engineer would burn LLM calls to hit the same
-        wall); _retry_or_fail routes here once retries are exhausted."""
-        _record_failure_signatures(comp, phase, error, signatures)
-        comp.status = ComponentStatus.FAILED.value
-        comp.error = error
-        comp.completed_at = _iso_now()
-        comp.failed_phase = phase
-        comp.failed_check = check
-        _end_attempt(comp)
-        skipped = manifest.cascade_skip(comp.id)
-        factory_result.failed.append(comp.id)
-        factory_result.skipped.extend(skipped)
-        progress_log.component_failed(comp.id, error)
-        notify.fire_first_failure(comp.id, error)
-        ui.err(f"  Failed: {comp.id}: {error[:80]}")
-        manifest.save(manifest_path)
-
-    def _handle_result(comp_id: str, comp_result: ComponentResult) -> None:
-        """Process component result through 3-phase verification."""
-        comp = manifest.get_component(comp_id)
-        if comp is None:
-            return
-
-        # Record timing
-        comp.duration_seconds = comp_result.duration_seconds
-        comp.iteration_count = comp_result.iterations
-
-        # R3.1: engineer-loop spend counts BEFORE the success branch -
-        # failed attempts cost real tokens too.
-        if comp_result.usage is not None:
-            _record_usage(comp_id, "engineer", comp_result.usage)
-
-        # R3.1 budget checkpoint: the engineer loop just reported the
-        # dominant spend; halt before starting adversarial phases (or a
-        # retry) when the run-level cap is blown.
-        if _token_budget_exceeded():
-            _fail_component_for_budget(comp, "engineer")
-            return
-
-        if not comp_result.success:
-            from ralph_py.context import IterationRecord
-            ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_iteration(IterationRecord(
-                iteration=comp_result.iterations,
-                success=False,
-                error=comp_result.error,
-            ))
-            _retry_or_fail(
-                comp, comp_result.error or "Unknown error", ctx.to_json(),
-                phase="engineer", check="loop",
-            )
-            return
-
-        wt_path = worktree_paths.get(comp_id, root_dir)
-
-        def _record_phase_skip(phase: str, reason: str) -> None:
-            """R1.2: a phase that never ran must leave a trace in both
-            the findings stream and the journal, so "ran clean" and
-            "never ran" are distinguishable downstream."""
-            _add_findings(comp, [Finding.phase_skipped(phase, reason)])
-            progress_log.emit(
-                "phase_skipped", comp_id,
-                {"phase": phase, "reason": reason},
-            )
-
-        # PHASE 1: Mechanical verification
-        comp.status = ComponentStatus.VERIFYING.value
-        manifest.save(manifest_path)
-
-        if factory_config.skip_verification:
-            # R2.3: --no-verify. Previously verify_config=None fell
-            # through to VerifyConfig() defaults here and Phase 1 ran
-            # anyway - on a non-Python repo that burned every retry
-            # against checks that could never pass. The empty
-            # VerificationResult below is what downstream reviewers see:
-            # no checks ran, none are claimed.
-            ui.info(
-                f"  Phase 1 SKIPPED for {comp_id}: mechanical "
-                f"verification disabled (--no-verify)"
-            )
-            comp.verification_passed = None
-            _record_phase_skip(
-                "verify", "mechanical verification disabled (--no-verify)",
-            )
-            verification = VerificationResult(passed=True, checks=[])
-        else:
-            verify_config = factory_config.verify_config or VerifyConfig()
-            ui.info(f"  Phase 1: mechanical verification for {comp_id}...")
-            verify_start = time.monotonic()
-            # Per-component allowed_paths comes from the PRD (architect-
-            # emitted via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+).
-            # Without this, the diff-scope check silently passes and a
-            # rogue agent can touch anything in the worktree -- the
-            # end-to-end validation run on 2026-05-27 caught an agent
-            # editing factory internals because allowed_paths was always
-            # None here. Legacy PRDs without the field load with
-            # allowed_paths=None which preserves the prior "no constraint"
-            # behavior; v1.2.0+ architect outputs are gated upstream in
-            # decompose._validate_decompose_output.
-            #
-            # R1.5: a PRD that fails to LOAD is not the same as a PRD with
-            # no allowedPaths. Swallowing the load error into
-            # allowed_paths=None silently disabled the scope check -- an
-            # agent that corrupts or deletes its own PRD would unbind its
-            # write scope. Load failure now flows into check_diff_scope as
-            # allowed_paths_error, which fails the check closed.
-            component_allowed_paths: list[str] | None = None
-            allowed_paths_error: str | None = None
-            try:
-                prd_for_scope = PRD.load(wt_path / comp.prd_path)
-                component_allowed_paths = prd_for_scope.allowed_paths
-            except FileNotFoundError as exc:
-                allowed_paths_error = f"PRD not found: {exc}"
-            except ValueError as exc:
-                allowed_paths_error = f"PRD failed to parse: {exc}"
-            # R7.2: fixtures config resolves from toml/env when the
-            # caller did not inject one; enabled=false (the default)
-            # makes run_mechanical_verification skip the check entirely.
-            fixtures_cfg = (
-                factory_config.fixtures_config
-                or FixturesConfig.load(root_dir)
-            )
-            verification = run_mechanical_verification(
-                wt_path,
-                wt_path / comp.prd_path,
-                manifest.base_branch,
-                component_allowed_paths,
-                verify_config,
-                allowed_paths_error=allowed_paths_error,
-                fixtures_config=fixtures_cfg,
-                component_id=comp_id,
-            )
-            verify_duration = time.monotonic() - verify_start
-            comp.verification_passed = verification.passed
-            progress_log.verification_result(
-                comp_id, verification.passed,
-                check_names=[c.name for c in verification.checks],
-                failures=[
-                    c.message for c in verification.checks if not c.passed
-                ],
-                duration=verify_duration,
-            )
-
-            if not verification.passed:
-                failing = [c for c in verification.checks if not c.passed]
-                ui.warn(
-                    f"  Phase 1 FAILED for {comp_id}: "
-                    f"{', '.join(c.name for c in failing)}"
-                )
-                ctx = IterationContext.from_json(
-                    comp_result.context_json or "{}",
-                )
-                ctx.add_verification_failure(verification.as_context())
-                # R6.1: carry the parser's structured codes (ruff rule,
-                # mypy error code, pytest exception type) into the
-                # journal instead of the flattened string.
-                from ralph_py.evolution import signatures_from_verification
-                _retry_or_fail(
-                    comp, "Mechanical verification failed", ctx.to_json(),
-                    phase="verify",
-                    check=", ".join(c.name for c in failing),
-                    signatures=signatures_from_verification(
-                        verification.checks,
-                    ),
-                )
-                return
-
-            ui.ok(f"  Phase 1 passed for {comp_id}")
-
-        # Fetch the component diff once and share it across Phase 2,
-        # Phase 2.5, and knowledge distillation. Without this each phase
-        # would shell out to `git diff` independently, redundantly
-        # rebuilding the same patch on every component.
-        #
-        # R1.3 (H-14): a git failure here used to yield "" and all three
-        # consumers silently reviewed an empty diff and passed. Now it
-        # is an infrastructure failure for the component: record the
-        # infra finding, journal it, and retry/fail closed.
-        from ralph_py import git as _git_for_diff
-        try:
-            shared_diff = _git_for_diff.get_diff_content(
-                manifest.base_branch, wt_path,
-            )
-        except GitDiffError as exc:
-            ui.err(f"  Diff fetch FAILED for {comp_id}: {exc}")
-            _add_findings(comp, [Finding.infrastructure_error(
-                phase="diff",
-                explanation=(
-                    f"git diff against {manifest.base_branch} failed; "
-                    f"review/security/knowledge cannot run: {exc}"
-                ),
-            )])
-            progress_log.emit(
-                "diff_fetch_failed", comp_id, {"error": str(exc)},
-            )
-            ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_verification_failure(
-                f"git diff against {manifest.base_branch} failed: {exc}"
-            )
-            _retry_or_fail(
-                comp, f"Diff fetch failed (infrastructure): {exc}",
-                ctx.to_json(), phase="diff", check="git_diff",
-                signatures=["diff:fetch-failed"],
-            )
-            return
-
-        # Forensic home for full raw reviewer output on parse failures
-        # (R1.2; mirrors knowledge.py's _debug/<run_id>/ layout).
-        adversarial_debug_dir = (
-            root_dir / ".ralph" / "debug" / run_id / comp_id
-        )
-
-        # R1.4: strip the engineer's Self-Critique block ONCE and share
-        # the stripped diff with BOTH reviewers (E2 anti-anchoring now
-        # applies to Phase 2.5 too, not just Phase 2). The knowledge
-        # distiller keeps the unstripped shared_diff: the self-critique
-        # is the engineer's own account, and anti-anchoring targets
-        # adversarial reviewers, not the distiller.
-        review_diff = _git_for_diff.strip_self_critique_from_diff(shared_diff)
-
-        # R1.4 (H-16): a diff over the prompt cap must never be
-        # partially reviewed in hard mode - a rogue engineer could pad
-        # the first 50KB with benign churn and land a malicious hunk
-        # after the cut. Split once on file boundaries; both hard-mode
-        # phases reuse the same chunks (one budget call per chunk).
-        # Advisory phases keep the single truncated pass, which
-        # run_review/run_security_review annotate as PARTIAL.
-        review_mode = ReviewMode(factory_config.review_mode)
-        sec_config = factory_config.security_config
-        oversized = (
-            len(review_diff) > _git_for_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
-        )
-        needs_chunks = oversized and (
-            review_mode == ReviewMode.HARD
-            or (
-                sec_config is not None
-                and sec_config.mode == SecurityMode.HARD.value
-            )
-        )
-        review_chunks: list[str] | None = None
-        if needs_chunks:
-            try:
-                review_chunks = _git_for_diff.split_diff_for_prompt(
-                    review_diff,
-                )
-            except _git_for_diff.DiffUnsplittableError as exc:
-                # Fail closed via the retry path: unlike budget
-                # exhaustion, the engineer CAN fix this by producing a
-                # smaller diff, so the retry context carries the signal.
-                ui.err(f"  Diff unsplittable for {comp_id}: {exc}")
-                _add_findings(comp, [Finding.infrastructure_error(
-                    phase="review",
-                    explanation=(
-                        "Hard-mode review requires chunking the "
-                        f"oversized diff, but it cannot be split: {exc} "
-                        "(R1.4: an unreviewable diff must not merge)"
-                    ),
-                )])
-                progress_log.emit(
-                    "diff_unsplittable", comp_id,
-                    {"error": str(exc), "diff_chars": len(review_diff)},
-                )
-                ctx = IterationContext.from_json(
-                    comp_result.context_json or "{}",
-                )
-                ctx.add_review_finding(
-                    f"The diff is too large to review ({exc}). Reduce "
-                    "the change so each file's diff fits the "
-                    f"{_git_for_diff.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
-                    "KB review cap."
-                )
-                _retry_or_fail(
-                    comp,
-                    f"Review diff unsplittable at the prompt cap: {exc}",
-                    ctx.to_json(), phase="review", check="diff_chunking",
-                    signatures=["review:diff-unsplittable"],
-                )
-                return
-            progress_log.emit(
-                "diff_chunked", comp_id,
-                {
-                    "chunks": len(review_chunks),
-                    "diff_chars": len(review_diff),
-                },
-            )
-
-        # PHASE 2: Second-opinion review
-        chunked_review = (
-            review_mode == ReviewMode.HARD and review_chunks is not None
-        )
-        review_skip_reason: str | None = None
-        if review_mode == ReviewMode.SKIP:
-            review_skip_reason = "review disabled (mode=skip)"
-        elif not chunked_review and not _adversarial_budget_ok():
-            # Chunked hard-mode reviews never downgrade to SKIP on an
-            # exhausted budget: their budget rule is "cover every chunk
-            # or fail as infrastructure" (handled below).
-            ui.warn(
-                f"  Phase 2 SKIPPED for {comp_id}: "
-                f"adversarial LLM budget ({factory_config.max_adversarial_calls}) exhausted"
-            )
-            review_skip_reason = (
-                f"adversarial LLM budget "
-                f"({factory_config.max_adversarial_calls}) exhausted"
-            )
-            review_mode = ReviewMode.SKIP
-        if review_mode == ReviewMode.HARD and review_chunks is not None:
-            remaining = _adversarial_budget_remaining()
-            if remaining is not None and remaining < len(review_chunks):
-                # R1.4: the budget cannot cover the chunks. Retrying
-                # cannot recover budget, so fail directly instead of
-                # burning engineer iterations on a deterministic wall.
-                error = (
-                    f"Chunked review needs {len(review_chunks)} "
-                    f"adversarial calls but only {remaining} remain in "
-                    f"max_adversarial_calls "
-                    f"({factory_config.max_adversarial_calls}); refusing "
-                    "a partial hard-mode review (R1.4)"
-                )
-                ui.err(f"  Phase 2 FAILED for {comp_id}: {error}")
-                comp.review_passed = False
-                _add_findings(comp, [Finding.infrastructure_error(
-                    phase="review", explanation=error,
-                )])
-                progress_log.emit(
-                    "chunk_budget_insufficient", comp_id,
-                    {
-                        "phase": "review",
-                        "chunks": len(review_chunks),
-                        "remaining": remaining,
-                    },
-                )
-                _fail_component(
-                    comp, f"Review infrastructure error: {error}",
-                    phase="review", check="adversarial_budget",
-                    signatures=["review:chunk-budget-insufficient"],
-                )
-                return
-        if review_mode != ReviewMode.SKIP:
-            if not chunked_review:
-                _adversarial_budget_consume()
-            chunk_note = (
-                f", {len(review_chunks)} chunks"
-                if chunked_review and review_chunks is not None else ""
-            )
-            ui.info(
-                f"  Phase 2: review ({review_mode.value}{chunk_note}) "
-                f"for {comp_id}..."
-            )
-
-            # R1.2: wrap the agent-driven work like Phase 2.5 does. A
-            # reviewer crash degrades to a per-component infrastructure
-            # failure; it must never abort the whole factory run.
-            review_agent: Any = None
-            try:
-                # R7.1: the run-level selection (explicit config, or the
-                # cross-family default, or the warned same-family
-                # fallback) decides who reviews.
-                review_agent = get_agent(
-                    review_selection.agent_cmd,
-                    review_selection.model,
-                    review_selection.reasoning,
-                    review_selection.agent_type,
-                )
-                if review_mode == ReviewMode.HARD and review_chunks is not None:
-                    # R1.4: one pass per chunk, each consuming budget;
-                    # any chunk failure fails the merged result.
-                    review_result = run_chunked_review(
-                        review_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        manifest.base_branch,
-                        verification,
-                        review_mode,
-                        ui,
-                        diff_chunks=review_chunks,
-                        budget_remaining=_adversarial_budget_remaining(),
-                        consume_budget=_adversarial_budget_consume,
-                        debug_dir=adversarial_debug_dir,
-                    )
-                else:
-                    review_result = run_review(
-                        review_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        manifest.base_branch,
-                        verification,
-                        review_mode,
-                        ui,
-                        diff_content=review_diff,
-                        debug_dir=adversarial_debug_dir,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                ui.warn(f"  Review crashed: {exc}")
-                review_result = ReviewResult(
-                    passed=review_mode != ReviewMode.HARD,
-                    mode=review_mode.value,
-                    overall_notes=f"Review agent crashed: {exc}",
-                    infrastructure_error=True,
-                    # R7.1: a crash before/inside the run is still
-                    # attributed to the selected reviewer identity.
-                    reviewer_model=review_selection.identity,
-                )
-            # R3.1: the instance is fresh per phase, so its accumulated
-            # records are exactly this review's spend (N records for a
-            # chunked review). Recorded before pass/fail handling so a
-            # failed or crashed review still counts.
-            if review_agent is not None:
-                _record_usage(comp_id, "review", collect_usage(review_agent))
-            if _token_budget_exceeded():
-                _fail_component_for_budget(comp, "review")
-                return
-            comp.review_passed = review_result.passed
-            # E3: typed findings are the source of truth; the rendered
-            # string is a derived view kept for backward-compat consumers.
-            _add_findings(comp, review_result.as_findings())
-            comp.review_findings = review_result.as_pr_body_section()
-            # Observability gets criterion-only counts to preserve the
-            # historical meaning of fail_count = "failed PRD criteria".
-            # Concern counts ride along separately via fail_concerns /
-            # advisory_concerns so dashboards can distinguish.
-            progress_log.review_result(
-                comp_id, review_result.passed,
-                mode=review_mode.value,
-                fail_count=review_result.criterion_fail_count,
-                advisory_count=review_result.criterion_advisory_count,
-                duration=review_result.duration_seconds,
-            )
-
-            if not review_result.passed:
-                reason = (
-                    "Review infrastructure error"
-                    if review_result.infrastructure_error
-                    else "Review failed"
-                )
-                ui.warn(
-                    f"  Phase 2 FAILED for {comp_id}: "
-                    f"{review_result.fail_count} failures"
-                )
-                ctx = IterationContext.from_json(comp_result.context_json or "{}")
-                ctx.add_review_finding(review_result.as_retry_context())
-                # R6.1: journal the finding categories that failed the
-                # gate ("review:scope_creep", "review:prd_criterion",
-                # "review:infrastructure"), not the flattened reason.
-                from ralph_py.evolution import signatures_from_findings
-                _retry_or_fail(
-                    comp, reason, ctx.to_json(), phase="review",
-                    check=(
-                        "infrastructure"
-                        if review_result.infrastructure_error else "criteria"
-                    ),
-                    signatures=signatures_from_findings(
-                        "review", review_result.as_findings(),
-                    ),
-                )
-                return
-
-            ui.ok(f"  Phase 2 passed for {comp_id}")
-        else:
-            comp.review_passed = None
-            _record_phase_skip(
-                "review", review_skip_reason or "review skipped",
-            )
-
-        # PHASE 2.5: Security review (adversarial pass focused on vulns).
-        # Runs as a separate LLM call with its own threat-model framing so
-        # it catches what the correctness reviewer misses. Hard-mode
-        # fails the component on findings at or above
-        # SecurityConfig.fail_threshold OR on infrastructure errors.
-        # (sec_config was resolved above, where the R1.4 chunking
-        # decision needed it.)
-        chunked_security = (
-            sec_config is not None
-            and sec_config.mode == SecurityMode.HARD.value
-            and review_chunks is not None
-        )
-        if sec_config is None:
-            _record_phase_skip(
-                "security", "security review not configured",
-            )
-        elif sec_config.mode == SecurityMode.SKIP.value:
-            _record_phase_skip(
-                "security", "security review disabled (mode=skip)",
-            )
-        elif not chunked_security and not _adversarial_budget_ok():
-            # As with Phase 2: chunked hard-mode security never
-            # downgrades to SKIP on an exhausted budget - it covers
-            # every chunk or fails as infrastructure below.
-            ui.warn(
-                f"  Phase 2.5 SKIPPED for {comp_id}: "
-                f"adversarial LLM budget exhausted"
-            )
-            _record_phase_skip(
-                "security", "adversarial LLM budget exhausted",
-            )
-            sec_config = None
-        if (
-            sec_config is not None
-            and sec_config.mode == SecurityMode.HARD.value
-            and review_chunks is not None
-        ):
-            remaining = _adversarial_budget_remaining()
-            if remaining is not None and remaining < len(review_chunks):
-                # R1.4: same rule as Phase 2 - budget cannot cover the
-                # chunks, and retrying cannot recover budget.
-                error = (
-                    f"Chunked security review needs {len(review_chunks)} "
-                    f"adversarial calls but only {remaining} remain in "
-                    f"max_adversarial_calls "
-                    f"({factory_config.max_adversarial_calls}); refusing "
-                    "a partial hard-mode security review (R1.4)"
-                )
-                ui.err(f"  Phase 2.5 FAILED for {comp_id}: {error}")
-                _add_findings(comp, [Finding.infrastructure_error(
-                    phase="security", explanation=error,
-                )])
-                progress_log.emit(
-                    "chunk_budget_insufficient", comp_id,
-                    {
-                        "phase": "security",
-                        "chunks": len(review_chunks),
-                        "remaining": remaining,
-                    },
-                )
-                _fail_component(
-                    comp, f"Security review infrastructure error: {error}",
-                    phase="security", check="adversarial_budget",
-                    signatures=["security:chunk-budget-insufficient"],
-                )
-                return
-        if sec_config and sec_config.mode != SecurityMode.SKIP.value:
-            if not chunked_security:
-                # Chunked passes consume per-chunk inside
-                # run_chunked_security_review instead.
-                _adversarial_budget_consume()
-            from ralph_py.agents import get_agent as _get_sec_agent
-
-            chunk_note = (
-                f", {len(review_chunks)} chunks"
-                if chunked_security and review_chunks is not None else ""
-            )
-            ui.info(
-                f"  Phase 2.5: security review "
-                f"({sec_config.mode}{chunk_note}) for {comp_id}..."
-            )
-            sec_result = None
-            sec_agent: Any = None
-            # R7.1: the run-level selection already folded in the
-            # explicit sec_config fields and the engineer fallbacks (or
-            # picked the cross-family default). sec_config is non-None
-            # and non-skip here, so the selection was resolved at run
-            # start.
-            assert security_selection is not None
-            # The try/except deliberately wraps ONLY the agent-driven
-            # work (getting the agent + running the review). Errors in
-            # the retry-or-fail path below must NOT be swallowed - if
-            # they were, a hard-mode security failure could fall through
-            # to PR creation as if it had passed.
-            try:
-                sec_agent = _get_sec_agent(
-                    security_selection.agent_cmd,
-                    security_selection.model,
-                    security_selection.reasoning,
-                    security_selection.agent_type,
-                )
-                if (
-                    sec_config.mode == SecurityMode.HARD.value
-                    and review_chunks is not None
-                ):
-                    # R1.4: one pass per chunk, each consuming budget
-                    # via consume_budget; any chunk failure fails the
-                    # merged result.
-                    sec_result = run_chunked_security_review(
-                        sec_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        manifest.base_branch,
-                        sec_config,
-                        ui,
-                        diff_chunks=review_chunks,
-                        budget_remaining=_adversarial_budget_remaining(),
-                        consume_budget=_adversarial_budget_consume,
-                        debug_dir=adversarial_debug_dir,
-                    )
-                else:
-                    sec_result = run_security_review(
-                        sec_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        manifest.base_branch,
-                        sec_config,
-                        ui,
-                        diff_content=review_diff,
-                        debug_dir=adversarial_debug_dir,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                # Agent infrastructure failed before run_security_review
-                # could classify the outcome. Synthesize an infra result
-                # and fall through to the shared recording block below:
-                # hard mode blocks via passed=False, advisory continues
-                # but the infra finding stays in the findings stream and
-                # the PR body instead of vanishing (R1.2, sec-pr-body).
-                ui.warn(f"  Security review crashed: {exc}")
-                sec_result = SecurityResult(
-                    passed=sec_config.mode != SecurityMode.HARD.value,
-                    mode=sec_config.mode,
-                    overall_notes=(
-                        f"Security review agent failed before "
-                        f"completion: {exc}"
-                    ),
-                    infrastructure_error=True,
-                    # R7.1: a crash before/inside the run is still
-                    # attributed to the selected reviewer identity.
-                    reviewer_model=security_selection.identity,
-                )
-
-            # R3.1: record security spend before pass/fail handling so
-            # failed and crashed passes still count toward the meter.
-            if sec_agent is not None:
-                _record_usage(comp_id, "security", collect_usage(sec_agent))
-            if _token_budget_exceeded():
-                _fail_component_for_budget(comp, "security")
-                return
-
-            if sec_result is not None:
-                progress_log.review_result(
-                    comp_id, sec_result.passed,
-                    mode=f"security-{sec_config.mode}",
-                    fail_count=sec_result.critical_count + sec_result.high_count,
-                    advisory_count=len(sec_result.findings),
-                    duration=sec_result.duration_seconds,
-                )
-
-                # E3: source-of-truth typed findings list, plus the
-                # legacy rendered string for PR body / manifest readers.
-                _add_findings(comp, sec_result.as_findings())
-                if sec_result.findings:
-                    if comp.review_findings:
-                        comp.review_findings = (
-                            comp.review_findings + "\n\n"
-                            + sec_result.as_pr_body_section()
-                        )
-                    else:
-                        comp.review_findings = sec_result.as_pr_body_section()
-
-                if not sec_result.passed:
-                    reason = (
-                        "Security review crashed"
-                        if sec_result.infrastructure_error
-                        else "Security review failed"
-                    )
-                    ui.warn(
-                        f"  Phase 2.5 FAILED for {comp_id}: "
-                        f"{sec_result.critical_count} critical, "
-                        f"{sec_result.high_count} high"
-                    )
-                    ctx = IterationContext.from_json(
-                        comp_result.context_json or "{}",
-                    )
-                    # as_retry_context is empty for infra results (no
-                    # findings list); fall back to the notes so the
-                    # retry prompt still says what went wrong.
-                    ctx.add_review_finding(
-                        sec_result.as_retry_context()
-                        or "Security review infrastructure error: "
-                        + sec_result.overall_notes
-                    )
-                    # R6.1: journal the vuln categories that failed the
-                    # gate ("security:injection", ...), not the reason.
-                    from ralph_py.evolution import signatures_from_findings
-                    _retry_or_fail(
-                        comp, reason, ctx.to_json(), phase="security",
-                        check=(
-                            "infrastructure"
-                            if sec_result.infrastructure_error
-                            else "findings"
-                        ),
-                        signatures=signatures_from_findings(
-                            "security", sec_result.as_findings(),
-                        ),
-                    )
-                    return
-
-        # Knowledge distillation (Voyager-style post-gate write).
-        # Runs after Phase 2 succeeds (or is skipped) but BEFORE the PR
-        # merge step pulls main into the worktree, so the diff is the
-        # component's true delta. Non-fatal on any failure.
-        #
-        # In single_pr mode every component shares one branch, which
-        # means `git diff base...HEAD` for component B also includes
-        # A's changes - distillation would write facts for B citing
-        # A's code as evidence. Skip the phase entirely until A2's
-        # follow-up wires up per-component diff isolation.
-        if knowledge_config.enabled and manifest.single_pr:
-            ui.info(
-                f"  Knowledge: skipped for {comp_id} "
-                f"(single_pr mode produces a polluted per-component diff)"
-            )
-            _record_phase_skip(
-                "knowledge",
-                "single_pr mode produces a polluted per-component diff",
-            )
-        elif knowledge_config.enabled and not _adversarial_budget_ok():
-            ui.info(
-                f"  Knowledge: skipped for {comp_id} "
-                f"(adversarial budget exhausted)"
-            )
-            _record_phase_skip(
-                "knowledge", "adversarial LLM budget exhausted",
-            )
-        elif knowledge_config.enabled and _token_budget_exceeded():
-            # R3.1: the gates all passed before the cap tripped, so the
-            # component proceeds to PR - but no further LLM spend. The
-            # skip is recorded, and the scheduling gate stops any
-            # remaining components loudly.
-            ui.warn(
-                f"  Knowledge: skipped for {comp_id} "
-                f"(token budget exceeded: {run_usage.total_tokens} >= "
-                f"{factory_config.max_total_tokens})"
-            )
-            _record_phase_skip(
-                "knowledge", "token budget (max_total_tokens) exceeded",
-            )
-        elif knowledge_config.enabled:
-            _adversarial_budget_consume()
-            distill_agent: Any = None
-            try:
-                from ralph_py.agents import get_agent as _get_agent
-
-                # Reuse the diff already fetched at the top of this
-                # method - the worktree state hasn't changed between
-                # Phase 1 and here.
-                diff_content = shared_diff
-                distill_model = (
-                    knowledge_config.distill_model or base_config.model
-                )
-                distill_agent = _get_agent(
-                    base_config.agent_cmd,
-                    distill_model,
-                    base_config.model_reasoning_effort,
-                    base_config.agent_type,
-                )
-                written, status = distill_facts(
-                    distill_agent,
-                    comp,
-                    diff_content,
-                    wt_path / comp.prd_path,
-                    comp_result.iterations,
-                    run_id,
-                    knowledge_config.knowledge_root,
-                    knowledge_config,
-                    wt_path,
-                    comp.review_passed,
-                )
-                if written > 0:
-                    ui.ok(f"  Knowledge: {status}")
-                else:
-                    ui.info(f"  Knowledge: {status}")
-            except Exception as exc:  # noqa: BLE001 - non-fatal
-                ui.warn(f"  Knowledge distillation failed: {exc}")
-
-            # R3.1: distillation spend (recorded even when the distill
-            # failed - the call still cost tokens). No fail-the-component
-            # checkpoint here: every gate already passed; the scheduling
-            # gate halts the run before any FURTHER spend.
-            if distill_agent is not None:
-                _record_usage(comp_id, "distill", collect_usage(distill_agent))
-
-            # Fact-utilization metric: did the agent reference any of
-            # the facts we injected at the top of the worker prompt?
-            # Crude substring match against the post-iteration diff and
-            # progress.txt; under-counts when the LLM paraphrases.
-            try:
-                prefix = build_knowledge_context(
-                    manifest, comp,
-                    knowledge_config.knowledge_root, knowledge_config,
-                )
-                if prefix:
-                    progress_text = ""
-                    progress_path = (
-                        wt_path / "scripts" / "ralph" / "progress.txt"
-                    )
-                    try:
-                        progress_text = progress_path.read_text(encoding="utf-8")
-                    except OSError:
-                        pass
-                    util = measure_fact_utilization(
-                        prefix, shared_diff, progress_text,
-                    )
-                    if util["injected"] > 0:
-                        ui.info(
-                            f"  Knowledge utilization: "
-                            f"{util['referenced']}/{util['injected']} "
-                            f"facts referenced in diff or progress.txt"
-                        )
-            except Exception:  # noqa: BLE001
-                pass
-
-        # All verification phases passed - create PR and merge.
-        # single_pr mode is exempt: every component shares one branch,
-        # a single PR is created at end-of-run, and squash-merging the
-        # shared branch per component would destroy the history the
-        # remaining components build on.
-        if factory_config.create_prs and not factory_config.single_pr:
-            from ralph_py.pr import is_gh_available, push_create_and_merge_pr
-
-            # E6: human-in-the-loop checkpoint. When opt-in, prompt
-            # before pushing+merging so a human can inspect the diff,
-            # the review findings, and the security findings before
-            # the PR goes through. Reject is terminal (R2.6): it marks
-            # the component FAILED and cascade-skips dependents with no
-            # retry and no re-prompt - routing it through the retry
-            # loop would re-run the full agent+review cycle and ask the
-            # human again, once per remaining retry. A human who wants
-            # a re-run says so explicitly via Retry, which consumes a
-            # retry like any other failure. Skip the prompt when no UI
-            # is interactive - automation should fail loudly rather
-            # than block indefinitely.
-            proceed = True
-            if factory_config.pause_before_pr_merge:
-                if ui.can_prompt():
-                    ui.section(f"Human checkpoint: {comp_id}")
-                    ui.info(comp.review_findings or "(no review findings)")
-                    choice = ui.choose(
-                        f"Approve PR creation and merge for {comp_id}?",
-                        [
-                            "Approve",
-                            "Reject (fail component, skip dependents)",
-                            "Retry (consume a retry, re-run component)",
-                        ],
-                        default=0,
-                    )
-                    proceed = choice == 0
-                    if choice == 1:
-                        ui.warn(
-                            f"  Human rejected {comp_id} at PR checkpoint"
-                        )
-                        _fail_component(
-                            comp, "Rejected at HITL checkpoint",
-                            phase="pr", check="hitl_reject",
-                        )
-                        return
-                    if choice == 2:
-                        ui.warn(
-                            f"  Human requested retry for {comp_id} "
-                            f"at PR checkpoint"
-                        )
-                        ctx = IterationContext.from_json(
-                            comp_result.context_json or "{}",
-                        )
-                        ctx.add_review_finding(
-                            "Human reviewer requested changes at PR checkpoint",
-                        )
-                        _retry_or_fail(
-                            comp,
-                            "Retry requested at HITL checkpoint",
-                            ctx.to_json(), phase="pr", check="hitl_retry",
-                        )
-                        return
-                else:
-                    ui.warn(
-                        f"  pause_before_pr_merge requested but UI is "
-                        f"non-interactive; proceeding without prompt for {comp_id}"
-                    )
-
-            if proceed and is_gh_available():
-                ui.info(f"  Creating and merging PR for {comp_id}...")
-                outcome = push_create_and_merge_pr(
-                    comp, manifest, root_dir, ui,
-                    merge_method="squash",
-                    merge_timeout=factory_config.merge_timeout,
-                )
-                if outcome.pr_url:
-                    factory_result.pr_urls.append(outcome.pr_url)
-                manifest.save(manifest_path)
-
-                # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
-                # Anything less and dependents would cut worktrees from
-                # a base that lacks this component's code.
-                if not outcome.merged:
-                    if outcome.merge_pending:
-                        comp.status = ComponentStatus.MERGE_PENDING.value
-                        comp.error = (
-                            outcome.error or "PR merge not confirmed"
-                        )
-                        progress_log.emit(
-                            "merge_pending", comp_id,
-                            {"pr_url": comp.pr_url, "error": comp.error},
-                        )
-                        notify.fire_merge_pending(comp_id, comp.error)
-                        # Parked, not terminal: no completed_at, but the
-                        # attempt's journal slice is closed (R3.3) -
-                        # after the merge_pending event so the slice
-                        # includes it.
-                        _end_attempt(comp)
-                        ui.warn(
-                            f"  MERGE PENDING: {comp_id}: {comp.error}; "
-                            f"dependents stay blocked; a factory re-run "
-                            f"re-polls the PR"
-                        )
-                    else:
-                        comp.status = ComponentStatus.FAILED.value
-                        comp.error = outcome.error or "PR flow failed"
-                        comp.completed_at = _iso_now()
-                        comp.failed_phase = "pr"
-                        comp.failed_check = "pr_flow"
-                        _record_failure_signatures(
-                            comp, "pr", comp.error, None,
-                        )
-                        _end_attempt(comp)
-                        skipped = manifest.cascade_skip(comp_id)
-                        factory_result.failed.append(comp_id)
-                        factory_result.skipped.extend(skipped)
-                        progress_log.component_failed(comp_id, comp.error)
-                        notify.fire_first_failure(comp_id, comp.error)
-                        ui.err(f"  Failed: {comp_id}: {comp.error[:120]}")
-                    manifest.save(manifest_path)
-                    return
-            elif proceed:
-                # No gh: the PR/merge gate cannot run. Completing anyway
-                # preserves local-only workflows, but say so loudly -
-                # this component's code exists only on its local branch.
-                ui.warn(
-                    f"  gh CLI not available: {comp_id} completes without "
-                    f"a PR; its code stays on branch {comp.branch_name}"
-                )
-
-        # Clean up worktree now that code is merged
-        if factory_config.use_worktrees and comp_id in worktree_paths:
-            _cleanup_worktree(comp_id, root_dir, run_id)
-            del worktree_paths[comp_id]
-
-        # Mark completed
-        comp.status = ComponentStatus.COMPLETED.value
-        comp.error = ""
-        component_failure_signatures.pop(comp_id, None)
-        comp.completed_at = _iso_now()
-        _end_attempt(comp)
-        factory_result.completed.append(comp_id)
-        progress_log.component_completed(
-            comp_id, comp_result.duration_seconds, comp_result.iterations,
-        )
-        ui.ok(
-            f"  COMPLETED: {comp_id} "
-            f"({comp_result.iterations} iterations, "
-            f"{comp_result.duration_seconds:.0f}s)"
-        )
-        manifest.save(manifest_path)
-
     def _launch_component(comp: Component) -> Path | None:
         """Set up worktree for a component. Returns worktree path or None."""
         try:
@@ -2721,9 +1486,9 @@ def _run_factory_locked(
             return wt_path
         except RuntimeError as exc:
             ui.err(f"  Worktree setup failed for '{comp.id}': {exc}")
-            # _fail_component covers the R3.2 notify + progress-log
+            # pipeline.fail covers the R3.2 notify + progress-log
             # calls and stamps the R3.3 failure/evidence fields.
-            _fail_component(
+            pipeline.fail(
                 comp, str(exc), phase="provisioning", check="worktree_setup",
             )
             return None
@@ -2740,9 +1505,6 @@ def _run_factory_locked(
             "conventions": fc.conventions,
             "max_context_tokens": fc.max_context_tokens,
         }
-
-    # Load knowledge config once for the entire factory run
-    knowledge_config = KnowledgeConfig.load(root_dir)
 
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
@@ -2794,10 +1556,10 @@ def _run_factory_locked(
                 # R3.1 scheduling gate: a blown token budget fails
                 # pending components loudly instead of launching an
                 # engineer loop that would only add spend.
-                if _token_budget_exceeded():
-                    _fail_component_for_budget(comp, "scheduling")
+                if pipeline.token_budget_exceeded():
+                    pipeline.fail_for_budget(comp, "scheduling")
                     continue
-                _begin_attempt(comp)
+                pipeline.begin_attempt(comp)
                 manifest.save(manifest_path)
                 progress_log.component_started(comp.id)
                 ui.info(f"  Starting: {comp.id}")
@@ -2814,7 +1576,7 @@ def _run_factory_locked(
                         component_id=comp.id, success=False, error=str(exc),
                     )
 
-                _handle_result(comp.id, comp_result)
+                pipeline.process_result(comp.id, comp_result)
             return
 
         # Manual executor lifecycle: on a backstop breach we must NOT wait
@@ -2830,10 +1592,10 @@ def _run_factory_locked(
 
                 for comp in ready[:slots]:
                     # R3.1 scheduling gate (see sequential path above).
-                    if _token_budget_exceeded():
-                        _fail_component_for_budget(comp, "scheduling")
+                    if pipeline.token_budget_exceeded():
+                        pipeline.fail_for_budget(comp, "scheduling")
                         continue
-                    _begin_attempt(comp)
+                    pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     progress_log.component_started(comp.id)
                     ui.info(f"  Starting: {comp.id}")
@@ -2879,7 +1641,7 @@ def _run_factory_locked(
                         comp_result = ComponentResult(
                             component_id=comp_id, success=False, error=str(exc),
                         )
-                    _handle_result(comp_id, comp_result)
+                    pipeline.process_result(comp_id, comp_result)
                     continue
 
                 # Nothing completed inside the window: fail every
@@ -2891,39 +1653,7 @@ def _run_factory_locked(
                     comp_id = running_futures.pop(future)
                     future_deadlines.pop(future, None)
                     leaked_component_ids.add(comp_id)
-                    timed_out_comp = manifest.get_component(comp_id)
-                    if timed_out_comp is not None:
-                        timed_out_comp.status = ComponentStatus.FAILED.value
-                        timed_out_comp.error = "component timeout"
-                        timed_out_comp.completed_at = _iso_now()
-                        timed_out_comp.failed_phase = "engineer"
-                        timed_out_comp.failed_check = "scheduler_backstop"
-                        component_failure_signatures[comp_id] = [
-                            "engineer:component-timeout",
-                        ]
-                        _end_attempt(timed_out_comp)
-                        # The worktree stays (leaked worker may own it);
-                        # point the evidence at it (R3.3).
-                        if comp_id in worktree_paths:
-                            timed_out_comp.evidence_worktree = str(
-                                worktree_paths[comp_id]
-                            )
-                        skipped = manifest.cascade_skip(comp_id)
-                        factory_result.failed.append(comp_id)
-                        factory_result.skipped.extend(skipped)
-                        progress_log.component_failed(
-                            comp_id, "component timeout",
-                        )
-                        notify.fire_first_failure(comp_id, "component timeout")
-                    ui.err(
-                        f"  Failed: {comp_id}: component timeout "
-                        f"(scheduler backstop after {backstop_seconds:.0f}s)"
-                    )
-                    ui.warn(
-                        f"  A worker process for '{comp_id}' may be leaked; "
-                        f"its worktree is left in place"
-                    )
-                    manifest.save(manifest_path)
+                    pipeline.fail_scheduler_backstop(comp_id, backstop_seconds)
         finally:
             if leaked_component_ids:
                 ui.warn(
@@ -3080,7 +1810,7 @@ def _run_factory_locked(
                 # R3.3: the completed attempt's findings are superseded
                 # by the contract-triggered re-run; journal them before
                 # the retry increments the attempt counter.
-                _journal_superseded_findings(breaker)
+                pipeline.journal_superseded_findings(breaker)
                 breaker.retries += 1
                 breaker.status = ComponentStatus.PENDING.value
                 breaker.error = f"Contract test failed at tier {cr.tier}"
@@ -3247,13 +1977,13 @@ def _run_factory_locked(
         ui.kv("Merge pending", str(len(factory_result.merge_pending)))
     ui.kv("Duration", f"{factory_duration:.0f}s")
     # R3.1 usage rollup: per component, per phase, plus the run total.
-    if run_usage.calls > 0:
+    if pipeline.run_usage.calls > 0:
         ui.subsection("Usage rollup")
-        for line in _format_usage_rollup(usage_meter, run_usage):
+        for line in _format_usage_rollup(pipeline.usage_meter, pipeline.run_usage):
             ui.info(f"  {line}")
-    if _token_budget_exceeded():
+    if pipeline.token_budget_exceeded():
         ui.err(
-            f"TOKEN BUDGET EXCEEDED: {run_usage.total_tokens} total tokens "
+            f"TOKEN BUDGET EXCEEDED: {pipeline.run_usage.total_tokens} total tokens "
             f"recorded >= max_total_tokens ({factory_config.max_total_tokens})"
         )
     if factory_result.pr_urls:
@@ -3307,9 +2037,9 @@ def _run_factory_locked(
                         phase: totals.to_dict()
                         for phase, totals in phases.items()
                     }
-                    for comp_id, phases in usage_meter.items()
+                    for comp_id, phases in pipeline.usage_meter.items()
                 },
-                run_usage=run_usage.to_dict(),
+                run_usage=pipeline.run_usage.to_dict(),
                 failure_signatures=component_failure_signatures,
             )
     except Exception as exc:
