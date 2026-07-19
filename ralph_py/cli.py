@@ -23,6 +23,7 @@ from click.core import ParameterSource
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
 from ralph_py.agents.base import Agent, UsageRecord
+from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
@@ -822,6 +823,7 @@ def understand(
     result = run_loop(
         config, ui_impl, agent, root_dir,
         timeouts=TimeoutConfig.load(root_dir),
+        breaker_config=BreakerConfig.load(root_dir),
     )
     sys.exit(result.exit_code)
 
@@ -1144,11 +1146,13 @@ def feature(
         understand_config.ralph_branch_explicit = True
 
     timeouts = TimeoutConfig.load(root_dir)
+    breaker_config = BreakerConfig.load(root_dir)
 
     understand_log = log_path("understand")
     understand_agent = LoggingAgent(agent, understand_log)
     understand_result = run_loop(
-        understand_config, ui_impl, understand_agent, root_dir, timeouts=timeouts,
+        understand_config, ui_impl, understand_agent, root_dir,
+        timeouts=timeouts, breaker_config=breaker_config,
     )
     if understand_result.exit_code != 0:
         sys.exit(understand_result.exit_code)
@@ -1190,7 +1194,10 @@ def feature(
 
     run_log = log_path("run")
     run_agent = LoggingAgent(agent, run_log)
-    result = run_loop(run_config, ui_impl, run_agent, root_dir, timeouts=timeouts)
+    result = run_loop(
+        run_config, ui_impl, run_agent, root_dir,
+        timeouts=timeouts, breaker_config=breaker_config,
+    )
     if result.exit_code == 0 or repair_max_runs == 0 or result.iterations == 0:
         sys.exit(result.exit_code)
 
@@ -1216,7 +1223,8 @@ def feature(
         )
         repair_agent = LoggingAgent(repair_agent_base, repair_log)
         repair_result = run_loop(
-            repair_config, ui_impl, repair_agent, root_dir, timeouts=timeouts,
+            repair_config, ui_impl, repair_agent, root_dir,
+            timeouts=timeouts, breaker_config=breaker_config,
         )
         if repair_result.exit_code == 0:
             sys.exit(0)

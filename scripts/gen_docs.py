@@ -117,6 +117,7 @@ class SectionSpec:
 
 
 def _section_specs() -> list[SectionSpec]:
+    from ralph_py.breaker import BreakerConfig
     from ralph_py.config import RalphConfig
     from ralph_py.contract import ContractConfig
     from ralph_py.evolution import EvolutionConfig
@@ -202,6 +203,15 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: FactoryConfig.load(root_dir=root),
             FactoryConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "breaker",
+            "No-progress circuit breaker (R7.5; 0 iterations disables)",
+            identity_keys(BreakerConfig, [
+                f.name for f in dataclasses.fields(BreakerConfig)
+            ]),
+            lambda root: BreakerConfig.load(root_dir=root),
+            BreakerConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "verify", "Phase 1 mechanical verification",
@@ -300,6 +310,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "JSONL event log at .ralph/progress.jsonl (R3.2)",
     ("factory", "keep_worktrees_on_failure"):
         "keep failed components' worktrees for post-mortem (R3.3)",
+    ("breaker", "no_progress_iterations"):
+        "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
+    ("breaker", "test_command"):
+        "stall-probe command; empty = the explicit [verify] test_command, "
+        "else diff-hash only",
+    ("breaker", "test_timeout"): "seconds before the stall probe is killed",
     ("verify", "test_command"): "empty = smart default (uv run pytest)",
     ("verify", "typecheck_command"): "empty = smart default (uv run mypy)",
     ("verify", "lint_command"): "empty = smart default (uv run ruff check)",

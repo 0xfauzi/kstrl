@@ -42,6 +42,18 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in ralph.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
+## BreakerConfig (`[breaker]`)
+
+No-progress circuit breaker (R7.5): the engineer loop halts loudly when N
+consecutive iterations produce an unchanged diff hash AND an unchanged
+test-failure signature.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `RALPH_BREAKER_ITERATIONS` | int | 3 | Consecutive no-progress iterations before the halt; 0 disables |
+| `RALPH_BREAKER_TEST_CMD` | str | unset | Stall-probe command; unset falls back to the explicit `[verify]` test_command, else diff-hash only |
+| `RALPH_BREAKER_TEST_TIMEOUT` | float | 300 | Seconds before the stall probe is killed |
+
 ## VerifyConfig (`[verify]`)
 
 | Env var | Type | Default |

@@ -9,11 +9,12 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 from ralph_py.agents.base import UsageTotals, collect_usage
+from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
 from ralph_py.contract import (
@@ -439,6 +440,11 @@ class ComponentResult:
     # across the ProcessPoolExecutor boundary. None means the worker
     # predates the meter or crashed before the loop started.
     usage: UsageTotals | None = None
+    # R7.5: the no-progress circuit breaker halted the loop. Routed by
+    # the pipeline to a direct FAILED transition (retrying the same
+    # prompt against the same state is the exact spend the breaker
+    # exists to stop) with a distinct journal event.
+    no_progress: bool = False
 
 
 @dataclass
@@ -883,6 +889,9 @@ def _run_component(
     max_iterations: int = 10,
     interactive: bool = False,
     allowed_paths: list[str] | None = None,
+    breaker_iterations: int = 3,
+    breaker_test_command: str | None = None,
+    breaker_test_timeout: float = 300.0,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -890,6 +899,7 @@ def _run_component(
     Creates all objects internally - no shared state.
     """
     from ralph_py.agents import get_agent
+    from ralph_py.breaker import BreakerConfig
     from ralph_py.loop import run_loop
     from ralph_py.ui.plain import PlainUI
 
@@ -1009,16 +1019,28 @@ def _run_component(
         agent_iteration=agent_iteration_timeout,
         component_total=component_timeout,
     )
+    breaker_config = BreakerConfig(
+        no_progress_iterations=breaker_iterations,
+        test_command=breaker_test_command,
+        test_timeout=breaker_test_timeout,
+    )
 
     try:
         result = run_loop(
             config, ui, agent, worktree_path,
             context_prefix=context_prefix, timeouts=timeouts,
+            breaker_config=breaker_config,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
         if result.completed:
             error = None
+        elif result.no_progress:
+            error = (
+                "no-progress circuit breaker tripped: "
+                f"{breaker_iterations} consecutive iteration(s) produced an "
+                "unchanged diff hash and test signature"
+            )
         elif result.timeout_limit == "component":
             error = (
                 f"component timeout: exceeded {component_timeout}s wall clock "
@@ -1039,6 +1061,7 @@ def _run_component(
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
             usage=result.usage,
+            no_progress=result.no_progress,
         )
     except Exception as exc:
         return ComponentResult(
@@ -1437,6 +1460,22 @@ def _run_factory_locked(
         if timeout_cfg.component_total > 0 else 0.0
     )
 
+    # R7.5: no-progress circuit breaker limits, forwarded into every
+    # engineer loop. When [breaker].test_command is unset, the stall
+    # probe falls back to the explicitly configured Phase 1 test command
+    # (never the smart default: the probe runs inside the engineer loop
+    # and must only execute commands the operator chose).
+    breaker_cfg = BreakerConfig.load(root_dir)
+    if (
+        breaker_cfg.test_command is None
+        and factory_config.verify_config is not None
+        and factory_config.verify_config.test_command
+    ):
+        breaker_cfg = replace(
+            breaker_cfg,
+            test_command=factory_config.verify_config.test_command,
+        )
+
     # R0.5 worktree crash recovery + stale-branch policy. Both only
     # apply to worktree mode: without worktrees the factory neither
     # creates branches nor worktree dirs.
@@ -1562,6 +1601,10 @@ def _run_factory_locked(
             base_config.max_iterations,
             base_config.interactive,
             base_config.allowed_paths or None,
+            # R7.5: no-progress circuit breaker limits.
+            breaker_cfg.no_progress_iterations,
+            breaker_cfg.test_command,
+            breaker_cfg.test_timeout,
         )
 
     def _run_scheduling_pass() -> None:

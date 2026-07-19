@@ -125,6 +125,17 @@ class ProgressLog:
             "error": error,
         })
 
+    def circuit_breaker_tripped(
+        self, component_id: str, iterations: int, error: str,
+    ) -> None:
+        """R7.5: the engineer loop halted on the no-progress breaker.
+        Emitted IN ADDITION to component_failed so a stall stays
+        distinguishable from an ordinary engineer failure in the log."""
+        self.emit("circuit_breaker_tripped", component_id=component_id, data={
+            "iterations": iterations,
+            "error": error,
+        })
+
     def component_retrying(
         self, component_id: str, attempt: int, reason: str,
     ) -> None:

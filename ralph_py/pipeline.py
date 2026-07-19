@@ -794,6 +794,24 @@ class ComponentPipeline:
             )
 
         if not comp_result.success:
+            # R7.5: the no-progress circuit breaker is a direct FAILED
+            # transition, never a retry - a fresh attempt would re-run
+            # the same prompt against the same base state, which is the
+            # exact spend the breaker exists to stop. Loud and distinct:
+            # its own progress-log event plus a structured failure
+            # signature for the evolution journal.
+            if comp_result.no_progress:
+                error = comp_result.error or "no-progress circuit breaker tripped"
+                self.progress_log.circuit_breaker_tripped(
+                    comp_id, comp_result.iterations, error,
+                )
+                return PipelineOutcome(
+                    transition=self.fail(
+                        comp, error,
+                        phase="engineer", check="no_progress_breaker",
+                        signatures=["engineer:no-progress-stall"],
+                    ),
+                )
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_iteration(IterationRecord(
                 iteration=comp_result.iterations,

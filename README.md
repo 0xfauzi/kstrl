@@ -318,6 +318,12 @@ pause_before_pr_merge = false      # human checkpoint before each PR (E6)
 progress_log_enabled = true        # JSONL event log at .ralph/progress.jsonl (R3.2)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
+# No-progress circuit breaker (R7.5; 0 iterations disables)
+[breaker]
+no_progress_iterations = 3  # halt after N consecutive no-progress iterations; 0 disables (R7.5)
+test_command = ""           # stall-probe command; empty = the explicit [verify] test_command, else diff-hash only
+test_timeout = 300.0        # seconds before the stall probe is killed
+
 # Phase 1 mechanical verification
 [verify]
 test_command = ""                                  # empty = smart default (uv run pytest)
