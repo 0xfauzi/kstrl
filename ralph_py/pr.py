@@ -43,6 +43,10 @@ class PrOutcome:
     # True when a merge was initiated but not confirmed within the
     # timeout: re-pollable, unlike a push/create/merge failure.
     merge_pending: bool = False
+    # R7.5: True when GitHub reports the PR CONFLICTING with base. The
+    # pipeline routes this to the re-run doctrine (re-run the component
+    # against the freshly merged base) instead of a terminal failure.
+    merge_conflict: bool = False
     error: str | None = None
 
 
@@ -165,6 +169,77 @@ def _pr_state(pr_number: int, cwd: Path) -> str | None:
     return str(state) or None
 
 
+def _pr_mergeable(pr_number: int, cwd: Path) -> str | None:
+    """Fetch GitHub's mergeability verdict for a PR: "MERGEABLE",
+    "CONFLICTING", or "UNKNOWN" (still computing). None when it could
+    not be determined (gh error, timeout, bad JSON) - callers must
+    treat None and UNKNOWN as "not proven conflicting"."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", str(pr_number), "--json", "mergeable"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=GH_POLL_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        return None
+    mergeable = data.get("mergeable", "") if isinstance(data, dict) else ""
+    return str(mergeable) or None
+
+
+def close_pr_for_rerun(pr_number: int, branch: str, cwd: Path) -> str | None:
+    """Close a conflicting PR and delete its remote branch so the
+    component can be re-run from the freshly merged base (R7.5).
+
+    The close carries an audit comment; the remote branch delete lets
+    the re-run push a same-named branch without a non-fast-forward
+    rejection. Returns an error string (first failure) or None; a
+    failure here is non-fatal for the caller - the re-run's own push
+    will fail loudly if the remote branch is still in the way.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "gh", "pr", "close", str(pr_number),
+                "--comment",
+                "Superseded: merge conflict with base; the component is "
+                "re-run against the freshly merged base instead of "
+                "rebasing agent output (R7.5 re-run doctrine).",
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return f"gh pr close #{pr_number} timed out after {GH_TIMEOUT}s"
+    if result.returncode != 0:
+        return result.stderr.strip() or f"gh pr close #{pr_number} failed"
+    try:
+        result = subprocess.run(
+            ["git", "push", "--delete", "--", "origin", branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PUSH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return f"remote branch delete of {branch} timed out"
+    if result.returncode != 0:
+        return (
+            result.stderr.strip()
+            or f"remote branch delete of {branch} failed"
+        )
+    return None
+
+
 def wait_for_merge(
     pr_number: int,
     cwd: Path,
@@ -204,6 +279,19 @@ def _merge_and_wait(
     merge_error = merge_pr(pr_number, cwd, merge_method)
     if merge_error:
         ui.warn(f"  Failed to merge #{pr_number}: {merge_error}")
+        # R7.5: distinguish "conflicting with base" from every other
+        # merge failure - conflicts route to the re-run doctrine
+        # instead of a terminal failure. Only GitHub's own CONFLICTING
+        # verdict counts; UNKNOWN/None fall through to normal failure.
+        if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
+            return PrOutcome(
+                pushed=True, pr_number=pr_number, pr_url=pr_url,
+                merge_conflict=True,
+                error=(
+                    f"PR #{pr_number} conflicts with {base_branch}: "
+                    f"{merge_error}"
+                ),
+            )
         return PrOutcome(
             pushed=True, pr_number=pr_number, pr_url=pr_url,
             error=f"merge failed for PR #{pr_number}: {merge_error}",
@@ -233,6 +321,19 @@ def _merge_and_wait(
         return PrOutcome(
             pushed=True, pr_number=pr_number, pr_url=pr_url,
             error=f"PR #{pr_number} closed without merge",
+        )
+
+    # R7.5: an --auto merge queued on a conflicting PR never lands;
+    # without this check it would park as MERGE_PENDING forever.
+    if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
+        ui.warn(f"  PR #{pr_number} is CONFLICTING with {base_branch}")
+        return PrOutcome(
+            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            merge_conflict=True,
+            error=(
+                f"PR #{pr_number} conflicts with {base_branch}; merge "
+                f"cannot land"
+            ),
         )
 
     ui.warn(

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from ralph_py import git, guards
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from ralph_py.breaker import BreakerConfig, NoProgressBreaker
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
 
@@ -41,6 +42,11 @@ class LoopResult:
     # call, collected from the agent's usage_records). Token/cost fields
     # are CLI self-reports - lower bounds whenever unreported_calls > 0.
     usage: UsageTotals = field(default_factory=UsageTotals)
+    # R7.5: True when the no-progress circuit breaker halted the loop
+    # (N consecutive iterations with an unchanged diff hash and test
+    # signature). Typed so the factory can route it distinctly instead
+    # of string-matching the error.
+    no_progress: bool = False
 
 
 def run_loop(
@@ -50,6 +56,7 @@ def run_loop(
     cwd: Path | None = None,
     context_prefix: str | None = None,
     timeouts: TimeoutConfig | None = None,
+    breaker_config: BreakerConfig | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -62,6 +69,8 @@ def run_loop(
         timeouts: Timeout limits (agent_iteration is passed into every
             agent.run call; component_total is enforced as a wall clock
             across iterations). Defaults to TimeoutConfig.from_env().
+        breaker_config: No-progress circuit breaker limits (R7.5).
+            Defaults to BreakerConfig.from_env().
 
     Returns:
         LoopResult with completion status and exit code
@@ -70,6 +79,8 @@ def run_loop(
         cwd = Path.cwd()
     if timeouts is None:
         timeouts = TimeoutConfig.from_env()
+    if breaker_config is None:
+        breaker_config = BreakerConfig.from_env()
 
     ui.startup_art()
 
@@ -98,6 +109,11 @@ def run_loop(
     ui.kv(
         "Component timeout",
         f"{timeouts.component_total}s" if timeouts.component_total > 0 else "<disabled>",
+    )
+    ui.kv(
+        "No-progress breaker",
+        f"{breaker_config.no_progress_iterations} iterations"
+        if breaker_config.no_progress_iterations > 0 else "<disabled>",
     )
 
     # Resolve the prompt template. If the explicit prompt file does not
@@ -176,6 +192,17 @@ def run_loop(
     timed_out_iterations = 0
     component_budget = timeouts.component_total
 
+    # R7.5: baseline fingerprint captured before iteration 1 so an
+    # agent that changes nothing in its first N iterations still trips.
+    # Inert outside a git repo (nothing to fingerprint) - stated loudly
+    # rather than silently.
+    breaker = NoProgressBreaker(cwd, breaker_config)
+    if breaker_config.no_progress_iterations > 0 and not breaker.enabled:
+        ui.warn(
+            "No-progress breaker disabled: working directory is not a "
+            "usable git repository"
+        )
+
     for iteration in range(1, config.max_iterations + 1):
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
         iter_start = time.monotonic()
@@ -251,6 +278,25 @@ def run_loop(
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,
                 usage=collect_usage(agent),
+            )
+
+        # R7.5 no-progress circuit breaker: the iteration finished
+        # without completing AND without changing the tree or the test
+        # outcome. After N consecutive such iterations, halt loudly -
+        # every further iteration would re-run the same prompt against
+        # the same state.
+        if breaker.record_iteration():
+            halt_message = breaker.halt_message()
+            ui.err(halt_message)
+            return LoopResult(
+                completed=False,
+                iterations=iteration,
+                exit_code=1,
+                duration_seconds=time.monotonic() - loop_start,
+                iteration_durations=iteration_durations,
+                timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(agent),
+                no_progress=True,
             )
 
         # Component wall clock: abort cleanly rather than start work that

@@ -115,8 +115,11 @@ def _advance_origin(tmp_path: Path, filename: str = "file1.txt") -> str:
 @pytest.fixture
 def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Executable ``gh`` stub on PATH, behavior driven by GH_STUB_* env
-    vars (inherited by subprocesses): GH_STUB_CREATE / GH_STUB_MERGE
-    ("ok"|"fail") and GH_STUB_VIEW_STATE ("MERGED"|"OPEN"|"CLOSED")."""
+    vars (inherited by subprocesses): GH_STUB_CREATE ("ok"|"fail"),
+    GH_STUB_MERGE ("ok"|"fail"|"fail_once" - fail_once fails the FIRST
+    merge call, tracked in GH_STUB_STATE_DIR, then succeeds),
+    GH_STUB_VIEW_STATE ("MERGED"|"OPEN"|"CLOSED") and
+    GH_STUB_VIEW_MERGEABLE ("MERGEABLE"|"CONFLICTING"|"UNKNOWN")."""
     bin_dir = tmp_path / "stub-bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
@@ -134,9 +137,21 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
               if [ "${{GH_STUB_MERGE:-ok}}" = "fail" ]; then
                 echo "stub: pr merge failed" >&2; exit 1
               fi
+              if [ "${{GH_STUB_MERGE:-ok}}" = "fail_once" ]; then
+                count_file="${{GH_STUB_STATE_DIR:-/nonexistent}}/merge-attempts"
+                n=$(cat "$count_file" 2>/dev/null || echo 0)
+                n=$((n+1)); echo "$n" > "$count_file"
+                # merge_pr tries --auto then direct: fail BOTH calls of
+                # the first invocation, succeed from the second one on.
+                if [ "$n" -le 2 ]; then
+                  echo "stub: pr merge conflict" >&2; exit 1
+                fi
+              fi
               exit 0 ;;
             view)
-              printf '{{"state": "%s"}}\\n' "${{GH_STUB_VIEW_STATE:-MERGED}}"
+              printf '{{"state": "%s", "mergeable": "%s"}}\\n' \\
+                "${{GH_STUB_VIEW_STATE:-MERGED}}" \\
+                "${{GH_STUB_VIEW_MERGEABLE:-UNKNOWN}}"
               exit 0 ;;
           esac
         fi
@@ -330,6 +345,62 @@ class TestPrFlowGatesCompletion:
         assert _git("rev-parse", "HEAD", cwd=root) == head_before
         notes = root / "OPERATOR_NOTES.txt"
         assert notes.read_text() == "uncommitted operator state"
+
+
+class TestMergeConflictRerun:
+    """R7.5 doctrine end-to-end with real git: a CONFLICTING PR re-runs
+    the component against the freshly merged base and then completes."""
+
+    def test_conflicting_pr_reruns_component_then_completes(
+        self, tmp_path: Path, stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        state_dir = tmp_path / "gh-state"
+        state_dir.mkdir()
+        monkeypatch.setenv("GH_STUB_STATE_DIR", str(state_dir))
+        monkeypatch.setenv("GH_STUB_MERGE", "fail_once")
+        monkeypatch.setenv("GH_STUB_VIEW_MERGEABLE", "CONFLICTING")
+        root = _make_repo(tmp_path, ["alpha", "beta"])
+        manifest = _two_component_manifest()
+
+        result, calls = _run(
+            manifest, root, _factory_config(max_retries=1),
+        )
+
+        alpha = manifest.get_component("alpha")
+        beta = manifest.get_component("beta")
+        assert alpha is not None and beta is not None
+        # The conflict consumed one retry; the re-run merged cleanly.
+        assert calls == ["alpha", "alpha", "beta"]
+        assert alpha.retries == 1
+        assert alpha.status == ComponentStatus.COMPLETED.value
+        assert beta.status == ComponentStatus.COMPLETED.value
+        assert result.completed == ["alpha", "beta"]
+        assert result.failed == []
+        assert result.exit_code == 0
+        # The re-run created a fresh PR (pointers were cleared).
+        assert alpha.pr_url == STUB_PR_URL
+
+    def test_conflicting_pr_with_no_retries_fails_loudly(
+        self, tmp_path: Path, stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GH_STUB_MERGE", "fail")
+        monkeypatch.setenv("GH_STUB_VIEW_MERGEABLE", "CONFLICTING")
+        root = _make_repo(tmp_path, ["alpha", "beta"])
+        manifest = _two_component_manifest()
+
+        result, calls = _run(manifest, root)  # max_retries=0
+
+        alpha = manifest.get_component("alpha")
+        beta = manifest.get_component("beta")
+        assert alpha is not None and beta is not None
+        assert calls == ["alpha"]
+        assert alpha.status == ComponentStatus.FAILED.value
+        assert alpha.failed_check == "merge_conflict"
+        assert "conflicts with" in alpha.error
+        assert beta.status == ComponentStatus.SKIPPED.value
+        assert result.exit_code == 1
 
 
 class TestMergePendingResume:

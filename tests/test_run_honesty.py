@@ -155,7 +155,7 @@ class TestIterationForwarding:
         def fake_run_loop(
             config: RalphConfig, ui: Any, agent: Any,
             cwd: Path | None = None, context_prefix: str | None = None,
-            timeouts: Any = None,
+            timeouts: Any = None, breaker_config: Any = None,
         ) -> LoopResult:
             captured["config"] = config
             return LoopResult(completed=True, iterations=1, exit_code=0)

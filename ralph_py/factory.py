@@ -9,11 +9,12 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 from ralph_py.agents.base import UsageTotals, collect_usage
+from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
 from ralph_py.contract import (
@@ -47,6 +48,7 @@ from ralph_py.review import (
     run_chunked_review,
     run_review,
 )
+from ralph_py.sandbox import SandboxConfig
 from ralph_py.security import (
     SecurityConfig,
     SecurityMode,
@@ -439,6 +441,11 @@ class ComponentResult:
     # across the ProcessPoolExecutor boundary. None means the worker
     # predates the meter or crashed before the loop started.
     usage: UsageTotals | None = None
+    # R7.5: the no-progress circuit breaker halted the loop. Routed by
+    # the pipeline to a direct FAILED transition (retrying the same
+    # prompt against the same state is the exact spend the breaker
+    # exists to stop) with a distinct journal event.
+    no_progress: bool = False
 
 
 @dataclass
@@ -593,7 +600,8 @@ def _setup_worktree(
     ``--force-lock``), where two invocations could otherwise race on the
     shared branch and .git metadata.
 
-    ``fresh_from_base=True`` (used for retries after a timeout kill)
+    ``fresh_from_base=True`` (used for retries after a timeout kill, and
+    for merge-conflict re-runs under the R7.5 re-run doctrine)
     additionally deletes the component branch so the worktree is recreated
     from ``base_branch`` instead of silently reusing possibly-dirty state
     from the killed attempt (R0.1).
@@ -883,6 +891,11 @@ def _run_component(
     max_iterations: int = 10,
     interactive: bool = False,
     allowed_paths: list[str] | None = None,
+    breaker_iterations: int = 3,
+    breaker_test_command: str | None = None,
+    breaker_test_timeout: float = 300.0,
+    sandbox_enabled: bool = False,
+    sandbox_allow_network: bool = False,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -904,7 +917,12 @@ def _run_component(
     root_dir = Path(root_dir_str)
 
     ui = PlainUI(no_color=True)
-    agent = get_agent(agent_cmd, model, reasoning, agent_type)
+    agent = get_agent(
+        agent_cmd, model, reasoning, agent_type,
+        sandbox=SandboxConfig(
+            enabled=sandbox_enabled, allow_network=sandbox_allow_network,
+        ),
+    )
 
     # Copy PRD into worktree if needed
     worktree_prd = worktree_path / prd_path_str
@@ -1009,16 +1027,28 @@ def _run_component(
         agent_iteration=agent_iteration_timeout,
         component_total=component_timeout,
     )
+    breaker_config = BreakerConfig(
+        no_progress_iterations=breaker_iterations,
+        test_command=breaker_test_command,
+        test_timeout=breaker_test_timeout,
+    )
 
     try:
         result = run_loop(
             config, ui, agent, worktree_path,
             context_prefix=context_prefix, timeouts=timeouts,
+            breaker_config=breaker_config,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
         if result.completed:
             error = None
+        elif result.no_progress:
+            error = (
+                "no-progress circuit breaker tripped: "
+                f"{breaker_iterations} consecutive iteration(s) produced an "
+                "unchanged diff hash and test signature"
+            )
         elif result.timeout_limit == "component":
             error = (
                 f"component timeout: exceeded {component_timeout}s wall clock "
@@ -1039,6 +1069,7 @@ def _run_component(
             duration_seconds=time.monotonic() - start,
             context_json=previous_context_json,
             usage=result.usage,
+            no_progress=result.no_progress,
         )
     except Exception as exc:
         return ComponentResult(
@@ -1365,7 +1396,7 @@ def _run_factory_locked(
     component_contexts: dict[str, str] = {}  # comp_id -> context JSON
     # Components whose last failure was a timeout kill: their retry must
     # not trust the surviving worktree/branch state (R0.1 requirement 5).
-    timeout_retry_ids: set[str] = set()
+    fresh_base_retry_ids: set[str] = set()
     # Components abandoned by the scheduler backstop; their workers may
     # still be alive, so their worktrees are never cleaned up here.
     leaked_component_ids: set[str] = set()
@@ -1402,7 +1433,7 @@ def _run_factory_locked(
         ),
         worktree_paths=worktree_paths,
         component_contexts=component_contexts,
-        timeout_retry_ids=timeout_retry_ids,
+        fresh_base_retry_ids=fresh_base_retry_ids,
         component_failure_signatures=component_failure_signatures,
     )
 
@@ -1436,6 +1467,35 @@ def _run_factory_locked(
         timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
         if timeout_cfg.component_total > 0 else 0.0
     )
+
+    # R7.5: no-progress circuit breaker limits, forwarded into every
+    # engineer loop. When [breaker].test_command is unset, the stall
+    # probe falls back to the explicitly configured Phase 1 test command
+    # (never the smart default: the probe runs inside the engineer loop
+    # and must only execute commands the operator chose).
+    breaker_cfg = BreakerConfig.load(root_dir)
+    if (
+        breaker_cfg.test_command is None
+        and factory_config.verify_config is not None
+        and factory_config.verify_config.test_command
+    ):
+        breaker_cfg = replace(
+            breaker_cfg,
+            test_command=factory_config.verify_config.test_command,
+        )
+
+    # R7.5: OS-level sandbox intent for engineer agent subprocesses.
+    # A custom agent command has no generic sandbox surface, so intent
+    # that cannot be honored is refused loudly instead of silently
+    # dropped (an operator who opted in must not believe the boundary
+    # exists when it does not).
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and base_config.agent_cmd:
+        ui.warn(
+            "  [sandbox] enabled but the agent is a custom command; "
+            "sandbox settings CANNOT be applied to it and are ignored "
+            "(worktree isolation remains the only boundary)"
+        )
 
     # R0.5 worktree crash recovery + stale-branch policy. Both only
     # apply to worktree mode: without worktrees the factory neither
@@ -1501,8 +1561,8 @@ def _run_factory_locked(
         """Set up worktree for a component. Returns worktree path or None."""
         try:
             if factory_config.use_worktrees:
-                fresh_from_base = comp.id in timeout_retry_ids
-                timeout_retry_ids.discard(comp.id)
+                fresh_from_base = comp.id in fresh_base_retry_ids
+                fresh_base_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
                     comp.id, comp.branch_name, manifest.base_branch, root_dir,
                     run_id, fresh_from_base=fresh_from_base,
@@ -1562,6 +1622,13 @@ def _run_factory_locked(
             base_config.max_iterations,
             base_config.interactive,
             base_config.allowed_paths or None,
+            # R7.5: no-progress circuit breaker limits.
+            breaker_cfg.no_progress_iterations,
+            breaker_cfg.test_command,
+            breaker_cfg.test_timeout,
+            # R7.5: OS-level sandbox intent for the engineer's agent CLI.
+            sandbox_cfg.enabled,
+            sandbox_cfg.allow_network,
         )
 
     def _run_scheduling_pass() -> None:

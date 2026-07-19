@@ -23,6 +23,7 @@ from click.core import ParameterSource
 from ralph_py import __version__
 from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
 from ralph_py.agents.base import Agent, UsageRecord
+from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
@@ -38,6 +39,7 @@ from ralph_py.observability import (
     summarize_events,
 )
 from ralph_py.prd import PRD
+from ralph_py.sandbox import SandboxConfig
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui import get_ui
 from ralph_py.ui.base import UI
@@ -814,14 +816,21 @@ def understand(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(config, ui_impl)
 
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and config.agent_cmd:
+        ui_impl.warn(
+            "[sandbox] enabled but the agent is a custom command; sandbox "
+            "settings cannot be applied to it and are ignored"
+        )
     agent = get_agent(
         config.agent_cmd, config.model, config.model_reasoning_effort,
-        config.agent_type,
+        config.agent_type, sandbox=sandbox_cfg,
     )
 
     result = run_loop(
         config, ui_impl, agent, root_dir,
         timeouts=TimeoutConfig.load(root_dir),
+        breaker_config=BreakerConfig.load(root_dir),
     )
     sys.exit(result.exit_code)
 
@@ -1120,11 +1129,18 @@ def feature(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
 
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and base_config.agent_cmd:
+        ui_impl.warn(
+            "[sandbox] enabled but the agent is a custom command; sandbox "
+            "settings cannot be applied to it and are ignored"
+        )
     agent = get_agent(
         base_config.agent_cmd,
         base_config.model,
         base_config.model_reasoning_effort,
         base_config.agent_type,
+        sandbox=sandbox_cfg,
     )
 
     # Feature understanding phase
@@ -1144,11 +1160,13 @@ def feature(
         understand_config.ralph_branch_explicit = True
 
     timeouts = TimeoutConfig.load(root_dir)
+    breaker_config = BreakerConfig.load(root_dir)
 
     understand_log = log_path("understand")
     understand_agent = LoggingAgent(agent, understand_log)
     understand_result = run_loop(
-        understand_config, ui_impl, understand_agent, root_dir, timeouts=timeouts,
+        understand_config, ui_impl, understand_agent, root_dir,
+        timeouts=timeouts, breaker_config=breaker_config,
     )
     if understand_result.exit_code != 0:
         sys.exit(understand_result.exit_code)
@@ -1190,7 +1208,10 @@ def feature(
 
     run_log = log_path("run")
     run_agent = LoggingAgent(agent, run_log)
-    result = run_loop(run_config, ui_impl, run_agent, root_dir, timeouts=timeouts)
+    result = run_loop(
+        run_config, ui_impl, run_agent, root_dir,
+        timeouts=timeouts, breaker_config=breaker_config,
+    )
     if result.exit_code == 0 or repair_max_runs == 0 or result.iterations == 0:
         sys.exit(result.exit_code)
 
@@ -1213,10 +1234,12 @@ def feature(
             base_config.model,
             base_config.model_reasoning_effort,
             base_config.agent_type,
+            sandbox=sandbox_cfg,
         )
         repair_agent = LoggingAgent(repair_agent_base, repair_log)
         repair_result = run_loop(
-            repair_config, ui_impl, repair_agent, root_dir, timeouts=timeouts,
+            repair_config, ui_impl, repair_agent, root_dir,
+            timeouts=timeouts, breaker_config=breaker_config,
         )
         if repair_result.exit_code == 0:
             sys.exit(0)

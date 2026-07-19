@@ -182,7 +182,7 @@ def _make_pipeline(
         hooks=_recording_hooks(call_log, **(hooks_overrides or {})),
         worktree_paths={},
         component_contexts={},
-        timeout_retry_ids=set(),
+        fresh_base_retry_ids=set(),
         component_failure_signatures={},
     )
     return pipeline, manifest, factory_result, call_log
@@ -285,7 +285,7 @@ class TestEngineerTransitions:
         ))
         assert outcome is not None
         assert outcome.transition == Transition.RETRYING
-        assert "comp-a" in pipeline.timeout_retry_ids
+        assert "comp-a" in pipeline.fresh_base_retry_ids
         assert "worktree recreated from base" in comp.error
 
     def test_token_budget_at_engineer_checkpoint_fails(
@@ -698,6 +698,117 @@ class TestCheckpointAndPrTransitions:
         assert outcome.pr.disposition == PrDisposition.NO_GH
         assert result.completed == ["comp-a"]
         assert result.pr_urls == []
+
+
+class TestMergeConflictDoctrine:
+    """R7.5: a CONFLICTING PR re-runs the component against the freshly
+    merged base (re-run, don't rebase) instead of failing terminally."""
+
+    def _pr_config(self, **overrides: Any) -> FactoryConfig:
+        return _factory_config(create_prs=True, **overrides)
+
+    def _conflict_outcome(self) -> PrOutcome:
+        return PrOutcome(
+            pushed=True, pr_number=7, pr_url="https://x/pull/7",
+            merged=False, merge_conflict=True,
+            error="PR #7 conflicts with main",
+        )
+
+    def test_conflict_routes_to_fresh_base_retry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr(
+            "ralph_py.pr.push_create_and_merge_pr",
+            lambda *a, **k: self._conflict_outcome(),
+        )
+        closed: list[tuple[int, str]] = []
+
+        def fake_close(pr_number: int, branch: str, cwd: Path) -> None:
+            closed.append((pr_number, branch))
+            return None
+
+        monkeypatch.setattr("ralph_py.pr.close_pr_for_rerun", fake_close)
+        pipeline, manifest, result, _ = _make_pipeline(
+            tmp_path, config=self._pr_config(max_retries=1, use_worktrees=True),
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        comp.pr_number = 7
+        comp.pr_url = "https://x/pull/7"
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.RETRYING
+        assert outcome.pr is not None
+        assert outcome.pr.disposition == PrDisposition.CONFLICT
+        # Scheduled for a re-run, not failed.
+        assert comp.status == ComponentStatus.PENDING.value
+        assert comp.retries == 1
+        assert result.failed == []
+        # The re-run recreates worktree AND branch from origin/<base>.
+        assert "comp-a" in pipeline.fresh_base_retry_ids
+        assert "[conflict retry" in comp.error
+        # The old PR was closed and its pointers cleared, so the retry
+        # creates a fresh PR instead of re-polling the closed one.
+        assert closed == [(7, comp.branch_name)]
+        assert comp.pr_number is None
+        assert comp.pr_url == ""
+        assert pipeline.component_failure_signatures["comp-a"] == [
+            "pr:merge-conflict",
+        ]
+        # The next attempt's context explains the re-run.
+        assert "freshly merged base" in pipeline.component_contexts["comp-a"]
+
+    def test_conflict_with_retries_exhausted_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr(
+            "ralph_py.pr.push_create_and_merge_pr",
+            lambda *a, **k: self._conflict_outcome(),
+        )
+        monkeypatch.setattr(
+            "ralph_py.pr.close_pr_for_rerun", lambda *a: None,
+        )
+        pipeline, manifest, result, _ = _make_pipeline(
+            tmp_path, config=self._pr_config(max_retries=0),
+        )
+        comp = manifest.get_component("comp-a")
+        dep = manifest.get_component("comp-b")
+        assert comp is not None and dep is not None
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.FAILED
+        assert comp.status == ComponentStatus.FAILED.value
+        assert comp.failed_check == "merge_conflict"
+        assert dep.status == ComponentStatus.SKIPPED.value
+        assert result.failed == ["comp-a"]
+
+    def test_conflict_close_failure_is_nonfatal(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr(
+            "ralph_py.pr.push_create_and_merge_pr",
+            lambda *a, **k: self._conflict_outcome(),
+        )
+        monkeypatch.setattr(
+            "ralph_py.pr.close_pr_for_rerun",
+            lambda *a: "gh pr close #7 failed",
+        )
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path, config=self._pr_config(max_retries=1),
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        comp.pr_number = 7
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.RETRYING
+        assert comp.status == ComponentStatus.PENDING.value
 
 
 class TestMergePendingRepoll:
