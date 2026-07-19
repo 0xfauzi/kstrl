@@ -324,6 +324,11 @@ no_progress_iterations = 3  # halt after N consecutive no-progress iterations; 0
 test_command = ""           # stall-probe command; empty = the explicit [verify] test_command, else diff-hash only
 test_timeout = 300.0        # seconds before the stall probe is killed
 
+# OS-level agent sandboxing (R7.5; claude-code/codex only)
+[sandbox]
+enabled = false        # OS-sandbox the engineer's agent CLI (writes scoped to its worktree); ignored for custom agent commands
+allow_network = false  # re-open outbound network inside the sandbox (off = deny)
+
 # Phase 1 mechanical verification
 [verify]
 test_command = ""                                  # empty = smart default (uv run pytest)

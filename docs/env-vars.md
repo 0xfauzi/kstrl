@@ -54,6 +54,17 @@ test-failure signature.
 | `RALPH_BREAKER_TEST_CMD` | str | unset | Stall-probe command; unset falls back to the explicit `[verify]` test_command, else diff-hash only |
 | `RALPH_BREAKER_TEST_TIMEOUT` | float | 300 | Seconds before the stall probe is killed |
 
+## SandboxConfig (`[sandbox]`)
+
+OS-level agent sandboxing (R7.5), applied by the claude-code and codex
+adapters (ignored, loudly, for custom agent commands). Write scope is the
+agent's worktree by construction on both CLIs.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `RALPH_SANDBOX_ENABLED` | bool | false | Opt-in OS sandbox for agent subprocesses |
+| `RALPH_SANDBOX_ALLOW_NETWORK` | bool | false | Re-open outbound network inside the sandbox |
+
 ## VerifyConfig (`[verify]`)
 
 | Env var | Type | Default |

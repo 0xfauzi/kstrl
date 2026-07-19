@@ -125,6 +125,7 @@ def _section_specs() -> list[SectionSpec]:
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.fixtures import FixturesConfig
     from ralph_py.knowledge import KnowledgeConfig
+    from ralph_py.sandbox import SandboxConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.timeout import TimeoutConfig
     from ralph_py.verify import VerifyConfig
@@ -212,6 +213,15 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: BreakerConfig.load(root_dir=root),
             BreakerConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "sandbox",
+            "OS-level agent sandboxing (R7.5; claude-code/codex only)",
+            identity_keys(SandboxConfig, [
+                f.name for f in dataclasses.fields(SandboxConfig)
+            ]),
+            lambda root: SandboxConfig.load(root_dir=root),
+            SandboxConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "verify", "Phase 1 mechanical verification",
@@ -316,6 +326,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "stall-probe command; empty = the explicit [verify] test_command, "
         "else diff-hash only",
     ("breaker", "test_timeout"): "seconds before the stall probe is killed",
+    ("sandbox", "enabled"):
+        "OS-sandbox the engineer's agent CLI (writes scoped to its "
+        "worktree); ignored for custom agent commands",
+    ("sandbox", "allow_network"):
+        "re-open outbound network inside the sandbox (off = deny)",
     ("verify", "test_command"): "empty = smart default (uv run pytest)",
     ("verify", "typecheck_command"): "empty = smart default (uv run mypy)",
     ("verify", "lint_command"): "empty = smart default (uv run ruff check)",

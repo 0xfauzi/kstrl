@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ralph_py.agents.base import UsageRecord
 from ralph_py.agents.proc import DeadlineStreamer, timeout_message
+from ralph_py.sandbox import SandboxConfig, codex_sandbox_args
 
 # Measured against codex CLI 0.134.0 (R3.1): plain `codex exec` output
 # ends with a two-line trailer - a line reading "tokens used" followed by
@@ -41,15 +42,21 @@ class CodexAgent:
         self,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        sandbox: SandboxConfig | None = None,
     ):
         """Initialize Codex agent.
 
         Args:
             model: Model name to pass to codex -m
             reasoning_effort: Reasoning effort level for codex -c
+            sandbox: OS-level sandbox intent (R7.5); mapped to
+                ``--sandbox workspace-write`` plus the network-access
+                config override (measured against codex 0.134.0 - see
+                ralph_py.sandbox)
         """
         self._model = model
         self._reasoning_effort = reasoning_effort
+        self._sandbox = sandbox
         self._final_message: str | None = None
         self._usage_records: list[UsageRecord] = []
 
@@ -90,6 +97,7 @@ class CodexAgent:
             # Translate unified effort levels to codex-specific values
             codex_effort = "xhigh" if self._reasoning_effort == "max" else self._reasoning_effort
             cmd.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
+        cmd.extend(codex_sandbox_args(self._sandbox))
 
         # Use --output-last-message when supported by the codex CLI.
         last_msg_file: Path | None = None

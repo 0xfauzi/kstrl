@@ -12,6 +12,11 @@ from typing import Any
 
 from ralph_py.agents.base import UsageRecord
 from ralph_py.agents.proc import DeadlineStreamer, timeout_message
+from ralph_py.sandbox import (
+    SandboxConfig,
+    claude_sandbox_args,
+    claude_sandbox_drops_skip_permissions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +31,24 @@ class ClaudeCodeAgent:
     execution rather than only showing the final text response.
     """
 
-    def __init__(self, model: str | None = None, effort: str | None = None):
+    def __init__(
+        self,
+        model: str | None = None,
+        effort: str | None = None,
+        sandbox: SandboxConfig | None = None,
+    ):
         """Initialize Claude Code agent.
 
         Args:
             model: Model name to pass to claude --model
             effort: Reasoning effort level (low, medium, high, max)
+            sandbox: OS-level sandbox intent (R7.5); passed to the CLI
+                via --settings (claude 2.1.x has no dedicated flag,
+                measured - see ralph_py.sandbox)
         """
         self._model = model
         self._effort = effort
+        self._sandbox = sandbox
         self._final_message: str | None = None
         self._saw_result: bool = False
         self._usage_records: list[UsageRecord] = []
@@ -71,12 +85,19 @@ class ClaudeCodeAgent:
             "claude", "--print",
             "--output-format", "stream-json",
             "--verbose",
-            "--dangerously-skip-permissions",
         ]
+        # R7.5: the no-network sandbox mode must NOT skip permissions -
+        # claude's domain allowlist is a permission-layer gate, and
+        # skipping auto-approves every domain (measured; see
+        # ralph_py.sandbox). File tools are re-allowed via the settings
+        # JSON instead.
+        if not claude_sandbox_drops_skip_permissions(self._sandbox):
+            cmd.append("--dangerously-skip-permissions")
         if self._model:
             cmd.extend(["--model", self._model])
         if self._effort:
             cmd.extend(["--effort", self._effort])
+        cmd.extend(claude_sandbox_args(self._sandbox))
 
         try:
             streamer = DeadlineStreamer(

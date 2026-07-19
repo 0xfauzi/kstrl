@@ -48,6 +48,19 @@ no_progress_iterations = 3         # consecutive no-progress iterations before t
 test_command = ""                  # stall-probe command; empty = the explicit [verify] test_command
 test_timeout = 300.0               # seconds before the stall probe is killed
 
+# OS-level agent sandboxing (R7.5). Applies to the claude-code and codex
+# adapters (a custom agent command has no generic sandbox surface and is
+# refused loudly). Write scope is the agent's worktree by construction;
+# allow_network re-opens outbound network inside the sandbox.
+# Measured mappings (see ralph_py/sandbox.py): codex gets
+# --sandbox workspace-write + an explicit network_access override;
+# claude gets --settings '{"sandbox": ...}' and, when network is denied,
+# runs without --dangerously-skip-permissions (the domain allowlist is a
+# permission-layer gate) with file tools re-allowed via settings.
+[sandbox]
+enabled = false                    # opt-in: sandboxing changes agent behavior
+allow_network = false              # deny outbound network inside the sandbox
+
 # Per-component semantic knowledge layer.
 # A third memory surface (alongside .ralph/evolution.jsonl and progress.txt)
 # that captures durable facts about WHAT WAS BUILT: interfaces, invariants,

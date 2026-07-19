@@ -39,6 +39,7 @@ from ralph_py.observability import (
     summarize_events,
 )
 from ralph_py.prd import PRD
+from ralph_py.sandbox import SandboxConfig
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui import get_ui
 from ralph_py.ui.base import UI
@@ -815,9 +816,15 @@ def understand(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(config, ui_impl)
 
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and config.agent_cmd:
+        ui_impl.warn(
+            "[sandbox] enabled but the agent is a custom command; sandbox "
+            "settings cannot be applied to it and are ignored"
+        )
     agent = get_agent(
         config.agent_cmd, config.model, config.model_reasoning_effort,
-        config.agent_type,
+        config.agent_type, sandbox=sandbox_cfg,
     )
 
     result = run_loop(
@@ -1122,11 +1129,18 @@ def feature(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
 
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and base_config.agent_cmd:
+        ui_impl.warn(
+            "[sandbox] enabled but the agent is a custom command; sandbox "
+            "settings cannot be applied to it and are ignored"
+        )
     agent = get_agent(
         base_config.agent_cmd,
         base_config.model,
         base_config.model_reasoning_effort,
         base_config.agent_type,
+        sandbox=sandbox_cfg,
     )
 
     # Feature understanding phase
@@ -1220,6 +1234,7 @@ def feature(
             base_config.model,
             base_config.model_reasoning_effort,
             base_config.agent_type,
+            sandbox=sandbox_cfg,
         )
         repair_agent = LoggingAgent(repair_agent_base, repair_log)
         repair_result = run_loop(

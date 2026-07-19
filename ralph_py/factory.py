@@ -48,6 +48,7 @@ from ralph_py.review import (
     run_chunked_review,
     run_review,
 )
+from ralph_py.sandbox import SandboxConfig
 from ralph_py.security import (
     SecurityConfig,
     SecurityMode,
@@ -892,6 +893,8 @@ def _run_component(
     breaker_iterations: int = 3,
     breaker_test_command: str | None = None,
     breaker_test_timeout: float = 300.0,
+    sandbox_enabled: bool = False,
+    sandbox_allow_network: bool = False,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -899,7 +902,6 @@ def _run_component(
     Creates all objects internally - no shared state.
     """
     from ralph_py.agents import get_agent
-    from ralph_py.breaker import BreakerConfig
     from ralph_py.loop import run_loop
     from ralph_py.ui.plain import PlainUI
 
@@ -914,7 +916,12 @@ def _run_component(
     root_dir = Path(root_dir_str)
 
     ui = PlainUI(no_color=True)
-    agent = get_agent(agent_cmd, model, reasoning, agent_type)
+    agent = get_agent(
+        agent_cmd, model, reasoning, agent_type,
+        sandbox=SandboxConfig(
+            enabled=sandbox_enabled, allow_network=sandbox_allow_network,
+        ),
+    )
 
     # Copy PRD into worktree if needed
     worktree_prd = worktree_path / prd_path_str
@@ -1476,6 +1483,19 @@ def _run_factory_locked(
             test_command=factory_config.verify_config.test_command,
         )
 
+    # R7.5: OS-level sandbox intent for engineer agent subprocesses.
+    # A custom agent command has no generic sandbox surface, so intent
+    # that cannot be honored is refused loudly instead of silently
+    # dropped (an operator who opted in must not believe the boundary
+    # exists when it does not).
+    sandbox_cfg = SandboxConfig.load(root_dir)
+    if sandbox_cfg.enabled and base_config.agent_cmd:
+        ui.warn(
+            "  [sandbox] enabled but the agent is a custom command; "
+            "sandbox settings CANNOT be applied to it and are ignored "
+            "(worktree isolation remains the only boundary)"
+        )
+
     # R0.5 worktree crash recovery + stale-branch policy. Both only
     # apply to worktree mode: without worktrees the factory neither
     # creates branches nor worktree dirs.
@@ -1605,6 +1625,9 @@ def _run_factory_locked(
             breaker_cfg.no_progress_iterations,
             breaker_cfg.test_command,
             breaker_cfg.test_timeout,
+            # R7.5: OS-level sandbox intent for the engineer's agent CLI.
+            sandbox_cfg.enabled,
+            sandbox_cfg.allow_network,
         )
 
     def _run_scheduling_pass() -> None:
