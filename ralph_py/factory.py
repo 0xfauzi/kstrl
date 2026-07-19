@@ -631,11 +631,16 @@ def _setup_worktree(
         # A killed prior attempt may have left git mid-operation.
         _remove_stale_index_lock(root_dir, component_id)
 
-        if worktree_path.exists():
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", str(worktree_path)],
-                cwd=root_dir, capture_output=True, timeout=30,
-            )
+        # Unconditional: a crashed attempt's directory may be gone (tmp
+        # cleaner, operator rm -rf) while its .git/worktrees/<comp>/
+        # registration survives, and `git worktree add` refuses over a
+        # registered-but-missing entry. remove --force clears the
+        # registration in that state too (measured on git 2.47); when
+        # nothing is registered it fails harmlessly, like `branch -D`.
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(worktree_path)],
+            cwd=root_dir, capture_output=True, timeout=30,
+        )
 
         if fresh_from_base:
             # Delete the branch from the killed attempt so the add below

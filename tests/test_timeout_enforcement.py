@@ -17,6 +17,7 @@ Covers the enforcement layers end to end:
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -854,3 +855,97 @@ class TestCliTimeoutFlags:
         )
         assert factory_config.timeout_config is not None
         assert factory_config.timeout_config.agent_iteration == 111.0
+
+
+# ---------------------------------------------------------------------------
+# Static audit: no subprocess call without a timeout (A+ orchestration gate)
+# ---------------------------------------------------------------------------
+
+
+class TestSubprocessTimeoutAudit:
+    """The A+ factory-orchestration gate requires that no subprocess call
+    in ralph_py ships without a timeout, enforced by a static test. This
+    is that test: an AST walk over every module, alias-aware
+    (``import subprocess as _sp`` counts), so a new call site without a
+    ``timeout=`` fails CI instead of hanging a run someday.
+
+    ``Popen`` takes no timeout kwarg; it is legitimate ONLY in modules
+    that implement their own deadline management, each covered by the
+    runtime kill tests in this file's suite or their own:
+
+    - ralph_py/agents/proc.py: reader-thread deadline + group kill (R0.1)
+    - ralph_py/verify.py: run_scrubbed communicate(timeout) + group kill
+      (R2.6)
+    """
+
+    SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
+    POPEN_ALLOWLIST = frozenset({
+        "ralph_py/agents/proc.py",
+        "ralph_py/verify.py",
+    })
+
+    @staticmethod
+    def _subprocess_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
+        """Names bound to the subprocess module / its spawn functions."""
+        module_aliases: set[str] = set()
+        direct_funcs: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "subprocess":
+                        module_aliases.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "subprocess":
+                    for alias in node.names:
+                        direct_funcs.add(alias.asname or alias.name)
+        return module_aliases, direct_funcs
+
+    def test_every_subprocess_call_has_timeout(self) -> None:
+        package_root = Path(__file__).resolve().parent.parent / "ralph_py"
+        violations: list[str] = []
+        popen_violations: list[str] = []
+        sites_seen = 0
+
+        for py_file in sorted(package_root.rglob("*.py")):
+            rel = py_file.relative_to(package_root.parent).as_posix()
+            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            module_aliases, direct_funcs = self._subprocess_aliases(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func
+                called: str | None = None
+                if (
+                    isinstance(fn, ast.Attribute)
+                    and isinstance(fn.value, ast.Name)
+                    and fn.value.id in module_aliases
+                ):
+                    called = fn.attr
+                elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
+                    called = fn.id
+                if called is None:
+                    continue
+                if called == "Popen":
+                    sites_seen += 1
+                    if rel not in self.POPEN_ALLOWLIST:
+                        popen_violations.append(f"{rel}:{node.lineno}")
+                elif called in self.SPAWN_FUNCS:
+                    sites_seen += 1
+                    if not any(k.arg == "timeout" for k in node.keywords):
+                        violations.append(f"{rel}:{node.lineno} {called}")
+
+        # If the walk ever finds nothing, the audit itself broke (import
+        # style changed, package moved) - fail loudly, never vacuously.
+        assert sites_seen >= 20, (
+            f"audit only found {sites_seen} subprocess call sites; "
+            "the scan is broken, not the code clean"
+        )
+        assert not violations, (
+            "subprocess calls without an explicit timeout= (add one, or "
+            "route through a deadline-managed runner):\n  "
+            + "\n  ".join(violations)
+        )
+        assert not popen_violations, (
+            "Popen outside the deadline-managed allowlist (see class "
+            "docstring):\n  " + "\n  ".join(popen_violations)
+        )
