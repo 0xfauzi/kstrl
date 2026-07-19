@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1054,6 +1054,33 @@ def _run_component(
         )
 
 
+class _InlineExecutor:
+    """Synchronous stand-in for ProcessPoolExecutor when max_parallel
+    is 1 (R7.3): the worker runs in-process (no pickling, no process
+    spawn - the historical sequential path), wrapped in an already-
+    resolved Future so ONE scheduling loop serves both modes. A worker
+    exception lands on the future and surfaces at ``future.result()``,
+    exactly where a pool worker's would.
+    """
+
+    def submit(
+        self, fn: Callable[..., ComponentResult], /, *args: Any,
+    ) -> Future[ComponentResult]:
+        future: Future[ComponentResult] = Future()
+        try:
+            result = fn(*args)
+        except Exception as exc:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
+        return future
+
+    def shutdown(
+        self, wait: bool = True, cancel_futures: bool = False,
+    ) -> None:
+        """Nothing to shut down: every submit already ran to completion."""
+
+
 def _next_backstop_wait(
     running: Mapping[Future[ComponentResult], str],
     deadlines: Mapping[Future[ComponentResult], float],
@@ -1545,55 +1572,46 @@ def _run_factory_locked(
         the outer loop in run_factory (R0.3) - previously the reset
         happened after the only scheduling loop had exited, so the
         promised retry never ran.
+
+        ONE loop serves sequential and parallel scheduling (R7.3): the
+        launch protocol (budget gate -> begin_attempt -> provisioning ->
+        submit) appears exactly once. max_parallel <= 1 swaps the
+        process pool for _InlineExecutor, which runs the worker
+        synchronously in-process - the historical sequential behavior -
+        behind the identical submit/wait/result flow.
+
+        Manual executor lifecycle: on a backstop breach we must NOT wait
+        for the (possibly hung) worker at shutdown, which the
+        `with ProcessPoolExecutor(...)` form would do.
         """
+        executor: ProcessPoolExecutor | _InlineExecutor
         if max_parallel <= 1:
-            while True:
-                ready = manifest.get_ready_components()
-                if not ready:
-                    break
-
-                comp = ready[0]
-                # R3.1 scheduling gate: a blown token budget fails
-                # pending components loudly instead of launching an
-                # engineer loop that would only add spend.
-                if pipeline.token_budget_exceeded():
-                    pipeline.fail_for_budget(comp, "scheduling")
-                    continue
-                pipeline.begin_attempt(comp)
-                manifest.save(manifest_path)
-                progress_log.component_started(comp.id)
-                ui.info(f"  Starting: {comp.id}")
-
-                wt_path = _launch_component(comp)
-                if wt_path is None:
-                    continue
-
-                args = _submit_args(comp, wt_path)
-                try:
-                    comp_result = _run_component(*args)
-                except Exception as exc:
-                    comp_result = ComponentResult(
-                        component_id=comp.id, success=False, error=str(exc),
-                    )
-
-                pipeline.process_result(comp.id, comp_result)
-            return
-
-        # Manual executor lifecycle: on a backstop breach we must NOT wait
-        # for the (possibly hung) worker at shutdown, which the
-        # `with ProcessPoolExecutor(...)` form would do.
-        executor = ProcessPoolExecutor(max_workers=max_parallel)
+            executor = _InlineExecutor()
+        else:
+            executor = ProcessPoolExecutor(max_workers=max_parallel)
+        slots_cap = max(1, max_parallel)
         running_futures: dict[Future[ComponentResult], str] = {}
         future_deadlines: dict[Future[ComponentResult], float] = {}
         try:
             while True:
                 ready = manifest.get_ready_components()
-                slots = max_parallel - len(running_futures)
+                slots = slots_cap - len(running_futures)
 
+                # Components transitioned WITHOUT a launch this pass
+                # (budget gate, provisioning failure). When that happens
+                # and nothing is running, the loop must re-derive the
+                # ready set rather than stop - R3.1's scheduling gate
+                # promises to fail every remaining pending component
+                # loudly, and a provisioning failure must not strand
+                # still-schedulable siblings.
+                transitioned_without_launch = 0
                 for comp in ready[:slots]:
-                    # R3.1 scheduling gate (see sequential path above).
+                    # R3.1 scheduling gate: a blown token budget fails
+                    # pending components loudly instead of launching an
+                    # engineer loop that would only add spend.
                     if pipeline.token_budget_exceeded():
                         pipeline.fail_for_budget(comp, "scheduling")
+                        transitioned_without_launch += 1
                         continue
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
@@ -1602,6 +1620,7 @@ def _run_factory_locked(
 
                     wt_path = _launch_component(comp)
                     if wt_path is None:
+                        transitioned_without_launch += 1
                         continue
 
                     args = _submit_args(comp, wt_path)
@@ -1613,6 +1632,8 @@ def _run_factory_locked(
                         )
 
                 if not running_futures:
+                    if transitioned_without_launch:
+                        continue
                     break
 
                 # Wait for the next completion, bounded by the nearest
