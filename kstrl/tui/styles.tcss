@@ -292,6 +292,32 @@ CheckpointModal {
     padding: 0 1;
 }
 
+/* ---- evolve screen ------------------------------------------------------- */
+
+#evolve-tabs {
+    height: 1fr;
+}
+
+#proposals-split {
+    height: 1fr;
+}
+
+#proposals-table {
+    width: 55%;
+    background: $background;
+}
+
+#proposal-detail {
+    width: 1fr;
+    padding: 1 2;
+    background: $surface;
+}
+
+#patterns-table, #trends-table {
+    height: 1fr;
+    background: $background;
+}
+
 /* ---- decompose screen ---------------------------------------------------- */
 /* Same register as the component screen: strips are 1 line, panel
  * titles 2 (the border-bottom needs its own row), the transcript
