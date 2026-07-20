@@ -63,9 +63,15 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   3/3 at haiku), so the hard fixtures need another iteration - R5.2 stays
   `[~]`. NOT captured: the fresh old-prompt "before" run (2d back-fill,
   optional); no-regression is anchored to the recorded 2026-05-27 reference.
-- **Reviewer-family baseline pair** (R7.1): PARTIAL 2026-07-20 - same-family
-  baseline captured (above); cross-family (`codex` reviewer) run NOT done, so
-  the correlated-miss delta is not yet computable. R7.1 stays `[~]`.
+- **Reviewer-family baseline pair** (R7.1): BOTH CAPTURED 2026-07-20.
+  Same-family (above) + cross-family (`codex`/gpt-5.5 on reviewer+security,
+  artifact `baseline-20260720-123959.json`, not committed - see note). Delta:
+  security 1.00 -> 0.94 (codex flaky on broken-JWT auth_bypass, 2/3), security
+  FP 0.0 -> 0.25 (codex false-flags constant-time-compare), everything else
+  unchanged; `compare` = PASS. No correlated-miss BENEFIT is visible because
+  both families are at the detection ceiling on this fixture set (same gap as
+  the R5.2 hard-positive finding). Recording requirement met; effect size
+  still unevidenced. See docs/adversarial-design.md "Recorded baselines".
 - **EARS/DECOMPOSE 1.4.0 capture** (R7.5): CAPTURED 2026-07-20 in the same run
   (`DECOMPOSE_PROMPT_VERSION == 1.4.0` on main; architect 3/3 + allowedPaths
   1/1). The remaining R7.5 blocker is the SDK go/no-go (user decision 5), so
@@ -644,12 +650,22 @@ by an integration test with a synthetic-but-realistic journal).
     reviewer-family override all landed. Stays `[~]` until the user records
     BOTH baselines (same-family and cross-family; commands in
     docs/adversarial-design.md "Reviewer-family override").
-  - Update (2026-07-20): the SAME-family baseline is captured
-    (`baseline-20260720-113835.json`, haiku reviewer+security). The
-    CROSS-family run (`RALPH_CALIBRATION_REVIEWER_AGENT_TYPE=codex`) was NOT
-    executed, so the correlated-miss delta is still uncomputed. Stays `[~]`
-    pending the cross-family capture. Recorded in
-    docs/adversarial-design.md "Reviewer-family override".
+  - Update (2026-07-20): BOTH baselines are now captured. Same-family
+    (`baseline-20260720-113835.json`, haiku) and cross-family
+    (`baseline-20260720-123959.json`, `haiku+reviewer:codex/gpt-5.5`; not
+    committed - it would trip `test_repo_baselines_match_default_model`).
+    Delta (3 runs each, `compare` = PASS): reviewer/security_hard/architect
+    unchanged at 1.00; security detection 1.00 -> 0.94 (codex missed
+    `sec-05-broken-jwt-verify` 1 of 3 runs); security FP 0.0 -> 0.25 (codex
+    false-flagged `sec-neg-02-constant-time-compare` 2 of 3, under threshold).
+    No correlated-miss BENEFIT is measurable: both families are at the
+    detection ceiling (same-family already catches 100%, incl. all 4 hard
+    positives), so there is nothing for rotation to additionally catch - the
+    SAME gap as the R5.2 hard-fixture finding. The literal blocker ("record
+    BOTH baselines") is cleared; whether that is enough to close R7.1, or it
+    should stay `[~]` until genuinely-missable fixtures let the delta show a
+    real effect size, is a user call. Full write-up + the codex-invocation
+    gotcha in docs/adversarial-design.md "Reviewer-family override".
 - [x] R7.2 (M) **Wire fixtures, sandboxed** [CRIT-3, H-6; user decision 4]
   - Function fixtures execute in a subprocess (`sys.executable -c`) with the
     R2.6 scrubbed env: never in the harness process.
