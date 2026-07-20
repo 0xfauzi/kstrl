@@ -2463,6 +2463,70 @@ def _render_status(
     help="Project root path (defaults to current directory)",
 )
 @click.option(
+    "--run-id",
+    "run_id",
+    help="Run to observe (unique prefix ok; default: newest run)",
+)
+@click.option(
+    "--poll",
+    type=click.FloatRange(min=0, min_open=True),
+    default=0.2,
+    help="Tail poll interval in seconds (default: 0.2, spike-measured)",
+)
+def dash(root: Path | None, run_id: str | None, poll: float) -> None:
+    """Live dashboard over a factory run (observe-only).
+
+    Tails .ralph/runs/<run_id>/ - a run in flight in another terminal,
+    or a finished one (post-mortem replay works by construction). This
+    command never writes to the run; E6 checkpoints are answered where
+    the factory runs.
+    """
+    import sys as _sys
+
+    root_dir = root.resolve() if root else Path.cwd()
+    if not (_sys.stdout.isatty() and _sys.stdin.isatty()):
+        click.echo(
+            "ralph dash needs a terminal; use `ralph status` for "
+            "non-interactive output.",
+            err=True,
+        )
+        _sys.exit(2)
+
+    from ralph_py.tui.runs import find_run, latest_run
+
+    ref = find_run(root_dir, run_id) if run_id else latest_run(root_dir)
+    if ref is None:
+        click.echo(
+            f"No run found under {root_dir / '.ralph' / 'runs'}"
+            + (f" matching '{run_id}'" if run_id else "")
+            + ". Run `ralph factory` first, or check --root.",
+            err=True,
+        )
+        _sys.exit(1)
+
+    from ralph_py.tui.app import Mode, RalphTuiApp
+
+    app = RalphTuiApp(
+        run_dir=ref.run_dir, root_dir=root_dir,
+        mode=Mode.DASH, poll_interval=poll,
+    )
+    try:
+        code = app.run()
+    finally:
+        # Spike finding 2: belt-and-braces terminal restore for any
+        # exit path Textual could not clean up after.
+        _sys.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m")
+        _sys.stdout.flush()
+    _sys.exit(code or 0)
+
+
+@cli.command()
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+@click.option(
     "--manifest",
     "manifest_path",
     type=click.Path(path_type=Path),

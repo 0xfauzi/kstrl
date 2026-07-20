@@ -8,6 +8,10 @@ license = "MIT"
 dependencies = [
     "rich>=13.0.0",
     "click>=8.0.0",
+    # TUI rewrite PR D: the dashboard engine. Pinned <6 (Textualize
+    # wind-down risk); 5.3.0 verified compatible with locked rich 14.3.3
+    # in the Stage 0 spike (spike/tui0/RESULTS.md).
+    "textual>=3.0,<6",
 ]
 
 # R7.6: the claude-sdk agent adapter is opt-in because the SDK carries a
