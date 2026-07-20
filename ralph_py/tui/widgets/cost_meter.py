@@ -4,6 +4,10 @@ The "+" marker is load-bearing: token/cost figures are CLI
 self-reports, and whenever unreported_calls > 0 every total is a
 LOWER BOUND (H4: totals are only as honest as their coverage). The
 meter must never turn an honest number into a false one.
+
+Design pass: compact grammar (`12.4k+ tok · $1.87+ · 40% of cap`),
+cap pressure colored only when it matters (>=70%), the short run id
+as a dim suffix so the masthead stays about the work.
 """
 
 from __future__ import annotations
@@ -12,6 +16,8 @@ from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.widgets import Static
+
+from ralph_py.tui import theme
 
 if TYPE_CHECKING:
     from ralph_py.reducer import RunState
@@ -28,26 +34,28 @@ def _format_tokens(tokens: int) -> str:
 def render_cost_meter(state: RunState) -> Text:
     text = Text()
     marker = "+" if state.unreported_calls else ""
-    text.append("tokens ", style="dim")
-    text.append(f"{_format_tokens(state.total_tokens)}{marker}", style="bold")
+    text.append(
+        f"{_format_tokens(state.total_tokens)}{marker}", style="bold",
+    )
+    text.append(" tok", style=theme.MUTED)
+    text.append(" · ", style=theme.MUTED)
+    text.append(f"${state.cost_usd:.2f}{marker}", style="bold")
     if state.max_total_tokens:
         pct = min(
             100, int(100 * state.total_tokens / state.max_total_tokens),
         )
-        style = "bold red" if pct >= 90 else (
-            "bold yellow" if pct >= 70 else "dim"
+        style = (
+            f"bold {theme.ERROR}" if pct >= 90
+            else f"bold {theme.WARNING}" if pct >= 70
+            else theme.MUTED
         )
-        text.append(
-            f" / {_format_tokens(state.max_total_tokens)} ({pct}%)",
-            style=style,
-        )
-    text.append("   cost ", style="dim")
-    text.append(f"${state.cost_usd:.2f}{marker}", style="bold")
+        text.append(" · ", style=theme.MUTED)
+        text.append(f"{pct}% of cap", style=style)
     if state.unreported_calls:
-        text.append(
-            f"   [{state.unreported_calls} call(s) unreported: lower bound]",
-            style="italic dim",
-        )
+        text.append("  + lower bound", style=f"italic {theme.MUTED}")
+    if state.run_id:
+        text.append("  run ", style=theme.MUTED)
+        text.append(theme.short_run_id(state.run_id), style=theme.MUTED)
     return text
 
 

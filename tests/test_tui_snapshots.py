@@ -34,7 +34,12 @@ def _app(root: Path, run_dir: Path) -> RalphTuiApp:
 
 def test_overview_snapshot(
     snap_compare: Any, fixed_run: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The activity feed stamps wall-clock times; freeze for determinism.
+    from ralph_py.tui.widgets import activity
+
+    monkeypatch.setattr(activity, "_stamp", lambda ts: "12:00:00")
     root, run_dir = fixed_run
     assert snap_compare(_app(root, run_dir), terminal_size=SIZE)
 

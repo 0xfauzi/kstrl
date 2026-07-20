@@ -88,8 +88,8 @@ class TestComponentScreen:
             timeline = render_timeline(
                 app.store.state.components["comp-a"],
             ).plain
-            assert "engineer pass" in timeline
-            assert "review pass" in timeline
+            assert "engineer ✓" in timeline
+            assert "review ✓" in timeline
 
     async def test_follow_toggle(self, tmp_path: Path) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
@@ -169,7 +169,7 @@ class TestCheckpointModal:
                 app.screen.query_one("#checkpoint-summary").render(),
             )
             assert "ralph/factory/comp-a" in summary
-            assert "4321+" in summary  # lower-bound marker (unreported)
+            assert "4,321+" in summary  # lower-bound marker (unreported)
             await pilot.press("a")
             await pilot.pause()
         assert results == [0]
@@ -212,5 +212,6 @@ class TestPhaseTimeline:
 
         timeline = render_timeline(comp).plain
 
-        assert "engineer fail" in timeline
-        assert "engineer ..." in timeline
+        assert "engineer ✗" in timeline
+        # The retried phase renders as the live amber chip (● marker).
+        assert "engineer ●" in timeline

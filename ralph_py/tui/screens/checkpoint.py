@@ -10,7 +10,7 @@ never opens it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -19,22 +19,27 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Static
 
+from ralph_py.tui import theme
+
 if TYPE_CHECKING:
     from ralph_py.interaction import PromptRequest
 
 
 def _findings_block(title: str, findings: tuple[object, ...]) -> Text:
     text = Text()
-    text.append(f"{title}\n", style="bold underline")
+    text.append(f"{title.lower()}\n", style=f"bold {theme.ACCENT}")
     if not findings:
-        text.append("  (none)\n", style="dim")
+        text.append("  none\n", style=theme.MUTED)
         return text
     for finding in findings:
         severity = getattr(finding, "severity", "")
         location = getattr(finding, "location", "")
         explanation = getattr(finding, "explanation", "")
-        style = "red" if severity in ("critical", "high", "fail") else "yellow"
-        text.append(f"  [{severity}] ", style=style)
+        style = (
+            theme.ERROR if severity in ("critical", "high", "fail")
+            else theme.WARNING
+        )
+        text.append(f"  [{severity}] ", style=f"bold {style}")
         text.append(f"{location}  ", style="bold")
         text.append(f"{explanation}\n")
     return text
@@ -57,18 +62,20 @@ class CheckpointModal(ModalScreen[int | None]):
 
     def compose(self) -> ComposeResult:
         ctx = self.request.checkpoint
-        with Vertical(id="checkpoint-dialog"):
+        dialog = Vertical(id="checkpoint-dialog")
+        dialog.border_title = "E6 checkpoint"
+        with dialog:
             yield Label(self.request.header, id="checkpoint-question")
             if ctx is not None:
                 summary = Text()
                 if ctx.branch:
-                    summary.append("branch ", style="dim")
+                    summary.append("branch ", style=theme.MUTED)
                     summary.append(ctx.branch, style="bold")
                 if ctx.usage is not None and ctx.usage.calls:
                     marker = "+" if ctx.usage.unreported_calls else ""
-                    summary.append("   spend ", style="dim")
+                    summary.append("  ·  spend ", style=theme.MUTED)
                     summary.append(
-                        f"{ctx.usage.total_tokens}{marker} tokens, "
+                        f"{ctx.usage.total_tokens:,}{marker} tok, "
                         f"${ctx.usage.cost_usd:.2f}{marker}",
                         style="bold",
                     )
@@ -81,31 +88,27 @@ class CheckpointModal(ModalScreen[int | None]):
                         "Security findings", ctx.security_findings,
                     ))
                     diff_text = Text()
-                    diff_text.append("Diff\n", style="bold underline")
+                    diff_text.append("diff\n", style=f"bold {theme.ACCENT}")
                     if ctx.diff_excerpt:
                         for line in ctx.diff_excerpt.splitlines():
                             style = (
-                                "green" if line.startswith("+")
-                                else "red" if line.startswith("-")
-                                else "dim"
+                                theme.SUCCESS if line.startswith("+")
+                                else theme.ERROR if line.startswith("-")
+                                else theme.MUTED
                             )
                             diff_text.append(line + "\n", style=style)
                     else:
-                        diff_text.append("  (no diff captured)\n", style="dim")
+                        diff_text.append(
+                            "  (no diff captured)\n", style=theme.MUTED,
+                        )
                     yield Static(diff_text)
             with Horizontal(id="checkpoint-buttons"):
-                variants = ("success", "error", "warning")
+                # Quiet buttons; the TCSS gives choice-0 the single
+                # accent treatment (one primary action per surface).
                 for index, option in enumerate(self.request.options):
+                    label = option.split(" (")[0]
                     yield Button(
-                        f"{option} ({index + 1})",
-                        id=f"choice-{index}",
-                        variant=cast(
-                            Literal[
-                                "default", "primary", "success", "warning",
-                                "error",
-                            ],
-                            variants[min(index, len(variants) - 1)],
-                        ),
+                        f"{label} ({index + 1})", id=f"choice-{index}",
                     )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

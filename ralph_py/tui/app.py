@@ -37,6 +37,7 @@ from ralph_py.tui.screens.overview import OverviewScreen
 from ralph_py.tui.screens.quit import QuitModal
 from ralph_py.tui.state import StateStore
 from ralph_py.tui.tail import RunTailer, TextTailer
+from ralph_py.tui.theme import RALPH_THEME
 
 DEFAULT_POLL_INTERVAL = 0.2  # measured, spike G1
 
@@ -81,6 +82,8 @@ class RalphTuiApp(App[int]):
         self._stopping = False
 
     def on_mount(self) -> None:
+        self.register_theme(RALPH_THEME)
+        self.theme = "ralph"
         self.push_screen(OverviewScreen(
             observe_only=self.mode is Mode.DASH,
         ))
@@ -117,6 +120,12 @@ class RalphTuiApp(App[int]):
                 screen.refresh_state(self.store.state, self.store.manifest())
             elif not isinstance(screen, ComponentScreen):
                 screen.post_message(StateChanged(self.store.state))
+            if isinstance(screen, OverviewScreen) and not chunk.truncated:
+                # The feed narrates the run (design pass); humanize()
+                # curates, so raw Log noise and heartbeats never land.
+                # A truncation rebuild replays history into the state
+                # but must not re-narrate it into the feed.
+                screen.feed_events(chunk.events)
         # Transcript: ONLY the top component screen's component
         # (finding 3 - never all components at once).
         if isinstance(screen, ComponentScreen) and screen.ready:
