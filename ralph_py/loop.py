@@ -231,29 +231,30 @@ def run_loop(
         # Run agent
         completion_seen = False
         iteration_timed_out = False
-        for line in agent.run(prompt, cwd, timeout=iteration_timeout):
-            if line.strip() == COMPLETION_MARKER:
-                completion_seen = True
-            if line.startswith(TIMEOUT_MESSAGE_PREFIX):
-                iteration_timed_out = True
-            ui.stream_line("AI", line)
+        try:
+            for line in agent.run(prompt, cwd, timeout=iteration_timeout):
+                if line.strip() == COMPLETION_MARKER:
+                    completion_seen = True
+                if line.startswith(TIMEOUT_MESSAGE_PREFIX):
+                    iteration_timed_out = True
+                ui.stream_line("AI", line)
 
-        final_message = agent.final_message
-        if not completion_seen and final_message:
-            completion_seen = any(
-                line.strip() == COMPLETION_MARKER
-                for line in final_message.splitlines()
-            )
-
-        iter_duration = time.monotonic() - iter_start
-        iteration_durations.append(iter_duration)
-        if bus is not None:
-            bus.emit(IterationCompleted(
-                iteration=iteration,
-                duration_seconds=round(iter_duration, 2),
-                completed=completion_seen,
-                timed_out=iteration_timed_out,
-            ))
+            final_message = agent.final_message
+            if not completion_seen and final_message:
+                completion_seen = any(
+                    line.strip() == COMPLETION_MARKER
+                    for line in final_message.splitlines()
+                )
+        finally:
+            iter_duration = time.monotonic() - iter_start
+            iteration_durations.append(iter_duration)
+            if bus is not None:
+                bus.emit(IterationCompleted(
+                    iteration=iteration,
+                    duration_seconds=round(iter_duration, 2),
+                    completed=completion_seen,
+                    timed_out=iteration_timed_out,
+                ))
 
         if iteration_timed_out:
             timed_out_iterations += 1
