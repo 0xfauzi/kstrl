@@ -3,10 +3,11 @@
 # Environment variables override these settings (see README for mapping).
 
 [agent]
-type = "claude"                    # "claude" | "codex" | "custom"
-command = ""                       # shell command (only used when type = "custom")
-model = ""                         # e.g., "sonnet" for claude, "o3" for codex (empty = default)
+type = ""                          # "claude-code" | "claude-sdk" | "codex" (empty = auto-detect)
+command = ""                       # custom agent shell command; overrides type
+model = ""                         # e.g., "sonnet" for claude, "gpt-5" for codex (empty = default)
 reasoning_effort = ""              # low|medium|high|max
+budget_usd = 0                     # in-loop USD ceiling; claude-sdk adapter only; 0 = unlimited (R7.6)
 
 [run]
 max_iterations = 10
@@ -94,7 +95,7 @@ dependency_scope = "direct"
 max_parallel = 4                   # concurrent component workers
 max_retries = 3                    # per-component retry budget across all phases
 retry_delay = 5.0                  # seconds between retry attempts
-use_worktrees = true               # branch each component into .ralph/worktrees/<id>
+use_worktrees = true               # branch each component into .ralph/worktrees/<run>/<id>
 single_pr = false                  # one PR for the whole factory vs per-component
 create_prs = true                  # call `gh` to push + merge per component
 review_mode = "hard"               # hard | advisory | skip
@@ -102,6 +103,8 @@ merge_timeout = 300.0              # seconds to wait for PR merge confirmation (
 max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
 max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1)
 pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
+progress_log_enabled = true        # JSONL event log at .ralph/progress.jsonl (R3.2)
+keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # Phase 1 mechanical verification.
 [verify]
@@ -161,6 +164,15 @@ min_pattern_frequency = 2
 lookback_runs = 10
 auto_propose = true                # generate proposals after each factory run
 auto_apply_computational = false   # auto-apply computational proposals
+
+# Run-milestone notification hooks (R3.2). Shell commands fired at most
+# once per run, with RALPH_NOTIFY_EVENT (run_complete | first_failure |
+# merge_pending), RALPH_NOTIFY_RUN_ID, RALPH_NOTIFY_PROJECT,
+# RALPH_NOTIFY_COMPONENT and RALPH_NOTIFY_DETAIL set in their environment.
+[notify]
+on_complete = ""                   # e.g. "printf '\\a'" for a terminal bell
+on_first_failure = ""              # e.g. a curl webhook one-liner
+hook_timeout = 30.0                # seconds before a hook command is killed
 
 # Linear integration (R7.4). Off by default. When enabled, decompose
 # creates one Linear project per manifest and one issue per component
