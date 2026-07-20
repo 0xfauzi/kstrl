@@ -86,6 +86,16 @@ class TestLifecycleFold:
         assert a.attempt == 2
         assert a.error == "tests failed"
 
+    def test_component_skipped_is_terminal(self) -> None:
+        state = reducer.fold(_stamped([
+            ev.ComponentStarted(component="a"),
+            ev.ComponentSkipped(component="a", reason="operator stopped"),
+            ev.RunCompleted(skipped=1),
+        ]))
+        assert state.finished
+        assert state.components["a"].status == "skipped"
+        assert state.components["a"].error == "operator stopped"
+
     def test_usage_accumulates_component_and_run(self) -> None:
         events = _stamped([
             ev.ComponentUsage(component="a", phase="engineer", calls=2,
