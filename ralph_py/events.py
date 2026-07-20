@@ -271,12 +271,14 @@ class ChunkBudgetInsufficient(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class AdversarialAgentSelected(Event):
+    """Preserve unset agent metadata as JSON null in the v1 projection."""
+
     type: ClassVar[str] = "adversarial_agent_selected"
     phase: str = ""
     agent_source: str = ""
     identity: str = ""
-    agent_type: str = ""
-    model: str = ""
+    agent_type: str | None = None
+    model: str | None = None
     homogeneous: bool = False
 
 
