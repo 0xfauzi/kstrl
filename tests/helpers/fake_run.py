@@ -153,3 +153,48 @@ def stream_fake_run(
 ) -> Iterator[None]:
     """Step the fake run forward one write-batch per iteration."""
     return _emit_run(root, spec or FakeRunSpec(), run_id)
+
+
+def write_fake_understand_run(
+    root: Path, *,
+    complete: bool = True,
+    run_id: str = "understand-20260720-130000.000000-fake",
+) -> Path:
+    """A complete understand-kind run: one pseudo-component, one phase,
+    a transcript, the codebase-map artifact (TUI surface C1)."""
+    paths = ev.RunPaths.for_run(root, run_id)
+    bus = ev.EventBus(
+        ev.JsonlSink(paths.events_file), run_id=run_id,
+        component="understand",
+    )
+    bus.emit(ev.RunStarted(project="fake-project", components=1))
+    bus.emit(ev.RunPlan(components=(
+        {"id": "understand", "title": "Codebase understanding", "deps": []},
+    )))
+    bus.emit(ev.ComponentStarted(component="understand"))
+    bus.emit(ev.PhaseStarted(component="understand", phase="understand",
+                             attempt=1))
+    log_path = paths.engineer_log("understand")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as log:
+        log.write("[understand] reading src/\n")
+        log.write("[understand] editing scripts/kstrl/codebase_map.md\n")
+    for iteration in (1, 2):
+        bus.emit(ev.IterationStarted(component="understand",
+                                     iteration=iteration, max_iterations=10))
+        bus.emit(ev.IterationCompleted(
+            component="understand", iteration=iteration,
+            duration_seconds=8.0, completed=iteration == 2,
+        ))
+    if complete:
+        bus.emit(ev.PhaseCompleted(component="understand", phase="understand",
+                                   passed=True, duration_seconds=16.0))
+        bus.emit(ev.ArtifactWritten(component="understand",
+                                    label="codebase_map",
+                                    path="scripts/kstrl/codebase_map.md"))
+        bus.emit(ev.ComponentCompleted(component="understand",
+                                       duration_seconds=16.0, iterations=2))
+        bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0,
+                                 duration_seconds=16.0))
+    bus.close()
+    return paths.root
