@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import TextIO
@@ -158,25 +157,6 @@ class PlainUI:
         """Interactive choice, returns selected index."""
         if not self.can_prompt():
             return default
-
-        prompt_radiolist_dialog: Callable[..., Any] | None
-        try:
-            from prompt_toolkit.shortcuts import (  # type: ignore[import-not-found]
-                radiolist_dialog as _radiolist_dialog,
-            )
-        except Exception:
-            prompt_radiolist_dialog = None
-        else:
-            prompt_radiolist_dialog = _radiolist_dialog
-
-        if prompt_radiolist_dialog is not None:
-            values = [(idx, opt) for idx, opt in enumerate(options)]
-            result = prompt_radiolist_dialog(
-                title="Ralph", text=header, values=values
-            ).run()
-            if result is None:
-                return default
-            return int(result)
 
         self._print(f"\n{header}")
         for i, opt in enumerate(options):

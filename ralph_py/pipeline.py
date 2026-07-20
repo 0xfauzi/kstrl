@@ -44,6 +44,13 @@ from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.context import IterationContext, IterationRecord
 from ralph_py.findings import Finding, tag_finding_with_attempt
 from ralph_py.fixtures import FixturesConfig
+from ralph_py.interaction import (
+    CheckpointContext,
+    InteractionChannel,
+    PromptKind,
+    PromptRequest,
+    UiInteractionChannel,
+)
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import NotifyHooks
 from ralph_py.prd import PRD
@@ -61,6 +68,11 @@ if TYPE_CHECKING:
     )
     from ralph_py.knowledge import KnowledgeConfig
     from ralph_py.ui.base import UI
+
+
+# PR A: the E6 checkpoint shows a real diff excerpt, not just the
+# review summary string. Bounded so a huge diff cannot flood the modal.
+CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 
 
 def _iso_now() -> str:
@@ -240,6 +252,7 @@ class ComponentPipeline:
         bus: ev.EventBus,
         journal_path: Path | None,
         run_paths: ev.RunPaths | None = None,
+        interaction: InteractionChannel | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
         security_selection: AdversarialAgentSelection | None,
@@ -261,6 +274,11 @@ class ComponentPipeline:
         self.bus = bus
         self.journal_path = journal_path
         self.run_paths = run_paths
+        # PR A: the interaction seam. Defaults to today's terminal
+        # behavior; embedded mode (PR F) injects a QueueInteractionChannel.
+        self.interaction: InteractionChannel = (
+            interaction if interaction is not None else UiInteractionChannel(ui)
+        )
         self.notify = notify
         self.review_selection = review_selection
         self.security_selection = security_selection
@@ -333,6 +351,14 @@ class ComponentPipeline:
         self.bus.emit(ev.ComponentUsage(
             component=comp_id, phase=phase, **totals.to_dict(),
         ))
+
+    def usage_totals_for(self, comp_id: str) -> UsageTotals:
+        """One component's spend across all phases (PR A: shown at the
+        E6 checkpoint so the human sees what the attempt cost)."""
+        totals = UsageTotals()
+        for phase_totals in self.usage_meter.get(comp_id, {}).values():
+            totals.merge(phase_totals)
+        return totals
 
     def token_budget_exceeded(self) -> bool:
         cap = self.factory_config.max_total_tokens
@@ -1066,7 +1092,9 @@ class ComponentPipeline:
         checkpoint = CheckpointDecision.NOT_PROMPTED
         pr = PrPhaseResult(disposition=PrDisposition.SKIPPED)
         if self.factory_config.create_prs and not self.factory_config.single_pr:
-            checkpoint = self._phase_checkpoint(comp)
+            checkpoint = self._phase_checkpoint(
+                comp, diff_text=diff.review_diff,
+            )
             if checkpoint == CheckpointDecision.REJECTED:
                 return PipelineOutcome(
                     transition=self.fail(
@@ -2020,7 +2048,9 @@ class ComponentPipeline:
 
         return DistillPhaseResult(ran=True)
 
-    def _phase_checkpoint(self, comp: Component) -> CheckpointDecision:
+    def _phase_checkpoint(
+        self, comp: Component, *, diff_text: str = "",
+    ) -> CheckpointDecision:
         """E6: human-in-the-loop checkpoint. When opt-in, prompt
         before pushing+merging so a human can inspect the diff,
         the review findings, and the security findings before
@@ -2039,7 +2069,32 @@ class ComponentPipeline:
         self.bus.emit(ev.CheckpointRequested(
             component=comp.id, kind="pr_merge", question=question,
         ))
-        if not self.ui.can_prompt():
+        request = PromptRequest(
+            kind=PromptKind.CHECKPOINT,
+            header=question,
+            options=(
+                "Approve",
+                "Reject (fail component, skip dependents)",
+                "Retry (consume a retry, re-run component)",
+            ),
+            default=0,
+            component_id=comp.id,
+            checkpoint=CheckpointContext(
+                component_id=comp.id,
+                diff_excerpt=git.truncate_diff_for_prompt(
+                    diff_text, CHECKPOINT_DIFF_CHAR_LIMIT,
+                ) if diff_text else "",
+                review_findings=tuple(
+                    f for f in comp.findings if f.phase == "review"
+                ),
+                security_findings=tuple(
+                    f for f in comp.findings if f.phase == "security"
+                ),
+                usage=self.usage_totals_for(comp.id),
+                branch=comp.branch_name,
+            ),
+        )
+        if not self.interaction.can_prompt():
             self.ui.warn(
                 f"  pause_before_pr_merge requested but UI is "
                 f"non-interactive; proceeding without prompt for {comp.id}"
@@ -2051,19 +2106,19 @@ class ComponentPipeline:
             return CheckpointDecision.NOT_PROMPTED
         self.ui.section(f"Human checkpoint: {comp.id}")
         self.ui.info(comp.review_findings or "(no review findings)")
-        choice = self.ui.choose(
-            question,
-            [
-                "Approve",
-                "Reject (fail component, skip dependents)",
-                "Retry (consume a retry, re-run component)",
-            ],
-            default=0,
-        )
+        response = self.interaction.request(request)
+        if not response.answered:
+            # The channel lost its resolver between the guard and the
+            # answer (detached TUI): same semantics as non-interactive.
+            self.bus.emit(ev.CheckpointResolved(
+                component=comp.id, kind="pr_merge",
+                decision="not_prompted", decided_by="auto",
+            ))
+            return CheckpointDecision.NOT_PROMPTED
         decision = {
             1: CheckpointDecision.REJECTED,
             2: CheckpointDecision.RETRY,
-        }.get(choice, CheckpointDecision.APPROVED)
+        }.get(response.choice, CheckpointDecision.APPROVED)
         self.bus.emit(ev.CheckpointResolved(
             component=comp.id, kind="pr_merge",
             decision=decision.name.lower(), decided_by="operator",
