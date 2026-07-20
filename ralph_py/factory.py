@@ -6,6 +6,7 @@ import functools
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from ralph_py.agents.base import UsageTotals, collect_usage
+from ralph_py.agents.proc import kill_active_process_groups
 from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig
 from ralph_py.context import IterationContext
@@ -78,6 +80,7 @@ from ralph_py.security import (
     run_chunked_security_review,
     run_security_review,
 )
+from ralph_py.shutdown import StopController
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui.bridge import EventBridgeUI
 from ralph_py.verify import VerifyConfig, run_mechanical_verification
@@ -943,6 +946,7 @@ def _run_component(
     run_id: str = "",
     redirect_output: bool = True,
     live_line: Callable[[str], None] | None = None,
+    stop_check: Callable[[], bool] | None = None,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -992,6 +996,11 @@ def _run_component(
             # dup2 BEFORE any threads start (chunk 6 invariant); stray
             # library writes land in the transcript, never the terminal.
             _redirect_worker_output(run_paths.engineer_log(component_id))
+            # PR B: a shutdown SIGTERM from the parent must group-kill
+            # this worker's agent subprocess (its own session leader),
+            # not orphan it. Pool mode only - inline mode runs in the
+            # parent, whose handlers belong to the cli/TUI.
+            _install_worker_signal_forwarding()
 
     agent = get_agent(
         agent_cmd, model, reasoning, agent_type,
@@ -1143,6 +1152,7 @@ def _run_component(
             context_prefix=context_prefix, timeouts=timeouts,
             breaker_config=breaker_config,
             bus=worker_bus,
+            stop_check=stop_check,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -1201,6 +1211,25 @@ def _run_component(
 
 
 _HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+def _install_worker_signal_forwarding() -> None:
+    """Pool-worker SIGTERM handler: kill the agent's process group,
+    then exit 130. Installed only on a worker's main thread."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+
+    def _on_term(signum: int, frame: object) -> None:
+        del signum, frame
+        try:
+            kill_active_process_groups()
+        finally:
+            os._exit(130)
+
+    try:
+        signal.signal(signal.SIGTERM, _on_term)
+    except (ValueError, OSError):
+        pass
 
 
 def _redirect_worker_output(log_path: Path) -> None:
@@ -1272,6 +1301,105 @@ class _InlineExecutor:
         self, wait: bool = True, cancel_futures: bool = False,
     ) -> None:
         """Nothing to shut down: every submit already ran to completion."""
+
+
+def _wait_interruptible(
+    futures: set[Future[ComponentResult]],
+    timeout: float | None,
+    stop: StopController | None,
+    slice_seconds: float = 0.5,
+) -> tuple[set[Future[ComponentResult]], bool]:
+    """concurrent.futures.wait in stop-checkable slices (PR B).
+
+    Returns (done, stopped). Worst-case stop latency is one slice;
+    the backstop deadline math is preserved by honoring ``timeout``.
+    """
+    if stop is None:
+        done, _ = wait(futures, timeout=timeout, return_when=FIRST_COMPLETED)
+        return done, False
+    deadline = (
+        time.monotonic() + timeout if timeout is not None else None
+    )
+    while True:
+        if stop.is_set():
+            return set(), True
+        remaining = (
+            None if deadline is None
+            else max(0.0, deadline - time.monotonic())
+        )
+        slice_t = (
+            slice_seconds if remaining is None
+            else min(slice_seconds, remaining)
+        )
+        done, _ = wait(futures, timeout=slice_t, return_when=FIRST_COMPLETED)
+        if done:
+            return done, False
+        if remaining is not None and remaining <= slice_seconds:
+            return set(), False
+
+
+def _abort_inflight(
+    executor: ProcessPoolExecutor | _InlineExecutor,
+    running_futures: dict[Future[ComponentResult], str],
+    pipeline: ComponentPipeline,
+    ui: UI,
+    stop: StopController,
+    term_grace: float = 5.0,
+) -> None:
+    """Group-terminate in-flight workers and record their components as
+    aborted (PR B). Pool mode SIGTERMs each worker pid - the worker's
+    forwarding handler group-kills its agent subprocess and exits 130;
+    stragglers get SIGKILL after the grace period. A second stop request
+    skips the rest of that grace period. `_processes` is private executor
+    API, so process objects are inspected defensively and only workers
+    still reported alive are killed.
+    """
+    procs = getattr(executor, "_processes", None)
+    workers: list[Any] = list(procs.values()) if procs else []
+    if workers:
+        alive = []
+        for worker in workers:
+            try:
+                pid = worker.pid
+                if (
+                    isinstance(pid, int)
+                    and pid > 1
+                    and pid != os.getpid()
+                    and worker.is_alive()
+                ):
+                    worker.terminate()
+                    alive.append(worker)
+            except (AssertionError, AttributeError, OSError, ValueError):
+                pass
+        deadline = time.monotonic() + term_grace
+        while alive and not stop.force and time.monotonic() < deadline:
+            still_alive = []
+            for worker in alive:
+                try:
+                    if worker.is_alive():
+                        still_alive.append(worker)
+                except (AssertionError, AttributeError, OSError, ValueError):
+                    pass
+            alive = still_alive
+            if alive and not stop.force:
+                time.sleep(0.1)
+        for worker in alive:
+            try:
+                if worker.is_alive():
+                    worker.kill()
+            except (AssertionError, AttributeError, OSError, ValueError):
+                pass
+    elif isinstance(executor, _InlineExecutor):
+        # Inline executor: the agents live in THIS process, so group-kill
+        # them directly.
+        killed = kill_active_process_groups()
+        if killed:
+            ui.warn(f"  Terminated {killed} in-flight agent process group(s)")
+    for future, comp_id in list(running_futures.items()):
+        pipeline.fail_aborted(comp_id, stop.reason)
+        running_futures.pop(future, None)
+    ui.warn(f"  Aborted in-flight work: {stop.reason}")
+    executor.shutdown(wait=False, cancel_futures=True)
 
 
 def _next_backstop_wait(
@@ -1366,6 +1494,8 @@ def run_factory(
     manifest_path: Path | None = None,
     *,
     interaction: InteractionChannel | None = None,
+    stop: StopController | None = None,
+    run_id: str | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -1396,7 +1526,7 @@ def run_factory(
         return _run_factory_locked(
             manifest, factory_config, base_config, ui, root_dir,
             manifest_path=manifest_path, lock_held=run_lock.held,
-            interaction=interaction,
+            interaction=interaction, stop=stop, run_id_override=run_id,
         )
     finally:
         run_lock.release()
@@ -1411,6 +1541,8 @@ def _run_factory_locked(
     manifest_path: Path | None,
     lock_held: bool,
     interaction: InteractionChannel | None = None,
+    stop: StopController | None = None,
+    run_id_override: str | None = None,
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -1422,7 +1554,9 @@ def _run_factory_locked(
     # collide on .ralph/knowledge/<comp>/<run_id>/ directories nor
     # order ambiguously (R1.6: same-second knowledge run dirs must sort
     # by creation time, not by nonce).
-    run_id = current_run_id()
+    # PR F needs the run dir known before the TUI starts: the caller
+    # may mint the id (format unchanged - knowledge.current_run_id).
+    run_id = run_id_override if run_id_override else current_run_id()
 
     # R6.1: structured "<check>:<code>" failure signatures per component
     # (e.g. "linter:E501", "review:scope_creep"), recorded at each
@@ -1885,6 +2019,11 @@ def _run_factory_locked(
         future_deadlines: dict[Future[ComponentResult], float] = {}
         try:
             while True:
+                if stop is not None and stop.is_set():
+                    _abort_inflight(
+                        executor, running_futures, pipeline, ui, stop,
+                    )
+                    return
                 ready = manifest.get_ready_components()
                 slots = slots_cap - len(running_futures)
 
@@ -1938,6 +2077,9 @@ def _run_factory_locked(
                             live_line=functools.partial(
                                 ui.stream_line, "AI",
                             ),
+                            stop_check=(
+                                stop.is_set if stop is not None else None
+                            ),
                         )
                         future = executor.submit(task)
                     else:
@@ -1961,11 +2103,15 @@ def _run_factory_locked(
                 wait_timeout = _next_backstop_wait(
                     running_futures, future_deadlines, time.monotonic(),
                 )
-                done, _pending = wait(
-                    set(running_futures),
-                    timeout=wait_timeout,
-                    return_when=FIRST_COMPLETED,
+                done, stopped = _wait_interruptible(
+                    set(running_futures), wait_timeout, stop,
                 )
+                if stopped:
+                    assert stop is not None
+                    _abort_inflight(
+                        executor, running_futures, pipeline, ui, stop,
+                    )
+                    return
 
                 if done:
                     # Preserve pre-R0.1 semantics: process one completion
@@ -2103,6 +2249,10 @@ def _run_factory_locked(
     while True:
         _run_scheduling_pass()
         _cleanup_pass_worktrees()
+
+        if stop is not None and stop.is_set():
+            ui.warn(f"  Run stopped: {stop.reason}")
+            break
 
         # PHASE 3: Contract testing
         contract_config = factory_config.contract_config
@@ -2342,7 +2492,9 @@ def _run_factory_locked(
             "re-poll them: " + ", ".join(factory_result.merge_pending)
         )
 
-    if factory_result.failed or factory_result.contract_failures:
+    if stop is not None and stop.is_set():
+        factory_result.exit_code = 130
+    elif factory_result.failed or factory_result.contract_failures:
         factory_result.exit_code = 1
     elif factory_result.merge_pending:
         # Incomplete, not failed: unconfirmed merges blocked their

@@ -55,6 +55,7 @@ def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         ui: Any,
         root_dir: Path,
         manifest_path: Path | None = None,
+        **kwargs: Any,
     ) -> FactoryResult:
         box["manifest"] = manifest
         box["factory_config"] = factory_config

@@ -268,6 +268,7 @@ class TestCliWiring:
             manifest: Manifest, factory_config: FactoryConfig,
             base_config: RalphConfig, ui: Any, root_dir: Path,
             manifest_path: Path | None = None,
+            **kwargs: Any,
         ) -> FactoryResult:
             captured["factory_config"] = factory_config
             captured["base_config"] = base_config

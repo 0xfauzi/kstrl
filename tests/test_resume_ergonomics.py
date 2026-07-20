@@ -571,6 +571,7 @@ class TestRetryCli:
             ui_impl: object,
             root_dir: Path,
             manifest_path: Path | None = None,
+            **kwargs: object,
         ) -> FactoryResult:
             captured["manifest"] = manifest
             captured["manifest_path"] = manifest_path

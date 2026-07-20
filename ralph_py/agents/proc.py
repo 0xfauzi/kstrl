@@ -20,6 +20,7 @@ import signal
 import subprocess
 import threading
 import time
+import weakref
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -36,6 +37,29 @@ DEFAULT_FINISH_WAIT_SECONDS = 10.0
 def timeout_message(timeout: float | None) -> str:
     """Uniform timeout line yielded by every adapter."""
     return f"{TIMEOUT_MESSAGE_PREFIX} after {timeout}s"
+
+
+# PR B (TUI rewrite): live streamers register here so a shutdown signal
+# can group-kill every in-flight agent subprocess. WeakSet: a streamer
+# that was garbage collected is by definition no longer streaming.
+_ACTIVE: weakref.WeakSet[DeadlineStreamer] = weakref.WeakSet()
+
+
+def kill_active_process_groups() -> int:
+    """SIGTERM->grace->SIGKILL every live agent process group.
+
+    The shutdown path for both worker SIGTERM forwarding (pool mode)
+    and the parent's inline-executor abort. Returns the number of
+    streamers signalled; never raises.
+    """
+    count = 0
+    for streamer in list(_ACTIVE):
+        try:
+            streamer.kill()
+            count += 1
+        except Exception:  # noqa: BLE001 - shutdown must not raise
+            pass
+    return count
 
 
 class DeadlineStreamer:
@@ -81,6 +105,7 @@ class DeadlineStreamer:
         self._writer.start()
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
+        _ACTIVE.add(self)
 
     def lines(self) -> Iterator[str]:
         """Yield stdout lines (newline-stripped) until EOF or breach.
@@ -116,6 +141,7 @@ class DeadlineStreamer:
             self.kill()
         self._reader.join(timeout=1.0)
         self._writer.join(timeout=1.0)
+        _ACTIVE.discard(self)
 
     def kill(self) -> None:
         """SIGTERM the process group, wait a grace period, then SIGKILL."""
