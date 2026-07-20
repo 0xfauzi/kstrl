@@ -24,9 +24,17 @@ from textual.app import App
 from textual.binding import Binding
 from textual.widgets import DataTable
 
+from ralph_py.interaction import (
+    PromptKind,
+    PromptRequest,
+    QueueInteractionChannel,
+)
+from ralph_py.tui.bridge import OrchestratorHandle
 from ralph_py.tui.messages import StateChanged
+from ralph_py.tui.screens.checkpoint import CheckpointModal
 from ralph_py.tui.screens.component import ComponentScreen
 from ralph_py.tui.screens.overview import OverviewScreen
+from ralph_py.tui.screens.quit import QuitModal
 from ralph_py.tui.state import StateStore
 from ralph_py.tui.tail import RunTailer, TextTailer
 
@@ -46,6 +54,7 @@ class RalphTuiApp(App[int]):
         # Spike finding 1: raw mode delivers ctrl+c as a KEY - unbound
         # it does nothing at all.
         Binding("ctrl+c", "quit_or_detach", show=False),
+        Binding("c", "answer_checkpoint", "Checkpoint", show=False),
     ]
 
     def __init__(
@@ -55,15 +64,21 @@ class RalphTuiApp(App[int]):
         root_dir: Path,
         mode: Mode = Mode.DASH,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
+        channel: QueueInteractionChannel | None = None,
+        orchestrator: OrchestratorHandle | None = None,
     ) -> None:
         super().__init__()
         self.run_dir = run_dir
         self.root_dir = root_dir
         self.mode = mode
         self.poll_interval = poll_interval
+        self.channel = channel
+        self.orchestrator = orchestrator
         self.tailer = RunTailer(run_dir)
         self.store = StateStore(root_dir, run_id=run_dir.name)
         self._transcript_tailers: dict[str, TextTailer] = {}
+        self._pending_prompts: dict[str, PromptRequest] = {}
+        self._stopping = False
 
     def on_mount(self) -> None:
         self.push_screen(OverviewScreen(
@@ -71,6 +86,19 @@ class RalphTuiApp(App[int]):
         ))
         self.set_interval(self.poll_interval, self._poll)
         self.set_interval(1.0, self._tick_ages)
+        if self.mode is Mode.EMBEDDED:
+            self.set_interval(0.5, self._check_orchestrator)
+            if self.channel is not None:
+                # Attach HERE, not before app.run(): call_from_thread on
+                # a not-yet-running app raises, which would degrade the
+                # request to its non-interactive default. Until attach,
+                # can_prompt() is False and a checkpoint proceeds
+                # NOT_PROMPTED - exactly the non-TTY semantics.
+                self.channel.attach(
+                    lambda req: self.call_from_thread(
+                        self.on_prompt_request, req,
+                    ),
+                )
         self._poll()  # catch-up fold before the first frame settles
 
     # -- data flow -----------------------------------------------------------
@@ -119,7 +147,76 @@ class RalphTuiApp(App[int]):
         # The screen fills itself in on_mount (compose must run first).
         self.push_screen(ComponentScreen(component_id))
 
+    # -- embedded mode (PR F) ------------------------------------------------
+
+    def _check_orchestrator(self) -> None:
+        handle = self.orchestrator
+        if handle is None or not handle.done():
+            return
+        self._poll()  # final drain before leaving the screen
+        self.exit(
+            130 if handle.stop.is_set() else handle.exit_code,
+        )
+
+    def on_prompt_request(self, request: PromptRequest) -> None:
+        """The interaction channel's notify callback (call_from_thread -
+        the sole orchestrator-to-UI crossing, spike-G4 validated)."""
+        self._pending_prompts[request.request_id] = request
+        self._open_prompt(request)
+
+    def _open_prompt(self, request: PromptRequest) -> None:
+        if self.channel is None:
+            return
+
+        def _resolve(choice: int | None) -> None:
+            if choice is None:
+                # Left pending (Esc): the banner keeps pointing at it;
+                # press c to reopen. The orchestrator stays blocked -
+                # that is what a checkpoint IS.
+                self.notify(
+                    "checkpoint left pending - press c to answer",
+                    severity="warning",
+                )
+                return
+            if self.channel is not None and self.channel.resolve(
+                request.request_id, choice,
+            ):
+                self._pending_prompts.pop(request.request_id, None)
+
+        if request.kind is PromptKind.CHECKPOINT:
+            self.push_screen(CheckpointModal(request), _resolve)
+        else:
+            # Generic prompts reuse the checkpoint chrome minus context.
+            self.push_screen(CheckpointModal(request), _resolve)
+
+    def action_answer_checkpoint(self) -> None:
+        if isinstance(self.screen, CheckpointModal):
+            return
+        for request in self._pending_prompts.values():
+            self._open_prompt(request)
+            return
+
     def action_quit_or_detach(self) -> None:
-        # DASH: detach immediately; the run (if live) is not ours to
-        # stop. EMBEDDED overrides this action in PR F.
-        self.exit(0)
+        if self.mode is Mode.DASH:
+            # Detach immediately; the run (if live) is not ours to stop.
+            self.exit(0)
+            return
+        handle = self.orchestrator
+        if handle is None:
+            self.exit(0)
+            return
+        if self._stopping or handle.stop.is_set():
+            # Second request escalates to force (mirrors the second
+            # Ctrl-C signal semantics of PR B).
+            handle.stop.request("forced from TUI", force=True)
+            self.exit(130)
+            return
+
+        def _confirmed(stop_run: bool | None) -> None:
+            if not stop_run:
+                return
+            self._stopping = True
+            handle.stop.request("stopped from TUI")
+            self.notify("shutting down - waiting for cleanup", timeout=10)
+
+        self.push_screen(QuitModal(), _confirmed)

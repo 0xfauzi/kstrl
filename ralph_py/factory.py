@@ -1478,6 +1478,7 @@ def run_factory(
     interaction: InteractionChannel | None = None,
     stop: StopController | None = None,
     run_id: str | None = None,
+    notify_capture_output: bool = False,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -1509,6 +1510,7 @@ def run_factory(
             manifest, factory_config, base_config, ui, root_dir,
             manifest_path=manifest_path, lock_held=run_lock.held,
             interaction=interaction, stop=stop, run_id_override=run_id,
+            notify_capture_output=notify_capture_output,
         )
     finally:
         run_lock.release()
@@ -1525,6 +1527,7 @@ def _run_factory_locked(
     interaction: InteractionChannel | None = None,
     stop: StopController | None = None,
     run_id_override: str | None = None,
+    notify_capture_output: bool = False,
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -1610,6 +1613,7 @@ def _run_factory_locked(
         run_id=run_id,
         project=manifest.project_name,
         warn=ui.warn,
+        capture_output=notify_capture_output,
     )
 
     bus.emit(RunStarted(

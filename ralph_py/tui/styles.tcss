@@ -99,3 +99,35 @@ CheckpointModal {
 #checkpoint-buttons Button {
     margin: 0 2;
 }
+
+/* Quit confirmation (PR F). */
+
+QuitModal {
+    align: center middle;
+}
+
+#quit-dialog {
+    width: 64;
+    height: auto;
+    border: thick $error;
+    background: $surface;
+    padding: 1 2;
+}
+
+#quit-question {
+    text-style: bold;
+}
+
+#quit-detail {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#quit-buttons {
+    height: 3;
+    align-horizontal: center;
+}
+
+#quit-buttons Button {
+    margin: 0 2;
+}
