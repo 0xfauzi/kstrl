@@ -266,7 +266,7 @@ class TestContractFailureExitsNonzero:
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
 
@@ -348,7 +348,7 @@ class TestBreakerRetryReentersScheduling:
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
             agent_cmd=agent_cmd,
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
 
@@ -496,7 +496,7 @@ class TestCleanupFailsLoudly:
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
 

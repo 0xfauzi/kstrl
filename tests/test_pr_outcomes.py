@@ -222,7 +222,7 @@ def _base_config(root: Path) -> KstrlConfig:
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
-        ralph_branch="", ralph_branch_explicit=True,
+        kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
     )
 

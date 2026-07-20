@@ -9,7 +9,7 @@
 ## Verification commands
 
 - **Test**: `uv run pytest tests/ -v`
-- **Calibration (opt-in, real LLMs)**: `RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
+- **Calibration (opt-in, real LLMs)**: `KSTRL_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
 - **Typecheck**: `uv run mypy kstrl/ --strict`
 - **Lint**: `uv run ruff check kstrl/ tests/`
 

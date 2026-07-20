@@ -1,5 +1,5 @@
-# Ralph configuration
-# Copy to ralph.toml and customize. All values shown are defaults.
+# kstrl configuration
+# Copy to kstrl.toml and customize. All values shown are defaults.
 # Environment variables override these settings (see README for mapping).
 
 [agent]

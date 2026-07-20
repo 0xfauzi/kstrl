@@ -29,7 +29,10 @@ import pytest
 from kstrl.agents.codex import CodexAgent
 
 CODEX_AVAILABLE = shutil.which("codex") is not None
-LIVE_CONTRACT_ENABLED = os.environ.get("RALPH_RUN_LIVE_CONTRACT") == "1"
+LIVE_CONTRACT_ENABLED = "1" in (
+    os.environ.get("KSTRL_RUN_LIVE_CONTRACT"),
+    os.environ.get("RALPH_RUN_LIVE_CONTRACT"),
+)
 
 
 class TestCodexAgentStructure:
@@ -99,7 +102,7 @@ class TestCodexAgentStructure:
 
 @pytest.mark.skipif(
     not LIVE_CONTRACT_ENABLED,
-    reason="live codex contract tests are opt-in: set RALPH_RUN_LIVE_CONTRACT=1",
+    reason="live codex contract tests are opt-in: set KSTRL_RUN_LIVE_CONTRACT=1",
 )
 @pytest.mark.skipif(not CODEX_AVAILABLE, reason="codex CLI not installed")
 class TestCodexLiveContract:

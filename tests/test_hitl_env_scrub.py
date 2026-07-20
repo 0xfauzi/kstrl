@@ -89,7 +89,7 @@ def _scaffold(
         prompt_file=scaffold / "prompt.md",
         prd_file=scaffold / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
-        ralph_branch="", ralph_branch_explicit=True,
+        kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
     )
     return manifest, base

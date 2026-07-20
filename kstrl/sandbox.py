@@ -48,9 +48,10 @@ denied writes), so the operator opts in per project.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from kstrl import envcompat
 
 # File-tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
@@ -84,9 +85,9 @@ class SandboxConfig:
         from kstrl.config import _parse_bool
 
         return cls(
-            enabled=_parse_bool(os.environ.get("RALPH_SANDBOX_ENABLED")),
+            enabled=_parse_bool(envcompat.get("KSTRL_SANDBOX_ENABLED")),
             allow_network=_parse_bool(
-                os.environ.get("RALPH_SANDBOX_ALLOW_NETWORK")
+                envcompat.get("KSTRL_SANDBOX_ALLOW_NETWORK")
             ),
         )
 
@@ -96,22 +97,22 @@ class SandboxConfig:
 
         Reads the ``[sandbox]`` section from ``<root_dir>/ralph.toml``.
         """
-        from kstrl.config import _parse_bool, load_toml_section
+        from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
-        section = load_toml_section(root_dir / "ralph.toml", "sandbox")
+        section = load_toml_section(resolve_config_file(root_dir), "sandbox")
         enabled = cls.enabled
         allow_network = cls.allow_network
         if "enabled" in section:
             enabled = bool(section["enabled"])
         if "allow_network" in section:
             allow_network = bool(section["allow_network"])
-        if "RALPH_SANDBOX_ENABLED" in os.environ:
-            enabled = _parse_bool(os.environ.get("RALPH_SANDBOX_ENABLED"))
-        if "RALPH_SANDBOX_ALLOW_NETWORK" in os.environ:
+        if envcompat.contains("KSTRL_SANDBOX_ENABLED"):
+            enabled = _parse_bool(envcompat.get("KSTRL_SANDBOX_ENABLED"))
+        if envcompat.contains("KSTRL_SANDBOX_ALLOW_NETWORK"):
             allow_network = _parse_bool(
-                os.environ.get("RALPH_SANDBOX_ALLOW_NETWORK")
+                envcompat.get("KSTRL_SANDBOX_ALLOW_NETWORK")
             )
         return cls(enabled=enabled, allow_network=allow_network)
 

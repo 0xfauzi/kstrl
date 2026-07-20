@@ -94,13 +94,13 @@ class TestConfigProbing:
             gen_docs._verify_sections([spec])
 
     def test_config_reference_covers_all_example_sections(self, gen_docs: ModuleType) -> None:
-        """Every [section] in ralph.toml.example appears in the generated
+        """Every [section] in kstrl.toml.example appears in the generated
         reference and vice versa - the two surfaces stay in lockstep."""
         import tomllib
 
         reference = gen_docs.build_config_reference()
         example = tomllib.loads(
-            (REPO_ROOT / "ralph.toml.example").read_text(encoding="utf-8")
+            (REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8")
         )
         generated_sections = {s.section for s in gen_docs._section_specs()}
         assert set(example) == generated_sections
@@ -108,11 +108,11 @@ class TestConfigProbing:
             assert f"[{section}]" in reference
 
     def test_example_toml_keys_are_all_documented(self, gen_docs: ModuleType) -> None:
-        """ralph.toml.example must not name keys the loaders ignore."""
+        """kstrl.toml.example must not name keys the loaders ignore."""
         import tomllib
 
         example = tomllib.loads(
-            (REPO_ROOT / "ralph.toml.example").read_text(encoding="utf-8")
+            (REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8")
         )
         documented = {
             (spec.section, key)
@@ -122,7 +122,7 @@ class TestConfigProbing:
         for section, values in example.items():
             for key in values:
                 assert (section, key) in documented, (
-                    f"ralph.toml.example documents [{section}] {key} "
+                    f"kstrl.toml.example documents [{section}] {key} "
                     "but gen_docs does not know it as a live loader key"
                 )
 

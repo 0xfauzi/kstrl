@@ -393,8 +393,8 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlCon
         prd_file=ralph_dir / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
         ui_mode="plain",
         no_color=True,
     )

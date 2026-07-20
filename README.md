@@ -443,7 +443,7 @@ hook_timeout = 30.0    # seconds before a hook command is killed
 [linear]
 enabled = false                             # mirror runs into Linear (project/issues/status via GitHub linking)
 team_id = ""                                # Linear team UUID (required when enabled)
-token_env = "RALPH_LINEAR_TOKEN"            # NAME of the env var holding the API token
+token_env = "KSTRL_LINEAR_TOKEN"            # NAME of the env var holding the API token
 auth_mode = "auto"                          # auto | api_key | oauth (auto sniffs the lin_api_ prefix)
 api_url = "https://api.linear.app/graphql"  # GraphQL endpoint
 dry_run = false                             # record mutations instead of sending them
@@ -451,7 +451,7 @@ timeout_seconds = 30.0                      # per-request timeout
 min_request_interval = 0.5                  # client-side throttle between requests (seconds)
 ```
 
-Environment variables override ralph.toml, and CLI flags override both.
+Environment variables override kstrl.toml, and CLI flags override both.
 See [docs/env-vars.md](docs/env-vars.md) for the full env-var mapping.
 <!-- END GENERATED: config-reference -->
 

@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl import envcompat
+
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
 
@@ -30,7 +32,7 @@ from kstrl.agents import (
 )
 from kstrl.agents.base import Agent, UsageRecord
 from kstrl.breaker import BreakerConfig
-from kstrl.config import KstrlConfig, _parse_paths, load_toml_section
+from kstrl.config import KstrlConfig, _parse_paths, load_toml_section, resolve_config_file
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
@@ -254,9 +256,9 @@ def _apply_cli_overrides(
         config.allowed_paths = _parse_paths(ctx.params["allowed_paths"])
         overridden.add("allowed_paths")
     if passed("branch"):
-        config.ralph_branch = ctx.params["branch"]
-        config.ralph_branch_explicit = True
-        overridden.add("ralph_branch")
+        config.kstrl_branch = ctx.params["branch"]
+        config.kstrl_branch_explicit = True
+        overridden.add("kstrl_branch")
     if passed("agent_cmd"):
         config.agent_cmd = ctx.params["agent_cmd"]
         overridden.add("agent_cmd")
@@ -585,7 +587,7 @@ def run(
     # worth surfacing, not something to swallow.
     prd_branch = PRD.load(config.prd_file).branch_name
 
-    effective_branch = config.ralph_branch or prd_branch or "ralph/run"
+    effective_branch = config.kstrl_branch or prd_branch or "ralph/run"
 
     # Detect base branch from git
     detected_base = "main"
@@ -637,7 +639,7 @@ def run(
     # `ralph run` reviews in advisory mode unless the project's
     # ralph.toml explicitly opts into a different review_mode (there is
     # no review_mode env var, so the toml section check is exhaustive).
-    if "review_mode" not in load_toml_section(root_dir / "ralph.toml", "factory"):
+    if "review_mode" not in load_toml_section(resolve_config_file(root_dir), "factory"):
         factory_cfg.review_mode = "advisory"
 
     # R0.5 (H-15): `ralph run` persists to its own run-manifest.json so
@@ -813,8 +815,8 @@ def understand(
     if _use_cli_value(ctx, "allowed_paths"):
         config.allowed_paths = _parse_paths(allowed_paths)
     if _use_cli_value(ctx, "branch"):
-        config.ralph_branch = branch
-        config.ralph_branch_explicit = True
+        config.kstrl_branch = branch
+        config.kstrl_branch_explicit = True
     if _use_cli_value(ctx, "agent_cmd"):
         config.agent_cmd = agent_cmd
     if _use_cli_value(ctx, "model"):
@@ -835,14 +837,14 @@ def understand(
         config.allowed_paths = ["scripts/ralph/codebase_map.md"]
     # Only fall back to the understand-mode branch default when no other
     # source (CLI / env / TOML) supplied a branch. KstrlConfig.load sets
-    # ralph_branch_explicit=True when TOML provides a non-empty [git].branch.
+    # kstrl_branch_explicit=True when TOML provides a non-empty [git].branch.
     if (
         not _use_cli_value(ctx, "branch")
-        and "RALPH_BRANCH" not in os.environ
-        and not config.ralph_branch_explicit
+        and not envcompat.contains("KSTRL_BRANCH")
+        and not config.kstrl_branch_explicit
     ):
-        config.ralph_branch = "ralph/understanding"
-        config.ralph_branch_explicit = False
+        config.kstrl_branch = "ralph/understanding"
+        config.kstrl_branch_explicit = False
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
@@ -1205,8 +1207,8 @@ def feature(
     rel_feature_understand = feature_understand.relative_to(root_dir).as_posix()
     understand_config.allowed_paths = [rel_feature_understand]
     if _use_cli_value(ctx, "branch"):
-        understand_config.ralph_branch = branch
-        understand_config.ralph_branch_explicit = True
+        understand_config.kstrl_branch = branch
+        understand_config.kstrl_branch_explicit = True
 
     timeouts = TimeoutConfig.load(root_dir)
     breaker_config = BreakerConfig.load(root_dir)
@@ -1254,8 +1256,8 @@ def feature(
     if _use_cli_value(ctx, "implementation_allowed_paths"):
         run_config.allowed_paths = _parse_paths(implementation_allowed_paths)
     if _use_cli_value(ctx, "branch"):
-        run_config.ralph_branch = branch
-        run_config.ralph_branch_explicit = True
+        run_config.kstrl_branch = branch
+        run_config.kstrl_branch_explicit = True
 
     run_log = log_path("run")
     run_agent = LoggingAgent(agent, run_log)
@@ -1276,8 +1278,8 @@ def feature(
         repair_config.max_iterations = repair_iterations
         if _use_cli_value(ctx, "implementation_allowed_paths"):
             repair_config.allowed_paths = _parse_paths(implementation_allowed_paths)
-        repair_config.ralph_branch = ""
-        repair_config.ralph_branch_explicit = True
+        repair_config.kstrl_branch = ""
+        repair_config.kstrl_branch_explicit = True
 
         repair_log = log_path("repair", attempt)
         repair_agent_base = get_agent(
@@ -1387,7 +1389,7 @@ def decompose(
     )
     effective_type = (
         agent_type if _use_cli_value(ctx, "agent_type")
-        else os.environ.get("RALPH_AGENT_TYPE", "auto")
+        else envcompat.get("KSTRL_AGENT_TYPE", "auto")
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -1597,7 +1599,7 @@ def decompose(
     default=None,
     help="Hard cap on adversarial LLM calls (review + security + "
          "distill) per run; 0 = unbounded (default: 0, or "
-         "RALPH_FACTORY_MAX_ADVERSARIAL_CALLS / "
+         "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS / "
          "[factory].max_adversarial_calls in ralph.toml)",
 )
 @click.option(
@@ -1615,7 +1617,7 @@ def decompose(
     default=None,
     help="Pause for human approval before each component's PR "
          "push+merge (default: off, or "
-         "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE / "
+         "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE / "
          "[factory].pause_before_pr_merge in ralph.toml)",
 )
 @click.option(
@@ -1624,7 +1626,7 @@ def decompose(
     help="Path for the JSONL progress log (default: .ralph/progress.jsonl; "
          "the log is on by default, disable via "
          "[factory].progress_log_enabled = false or "
-         "RALPH_FACTORY_PROGRESS_LOG_ENABLED=0)",
+         "KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)",
 )
 @click.option(
     "--no-worktrees",
@@ -1763,7 +1765,7 @@ def factory(
     )
     effective_type = (
         agent_type if _use_cli_value(ctx, "agent_type")
-        else os.environ.get("RALPH_AGENT_TYPE", "auto")
+        else envcompat.get("KSTRL_AGENT_TYPE", "auto")
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -2072,7 +2074,7 @@ def factory(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and os.environ.get("RALPH_NO_TUI") != "1"
+        and envcompat.get("KSTRL_NO_TUI") != "1"
         and _normalize_ui_mode(ui) != "plain"
     )
     if use_tui:
@@ -2107,9 +2109,9 @@ def factory(
 
 
 # Display structure for the KstrlConfig-backed ralph.toml sections:
-# section -> [(toml_key, dataclass_field)]. Mirrors DEFAULT_RALPH_TOML in
+# section -> [(toml_key, dataclass_field)]. Mirrors DEFAULT_KSTRL_TOML in
 # init_cmd.py plus the env/flag-only UI knobs (ui_mode, no_color).
-_RALPH_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
+_KSTRL_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("agent", [
         ("type", "agent_type"),
         ("command", "agent_cmd"),
@@ -2129,7 +2131,7 @@ _RALPH_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("allowed", "allowed_paths"),
     ]),
     ("git", [
-        ("branch", "ralph_branch"),
+        ("branch", "kstrl_branch"),
         ("auto_checkout", "auto_checkout"),
     ]),
     ("ui", [
@@ -2212,7 +2214,7 @@ def config_show(
     """
     ctx = click.get_current_context()
     root_dir = root.resolve() if root else Path.cwd()
-    toml_path = root_dir / "ralph.toml"
+    toml_path = resolve_config_file(root_dir)
 
     from kstrl.contract import ContractConfig
     from kstrl.evolution import EvolutionConfig
@@ -2311,7 +2313,7 @@ def config_show(
     click.echo(f"# ralph.toml: {toml_path if toml_path.exists() else '(absent)'}")
     click.echo("")
 
-    for section, keys in _RALPH_SHOW_SECTIONS:
+    for section, keys in _KSTRL_SHOW_SECTIONS:
         click.echo(f"[{section}]")
         for toml_key, field_name in keys:
             value = getattr(resolved_ralph, field_name)
@@ -2722,7 +2724,7 @@ def status(
     is_flag=True,
     help="Keep a failed component's worktree for post-mortem instead of "
          "removing it at cleanup (also via "
-         "RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+         "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
          "[factory].keep_worktrees_on_failure in ralph.toml)",
 )
 @click.option(

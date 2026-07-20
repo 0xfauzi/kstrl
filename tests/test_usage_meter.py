@@ -401,8 +401,8 @@ def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",
         sleep_seconds=0,
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
     )
 
 
@@ -495,8 +495,8 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
         prd_file=root_dir / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
         ui_mode="plain",
         no_color=True,
     )

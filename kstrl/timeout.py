@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from kstrl import envcompat
+
 # Field name -> environment variable, shared by from_env and load so the
 # two surfaces cannot drift.
 _ENV_VARS: dict[str, str] = {
-    "git_operation": "RALPH_TIMEOUT_GIT",
-    "agent_iteration": "RALPH_TIMEOUT_AGENT_ITERATION",
-    "component_total": "RALPH_TIMEOUT_COMPONENT",
-    "verification_check": "RALPH_TIMEOUT_VERIFY",
-    "review_agent": "RALPH_TIMEOUT_REVIEW",
-    "contract_test": "RALPH_TIMEOUT_CONTRACT",
-    "subprocess_default": "RALPH_TIMEOUT_DEFAULT",
-    "scheduler_backstop_margin": "RALPH_TIMEOUT_BACKSTOP_MARGIN",
+    "git_operation": "KSTRL_TIMEOUT_GIT",
+    "agent_iteration": "KSTRL_TIMEOUT_AGENT_ITERATION",
+    "component_total": "KSTRL_TIMEOUT_COMPONENT",
+    "verification_check": "KSTRL_TIMEOUT_VERIFY",
+    "review_agent": "KSTRL_TIMEOUT_REVIEW",
+    "contract_test": "KSTRL_TIMEOUT_CONTRACT",
+    "subprocess_default": "KSTRL_TIMEOUT_DEFAULT",
+    "scheduler_backstop_margin": "KSTRL_TIMEOUT_BACKSTOP_MARGIN",
 }
 
 
@@ -58,12 +59,12 @@ class TimeoutConfig:
         Reads the ``[timeout]`` section from ``<root_dir>/ralph.toml`` if
         present, then overlays any explicitly-set env vars on top.
         """
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "timeout")
+        section = load_toml_section(resolve_config_file(root_dir), "timeout")
         for f in fields(cls):
             if f.name in section:
                 setattr(config, f.name, float(section[f.name]))
@@ -75,8 +76,8 @@ def _apply_env_overrides(config: TimeoutConfig) -> None:
     """Overlay env vars that are explicitly set; unset vars leave the
     existing value untouched (so toml values survive the overlay)."""
     for field_name, env_var in _ENV_VARS.items():
-        if env_var in os.environ:
-            setattr(config, field_name, float(os.environ[env_var]))
+        if envcompat.contains(env_var):
+            setattr(config, field_name, float(envcompat.require(env_var)))
 
 
 def run_with_timeout(

@@ -41,8 +41,8 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
         prd_file=prd,
         sleep_seconds=0,
         agent_cmd="echo test",
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
         ui_mode="plain",
         no_color=True,
     )

@@ -30,6 +30,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # SecurityConfig, VerifyConfig, EvolutionConfig, KnowledgeConfig). Cleared
 # by prefix so ambient dev-machine env cannot alter from_env/load tests,
 # and so newly added vars in a family are covered without editing this list.
+# Each family is scrubbed in BOTH namespaces during the rename transition:
+# KSTRL_* is primary, RALPH_* is the deprecated alias envcompat still reads.
 RALPH_ENV_PREFIXES: tuple[str, ...] = (
     "FACTORY_",
     "RALPH_FACTORY_",
@@ -43,6 +45,18 @@ RALPH_ENV_PREFIXES: tuple[str, ...] = (
     "RALPH_MUTATION_",
     "RALPH_DEAD_CODE_",
     "RALPH_LINEAR_",
+    "KSTRL_FACTORY_",
+    "KSTRL_TIMEOUT_",
+    "KSTRL_CONTRACT_",
+    "KSTRL_SECURITY_",
+    "KSTRL_VERIFY_",
+    "KSTRL_EVOLUTION_",
+    "KSTRL_KNOWLEDGE_",
+    "KSTRL_FEEDFORWARD_",
+    "KSTRL_MUTATION_",
+    "KSTRL_DEAD_CODE_",
+    "KSTRL_LINEAR_",
+    "KSTRL_NOTIFY_",
 )
 
 # Legacy single-loop env vars (exact names, no shared prefix).
@@ -56,11 +70,20 @@ _LEGACY_ENV_VARS: tuple[str, ...] = (
     "PROMPT_FILE",
     "ALLOWED_PATHS",
     "RALPH_BRANCH",
+    "KSTRL_BRANCH",
     "PRD_FILE",
     "RALPH_UI",
+    "KSTRL_UI",
     "GUM_FORCE",
     "NO_COLOR",
     "RALPH_ASCII",
+    "KSTRL_ASCII",
+    "RALPH_AGENT_TYPE",
+    "KSTRL_AGENT_TYPE",
+    "RALPH_AUTO_CHECKOUT",
+    "KSTRL_AUTO_CHECKOUT",
+    "RALPH_AGENT_BUDGET_USD",
+    "KSTRL_AGENT_BUDGET_USD",
 )
 
 

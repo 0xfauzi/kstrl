@@ -26,7 +26,6 @@ Blame attribution (bisection) honesty:
 
 from __future__ import annotations
 
-import os
 import secrets
 import subprocess
 import time
@@ -35,7 +34,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import envcompat, git
 from kstrl.manifest import Manifest
 from kstrl.verify import run_scrubbed
 
@@ -92,31 +91,31 @@ class ContractConfig:
     def from_env(cls) -> ContractConfig:
         """Load contract config from environment variables."""
         return cls(
-            mode=os.environ.get("RALPH_CONTRACT_MODE", ContractMode.TIER.value),
-            test_command=os.environ.get("RALPH_CONTRACT_TEST_CMD", "uv run pytest"),
-            timeout=float(os.environ.get("RALPH_TIMEOUT_CONTRACT", "600")),
+            mode=envcompat.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
+            test_command=envcompat.get("KSTRL_CONTRACT_TEST_CMD", "uv run pytest"),
+            timeout=float(envcompat.get("KSTRL_TIMEOUT_CONTRACT", "600")),
         )
 
     @classmethod
     def load(cls, root_dir: Path | None = None) -> ContractConfig:
         """Load contract config with precedence: env > toml > defaults."""
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "contract")
+        section = load_toml_section(resolve_config_file(root_dir), "contract")
         if "mode" in section:
             config.mode = str(section["mode"])
         if "test_command" in section:
             config.test_command = str(section["test_command"])
         if "timeout" in section:
             config.timeout = float(section["timeout"])
-        if "RALPH_CONTRACT_MODE" in os.environ:
-            config.mode = os.environ["RALPH_CONTRACT_MODE"]
-        if "RALPH_CONTRACT_TEST_CMD" in os.environ:
-            config.test_command = os.environ["RALPH_CONTRACT_TEST_CMD"]
-        if "RALPH_TIMEOUT_CONTRACT" in os.environ:
-            config.timeout = float(os.environ["RALPH_TIMEOUT_CONTRACT"])
+        if envcompat.contains("KSTRL_CONTRACT_MODE"):
+            config.mode = envcompat.require("KSTRL_CONTRACT_MODE")
+        if envcompat.contains("KSTRL_CONTRACT_TEST_CMD"):
+            config.test_command = envcompat.require("KSTRL_CONTRACT_TEST_CMD")
+        if envcompat.contains("KSTRL_TIMEOUT_CONTRACT"):
+            config.timeout = float(envcompat.require("KSTRL_TIMEOUT_CONTRACT"))
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
         return config

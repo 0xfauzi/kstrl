@@ -310,7 +310,7 @@ class TestLoopStopCheck:
             max_iterations=5, sleep_seconds=0,
             prompt_file=tmp_path / "prompt.md",
             prd_file=tmp_path / "prd.json",
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
         (tmp_path / "prompt.md").write_text("p")

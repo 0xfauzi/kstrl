@@ -202,8 +202,8 @@ def _loop_config(root: Path, max_iterations: int) -> KstrlConfig:
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",
         sleep_seconds=0,
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
     )
 
 

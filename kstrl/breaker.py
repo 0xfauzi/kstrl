@@ -23,11 +23,12 @@ RESETS the stall streak: the breaker fails open, never spuriously.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from kstrl import envcompat
 
 # Distinct, greppable error prefix. loop.py builds its halt message with
 # it and the factory routes on the typed LoopResult/ComponentResult flag
@@ -67,15 +68,13 @@ class BreakerConfig:
         config = cls()
         return cls(
             no_progress_iterations=int(
-                os.environ.get(
-                    "RALPH_BREAKER_ITERATIONS",
+                envcompat.get("KSTRL_BREAKER_ITERATIONS",
                     str(config.no_progress_iterations),
                 )
             ),
-            test_command=os.environ.get("RALPH_BREAKER_TEST_CMD") or None,
+            test_command=envcompat.get("KSTRL_BREAKER_TEST_CMD") or None,
             test_timeout=float(
-                os.environ.get(
-                    "RALPH_BREAKER_TEST_TIMEOUT", str(config.test_timeout),
+                envcompat.get("KSTRL_BREAKER_TEST_TIMEOUT", str(config.test_timeout),
                 )
             ),
         )
@@ -86,11 +85,11 @@ class BreakerConfig:
 
         Reads the ``[breaker]`` section from ``<root_dir>/ralph.toml``.
         """
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
-        section = load_toml_section(root_dir / "ralph.toml", "breaker")
+        section = load_toml_section(resolve_config_file(root_dir), "breaker")
         no_progress_iterations = cls.no_progress_iterations
         test_command = cls.test_command
         test_timeout = cls.test_timeout
@@ -100,12 +99,12 @@ class BreakerConfig:
             test_command = str(section["test_command"])
         if "test_timeout" in section:
             test_timeout = float(section["test_timeout"])
-        if "RALPH_BREAKER_ITERATIONS" in os.environ:
-            no_progress_iterations = int(os.environ["RALPH_BREAKER_ITERATIONS"])
-        if os.environ.get("RALPH_BREAKER_TEST_CMD"):
-            test_command = os.environ["RALPH_BREAKER_TEST_CMD"]
-        if "RALPH_BREAKER_TEST_TIMEOUT" in os.environ:
-            test_timeout = float(os.environ["RALPH_BREAKER_TEST_TIMEOUT"])
+        if envcompat.contains("KSTRL_BREAKER_ITERATIONS"):
+            no_progress_iterations = int(envcompat.require("KSTRL_BREAKER_ITERATIONS"))
+        if envcompat.get("KSTRL_BREAKER_TEST_CMD"):
+            test_command = envcompat.require("KSTRL_BREAKER_TEST_CMD")
+        if envcompat.contains("KSTRL_BREAKER_TEST_TIMEOUT"):
+            test_timeout = float(envcompat.require("KSTRL_BREAKER_TEST_TIMEOUT"))
         return cls(
             no_progress_iterations=no_progress_iterations,
             test_command=test_command,
