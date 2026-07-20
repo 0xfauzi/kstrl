@@ -90,6 +90,14 @@ class RunState:
     max_adversarial_calls: int = 0
     unknown_events: int = 0
 
+    @property
+    def kind(self) -> str:
+        """Command kind from the run-id prefix; kind-agnostic folds
+        never set it, and pre-kinds ids default to factory."""
+        from kstrl.runid import run_kind
+
+        return run_kind(self.run_id) or "factory"
+
 
 def _infer_phase(event: ev.Event) -> str | None:
     """v1 fallback, ported from observability._phase_for_event."""
@@ -348,9 +356,11 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
         ]
     except OSError:
         return []
-    # run_ids are lexicographically sortable by construction
-    # (factory-YYYYMMDD-HHMMSS...); newest last.
-    return sorted(candidates, key=lambda d: d.name)
+    # Sort by the stamp after the kind prefix (kstrl.runid) so
+    # decompose-*/factory-* interleave chronologically; newest last.
+    from kstrl.runid import run_sort_key
+
+    return sorted(candidates, key=lambda d: run_sort_key(d.name))
 
 
 def read_run_dir(run_dir: Path) -> list[ev.Event]:
