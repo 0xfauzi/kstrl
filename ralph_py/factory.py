@@ -1878,11 +1878,6 @@ def _run_factory_locked(
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     bus.emit(ComponentStarted(component=comp.id))
-                    # Engineer bracket opener; process_result closes it.
-                    bus.emit(PhaseStarted(
-                        component=comp.id, phase="engineer",
-                        attempt=comp.retries + 1,
-                    ))
                     ui.info(f"  Starting: {comp.id}")
 
                     wt_path = _launch_component(comp)
@@ -1890,6 +1885,13 @@ def _run_factory_locked(
                         transitioned_without_launch += 1
                         continue
 
+                    # Provisioning succeeded: the engineer phase starts
+                    # immediately before submission. process_result closes
+                    # normal exits; fail_scheduler_backstop closes timeouts.
+                    bus.emit(PhaseStarted(
+                        component=comp.id, phase="engineer",
+                        attempt=comp.retries + 1,
+                    ))
                     args = _submit_args(comp, wt_path)
                     if isinstance(executor, _InlineExecutor):
                         # In-process worker: no fd redirection (it would
