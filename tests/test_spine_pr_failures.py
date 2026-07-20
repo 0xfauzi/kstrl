@@ -104,9 +104,13 @@ class TestSpinePrFailurePaths:
         assert result.completed == ["alpha", "beta"]
         assert result.exit_code == 0
         assert len(result.pr_urls) == 2
-        # The pushes were real: the bare origin has both branch refs.
+        # The pushes were real - the PR lifecycle cannot complete
+        # without them - and the post-merge remote cleanup then removed
+        # both branch refs from origin (the --delete-branch replacement;
+        # a stale remote branch would break the next same-name push).
         for branch in ("ralph/factory/alpha", "ralph/factory/beta"):
-            assert git("rev-parse", f"refs/heads/{branch}", cwd=origin)
+            refs = git("ls-remote", "--heads", "origin", branch, cwd=root)
+            assert refs == "", branch + " not cleaned from origin: " + refs
 
     def test_push_failure_fails_component_and_skips_dependents(
         self, tmp_path: Path, stub_gh: Path,
@@ -163,6 +167,10 @@ class TestSpinePrFailurePaths:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_SPINE_MERGE", "fail")
+        # A REAL merge failure means the PR is not merged; without this
+        # pin the stub's MERGED default would trigger _merge_and_wait's
+        # (deliberate) merged-outcome rescue and complete the component.
+        monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
         root = tmp_path / "repo"
         init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
         manifest = _alpha_beta_manifest()

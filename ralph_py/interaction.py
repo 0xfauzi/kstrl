@@ -65,6 +65,12 @@ class PromptRequest:
     checkpoint: CheckpointContext | None = None
     request_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
+    def __post_init__(self) -> None:
+        if not self.options:
+            raise ValueError("prompt options must not be empty")
+        if self.default < 0 or self.default >= len(self.options):
+            raise ValueError("prompt default must index an option")
+
 
 @dataclass(frozen=True)
 class PromptResponse:
@@ -94,6 +100,10 @@ class UiInteractionChannel:
                 request_id=req.request_id, choice=req.default, answered=False,
             )
         choice = self._ui.choose(req.header, list(req.options), req.default)
+        if isinstance(choice, bool) or not 0 <= choice < len(req.options):
+            return PromptResponse(
+                request_id=req.request_id, choice=req.default, answered=False,
+            )
         return PromptResponse(
             request_id=req.request_id, choice=choice, answered=True,
         )
@@ -167,10 +177,16 @@ class QueueInteractionChannel:
 
     def resolve(self, request_id: str, choice: int) -> bool:
         """Answer one pending request; False when it is unknown (already
-        cancelled, double-answered, or never existed)."""
+        cancelled, double-answered, never existed, or out of range)."""
         with self._lock:
             pending = self._pending.get(request_id)
             if pending is None or pending.event.is_set():
+                return False
+            if (
+                isinstance(choice, bool)
+                or choice < 0
+                or choice >= len(pending.request.options)
+            ):
                 return False
             pending.choice = choice
             pending.event.set()

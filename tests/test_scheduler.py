@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from ralph_py import events as ev
 from ralph_py.config import RalphConfig
 from ralph_py.factory import (
     ComponentResult,
@@ -168,3 +169,11 @@ class TestUnifiedSchedulingLoop:
         assert result.failed == ["comp-a"]
         assert result.completed == ["comp-b"]
         assert real_setup_calls == ["comp-a", "comp-b"]
+        run_dir = sorted((tmp_path / ".ralph" / "runs").iterdir())[-1]
+        events = ev.read_events(run_dir / "events.jsonl")
+        engineer_starts = [
+            event for event in events
+            if isinstance(event, ev.PhaseStarted)
+            and event.phase == "engineer"
+        ]
+        assert [event.component for event in engineer_starts] == ["comp-b"]

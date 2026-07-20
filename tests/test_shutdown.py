@@ -16,12 +16,17 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from ralph_py.agents.proc import DeadlineStreamer, kill_active_process_groups
-from ralph_py.factory import ComponentResult, _wait_interruptible, run_factory
+from ralph_py.factory import (
+    ComponentResult,
+    _abort_inflight,
+    _wait_interruptible,
+    run_factory,
+)
 from ralph_py.shutdown import StopController, install_signal_handlers
 from ralph_py.ui.plain import PlainUI
 from tests.test_event_stream import (
@@ -106,6 +111,67 @@ class TestWaitInterruptible:
         )
         assert stopped is False
         assert done == set()
+
+
+class TestAbortInflight:
+    class Worker:
+        pid = 4242
+
+        def __init__(self, *, exits_on_term: bool) -> None:
+            self.alive = True
+            self.exits_on_term = exits_on_term
+            self.terminated = False
+            self.killed = False
+
+        def is_alive(self) -> bool:
+            return self.alive
+
+        def terminate(self) -> None:
+            self.terminated = True
+            if self.exits_on_term:
+                self.alive = False
+
+        def kill(self) -> None:
+            self.killed = True
+            self.alive = False
+
+    class Executor:
+        def __init__(self, worker: TestAbortInflight.Worker) -> None:
+            self._processes = {worker.pid: worker}
+            self.shutdown_called = False
+
+        def shutdown(self, **kwargs: Any) -> None:
+            self.shutdown_called = True
+
+    def test_second_request_skips_grace_and_kills_live_worker(self) -> None:
+        worker = self.Worker(exits_on_term=False)
+        executor = self.Executor(worker)
+        stop = StopController()
+        stop.request("first")
+        stop.request("second")
+
+        _abort_inflight(
+            executor, {}, Mock(), Mock(), stop,  # type: ignore[arg-type]
+            term_grace=30.0,
+        )
+
+        assert worker.terminated is True
+        assert worker.killed is True
+        assert executor.shutdown_called is True
+
+    def test_exited_worker_is_not_killed(self) -> None:
+        worker = self.Worker(exits_on_term=True)
+        executor = self.Executor(worker)
+        stop = StopController()
+        stop.request("first")
+
+        _abort_inflight(
+            executor, {}, Mock(), Mock(), stop,  # type: ignore[arg-type]
+            term_grace=30.0,
+        )
+
+        assert worker.terminated is True
+        assert worker.killed is False
 
 
 class TestAgentGroupKill:
