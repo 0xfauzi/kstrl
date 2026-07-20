@@ -721,6 +721,15 @@ class EventBus:
     def add_sink(self, sink: EventSink) -> None:
         self._sinks.append(sink)
 
+    def remove_sink(self, sink: EventSink) -> None:
+        """Detach one sink (does not close it). Lets a long-lived
+        console bus shed a run's file sinks at run end without
+        disturbing its renderer."""
+        try:
+            self._sinks.remove(sink)
+        except ValueError:
+            pass
+
     def emit(self, event: Event) -> Event:
         with self._lock:
             self._seq += 1
