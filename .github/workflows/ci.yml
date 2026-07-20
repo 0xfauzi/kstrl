@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # Stacked PRs target feature branches until the preceding layer lands.
+  # Checking every PR base keeps each layer independently validated.
   pull_request:
-    branches: [main]
 
 # Cancel superseded runs on the same branch.
 concurrency:
