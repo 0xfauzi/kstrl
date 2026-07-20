@@ -1,7 +1,7 @@
 """Schema-v2 typed event model for Ralph runs (TUI rewrite, stage 1).
 
 The filesystem is the event bus: the orchestrator and its workers append
-one JSON object per line to files under ``.ralph/runs/<run_id>/`` and
+one JSON object per line to files under ``.kstrl/runs/<run_id>/`` and
 every surface (plain line output, the Textual TUI, ``ralph status``) is
 a projection of that stream. This module owns the vocabulary: the
 :class:`Event` dataclasses, the sinks that write them, the tolerant
@@ -20,7 +20,7 @@ mistyped payload values degrade to the field default, and a torn tail
 line parses to ``None``. Sinks are observability, never control flow:
 :class:`EventBus` isolates sink exceptions and counts drops.
 
-Naming note: v1 compatibility (``.ralph/progress.jsonl``) is provided by
+Naming note: v1 compatibility (``.kstrl/progress.jsonl``) is provided by
 :class:`V1CompatSink`, which delegates to a real
 :class:`~kstrl.observability.ProgressLog` so its file format AND its
 attached ``ProgressSink`` observers (e.g. the Linear sink, R7.4) keep
@@ -769,11 +769,11 @@ class EventBus:
 class RunPaths:
     """Canonical layout of one run's on-disk stream."""
 
-    root: Path  # <project>/.ralph/runs/<run_id>
+    root: Path  # <project>/.kstrl/runs/<run_id>
 
     @classmethod
     def for_run(cls, project_root: Path, run_id: str) -> RunPaths:
-        return cls(root=project_root / ".ralph" / "runs" / run_id)
+        return cls(root=project_root / ".kstrl" / "runs" / run_id)
 
     @property
     def events_file(self) -> Path:

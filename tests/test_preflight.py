@@ -47,7 +47,7 @@ def _stub_run_loop(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 VALID_PRD = {
-    "branchName": "ralph/test",
+    "branchName": "kstrl/test",
     "userStories": [
         {
             "id": "US-1",
@@ -62,7 +62,7 @@ VALID_PRD = {
 
 
 def _scaffold(root: Path, prd: dict[str, Any] | str | None = VALID_PRD) -> Path:
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("prompt")
     (ralph_dir / "understand_prompt.md").write_text("prompt")
@@ -309,7 +309,7 @@ class TestRunPrdPreflight:
     ) -> None:
         factory_calls = self._stub_run_factory(monkeypatch)
         bad_prd = {
-            "branchName": "ralph/test",
+            "branchName": "kstrl/test",
             "userStories": [{"id": "US-1", "title": "incomplete"}],
         }
         _scaffold(tmp_path, prd=bad_prd)
@@ -381,8 +381,8 @@ class TestFactoryPreflightWiring:
             base_branch="main", single_pr=False,
             components=[Component(
                 "alpha", "Alpha", "First", [],
-                "scripts/ralph/feature/alpha/prd.json",
-                "ralph/factory/alpha",
+                "scripts/kstrl/feature/alpha/prd.json",
+                "kstrl/factory/alpha",
             )],
         )
         manifest_file = tmp_path / "manifest.json"
@@ -433,8 +433,8 @@ class TestFactoryPreflightWiring:
             base_branch="main", single_pr=False,
             components=[Component(
                 "alpha", "Alpha", "First", [],
-                "scripts/ralph/feature/alpha/prd.json",
-                "ralph/factory/alpha",
+                "scripts/kstrl/feature/alpha/prd.json",
+                "kstrl/factory/alpha",
             )],
         )
         manifest_file = tmp_path / "manifest.json"

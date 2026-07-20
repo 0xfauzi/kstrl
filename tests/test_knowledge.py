@@ -106,7 +106,7 @@ def _make_component(
         description=f"Description of {component_id}",
         dependencies=dependencies or [],
         prd_path=f"feature/{component_id}/prd.json",
-        branch_name=f"ralph/{component_id}",
+        branch_name=f"kstrl/{component_id}",
     )
 
 
@@ -136,7 +136,7 @@ class TestKnowledgeConfig:
         config = KnowledgeConfig.load(tmp_path)
         assert config.enabled is True
         assert config.max_core_tokens == 2000
-        assert config.knowledge_root == tmp_path / ".ralph" / "knowledge"
+        assert config.knowledge_root == tmp_path / ".kstrl" / "knowledge"
 
     def test_load_reads_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -1652,7 +1652,7 @@ def test_distill_prompt_includes_all_placeholders() -> None:
         prd_content="prd",
         existing_facts="(none)",
         diff_content="diff",
-        data_delimiter="RALPH-DATA-test",
+        data_delimiter="KSTRL-DATA-test",
     )
     assert "comp-a" in rendered
     assert "prd" in rendered
@@ -1666,13 +1666,13 @@ def test_distill_prompt_includes_all_placeholders() -> None:
 
 def _setup_factory_project(tmp_path: Path, component_id: str) -> Path:
     """Create a minimal project layout that satisfies the factory."""
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
-    feature_dir = tmp_path / "scripts" / "ralph" / "feature" / component_id
+    feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / component_id
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(
         json.dumps({
@@ -1689,8 +1689,8 @@ def _setup_factory_project(tmp_path: Path, component_id: str) -> Path:
 
 def _factory_base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts/ralph/prompt.md",
-        prd_file=root / "scripts/ralph/prd.json",
+        prompt_file=root / "scripts/kstrl/prompt.md",
+        prd_file=root / "scripts/kstrl/prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",
@@ -1706,7 +1706,7 @@ class TestFactoryDistillIntegration:
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         # ensure component has the prd_path matching what factory expects
         manifest.components[0].prd_path = (
-            "scripts/ralph/feature/comp-a/prd.json"
+            "scripts/kstrl/feature/comp-a/prd.json"
         )
         config = FactoryConfig(
             use_worktrees=False, create_prs=False, max_parallel=1,
@@ -1739,7 +1739,7 @@ class TestFactoryDistillIntegration:
         root = _setup_factory_project(tmp_path, "comp-a")
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         manifest.components[0].prd_path = (
-            "scripts/ralph/feature/comp-a/prd.json"
+            "scripts/kstrl/feature/comp-a/prd.json"
         )
         config = FactoryConfig(
             use_worktrees=False, create_prs=False, max_parallel=1,
@@ -1766,7 +1766,7 @@ class TestFactoryDistillIntegration:
         root = _setup_factory_project(tmp_path, "comp-a")
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         manifest.components[0].prd_path = (
-            "scripts/ralph/feature/comp-a/prd.json"
+            "scripts/kstrl/feature/comp-a/prd.json"
         )
         config = FactoryConfig(
             use_worktrees=False, create_prs=False, max_parallel=1,
@@ -1801,7 +1801,7 @@ class TestFactoryDistillIntegration:
         root = _setup_factory_project(tmp_path, "comp-a")
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         manifest.components[0].prd_path = (
-            "scripts/ralph/feature/comp-a/prd.json"
+            "scripts/kstrl/feature/comp-a/prd.json"
         )
         manifest.single_pr = True
         config = FactoryConfig(
@@ -1840,7 +1840,7 @@ class TestFactoryDistillIntegration:
         root = _setup_factory_project(tmp_path, "comp-a")
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         manifest.components[0].prd_path = (
-            "scripts/ralph/feature/comp-a/prd.json"
+            "scripts/kstrl/feature/comp-a/prd.json"
         )
         config = FactoryConfig(
             use_worktrees=False, create_prs=False, max_parallel=1,

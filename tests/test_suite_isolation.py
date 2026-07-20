@@ -4,9 +4,9 @@ Proves two things independently:
 
 1. The autouse redirect works: code writing through the DEFAULT
    (CWD-relative) evolution/experiments/knowledge paths lands in tmp_path,
-   not in the repository's real ``.ralph/``.
+   not in the repository's real ``.kstrl/``.
 2. The session guard works: a nested pytest run whose test mutates the
-   guarded ``.ralph/`` exits nonzero with a loud message (and a control
+   guarded ``.kstrl/`` exits nonzero with a loud message (and a control
    run that does not mutate exits zero).
 """
 
@@ -43,7 +43,7 @@ def _make_manifest_with_one_component() -> Manifest:
         description="isolation probe",
         dependencies=[],
         prd_path="prd/iso.json",
-        branch_name="ralph/iso",
+        branch_name="kstrl/iso",
         status=ComponentStatus.COMPLETED.value,
         error="",
         retries=0,
@@ -73,25 +73,25 @@ class TestRedirect:
         """Deliberate journal write through the DEFAULT config.
 
         This is the exact shape of the historical pollution: run_factory
-        constructs ``EvolutionConfig()`` (relative ``.ralph/...`` paths)
+        constructs ``EvolutionConfig()`` (relative ``.kstrl/...`` paths)
         and records the run. With the redirect the entries must land under
         tmp_path and never in the repo's real journal.
         """
-        config = EvolutionConfig()  # defaults: relative .ralph/ paths
+        config = EvolutionConfig()  # defaults: relative .kstrl/ paths
         journal = EvolutionJournal(config)
         manifest = _make_manifest_with_one_component()
         result = FactoryResult(completed=["iso"], failed=[], skipped=[])
 
         journal.record_run(_RUN_MARKER, manifest, result)
 
-        tmp_journal = tmp_path / ".ralph" / "evolution.jsonl"
-        tmp_experiments = tmp_path / ".ralph" / "experiments.tsv"
+        tmp_journal = tmp_path / ".kstrl" / "evolution.jsonl"
+        tmp_experiments = tmp_path / ".kstrl" / "experiments.tsv"
         assert tmp_journal.exists()
         assert _RUN_MARKER in tmp_journal.read_text()
         assert tmp_experiments.exists()
         assert _RUN_MARKER in tmp_experiments.read_text()
 
-        repo_journal = REPO_ROOT / ".ralph" / "evolution.jsonl"
+        repo_journal = REPO_ROOT / ".kstrl" / "evolution.jsonl"
         if repo_journal.exists():  # archived away by R4.1; belt and braces
             assert _RUN_MARKER not in repo_journal.read_text()
 
@@ -100,7 +100,7 @@ class TestRedirect:
     ) -> None:
         # load(None) resolves against Path.cwd(), which the redirect owns.
         assert KnowledgeConfig.load(None).knowledge_root == (
-            tmp_path / ".ralph" / "knowledge"
+            tmp_path / ".kstrl" / "knowledge"
         )
 
         fact = Fact(
@@ -120,7 +120,7 @@ class TestRedirect:
             run_id=_RUN_MARKER,
         )
         assert written == 1
-        component_dir = tmp_path / ".ralph" / "knowledge" / "iso"
+        component_dir = tmp_path / ".kstrl" / "knowledge" / "iso"
         assert component_dir.is_dir()
         assert any(component_dir.rglob("*.md"))
 
@@ -154,13 +154,13 @@ class TestGuardHelpers:
     def test_missing_dir_snapshots_empty_on_both_sides(
         self, tmp_path: Path
     ) -> None:
-        missing = tmp_path / "nope" / ".ralph"
+        missing = tmp_path / "nope" / ".kstrl"
         assert snapshot_ralph_dir(missing) == snapshot_ralph_dir(missing) == {}
 
     def test_detects_created_modified_and_deleted_entries(
         self, tmp_path: Path
     ) -> None:
-        ralph_dir = tmp_path / ".ralph"
+        ralph_dir = tmp_path / ".kstrl"
         ralph_dir.mkdir()
         (ralph_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
         (ralph_dir / "experiments.tsv").write_text("header\n")
@@ -178,7 +178,7 @@ class TestGuardHelpers:
         assert "created:  proposals" in diff
 
     def test_identical_content_compares_equal(self, tmp_path: Path) -> None:
-        ralph_dir = tmp_path / ".ralph"
+        ralph_dir = tmp_path / ".kstrl"
         ralph_dir.mkdir()
         (ralph_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
         before = snapshot_ralph_dir(ralph_dir)
@@ -199,9 +199,9 @@ class TestGuardEndToEnd:
         (nested / "test_nested.py").write_text(textwrap.dedent(test_body))
 
         env = os.environ.copy()
-        env["RALPH_SUITE_GUARD_ROOT"] = str(guarded_repo)
-        env["RALPH_GUARDED_JOURNAL"] = str(
-            guarded_repo / ".ralph" / "evolution.jsonl"
+        env["KSTRL_SUITE_GUARD_ROOT"] = str(guarded_repo)
+        env["KSTRL_GUARDED_JOURNAL"] = str(
+            guarded_repo / ".kstrl" / "evolution.jsonl"
         )
         return subprocess.run(
             [sys.executable, "-m", "pytest", str(nested), "-q",
@@ -215,8 +215,8 @@ class TestGuardEndToEnd:
     @pytest.fixture
     def guarded_repo(self, tmp_path: Path) -> Path:
         repo = tmp_path / "synthetic_repo"
-        (repo / ".ralph").mkdir(parents=True)
-        (repo / ".ralph" / "evolution.jsonl").write_text(
+        (repo / ".kstrl").mkdir(parents=True)
+        (repo / ".kstrl" / "evolution.jsonl").write_text(
             '{"run_id": "real-data"}\n'
         )
         return repo
@@ -231,7 +231,7 @@ class TestGuardEndToEnd:
             import os
 
             def test_mutates_the_guarded_journal() -> None:
-                with open(os.environ["RALPH_GUARDED_JOURNAL"], "a") as f:
+                with open(os.environ["KSTRL_GUARDED_JOURNAL"], "a") as f:
                     f.write('{"run_id": "pollution"}\\n')
             """,
         )
@@ -239,7 +239,7 @@ class TestGuardEndToEnd:
             f"guard did not fail the run\nstdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"
         )
-        assert "mutated the repository's real .ralph/" in result.stdout
+        assert "mutated the repository's real .kstrl/" in result.stdout
         assert "modified: evolution.jsonl" in result.stdout
 
     def test_guard_passes_a_run_that_leaves_ralph_dir_alone(

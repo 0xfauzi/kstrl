@@ -38,7 +38,7 @@ class StateStore:
 
     def manifest(self) -> Manifest | None:
         """The factory manifest, reloaded only when its mtime moves."""
-        path = self.root_dir / "scripts" / "ralph" / "manifest.json"
+        path = self.root_dir / "scripts" / "kstrl" / "manifest.json"
         try:
             mtime = path.stat().st_mtime
         except OSError:

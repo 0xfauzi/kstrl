@@ -56,6 +56,6 @@
   "allowedPaths": [
     "tools/slugify.py",
     "tests/test_slugify.py",
-    "scripts/ralph/feature/slugify-max/"
+    "scripts/kstrl/feature/slugify-max/"
   ]
 }

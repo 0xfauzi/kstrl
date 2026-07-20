@@ -343,7 +343,7 @@ class TestPrBodyDidNotRun:
     def _component(self, findings: list[Finding]) -> tuple[Component, Manifest]:
         comp = Component(
             "comp-a", "Component A", "Desc", [],
-            "scripts/ralph/feature/comp-a/prd.json", "ralph/comp-a",
+            "scripts/kstrl/feature/comp-a/prd.json", "kstrl/comp-a",
         )
         comp.findings = findings
         manifest = Manifest(
@@ -393,13 +393,13 @@ class TestPrBodyDidNotRun:
 
 
 def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
-    (tmp_path / "scripts" / "ralph").mkdir(parents=True)
-    (tmp_path / "scripts" / "ralph" / "prompt.md").write_text("p")
-    (tmp_path / "scripts" / "ralph" / "prd.json").write_text(
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+    (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("p")
+    (tmp_path / "scripts" / "kstrl" / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     for comp_id in comp_ids:
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / comp_id
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         _write_prd(feature_dir / "prd.json", ["US-001"])
     return tmp_path
@@ -412,8 +412,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
         components=[
             Component(
                 id=i, title=i, description="", dependencies=[],
-                prd_path=f"scripts/ralph/feature/{i}/prd.json",
-                branch_name=f"ralph/{i}",
+                prd_path=f"scripts/kstrl/feature/{i}/prd.json",
+                branch_name=f"kstrl/{i}",
             )
             for i in ids
         ],
@@ -422,8 +422,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts/ralph/prompt.md",
-        prd_file=root / "scripts/ralph/prd.json",
+        prompt_file=root / "scripts/kstrl/prompt.md",
+        prd_file=root / "scripts/kstrl/prd.json",
         sleep_seconds=0, agent_cmd="echo test",
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,

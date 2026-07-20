@@ -313,7 +313,7 @@ def test_from_env_still_works(
     config = KstrlConfig.from_env(tmp_path)
     assert config.max_iterations == 13
     assert config.model == "haiku"
-    assert config.prompt_file == tmp_path / "scripts/ralph/prompt.md"
+    assert config.prompt_file == tmp_path / "scripts/kstrl/prompt.md"
 
 
 def test_from_env_does_not_read_toml(

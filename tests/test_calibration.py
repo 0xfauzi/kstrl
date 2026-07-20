@@ -478,7 +478,7 @@ def architect_allowed_paths_caught(
       ``allowedPaths`` must contain at least one entry starting with
       this prefix.
     - ``includes_feature_subtree`` (bool): each component's
-      ``allowedPaths`` must include ``scripts/ralph/feature/<id>/``.
+      ``allowedPaths`` must include ``scripts/kstrl/feature/<id>/``.
     """
     components = decompose_output.get("components", [])
 
@@ -531,7 +531,7 @@ def architect_allowed_paths_caught(
             if not isinstance(c, dict):
                 continue
             comp_id = c.get("id", "")
-            expected = f"scripts/ralph/feature/{comp_id}/"
+            expected = f"scripts/kstrl/feature/{comp_id}/"
             entries = c.get("allowedPaths", []) or []
             if not any(
                 isinstance(e, str) and expected in e for e in entries

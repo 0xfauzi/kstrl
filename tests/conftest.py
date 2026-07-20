@@ -2,14 +2,14 @@
 
 Suite isolation (R4.1): before this conftest grew the fixtures below, the
 suite appended hundreds of junk entries to the repository's real
-``.ralph/evolution.jsonl`` / ``.ralph/experiments.tsv`` (837 of 910 journal
+``.kstrl/evolution.jsonl`` / ``.kstrl/experiments.tsv`` (837 of 910 journal
 entries at review time were test pollution), corrupting the data the
 learning loop consumes. Two layers fix that:
 
 1. ``isolate_ralph_state`` (autouse, function-scoped) redirects every
-   relative ``.ralph/...`` default write path into the test's ``tmp_path``.
+   relative ``.kstrl/...`` default write path into the test's ``tmp_path``.
 2. ``guard_repo_ralph_state`` (autouse, session-scoped) is the enforcement:
-   it fingerprints the repo's real ``.ralph/`` before the session and fails
+   it fingerprints the repo's real ``.kstrl/`` before the session and fails
    the run loudly if any test mutated it.
 """
 
@@ -104,12 +104,12 @@ def isolate_ralph_state(
 
     Why chdir is the mechanism: the bare ``EvolutionConfig()``
     constructor defaults ``journal_path``/``experiments_path`` to
-    relative ``.ralph/...`` paths resolved against CWD at write time
+    relative ``.kstrl/...`` paths resolved against CWD at write time
     (since R2.1 ``run_factory`` uses ``EvolutionConfig.load(root_dir)``,
     which anchors them to the factory root, but direct constructions in
     tests and legacy call sites remain CWD-relative).
     ``KnowledgeConfig`` likewise defaults ``knowledge_root`` to a
-    relative ``.ralph/knowledge`` and ``KnowledgeConfig.load(None)``
+    relative ``.kstrl/knowledge`` and ``KnowledgeConfig.load(None)``
     resolves it against ``Path.cwd()``; there is no env override for the
     root. Pointing CWD at ``tmp_path`` therefore redirects every relative
     default in one move (journal, experiments, knowledge root, snapshot
@@ -164,39 +164,39 @@ def describe_snapshot_diff(
 
 
 def _guard_root() -> Path:
-    """Root whose .ralph/ the session guard protects.
+    """Root whose .kstrl/ the session guard protects.
 
-    ``RALPH_SUITE_GUARD_ROOT`` exists so the guard's failure path can be
+    ``KSTRL_SUITE_GUARD_ROOT`` exists so the guard's failure path can be
     exercised end-to-end by a nested pytest run against a synthetic repo
     (tests/test_suite_isolation.py); it is not a knob for disabling the
     guard.
     """
-    override = os.environ.get("RALPH_SUITE_GUARD_ROOT")
+    override = os.environ.get("KSTRL_SUITE_GUARD_ROOT")
     return Path(override) if override else REPO_ROOT
 
 
 @pytest.fixture(scope="session", autouse=True)
 def guard_repo_ralph_state() -> Generator[None, None, None]:
-    """FAIL the run loudly if any test mutated the repo's real .ralph/.
+    """FAIL the run loudly if any test mutated the repo's real .kstrl/.
 
     This is the enforcement behind the per-test redirect: the redirect
     covers the known relative-default write paths, but any test that
-    reaches the real ``.ralph/`` through an absolute path (or a future
+    reaches the real ``.kstrl/`` through an absolute path (or a future
     write path the redirect does not know about) is caught here and fails
     the whole run, so pollution of the learning loop's data can never land
     silently again.
     """
-    ralph_dir = _guard_root() / ".ralph"
+    ralph_dir = _guard_root() / ".kstrl"
     before = snapshot_ralph_dir(ralph_dir)
     yield
     after = snapshot_ralph_dir(ralph_dir)
     if before != after:
         pytest.fail(
-            "Test suite mutated the repository's real .ralph/ directory "
+            "Test suite mutated the repository's real .kstrl/ directory "
             f"({ralph_dir}).\n"
             "Tests must write only under tmp_path; the autouse "
             "isolate_ralph_state fixture redirects the default relative "
-            ".ralph/ paths there, so a mutation here means a test used an "
+            ".kstrl/ paths there, so a mutation here means a test used an "
             "absolute path to the repo. Changes detected:\n"
             + describe_snapshot_diff(before, after),
             pytrace=False,
@@ -206,7 +206,7 @@ def guard_repo_ralph_state() -> Generator[None, None, None]:
 @pytest.fixture
 def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
     """Create a temporary project directory with Ralph structure."""
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
 
     # Create minimal prompt.md

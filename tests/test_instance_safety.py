@@ -1,6 +1,6 @@
 """R0.5: instance and state safety (H-7, H-8, H-15).
 
-- Run-level flock on ``.ralph/factory.lock``: a second invocation on the
+- Run-level flock on ``.kstrl/factory.lock``: a second invocation on the
   same root refuses to start while the first holds the lock (real
   two-process contention), with ``--force-lock`` as the explicit
   override.
@@ -67,18 +67,18 @@ def _git_out(*args: str, cwd: Path) -> str:
 
 
 def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
-    """Real git repo shaped like a ralph project (scripts/ralph/ is
+    """Real git repo shaped like a ralph project (scripts/kstrl/ is
     gitignored, so provisioning must copy prompt + PRD into worktrees)."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
-    (root / ".gitignore").write_text("scripts/ralph/\n")
+    (root / ".gitignore").write_text("scripts/kstrl/\n")
     (root / "README.md").write_text("seed\n")
     _git("add", ".gitignore", "README.md", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     (ralph_dir / "feature").mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text(
         "Read the PRD at $prd_path and implement one story.\n"
@@ -87,7 +87,7 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
         feature_dir = ralph_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
-            "branchName": f"ralph/factory/{comp_id}",
+            "branchName": f"kstrl/factory/{comp_id}",
             "userStories": [{
                 "id": "US-001", "title": "Test",
                 "acceptanceCriteria": ["AC1"],
@@ -100,8 +100,8 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
 def _component(comp_id: str, branch: str | None = None) -> Component:
     return Component(
         id=comp_id, title=comp_id.upper(), description="", dependencies=[],
-        prd_path=f"scripts/ralph/feature/{comp_id}/prd.json",
-        branch_name=branch or f"ralph/factory/{comp_id}",
+        prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
+        branch_name=branch or f"kstrl/factory/{comp_id}",
     )
 
 
@@ -132,8 +132,8 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
 
 def _base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -158,10 +158,10 @@ def _run(
 
 
 class _HeldLock:
-    """Context manager: a real second process holding .ralph/factory.lock."""
+    """Context manager: a real second process holding .kstrl/factory.lock."""
 
     def __init__(self, root: Path) -> None:
-        self.lock_path = root / ".ralph" / "factory.lock"
+        self.lock_path = root / ".kstrl" / "factory.lock"
 
     def __enter__(self) -> _HeldLock:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -203,8 +203,8 @@ class TestRunLockContention:
         assert result.completed == []
         # Nothing was scheduled or persisted.
         assert manifest.components[0].status == "pending"
-        assert not (root / "scripts" / "ralph" / "manifest.json").exists()
-        assert not (root / ".ralph" / "worktrees").exists()
+        assert not (root / "scripts" / "kstrl" / "manifest.json").exists()
+        assert not (root / ".kstrl" / "worktrees").exists()
         text = capsys.readouterr().err
         assert "factory.lock" in text
         assert "--force-lock" in text
@@ -241,7 +241,7 @@ class TestRunLockContention:
         result = _run(root)
         assert result.completed == ["comp-a"]
 
-        with open(root / ".ralph" / "factory.lock", "a+") as fp:
+        with open(root / ".kstrl" / "factory.lock", "a+") as fp:
             # Raises BlockingIOError if the run leaked its lock.
             fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
@@ -252,7 +252,7 @@ class TestManifestPathFidelity:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """State saves to the same custom path the manifest was loaded
-        from, not the hardcoded scripts/ralph/manifest.json (H-15)."""
+        from, not the hardcoded scripts/kstrl/manifest.json (H-15)."""
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
@@ -267,7 +267,7 @@ class TestManifestPathFidelity:
         assert result.completed == ["comp-a"]
         saved = json.loads(custom.read_text())
         assert saved["components"][0]["status"] == "completed"
-        assert not (root / "scripts" / "ralph" / "manifest.json").exists(), (
+        assert not (root / "scripts" / "kstrl" / "manifest.json").exists(), (
             "custom-manifest run leaked state into the default path"
         )
 
@@ -282,7 +282,7 @@ class TestManifestPathFidelity:
         result = _run(root)
 
         assert result.completed == ["comp-a"]
-        default_path = root / "scripts" / "ralph" / "manifest.json"
+        default_path = root / "scripts" / "kstrl" / "manifest.json"
         saved = json.loads(default_path.read_text())
         assert saved["components"][0]["status"] == "completed"
 
@@ -292,7 +292,7 @@ class TestManifestPathFidelity:
         """`ralph run` wires its own run-manifest.json into run_factory
         so it cannot clobber a factory's resumable manifest.json."""
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "ralph"
+        ralph_dir = project / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
         (ralph_dir / "prompt.md").write_text("test prompt")
         (ralph_dir / "prd.json").write_text(
@@ -377,7 +377,7 @@ class TestSinglePrParallelism:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
 
-        shared_branch = "ralph/factory/shared"
+        shared_branch = "kstrl/factory/shared"
         manifest = _manifest(
             components=[
                 _component("comp-a", branch=shared_branch),
@@ -409,13 +409,13 @@ class TestStaleBranchPolicy:
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
 
         # Aborted-run leftover: branch with a commit main does not have.
-        _git("branch", "ralph/factory/comp-a", cwd=root)
-        _git("checkout", "-q", "ralph/factory/comp-a", cwd=root)
+        _git("branch", "kstrl/factory/comp-a", cwd=root)
+        _git("checkout", "-q", "kstrl/factory/comp-a", cwd=root)
         (root / "stale.txt").write_text("from an aborted run\n")
         _git("add", "stale.txt", cwd=root)
         _git("commit", "-q", "-m", "stale work", cwd=root)
         _git("checkout", "-q", "main", cwd=root)
-        stale_tip = _git_out("rev-parse", "ralph/factory/comp-a", cwd=root)
+        stale_tip = _git_out("rev-parse", "kstrl/factory/comp-a", cwd=root)
 
         manifest = _manifest()
         result = _run(root, manifest=manifest)
@@ -425,10 +425,10 @@ class TestStaleBranchPolicy:
         assert manifest.components[0].status == "pending"
         # The branch is untouched, not deleted and not built upon.
         assert _git_out(
-            "rev-parse", "ralph/factory/comp-a", cwd=root,
+            "rev-parse", "kstrl/factory/comp-a", cwd=root,
         ) == stale_tip
         text = capsys.readouterr().err
-        assert "ralph/factory/comp-a" in text
+        assert "kstrl/factory/comp-a" in text
         assert "not merged" in text
 
     def test_merged_stale_branch_deleted_and_run_proceeds(
@@ -443,14 +443,14 @@ class TestStaleBranchPolicy:
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
 
         # Leftover branch pointing at main's tip: fully merged.
-        _git("branch", "ralph/factory/comp-a", "main", cwd=root)
+        _git("branch", "kstrl/factory/comp-a", "main", cwd=root)
 
         result = _run(root)
 
         assert result.exit_code == 0
         assert result.completed == ["comp-a"]
         text = capsys.readouterr().err
-        assert "Deleted stale branch 'ralph/factory/comp-a'" in text
+        assert "Deleted stale branch 'kstrl/factory/comp-a'" in text
 
 
 class TestStaleWorktreePrune:
@@ -465,7 +465,7 @@ class TestStaleWorktreePrune:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
 
-        worktree_root = root / ".ralph" / "worktrees"
+        worktree_root = root / ".kstrl" / "worktrees"
         old_run_wt = worktree_root / "20250101-000000-000000-dead" / "comp-x"
         legacy_wt = worktree_root / "legacy-comp"
         _git(

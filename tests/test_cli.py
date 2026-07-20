@@ -85,7 +85,7 @@ class TestCliValidation:
         the verification phase so the test stays fast and doesn't depend
         on real git/agent state."""
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "ralph"
+        ralph_dir = project / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
         (ralph_dir / "prompt.md").write_text("test prompt")
         (ralph_dir / "prd.json").write_text(
@@ -118,7 +118,7 @@ class TestCliValidation:
 
     def test_understand_uses_root_option(self, tmp_path: Path, monkeypatch) -> None:
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "ralph"
+        ralph_dir = project / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
         (ralph_dir / "understand_prompt.md").write_text("test prompt")
         (ralph_dir / "codebase_map.md").write_text("# Map\n")
@@ -145,7 +145,7 @@ class TestCliValidation:
 
     def test_feature_uses_root_option(self, tmp_path: Path, monkeypatch) -> None:
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "ralph"
+        ralph_dir = project / "scripts" / "kstrl"
         feature_dir = ralph_dir / "feature" / "demo"
         feature_dir.mkdir(parents=True)
         (ralph_dir / "feature_understand_prompt.md").write_text("test prompt")
@@ -188,7 +188,7 @@ class TestDecomposeBlockerOutput:
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
-        artifact = tmp_path / "scripts" / "ralph" / "spec-issues.json"
+        artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
 
         def fake_decompose(**kwargs: object) -> None:
             raise SpecBlockerError(

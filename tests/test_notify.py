@@ -5,7 +5,7 @@ Covers:
 - NotifyHooks once-per-condition semantics via a counting stub command,
   context env vars, and non-fatal failure modes (nonzero exit, missing
   binary, timeout).
-- Factory wiring: default-on progress log written under .ralph/ with
+- Factory wiring: default-on progress log written under .kstrl/ with
   run_id on events; configurable off; on_first_failure and on_complete
   fired exactly once per run through real run_factory calls; a
   MERGE_PENDING park fires the attention hook (real git + stub gh).
@@ -208,7 +208,7 @@ def _plain_factory_config(**overrides: object) -> FactoryConfig:
 
 
 def _setup_plain_project(tmp_path: Path) -> Path:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -219,8 +219,8 @@ def _setup_plain_project(tmp_path: Path) -> Path:
 
 def _plain_base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -239,7 +239,7 @@ def _two_component_manifest() -> Manifest:
 
 
 class TestFactoryProgressLogDefaultOn:
-    """R3.2 requirement 1: the log defaults on under .ralph/."""
+    """R3.2 requirement 1: the log defaults on under .kstrl/."""
 
     def test_default_on_writes_log_with_run_id(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)
@@ -250,7 +250,7 @@ class TestFactoryProgressLogDefaultOn:
         )
         assert result.exit_code == 0
 
-        log_path = root / ".ralph" / "progress.jsonl"
+        log_path = root / ".kstrl" / "progress.jsonl"
         assert log_path.exists()
         events = read_progress_events(log_path)
         assert [e["event"] for e in events] == [
@@ -266,7 +266,7 @@ class TestFactoryProgressLogDefaultOn:
             _plain_base_config(root), PlainUI(no_color=True), root,
         )
         assert result.exit_code == 0
-        assert not (root / ".ralph" / "progress.jsonl").exists()
+        assert not (root / ".kstrl" / "progress.jsonl").exists()
 
     def test_explicit_path_overrides_default(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)
@@ -277,7 +277,7 @@ class TestFactoryProgressLogDefaultOn:
             _plain_base_config(root), PlainUI(no_color=True), root,
         )
         assert custom.exists()
-        assert not (root / ".ralph" / "progress.jsonl").exists()
+        assert not (root / ".kstrl" / "progress.jsonl").exists()
 
     def test_two_runs_share_log_distinguishably(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)
@@ -286,7 +286,7 @@ class TestFactoryProgressLogDefaultOn:
                 make_manifest([]), _plain_factory_config(),
                 _plain_base_config(root), PlainUI(no_color=True), root,
             )
-        events = read_progress_events(root / ".ralph" / "progress.jsonl")
+        events = read_progress_events(root / ".kstrl" / "progress.jsonl")
         run_ids = {e["run_id"] for e in events}
         assert len(run_ids) == 2
 
@@ -366,7 +366,7 @@ def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
     so worktrees contain the PRDs without the (mocked-out) engineer's
     provisioning step (mirrors tests/test_pr_outcomes.py)."""
     root = tmp_path / "repo"
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -376,7 +376,7 @@ def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
         feature = ralph_dir / "feature" / cid
         feature.mkdir(parents=True)
         (feature / "prd.json").write_text(json.dumps({
-            "branchName": f"ralph/factory/{cid}",
+            "branchName": f"kstrl/factory/{cid}",
             "userStories": [{
                 "id": "US-001", "title": "Test",
                 "acceptanceCriteria": ["AC1"],
@@ -384,7 +384,7 @@ def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
             }],
         }))
     (root / ".gitignore").write_text(
-        ".ralph/\nscripts/ralph/manifest.json\n"
+        ".kstrl/\nscripts/kstrl/manifest.json\n"
     )
     git("init", "-q", "-b", "main", cwd=root)
     git("config", "user.email", "notify@test", cwd=root)
@@ -439,7 +439,7 @@ class TestMergePendingFiresHook:
         assert result.merge_pending == ["alpha"]
         assert _lines(count) == ["merge_pending alpha"]
         # The park is also visible in the progress log for `ralph status`.
-        events = read_progress_events(root / ".ralph" / "progress.jsonl")
+        events = read_progress_events(root / ".kstrl" / "progress.jsonl")
         assert "merge_pending" in [e["event"] for e in events]
 
 
@@ -466,6 +466,6 @@ def test_progress_log_survives_manifest_json_shape(tmp_path: Path) -> None:
         make_manifest([]), _plain_factory_config(),
         _plain_base_config(root), PlainUI(no_color=True), root,
     )
-    raw = (root / ".ralph" / "progress.jsonl").read_text().splitlines()
+    raw = (root / ".kstrl" / "progress.jsonl").read_text().splitlines()
     for line in raw:
         assert isinstance(json.loads(line), dict)

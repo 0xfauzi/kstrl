@@ -31,7 +31,7 @@ logger = logging.getLogger("kstrl.evolution")
 # format migrations are detectable. Version 2 = structured failure
 # signatures (R6.1). Entries without the field are version 1 (the
 # pre-R6 shape); wave 1 (R4.1) archived the polluted v1 journals to
-# .ralph/archive/, so fresh journals contain v2 entries only.
+# .kstrl/archive/, so fresh journals contain v2 entries only.
 JOURNAL_SCHEMA_VERSION = 2
 
 
@@ -43,8 +43,8 @@ JOURNAL_SCHEMA_VERSION = 2
 @dataclass
 class EvolutionConfig:
     enabled: bool = True
-    journal_path: Path = field(default_factory=lambda: Path(".ralph/evolution.jsonl"))
-    experiments_path: Path = field(default_factory=lambda: Path(".ralph/experiments.tsv"))
+    journal_path: Path = field(default_factory=lambda: Path(".kstrl/evolution.jsonl"))
+    experiments_path: Path = field(default_factory=lambda: Path(".kstrl/experiments.tsv"))
     min_pattern_frequency: int = 2
     lookback_runs: int = 10
     auto_propose: bool = True
@@ -121,7 +121,7 @@ def _resolve_relative_paths(config: EvolutionConfig, root_dir: Path) -> None:
     The bare ``EvolutionConfig()`` constructor keeps its historical
     CWD-relative defaults; the load/from_env paths always hand back
     absolute paths so ``ralph factory --root X`` run from elsewhere
-    cannot scatter ``.ralph/`` state into the operator's CWD.
+    cannot scatter ``.kstrl/`` state into the operator's CWD.
     """
     if not config.journal_path.is_absolute():
         config.journal_path = root_dir / config.journal_path

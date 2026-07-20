@@ -36,7 +36,7 @@
       "role": "architect_allowed_paths",
       "fixture_id": "spec-04-clear-layout",
       "caught": true,
-      "detail": "1 components, all gate-clean: slugify-function=['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/slugify-function/']"
+      "detail": "1 components, all gate-clean: slugify-function=['src/slugify/', 'tests/test_slugify.py', 'scripts/kstrl/feature/slugify-function/']"
     }
   ]
 }

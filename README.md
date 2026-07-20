@@ -311,10 +311,10 @@ interactive = false  # human-in-the-loop mode for the legacy loop
 
 # File locations
 [paths]
-prompt = "scripts/ralph/prompt.md"              # engineer prompt file
-prd = "scripts/ralph/prd.json"                  # PRD file
-progress = "scripts/ralph/progress.txt"         # progress log the agent appends to
-codebase_map = "scripts/ralph/codebase_map.md"  # brownfield codebase notes
+prompt = "scripts/kstrl/prompt.md"              # engineer prompt file
+prd = "scripts/kstrl/prd.json"                  # PRD file
+progress = "scripts/kstrl/progress.txt"         # progress log the agent appends to
+codebase_map = "scripts/kstrl/codebase_map.md"  # brownfield codebase notes
 allowed = []                                    # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
 
 # Branch handling
@@ -342,7 +342,7 @@ scheduler_backstop_margin = 60.0  # extra slack before the scheduler declares a 
 max_parallel = 4                   # concurrent component workers
 max_retries = 3                    # per-component retry budget across all phases
 retry_delay = 5.0                  # seconds between retry attempts
-use_worktrees = true               # isolate each component in .ralph/worktrees/<run>/<id>
+use_worktrees = true               # isolate each component in .kstrl/worktrees/<run>/<id>
 single_pr = false                  # one PR for the whole run instead of per-component
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
@@ -350,7 +350,7 @@ merge_timeout = 300.0              # seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
 max_total_tokens = 0               # run-level token budget; 0 = unbounded
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
-progress_log_enabled = true        # JSONL event log at .ralph/progress.jsonl (R3.2)
+progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
@@ -379,13 +379,13 @@ mutation_timeout = 600.0                           # seconds for the mutation ru
 subprocess_timeout = 300.0                         # seconds per verification subprocess
 require_self_critique = false                      # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3                      # minimum substantive bullets in the block
-progress_file_path = "scripts/ralph/progress.txt"  # progress file the self-critique check reads
+progress_file_path = "scripts/kstrl/progress.txt"  # progress file the self-critique check reads
 
 # Phase 1 approved-fixtures oracle (R7.2; default off)
 [fixtures]
 enabled = false                    # run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)
 snapshot_on_success = true         # save passing outputs for cross-run regression comparison
-snapshot_dir = ".ralph/snapshots"  # relative paths resolve against the repo root
+snapshot_dir = ".kstrl/snapshots"  # relative paths resolve against the repo root
 timeout = 30.0                     # seconds per fixture subprocess
 
 # Phase 2.5 security review
@@ -426,8 +426,8 @@ dependency_scope = "direct"      # direct | transitive (E8)
 # Continuous-learning journal
 [evolution]
 enabled = true                               # record run outcomes
-journal_path = ".ralph/evolution.jsonl"      # JSONL journal location
-experiments_path = ".ralph/experiments.tsv"  # experiment tracker location
+journal_path = ".kstrl/evolution.jsonl"      # JSONL journal location
+experiments_path = ".kstrl/experiments.tsv"  # experiment tracker location
 min_pattern_frequency = 2                    # pattern must recur N times before proposal
 lookback_runs = 10                           # past runs to analyze
 auto_propose = true                          # generate proposals after each factory run

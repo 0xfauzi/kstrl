@@ -41,7 +41,7 @@ def _checkpoint_request() -> PromptRequest:
             ),),
             security_findings=(),
             usage=_usage_totals(),
-            branch="ralph/factory/comp-a",
+            branch="kstrl/factory/comp-a",
         ),
     )
 
@@ -168,7 +168,7 @@ class TestCheckpointModal:
             summary = str(
                 app.screen.query_one("#checkpoint-summary").render(),
             )
-            assert "ralph/factory/comp-a" in summary
+            assert "kstrl/factory/comp-a" in summary
             assert "4,321+" in summary  # lower-bound marker (unreported)
             await pilot.press("a")
             await pilot.pause()

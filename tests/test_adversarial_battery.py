@@ -40,7 +40,7 @@ _NOOP = "true"
 def _write_prd(root: Path) -> Path:
     """PRD whose fixture is the independent oracle: add(2, 2) must be 4."""
     prd = {
-        "branchName": "ralph/battery",
+        "branchName": "kstrl/battery",
         "userStories": [
             {
                 "id": "US-1",

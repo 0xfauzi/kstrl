@@ -501,7 +501,7 @@ def split_diff_for_prompt(
         # Provenance only, no reviewer directives: prompt-body guidance
         # about truncated/chunked diffs is Session 8C's calibrated change.
         header = (
-            f"# [ralph R1.4] diff chunk {i} of {total}: oversized diff "
+            f"# [kstrl R1.4] diff chunk {i} of {total}: oversized diff "
             f"split on file boundaries; other files are in other chunks\n"
         )
         chunk = header + "".join(group)

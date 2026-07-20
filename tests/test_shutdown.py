@@ -268,7 +268,7 @@ class TestFactoryShutdown:
                 run_id="factory-20260720-999999.000000-fixed",
             )
         assert (
-            root / ".ralph" / "runs" / "factory-20260720-999999.000000-fixed"
+            root / ".kstrl" / "runs" / "factory-20260720-999999.000000-fixed"
             / "events.jsonl"
         ).exists()
 

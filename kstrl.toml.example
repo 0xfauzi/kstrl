@@ -15,11 +15,11 @@ sleep_seconds = 2
 interactive = false
 
 [paths]
-prompt = "scripts/ralph/prompt.md"
-prd = "scripts/ralph/prd.json"
-progress = "scripts/ralph/progress.txt"
-codebase_map = "scripts/ralph/codebase_map.md"
-allowed = []                       # e.g., ["scripts/ralph/", "src/"]
+prompt = "scripts/kstrl/prompt.md"
+prd = "scripts/kstrl/prd.json"
+progress = "scripts/kstrl/progress.txt"
+codebase_map = "scripts/kstrl/codebase_map.md"
+allowed = []                       # e.g., ["scripts/kstrl/", "src/"]
 
 [git]
 branch = ""                        # override branch (empty = use PRD branchName)
@@ -63,12 +63,12 @@ enabled = false                    # opt-in: sandboxing changes agent behavior
 allow_network = false              # deny outbound network inside the sandbox
 
 # Per-component semantic knowledge layer.
-# A third memory surface (alongside .ralph/evolution.jsonl and progress.txt)
+# A third memory surface (alongside .kstrl/evolution.jsonl and progress.txt)
 # that captures durable facts about WHAT WAS BUILT: interfaces, invariants,
 # contracts, gotchas. Written after Phase 2 review passes, read by
 # downstream components automatically.
 #
-# Storage: .ralph/knowledge/<component_id>/<run_id>/<fact_id>.md
+# Storage: .kstrl/knowledge/<component_id>/<run_id>/<fact_id>.md
 # Latest run dir per component wins; contract-breaker retries naturally
 # orphan stale facts.
 #
@@ -95,7 +95,7 @@ dependency_scope = "direct"
 max_parallel = 4                   # concurrent component workers
 max_retries = 3                    # per-component retry budget across all phases
 retry_delay = 5.0                  # seconds between retry attempts
-use_worktrees = true               # branch each component into .ralph/worktrees/<run>/<id>
+use_worktrees = true               # branch each component into .kstrl/worktrees/<run>/<id>
 single_pr = false                  # one PR for the whole factory vs per-component
 create_prs = true                  # call `gh` to push + merge per component
 review_mode = "hard"               # hard | advisory | skip
@@ -103,7 +103,7 @@ merge_timeout = 300.0              # seconds to wait for PR merge confirmation (
 max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
 max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1)
 pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
-progress_log_enabled = true        # JSONL event log at .ralph/progress.jsonl (R3.2)
+progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # Phase 1 mechanical verification.
@@ -120,7 +120,7 @@ mutation_timeout = 600.0
 subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
-progress_file_path = "scripts/ralph/progress.txt"
+progress_file_path = "scripts/kstrl/progress.txt"
 
 # Phase 1 approved fixtures (R7.2): PRD-defined input/output pairs run as an
 # oracle independent of agent-authored tests. Opt-in: fixtures execute
@@ -129,7 +129,7 @@ progress_file_path = "scripts/ralph/progress.txt"
 [fixtures]
 enabled = false
 snapshot_on_success = true         # save passing outputs for cross-run regression comparison
-snapshot_dir = ".ralph/snapshots"  # relative = against the repo root, not the worktree
+snapshot_dir = ".kstrl/snapshots"  # relative = against the repo root, not the worktree
 timeout = 30.0                     # seconds per fixture subprocess
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
@@ -158,8 +158,8 @@ max_context_tokens = 4000
 # Continuous-learning journal.
 [evolution]
 enabled = true
-journal_path = ".ralph/evolution.jsonl"
-experiments_path = ".ralph/experiments.tsv"
+journal_path = ".kstrl/evolution.jsonl"
+experiments_path = ".kstrl/experiments.tsv"
 min_pattern_frequency = 2
 lookback_runs = 10
 auto_propose = true                # generate proposals after each factory run

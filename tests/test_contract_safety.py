@@ -61,13 +61,13 @@ def _init_repo(root: Path) -> None:
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
     (root / "conflict.txt").write_text("base\n")
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt\n")
     feature_dir = ralph_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(json.dumps({
-        "branchName": "ralph/factory/a",
+        "branchName": "kstrl/factory/a",
         "userStories": [{
             "id": "US-001", "title": "Test",
             "acceptanceCriteria": ["AC1"],
@@ -95,11 +95,11 @@ def _commit_on_branch(
 
 
 def _snapshot_working_tree(root: Path) -> dict[str, bytes]:
-    """All file bytes in the working tree, excluding .git and .ralph."""
+    """All file bytes in the working tree, excluding .git and .kstrl."""
     snapshot: dict[str, bytes] = {}
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
-        if rel.parts and rel.parts[0] in (".git", ".ralph"):
+        if rel.parts and rel.parts[0] in (".git", ".kstrl"):
             continue
         if path.is_file():
             snapshot[str(rel)] = path.read_bytes()
@@ -128,7 +128,7 @@ def _component(
         title=comp_id.upper(),
         description="",
         dependencies=deps or [],
-        prd_path="scripts/ralph/feature/a/prd.json",
+        prd_path="scripts/kstrl/feature/a/prd.json",
         branch_name=branch,
         status=status,
     )
@@ -141,7 +141,7 @@ def _worktree_count(root: Path) -> int:
 
 def _tracked_changes(root: Path) -> list[str]:
     """git status lines for tracked files only. run_factory writes
-    untracked persistence state (scripts/ralph/manifest.json, .ralph/)
+    untracked persistence state (scripts/kstrl/manifest.json, .kstrl/)
     by design; contract corruption would show up as tracked modifications
     or staged merge state."""
     return [
@@ -158,7 +158,7 @@ def _read_journal_events(
     run_factory loads EvolutionConfig via ``load(root_dir)``, which
     anchors the default journal path to the factory root (not the
     process CWD)."""
-    journal = root / ".ralph" / "evolution.jsonl"
+    journal = root / ".kstrl" / "evolution.jsonl"
     if not journal.exists():
         return []
     entries = [
@@ -174,11 +174,11 @@ class TestConflictedTierLeavesCheckoutUntouched:
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
-        _commit_on_branch(root, "ralph/a", {"conflict.txt": "from a\n"})
-        _commit_on_branch(root, "ralph/b", {"conflict.txt": "from b\n"})
+        _commit_on_branch(root, "kstrl/a", {"conflict.txt": "from a\n"})
+        _commit_on_branch(root, "kstrl/b", {"conflict.txt": "from b\n"})
         manifest = _make_manifest([
-            _component("a", "ralph/a"),
-            _component("b", "ralph/b"),
+            _component("a", "kstrl/a"),
+            _component("b", "kstrl/b"),
         ])
         config = ContractConfig(
             mode=ContractMode.TIER.value, test_command="true", timeout=60,
@@ -202,9 +202,9 @@ class TestConflictedTierLeavesCheckoutUntouched:
         assert _git("status", "--porcelain", cwd=root) == ""
         assert not (root / ".git" / "MERGE_HEAD").exists()
 
-        # The temp worktree is gone: nothing under .ralph/contract and
+        # The temp worktree is gone: nothing under .kstrl/contract and
         # git tracks only the main worktree.
-        contract_dir = root / ".ralph" / "contract"
+        contract_dir = root / ".kstrl" / "contract"
         assert not contract_dir.exists() or not any(contract_dir.iterdir())
         assert _worktree_count(root) == 1
 
@@ -220,8 +220,8 @@ class TestConflictedTierLeavesCheckoutUntouched:
         the user's checkout still never changes."""
         root = tmp_path / "repo"
         _init_repo(root)
-        _commit_on_branch(root, "ralph/a", {"bad_marker.txt": "boom\n"})
-        manifest = _make_manifest([_component("a", "ralph/a")])
+        _commit_on_branch(root, "kstrl/a", {"bad_marker.txt": "boom\n"})
+        manifest = _make_manifest([_component("a", "kstrl/a")])
         config = ContractConfig(
             mode=ContractMode.TIER.value,
             test_command=MARKER_TEST_CMD,
@@ -250,8 +250,8 @@ class TestContractFailureExitsNonzero:
         broken integrated code)."""
         root = tmp_path / "repo"
         _init_repo(root)
-        _commit_on_branch(root, "ralph/factory/a", {"bad_marker.txt": "boom\n"})
-        manifest = _make_manifest([_component("a", "ralph/factory/a")])
+        _commit_on_branch(root, "kstrl/factory/a", {"bad_marker.txt": "boom\n"})
+        manifest = _make_manifest([_component("a", "kstrl/factory/a")])
         factory_config = FactoryConfig(
             use_worktrees=True, create_prs=False, max_parallel=1,
             max_retries=0, retry_delay=0, review_mode="skip",
@@ -262,8 +262,8 @@ class TestContractFailureExitsNonzero:
             ),
         )
         base = KstrlConfig(
-            prompt_file=root / "scripts" / "ralph" / "prompt.md",
-            prd_file=root / "scripts" / "ralph" / "prd.json",
+            prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+            prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
             kstrl_branch="", kstrl_branch_explicit=True,
@@ -321,7 +321,7 @@ class TestBreakerRetryReentersScheduling:
 
         manifest = _make_manifest([
             _component(
-                "a", "ralph/factory/a",
+                "a", "kstrl/factory/a",
                 status=ComponentStatus.PENDING.value,
             ),
         ])
@@ -344,8 +344,8 @@ class TestBreakerRetryReentersScheduling:
             ),
         )
         base = KstrlConfig(
-            prompt_file=root / "scripts" / "ralph" / "prompt.md",
-            prd_file=root / "scripts" / "ralph" / "prd.json",
+            prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+            prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd=agent_cmd,
             kstrl_branch="", kstrl_branch_explicit=True,
@@ -397,11 +397,11 @@ class TestMergedModeNoBlame:
         (root / "bad_marker.txt").write_text("boom\n")
         _git("add", "-A", cwd=root)
         _git("commit", "-q", "-m", "squash-merged components", cwd=root)
-        _commit_on_branch(root, "ralph/a", {"a.txt": "a\n"})
-        _commit_on_branch(root, "ralph/b", {"b.txt": "b\n"})
+        _commit_on_branch(root, "kstrl/a", {"a.txt": "a\n"})
+        _commit_on_branch(root, "kstrl/b", {"b.txt": "b\n"})
         manifest = _make_manifest([
-            _component("a", "ralph/a"),
-            _component("b", "ralph/b", deps=["a"]),
+            _component("a", "kstrl/a"),
+            _component("b", "kstrl/b", deps=["a"]),
         ])
         config = ContractConfig(
             mode=ContractMode.TIER.value,
@@ -429,8 +429,8 @@ class TestMergedModeNoBlame:
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
-        _commit_on_branch(root, "ralph/a", {"a.txt": "a\n"})
-        manifest = _make_manifest([_component("a", "ralph/a")])
+        _commit_on_branch(root, "kstrl/a", {"a.txt": "a\n"})
+        manifest = _make_manifest([_component("a", "kstrl/a")])
         config = ContractConfig(
             mode=ContractMode.TIER.value,
             test_command=MARKER_TEST_CMD,
@@ -483,7 +483,7 @@ class TestCleanupFailsLoudly:
 
         root = tmp_path / "repo"
         _init_repo(root)
-        manifest = _make_manifest([_component("a", "ralph/factory/a")])
+        manifest = _make_manifest([_component("a", "kstrl/factory/a")])
         factory_config = FactoryConfig(
             use_worktrees=True, create_prs=False, max_parallel=1,
             max_retries=0, retry_delay=0, review_mode="skip",
@@ -492,8 +492,8 @@ class TestCleanupFailsLoudly:
             ),
         )
         base = KstrlConfig(
-            prompt_file=root / "scripts" / "ralph" / "prompt.md",
-            prd_file=root / "scripts" / "ralph" / "prd.json",
+            prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+            prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
             kstrl_branch="", kstrl_branch_explicit=True,

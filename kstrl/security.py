@@ -327,7 +327,7 @@ class SecurityConfig:
         return config
 
 
-SECURITY_PROMPT_VERSION = "1.1.0"
+SECURITY_PROMPT_VERSION = "1.1.1"
 
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance
@@ -443,7 +443,7 @@ Truncated and chunked diffs:
   diff and you are seeing only a prefix. Your review is PARTIAL: say so
   in "overallNotes" and set "exhaustively_searched": false. Never treat
   unseen content as clean.
-- A header line like "# [ralph R1.4] diff chunk 2 of 5" means the diff
+- A header line like "# [kstrl R1.4] diff chunk 2 of 5" means the diff
   was split on file boundaries and you are reviewing one slice; other
   slices go to separate review passes. Review everything present, note
   "chunk i of N" in "overallNotes", and set "exhaustively_searched":

@@ -108,7 +108,7 @@ class TestSpinePrFailurePaths:
         # without them - and the post-merge remote cleanup then removed
         # both branch refs from origin (the --delete-branch replacement;
         # a stale remote branch would break the next same-name push).
-        for branch in ("ralph/factory/alpha", "ralph/factory/beta"):
+        for branch in ("kstrl/factory/alpha", "kstrl/factory/beta"):
             refs = git("ls-remote", "--heads", "origin", branch, cwd=root)
             assert refs == "", branch + " not cleaned from origin: " + refs
 
@@ -160,7 +160,7 @@ class TestSpinePrFailurePaths:
         assert "beta" in result.skipped
         assert result.exit_code == 1
         # The failure was after the real push: origin has alpha's branch.
-        assert git("rev-parse", "refs/heads/ralph/factory/alpha", cwd=origin)
+        assert git("rev-parse", "refs/heads/kstrl/factory/alpha", cwd=origin)
 
     def test_merge_failure_fails_component_and_skips_dependents(
         self, tmp_path: Path, stub_gh: Path,

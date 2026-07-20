@@ -436,7 +436,7 @@ class ComponentPipeline:
 
     def _debug_dir_for(self, comp_id: str) -> Path:
         """Forensic raw-output dir for this run's component (R1.2)."""
-        return self.root_dir / ".ralph" / "debug" / self.run_id / comp_id
+        return self.root_dir / ".kstrl" / "debug" / self.run_id / comp_id
 
     def _add_findings(
         self, comp: Component, new_findings: list[Finding],
@@ -2051,7 +2051,7 @@ class ComponentPipeline:
             if prefix:
                 progress_text = ""
                 progress_path = (
-                    wt_path / "scripts" / "ralph" / "progress.txt"
+                    wt_path / "scripts" / "kstrl" / "progress.txt"
                 )
                 try:
                     progress_text = progress_path.read_text(encoding="utf-8")

@@ -14,20 +14,20 @@ if TYPE_CHECKING:
 
 # Default file contents
 DEFAULT_PRD = {
-    "branchName": "ralph/feature",
+    "branchName": "kstrl/feature",
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.1.0"
+DEFAULT_PROMPT_VERSION = "1.1.1"
 
 # The $prd_path / $progress_path / $codebase_map_path placeholders are
 # substituted by loop.run_loop (string.Template.safe_substitute) with the
 # per-component paths, so a decomposed component's agent reads the SAME
 # PRD file that verify.check_prd_stories re-reads (R2.3, H-11). Before
-# v1.1.0 the body hardcoded scripts/ralph/prd.json while decomposed PRDs
-# live at scripts/ralph/feature/<id>/prd.json - the agent and the
+# v1.1.0 the body hardcoded scripts/kstrl/prd.json while decomposed PRDs
+# live at scripts/kstrl/feature/<id>/prd.json - the agent and the
 # verifier disagreed on which file mattered.
-DEFAULT_PROMPT = """# Ralph Agent Instructions
+DEFAULT_PROMPT = """# kstrl Agent Instructions
 
 You are the implementing engineer in a software factory. You will be
 reviewed by a hostile code reviewer when you declare done; treat that
@@ -43,8 +43,8 @@ reviewer as already reading your diff while you write it.
    - Do not load the entire file.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
 5. If a feature understand file exists for this PRD, query it using the same keywords.
-   - Default path: `scripts/ralph/feature/<feature_name>/understand.md`
-   - If the PRD is at `scripts/ralph/feature/<feature_name>/prd.json`, use that folder name.
+   - Default path: `scripts/kstrl/feature/<feature_name>/understand.md`
+   - If the PRD is at `scripts/kstrl/feature/<feature_name>/prd.json`, use that folder name.
    - Otherwise use the PRD filename stem as `<feature_name>`.
 6. Branch is pre-checked out to `branchName` from the PRD
    (verify only; do not switch)
@@ -121,7 +121,7 @@ If ALL stories pass, reply with exactly:
 Otherwise end normally.
 """
 
-DEFAULT_PROGRESS = """# Ralph Progress Log
+DEFAULT_PROGRESS = """# kstrl Progress Log
 
 ## Codebase Patterns
 - (add reusable patterns here)
@@ -134,7 +134,7 @@ DEFAULT_PROGRESS = """# Ralph Progress Log
 
 DEFAULT_CODEBASE_MAP = """# Codebase Map (Brownfield Notes)
 
-This file is meant to be built over time using the Ralph **codebase understanding** loop.
+This file is meant to be built over time using the kstrl **codebase understanding** loop.
 
 ## How to use this map
 
@@ -223,14 +223,14 @@ and write an evidence-based "map" for humans.
 **Hard rule:** do NOT modify application code, tests, configs, dependencies, or CI.
 
 **The only file you may edit is:**
-- `scripts/ralph/codebase_map.md`
+- `scripts/kstrl/codebase_map.md`
 
 If you think code changes are needed, write that as a note in the map under
 **Open questions / Follow-ups**. Do not implement changes in this mode.
 
 ## What to do
 
-1. Read `scripts/ralph/codebase_map.md`.
+1. Read `scripts/kstrl/codebase_map.md`.
 2. Choose ONE topic to investigate this iteration:
    - If `codebase_map.md` has a **Next Topics** checklist, pick the first unchecked item.
    - Otherwise follow this default order:
@@ -252,7 +252,7 @@ If you think code changes are needed, write that as a note in the map under
    - app entrypoints (server/main)
    - routes/controllers
    - data layer (models, migrations)
-4. Update **ONLY** `scripts/ralph/codebase_map.md`:
+4. Update **ONLY** `scripts/kstrl/codebase_map.md`:
    - Append a new **Iteration Notes** section for this topic (template below)
    - If you used a Next Topics checklist, mark the topic as done (`[x]`)
    - Keep notes concise, factual, and verifiable
@@ -267,7 +267,7 @@ If you think code changes are needed, write that as a note in the map under
 
 ## Iteration Notes format
 
-Append this to the END of `scripts/ralph/codebase_map.md`:
+Append this to the END of `scripts/kstrl/codebase_map.md`:
 
 ## [YYYY-MM-DD] - [Topic]
 
@@ -303,7 +303,7 @@ Your job is to build a focused, evidence-based map of the code that this feature
 **Hard rule:** do NOT modify application code, tests, configs, dependencies, or CI.
 
 **The only file you may edit is the feature understand file, for example:**
-- `scripts/ralph/feature/<feature_name>/understand.md`
+- `scripts/kstrl/feature/<feature_name>/understand.md`
 
 If you think code changes are needed, write that as a note in the feature understand file
 under **Open questions / Follow-ups**. Do not implement changes in this mode.
@@ -312,7 +312,7 @@ under **Open questions / Follow-ups**. Do not implement changes in this mode.
 
 1. Read the feature PRD file you were given.
 2. Derive a short list of keywords from the PRD intent, not just exact wording.
-3. Read `scripts/ralph/codebase_map.md` and query only the sections relevant to this feature.
+3. Read `scripts/kstrl/codebase_map.md` and query only the sections relevant to this feature.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
    - Do not load the entire file.
 4. Investigate by reading docs, configs, and code. Prefer fast, high-signal entrypoints:
@@ -386,11 +386,11 @@ DEFAULT_KSTRL_TOML = """\
 # interactive = false
 
 [paths]
-# prompt = "scripts/ralph/prompt.md"
-# prd = "scripts/ralph/prd.json"
-# progress = "scripts/ralph/progress.txt"
-# codebase_map = "scripts/ralph/codebase_map.md"
-# allowed = []                     # e.g. ["scripts/ralph/", "src/"]
+# prompt = "scripts/kstrl/prompt.md"
+# prd = "scripts/kstrl/prd.json"
+# progress = "scripts/kstrl/progress.txt"
+# codebase_map = "scripts/kstrl/codebase_map.md"
+# allowed = []                     # e.g. ["scripts/kstrl/", "src/"]
 
 [git]
 # branch = ""                      # override branch (empty = use PRD branchName)
@@ -404,7 +404,7 @@ DEFAULT_KSTRL_TOML = """\
 # max_parallel = 4                 # concurrent component workers
 # max_retries = 3                  # per-component retry budget across all phases
 # retry_delay = 5.0                # seconds between retry attempts
-# use_worktrees = true             # branch each component into .ralph/worktrees/<id>
+# use_worktrees = true             # branch each component into .kstrl/worktrees/<id>
 # single_pr = false                # one PR for the whole factory vs per-component
 # create_prs = true                # call `gh` to push + merge per component
 # review_mode = "hard"             # hard | advisory | skip
@@ -427,7 +427,7 @@ DEFAULT_KSTRL_TOML = """\
 # subprocess_timeout = 300.0
 # require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse
 # self_critique_min_bullets = 3
-# progress_file_path = "scripts/ralph/progress.txt"
+# progress_file_path = "scripts/kstrl/progress.txt"
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
@@ -469,8 +469,8 @@ DEFAULT_KSTRL_TOML = """\
 # Continuous-learning journal.
 [evolution]
 # enabled = true
-# journal_path = ".ralph/evolution.jsonl"
-# experiments_path = ".ralph/experiments.tsv"
+# journal_path = ".kstrl/evolution.jsonl"
+# experiments_path = ".kstrl/experiments.tsv"
 # min_pattern_frequency = 2
 # lookback_runs = 10
 
@@ -497,7 +497,7 @@ def run_init(directory: Path, ui: UI) -> int:
     Returns:
         Exit code (0=success, 1=validation failure, 2=directory not found)
     """
-    ui.title("Ralph Init")
+    ui.title("kstrl Init")
 
     # Validate directory
     ui.section("Target")
@@ -516,22 +516,22 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.warn("Not a git repository")
 
     ui.section("Scaffold")
-    ralph_dir = root / "scripts" / "ralph"
-    if not ralph_dir.exists():
-        ralph_dir.mkdir(parents=True, exist_ok=True)
-        ui.ok("Created scripts/ralph/")
+    kstrl_dir = root / "scripts" / "kstrl"
+    if not kstrl_dir.exists():
+        kstrl_dir.mkdir(parents=True, exist_ok=True)
+        ui.ok("Created scripts/kstrl/")
     else:
-        ui.ok("scripts/ralph/ exists")
+        ui.ok("scripts/kstrl/ exists")
 
     ui.section("Create defaults")
     _create_if_missing(root / "kstrl.toml", DEFAULT_KSTRL_TOML, ui)
-    _create_if_missing(ralph_dir / "prompt.md", DEFAULT_PROMPT, ui)
-    _create_if_missing(ralph_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
-    _create_if_missing(ralph_dir / "progress.txt", DEFAULT_PROGRESS, ui)
-    _create_if_missing(ralph_dir / "codebase_map.md", DEFAULT_CODEBASE_MAP, ui)
-    _create_if_missing(ralph_dir / "understand_prompt.md", DEFAULT_UNDERSTAND_PROMPT, ui)
+    _create_if_missing(kstrl_dir / "prompt.md", DEFAULT_PROMPT, ui)
+    _create_if_missing(kstrl_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
+    _create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)
+    _create_if_missing(kstrl_dir / "codebase_map.md", DEFAULT_CODEBASE_MAP, ui)
+    _create_if_missing(kstrl_dir / "understand_prompt.md", DEFAULT_UNDERSTAND_PROMPT, ui)
     _create_if_missing(
-        ralph_dir / "feature_understand_prompt.md",
+        kstrl_dir / "feature_understand_prompt.md",
         DEFAULT_FEATURE_UNDERSTAND_PROMPT,
         ui,
     )
@@ -541,7 +541,7 @@ def run_init(directory: Path, ui: UI) -> int:
 
     # Validate PRD
     ui.section("Validate PRD")
-    prd_file = ralph_dir / "prd.json"
+    prd_file = kstrl_dir / "prd.json"
 
     try:
         with open(prd_file) as f:
@@ -573,15 +573,15 @@ def run_init(directory: Path, ui: UI) -> int:
 
     # Next steps
     ui.section("Next steps")
-    ui.info("1. Edit scripts/ralph/prompt.md")
-    ui.info("2. Add user stories to scripts/ralph/prd.json")
+    ui.info("1. Edit scripts/kstrl/prompt.md")
+    ui.info("2. Add user stories to scripts/kstrl/prd.json")
     ui.info("3. Run: ralph run [iterations]")
     ui.info("")
     ui.info("For codebase understanding mode:")
     ui.info("  ralph understand [iterations]")
     ui.info("")
     ui.info("For feature understanding mode:")
-    ui.info("  ralph feature [iterations] --prd scripts/ralph/feature/<feature_name>/prd.json")
+    ui.info("  ralph feature [iterations] --prd scripts/kstrl/feature/<feature_name>/prd.json")
 
     return 0
 

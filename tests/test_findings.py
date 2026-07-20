@@ -28,7 +28,7 @@ def _make_component(comp_id: str = "comp-1") -> Component:
         description="d",
         dependencies=[],
         prd_path="prd.json",
-        branch_name="ralph/comp-1",
+        branch_name="kstrl/comp-1",
     )
 
 
@@ -241,7 +241,7 @@ class TestManifestFindingsRoundtrip:
             "components": [{
                 "id": "c1", "title": "t", "description": "d",
                 "dependencies": [], "prdPath": "p.json",
-                "branchName": "ralph/c1",
+                "branchName": "kstrl/c1",
             }],
         }
         path = tmp_path / "manifest.json"
@@ -256,7 +256,7 @@ class TestManifestFindingsRoundtrip:
             "components": [{
                 "id": "c1", "title": "t", "description": "d",
                 "dependencies": [], "prdPath": "p.json",
-                "branchName": "ralph/c1",
+                "branchName": "kstrl/c1",
                 "findings": [],
             }],
         }
@@ -271,7 +271,7 @@ class TestManifestFindingsRoundtrip:
             "components": [{
                 "id": "c1", "title": "t", "description": "d",
                 "dependencies": [], "prdPath": "p.json",
-                "branchName": "ralph/c1",
+                "branchName": "kstrl/c1",
                 "findings": ["not-a-dict", {"phase": "review", "category": "x"}],
             }],
         }

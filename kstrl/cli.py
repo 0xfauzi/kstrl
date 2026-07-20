@@ -193,7 +193,7 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
     if not prd_file.exists():
         ui_impl.err(f"PRD file not found: {prd_file}")
         ui_impl.info(
-            "Run `ralph init` to scaffold scripts/ralph/prd.json, "
+            "Run `ralph init` to scaffold scripts/kstrl/prd.json, "
             "or point --prd / PRD_FILE at an existing PRD."
         )
         sys.exit(1)
@@ -345,7 +345,7 @@ def _resolve_root(root: Path | None, prompt: Path | None, prd: Path | None) -> P
             continue
         resolved = candidate.resolve()
         parent = resolved.parent
-        if parent.name == "ralph" and parent.parent.name == "scripts":
+        if parent.name == "kstrl" and parent.parent.name == "scripts":
             return parent.parent.parent
 
     return Path.cwd()
@@ -378,7 +378,7 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
         rel = None
 
     if rel is not None and len(rel.parts) >= 4:
-        if rel.parts[0] == "scripts" and rel.parts[1] == "ralph" and rel.parts[2] == "feature":
+        if rel.parts[0] == "scripts" and rel.parts[1] == "kstrl" and rel.parts[2] == "feature":
             return rel.parts[3]
 
     return prd_path.stem
@@ -500,7 +500,7 @@ def cli() -> None:
     "--force-lock",
     is_flag=True,
     help="Proceed even if another ralph invocation holds "
-         ".ralph/factory.lock (may corrupt the other run's state)",
+         ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 def run(
     max_iterations: int,
@@ -550,8 +550,8 @@ def run(
     # Apply CLI overrides when explicitly provided.
     _apply_cli_overrides(
         ctx, config, root_dir,
-        prompt_default=root_dir / "scripts/ralph/prompt.md",
-        prd_default=root_dir / "scripts/ralph/prd.json",
+        prompt_default=root_dir / "scripts/kstrl/prompt.md",
+        prd_default=root_dir / "scripts/kstrl/prd.json",
     )
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
@@ -587,7 +587,7 @@ def run(
     # worth surfacing, not something to swallow.
     prd_branch = PRD.load(config.prd_file).branch_name
 
-    effective_branch = config.kstrl_branch or prd_branch or "ralph/run"
+    effective_branch = config.kstrl_branch or prd_branch or "kstrl/run"
 
     # Detect base branch from git
     detected_base = "main"
@@ -649,7 +649,7 @@ def run(
     try:
         factory_result = run_factory(
             manifest, factory_cfg, config, ui_impl, root_dir,
-            manifest_path=root_dir / "scripts" / "ralph" / "run-manifest.json",
+            manifest_path=root_dir / "scripts" / "kstrl" / "run-manifest.json",
             stop=stop,
         )
     finally:
@@ -723,7 +723,7 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
 )
 @click.option(
     "--branch",
-    help="Git branch (default: ralph/understanding)",
+    help="Git branch (default: kstrl/understanding)",
 )
 @click.option(
     "--allowed-paths",
@@ -768,7 +768,7 @@ def understand(
     This mode:
     - Uses understand_prompt.md instead of prompt.md
     - Only allows edits to codebase_map.md
-    - Works on ralph/understanding branch by default
+    - Works on kstrl/understanding branch by default
     """
     ctx = click.get_current_context()
     env_prompt = os.environ.get("PROMPT_FILE")
@@ -786,10 +786,10 @@ def understand(
 
     root_value = root if _use_cli_value(ctx, "root") else None
     root_dir = _resolve_root(root_value, prompt_for_root, prd_for_root)
-    ralph_dir = root_dir / "scripts" / "ralph"
+    kstrl_dir = root_dir / "scripts" / "kstrl"
 
     # Create codebase_map.md if missing
-    codebase_map = ralph_dir / "codebase_map.md"
+    codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
         from kstrl.init_cmd import DEFAULT_CODEBASE_MAP
         codebase_map.parent.mkdir(parents=True, exist_ok=True)
@@ -802,11 +802,11 @@ def understand(
         config.max_iterations = max_iterations
     if _use_cli_value(ctx, "prompt"):
         config.prompt_file = _resolve_path(
-            root_dir, prompt, ralph_dir / "understand_prompt.md"
+            root_dir, prompt, kstrl_dir / "understand_prompt.md"
         )
     if _use_cli_value(ctx, "prd"):
         config.prd_file = _resolve_path(
-            root_dir, prd, ralph_dir / "prd.json"
+            root_dir, prd, kstrl_dir / "prd.json"
         )
     if _use_cli_value(ctx, "sleep"):
         config.sleep_seconds = sleep
@@ -832,9 +832,9 @@ def understand(
 
     # Apply understanding defaults when not overridden by env or CLI.
     if not _use_cli_value(ctx, "prompt") and "PROMPT_FILE" not in os.environ:
-        config.prompt_file = ralph_dir / "understand_prompt.md"
+        config.prompt_file = kstrl_dir / "understand_prompt.md"
     if not _use_cli_value(ctx, "allowed_paths") and "ALLOWED_PATHS" not in os.environ:
-        config.allowed_paths = ["scripts/ralph/codebase_map.md"]
+        config.allowed_paths = ["scripts/kstrl/codebase_map.md"]
     # Only fall back to the understand-mode branch default when no other
     # source (CLI / env / TOML) supplied a branch. KstrlConfig.load sets
     # kstrl_branch_explicit=True when TOML provides a non-empty [git].branch.
@@ -843,7 +843,7 @@ def understand(
         and not envcompat.contains("KSTRL_BRANCH")
         and not config.kstrl_branch_explicit
     ):
-        config.kstrl_branch = "ralph/understanding"
+        config.kstrl_branch = "kstrl/understanding"
         config.kstrl_branch_explicit = False
 
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
@@ -1020,7 +1020,7 @@ def feature(
 
     root_value = root if _use_cli_value(ctx, "root") else None
     root_dir = _resolve_root(root_value, prompt_for_root, prd_for_root)
-    ralph_dir = root_dir / "scripts" / "ralph"
+    kstrl_dir = root_dir / "scripts" / "kstrl"
 
     base_config = KstrlConfig.load(root_dir)
 
@@ -1053,7 +1053,7 @@ def feature(
         force_rich=force_rich,
     )
 
-    codebase_map = ralph_dir / "codebase_map.md"
+    codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
         ui_impl.err(f"codebase_map.md not found: {codebase_map}")
         ui_impl.info("Run `ralph init` or `ralph understand` first.")
@@ -1089,9 +1089,9 @@ def feature(
         sys.exit(2)
 
     if _use_cli_value(ctx, "prd"):
-        prd_path = _resolve_path(root_dir, prd, ralph_dir / "prd.json")
+        prd_path = _resolve_path(root_dir, prd, kstrl_dir / "prd.json")
     elif env_prd is not None:
-        prd_path = _resolve_path(root_dir, env_prd, ralph_dir / "prd.json")
+        prd_path = _resolve_path(root_dir, env_prd, kstrl_dir / "prd.json")
     else:
         prd_path = None
     if prd_path is None:
@@ -1113,13 +1113,13 @@ def feature(
         ui_impl.err("Unable to determine feature name from PRD path.")
         sys.exit(2)
 
-    feature_dir = ralph_dir / "feature" / feature_name
+    feature_dir = kstrl_dir / "feature" / feature_name
     feature_dir.mkdir(parents=True, exist_ok=True)
     feature_understand = feature_dir / "understand.md"
     if not feature_understand.exists():
         feature_understand.write_text(DEFAULT_FEATURE_UNDERSTAND)
 
-    log_dir = root_dir / ".ralph" / "logs" / f"feature_{feature_name}"
+    log_dir = root_dir / ".kstrl" / "logs" / f"feature_{feature_name}"
 
     def log_path(label: str, attempt: int | None = None) -> Path:
         stamp = _timestamp()
@@ -1199,10 +1199,10 @@ def feature(
     understand_config.max_iterations = understand_iterations_value
     if _use_cli_value(ctx, "understand_prompt"):
         understand_config.prompt_file = _resolve_path(
-            root_dir, understand_prompt, ralph_dir / "feature_understand_prompt.md"
+            root_dir, understand_prompt, kstrl_dir / "feature_understand_prompt.md"
         )
     elif "PROMPT_FILE" not in os.environ:
-        understand_config.prompt_file = ralph_dir / "feature_understand_prompt.md"
+        understand_config.prompt_file = kstrl_dir / "feature_understand_prompt.md"
     understand_config.prd_file = prd_path
     rel_feature_understand = feature_understand.relative_to(root_dir).as_posix()
     understand_config.allowed_paths = [rel_feature_understand]
@@ -1252,7 +1252,7 @@ def feature(
     if run_config.max_iterations == 0:
         ui_impl.warn("PRD has no user stories. Skipping implementation.")
         sys.exit(0)
-    run_config.prompt_file = root_dir / "scripts/ralph/prompt.md"
+    run_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
     if _use_cli_value(ctx, "implementation_allowed_paths"):
         run_config.allowed_paths = _parse_paths(implementation_allowed_paths)
     if _use_cli_value(ctx, "branch"):
@@ -1274,7 +1274,7 @@ def feature(
         repair_prd = build_repair_prd(last_log, attempt)
         repair_config = copy.deepcopy(base_config)
         repair_config.prd_file = repair_prd
-        repair_config.prompt_file = root_dir / "scripts/ralph/prompt.md"
+        repair_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
         repair_config.max_iterations = repair_iterations
         if _use_cli_value(ctx, "implementation_allowed_paths"):
             repair_config.allowed_paths = _parse_paths(implementation_allowed_paths)
@@ -1623,7 +1623,7 @@ def decompose(
 @click.option(
     "--progress-log",
     type=click.Path(path_type=Path),
-    help="Path for the JSONL progress log (default: .ralph/progress.jsonl; "
+    help="Path for the JSONL progress log (default: .kstrl/progress.jsonl; "
          "the log is on by default, disable via "
          "[factory].progress_log_enabled = false or "
          "KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)",
@@ -1645,7 +1645,7 @@ def decompose(
     "--force-lock",
     is_flag=True,
     help="Proceed even if another ralph invocation holds "
-         ".ralph/factory.lock (may corrupt the other run's state)",
+         ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
     "--yes", "-y",
@@ -2040,7 +2040,7 @@ def factory(
         if response.answered and response.choice != 0:
             sys.exit(0)
 
-    ralph_dir = root_dir / "scripts" / "ralph"
+    kstrl_dir = root_dir / "scripts" / "kstrl"
     base_config = KstrlConfig.load(root_dir)
     if _use_cli_value(ctx, "agent_cmd"):
         base_config.agent_cmd = agent_cmd
@@ -2064,13 +2064,13 @@ def factory(
 
     # Ensure prompt file exists
     if not base_config.prompt_file.exists():
-        default_prompt = ralph_dir / "prompt.md"
+        default_prompt = kstrl_dir / "prompt.md"
         if default_prompt.exists():
             base_config.prompt_file = default_prompt
 
     # R0.5 (H-15): state saves back to the file it was loaded from.
     # --manifest /custom.json persists to /custom.json; --spec runs keep
-    # the default scripts/ralph/manifest.json that decompose wrote.
+    # the default scripts/kstrl/manifest.json that decompose wrote.
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
@@ -2145,10 +2145,10 @@ _KSTRL_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
 def _ralph_config_defaults(root_dir: Path) -> KstrlConfig:
     """Built-in KstrlConfig defaults with paths anchored like load()."""
     config = KstrlConfig()
-    config.prompt_file = root_dir / "scripts/ralph/prompt.md"
-    config.prd_file = root_dir / "scripts/ralph/prd.json"
-    config.progress_file = root_dir / "scripts/ralph/progress.txt"
-    config.codebase_map_file = root_dir / "scripts/ralph/codebase_map.md"
+    config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+    config.prd_file = root_dir / "scripts/kstrl/prd.json"
+    config.progress_file = root_dir / "scripts/kstrl/progress.txt"
+    config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
     return config
 
 
@@ -2302,8 +2302,8 @@ def config_show(
 
     flag_fields = _apply_cli_overrides(
         ctx, resolved_ralph, root_dir,
-        prompt_default=root_dir / "scripts/ralph/prompt.md",
-        prd_default=root_dir / "scripts/ralph/prd.json",
+        prompt_default=root_dir / "scripts/kstrl/prompt.md",
+        prd_default=root_dir / "scripts/kstrl/prd.json",
     )
     for name in flag_fields:
         ralph_sources[name] = "flag"
@@ -2477,12 +2477,12 @@ def _render_status(
                 )
         # Evidence paths: whatever this run left on disk for the
         # component (worktree kept after a failure, adversarial raw
-        # outputs under .ralph/debug/).
+        # outputs under .kstrl/debug/).
         if root_dir is not None and state is not None and state.run_id:
             evidence = [
                 path for path in (
-                    root_dir / ".ralph" / "worktrees" / state.run_id / comp.id,
-                    root_dir / ".ralph" / "debug" / state.run_id / comp.id,
+                    root_dir / ".kstrl" / "worktrees" / state.run_id / comp.id,
+                    root_dir / ".kstrl" / "debug" / state.run_id / comp.id,
                 )
                 if path.exists()
             ]
@@ -2510,7 +2510,7 @@ def _render_status(
 def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     """Live dashboard over a factory run (observe-only).
 
-    Tails .ralph/runs/<run_id>/ - a run in flight in another terminal,
+    Tails .kstrl/runs/<run_id>/ - a run in flight in another terminal,
     or a finished one (post-mortem replay works by construction). This
     command never writes to the run; E6 checkpoints are answered where
     the factory runs.
@@ -2531,7 +2531,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     ref = find_run(root_dir, run_id) if run_id else latest_run(root_dir)
     if ref is None:
         click.echo(
-            f"No run found under {root_dir / '.ralph' / 'runs'}"
+            f"No run found under {root_dir / '.kstrl' / 'runs'}"
             + (f" matching '{run_id}'" if run_id else "")
             + ". Run `ralph factory` first, or check --root.",
             err=True,
@@ -2564,15 +2564,15 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     "--manifest",
     "manifest_path",
     type=click.Path(path_type=Path),
-    help="Manifest file (default: scripts/ralph/manifest.json, falling "
-         "back to scripts/ralph/run-manifest.json)",
+    help="Manifest file (default: scripts/kstrl/manifest.json, falling "
+         "back to scripts/kstrl/run-manifest.json)",
 )
 @click.option(
     "--progress-log",
     "progress_log_path",
     type=click.Path(path_type=Path),
     help="Progress log to join onto the manifest "
-         "(default: <root>/.ralph/progress.jsonl)",
+         "(default: <root>/.kstrl/progress.jsonl)",
 )
 @click.option(
     "--watch",
@@ -2608,7 +2608,7 @@ def status(
     """Show per-component status from the manifest + progress log.
 
     R3.2: joins the factory manifest with the ProgressLog (default
-    .ralph/progress.jsonl): per component status, retries, branch,
+    .kstrl/progress.jsonl): per component status, retries, branch,
     timestamps, plus phase, attempt, last-event age, usage totals and
     evidence paths for the latest run found in the log. Works
     manifest-only when no log exists.
@@ -2625,8 +2625,8 @@ def status(
         # Factory runs persist to manifest.json; `ralph run` persists to
         # run-manifest.json (R0.5, H-15). Prefer the factory manifest.
         candidates = [
-            root_dir / "scripts" / "ralph" / "manifest.json",
-            root_dir / "scripts" / "ralph" / "run-manifest.json",
+            root_dir / "scripts" / "kstrl" / "manifest.json",
+            root_dir / "scripts" / "kstrl" / "run-manifest.json",
         ]
 
     def _load_state(manifest: Manifest) -> tuple[RunState | None, Path | None]:
@@ -2712,7 +2712,7 @@ def status(
     "--manifest",
     "manifest_path",
     type=click.Path(path_type=Path),
-    help="Manifest file (default: scripts/ralph/manifest.json)",
+    help="Manifest file (default: scripts/kstrl/manifest.json)",
 )
 @click.option(
     "--progress-log",
@@ -2731,7 +2731,7 @@ def status(
     "--force-lock",
     is_flag=True,
     help="Proceed even if another ralph invocation holds "
-         ".ralph/factory.lock (may corrupt the other run's state)",
+         ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
     "--yes", "-y",
@@ -2779,7 +2779,7 @@ def retry(
 
     manifest_file = (
         manifest_path if manifest_path is not None
-        else root_dir / "scripts" / "ralph" / "manifest.json"
+        else root_dir / "scripts" / "kstrl" / "manifest.json"
     )
     if not manifest_file.exists():
         ui_impl.err(f"No manifest found at {manifest_file}")
@@ -2886,7 +2886,7 @@ def retry(
     base_config.ui_mode = "plain"
     base_config.no_color = True
     if not base_config.prompt_file.exists():
-        default_prompt = root_dir / "scripts" / "ralph" / "prompt.md"
+        default_prompt = root_dir / "scripts" / "kstrl" / "prompt.md"
         if default_prompt.exists():
             base_config.prompt_file = default_prompt
     _check_agent_preflight(base_config, ui_impl)
@@ -2997,7 +2997,7 @@ def evolve(
         sys.exit(0)
 
     if apply_id:
-        proposals_dir = root_dir / ".ralph" / "proposals"
+        proposals_dir = root_dir / ".kstrl" / "proposals"
         if not proposals_dir.exists():
             ui_impl.err("No proposals found. Run `ralph evolve` first.")
             sys.exit(1)
@@ -3031,7 +3031,7 @@ def evolve(
         )
         sys.exit(0)
 
-    proposals_dir = root_dir / ".ralph" / "proposals"
+    proposals_dir = root_dir / ".kstrl" / "proposals"
     proposals = journal.propose_improvements(patterns)
     # Idempotence across repeated `ralph evolve` runs: a proposal whose
     # title already exists on disk is the same pattern re-detected, not

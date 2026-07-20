@@ -71,7 +71,7 @@ class SpecBlockerError(Exception):
 # so injected text inside the data cannot forge a section boundary or
 # masquerade as harness instructions. Shared by review / security /
 # knowledge (they already import their JSON helpers from this module).
-_DATA_DELIMITER_PREFIX = "RALPH-DATA"
+_DATA_DELIMITER_PREFIX = "KSTRL-DATA"
 
 
 def generate_data_delimiter() -> str:
@@ -85,7 +85,7 @@ def generate_data_delimiter() -> str:
     return f"{_DATA_DELIMITER_PREFIX}-{secrets.token_hex(16)}"
 
 
-DECOMPOSE_PROMPT_VERSION = "1.4.0"
+DECOMPOSE_PROMPT_VERSION = "1.4.1"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -124,7 +124,7 @@ The output must be a JSON object with this exact structure:
       "description": "What this component does and why",
       "dependencies": ["other-component-id"],
       "allowedPaths": [
-        "src/", "tests/", "scripts/ralph/feature/<id>/"
+        "src/", "tests/", "scripts/kstrl/feature/<id>/"
       ],
       "userStories": [
         {{
@@ -185,18 +185,18 @@ Decomposition rules:
       package directory the spec names).
     - Test root (e.g. `tests/`, `__tests__/`, `spec/`).
     - The component's own feature subtree, exactly
-      `scripts/ralph/feature/<component-id>/` (the agent updates
+      `scripts/kstrl/feature/<component-id>/` (the agent updates
       progress.txt and PRD passes there).
 
     EXCLUDE (never list these in allowedPaths):
-    - `.ralph/` (harness runtime state).
+    - `.kstrl/` (harness runtime state).
     - `.github/` (CI configuration).
     - `pyproject.toml`, `package.json`, `Cargo.toml`, or other build
       manifests at the repo root.
-    - The harness's own packages: `ralph_py/`, `src/ralph/`.
-    - `scripts/ralph/` as a bare prefix. Listing the bare directory
+    - The harness's own packages: `kstrl/`, `ralph_py/`, `src/ralph/`.
+    - `scripts/kstrl/` as a bare prefix. Listing the bare directory
       would let the agent edit the manifest or sibling feature
-      subtrees. ONLY list the specific `scripts/ralph/feature/<id>/`
+      subtrees. ONLY list the specific `scripts/kstrl/feature/<id>/`
       subtree for this component -- nothing higher.
 
     PREFER tighter scopes:
@@ -461,15 +461,17 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 # allowedPaths entries that would reopen its own guardrails. This is
 # that enforcement -- exactly the prompt's EXCLUDE list. Entries are
 # compared after normalization (leading `./` and trailing `/` removed)
-# so `.ralph`, `.ralph/` and `./.ralph/` all match. Keep this set in
+# so `.kstrl`, `.kstrl/` and `./.kstrl/` all match. Keep this set in
 # sync with the prompt body (which only Session 8C may edit).
 _ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset({
-    ".ralph",          # harness runtime state
+    ".kstrl",          # harness runtime state
+    ".ralph",          # legacy state dir name (pre-rename)
     ".github",         # CI configuration
     "kstrl",           # harness package
     "ralph_py",        # legacy harness package name (pre-rename)
     "src/ralph",       # legacy harness package
-    "scripts/ralph",   # bare prefix exposes the manifest + sibling features
+    "scripts/kstrl",   # bare prefix exposes the manifest + sibling features
+    "scripts/ralph",   # legacy scaffold dir name (pre-rename)
     "pyproject.toml",  # repo-root build manifests
     "package.json",
     "Cargo.toml",
@@ -514,8 +516,8 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
             f"entry '{entry}' is on the DECOMPOSE_PROMPT EXCLUDE list "
             "(harness state, CI config, repo-root build manifests, and "
             "the harness's own packages are never in scope; for "
-            "scripts/ralph list only this component's own "
-            "scripts/ralph/feature/<id>/ subtree)"
+            "scripts/kstrl list only this component's own "
+            "scripts/kstrl/feature/<id>/ subtree)"
         )
     return None
 
@@ -576,8 +578,8 @@ def _validate_decompose_output(data: Any) -> list[str]:
             errors.append(f"{prefix}.id: must be a non-empty string")
         else:
             # R0.6: the id becomes a filesystem path segment
-            # (scripts/ralph/feature/<id>/, .ralph/worktrees/<id>) and a
-            # branch segment (ralph/factory/<id>), so a traversal id
+            # (scripts/kstrl/feature/<id>/, .kstrl/worktrees/<id>) and a
+            # branch segment (kstrl/factory/<id>), so a traversal id
             # like "../../repo" must be rejected here, where the error
             # feeds back into the decompose retry loop.
             id_error = validate_component_id(comp_id)
@@ -634,7 +636,7 @@ def _validate_decompose_output(data: Any) -> list[str]:
             else:
                 # R1.5 / H-4: content validation. Without this, only
                 # the SHAPE was checked and the architect could emit
-                # `.ralph/` or `kstrl/`, reopening the guardrail
+                # `.kstrl/` or `kstrl/`, reopening the guardrail
                 # the prompt claims the harness enforces.
                 for p in ap:
                     entry_error = _validate_allowed_path_entry(p)
@@ -773,7 +775,7 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
 
 # Relative location of the persisted red-team artifact (R1.7). Lives
 # next to manifest.json so one directory holds the decompose outputs.
-SPEC_ISSUES_REL_PATH = Path("scripts") / "ralph" / "spec-issues.json"
+SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -890,8 +892,8 @@ def _record_spec_issues_event(
 def _component_branch(comp_id: str, project_name: str, single_pr: bool) -> str:
     """Branch a component's PRD will target."""
     if single_pr:
-        return f"ralph/factory/{project_name}"
-    return f"ralph/factory/{comp_id}"
+        return f"kstrl/factory/{project_name}"
+    return f"kstrl/factory/{comp_id}"
 
 
 def _build_prd_data(comp_data: dict[str, Any], branch_name: str) -> dict[str, Any]:
@@ -939,7 +941,7 @@ def _generate_component_prd(
             f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}"
         )
 
-    feature_dir: Path = root_dir / "scripts" / "ralph" / "feature" / comp_id
+    feature_dir: Path = root_dir / "scripts" / "kstrl" / "feature" / comp_id
     feature_dir.mkdir(parents=True, exist_ok=True)
     prd_path = feature_dir / "prd.json"
     _atomic_write_json(prd_path, prd_data)
@@ -1180,7 +1182,7 @@ def decompose_spec(
 
             # Track directories this run creates so cleanup can remove
             # them; pre-existing directories are left alone.
-            probe = root_dir / "scripts" / "ralph" / "feature" / comp_id
+            probe = root_dir / "scripts" / "kstrl" / "feature" / comp_id
             while not probe.exists() and probe != root_dir:
                 created_dirs.append(probe)
                 probe = probe.parent
@@ -1235,7 +1237,7 @@ def decompose_spec(
 
         # Save manifest (atomic write; covered by the cleanup scope so
         # a save failure does not strand PRDs without a manifest)
-        manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
+        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
         manifest.save(manifest_path)
         ui.ok(f"Manifest saved: {manifest_path}")
     except BaseException:

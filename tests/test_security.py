@@ -408,7 +408,7 @@ def test_prompt_renders_with_placeholders() -> None:
     rendered = SECURITY_PROMPT.format(
         prd_content="some prd",
         diff_content="some diff",
-        data_delimiter="RALPH-DATA-test",
+        data_delimiter="KSTRL-DATA-test",
     )
     assert "some prd" in rendered
     assert "some diff" in rendered

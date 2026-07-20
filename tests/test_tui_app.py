@@ -50,7 +50,7 @@ class TestOverview:
             tmp_path, FakeRunSpec(components=2), run_id=run_id,
         )
         next(stepper)  # factory_started written; run dir exists
-        run_dir = tmp_path / ".ralph" / "runs" / run_id
+        run_dir = tmp_path / ".kstrl" / "runs" / run_id
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()

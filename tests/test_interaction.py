@@ -236,7 +236,7 @@ class TestCheckpointContext:
         assert "+real diff" in ctx.diff_excerpt
         assert ctx.usage is not None
         assert ctx.usage.total_tokens == 1234
-        assert ctx.branch == "ralph/factory/comp-a"
+        assert ctx.branch == "kstrl/factory/comp-a"
 
 
 class TestEvolveApplyNonTty:
@@ -262,7 +262,7 @@ class TestEvolveApplyNonTty:
             affected_components=["a", "b"], check_name="linter",
             error_signature="S608", category="verification",
         )])
-        journal.save_proposals(proposals, tmp_path / ".ralph" / "proposals")
+        journal.save_proposals(proposals, tmp_path / ".kstrl" / "proposals")
 
         # No input= at all: stdin is at EOF, which used to raise
         # click.Abort out of the raw click.confirm.

@@ -29,10 +29,10 @@ from tests.spine_utils import git, init_ralph_repo
 pytestmark = pytest.mark.spine
 
 COMP = "comp-a"
-BRANCH = f"ralph/factory/{COMP}"
+BRANCH = f"kstrl/factory/{COMP}"
 RUN_ID = "spine-run-engineer"
-PRD_REL = f"scripts/ralph/feature/{COMP}/prd.json"
-PROMPT_REL = "scripts/ralph/prompt.md"
+PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
+PROMPT_REL = "scripts/kstrl/prompt.md"
 
 
 class TestEngineerLoopPlumbing:

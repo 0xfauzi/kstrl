@@ -1,6 +1,6 @@
 # uv + Ralph example project
 
-This directory is a **minimal uv-managed Python project** (via `pyproject.toml`) that includes Ralph prompt and PRD files under `scripts/ralph/`.
+This directory is a **minimal uv-managed Python project** (via `pyproject.toml`) that includes Ralph prompt and PRD files under `scripts/kstrl/`.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ uv run ralph-uv-example Alice
 ## Ralph (agent loop) in this example
 
 Ralph uses files in:
-- `scripts/ralph/` (prompt, PRD, progress, and understanding prompts)
+- `scripts/kstrl/` (prompt, PRD, progress, and understanding prompts)
 
 Try a **dry run** (just echo the prompt through):
 
@@ -46,8 +46,8 @@ AGENT_CMD="printf 'hello\\n<promise>COMPLETE</promise>\\n'" RALPH_BRANCH="" uv r
 
 Notes:
 - This example directory is inside the top-level git repo, so **branch checkout would affect the main repo**. Use `RALPH_BRANCH=""` to disable branch checkout while you experiment.
-- The agent instructions live in `scripts/ralph/prompt.md`.
-- The PRD lives in `scripts/ralph/prd.json`.
+- The agent instructions live in `scripts/kstrl/prompt.md`.
+- The PRD lives in `scripts/kstrl/prd.json`.
 
 ## UI knobs
 

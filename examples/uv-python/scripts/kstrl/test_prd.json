@@ -1,6 +1,6 @@
 {
-  "branchName": "ralph/test-migration",
-  "allowedPaths": ["src/", "tests/", "scripts/ralph/"],
+  "branchName": "kstrl/test-migration",
+  "allowedPaths": ["src/", "tests/", "scripts/kstrl/"],
   "userStories": [
     {
       "id": "TEST-001",

@@ -328,7 +328,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "max_parallel"): "concurrent component workers",
     ("factory", "max_retries"): "per-component retry budget across all phases",
     ("factory", "retry_delay"): "seconds between retry attempts",
-    ("factory", "use_worktrees"): "isolate each component in .ralph/worktrees/<run>/<id>",
+    ("factory", "use_worktrees"): "isolate each component in .kstrl/worktrees/<run>/<id>",
     ("factory", "single_pr"): "one PR for the whole run instead of per-component",
     ("factory", "create_prs"): "push + merge PRs via gh",
     ("factory", "review_mode"): "hard | advisory | skip (Phase 2)",
@@ -337,7 +337,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "max_total_tokens"): "run-level token budget; 0 = unbounded",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
     ("factory", "progress_log_enabled"):
-        "JSONL event log at .ralph/progress.jsonl (R3.2)",
+        "JSONL event log at .kstrl/progress.jsonl (R3.2)",
     ("factory", "keep_worktrees_on_failure"):
         "keep failed components' worktrees for post-mortem (R3.3)",
     ("breaker", "no_progress_iterations"):

@@ -36,8 +36,8 @@ def _component_data(
         "title": title,
         "description": f"Description of {id}",
         "dependencies": dependencies or [],
-        "prdPath": f"scripts/ralph/feature/{id}/prd.json",
-        "branchName": f"ralph/factory/{id}",
+        "prdPath": f"scripts/kstrl/feature/{id}/prd.json",
+        "branchName": f"kstrl/factory/{id}",
     }
     data.update(overrides)
     return data
@@ -381,8 +381,8 @@ class TestManifestLoadSave:
                     title="Component A",
                     description="Description A",
                     dependencies=[],
-                    prd_path="scripts/ralph/feature/comp-a/prd.json",
-                    branch_name="ralph/factory/comp-a",
+                    prd_path="scripts/kstrl/feature/comp-a/prd.json",
+                    branch_name="kstrl/factory/comp-a",
                     status="completed",
                     error="",
                     retries=1,

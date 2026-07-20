@@ -7,7 +7,7 @@ Three defect classes are covered:
    `git mv protected/gate.py allowed/gate.py` looked in-scope.
    `git.get_diff_names` now reports both sides of renames/copies.
 2. allowedPaths content (H-4): DECOMPOSE_PROMPT rule #12 promises the
-   harness rejects entries like `.ralph/`; the validator now enforces
+   harness rejects entries like `.kstrl/`; the validator now enforces
    exactly that EXCLUDE list plus structural hazards, and the error
    flows through the decompose retry-with-error loop.
 3. PRD-load fail-closed: a PRD that fails to load at the factory's
@@ -190,11 +190,11 @@ class TestAllowedPathsContentValidation:
     rule #12 promises, plus structural hazards."""
 
     @pytest.mark.parametrize("entry", [
-        ".ralph/",
+        ".kstrl/",
         ".github/",
         "kstrl/",
         "src/ralph/",
-        "scripts/ralph/",
+        "scripts/kstrl/",
         "pyproject.toml",
         "package.json",
         "Cargo.toml",
@@ -204,10 +204,10 @@ class TestAllowedPathsContentValidation:
         assert any("allowedPaths" in e and entry in e for e in errors), errors
 
     @pytest.mark.parametrize("entry", [
-        ".ralph",           # no trailing slash
+        ".kstrl",           # no trailing slash
         "./kstrl/",      # leading ./
-        "./.ralph",         # both
-        "scripts/ralph",    # bare prefix, no slash
+        "./.kstrl",         # both
+        "scripts/kstrl",    # bare prefix, no slash
     ])
     def test_normalized_variants_rejected(self, entry: str) -> None:
         errors = _validate_decompose_output(_decompose_payload([entry]))
@@ -231,7 +231,7 @@ class TestAllowedPathsContentValidation:
         "src/",
         "tests/",
         "lib/",
-        "scripts/ralph/feature/comp-a/",
+        "scripts/kstrl/feature/comp-a/",
         "docs/pyproject.toml",   # manifest NOT at repo root
         "packages/",             # prefix-similar to an excluded name
         "kstrl_docs/",
@@ -243,9 +243,9 @@ class TestAllowedPathsContentValidation:
     def test_error_message_names_offending_entry(self) -> None:
         """The error feeds the retry prompt, so the architect must be
         told which entry to drop."""
-        error = _validate_allowed_path_entry(".ralph/")
+        error = _validate_allowed_path_entry(".kstrl/")
         assert error is not None
-        assert ".ralph/" in error
+        assert ".kstrl/" in error
         assert "EXCLUDE" in error
 
 
@@ -275,14 +275,14 @@ class _SequenceAgent:
 
 class TestExcludeRejectionFlowsThroughRetryLoop:
     def test_retry_prompt_carries_entry_error(self, tmp_path: Path) -> None:
-        """First attempt lists `.ralph/`; the retry prompt must contain
+        """First attempt lists `.kstrl/`; the retry prompt must contain
         the rejection so the architect can fix it, and the corrected
         second attempt must succeed."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        bad = json.dumps(_decompose_payload([".ralph/", "src/"]))
+        bad = json.dumps(_decompose_payload([".kstrl/", "src/"]))
         good = json.dumps(_decompose_payload(["src/", "tests/"]))
         agent = _SequenceAgent([bad, good])
 
@@ -298,7 +298,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
 
         assert len(agent.prompts) == 2
         assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
-        assert ".ralph/" in agent.prompts[1]
+        assert ".kstrl/" in agent.prompts[1]
         assert [c.id for c in manifest.components] == ["comp-a"]
 
 
@@ -362,7 +362,7 @@ class TestDiffScopeFailsClosed:
 
 
 def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlConfig]:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     manifest = Manifest(
@@ -374,8 +374,8 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlCon
         components=[
             Component(
                 "comp-a", "Component A", "Desc",
-                [], "scripts/ralph/feature/comp-a/prd.json",
-                "ralph/factory/comp-a",
+                [], "scripts/kstrl/feature/comp-a/prd.json",
+                "kstrl/factory/comp-a",
             ),
         ],
     )
@@ -407,7 +407,7 @@ class TestFactoryScopeSiteFailsClosed:
 
     def test_corrupt_prd_forwards_error(self, tmp_path: Path) -> None:
         manifest, config, base = _factory_fixtures(tmp_path)
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / "comp-a"
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text("{not valid json")
 
@@ -481,7 +481,7 @@ class TestFactoryScopeSiteFailsClosed:
         """The legitimate-disable case: a PRD that loads fine but has
         no allowedPaths field must NOT produce an error."""
         manifest, config, base = _factory_fixtures(tmp_path)
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / "comp-a"
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",

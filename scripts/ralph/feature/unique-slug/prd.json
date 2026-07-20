@@ -57,6 +57,6 @@
   "allowedPaths": [
     "tools/slugify.py",
     "tests/test_slugify.py",
-    "scripts/ralph/feature/unique-slug/"
+    "scripts/kstrl/feature/unique-slug/"
   ]
 }

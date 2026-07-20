@@ -658,7 +658,7 @@ class TestProgressLogFanout:
 class TestBranchAndPrBody:
     def test_branch_carries_lowercase_identifier_token(self) -> None:
         branch = linear_branch_name("EXC-42", "auth-api")
-        assert branch == "ralph/factory/exc-42-auth-api"
+        assert branch == "kstrl/factory/exc-42-auth-api"
         assert validate_branch_name(branch) is None
 
     def test_pr_body_gains_fixes_trailer(self) -> None:

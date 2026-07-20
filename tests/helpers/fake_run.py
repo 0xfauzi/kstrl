@@ -144,7 +144,7 @@ def write_fake_run(
     spec = spec or FakeRunSpec()
     for _ in _emit_run(root, spec, run_id):
         pass
-    return root / ".ralph" / "runs" / run_id
+    return root / ".kstrl" / "runs" / run_id
 
 
 def stream_fake_run(

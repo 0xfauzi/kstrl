@@ -80,8 +80,8 @@ def _write_manifest(tmp_path: Path) -> Path:
                 title="c1",
                 description="component one",
                 dependencies=[],
-                prd_path="scripts/ralph/prd.json",
-                branch_name="ralph/factory/c1",
+                prd_path="scripts/kstrl/prd.json",
+                branch_name="kstrl/factory/c1",
             ),
         ],
     )
@@ -112,11 +112,11 @@ def _invoke_factory(
 def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
     # R2.4: `ralph run` preflights prd.json before run_factory, so the
     # round-trip needs a schema-valid PRD in place.
-    prd_path = tmp_path / "scripts" / "ralph" / "prd.json"
+    prd_path = tmp_path / "scripts" / "kstrl" / "prd.json"
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     if not prd_path.exists():
         prd_path.write_text(
-            json.dumps({"branchName": "ralph/test", "userStories": []})
+            json.dumps({"branchName": "kstrl/test", "userStories": []})
         )
     runner = CliRunner()
     return runner.invoke(
@@ -616,7 +616,7 @@ class TestNewFromEnv:
         assert config.lookback_runs == 3
         assert config.journal_path == tmp_path / "custom/j.jsonl"
         # defaults resolve against root_dir, not CWD
-        assert config.experiments_path == tmp_path / ".ralph/experiments.tsv"
+        assert config.experiments_path == tmp_path / ".kstrl/experiments.tsv"
 
     def test_knowledge_from_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -626,7 +626,7 @@ class TestNewFromEnv:
         config = KnowledgeConfig.from_env(tmp_path)
         assert config.max_core_tokens == 99
         assert config.dependency_scope == "transitive"
-        assert config.knowledge_root == tmp_path / ".ralph" / "knowledge"
+        assert config.knowledge_root == tmp_path / ".kstrl" / "knowledge"
 
     def test_knowledge_from_env_rejects_bad_scope(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

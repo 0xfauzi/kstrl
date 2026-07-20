@@ -1,7 +1,7 @@
 """Phase 3: Cross-component contract testing in detached temp worktrees.
 
 All tier merging happens in a throwaway worktree created with
-``git worktree add --detach`` under ``.ralph/contract/`` - never in the
+``git worktree add --detach`` under ``.kstrl/contract/`` - never in the
 user's checkout (R0.3 / CRIT-6). The recovery path on any failure is
 ``git merge --abort`` in the temp worktree followed by
 ``git worktree remove --force``; if the worktree survives removal a
@@ -52,7 +52,7 @@ class ContractCleanupError(RuntimeError):
     """A contract temp worktree could not be removed.
 
     Raised so the factory fails loudly: a surviving temp worktree means
-    ``.ralph/contract/`` holds stale state and git's worktree metadata
+    ``.kstrl/contract/`` holds stale state and git's worktree metadata
     still references it, which would make every later contract pass
     (and possibly component worktree setup) fail in confusing ways.
     """
@@ -144,7 +144,7 @@ def _create_temp_worktree(
     Detached HEAD means merges move only the temp worktree's HEAD; no
     branch is created and the user's checkout is never touched.
     """
-    contract_base = root_dir / ".ralph" / "contract"
+    contract_base = root_dir / ".kstrl" / "contract"
     contract_base.mkdir(parents=True, exist_ok=True)
     worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
     try:

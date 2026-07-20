@@ -61,7 +61,7 @@ def init_ralph_repo(
 ) -> Path | None:
     """Real git repo shaped like a ralph project.
 
-    ``scripts/ralph/`` is gitignored so worktree provisioning (R0.4) must
+    ``scripts/kstrl/`` is gitignored so worktree provisioning (R0.4) must
     copy prompt and PRD files in. Returns the bare origin path when
     ``with_origin`` is set, else None.
     """
@@ -69,12 +69,12 @@ def init_ralph_repo(
     git("init", "-q", "-b", "main", cwd=root)
     git("config", "user.email", "spine@test", cwd=root)
     git("config", "user.name", "Spine Test", cwd=root)
-    (root / ".gitignore").write_text("scripts/ralph/\n.ralph/\n")
+    (root / ".gitignore").write_text("scripts/kstrl/\n.kstrl/\n")
     (root / "README.md").write_text("seed\n")
     git("add", ".gitignore", "README.md", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     (ralph_dir / "prompt.md").parent.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text(
         "Read the PRD at $prd_path and implement one story.\n"
@@ -83,7 +83,7 @@ def init_ralph_repo(
         feature_dir = ralph_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
-            "branchName": f"ralph/factory/{comp_id}",
+            "branchName": f"kstrl/factory/{comp_id}",
             "userStories": [{
                 "id": "US-001", "title": "Test",
                 "acceptanceCriteria": ["AC1"],
@@ -105,8 +105,8 @@ def component(comp_id: str, dependencies: list[str] | None = None) -> Component:
     return Component(
         id=comp_id, title=comp_id.upper(), description="",
         dependencies=dependencies or [],
-        prd_path=f"scripts/ralph/feature/{comp_id}/prd.json",
-        branch_name=f"ralph/factory/{comp_id}",
+        prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
+        branch_name=f"kstrl/factory/{comp_id}",
     )
 
 
@@ -135,8 +135,8 @@ def factory_config(**overrides: object) -> FactoryConfig:
 
 def base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
