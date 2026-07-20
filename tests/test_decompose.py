@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.decompose import (
+from kstrl.decompose import (
     SpecBlockerError,
     _extract_json,
     _parse_spec_issues,
     _validate_decompose_output,
     decompose_spec,
 )
-from ralph_py.prd import PRD
-from ralph_py.ui.plain import PlainUI
+from kstrl.prd import PRD
+from kstrl.ui.plain import PlainUI
 
 
 class MockDecomposeAgent:
@@ -909,7 +909,7 @@ class TestPrdValidationInsideRetryLoop:
         """If writing component 2's PRD fails, component 1's already
         written PRD and the directories created for it are removed; the
         spec-issues audit artifact survives."""
-        import ralph_py.decompose as decompose_mod
+        import kstrl.decompose as decompose_mod
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")

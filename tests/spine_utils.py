@@ -14,10 +14,10 @@ import subprocess
 import textwrap
 from pathlib import Path
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import FactoryConfig
-from ralph_py.manifest import Component, Manifest
-from ralph_py.verify import VerifyConfig
+from kstrl.config import KstrlConfig
+from kstrl.factory import FactoryConfig
+from kstrl.manifest import Component, Manifest
+from kstrl.verify import VerifyConfig
 
 STUB_PR_URL = "https://github.com/spine/repo/pull/41"
 STUB_PR_NUMBER = 41
@@ -133,8 +133,8 @@ def factory_config(**overrides: object) -> FactoryConfig:
     return config
 
 
-def base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> RalphConfig:
-    return RalphConfig(
+def base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,

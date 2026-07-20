@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ralph_py.feedforward import (
+from kstrl.feedforward import (
     FeedforwardConfig,
     build_dependency_graph,
     build_feedforward_context,

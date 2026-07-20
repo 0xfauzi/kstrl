@@ -29,22 +29,22 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.git import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.git import (
     DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
     DiffUnsplittableError,
     split_diff_for_prompt,
 )
-from ralph_py.manifest import Component, Manifest
-from ralph_py.review import (
+from kstrl.manifest import Component, Manifest
+from kstrl.review import (
     ReviewMode,
     ReviewResult,
     merge_review_results,
     run_chunked_review,
     run_review,
 )
-from ralph_py.security import (
+from kstrl.security import (
     SecurityConfig,
     SecurityMode,
     SecurityResult,
@@ -52,8 +52,8 @@ from ralph_py.security import (
     run_chunked_security_review,
     run_security_review,
 )
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 
 UI = PlainUI(no_color=True)
 
@@ -237,7 +237,7 @@ class TestMergeResults:
         assert merged.passed is False
 
     def test_findings_concatenate(self) -> None:
-        from ralph_py.review import CriterionReview, ReviewConcern
+        from kstrl.review import CriterionReview, ReviewConcern
         a = self._result(True)
         a.criteria.append(CriterionReview("AC1", "pass", "ok"))
         b = self._result(False)
@@ -276,7 +276,7 @@ class TestMergeResults:
             merge_security_results([], "hard")
 
     def test_security_merge_mirrors_policy(self) -> None:
-        from ralph_py.security import SecurityFinding
+        from kstrl.security import SecurityFinding
         a = SecurityResult(passed=True, mode="hard")
         a.findings.append(SecurityFinding(
             "injection", "low", "x.py:1", "meh",
@@ -479,7 +479,7 @@ class TestSelfCritiqueStripParity:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         with patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_SELF_CRITIQUE_DIFF,
         ):
             run_security_review(agent, prd, tmp_path, "main", config, UI)
@@ -494,7 +494,7 @@ class TestSelfCritiqueStripParity:
         _write_prd(prd, ["US-001"])
         agent = CountingAgent([_review_json("pass")])
         with patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_SELF_CRITIQUE_DIFF,
         ):
             run_review(
@@ -539,8 +539,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
     )
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts/ralph/prompt.md",
         prd_file=root / "scripts/ralph/prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -591,11 +591,11 @@ class TestFactoryChunkedReview:
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.agents.get_agent", return_value=agent,
+            "kstrl.agents.get_agent", return_value=agent,
         ), patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_oversized_component_diff(),
         ):
             result = run_factory(
@@ -631,11 +631,11 @@ class TestFactoryChunkedReview:
             return ComponentResult(comp_id, success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", side_effect=fake_run_component,
+            "kstrl.factory._run_component", side_effect=fake_run_component,
         ), patch(
-            "ralph_py.agents.get_agent", return_value=agent,
+            "kstrl.agents.get_agent", return_value=agent,
         ), patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_oversized_component_diff(),
         ):
             result = run_factory(
@@ -670,11 +670,11 @@ class TestFactoryChunkedReview:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.agents.get_agent", return_value=agent,
+            "kstrl.agents.get_agent", return_value=agent,
         ), patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_oversized_component_diff(),
         ):
             result = run_factory(
@@ -698,11 +698,11 @@ class TestFactoryChunkedReview:
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.agents.get_agent", return_value=agent,
+            "kstrl.agents.get_agent", return_value=agent,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value=big_single_file,
+            "kstrl.git.get_diff_content", return_value=big_single_file,
         ):
             result = run_factory(
                 manifest, config, _base_config(root),
@@ -743,11 +743,11 @@ class TestSinglePassSecurityBudget:
             return ComponentResult(comp_id, success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", side_effect=fake_run_component,
+            "kstrl.factory._run_component", side_effect=fake_run_component,
         ), patch(
-            "ralph_py.agents.get_agent", return_value=agent,
+            "kstrl.agents.get_agent", return_value=agent,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value="+small\n",
+            "kstrl.git.get_diff_content", return_value="+small\n",
         ):
             result = run_factory(
                 manifest, config, _base_config(root),
@@ -794,14 +794,14 @@ class TestFactoryStripOnce:
 
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review", side_effect=fake_run_review,
+            "kstrl.factory.run_review", side_effect=fake_run_review,
         ), patch(
-            "ralph_py.factory.run_security_review",
+            "kstrl.factory.run_security_review",
             side_effect=fake_run_security,
         ), patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             return_value=_SELF_CRITIQUE_DIFF,
         ):
             result = run_factory(

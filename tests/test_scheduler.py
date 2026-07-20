@@ -10,7 +10,7 @@ instead of stopping while schedulable components remain.
 The budget-gate fail-all behavior is already pinned by
 tests/test_usage_meter.py (comp-b never launches: the scheduling gate
 fails it loudly too); the in-process execution of the sequential mode
-is pinned by every test that patches ralph_py.factory._run_component
+is pinned by every test that patches kstrl.factory._run_component
 with an unpicklable MagicMock.
 """
 
@@ -22,18 +22,18 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from ralph_py import events as ev
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl import events as ev
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     _InlineExecutor,
     run_factory,
 )
-from ralph_py.fixtures import FixturesConfig
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.fixtures import FixturesConfig
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 
 def _git(root: Path, *args: str) -> None:
@@ -66,8 +66,8 @@ def _manifest(components: list[Component]) -> Manifest:
     )
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0,
@@ -148,11 +148,11 @@ class TestUnifiedSchedulingLoop:
             return wt
 
         with patch(
-            "ralph_py.factory._setup_worktree", side_effect=_setup,
+            "kstrl.factory._setup_worktree", side_effect=_setup,
         ), patch(
-            "ralph_py.factory._run_component", return_value=success_b,
+            "kstrl.factory._run_component", return_value=success_b,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             result = run_factory(
                 manifest, config, _base_config(tmp_path),

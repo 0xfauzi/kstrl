@@ -1,1 +1,1 @@
-"""Tests for ralph_py."""
+"""Tests for kstrl."""

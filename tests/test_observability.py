@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ralph_py.observability import (
+from kstrl.observability import (
     NullProgressLog,
     ProgressLog,
     format_age,

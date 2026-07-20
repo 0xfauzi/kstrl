@@ -6,9 +6,9 @@ import json
 import os
 from pathlib import Path
 
-from ralph_py import events as ev
-from ralph_py import reducer
-from ralph_py.tui.tail import JsonlTailer, RunTailer, TextTailer
+from kstrl import events as ev
+from kstrl import reducer
+from kstrl.tui.tail import JsonlTailer, RunTailer, TextTailer
 from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
 
 

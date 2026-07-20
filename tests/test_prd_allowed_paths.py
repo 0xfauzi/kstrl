@@ -1,4 +1,4 @@
-"""Tests for the new ``allowedPaths`` field on ``ralph_py.prd.PRD``.
+"""Tests for the new ``allowedPaths`` field on ``kstrl.prd.PRD``.
 
 These cover both the validator's optional-but-non-empty contract and
 the loader's coercion to ``PRD.allowed_paths``. The factory then reads
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.prd import PRD
+from kstrl.prd import PRD
 
 
 def _make_prd_payload(**overrides: object) -> dict[str, object]:

@@ -16,11 +16,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ralph_py.agents import get_agent
-from ralph_py.agents.claude_code import ClaudeCodeAgent
-from ralph_py.agents.codex import CodexAgent
-from ralph_py.agents.custom import CustomAgent
-from ralph_py.sandbox import (
+from kstrl.agents import get_agent
+from kstrl.agents.claude_code import ClaudeCodeAgent
+from kstrl.agents.codex import CodexAgent
+from kstrl.agents.custom import CustomAgent
+from kstrl.sandbox import (
     SandboxConfig,
     claude_sandbox_args,
     claude_sandbox_drops_skip_permissions,
@@ -223,10 +223,10 @@ class TestFactoryWorkerPassThrough:
     ) -> None:
         """_run_component rebuilds SandboxConfig from its pickled args
         and hands it to get_agent."""
-        import ralph_py.agents as agents_mod
-        import ralph_py.loop as loop_mod
-        from ralph_py.factory import _run_component
-        from ralph_py.loop import LoopResult
+        import kstrl.agents as agents_mod
+        import kstrl.loop as loop_mod
+        from kstrl.factory import _run_component
+        from kstrl.loop import LoopResult
 
         captured: dict[str, Any] = {}
 

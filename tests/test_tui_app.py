@@ -12,17 +12,17 @@ from unittest.mock import PropertyMock, patch
 
 from rich.text import Text
 
-from ralph_py.reducer import RunState, load_run_state
-from ralph_py.tui.app import Mode, RalphTuiApp
-from ralph_py.tui.screens.overview import CheckpointBanner
-from ralph_py.tui.widgets.component_table import ComponentTable
-from ralph_py.tui.widgets.cost_meter import render_cost_meter
-from ralph_py.tui.widgets.header import render_header
+from kstrl.reducer import RunState, load_run_state
+from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.screens.overview import CheckpointBanner
+from kstrl.tui.widgets.component_table import ComponentTable
+from kstrl.tui.widgets.cost_meter import render_cost_meter
+from kstrl.tui.widgets.header import render_header
 from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
 
 
-def _app(root: Path, run_dir: Path) -> RalphTuiApp:
-    return RalphTuiApp(
+def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
+    return KstrlTuiApp(
         run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=0.05,
     )
 
@@ -119,7 +119,7 @@ class TestOverview:
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             with patch.object(
-                RalphTuiApp, "screen_stack", new_callable=PropertyMock,
+                KstrlTuiApp, "screen_stack", new_callable=PropertyMock,
                 return_value=[],
             ):
                 app._poll()

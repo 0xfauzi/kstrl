@@ -34,22 +34,22 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.contract import ContractConfig, ContractMode
-from ralph_py.evolution import EvolutionConfig
-from ralph_py.factory import (
+from kstrl.config import KstrlConfig
+from kstrl.contract import ContractConfig, ContractMode
+from kstrl.evolution import EvolutionConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     FactoryResult,
     run_factory,
 )
-from ralph_py.feedforward import FeedforwardConfig
-from ralph_py.knowledge import KnowledgeConfig
-from ralph_py.manifest import Component, Manifest
-from ralph_py.review import ReviewResult
-from ralph_py.security import SecurityConfig, SecurityMode
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.feedforward import FeedforwardConfig
+from kstrl.knowledge import KnowledgeConfig
+from kstrl.manifest import Component, Manifest
+from kstrl.review import ReviewResult
+from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 from tests import spine_utils
 
 # ---------------------------------------------------------------------------
@@ -100,8 +100,8 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
     return tmp_path
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts/ralph/prompt.md",
         prd_file=root / "scripts/ralph/prd.json",
         sleep_seconds=0,
@@ -211,10 +211,10 @@ class TestC2ReviewRetry:
             return ReviewResult(passed=True, mode="hard")
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review", side_effect=fake_run_review,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory.run_review", side_effect=fake_run_review,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -230,7 +230,7 @@ class TestC2ReviewRetry:
 
 class TestC3SecurityRetry:
     def test_security_failure_triggers_retry(self, tmp_path: Path) -> None:
-        from ralph_py.security import SecurityResult
+        from kstrl.security import SecurityResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -252,10 +252,10 @@ class TestC3SecurityRetry:
             return SecurityResult(passed=True, mode="hard")
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_security_review", side_effect=fake_run_security,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory.run_security_review", side_effect=fake_run_security,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -273,7 +273,7 @@ class TestC4ContractBreaker:
     def test_contract_failure_sends_breaker_for_retry(
         self, tmp_path: Path,
     ) -> None:
-        from ralph_py.contract import ContractResult
+        from kstrl.contract import ContractResult
 
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         comp_a = _component("comp-a")
@@ -307,11 +307,11 @@ class TestC4ContractBreaker:
             )]
 
         with patch(
-            "ralph_py.factory._run_component",
+            "kstrl.factory._run_component",
             side_effect=[success_a, success_b, success_a],
         ) as mock_run, patch(
-            "ralph_py.factory.run_contract_testing", side_effect=fake_contract,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory.run_contract_testing", side_effect=fake_contract,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -344,11 +344,11 @@ class TestC5SinglePrMode:
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(0, "skipped"),
+            "kstrl.factory.distill_facts", return_value=(0, "skipped"),
         ) as mock_distill, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             result = run_factory(
                 manifest, config, _base_config(root),
@@ -450,7 +450,7 @@ class TestC6ConcurrentFactory:
 
 
 @pytest.mark.parametrize("factory_fn", [
-    lambda: RalphConfig(),
+    lambda: KstrlConfig(),
     lambda: FactoryConfig(),
     lambda: VerifyConfig(),
     lambda: ContractConfig(),
@@ -475,19 +475,19 @@ def test_c8_config_pickle_roundtrip(factory_fn) -> None:
 
 class TestC9AgentFactoryMatrix:
     def test_get_agent_returns_custom_when_cmd_set(self) -> None:
-        from ralph_py.agents import CustomAgent, get_agent
+        from kstrl.agents import CustomAgent, get_agent
         agent = get_agent(agent_cmd="my-cli --opt")
         assert isinstance(agent, CustomAgent)
 
     def test_get_agent_returns_codex_when_typed(self) -> None:
-        from ralph_py.agents import CodexAgent, get_agent
+        from kstrl.agents import CodexAgent, get_agent
         agent = get_agent(agent_type="codex")
         assert isinstance(agent, CodexAgent)
 
     def test_get_agent_returns_claude_when_typed(self) -> None:
         import shutil
 
-        from ralph_py.agents import ClaudeCodeAgent, get_agent
+        from kstrl.agents import ClaudeCodeAgent, get_agent
         if shutil.which("claude") is None:
             pytest.skip("claude CLI not present; auto-detect would skip claude")
         agent = get_agent(agent_type="claude-code")
@@ -496,7 +496,7 @@ class TestC9AgentFactoryMatrix:
     def test_get_agent_auto_prefers_claude_when_available(self) -> None:
         import shutil
 
-        from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
+        from kstrl.agents import ClaudeCodeAgent, CodexAgent, get_agent
         agent = get_agent(agent_type="auto")
         if shutil.which("claude") is not None:
             assert isinstance(agent, ClaudeCodeAgent)

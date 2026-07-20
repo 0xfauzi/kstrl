@@ -14,19 +14,19 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.breaker import (
+from kstrl.breaker import (
     NO_TEST_COMMAND_SIGNATURE,
     BreakerConfig,
     NoProgressBreaker,
     compute_diff_hash,
     compute_test_signature,
 )
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult
-from ralph_py.loop import run_loop
-from ralph_py.manifest import ComponentStatus
-from ralph_py.observability import read_progress_events
-from ralph_py.ui.plain import PlainUI
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult
+from kstrl.loop import run_loop
+from kstrl.manifest import ComponentStatus
+from kstrl.observability import read_progress_events
+from kstrl.ui.plain import PlainUI
 
 
 def _git(args: list[str], cwd: Path) -> None:
@@ -193,11 +193,11 @@ class _ScriptedAgent:
         return None
 
 
-def _loop_config(root: Path, max_iterations: int) -> RalphConfig:
+def _loop_config(root: Path, max_iterations: int) -> KstrlConfig:
     ralph_dir = root / "scripts" / "ralph"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
-    return RalphConfig(
+    return KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",

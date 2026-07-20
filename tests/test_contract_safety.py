@@ -25,20 +25,20 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py import contract as contract_mod
-from ralph_py.config import RalphConfig
-from ralph_py.contract import (
+from kstrl import contract as contract_mod
+from kstrl.config import KstrlConfig
+from kstrl.contract import (
     ContractCleanupError,
     ContractConfig,
     ContractMode,
     run_contract_testing,
     run_tier_check,
 )
-from ralph_py.factory import FactoryConfig, run_factory
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.timeout import TimeoutConfig
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.timeout import TimeoutConfig
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 # Fails (with output) whenever bad_marker.txt exists in the tested tree.
 MARKER_TEST_CMD = (
@@ -261,7 +261,7 @@ class TestContractFailureExitsNonzero:
                 timeout=60,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=root / "scripts" / "ralph" / "prompt.md",
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
@@ -343,7 +343,7 @@ class TestBreakerRetryReentersScheduling:
                 agent_iteration=60, component_total=120,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=root / "scripts" / "ralph" / "prompt.md",
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
@@ -491,7 +491,7 @@ class TestCleanupFailsLoudly:
                 mode=ContractMode.TIER.value, test_command="true",
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=root / "scripts" / "ralph" / "prompt.md",
             prd_file=root / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
@@ -501,7 +501,7 @@ class TestCleanupFailsLoudly:
         )
 
         with patch(
-            "ralph_py.factory.run_contract_testing",
+            "kstrl.factory.run_contract_testing",
             side_effect=ContractCleanupError("worktree survived removal"),
         ):
             result = run_factory(

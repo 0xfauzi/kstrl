@@ -13,9 +13,9 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from ralph_py.cli import cli
-from ralph_py.manifest import Component, Manifest
-from ralph_py.observability import ProgressLog
+from kstrl.cli import cli
+from kstrl.manifest import Component, Manifest
+from kstrl.observability import ProgressLog
 
 
 def _synthetic_manifest() -> Manifest:
@@ -259,7 +259,7 @@ class TestStatusV2Layout:
 
     def _write_v2_run(self, root: Path, run_id: str = "factory-20260720-000005.000000-t",
                       checkpoint_open: bool = False) -> None:
-        from ralph_py import events as ev
+        from kstrl import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)

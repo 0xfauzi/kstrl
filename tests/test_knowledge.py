@@ -12,9 +12,9 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.knowledge import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.knowledge import (
     DISTILL_PROMPT,
     MAX_EVIDENCE_ITEM_LENGTH,
     Fact,
@@ -33,9 +33,9 @@ from ralph_py.knowledge import (
     read_facts,
     write_facts,
 )
-from ralph_py.manifest import Component, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.manifest import Component, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -162,7 +162,7 @@ max_dependency_tokens = 50
 
     def test_malformed_toml_raises(self, tmp_path: Path) -> None:
         """KnowledgeConfig.load must raise ValueError on bad TOML, matching
-        RalphConfig.load. Silently falling back to defaults would hide
+        KstrlConfig.load. Silently falling back to defaults would hide
         user typos in the [knowledge] section."""
         (tmp_path / "ralph.toml").write_text(
             "this is not = valid = toml = [\n",
@@ -439,7 +439,7 @@ class TestHelpers:
         assert _transitive_dependencies(manifest, "d") == {"a", "b", "c"}
 
     def test_direct_dependencies_chain_skips_transitive(self) -> None:
-        from ralph_py.knowledge import _direct_dependencies
+        from kstrl.knowledge import _direct_dependencies
 
         manifest = _make_manifest([
             _make_component("a"),
@@ -451,7 +451,7 @@ class TestHelpers:
         assert _direct_dependencies(manifest, "c") == {"b"}
 
     def test_direct_dependencies_unknown_component_returns_empty(self) -> None:
-        from ralph_py.knowledge import _direct_dependencies
+        from kstrl.knowledge import _direct_dependencies
 
         manifest = _make_manifest([_make_component("a")])
         assert _direct_dependencies(manifest, "ghost") == set()
@@ -680,7 +680,7 @@ class TestBuildKnowledgeContext:
         direct scope, c's context omits a's facts from the full-text
         tier; telemetry records ``excluded_dep_count=1,
         withheld_fact_count=2``."""
-        from ralph_py.knowledge import read_dependency_scope_telemetry
+        from kstrl.knowledge import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest([
@@ -720,7 +720,7 @@ class TestBuildKnowledgeContext:
         """When direct deps == transitive deps (single-tier graph),
         nothing is excluded and no telemetry event is written. The
         absence of events is the healthy state."""
-        from ralph_py.knowledge import read_dependency_scope_telemetry
+        from kstrl.knowledge import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest([
@@ -744,7 +744,7 @@ class TestBuildKnowledgeContext:
     ) -> None:
         """When dependency_scope=transitive, no facts are excluded and
         the telemetry stays empty even on a deep chain."""
-        from ralph_py.knowledge import read_dependency_scope_telemetry
+        from kstrl.knowledge import read_dependency_scope_telemetry
 
         knowledge_root = tmp_path / "knowledge"
         manifest = _make_manifest([
@@ -1073,7 +1073,7 @@ class TestStreamSizeCap:
     memory blowup and prompt-context flooding."""
 
     def test_collect_aborts_over_cap(self) -> None:
-        from ralph_py.decompose import (
+        from kstrl.decompose import (
             AgentOutputTooLarge,
             collect_agent_output,
         )
@@ -1100,7 +1100,7 @@ class TestStreamSizeCap:
             collect_agent_output(_Flooder(), "prompt", max_bytes=5 * 1024 * 1024)
 
     def test_collect_succeeds_under_cap(self) -> None:
-        from ralph_py.decompose import collect_agent_output
+        from kstrl.decompose import collect_agent_output
 
         class _Normal:
             @property
@@ -1561,7 +1561,7 @@ class TestFactUtilization:
     fact claims referenced in downstream artifacts."""
 
     def _prefix(self, *claims: str) -> str:
-        from ralph_py.knowledge import (
+        from kstrl.knowledge import (
             Fact,
             _format_section,
         )
@@ -1581,12 +1581,12 @@ class TestFactUtilization:
         return _format_section("Dependencies", facts)
 
     def test_empty_prefix_zero_zero(self) -> None:
-        from ralph_py.knowledge import measure_fact_utilization
+        from kstrl.knowledge import measure_fact_utilization
         result = measure_fact_utilization("", "diff", "progress")
         assert result == {"injected": 0, "referenced": 0}
 
     def test_referenced_when_claim_in_diff(self) -> None:
-        from ralph_py.knowledge import measure_fact_utilization
+        from kstrl.knowledge import measure_fact_utilization
         prefix = self._prefix("The handler returns 200 for valid input.")
         diff = "+# The handler returns 200 for valid input.\n+def handler():\n"
         result = measure_fact_utilization(prefix, diff, "")
@@ -1594,14 +1594,14 @@ class TestFactUtilization:
         assert result["referenced"] == 1
 
     def test_not_referenced(self) -> None:
-        from ralph_py.knowledge import measure_fact_utilization
+        from kstrl.knowledge import measure_fact_utilization
         prefix = self._prefix("The handler validates JWT before accepting requests.")
         result = measure_fact_utilization(prefix, "unrelated diff", "unrelated progress")
         assert result["injected"] == 1
         assert result["referenced"] == 0
 
     def test_mixed_referenced(self) -> None:
-        from ralph_py.knowledge import measure_fact_utilization
+        from kstrl.knowledge import measure_fact_utilization
         prefix = self._prefix(
             "First fact about authentication middleware.",
             "Second fact about database adapter.",
@@ -1687,8 +1687,8 @@ def _setup_factory_project(tmp_path: Path, component_id: str) -> Path:
     return tmp_path
 
 
-def _factory_base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _factory_base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts/ralph/prompt.md",
         prd_file=root / "scripts/ralph/prd.json",
         sleep_seconds=0,
@@ -1722,11 +1722,11 @@ class TestFactoryDistillIntegration:
         success = ComponentResult("comp-a", success=True, iterations=2)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(2, "ok"),
+            "kstrl.factory.distill_facts", return_value=(2, "ok"),
         ) as mock_distill, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             result = run_factory(manifest, config, base, ui, root)
 
@@ -1750,9 +1750,9 @@ class TestFactoryDistillIntegration:
         fail = ComponentResult("comp-a", success=False, error="test failure")
 
         with patch(
-            "ralph_py.factory._run_component", return_value=fail,
+            "kstrl.factory._run_component", return_value=fail,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(0, "skipped"),
+            "kstrl.factory.distill_facts", return_value=(0, "skipped"),
         ) as mock_distill:
             result = run_factory(manifest, config, base, ui, root)
 
@@ -1782,11 +1782,11 @@ class TestFactoryDistillIntegration:
         success = ComponentResult("comp-a", success=True, iterations=2)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(0, "disabled"),
+            "kstrl.factory.distill_facts", return_value=(0, "disabled"),
         ) as mock_distill, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             run_factory(manifest, config, base, ui, root)
 
@@ -1818,11 +1818,11 @@ class TestFactoryDistillIntegration:
         success = ComponentResult("comp-a", success=True, iterations=2)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(0, "ok"),
+            "kstrl.factory.distill_facts", return_value=(0, "ok"),
         ) as mock_distill, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             run_factory(manifest, config, base, ui, root)
 
@@ -1856,11 +1856,11 @@ class TestFactoryDistillIntegration:
         success = ComponentResult("comp-a", success=True, iterations=2)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(1, "ok"),
+            "kstrl.factory.distill_facts", return_value=(1, "ok"),
         ) as mock_distill, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             run_factory(manifest, config, base, ui, root)
 

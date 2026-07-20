@@ -29,12 +29,12 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-from ralph_py.cli import cli
-from ralph_py.config import RalphConfig
-from ralph_py.factory import FactoryConfig, FactoryResult, run_factory
-from ralph_py.manifest import Component, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.cli import cli
+from kstrl.config import KstrlConfig
+from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.manifest import Component, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 
@@ -130,8 +130,8 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
     return FactoryConfig(**kwargs)
 
 
-def _base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,
@@ -306,7 +306,7 @@ class TestManifestPathFidelity:
             captured["factory_config"] = args[1]
             return FactoryResult()
 
-        monkeypatch.setattr("ralph_py.cli.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
         runner = CliRunner()
         result = runner.invoke(
             cli,
@@ -346,7 +346,7 @@ class TestManifestPathFidelity:
             captured["factory_config"] = args[1]
             return FactoryResult()
 
-        monkeypatch.setattr("ralph_py.cli.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
         runner = CliRunner()
         result = runner.invoke(
             cli,

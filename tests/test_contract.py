@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from ralph_py.contract import (
+from kstrl.contract import (
     ContractConfig,
     ContractMode,
     compute_tiers,
 )
-from ralph_py.manifest import Component, Manifest
+from kstrl.manifest import Component, Manifest
 
 
 def _make_manifest(components: list[Component]) -> Manifest:

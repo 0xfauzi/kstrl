@@ -1,4 +1,4 @@
-"""Tests for the ralph_py.config TOML loader."""
+"""Tests for the kstrl.config TOML loader."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.config import RalphConfig
+from kstrl.config import KstrlConfig
 
 
 def _write_toml(path: Path, content: str) -> None:
@@ -30,7 +30,7 @@ model = "o3"
 reasoning_effort = "high"
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.agent_type == "codex"
     assert config.agent_cmd == "my-agent --stdin"
     assert config.model == "o3"
@@ -48,7 +48,7 @@ sleep_seconds = 5
 interactive = true
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.max_iterations == 42
     assert config.sleep_seconds == 5.0
     assert config.interactive is True
@@ -67,7 +67,7 @@ codebase_map = "custom/map.md"
 allowed = ["src/", "tests/"]
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.prompt_file == tmp_path / "custom/prompt.md"
     assert config.prd_file == tmp_path / "custom/prd.json"
     assert config.progress_file == tmp_path / "custom/progress.txt"
@@ -85,7 +85,7 @@ branch = "feature/x"
 auto_checkout = false
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.ralph_branch == "feature/x"
     assert config.ralph_branch_explicit is True
     assert config.auto_checkout is False
@@ -100,21 +100,21 @@ def test_from_toml_maps_ui_section(tmp_path: Path) -> None:
 ascii = true
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.ascii_only is True
 
 
 def test_from_toml_empty_file_uses_defaults(tmp_path: Path) -> None:
     toml_path = tmp_path / "ralph.toml"
     _write_toml(toml_path, "")
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.max_iterations == 10
     assert config.sleep_seconds == 2.0
     assert config.agent_type is None
 
 
 def test_from_toml_missing_file_uses_defaults(tmp_path: Path) -> None:
-    config = RalphConfig.from_toml(tmp_path / "nonexistent.toml", tmp_path)
+    config = KstrlConfig.from_toml(tmp_path / "nonexistent.toml", tmp_path)
     assert config.max_iterations == 10
     assert config.agent_cmd is None
 
@@ -123,7 +123,7 @@ def test_from_toml_malformed_raises_clear_error(tmp_path: Path) -> None:
     toml_path = tmp_path / "ralph.toml"
     _write_toml(toml_path, "this is not = valid = toml = [\n")
     with pytest.raises(ValueError, match="Invalid TOML"):
-        RalphConfig.from_toml(toml_path, tmp_path)
+        KstrlConfig.from_toml(toml_path, tmp_path)
 
 
 def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:
@@ -136,7 +136,7 @@ def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:
 prompt = "{abs_prompt}"
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.prompt_file == abs_prompt
 
 
@@ -153,7 +153,7 @@ unknown_field = "ignored"
 foo = "bar"
 """,
     )
-    config = RalphConfig.from_toml(toml_path, tmp_path)
+    config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.agent_type == "claude"
 
 
@@ -178,7 +178,7 @@ model = "sonnet"
     )
     monkeypatch.setenv("MAX_ITERATIONS", "99")
     monkeypatch.setenv("MODEL", "opus")
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.max_iterations == 99
     assert config.model == "opus"
 
@@ -197,7 +197,7 @@ def test_load_toml_wins_over_defaults_when_env_unset(
 max_iterations = 25
 """,
     )
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.max_iterations == 25
 
 
@@ -210,7 +210,7 @@ def test_load_defaults_when_no_toml_and_no_env(
         "RALPH_AGENT_TYPE", "RALPH_BRANCH", "RALPH_ASCII",
     ):
         monkeypatch.delenv(var, raising=False)
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.max_iterations == 10
     assert config.sleep_seconds == 2.0
     assert config.agent_type is None
@@ -231,7 +231,7 @@ def test_load_auto_discovers_ralph_toml(
 max_iterations = 7
 """,
     )
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.max_iterations == 7
 
 
@@ -240,7 +240,7 @@ def test_load_missing_toml_falls_back_silently(
 ) -> None:
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.max_iterations == 10
 
 
@@ -248,7 +248,7 @@ def test_load_env_branch_marks_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("RALPH_BRANCH", "")
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.ralph_branch == ""
     assert config.ralph_branch_explicit is True
 
@@ -257,7 +257,7 @@ def test_load_env_paths_resolved_against_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROMPT_FILE", "custom/prompt.md")
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.prompt_file == tmp_path / "custom/prompt.md"
 
 
@@ -278,7 +278,7 @@ def test_load_toml_empty_branch_does_not_mark_explicit(
 branch = ""
 """,
     )
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.ralph_branch is None
     assert config.ralph_branch_explicit is False
 
@@ -295,7 +295,7 @@ def test_load_toml_nonempty_branch_marks_explicit(
 branch = "feature/foo"
 """,
     )
-    config = RalphConfig.load(tmp_path)
+    config = KstrlConfig.load(tmp_path)
     assert config.ralph_branch == "feature/foo"
     assert config.ralph_branch_explicit is True
 
@@ -310,7 +310,7 @@ def test_from_env_still_works(
 ) -> None:
     monkeypatch.setenv("MAX_ITERATIONS", "13")
     monkeypatch.setenv("MODEL", "haiku")
-    config = RalphConfig.from_env(tmp_path)
+    config = KstrlConfig.from_env(tmp_path)
     assert config.max_iterations == 13
     assert config.model == "haiku"
     assert config.prompt_file == tmp_path / "scripts/ralph/prompt.md"
@@ -330,6 +330,6 @@ max_iterations = 999
     )
     # Change cwd to tmp_path so any auto-discovery would pick up the toml
     monkeypatch.chdir(tmp_path)
-    config = RalphConfig.from_env(tmp_path)
+    config = KstrlConfig.from_env(tmp_path)
     # from_env must ignore toml
     assert config.max_iterations == 10

@@ -17,31 +17,31 @@ from typing import Any
 
 import pytest
 
-from ralph_py.agents.base import UsageRecord, UsageTotals
-from ralph_py.config import RalphConfig
-from ralph_py.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
-from ralph_py.factory import (
+from kstrl.agents.base import UsageRecord, UsageTotals
+from kstrl.config import KstrlConfig
+from kstrl.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
+from kstrl.factory import (
     AdversarialAgentSelection,
     ComponentResult,
     FactoryConfig,
     FactoryResult,
 )
-from ralph_py.fixtures import FixturesConfig
-from ralph_py.knowledge import KnowledgeConfig
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.observability import NotifyConfig, NotifyHooks, ProgressLog
-from ralph_py.pipeline import (
+from kstrl.fixtures import FixturesConfig
+from kstrl.knowledge import KnowledgeConfig
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
+from kstrl.pipeline import (
     CheckpointDecision,
     ComponentPipeline,
     PipelineHooks,
     PrDisposition,
     Transition,
 )
-from ralph_py.pr import PrOutcome
-from ralph_py.review import ReviewResult
-from ralph_py.security import SecurityConfig, SecurityResult
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.pr import PrOutcome
+from kstrl.review import ReviewResult
+from kstrl.security import SecurityConfig, SecurityResult
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 
 
 class _ChoiceUI(PlainUI):
@@ -79,8 +79,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
     )
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0,
@@ -220,10 +220,10 @@ def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     the agent factory are stubbed at their source modules (the same
     seams the factory-level tests use)."""
     monkeypatch.setattr(
-        "ralph_py.git.get_diff_content", lambda *a, **k: "diff --git a b\n",
+        "kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n",
     )
     monkeypatch.setattr(
-        "ralph_py.agents.get_agent", lambda *a, **k: object(),
+        "kstrl.agents.get_agent", lambda *a, **k: object(),
     )
 
 
@@ -390,12 +390,12 @@ class TestVerifyAndDiffTransitions:
     def test_diff_fetch_failure_fails_closed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ralph_py.git import GitDiffError
+        from kstrl.git import GitDiffError
 
         def _boom(*args: Any, **kwargs: Any) -> str:
             raise GitDiffError("git diff exploded")
 
-        monkeypatch.setattr("ralph_py.git.get_diff_content", _boom)
+        monkeypatch.setattr("kstrl.git.get_diff_content", _boom)
         pipeline, manifest, _, _ = _make_pipeline(tmp_path)
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -409,17 +409,17 @@ class TestVerifyAndDiffTransitions:
     def test_unsplittable_hard_mode_diff_retries(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ralph_py.git import DiffUnsplittableError
+        from kstrl.git import DiffUnsplittableError
 
         monkeypatch.setattr(
-            "ralph_py.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
+            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
         )
 
         def _unsplittable(*args: Any, **kwargs: Any) -> list[str]:
             raise DiffUnsplittableError("one file exceeds the cap")
 
         monkeypatch.setattr(
-            "ralph_py.git.split_diff_for_prompt", _unsplittable,
+            "kstrl.git.split_diff_for_prompt", _unsplittable,
         )
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path, config=_factory_config(review_mode="hard"),
@@ -480,10 +480,10 @@ class TestReviewAndSecurityTransitions:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "ralph_py.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
+            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
         )
         monkeypatch.setattr(
-            "ralph_py.git.split_diff_for_prompt",
+            "kstrl.git.split_diff_for_prompt",
             lambda *a, **k: ["c1", "c2", "c3"],
         )
         pipeline, manifest, result, _ = _make_pipeline(
@@ -603,9 +603,9 @@ class TestCheckpointAndPrTransitions:
     def test_merge_pending_parks_component(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=True, pr_number=7, pr_url="https://x/pull/7",
                 merged=False, merge_pending=True,
@@ -636,9 +636,9 @@ class TestCheckpointAndPrTransitions:
     def test_pr_flow_failure_fails_and_cascade_skips(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=False, merged=False, error="push rejected",
             ),
@@ -663,9 +663,9 @@ class TestCheckpointAndPrTransitions:
     def test_confirmed_merge_completes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
                 pushed=True, pr_number=8, pr_url="https://x/pull/8",
                 merged=True,
@@ -689,7 +689,7 @@ class TestCheckpointAndPrTransitions:
     def test_no_gh_completes_without_pr(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: False)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: False)
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path, config=self._pr_config(),
         )
@@ -722,9 +722,9 @@ class TestMergeConflictDoctrine:
     def test_conflict_routes_to_fresh_base_retry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         closed: list[tuple[int, str]] = []
@@ -733,7 +733,7 @@ class TestMergeConflictDoctrine:
             closed.append((pr_number, branch))
             return None
 
-        monkeypatch.setattr("ralph_py.pr.close_pr_for_rerun", fake_close)
+        monkeypatch.setattr("kstrl.pr.close_pr_for_rerun", fake_close)
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path, config=self._pr_config(max_retries=1, use_worktrees=True),
         )
@@ -768,13 +768,13 @@ class TestMergeConflictDoctrine:
     def test_conflict_with_retries_exhausted_fails(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         monkeypatch.setattr(
-            "ralph_py.pr.close_pr_for_rerun", lambda *a: None,
+            "kstrl.pr.close_pr_for_rerun", lambda *a: None,
         )
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path, config=self._pr_config(max_retries=0),
@@ -794,13 +794,13 @@ class TestMergeConflictDoctrine:
     def test_conflict_close_failure_is_nonfatal(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.push_create_and_merge_pr",
+            "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: self._conflict_outcome(),
         )
         monkeypatch.setattr(
-            "ralph_py.pr.close_pr_for_rerun",
+            "kstrl.pr.close_pr_for_rerun",
             lambda *a: "gh pr close #7 failed",
         )
         pipeline, manifest, _, _ = _make_pipeline(
@@ -833,12 +833,12 @@ class TestMergePendingRepoll:
     def test_repoll_merged_completes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.wait_for_merge", lambda *a, **k: "merged",
+            "kstrl.pr.wait_for_merge", lambda *a, **k: "merged",
         )
         monkeypatch.setattr(
-            "ralph_py.git.fetch_base_branch", lambda *a, **k: None,
+            "kstrl.git.fetch_base_branch", lambda *a, **k: None,
         )
         pipeline, manifest, result = self._parked(tmp_path)
         pipeline.repoll_merge_pending()
@@ -850,9 +850,9 @@ class TestMergePendingRepoll:
     def test_repoll_closed_fails_and_cascade_skips(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.wait_for_merge", lambda *a, **k: "closed",
+            "kstrl.pr.wait_for_merge", lambda *a, **k: "closed",
         )
         pipeline, manifest, result = self._parked(tmp_path)
         pipeline.repoll_merge_pending()
@@ -868,9 +868,9 @@ class TestMergePendingRepoll:
     def test_repoll_unconfirmed_stays_parked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "ralph_py.pr.wait_for_merge", lambda *a, **k: "unknown",
+            "kstrl.pr.wait_for_merge", lambda *a, **k: "unknown",
         )
         pipeline, manifest, result = self._parked(tmp_path)
         pipeline.repoll_merge_pending()
@@ -926,7 +926,7 @@ class TestDistillPlacement:
         after the review gates and BEFORE the PR step, so the distilled
         diff is the component's true delta."""
         calls: list[str] = []
-        monkeypatch.setattr("ralph_py.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
 
         def _pr(*args: Any, **kwargs: Any) -> PrOutcome:
             calls.append("pr")
@@ -935,7 +935,7 @@ class TestDistillPlacement:
                 merged=True,
             )
 
-        monkeypatch.setattr("ralph_py.pr.push_create_and_merge_pr", _pr)
+        monkeypatch.setattr("kstrl.pr.push_create_and_merge_pr", _pr)
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(create_prs=True),

@@ -18,9 +18,9 @@ failing the suite, while a fixture that misses most runs is a
 regression and fails. Results (per-fixture consistency, per-role and
 per-category detection rates, the model id) are written to
 ``tests/adversarial_fixtures/_results/baseline-<UTC-date>.json`` in
-the v2 format defined by :mod:`ralph_py.calibration`; compare against
+the v2 format defined by :mod:`kstrl.calibration`; compare against
 a previous baseline with
-``python -m ralph_py.calibration compare <old.json> <new.json>``.
+``python -m kstrl.calibration compare <old.json> <new.json>``.
 
 R5.2 adds two axes on top of the R5.1 detection gate:
 - HARD positives (``security/`` ``difficulty: hard``: multi-hop authz,
@@ -53,8 +53,8 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py import calibration
-from ralph_py.decompose import (
+from kstrl import calibration
+from kstrl.decompose import (
     SpecIssue,
     _extract_agent_json,
     _parse_spec_issues,
@@ -62,7 +62,7 @@ from ralph_py.decompose import (
     build_decompose_prompt,
     generate_data_delimiter,
 )
-from ralph_py.review import (
+from kstrl.review import (
     REVIEWER_PROMPT,
     VALID_CONCERN_CATEGORIES,
     CriterionReview,
@@ -71,7 +71,7 @@ from ralph_py.review import (
     ReviewVerdict,
     parse_review_output,
 )
-from ralph_py.security import (
+from kstrl.security import (
     VALID_CATEGORIES,
     SecurityFinding,
     SecurityMode,
@@ -109,7 +109,7 @@ RESULTS_DIR = FIXTURES_DIR / "_results"
 # fixture counts as a false positive when a majority of its completed
 # runs flag a forbidden (must_not_flag) category. The rate joins the v2
 # detection report as a ``false_positive_analysis`` block (see
-# _DetectionReport.save). Detection thresholds live in ralph_py.calibration
+# _DetectionReport.save). Detection thresholds live in kstrl.calibration
 # (R5.1); this is the FP counterpart, kept test-side since the negative
 # fixtures are an R5.2 addition.
 FP_RATE_MAX = 0.34
@@ -242,7 +242,7 @@ def _halting_spec_fixtures() -> list[tuple[Path, dict]]:
 
 def _get_calibration_agent():
     """Return an agent suitable for calibration (fast, cheap)."""
-    from ralph_py.agents import get_agent
+    from kstrl.agents import get_agent
     return get_agent(
         agent_cmd=None,
         model=CALIBRATION_MODEL,
@@ -256,7 +256,7 @@ def _get_reviewer_calibration_agent():
     agent unless the R7.1 reviewer-family override
     (RALPH_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
     family for the same-family vs cross-family baseline comparison."""
-    from ralph_py.agents import get_agent
+    from kstrl.agents import get_agent
     return get_agent(
         agent_cmd=None,
         model=REVIEWER_MODEL or CALIBRATION_MODEL,
@@ -541,7 +541,7 @@ def architect_allowed_paths_caught(
 
 
 # ---------------------------------------------------------------------------
-# Detection report (v2 format, built by ralph_py.calibration) + R5.2 FP block
+# Detection report (v2 format, built by kstrl.calibration) + R5.2 FP block
 # ---------------------------------------------------------------------------
 
 
@@ -612,7 +612,7 @@ def build_fp_summary(
 class _DetectionReport:
     """Accumulates one record per RUN (not per fixture) and delegates
     detection aggregation + the on-disk format to
-    :mod:`ralph_py.calibration`. Negative-fixture (false-positive) runs
+    :mod:`kstrl.calibration`. Negative-fixture (false-positive) runs
     are kept separately (R5.2) and injected as a ``false_positive_analysis``
     block at save time."""
 
@@ -680,7 +680,7 @@ class _DetectionReport:
                 "fixtures": [],
             }
         # R5.2: inject the false-positive analysis test-side. Negative
-        # fixtures are an R5.2 addition and ralph_py.calibration owns only
+        # fixtures are an R5.2 addition and kstrl.calibration owns only
         # the detection format (out of this session's scope), so the FP
         # block is layered on the returned dict, not baked into build_report.
         if self.fp_records:

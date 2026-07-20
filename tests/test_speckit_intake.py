@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.decompose import (
+from kstrl.decompose import (
     DECOMPOSE_PROMPT,
     decompose_spec,
     load_spec_input,
 )
-from ralph_py.ui.plain import PlainUI
+from kstrl.ui.plain import PlainUI
 from tests.test_decompose import (
     SequenceAgent,
     _single_component_output,

@@ -4,16 +4,16 @@
 
 - **Language**: Python (FastAPI / pytest / uv toolchain)
 - **Project**: Ralph - an adversarial coding-agent harness
-- **Layout**: `ralph_py/` is the canonical factory implementation. `src/ralph/` is the legacy single-component loop (out of scope for the adversarial roadmap).
+- **Layout**: `kstrl/` is the canonical factory implementation. `src/ralph/` is the legacy single-component loop (out of scope for the adversarial roadmap).
 
 ## Verification commands
 
 - **Test**: `uv run pytest tests/ -v`
 - **Calibration (opt-in, real LLMs)**: `RALPH_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
-- **Typecheck**: `uv run mypy ralph_py/ --strict`
-- **Lint**: `uv run ruff check ralph_py/ tests/`
+- **Typecheck**: `uv run mypy kstrl/ --strict`
+- **Lint**: `uv run ruff check kstrl/ tests/`
 
-Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["ralph_py"]` so `uv run mypy` (no args) also checks `ralph_py/`. The legacy `src/ralph/` package is intentionally not in mypy's scope -- it is the out-of-scope single-component loop, and the factory's smart-default typecheck command honors this configuration. If you actively maintain `src/ralph/`, run `uv run mypy src/ralph/ --strict` manually; CI does not gate it.
+Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so `uv run mypy` (no args) also checks `kstrl/`. The legacy `src/ralph/` package is intentionally not in mypy's scope -- it is the out-of-scope single-component loop, and the factory's smart-default typecheck command honors this configuration. If you actively maintain `src/ralph/`, run `uv run mypy src/ralph/ --strict` manually; CI does not gate it.
 
 ## Adversarial role taxonomy
 
@@ -34,7 +34,7 @@ Ralph's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 
 - **Do not run `/code-review` on your own code.** Per H1 of `docs/adversarial-roadmap.md`, AI self-review of AI-generated code is prohibited. The user or `/code-review ultra` is the gating reviewer.
 - **Calibration is the truth signal.** When changing an adversarial prompt (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, the engineer prompt), re-run the calibration suite and compare detection rates against the saved baseline. A prompt edit without a calibration check is treated as untested (H2).
-- **Prompt edits require a version bump AND a hash update.** Every adversarial prompt (including the harness-shipped engineer prompt `DEFAULT_PROMPT`) declares a `*_PROMPT_VERSION` semver constant next to the body. `tests/test_prompt_versions.py` snapshots each prompt as a `(hash, version)` tuple in `_EXPECTED_SNAPSHOTS`; both must move together. The test also AST-walks `ralph_py/` for any module-level `*_PROMPT` constant and fails if a new one is not enrolled. The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving (H3).
+- **Prompt edits require a version bump AND a hash update.** Every adversarial prompt (including the harness-shipped engineer prompt `DEFAULT_PROMPT`) declares a `*_PROMPT_VERSION` semver constant next to the body. `tests/test_prompt_versions.py` snapshots each prompt as a `(hash, version)` tuple in `_EXPECTED_SNAPSHOTS`; both must move together. The test also AST-walks `kstrl/` for any module-level `*_PROMPT` constant and fails if a new one is not enrolled. The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving (H3).
 - **Be explicit about what was tested vs assumed.** "Smoke passed" without listing what was checked is presence-testing, not behavior-testing (H4).
 - **All adversarial-roadmap policies are tracked in `docs/adversarial-roadmap.md`**. Read it before changing the role architecture.
 

@@ -12,11 +12,11 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from ralph_py import events as ev
-from ralph_py.output import Console, build_console
-from ralph_py.render import UIBackedRenderer, plain_renderer
-from ralph_py.ui.bridge import EventBridgeUI
-from ralph_py.ui.plain import PlainUI
+from kstrl import events as ev
+from kstrl.output import Console, build_console
+from kstrl.render import UIBackedRenderer, plain_renderer
+from kstrl.ui.bridge import EventBridgeUI
+from kstrl.ui.plain import PlainUI
 
 # (method, args) covering all 14 protocol methods' render paths.
 _CALLS: list[tuple[str, tuple[str, ...]]] = [

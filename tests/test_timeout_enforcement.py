@@ -28,13 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.agents.claude_code import ClaudeCodeAgent
-from ralph_py.agents.claude_sdk import ClaudeSdkAgent
-from ralph_py.agents.codex import CodexAgent
-from ralph_py.agents.custom import CustomAgent
-from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl.agents.claude_code import ClaudeCodeAgent
+from kstrl.agents.claude_sdk import ClaudeSdkAgent
+from kstrl.agents.codex import CodexAgent
+from kstrl.agents.custom import CustomAgent
+from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     _expired_futures,
@@ -43,10 +43,10 @@ from ralph_py.factory import (
     _setup_worktree,
     run_factory,
 )
-from ralph_py.loop import run_loop
-from ralph_py.manifest import Component, Manifest
-from ralph_py.timeout import TimeoutConfig
-from ralph_py.ui.plain import PlainUI
+from kstrl.loop import run_loop
+from kstrl.manifest import Component, Manifest
+from kstrl.timeout import TimeoutConfig
+from kstrl.ui.plain import PlainUI
 
 # Generous bound for "killed within the deadline": 1s deadline + 5s
 # SIGTERM grace + slack. A hang would previously block forever.
@@ -387,7 +387,7 @@ class TestSignalGroupSafety:
     def _streamer_with_fake_proc(self, pid: object) -> tuple[object, object]:
         from unittest.mock import MagicMock, patch
 
-        from ralph_py.agents.proc import DeadlineStreamer
+        from kstrl.agents.proc import DeadlineStreamer
 
         fake_proc = MagicMock()
         fake_proc.pid = pid
@@ -476,14 +476,14 @@ class _RecordingAgent:
         yield from self._lines
 
 
-def _loop_config(tmp_path: Path, max_iterations: int) -> RalphConfig:
+def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
     ralph_dir = tmp_path / "scripts" / "ralph"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
-    return RalphConfig(
+    return KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",
@@ -595,7 +595,7 @@ class TestFactoryComponentTimeout:
                 agent_iteration=0.5, component_total=1.0,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
@@ -644,7 +644,7 @@ class TestFactoryComponentTimeout:
                 agent_iteration=0.3, component_total=0.5,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=tmp_path / "scripts" / "ralph" / "prompt.md",
             prd_file=tmp_path / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
@@ -798,7 +798,7 @@ class TestSchedulerBackstop:
                 scheduler_backstop_margin=0.5,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=tmp_path / "scripts" / "ralph" / "prompt.md",
             prd_file=tmp_path / "scripts" / "ralph" / "prd.json",
             sleep_seconds=0,
@@ -875,9 +875,9 @@ class TestTimeoutConfigLoading:
         assert config.scheduler_backstop_margin == 60.0
 
     def test_ralph_config_duplicate_fields_deleted(self) -> None:
-        """R0.1 requirement 4: the dead duplicate fields on RalphConfig are
+        """R0.1 requirement 4: the dead duplicate fields on KstrlConfig are
         gone; TimeoutConfig is the only source."""
-        config = RalphConfig()
+        config = KstrlConfig()
         assert not hasattr(config, "agent_iteration_timeout")
         assert not hasattr(config, "component_timeout")
         assert not hasattr(config, "subprocess_timeout")
@@ -906,12 +906,12 @@ class TestCliTimeoutFlags:
 
         from click.testing import CliRunner
 
-        from ralph_py.cli import cli
-        from ralph_py.factory import FactoryResult
+        from kstrl.cli import cli
+        from kstrl.factory import FactoryResult
 
         manifest_path = self._write_manifest(tmp_path)
         runner = CliRunner()
-        with patch("ralph_py.cli.run_factory") as mock_run:
+        with patch("kstrl.cli.run_factory") as mock_run:
             mock_run.return_value = FactoryResult()
             result = runner.invoke(cli, [
                 "factory",
@@ -971,7 +971,7 @@ class TestCliTimeoutFlags:
 
 class TestSubprocessTimeoutAudit:
     """The A+ factory-orchestration gate requires that no subprocess call
-    in ralph_py ships without a timeout, enforced by a static test. This
+    in kstrl ships without a timeout, enforced by a static test. This
     is that test: an AST walk over every module, alias-aware
     (``import subprocess as _sp`` counts), so a new call site without a
     ``timeout=`` fails CI instead of hanging a run someday.
@@ -980,15 +980,15 @@ class TestSubprocessTimeoutAudit:
     that implement their own deadline management, each covered by the
     runtime kill tests in this file's suite or their own:
 
-    - ralph_py/agents/proc.py: reader-thread deadline + group kill (R0.1)
-    - ralph_py/verify.py: run_scrubbed communicate(timeout) + group kill
+    - kstrl/agents/proc.py: reader-thread deadline + group kill (R0.1)
+    - kstrl/verify.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
     """
 
     SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
     POPEN_ALLOWLIST = frozenset({
-        "ralph_py/agents/proc.py",
-        "ralph_py/verify.py",
+        "kstrl/agents/proc.py",
+        "kstrl/verify.py",
     })
 
     @staticmethod
@@ -1008,7 +1008,7 @@ class TestSubprocessTimeoutAudit:
         return module_aliases, direct_funcs
 
     def test_every_subprocess_call_has_timeout(self) -> None:
-        package_root = Path(__file__).resolve().parent.parent / "ralph_py"
+        package_root = Path(__file__).resolve().parent.parent / "kstrl"
         violations: list[str] = []
         popen_violations: list[str] = []
         sites_seen = 0

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
-from ralph_py.cli import cli
+from kstrl.cli import cli
 
 
 class TestCliHelp:
@@ -16,7 +18,7 @@ class TestCliHelp:
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
-        assert "Ralph" in result.output
+        assert "kstrl" in result.output
         assert "run" in result.output
         assert "init" in result.output
         assert "understand" in result.output
@@ -52,7 +54,9 @@ class TestCliHelp:
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        from kstrl import __version__
+
+        assert __version__ in result.output
 
 
 class TestCliValidation:
@@ -179,8 +183,8 @@ class TestDecomposeBlockerOutput:
     def test_prints_artifact_path_on_halt(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        import ralph_py.cli as cli_mod
-        from ralph_py.decompose import SpecBlockerError, SpecIssue
+        import kstrl.cli as cli_mod
+        from kstrl.decompose import SpecBlockerError, SpecIssue
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
@@ -213,3 +217,20 @@ class TestDecomposeBlockerOutput:
         assert result.exit_code == 2
         assert "spec is too vague" in result.output
         assert str(artifact) in result.output
+
+
+class TestDeprecatedRalphShim:
+    def test_ralph_entry_point_warns_and_runs(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """The rename shim (`ralph` console script) warns on stderr and
+        still dispatches to the real CLI."""
+        from kstrl.cli import deprecated_ralph_main
+
+        monkeypatch.setattr(sys, "argv", ["ralph", "--help"])
+        with pytest.raises(SystemExit) as excinfo:
+            deprecated_ralph_main()
+        assert excinfo.value.code == 0
+        captured = capsys.readouterr()
+        assert "deprecated" in captured.err
+        assert "kstrl" in captured.out

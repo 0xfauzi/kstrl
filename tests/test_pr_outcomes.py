@@ -24,18 +24,18 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py import git
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl import git
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     FactoryResult,
     run_factory,
 )
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 STUB_PR_URL = "https://github.com/stub/repo/pull/7"
 
@@ -217,8 +217,8 @@ def _factory_config(**overrides: object) -> FactoryConfig:
     return config
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -240,7 +240,7 @@ def _run(
         calls.append(component_id)
         return ComponentResult(component_id, success=True, iterations=1)
 
-    with patch("ralph_py.factory._run_component", side_effect=fake_run):
+    with patch("kstrl.factory._run_component", side_effect=fake_run):
         result = run_factory(
             manifest, config or _factory_config(), _base_config(root),
             PlainUI(no_color=True), root,
@@ -569,7 +569,7 @@ class TestPrOutcomeDataclass:
         """--delete-branch is the measured hazard: its local-branch
         deletion fails inside a component worktree and gh reports the
         whole (successful) merge as failed. It must never come back."""
-        from ralph_py import pr as pr_module
+        from kstrl import pr as pr_module
 
         seen: list[list[str]] = []
 

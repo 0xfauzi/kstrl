@@ -27,12 +27,12 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.decompose import build_decompose_prompt, generate_data_delimiter
-from ralph_py.knowledge import build_distill_prompt
-from ralph_py.manifest import Component
-from ralph_py.review import build_review_prompt
-from ralph_py.security import _build_security_prompt
-from ralph_py.verify import CheckResult, VerificationResult
+from kstrl.decompose import build_decompose_prompt, generate_data_delimiter
+from kstrl.knowledge import build_distill_prompt
+from kstrl.manifest import Component
+from kstrl.review import build_review_prompt
+from kstrl.security import _build_security_prompt
+from kstrl.verify import CheckResult, VerificationResult
 
 _TOKEN_RE = re.compile(r"RALPH-DATA-[0-9a-f]{32}")
 

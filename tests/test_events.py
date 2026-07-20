@@ -16,8 +16,8 @@ from typing import Any
 
 import pytest
 
-from ralph_py import events as ev
-from ralph_py.observability import ProgressLog, read_progress_events
+from kstrl import events as ev
+from kstrl.observability import ProgressLog, read_progress_events
 
 
 def _sample_events() -> list[ev.Event]:

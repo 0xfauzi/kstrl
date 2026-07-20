@@ -17,38 +17,38 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from ralph_py import calibration
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl import calibration
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     AdversarialAgentSelection,
     FactoryConfig,
     resolve_adversarial_selection,
     run_factory,
 )
-from ralph_py.findings import (
+from kstrl.findings import (
     Finding,
     finding_model,
     render_findings_markdown,
     tag_finding_with_attempt,
     tag_finding_with_model,
 )
-from ralph_py.manifest import Component, Manifest
-from ralph_py.observability import read_progress_events
-from ralph_py.pr import _generate_pr_body
-from ralph_py.review import (
+from kstrl.manifest import Component, Manifest
+from kstrl.observability import read_progress_events
+from kstrl.pr import _generate_pr_body
+from kstrl.review import (
     ReviewMode,
     ReviewResult,
     merge_review_results,
     run_review,
 )
-from ralph_py.security import (
+from kstrl.security import (
     SecurityConfig,
     SecurityResult,
     merge_security_results,
     run_security_review,
 )
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult
 
 
 def _resolve(
@@ -438,7 +438,7 @@ class TestHomogeneityWarningFires:
             security_config=SecurityConfig(mode="hard"),
             create_prs=False,
         )
-        base = RalphConfig(agent_cmd="./fake-engineer.sh")
+        base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
         result = run_factory(
             manifest, config, base, ui, tmp_path,
@@ -471,7 +471,7 @@ class TestHomogeneityWarningFires:
             security_config=None,
             create_prs=False,
         )
-        base = RalphConfig(agent_cmd="./fake-engineer.sh")
+        base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
         run_factory(
             manifest, config, base, ui, tmp_path,

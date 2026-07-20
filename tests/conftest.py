@@ -1,4 +1,4 @@
-"""Pytest fixtures for ralph_py tests.
+"""Pytest fixtures for kstrl tests.
 
 Suite isolation (R4.1): before this conftest grew the fixtures below, the
 suite appended hundreds of junk entries to the repository's real
@@ -90,7 +90,7 @@ def isolate_ralph_state(
     resolves it against ``Path.cwd()``; there is no env override for the
     root. Pointing CWD at ``tmp_path`` therefore redirects every relative
     default in one move (journal, experiments, knowledge root, snapshot
-    dirs, proposals) without touching ralph_py source.
+    dirs, proposals) without touching kstrl source.
 
     Ambient env is cleared too, so a dev machine exporting FACTORY_* /
     RALPH_* values cannot alter from_env/load tests.

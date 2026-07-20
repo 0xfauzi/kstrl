@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.manifest import Component, ComponentStatus, Manifest
+from kstrl.manifest import Component, ComponentStatus, Manifest
 
 
 def _minimal_manifest_data(

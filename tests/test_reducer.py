@@ -8,9 +8,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ralph_py import events as ev
-from ralph_py import reducer
-from ralph_py.observability import ProgressLog, read_progress_events, summarize_events
+from kstrl import events as ev
+from kstrl import reducer
+from kstrl.observability import ProgressLog, read_progress_events, summarize_events
 
 
 def _stamped(events: list[ev.Event], run_id: str = "run-1") -> list[ev.Event]:

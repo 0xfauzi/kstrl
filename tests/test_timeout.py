@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from ralph_py.timeout import TimeoutConfig, run_with_timeout
+from kstrl.timeout import TimeoutConfig, run_with_timeout
 
 
 class TestTimeoutConfig:

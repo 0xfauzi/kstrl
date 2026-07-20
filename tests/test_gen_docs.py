@@ -63,16 +63,16 @@ class TestReadmeCurrent:
 
 class TestCliReference:
     def test_every_click_command_is_documented(self, gen_docs: ModuleType) -> None:
-        from ralph_py.cli import cli
+        from kstrl.cli import cli
 
         reference = gen_docs.build_cli_reference()
         for name in cli.commands:
-            assert f"ralph {name}" in reference
+            assert f"ks {name}" in reference
 
     def test_no_fictional_commands(self, gen_docs: ModuleType) -> None:
         """The pre-R2.5 README documented commands that never existed."""
         reference = gen_docs.build_cli_reference()
-        for fiction in ("ralph prd", "--legacy", "Launch TUI"):
+        for fiction in ("ks prd", "--legacy", "Launch TUI"):
             assert fiction not in reference
 
 
@@ -80,14 +80,14 @@ class TestConfigProbing:
     def test_documented_dead_key_fails_generation(self, gen_docs: ModuleType) -> None:
         """A documented toml key the loader ignores must break generation,
         not silently ship wrong docs."""
-        from ralph_py.config import RalphConfig
+        from kstrl.config import KstrlConfig
 
         spec = gen_docs.SectionSpec(
             section="agent",
             title="broken",
             keys={"no_such_key": "max_iterations"},
-            loader=lambda root: RalphConfig.load(root_dir=root),
-            defaults=RalphConfig(),
+            loader=lambda root: KstrlConfig.load(root_dir=root),
+            defaults=KstrlConfig(),
             probe_undocumented_fields=False,
         )
         with pytest.raises(SystemExit, match="no_such_key"):
@@ -132,7 +132,7 @@ class TestExampleProjectContract:
         """examples/uv-python ships the same engineer prompt `ralph init`
         scaffolds, so the example cannot drift behind the contract again
         (pre-R2.5 it lacked the Self-Critique block)."""
-        from ralph_py.init_cmd import DEFAULT_PROMPT
+        from kstrl.init_cmd import DEFAULT_PROMPT
 
         example = (
             REPO_ROOT / "examples" / "uv-python" / "scripts" / "ralph" / "prompt.md"

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.security import (
+from kstrl.security import (
     SECURITY_PROMPT,
     SecurityConfig,
     SecurityFinding,
@@ -18,7 +18,7 @@ from ralph_py.security import (
     parse_security_output,
     run_security_review,
 )
-from ralph_py.ui.plain import PlainUI
+from kstrl.ui.plain import PlainUI
 
 
 class MockSecurityAgent:

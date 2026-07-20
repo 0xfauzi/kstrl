@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ralph_py.cli import cli
+from kstrl.cli import cli
 
 ALL_SECTIONS = [
     "[agent]", "[run]", "[paths]", "[git]", "[ui]",
@@ -51,7 +51,7 @@ class TestConfigShowSources:
 
         output = self._invoke(tmp_path, "--model", "flagmodel")
 
-        # RalphConfig-backed sections
+        # KstrlConfig-backed sections
         line = _line_for(output, "max_iterations")
         assert "42" in line and "(toml)" in line
         line = _line_for(output, "sleep_seconds")

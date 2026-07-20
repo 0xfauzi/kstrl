@@ -38,7 +38,7 @@ jobs:
         # so this job is network-free (R4.3).
         run: >
           uv run pytest tests/ -v --tb=short -m "not spine"
-          --cov=ralph_py --cov-report=
+          --cov=kstrl --cov-report=
 
       - name: Stash coverage data
         run: mv .coverage coverage-fast
@@ -71,7 +71,7 @@ jobs:
       - name: pytest (spine tier)
         run: >
           uv run pytest tests/ -v --tb=short -m spine
-          --cov=ralph_py --cov-report=
+          --cov=kstrl --cov-report=
 
       - name: Stash coverage data
         run: mv .coverage coverage-spine
@@ -146,10 +146,10 @@ jobs:
         run: uv sync --frozen --all-extras --dev
 
       - name: ruff
-        run: uv run ruff check ralph_py/ tests/
+        run: uv run ruff check kstrl/ tests/
 
       - name: mypy
-        run: uv run mypy ralph_py/ --strict
+        run: uv run mypy kstrl/ --strict
 
       - name: doc drift (R2.5)
         # The README CLI/config reference sections are generated from the

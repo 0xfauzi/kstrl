@@ -29,10 +29,10 @@ from typing import Any
 
 import pytest
 
-from ralph_py.contract import ContractConfig
-from ralph_py.factory import FactoryResult, run_factory
-from ralph_py.manifest import ComponentStatus, Manifest
-from ralph_py.ui.plain import PlainUI
+from kstrl.contract import ContractConfig
+from kstrl.factory import FactoryResult, run_factory
+from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
     base_config,
     component,

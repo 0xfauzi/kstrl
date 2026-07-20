@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 
-from ralph_py.interaction import (
+from kstrl.interaction import (
     CheckpointContext,
     PromptKind,
     PromptRequest,
@@ -20,7 +20,7 @@ from ralph_py.interaction import (
     QueueInteractionChannel,
     UiInteractionChannel,
 )
-from ralph_py.ui.plain import PlainUI
+from kstrl.ui.plain import PlainUI
 
 
 def _req(default: int = 0) -> PromptRequest:
@@ -185,7 +185,7 @@ class TestCheckpointContext:
         review summary string (verified through a recording channel)."""
         from unittest.mock import patch
 
-        from ralph_py.factory import ComponentResult, run_factory
+        from kstrl.factory import ComponentResult, run_factory
         from tests.test_event_stream import (
             _component,
             _factory_config,
@@ -217,10 +217,10 @@ class TestCheckpointContext:
                 )
 
         with patch(
-            "ralph_py.factory._run_component", return_value=result,
+            "kstrl.factory._run_component", return_value=result,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value="+real diff\n",
-        ), patch("ralph_py.pr.is_gh_available", return_value=False):
+            "kstrl.git.get_diff_content", return_value="+real diff\n",
+        ), patch("kstrl.pr.is_gh_available", return_value=False):
             run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True, file=io.StringIO()), root,
@@ -245,8 +245,8 @@ class TestEvolveApplyNonTty:
         the seam degrades to a clean "not applied" skip."""
         from click.testing import CliRunner
 
-        from ralph_py.cli import cli
-        from ralph_py.evolution import (
+        from kstrl.cli import cli
+        from kstrl.evolution import (
             EvolutionConfig,
             EvolutionJournal,
             FailurePattern,

@@ -1,7 +1,7 @@
 # DESIGN.md - Ralph dashboard visual system
 
 Terminal UI (Textual). The single source of truth for tokens is
-`ralph_py/tui/theme.py` (`RALPH_THEME`); this file documents intent.
+`kstrl/tui/theme.py` (`RALPH_THEME`); this file documents intent.
 
 ## Theme
 

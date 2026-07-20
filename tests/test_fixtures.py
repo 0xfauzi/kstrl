@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from ralph_py.fixtures import (
+from kstrl.fixtures import (
     Fixture,
     FixtureResult,
     FixturesConfig,
@@ -23,8 +23,8 @@ from ralph_py.fixtures import (
     run_function_fixture,
     save_snapshot,
 )
-from ralph_py.prd import PRD
-from ralph_py.verify import VerifyConfig, run_mechanical_verification
+from kstrl.prd import PRD
+from kstrl.verify import VerifyConfig, run_mechanical_verification
 
 
 def _story() -> dict[str, Any]:
