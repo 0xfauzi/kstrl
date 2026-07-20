@@ -198,3 +198,62 @@ def write_fake_understand_run(
                                  duration_seconds=16.0))
     bus.close()
     return paths.root
+
+
+def write_fake_feature_run(
+    root: Path, *,
+    feature_name: str = "demo-feature",
+    run_id: str = "feature-20260720-140000.000000-fake",
+    repaired: bool = True,
+) -> Path:
+    """A feature-kind run: understand -> gate -> implement (fail) ->
+    repair-1 (pass when ``repaired``) on one pseudo-component (C3)."""
+    paths = ev.RunPaths.for_run(root, run_id)
+    bus = ev.EventBus(
+        ev.JsonlSink(paths.events_file), run_id=run_id,
+        component=feature_name,
+    )
+    comp = feature_name
+    bus.emit(ev.RunStarted(project=comp, components=1))
+    bus.emit(ev.RunPlan(components=(
+        {"id": comp, "title": f"Feature: {comp}", "deps": []},
+    )))
+    bus.emit(ev.ComponentStarted(component=comp))
+    bus.emit(ev.PhaseStarted(component=comp, phase="understand", attempt=1))
+    log_path = paths.engineer_log(comp)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as log:
+        log.write(f"[{comp}] reading the PRD\n")
+        log.write(f"[{comp}] writing understand.md\n")
+    bus.emit(ev.PhaseCompleted(component=comp, phase="understand",
+                               passed=True, duration_seconds=20.0))
+    bus.emit(ev.ArtifactWritten(
+        component=comp, label="understand_file",
+        path=f"scripts/kstrl/feature/{comp}/understand.md",
+    ))
+    bus.emit(ev.CheckpointRequested(
+        component=comp, kind="feature_gate",
+        question="Review the understand file and confirm implementation start:",
+    ))
+    bus.emit(ev.CheckpointResolved(
+        component=comp, kind="feature_gate",
+        decision="start_implementation", decided_by="operator",
+    ))
+    bus.emit(ev.PhaseStarted(component=comp, phase="implement", attempt=1))
+    bus.emit(ev.PhaseCompleted(component=comp, phase="implement",
+                               passed=False, detail="exit 1",
+                               duration_seconds=60.0))
+    bus.emit(ev.ArtifactWritten(
+        component=comp, label="repair_prd",
+        path=f"scripts/kstrl/feature/{comp}/repairs/latest.json",
+    ))
+    bus.emit(ev.PhaseStarted(component=comp, phase="repair-1", attempt=1))
+    if repaired:
+        bus.emit(ev.PhaseCompleted(component=comp, phase="repair-1",
+                                   passed=True, duration_seconds=30.0))
+        bus.emit(ev.ComponentCompleted(component=comp,
+                                       duration_seconds=110.0, iterations=3))
+        bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0,
+                                 duration_seconds=110.0))
+    bus.close()
+    return paths.root
