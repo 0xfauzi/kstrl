@@ -58,6 +58,9 @@ class ComponentState:
     cost_usd: float = 0.0
     findings_count: int = 0
     recent_findings: list[dict[str, Any]] = field(default_factory=list)
+    # Completed-phase history for the detail screen's timeline:
+    # {"phase", "passed", "detail", "duration_seconds", "attempt"}.
+    phase_history: list[dict[str, Any]] = field(default_factory=list)
     pr_url: str = ""
     pr_number: int = 0
     pr_state: str = ""  # "" | created | merge_pending | merged
@@ -194,6 +197,13 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
                 comp.status = "verifying"
     elif isinstance(event, ev.PhaseCompleted):
         comp.phase_explicit = True
+        comp.phase_history.append({
+            "phase": event.phase,
+            "passed": event.passed,
+            "detail": event.detail,
+            "duration_seconds": event.duration_seconds,
+            "attempt": comp.attempt or 1,
+        })
         if not event.passed and event.detail:
             comp.error = event.detail
     elif isinstance(event, ev.ComponentCompleted):
@@ -234,6 +244,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             "location": event.location,
             "explanation": event.explanation,
             "attempt": event.attempt,
+            "model": event.model,
         })
         if len(comp.recent_findings) > MAX_RECENT_FINDINGS:
             del comp.recent_findings[0]
