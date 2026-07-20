@@ -19,6 +19,10 @@ def slugify(text: str, separator: str = "-") -> str:
 
 
 # ## Self-Critique
-# - If the input text contains only whitespace, this function will return an empty string after lowercasing, which matches the intent to only keep alphanumeric content.
-# - If the separator is a common regex metacharacter like '+' or '*', the strip() call will still work correctly because it treats the argument as a literal string, not a regex pattern.
-# - If the input contains the separator character itself (e.g., text="hello-world" with separator="-"), the separator validation occurs before processing, so invalid separators are rejected upfront; however, if the input naturally contains the chosen separator, it will not be preserved (it will be treated as a word boundary).
+# - If input is whitespace-only, strip() returns empty string, which matches the
+#   intent to keep only alphanumeric content.
+# - If separator is a regex metacharacter like '+', strip() treats it as a literal
+#   string, not a regex pattern, so the call still works correctly.
+# - If input contains the chosen separator (e.g., "hello-world" with sep="-"), it
+#   will not be preserved; the separator validation fails on invalid separators
+#   upfront, and valid separators within input text are treated as word boundaries.
