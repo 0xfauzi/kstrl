@@ -6,7 +6,7 @@
 
 Ralph is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
-The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. Ralph automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work.
+The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. Ralph automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
 
 ## What makes ralph different
 
@@ -53,6 +53,8 @@ ralph init .                       # scaffold ralph.toml and prompt/PRD template
 $EDITOR scripts/ralph/prd.json     # define what to build (user stories + acceptance criteria)
 ralph run 25                       # let the agent work for up to 25 iterations
 ```
+
+Factory runs on a terminal open a live dashboard automatically (`--no-tui` opts out); `ralph dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ralph status` prints the same state for scripts and CI.
 
 You need at least one AI coding agent CLI:
 
@@ -176,6 +178,28 @@ flowchart TD
     Bisect --> Schedule
 ```
 
+## The dashboard - watch the factory work
+
+`ralph factory` on a terminal runs an embedded [Textual](https://github.com/Textualize/textual) dashboard (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `RALPH_NO_TUI=1`). The screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
+
+The overview board shows every component's status, authoritative phase, attempt, last-event age, and spend - here with `auth-core` and `api-routes` running in parallel workers while `ui-shell` waits on its dependency:
+
+<img src="docs/img/tui-overview.svg" alt="ralph dashboard overview: component board with statuses, phases and cost meter" width="100%">
+
+`enter` drills into a component: the phase timeline with verdicts and durations, the typed adversarial findings stream (severity and reviewing-model attribution), the live engineer transcript, and the evidence paths you would visit if something broke:
+
+<img src="docs/img/tui-detail.svg" alt="ralph component detail: phase timeline, findings, live transcript" width="100%">
+
+With `pause_before_pr_merge` enabled, the E6 human checkpoint opens as a real inspection surface - the diff excerpt, both finding streams, and what the attempt cost - instead of a y/n prompt. `a` approves, `r` rejects (fails the component and skips dependents), `t` consumes a retry, `escape` leaves it pending while you look around the dashboard:
+
+<img src="docs/img/tui-checkpoint.svg" alt="ralph E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
+
+Keys: `enter` component detail, `escape` back, `f` toggle transcript follow, `c` reopen a pending checkpoint, `q` quit. Quit semantics differ by mode: in `ralph dash` (observe-only) `q` detaches immediately; embedded, `q` asks first - confirming group-kills in-flight agents, runs worktree cleanup, flushes the manifest, and exits 130, and a second `q` (or Ctrl-C) force-kills.
+
+The dashboard is a view, never the record. Every run appends typed schema-versioned events to `.ralph/runs/<run_id>/events.jsonl`, per-component engineer transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. `ralph dash` and the embedded view tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. The legacy `.ralph/progress.jsonl` keeps being written byte-compatibly for existing consumers.
+
+One honesty note carried through every surface: token and cost figures are CLI self-reports, so whenever any call went unreported the meter renders a `+` marker and treats the total as a lower bound - the dashboard never turns an honest number into a false one.
+
 ## Approved fixtures - behavioral verification you control
 
 Agent-generated tests can be written to pass trivially. Approved fixtures are input/output pairs, declared in the PRD, that the agent's code must satisfy - they run during Phase 1 mechanical verification, outside the project's own pytest, so a gamed conftest cannot deselect them.
@@ -232,6 +256,7 @@ You can, and for small tasks you should. Ralph is for when you want to:
 
 - **Define success criteria before starting** - acceptance criteria, path restrictions - not just "make it work"
 - **Walk away** - Ralph runs unattended with structured verification, not just a completion marker
+- **Watch it without babysitting it** - a live dashboard over a replayable event log; attach, detach, or inspect after the fact
 - **Give the agent context** - feedforward injection means fewer wasted iterations discovering the codebase
 - **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
 - **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
@@ -558,7 +583,7 @@ git clone https://github.com/0xfauzi/ralph-loop.git
 cd ralph-loop
 uv sync
 uv tool install -e .
-uv run pytest tests/           # 1695 tests collected at the time of writing (2026-07)
+uv run pytest tests/           # 1777 tests collected at the time of writing (2026-07)
 uv run mypy ralph_py/ --strict
 uv run ruff check ralph_py/ tests/
 ```
