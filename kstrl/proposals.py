@@ -135,11 +135,17 @@ def append_to_agent_learnings(
     # End of the section = next level-2 header after it, else EOF.
     next_header = content.find("\n## ", idx + len(marker))
     insert_at = len(content) if next_header == -1 else next_header
+    application_marker = f"(applied from {proposal_id} by ralph evolve)"
+    if application_marker in content[idx:insert_at]:
+        return True
     entry = f"- {convention} (applied from {proposal_id} by ralph evolve)\n"
     head = content[:insert_at]
     if not head.endswith("\n"):
         head += "\n"
-    claude_md.write_text(head + entry + content[insert_at:])
+    try:
+        claude_md.write_text(head + entry + content[insert_at:])
+    except OSError:
+        return False
     return True
 
 
@@ -187,5 +193,12 @@ def apply_proposal(
             f"'## Agent Learnings' section. Add the section or apply "
             f"manually from {proposal.path}.",
         )
-    mark_applied(proposal.path)
+    try:
+        mark_applied(proposal.path)
+    except OSError as exc:
+        return ApplyOutcome(
+            "error",
+            f"{pid} was appended to {claude_md}, but the proposal file "
+            f"could not be marked applied: {exc}. Retrying is safe.",
+        )
     return ApplyOutcome("applied", f"{pid} appended to {claude_md}.")

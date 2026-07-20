@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from kstrl.proposals import (
     apply_proposal,
@@ -135,6 +136,39 @@ class TestApply:
         (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\nno section\n")
         proposal = parse_proposal_file(proposals_dir / "prop-001.md")
         outcome = apply_proposal(proposal, tmp_path, confirm=lambda _: True)
+        assert outcome.status == "error"
+        assert "**Applied**:" not in proposal.path.read_text()
+
+    def test_stamp_failure_is_reported_and_retry_is_idempotent(
+        self, tmp_path: Path,
+    ) -> None:
+        proposals_dir = _write_props(tmp_path)
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text(CLAUDE_MD)
+        proposal = parse_proposal_file(proposals_dir / "prop-001.md")
+
+        with patch("kstrl.proposals.mark_applied", side_effect=OSError("full")):
+            outcome = apply_proposal(
+                proposal, tmp_path, confirm=lambda _: True,
+            )
+
+        assert outcome.status == "error"
+        assert "Retrying is safe" in outcome.message
+        retry = apply_proposal(proposal, tmp_path, confirm=lambda _: True)
+        assert retry.status == "applied"
+        assert claude_md.read_text().count("applied from PROP-001") == 1
+
+    def test_claude_write_failure_is_an_error(self, tmp_path: Path) -> None:
+        proposals_dir = _write_props(tmp_path)
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text(CLAUDE_MD)
+        proposal = parse_proposal_file(proposals_dir / "prop-001.md")
+
+        with patch.object(Path, "write_text", side_effect=OSError("read-only")):
+            outcome = apply_proposal(
+                proposal, tmp_path, confirm=lambda _: True,
+            )
+
         assert outcome.status == "error"
         assert "**Applied**:" not in proposal.path.read_text()
 
