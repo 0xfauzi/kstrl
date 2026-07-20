@@ -23,7 +23,15 @@ from textual.widgets.option_list import Option
 
 from kstrl.config import resolve_config_file
 from kstrl.tui import theme
+from kstrl.tui.home_data import (
+    HomeStats,
+    RunSummary,
+    SummaryCache,
+    gather_stats,
+)
+from kstrl.tui.messages import SummariesReady
 from kstrl.tui.runs import RunRef, discover_runs
+from kstrl.tui.widgets.cost_meter import format_tokens
 from kstrl.tui.widgets.run_table import RunTable
 
 if TYPE_CHECKING:
@@ -88,6 +96,41 @@ def _masthead(root_dir: Path, branch: str, project: str) -> Text:
     return text
 
 
+def _stats_line(stats: HomeStats) -> Text:
+    text = Text()
+    last = stats.last
+    if last is None:
+        text.append("no finished runs yet", style=theme.MUTED)
+    else:
+        glyphs = {
+            "live": ("●", theme.ACCENT),
+            "done": ("✓", theme.SUCCESS),
+            "failed": ("✗", theme.ERROR),
+            "stale": (theme.EMPTY_CELL, theme.MUTED),
+        }
+        glyph, color = glyphs.get(last.outcome, (theme.EMPTY_CELL, theme.MUTED))
+        text.append("last run ", style=theme.MUTED)
+        text.append(f"{glyph} {last.outcome}", style=f"bold {color}")
+        text.append(
+            f" {last.components_done}/{last.components_total}",
+            style="bold",
+        )
+        marker = "+" if last.tokens_lower_bound else ""
+        if last.total_tokens:
+            text.append(" · ", style=theme.MUTED)
+            text.append(f"{format_tokens(last.total_tokens)}{marker} tok")
+        if last.cost_usd:
+            text.append(" · ", style=theme.MUTED)
+            text.append(f"${last.cost_usd:.2f}{marker}")
+    if stats.pending_proposals:
+        text.append("   ", style=theme.MUTED)
+        text.append(
+            f"▲ {stats.pending_proposals} proposal(s) pending",
+            style=theme.WARNING,
+        )
+    return text
+
+
 class HomeScreen(Screen[None]):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
@@ -96,9 +139,13 @@ class HomeScreen(Screen[None]):
     def __init__(self) -> None:
         super().__init__()
         self._refs: dict[str, RunRef] = {}
+        self._summaries: dict[str, RunSummary] = {}
+        self._cache = SummaryCache()
+        self._summarizing = False
 
     def compose(self) -> ComposeResult:
         yield Static(id="home-masthead")
+        yield Static(id="home-stats")
         yield Static("runs", id="home-runs-title")
         yield RunTable(id="home-runs")
         yield Static("commands", id="home-commands-title")
@@ -128,14 +175,48 @@ class HomeScreen(Screen[None]):
     def refresh_runs(self) -> None:
         if not self.ready:
             return
-        refs = discover_runs(self._root_dir())[:HOME_RUN_LIMIT]
+        root_dir = self._root_dir()
+        refs = discover_runs(root_dir)[:HOME_RUN_LIMIT]
         self._refs = {ref.run_id: ref for ref in refs}
-        self.query_one(RunTable).update_runs(refs)
+        self.query_one(RunTable).update_runs(refs, self._summaries)
         title = Text("runs", style=f"bold {theme.MUTED}")
         if not refs:
             title.append("  none yet - run a command below",
                          style=theme.MUTED)
         self.query_one("#home-runs-title", Static).update(title)
+        if not self._summarizing:
+            # Folding every listed run is file IO + reducer work: off
+            # the UI thread, with "·" cells until the message lands.
+            self._summarizing = True
+            self.run_worker(
+                lambda: self._compute_summaries(list(refs), root_dir),
+                thread=True,
+            )
+
+    def _compute_summaries(
+        self, refs: list[RunRef], root_dir: Path,
+    ) -> None:
+        try:
+            summaries = self._cache.refresh(refs)
+            stats = gather_stats(
+                root_dir, summaries,
+                refs[0].run_id if refs else "",
+            )
+        except Exception:  # noqa: BLE001 - a broken run dir must not kill home
+            summaries, stats = {}, HomeStats(None, 0)
+        self.post_message(SummariesReady(summaries, stats))
+
+    def on_summaries_ready(self, message: SummariesReady) -> None:
+        self._summarizing = False
+        if message.summaries:
+            self._summaries = message.summaries
+        if self.ready:
+            self.query_one(RunTable).update_runs(
+                list(self._refs.values()), self._summaries,
+            )
+            self.query_one("#home-stats", Static).update(
+                _stats_line(message.stats),
+            )
 
     def on_screen_resume(self) -> None:
         # Whatever path popped back here, the observed run is done

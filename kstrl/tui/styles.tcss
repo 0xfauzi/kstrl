@@ -239,6 +239,11 @@ CheckpointModal {
     padding: 0 1;
 }
 
+#home-stats {
+    height: 1;
+    padding: 0 1;
+}
+
 #home-runs-title, #home-commands-title {
     height: 2;
     padding: 0 1;

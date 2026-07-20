@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from kstrl.reducer import RunState
 
 
-def _format_tokens(tokens: int) -> str:
+def format_tokens(tokens: int) -> str:
     if tokens >= 1_000_000:
         return f"{tokens / 1_000_000:.2f}M"
     if tokens >= 1_000:
@@ -35,7 +35,7 @@ def render_cost_meter(state: RunState) -> Text:
     text = Text()
     marker = "+" if state.unreported_calls else ""
     text.append(
-        f"{_format_tokens(state.total_tokens)}{marker}", style="bold",
+        f"{format_tokens(state.total_tokens)}{marker}", style="bold",
     )
     text.append(" tok", style=theme.MUTED)
     text.append(" · ", style=theme.MUTED)
