@@ -17,11 +17,13 @@ graceful-shutdown flow.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 
 from textual.app import App
 from textual.binding import Binding
+from textual.screen import Screen
 from textual.widgets import DataTable
 
 from kstrl.interaction import (
@@ -33,6 +35,7 @@ from kstrl.tui.bridge import OrchestratorHandle
 from kstrl.tui.messages import StateChanged
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
+from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
 from kstrl.tui.state import StateStore
@@ -40,6 +43,9 @@ from kstrl.tui.tail import RunTailer, TextTailer
 from kstrl.tui.theme import KSTRL_THEME
 
 DEFAULT_POLL_INTERVAL = 0.2  # measured, spike G1
+
+# Bottom-first initial screen stack; None = the default overview.
+ScreenStackFactory = Callable[[], list[Screen[None]]]
 
 
 class Mode(StrEnum):
@@ -67,6 +73,7 @@ class KstrlTuiApp(App[int]):
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         channel: QueueInteractionChannel | None = None,
         orchestrator: OrchestratorHandle | None = None,
+        screen_factory: ScreenStackFactory | None = None,
     ) -> None:
         super().__init__()
         self.run_dir = run_dir
@@ -75,6 +82,7 @@ class KstrlTuiApp(App[int]):
         self.poll_interval = poll_interval
         self.channel = channel
         self.orchestrator = orchestrator
+        self.screen_factory = screen_factory
         self.tailer = RunTailer(run_dir)
         self.store = StateStore(root_dir, run_id=run_dir.name)
         self._transcript_tailers: dict[str, TextTailer] = {}
@@ -84,9 +92,13 @@ class KstrlTuiApp(App[int]):
     def on_mount(self) -> None:
         self.register_theme(KSTRL_THEME)
         self.theme = "kstrl"
-        self.push_screen(OverviewScreen(
-            observe_only=self.mode is Mode.DASH,
-        ))
+        if self.screen_factory is not None:
+            for screen in self.screen_factory():
+                self.push_screen(screen)
+        else:
+            self.push_screen(OverviewScreen(
+                observe_only=self.mode is Mode.DASH,
+            ))
         self.set_interval(self.poll_interval, self._poll)
         self.set_interval(1.0, self._tick_ages)
         if self.mode is Mode.EMBEDDED:
@@ -107,6 +119,19 @@ class KstrlTuiApp(App[int]):
     # -- data flow -----------------------------------------------------------
 
     def _poll(self) -> None:
+        """Screen dispatch is duck-typed on a small contract so any
+        screen (component detail, decompose, home-launched views) can
+        opt in without the app enumerating types:
+
+        - ``transcript_component`` (str): a detail screen; when
+          ``ready``, gets ``refresh_state(state, manifest)`` directly
+          and a bounded transcript tail for that ONE component
+          (finding 3 - never all components at once).
+        - otherwise: receives the StateChanged message.
+        - ``feed_events(batch)``: narrated event batches (curated by
+          humanize(); truncation rebuilds replay history into state
+          but must not re-narrate it into the feed).
+        """
         chunk = self.tailer.poll_events()
         if chunk.truncated:
             self.store.reset()
@@ -115,23 +140,25 @@ class KstrlTuiApp(App[int]):
         if not screen_stack:
             return
         screen = screen_stack[-1]
+        component_id = str(getattr(screen, "transcript_component", ""))
+        ready = bool(getattr(screen, "ready", True))
         if changed:
-            if isinstance(screen, ComponentScreen) and screen.ready:
-                screen.refresh_state(self.store.state, self.store.manifest())
-            elif not isinstance(screen, ComponentScreen):
+            if component_id:
+                if ready:
+                    screen.refresh_state(  # type: ignore[attr-defined]
+                        self.store.state, self.store.manifest(),
+                    )
+            else:
                 screen.post_message(StateChanged(self.store.state))
-            if isinstance(screen, OverviewScreen) and not chunk.truncated:
-                # The feed narrates the run (design pass); humanize()
-                # curates, so raw Log noise and heartbeats never land.
-                # A truncation rebuild replays history into the state
-                # but must not re-narrate it into the feed.
-                screen.feed_events(chunk.events)
-        # Transcript: ONLY the top component screen's component
-        # (finding 3 - never all components at once).
-        if isinstance(screen, ComponentScreen) and screen.ready:
-            screen.feed_transcript(
-                self._transcript_tailer(screen.component_id).poll(),
-            )
+            feed = getattr(screen, "feed_events", None)
+            if feed is not None and not chunk.truncated:
+                feed(chunk.events)
+        if component_id and ready:
+            feed_transcript = getattr(screen, "feed_transcript", None)
+            if feed_transcript is not None:
+                feed_transcript(
+                    self._transcript_tailer(component_id).poll(),
+                )
 
     def _transcript_tailer(self, component_id: str) -> TextTailer:
         tailer = self._transcript_tailers.get(component_id)
@@ -146,9 +173,9 @@ class KstrlTuiApp(App[int]):
         screen_stack = self.screen_stack
         if not screen_stack:
             return
-        screen = screen_stack[-1]
-        if isinstance(screen, OverviewScreen):
-            screen.tick_ages(self.store.state)
+        tick = getattr(screen_stack[-1], "tick_ages", None)
+        if tick is not None:
+            tick(self.store.state)
 
     # -- navigation ----------------------------------------------------------
 
@@ -201,11 +228,14 @@ class KstrlTuiApp(App[int]):
             ):
                 self._pending_prompts.pop(request.request_id, None)
 
-        if request.kind is PromptKind.CHECKPOINT:
+        if request.kind is PromptKind.CHECKPOINT and request.checkpoint:
             self.push_screen(CheckpointModal(request), _resolve)
         else:
-            # Generic prompts reuse the checkpoint chrome minus context.
-            self.push_screen(CheckpointModal(request), _resolve)
+            # Generic prompts get the lean options modal: the
+            # checkpoint modal's a/r/t bindings hardcode three options
+            # and mis-resolve a 2-option CONFIRM (choice out of range
+            # leaves the prompt pending with the modal gone).
+            self.push_screen(OptionsModal(request), _resolve)
 
     def action_answer_checkpoint(self) -> None:
         if isinstance(self.screen, CheckpointModal):

@@ -39,6 +39,10 @@ class ComponentScreen(Screen[None]):
     def __init__(self, component_id: str) -> None:
         super().__init__()
         self.component_id = component_id
+        # The app's duck-typed poll contract: a screen naming a
+        # transcript_component gets refresh_state(state, manifest) and
+        # that ONE component's transcript tail.
+        self.transcript_component = component_id
         self._following = True
 
     def compose(self) -> ComposeResult:

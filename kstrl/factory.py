@@ -21,6 +21,7 @@ from kstrl import envcompat
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.breaker import BreakerConfig
+from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import KstrlConfig
 from kstrl.context import IterationContext
 from kstrl.contract import (
@@ -43,7 +44,6 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
     V1CompatSink,
-    WorkerHeartbeat,
 )
 from kstrl.events import (
     ContractResult as ContractResultEvent,
@@ -1213,9 +1213,6 @@ def _run_component(
                 pass
 
 
-_HEARTBEAT_INTERVAL_SECONDS = 15.0
-
-
 def _install_worker_signal_forwarding() -> None:
     """Pool-worker SIGTERM handler: kill the agent's process group,
     then exit 130. Installed only on a worker's main thread."""
@@ -1249,34 +1246,6 @@ def _redirect_worker_output(log_path: Path) -> None:
         sys.stderr = f
     except OSError:
         pass
-
-
-def _start_heartbeat(
-    bus: EventBus, interval: float | None = None,
-) -> Callable[[], None]:
-    """Emit WorkerHeartbeat every ``interval`` seconds on a daemon
-    thread until the returned stop callable runs. JsonlSink's lock
-    makes the cross-thread emit safe."""
-    stop_event = threading.Event()
-    period = _HEARTBEAT_INTERVAL_SECONDS if interval is None else interval
-    started = time.monotonic()
-    pid = os.getpid()
-
-    def _beat() -> None:
-        while not stop_event.wait(period):
-            bus.emit(WorkerHeartbeat(
-                pid=pid,
-                elapsed_seconds=round(time.monotonic() - started, 1),
-            ))
-
-    thread = threading.Thread(target=_beat, daemon=True, name="ralph-heartbeat")
-    thread.start()
-
-    def _stop() -> None:
-        stop_event.set()
-        thread.join(timeout=1.0)
-
-    return _stop
 
 
 class _InlineExecutor:
