@@ -232,6 +232,63 @@ CheckpointModal {
     color: $warning;
 }
 
+/* ---- options modal ------------------------------------------------------- */
+/* Lean prompt surface for every non-checkpoint request (feature gate,
+ * apply/retry confirms). Same chrome family as the checkpoint modal;
+ * the accent sits on the REQUEST's default option, which is not
+ * always index 0. */
+
+OptionsModal {
+    align: center middle;
+    background: $background 60%;
+}
+
+#options-dialog {
+    width: 70%;
+    max-width: 90;
+    height: auto;
+    border: round $accent 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    background: $surface;
+    padding: 1 2;
+}
+
+#options-question {
+    text-style: bold;
+    color: $foreground;
+}
+
+#options-buttons {
+    height: 3;
+    margin-top: 1;
+    align-horizontal: center;
+}
+
+#options-buttons Button {
+    margin: 0 1;
+    min-width: 16;
+    border: none;
+    height: 1;
+    background: $panel;
+    color: $foreground;
+    text-style: none;
+}
+
+#options-buttons Button:hover {
+    background: $boost;
+}
+
+#options-buttons Button:focus {
+    text-style: bold;
+}
+
+#options-buttons .default-choice {
+    background: $accent;
+    color: $background;
+    text-style: bold;
+}
+
 /* ---- quit modal ---------------------------------------------------------- */
 
 QuitModal {

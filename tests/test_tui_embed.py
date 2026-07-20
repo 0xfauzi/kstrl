@@ -23,13 +23,20 @@ from kstrl.interaction import (
 from kstrl.observability import NotifyConfig, NotifyHooks
 from kstrl.shutdown import StopController
 from kstrl.tui.app import KstrlTuiApp, Mode
-from kstrl.tui.bridge import OrchestratorHandle, start_orchestrator
+from kstrl.tui.bridge import (
+    OrchestratorHandle,
+    start_command_thread,
+    start_orchestrator,
+)
 from kstrl.tui.embed import (
     _install_exclusive_root_handler,
     _plain_fallback,
     _restore_root_handlers,
 )
 from kstrl.tui.screens.checkpoint import CheckpointModal
+from kstrl.tui.screens.component import ComponentScreen
+from kstrl.tui.screens.options import OptionsModal
+from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
 
 
@@ -94,7 +101,7 @@ def _fake_orchestrator(
 ) -> OrchestratorHandle:
     """A thread standing in for run_factory: optionally asks one
     checkpoint question, then finishes (or waits for stop)."""
-    result_box: list[FactoryResult] = []
+    result_box: list[int] = []
     error_box: list[BaseException] = []
 
     def _target() -> None:
@@ -117,9 +124,7 @@ def _fake_orchestrator(
             decisions.append(response.choice if response.answered else -1)
         if wait_for_stop:
             stop.wait(timeout=30)
-        result = FactoryResult()
-        result.exit_code = 130 if stop.is_set() else 0
-        result_box.append(result)
+        result_box.append(130 if stop.is_set() else 0)
 
     thread = threading.Thread(target=_target, daemon=False)
     handle = OrchestratorHandle(
@@ -271,13 +276,11 @@ class TestEmbeddedApp:
 class TestFallbackAndLogging:
     def test_plain_fallback_accepts_tailer_chunks(self, tmp_path: Path) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-fallback")
-        result = FactoryResult()
-        result.exit_code = 7
         thread = threading.Thread(target=lambda: None)
         thread.start()
         thread.join()
         handle = OrchestratorHandle(
-            thread=thread, stop=StopController(), result_box=[result],
+            thread=thread, stop=StopController(), result_box=[7],
         )
 
         assert _plain_fallback(handle, run_dir) == 7
@@ -332,3 +335,150 @@ class TestNotifyCapture:
         src = inspect.getsource(NotifyHooks._fire)
         assert "stdout=sink" in src and "stderr=sink" in src
         assert subprocess.DEVNULL  # imported, used above
+
+
+def _fake_confirm_worker(
+    channel: QueueInteractionChannel,
+    stop: StopController,
+    decisions: list[int],
+) -> OrchestratorHandle:
+    """A command core standing in for the feature review gate: one
+    2-option CONFIRM through the channel, then done."""
+    del stop  # the handle's StopController is unused by this fake
+
+    def _target() -> int:
+        deadline = time.monotonic() + 5
+        while not channel.can_prompt() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        response = channel.request(PromptRequest(
+            kind=PromptKind.CONFIRM,
+            header="Understanding complete. Start implementation?",
+            options=("Start implementation", "Quit"),
+            default=0,
+        ))
+        decisions.append(response.choice if response.answered else -1)
+        return 0
+
+    return start_command_thread(_target, stop=StopController())
+
+
+class TestCommandThread:
+    def test_returned_code_is_boxed(self) -> None:
+        handle = start_command_thread(lambda: 7, stop=StopController())
+        handle.join(timeout=5)
+        assert handle.done()
+        assert handle.exit_code == 7
+        assert not handle.error_box
+
+    def test_system_exit_codes_are_honored_not_crashes(self) -> None:
+        """A missed sys.exit inside a core must keep its exit code."""
+        import sys
+
+        cases: list[tuple[Any, int]] = [(3, 3), (None, 0), ("boom", 1)]
+        for raised, expected in cases:
+            handle = start_command_thread(
+                lambda code=raised: sys.exit(code),  # type: ignore[misc]
+                stop=StopController(),
+            )
+            handle.join(timeout=5)
+            assert not handle.error_box, f"sys.exit({raised!r}) crashed"
+            assert handle.exit_code == expected
+
+    def test_exception_lands_in_error_box(self) -> None:
+        def _boom() -> int:
+            raise RuntimeError("boom")
+
+        handle = start_command_thread(_boom, stop=StopController())
+        handle.join(timeout=5)
+        assert handle.error_box
+        assert handle.exit_code == 1
+
+
+class TestScreenFactory:
+    async def test_custom_stack_pushed_bottom_first(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = _write_minimal_run(tmp_path, "factory-20260720-stack1")
+        app = KstrlTuiApp(
+            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            poll_interval=0.05,
+            screen_factory=lambda: [
+                OverviewScreen(observe_only=True),
+                ComponentScreen("comp-a"),
+            ],
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            assert isinstance(app.screen, ComponentScreen)
+            assert app.screen.component_id == "comp-a"
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, OverviewScreen)
+
+
+class TestOptionsModal:
+    async def test_confirm_resolves_through_the_channel(
+        self, tmp_path: Path,
+    ) -> None:
+        """D9 regression: a 2-option CONFIRM must open the lean options
+        modal; an out-of-range digit does NOTHING (the checkpoint
+        modal's old 't'/'3' path dismissed with a rejected choice,
+        leaving the core blocked with the modal gone)."""
+        run_dir = _write_minimal_run(tmp_path, "factory-20260720-opts1")
+        channel = QueueInteractionChannel()
+        stop = StopController()
+        decisions: list[int] = []
+        handle = _fake_confirm_worker(channel, stop, decisions)
+        app = KstrlTuiApp(
+            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
+            poll_interval=0.05, channel=channel, orchestrator=handle,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            deadline = time.monotonic() + 5
+            while not isinstance(app.screen, OptionsModal):
+                await pilot.pause(0.05)
+                assert time.monotonic() < deadline, "modal never opened"
+            await pilot.press("3")  # out of range: still open, unresolved
+            await pilot.pause()
+            assert isinstance(app.screen, OptionsModal)
+            assert not decisions
+            await pilot.press("2")
+            deadline = time.monotonic() + 5
+            while not handle.done():
+                await pilot.pause(0.05)
+                assert time.monotonic() < deadline, "core stuck"
+            await pilot.pause(0.6)
+        assert decisions == [1]
+        assert app.return_value == 0
+
+    async def test_escape_leaves_pending_and_c_reopens(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = _write_minimal_run(tmp_path, "factory-20260720-opts2")
+        channel = QueueInteractionChannel()
+        stop = StopController()
+        decisions: list[int] = []
+        handle = _fake_confirm_worker(channel, stop, decisions)
+        app = KstrlTuiApp(
+            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
+            poll_interval=0.05, channel=channel, orchestrator=handle,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            deadline = time.monotonic() + 5
+            while not isinstance(app.screen, OptionsModal):
+                await pilot.pause(0.05)
+                assert time.monotonic() < deadline, "modal never opened"
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, OptionsModal)
+            assert not handle.done()  # the core is still waiting
+            await pilot.press("c")
+            await pilot.pause()
+            assert isinstance(app.screen, OptionsModal)
+            await pilot.press("1")
+            deadline = time.monotonic() + 5
+            while not handle.done():
+                await pilot.pause(0.05)
+                assert time.monotonic() < deadline, "core stuck"
+            await pilot.pause(0.6)
+        assert decisions == [0]
