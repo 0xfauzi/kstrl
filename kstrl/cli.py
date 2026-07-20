@@ -7,7 +7,7 @@ import json
 import os
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +17,7 @@ from kstrl import envcompat
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
+    from kstrl.interaction import InteractionChannel
 
 import click
 from click.core import ParameterSource
@@ -30,10 +31,22 @@ from kstrl.agents import (
 )
 from kstrl.agents.base import Agent, UsageRecord
 from kstrl.breaker import BreakerConfig
+from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
 from kstrl.config_report import build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
+from kstrl.events import (
+    ArtifactWritten,
+    ComponentCompleted,
+    ComponentFailed,
+    ComponentStarted,
+    PhaseCompleted,
+    PhaseStarted,
+    RunCompleted,
+    RunPlan,
+    RunStarted,
+)
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
@@ -717,6 +730,13 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     is_flag=True,
     help="Use ASCII characters only",
 )
+@click.option(
+    "--tui/--no-tui",
+    "tui",
+    default=None,
+    help="Embedded dashboard (default: auto - on when stdin/stdout are "
+         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+)
 def understand(
     max_iterations: int,
     root: Path | None,
@@ -732,6 +752,7 @@ def understand(
     ui: str,
     no_color: bool,
     ascii: bool,
+    tui: bool | None,
 ) -> None:
     """Run codebase understanding loop (read-only mode).
 
@@ -849,12 +870,149 @@ def understand(
         max_budget_usd=config.agent_budget_usd,
     )
 
-    result = run_loop(
-        config, ui_impl, agent, root_dir,
-        timeouts=TimeoutConfig.load(root_dir),
-        breaker_config=BreakerConfig.load(root_dir),
+    use_tui = tui if tui is not None else (
+        sys.stdout.isatty()
+        and sys.stdin.isatty()
+        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and config.ui_mode != "plain"
     )
-    sys.exit(result.exit_code)
+    if use_tui:
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            click.echo(
+                "--tui requires an interactive terminal; use --no-tui "
+                "for non-interactive execution.",
+                err=True,
+            )
+            sys.exit(2)
+        from kstrl.runid import mint_run_id
+        from kstrl.tui.embed import EmbeddedContext, run_embedded
+        from kstrl.tui.screens.component import ComponentScreen
+        from kstrl.tui.screens.overview import OverviewScreen
+
+        def _target(embed_ctx: EmbeddedContext) -> int:
+            command_run = open_command_run(
+                embed_ctx.ui, root_dir, "understand",
+                component="understand", run_id=embed_ctx.run_id,
+            )
+            try:
+                return _understand_core(
+                    config, agent, root_dir, embed_ctx.ui,
+                    run=command_run,
+                    interaction=embed_ctx.channel,
+                    stop_check=embed_ctx.stop.is_set,
+                )
+            finally:
+                command_run.close()
+
+        sys.exit(run_embedded(
+            _target, root_dir=root_dir,
+            run_id=mint_run_id("understand"),
+            screen_factory=lambda: [
+                OverviewScreen(observe_only=False),
+                ComponentScreen("understand"),
+            ],
+        ))
+
+    command_run = open_command_run(
+        ui_impl, root_dir, "understand", component="understand",
+    )
+    try:
+        code = _understand_core(
+            config, agent, root_dir, ui_impl, run=command_run,
+        )
+    finally:
+        command_run.close()
+    sys.exit(code)
+
+
+def _understand_core(
+    config: KstrlConfig,
+    agent: Agent,
+    root_dir: Path,
+    ui_impl: UI,
+    *,
+    run: CommandRun,
+    interaction: InteractionChannel | None = None,
+    stop_check: Callable[[], bool] | None = None,
+) -> int:
+    """The understand loop as an event-stream run (TUI surface C1).
+
+    The reducer projects the work onto the pseudo-component
+    "understand": one plan row, one phase, the loop's iterations. When
+    recording, the agent is wrapped so its transcript lands where the
+    dashboard's transcript pane tails.
+    """
+    bus = run.bus
+    component = "understand"
+    loop_agent = agent
+    transcript = run.transcript_path(component)
+    if transcript is not None:
+        loop_agent = LoggingAgent(agent, transcript)
+
+    started = time.monotonic()
+    bus.emit(RunStarted(project=root_dir.name, components=1))
+    bus.emit(RunPlan(components=(
+        {"id": component, "title": "Codebase understanding", "deps": []},
+    )))
+    bus.emit(ComponentStarted(component=component))
+    bus.emit(PhaseStarted(component=component, phase="understand", attempt=1))
+
+    try:
+        result = run_loop(
+            config, ui_impl, loop_agent, root_dir,
+            timeouts=TimeoutConfig.load(root_dir),
+            breaker_config=BreakerConfig.load(root_dir),
+            bus=bus,
+            interaction=interaction,
+            stop_check=stop_check,
+        )
+    except Exception as exc:
+        duration = round(time.monotonic() - started, 2)
+        detail = f"{type(exc).__name__}: {exc}"
+        bus.emit(PhaseCompleted(
+            component=component, phase="understand", passed=False,
+            detail=detail, duration_seconds=duration,
+        ))
+        bus.emit(ComponentFailed(component=component, error=detail))
+        bus.emit(RunCompleted(
+            completed=0, failed=1, duration_seconds=duration,
+        ))
+        raise
+
+    duration = round(time.monotonic() - started, 2)
+    passed = result.completed and result.exit_code == 0
+    failure_detail = (
+        f"exit {result.exit_code}"
+        if result.exit_code != 0
+        else "ended before completion"
+    )
+    bus.emit(PhaseCompleted(
+        component=component, phase="understand", passed=passed,
+        detail="" if passed else failure_detail,
+        duration_seconds=duration,
+    ))
+    if passed:
+        map_path = config.codebase_map_file
+        try:
+            map_display = str(map_path.relative_to(root_dir))
+        except ValueError:
+            map_display = str(map_path)
+        bus.emit(ArtifactWritten(label="codebase_map", path=map_display))
+        bus.emit(ComponentCompleted(
+            component=component, duration_seconds=duration,
+            iterations=result.iterations,
+        ))
+    else:
+        bus.emit(ComponentFailed(
+            component=component,
+            error=f"understand loop {failure_detail}",
+        ))
+    bus.emit(RunCompleted(
+        completed=1 if passed else 0,
+        failed=0 if passed else 1,
+        duration_seconds=duration,
+    ))
+    return result.exit_code
 
 
 @cli.command()
