@@ -46,7 +46,10 @@ Process rules that bind this plan:
    default-off (`[fixtures].enabled = false`) unless decided otherwise.
 5. **Agent SDK spike go/no-go** (R7.5): decide after the measurement spike, not
    before. Spike is done: `docs/sdk-spike.md` recommends GO scoped to a
-   fourth adapter.
+   fourth adapter. **Decided 2026-07-20: GO**, per that scope - an additional
+   `claude-sdk` adapter for the claude-code engineer path, subprocess adapters
+   kept; production wiring gated on the R0.1 timeout battery + sandbox
+   re-measurement. Implementation tracked as R7.6.
 6. **Untracked docs artifacts** (R3.4): commit or delete
    `docs/end-to-end-flow.html`, `docs/phase-f-e2e-validation-v12.log`, and
    `.claude/` in the main checkout.
@@ -78,8 +81,8 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   docs/adversarial-design.md "Recorded baselines".
 - **EARS/DECOMPOSE 1.4.0 capture** (R7.5): CAPTURED 2026-07-20 in the same run
   (`DECOMPOSE_PROMPT_VERSION == 1.4.0` on main; architect 3/3 + allowedPaths
-  1/1). The remaining R7.5 blocker is the SDK go/no-go (user decision 5), so
-  R7.5 stays `[~]`.
+  1/1). The SDK go/no-go (user decision 5) was then DECIDED GO 2026-07-20, so
+  R7.5 closed `[x]`; the adapter implementation is tracked as R7.6.
 - **Two real factory runs** (knowledge + evolution A+ gates): knowledge
   fact-utilization telemetry nonzero, and one `ralph evolve` proposal
   traceable to a real recorded signature.
@@ -743,14 +746,15 @@ by an integration test with a synthetic-but-realistic journal).
     that branch had already reached main, so `ralph_py/linear.py` never landed.
     Re-landed onto R7.5-era main by cherry-picking the #91 squash (see PR
     "feat: R7.4 Linear integration re-land (#91 onto main)").
-- [~] R7.5 (M) **Platform hardening** [research topics 1-2]
-    (all five sub-items implemented across the two R7.5 PRs; [~] because
-    the EARS calibration capture and the SDK go/no-go are user actions.
-    EARS/DECOMPOSE 1.4.0 capture DONE 2026-07-20: the v2 baseline ran against
+- [x] R7.5 (M) **Platform hardening** [research topics 1-2]
+    (all five sub-items implemented across the two R7.5 PRs; the two user
+    actions that held it at `[~]` are both done. EARS/DECOMPOSE 1.4.0 capture
+    DONE 2026-07-20: the v2 baseline ran against
     `DECOMPOSE_PROMPT_VERSION == 1.4.0` on main and the architect scored 3/3
     on the vague-spec fixtures plus 1/1 allowedPaths, 0 errors
-    (`baseline-20260720-113835.json`). REMAINING blocker: decide user
-    decision 5 from docs/sdk-spike.md - stays `[~]` on the SDK go/no-go only.)
+    (`baseline-20260720-113835.json`). SDK go/no-go DECIDED 2026-07-20: GO,
+    scoped to a fourth adapter per docs/sdk-spike.md; implementation is NEW
+    work tracked as R7.6, not part of this item.)
   - No-progress circuit breaker: halt a component when N consecutive iterations
     produce an unchanged diff hash + test signature (the community's
     single most-repeated Ralph-loop fix). DONE: `ralph_py/breaker.py`,
@@ -769,12 +773,30 @@ by an integration test with a synthetic-but-realistic journal).
     DECOMPOSE prompt demands EARS-style acceptance criteria (prompt change:
     rides the next H2 calibration cycle, not R5's). DONE code-side
     (`load_spec_input`, DECOMPOSE_PROMPT 1.4.0 + snapshot); calibration
-    capture pending (user).
+    captured 2026-07-20 (architect 3/3 + allowedPaths 1/1 vs 1.4.0,
+    `baseline-20260720-113835.json`).
   - Agent SDK spike (measure, then decide: user decision 5): structured
     streams, hooks, budget enforcement vs stdout parsing; a one-day spike with
     a written comparison, per the measure-don't-assume rule. DONE:
     docs/sdk-spike.md (measured; recommendation GO, scoped to a fourth
-    adapter); decision pending (user).
+    adapter); DECIDED 2026-07-20: GO (see user decision 5 and R7.6).
+- [ ] R7.6 (M) **`claude-sdk` adapter** [user decision 5: GO, 2026-07-20]
+  - A fourth agent adapter (`agent_type = "claude-sdk"`) over
+    `claude-agent-sdk`, behind the existing `Agent` protocol (asyncio bridge
+    inside `run()`), for the claude-code engineer path. Subprocess adapters
+    stay: codex rotation (R7.1) and the custom escape hatch depend on them,
+    and they are the fallback if the SDK regresses.
+  - Why (measured, docs/sdk-spike.md): pre-hoc `PreToolUse` guardrails (a
+    hook denied a real out-of-scope write during the spike - prevention where
+    Ralph today has detection), typed in-loop `max_budget_usd` enforcement
+    (overshoot bounded by one turn, not one phase), structured usage (kills
+    the R3.1 meter's parse-drift risk for the dominant spend), typed errors +
+    rate-limit visibility.
+  - GATE before production wiring (unchanged from the spike): the R0.1
+    timeout battery (sleep-forever tool, grandchild kill, silent hang) must
+    pass against the SDK transport, and the sandbox settings pass-through
+    (R7.5) must be re-measured through `ClaudeAgentOptions`. New dependency
+    (`claude-agent-sdk`) enters the runtime set - flag it in the PR.
 
 Done when: cross-family review is the measured default; fixtures run sandboxed
 in Phase 1 on an opt-in project; a factory run appears in Linear end-to-end
