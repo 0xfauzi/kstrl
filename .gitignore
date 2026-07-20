@@ -62,3 +62,6 @@ scripts/ralph/understand_prompt.md
 
 # Live per-checkout config; ralph.toml.example is the tracked template (R3.4)
 /ralph.toml
+
+# Claude Code session dir: personal settings + live session worktrees (R3.4)
+.claude/
