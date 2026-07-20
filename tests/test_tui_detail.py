@@ -107,6 +107,18 @@ class TestComponentScreen:
             await pilot.press("f")
             assert tail.follow is True
 
+    async def test_poll_during_screen_mount_is_safe(self, tmp_path: Path) -> None:
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.open_component("comp-a")
+
+            app._poll()
+
+            await pilot.pause()
+            assert isinstance(app.screen, ComponentScreen)
+
     async def test_findings_rollover_rebuilds_same_length_table(
         self, tmp_path: Path,
     ) -> None:
