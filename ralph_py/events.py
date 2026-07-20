@@ -271,7 +271,8 @@ class ChunkBudgetInsufficient(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class AdversarialAgentSelected(Event):
-    """Preserve unset agent metadata as JSON null in the v1 projection."""
+    """agent_type/model stay optional (None, not ""): the v1 line wrote
+    JSON null for unset values and byte parity is this chunk's contract."""
 
     type: ClassVar[str] = "adversarial_agent_selected"
     phase: str = ""

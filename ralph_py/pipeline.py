@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -238,6 +239,7 @@ class ComponentPipeline:
         run_id: str,
         bus: ev.EventBus,
         journal_path: Path | None,
+        run_paths: ev.RunPaths | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
         security_selection: AdversarialAgentSelection | None,
@@ -258,6 +260,7 @@ class ComponentPipeline:
         self.run_id = run_id
         self.bus = bus
         self.journal_path = journal_path
+        self.run_paths = run_paths
         self.notify = notify
         self.review_selection = review_selection
         self.security_selection = security_selection
@@ -356,6 +359,55 @@ class ComponentPipeline:
         except OSError:
             return -1
 
+    @contextmanager
+    def _phase_transcript(
+        self, comp_id: str, phase: str,
+    ) -> Iterator[Callable[[str], None] | None]:
+        """Line writer onto RunPaths.phase_log for one phase invocation.
+
+        Yields None when no run dir is configured (progress logging
+        disabled) or the file cannot be opened - transcripts are
+        observability and must never gate a phase (chunk 4). Repeated
+        invocations (retries, chunked passes) append.
+        """
+        if self.run_paths is None:
+            yield None
+            return
+        path = self.run_paths.phase_log(comp_id, phase)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fh = open(path, "a", buffering=1, encoding="utf-8")
+        except OSError:
+            yield None
+            return
+        def _write_line(line: str) -> None:
+            fh.write(line + "\n")
+
+        try:
+            yield _write_line
+        finally:
+            try:
+                fh.close()
+            except OSError:
+                pass
+
+    def _phase_started(self, comp: Component, phase: str) -> float:
+        """Emit the authoritative phase bracket opener; returns the
+        monotonic start for the matching _phase_completed."""
+        self.bus.emit(ev.PhaseStarted(
+            component=comp.id, phase=phase, attempt=comp.retries + 1,
+        ))
+        return time.monotonic()
+
+    def _phase_completed(
+        self, comp: Component, phase: str, started: float,
+        passed: bool, detail: str = "",
+    ) -> None:
+        self.bus.emit(ev.PhaseCompleted(
+            component=comp.id, phase=phase, passed=passed, detail=detail,
+            duration_seconds=round(time.monotonic() - started, 2),
+        ))
+
     def _debug_dir_for(self, comp_id: str) -> Path:
         """Forensic raw-output dir for this run's component (R1.2)."""
         return self.root_dir / ".ralph" / "debug" / self.run_id / comp_id
@@ -370,6 +422,18 @@ class ComponentPipeline:
         comp.findings.extend(
             tag_finding_with_attempt(f, attempt) for f in new_findings
         )
+        # Chunk 4: stream each finding as a typed event the moment it is
+        # recorded (the manifest only carries them at transition time).
+        for finding in new_findings:
+            self.bus.emit(ev.FindingRecorded(
+                component=comp.id,
+                phase=finding.phase,
+                category=finding.category,
+                severity=finding.severity,
+                location=finding.location,
+                explanation=finding.explanation,
+                attempt=attempt,
+            ))
 
     def begin_attempt(self, comp: Component) -> None:
         """PENDING -> RUNNING transition for one attempt (R3.3).
@@ -623,6 +687,11 @@ class ComponentPipeline:
         merge_pending event so the slice includes it."""
         comp.status = ComponentStatus.MERGE_PENDING.value
         comp.error = error
+        # Richer v2 event first; the v1-parity twin keeps progress.jsonl
+        # unchanged (the reducer prefers the v2 event, chunk 2).
+        self.bus.emit(ev.PrMergePending(
+            component=comp.id, pr_url=comp.pr_url, error=comp.error,
+        ))
         self.bus.emit(ev.MergePendingV1(
             component=comp.id, pr_url=comp.pr_url, error=comp.error,
         ))
@@ -741,6 +810,15 @@ class ComponentPipeline:
             skipped = self.manifest.cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
             self.factory_result.skipped.extend(skipped)
+            started = self._attempt_started_monotonic.get(comp_id)
+            duration = time.monotonic() - started if started is not None else 0.0
+            self.bus.emit(ev.PhaseCompleted(
+                component=comp_id,
+                phase="engineer",
+                passed=False,
+                detail="component timeout",
+                duration_seconds=round(duration, 2),
+            ))
             self.bus.emit(ev.ComponentFailed(
                 component=comp_id, error="component timeout",
             ))
@@ -870,6 +948,15 @@ class ComponentPipeline:
         comp.duration_seconds = comp_result.duration_seconds
         comp.iteration_count = comp_result.iterations
 
+        # Engineer bracket closer: PhaseStarted(engineer) was emitted by
+        # the scheduler at submit time; the worker's exit lands here.
+        self.bus.emit(ev.PhaseCompleted(
+            component=comp_id, phase="engineer",
+            passed=comp_result.success,
+            detail=comp_result.error or "",
+            duration_seconds=round(comp_result.duration_seconds, 2),
+        ))
+
         # R3.1: engineer-loop spend counts BEFORE the success branch -
         # failed attempts cost real tokens too.
         if comp_result.usage is not None:
@@ -922,14 +1009,24 @@ class ComponentPipeline:
         comp.status = ComponentStatus.VERIFYING.value
         self.manifest.save(self.manifest_path)
 
+        t0 = self._phase_started(comp, "verify")
         verify = self._phase_verify(comp, comp_result, wt_path)
+        self._phase_completed(
+            comp, "verify", t0, verify.failure is None,
+            verify.failure.error if verify.failure else "",
+        )
         if verify.failure is not None:
             return PipelineOutcome(
                 transition=self._route_failure(comp, verify.failure),
                 verify=verify,
             )
 
+        t0 = self._phase_started(comp, "diff")
         diff = self._phase_diff(comp, comp_result, wt_path)
+        self._phase_completed(
+            comp, "diff", t0, diff.failure is None,
+            diff.failure.error if diff.failure else "",
+        )
         if diff.failure is not None:
             return PipelineOutcome(
                 transition=self._route_failure(comp, diff.failure),
@@ -937,9 +1034,14 @@ class ComponentPipeline:
             )
 
         # PHASE 2: Second-opinion review
+        t0 = self._phase_started(comp, "review")
         review = self._phase_review(
             comp, comp_result, wt_path, verify.verification,
             diff.review_diff, diff.chunks,
+        )
+        self._phase_completed(
+            comp, "review", t0, review.failure is None,
+            review.failure.error if review.failure else "",
         )
         if review.failure is not None:
             return PipelineOutcome(
@@ -948,8 +1050,13 @@ class ComponentPipeline:
             )
 
         # PHASE 2.5: Security review
+        t0 = self._phase_started(comp, "security")
         security = self._phase_security(
             comp, comp_result, wt_path, diff.review_diff, diff.chunks,
+        )
+        self._phase_completed(
+            comp, "security", t0, security.failure is None,
+            security.failure.error if security.failure else "",
         )
         if security.failure is not None:
             return PipelineOutcome(
@@ -958,7 +1065,11 @@ class ComponentPipeline:
             )
 
         # Knowledge distillation: a NAMED PRE-PR step (R7.3 decision).
+        t0 = self._phase_started(comp, "distill")
         distill = self._phase_distill(comp, comp_result, wt_path, diff.diff)
+        self._phase_completed(
+            comp, "distill", t0, True, distill.skip_reason or "",
+        )
 
         # HITL checkpoint + PR create/merge (per-component PR mode only).
         checkpoint = CheckpointDecision.NOT_PROMPTED
@@ -993,7 +1104,16 @@ class ComponentPipeline:
                     checkpoint=checkpoint,
                 )
 
+            t0 = self._phase_started(comp, "pr")
             pr = self._phase_pr(comp)
+            self._phase_completed(
+                comp, "pr", t0,
+                pr.disposition in (
+                    PrDisposition.MERGED, PrDisposition.NO_GH,
+                    PrDisposition.SKIPPED,
+                ),
+                pr.error,
+            )
             if pr.disposition == PrDisposition.CONFLICT:
                 return PipelineOutcome(
                     transition=self._retry_after_merge_conflict(
@@ -1387,31 +1507,35 @@ class ComponentPipeline:
             if review_mode == ReviewMode.HARD and review_chunks is not None:
                 # R1.4: one pass per chunk, each consuming budget;
                 # any chunk failure fails the merged result.
-                review_result = self.hooks.run_chunked_review(
-                    review_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.manifest.base_branch,
-                    verification,
-                    review_mode,
-                    self.ui,
-                    diff_chunks=review_chunks,
-                    budget_remaining=self.adversarial_budget_remaining(),
-                    consume_budget=self.adversarial_budget_consume,
-                    debug_dir=adversarial_debug_dir,
-                )
+                with self._phase_transcript(comp.id, "review") as on_line:
+                    review_result = self.hooks.run_chunked_review(
+                        review_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.manifest.base_branch,
+                        verification,
+                        review_mode,
+                        self.ui,
+                        diff_chunks=review_chunks,
+                        budget_remaining=self.adversarial_budget_remaining(),
+                        consume_budget=self.adversarial_budget_consume,
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
             else:
-                review_result = self.hooks.run_review(
-                    review_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.manifest.base_branch,
-                    verification,
-                    review_mode,
-                    self.ui,
-                    diff_content=review_diff,
-                    debug_dir=adversarial_debug_dir,
-                )
+                with self._phase_transcript(comp.id, "review") as on_line:
+                    review_result = self.hooks.run_review(
+                        review_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.manifest.base_branch,
+                        verification,
+                        review_mode,
+                        self.ui,
+                        diff_content=review_diff,
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
         except Exception as exc:  # noqa: BLE001
             self.ui.warn(f"  Review crashed: {exc}")
             review_result = ReviewResult(
@@ -1618,29 +1742,33 @@ class ComponentPipeline:
                 # R1.4: one pass per chunk, each consuming budget
                 # via consume_budget; any chunk failure fails the
                 # merged result.
-                sec_result = self.hooks.run_chunked_security_review(
-                    sec_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.manifest.base_branch,
-                    sec_config,
-                    self.ui,
-                    diff_chunks=review_chunks,
-                    budget_remaining=self.adversarial_budget_remaining(),
-                    consume_budget=self.adversarial_budget_consume,
-                    debug_dir=adversarial_debug_dir,
-                )
+                with self._phase_transcript(comp.id, "security") as on_line:
+                    sec_result = self.hooks.run_chunked_security_review(
+                        sec_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.manifest.base_branch,
+                        sec_config,
+                        self.ui,
+                        diff_chunks=review_chunks,
+                        budget_remaining=self.adversarial_budget_remaining(),
+                        consume_budget=self.adversarial_budget_consume,
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
             else:
-                sec_result = self.hooks.run_security_review(
-                    sec_agent,
-                    wt_path / comp.prd_path,
-                    wt_path,
-                    self.manifest.base_branch,
-                    sec_config,
-                    self.ui,
-                    diff_content=review_diff,
-                    debug_dir=adversarial_debug_dir,
-                )
+                with self._phase_transcript(comp.id, "security") as on_line:
+                    sec_result = self.hooks.run_security_review(
+                        sec_agent,
+                        wt_path / comp.prd_path,
+                        wt_path,
+                        self.manifest.base_branch,
+                        sec_config,
+                        self.ui,
+                        diff_content=review_diff,
+                        debug_dir=adversarial_debug_dir,
+                        on_line=on_line,
+                    )
         except Exception as exc:  # noqa: BLE001
             # Agent infrastructure failed before run_security_review
             # could classify the outcome. Synthesize an infra result
@@ -1832,18 +1960,27 @@ class ComponentPipeline:
                 self.base_config.model_reasoning_effort,
                 self.base_config.agent_type,
             )
-            written, status = self.hooks.distill_facts(
-                distill_agent,
-                comp,
-                diff_content,
-                wt_path / comp.prd_path,
-                comp_result.iterations,
-                self.run_id,
-                knowledge_config.knowledge_root,
-                knowledge_config,
-                wt_path,
-                comp.review_passed,
-            )
+            distill_start = time.monotonic()
+            with self._phase_transcript(comp.id, "distill") as on_line:
+                written, status = self.hooks.distill_facts(
+                    distill_agent,
+                    comp,
+                    diff_content,
+                    wt_path / comp.prd_path,
+                    comp_result.iterations,
+                    self.run_id,
+                    knowledge_config.knowledge_root,
+                    knowledge_config,
+                    wt_path,
+                    comp.review_passed,
+                    on_line=on_line,
+                )
+            self.bus.emit(ev.DistillResult(
+                component=comp.id, facts_written=written,
+                duration_seconds=round(
+                    time.monotonic() - distill_start, 2,
+                ),
+            ))
             if written > 0:
                 self.ui.ok(f"  Knowledge: {status}")
             else:
@@ -1907,16 +2044,24 @@ class ComponentPipeline:
         than block indefinitely."""
         if not self.factory_config.pause_before_pr_merge:
             return CheckpointDecision.NOT_PROMPTED
+        question = f"Approve PR creation and merge for {comp.id}?"
+        self.bus.emit(ev.CheckpointRequested(
+            component=comp.id, kind="pr_merge", question=question,
+        ))
         if not self.ui.can_prompt():
             self.ui.warn(
                 f"  pause_before_pr_merge requested but UI is "
                 f"non-interactive; proceeding without prompt for {comp.id}"
             )
+            self.bus.emit(ev.CheckpointResolved(
+                component=comp.id, kind="pr_merge",
+                decision="not_prompted", decided_by="auto",
+            ))
             return CheckpointDecision.NOT_PROMPTED
         self.ui.section(f"Human checkpoint: {comp.id}")
         self.ui.info(comp.review_findings or "(no review findings)")
         choice = self.ui.choose(
-            f"Approve PR creation and merge for {comp.id}?",
+            question,
             [
                 "Approve",
                 "Reject (fail component, skip dependents)",
@@ -1924,18 +2069,24 @@ class ComponentPipeline:
             ],
             default=0,
         )
-        if choice == 1:
+        decision = {
+            1: CheckpointDecision.REJECTED,
+            2: CheckpointDecision.RETRY,
+        }.get(choice, CheckpointDecision.APPROVED)
+        self.bus.emit(ev.CheckpointResolved(
+            component=comp.id, kind="pr_merge",
+            decision=decision.name.lower(), decided_by="operator",
+        ))
+        if decision == CheckpointDecision.REJECTED:
             self.ui.warn(
                 f"  Human rejected {comp.id} at PR checkpoint"
             )
-            return CheckpointDecision.REJECTED
-        if choice == 2:
+        elif decision == CheckpointDecision.RETRY:
             self.ui.warn(
                 f"  Human requested retry for {comp.id} "
                 f"at PR checkpoint"
             )
-            return CheckpointDecision.RETRY
-        return CheckpointDecision.APPROVED
+        return decision
 
     def _phase_pr(self, comp: Component) -> PrPhaseResult:
         """Per-component PR create+merge. single_pr mode is exempt
@@ -1963,6 +2114,10 @@ class ComponentPipeline:
         )
         if outcome.pr_url:
             self.factory_result.pr_urls.append(outcome.pr_url)
+            self.bus.emit(ev.PrCreated(
+                component=comp.id, pr_number=comp.pr_number or 0,
+                pr_url=outcome.pr_url,
+            ))
         self.manifest.save(self.manifest_path)
 
         # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
@@ -1987,6 +2142,10 @@ class ComponentPipeline:
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
             )
+        self.bus.emit(ev.PrMerged(
+            component=comp.id, pr_number=comp.pr_number or 0,
+            pr_url=outcome.pr_url,
+        ))
         return PrPhaseResult(
             disposition=PrDisposition.MERGED, pr_url=outcome.pr_url,
         )

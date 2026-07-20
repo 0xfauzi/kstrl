@@ -25,6 +25,7 @@ import os
 import re
 import tempfile
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1142,6 +1143,8 @@ def distill_facts(
     config: KnowledgeConfig,
     worktree_path: Path,
     review_passed: bool | None,
+    *,
+    on_line: Callable[[str], None] | None = None,
 ) -> tuple[int, str]:
     """Run the LLM distillation call and persist any facts returned.
 
@@ -1174,6 +1177,7 @@ def distill_facts(
         output_lines = collect_agent_output(
             agent, prompt, cwd=worktree_path,
             timeout=config.distill_timeout_seconds,
+            on_line=on_line,
         )
     except AgentOutputTooLarge as exc:
         return 0, f"knowledge.agent_output_too_large: {exc}"

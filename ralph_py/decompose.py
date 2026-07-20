@@ -8,6 +8,7 @@ import re
 import secrets
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -365,9 +366,15 @@ def collect_agent_output(
     timeout: float | None = None,
     *,
     max_bytes: int = MAX_AGENT_OUTPUT_BYTES,
+    on_line: Callable[[str], None] | None = None,
 ) -> list[str]:
     """Drain ``agent.run(...)`` into a list, aborting if total bytes
     exceed ``max_bytes``.
+
+    ``on_line`` observes each streamed line as it arrives (phase
+    transcripts, TUI rewrite chunk 4). An observer failure disables the
+    observer for the rest of the run - a dead transcript file must
+    never abort an agent call.
 
     Raises :class:`AgentOutputTooLarge` when the cap is hit. Callers
     are expected to catch it and translate to their phase-specific
@@ -377,6 +384,11 @@ def collect_agent_output(
     total_bytes = 0
     for line in agent.run(prompt, cwd=cwd, timeout=timeout):
         output_lines.append(line)
+        if on_line is not None:
+            try:
+                on_line(line)
+            except Exception:  # noqa: BLE001 - transcripts never gate
+                on_line = None
         total_bytes += len(line) + 1  # +1 for the implicit newline
         if total_bytes > max_bytes:
             raise AgentOutputTooLarge(

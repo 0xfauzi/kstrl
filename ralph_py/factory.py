@@ -30,8 +30,10 @@ from ralph_py.events import (
     ComponentStarted,
     EventBus,
     JsonlSink,
+    PhaseStarted,
     RunCompleted,
     RunPaths,
+    RunPlan,
     RunStarted,
     V1CompatSink,
 )
@@ -1315,6 +1317,7 @@ def _run_factory_locked(
     progress_log: ProgressLog
     bus = EventBus(run_id=run_id)
     journal_path: Path | None = None
+    run_paths: RunPaths | None = None
     if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
     else:
@@ -1352,6 +1355,16 @@ def _run_factory_locked(
 
     bus.emit(RunStarted(
         project=manifest.project_name, components=len(manifest.components),
+    ))
+    # Chunk 4: the component DAG + budget caps as one event, so a
+    # dashboard can draw the board without reading the manifest.
+    bus.emit(RunPlan(
+        components=tuple(
+            {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
+            for c in manifest.components
+        ),
+        max_total_tokens=factory_config.max_total_tokens,
+        max_adversarial_calls=factory_config.max_adversarial_calls,
     ))
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
@@ -1475,6 +1488,7 @@ def _run_factory_locked(
         run_id=run_id,
         bus=bus,
         journal_path=journal_path,
+        run_paths=run_paths,
         notify=notify,
         review_selection=review_selection,
         security_selection=security_selection,
@@ -1752,6 +1766,13 @@ def _run_factory_locked(
                         transitioned_without_launch += 1
                         continue
 
+                    # Provisioning succeeded: the engineer phase starts
+                    # immediately before submission. process_result closes
+                    # normal exits; fail_scheduler_backstop closes timeouts.
+                    bus.emit(PhaseStarted(
+                        component=comp.id, phase="engineer",
+                        attempt=comp.retries + 1,
+                    ))
                     args = _submit_args(comp, wt_path)
                     future = executor.submit(_run_component, *args)
                     running_futures[future] = comp.id

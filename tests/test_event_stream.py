@@ -238,3 +238,175 @@ class TestDualWrite:
         assert comp.journal_offset_end >= comp.journal_offset_start
         v1_size = (root / "progress.jsonl").stat().st_size
         assert comp.journal_offset_end <= v1_size
+
+
+def _v2_names_for(events: list[ev.Event], comp: str) -> list[str]:
+    out = []
+    for e in events:
+        if e.component != comp:
+            continue
+        name = type(e).type
+        if name in ("phase_started", "phase_completed"):
+            name = f"{name}:{e.to_dict()['data']['phase']}"
+        out.append(name)
+    return out
+
+
+class TestSemanticEvents:
+    def test_run_plan_follows_factory_started(self, tmp_path: Path) -> None:
+        root = _run_stub_factory(tmp_path, ["comp-a", "comp-b"])
+        events = ev.read_events(_events_file(root))
+        names = [type(e).type for e in events]
+        assert names[0] == "factory_started"
+        assert names[1] == "run_plan"
+        plan = events[1]
+        assert isinstance(plan, ev.RunPlan)
+        assert [c["id"] for c in plan.components] == ["comp-a", "comp-b"]
+
+    def test_phase_bracket_ordering_success(self, tmp_path: Path) -> None:
+        root = _run_stub_factory(tmp_path, ["comp-a"])
+        events = ev.read_events(_events_file(root))
+        names = _v2_names_for(events, "comp-a")
+
+        def pos(name: str) -> int:
+            return names.index(name)
+
+        assert pos("component_started") < pos("phase_started:engineer")
+        assert pos("phase_started:engineer") < pos("phase_completed:engineer")
+        assert pos("phase_completed:engineer") < pos("phase_started:verify")
+        assert pos("phase_started:verify") < pos("verification_result")
+        assert pos("verification_result") < pos("phase_completed:verify")
+        assert pos("phase_completed:verify") < pos("phase_started:diff")
+        assert pos("phase_completed:diff") < pos("phase_started:review")
+        assert pos("phase_completed:review") < pos("phase_started:security")
+        assert pos("phase_completed:security") < pos("phase_started:distill")
+        assert pos("phase_completed:distill") < pos("component_completed")
+
+    def test_failure_path_stops_at_engineer(self, tmp_path: Path) -> None:
+        root = _run_stub_factory(tmp_path, ["comp-a"], success=False)
+        events = ev.read_events(_events_file(root))
+        names = _v2_names_for(events, "comp-a")
+        assert "phase_completed:engineer" in names
+        engineer_done = [
+            e for e in events
+            if isinstance(e, ev.PhaseCompleted) and e.phase == "engineer"
+        ]
+        assert engineer_done[0].passed is False
+        assert "stub failure" in engineer_done[0].detail
+        assert "phase_started:verify" not in names
+
+    def test_v1_file_has_no_semantic_events(self, tmp_path: Path) -> None:
+        root = _run_stub_factory(tmp_path, ["comp-a"])
+        v1_names = {e["event"] for e in
+                    read_progress_events(root / "progress.jsonl")}
+        assert not v1_names & {
+            "run_plan", "phase_started", "phase_completed",
+            "checkpoint_requested", "checkpoint_resolved", "pr_created",
+            "pr_merged", "pr_merge_pending", "distill_result",
+            "finding_recorded",
+        }
+
+    def test_reducer_sees_explicit_phases(self, tmp_path: Path) -> None:
+        root = _run_stub_factory(tmp_path, ["comp-a"])
+        state = reducer.fold(ev.read_events(_events_file(root)))
+        comp = state.components["comp-a"]
+        assert comp.phase_explicit is True
+        assert comp.status == "completed"
+        assert comp.phase == "done"
+
+    def test_checkpoint_events_auto_resolution(self, tmp_path: Path) -> None:
+        """pause_before_pr_merge on a non-TTY: requested then resolved
+        with decided_by=auto, and the run proceeds (NO_GH path)."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(
+            root, create_prs=True, pause_before_pr_merge=True,
+        )
+        result = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_usage(10),
+        )
+        with patch(
+            "ralph_py.factory._run_component", return_value=result,
+        ), patch("ralph_py.git.get_diff_content", return_value=""), patch(
+            "ralph_py.pr.is_gh_available", return_value=False,
+        ):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()), root,
+            )
+        events = ev.read_events(_events_file(root))
+        requested = [e for e in events if isinstance(e, ev.CheckpointRequested)]
+        resolved = [e for e in events if isinstance(e, ev.CheckpointResolved)]
+        assert len(requested) == 1
+        assert requested[0].kind == "pr_merge"
+        assert len(resolved) == 1
+        assert resolved[0].decision == "not_prompted"
+        assert resolved[0].decided_by == "auto"
+
+
+class TestPhaseTranscripts:
+    def test_review_transcript_written(self, tmp_path: Path) -> None:
+        """The pipeline threads a transcript writer into the review
+        hook; lines the reviewer streams land in review.log."""
+        from ralph_py.review import ReviewResult
+
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, review_mode="advisory")
+        result = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_usage(10),
+        )
+
+        def fake_review(*args: Any, **kwargs: Any) -> ReviewResult:
+            on_line = kwargs.get("on_line")
+            assert on_line is not None, "pipeline must pass a transcript writer"
+            on_line("reviewer line one")
+            on_line("reviewer line two")
+            return ReviewResult(passed=True, mode="advisory")
+
+        with patch(
+            "ralph_py.factory._run_component", return_value=result,
+        ), patch("ralph_py.git.get_diff_content", return_value="+x\n"), patch(
+            "ralph_py.factory.run_review", side_effect=fake_review,
+        ):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()), root,
+            )
+
+        run_dir = _events_file(root).parent
+        review_log = run_dir / "components" / "comp-a" / "review.log"
+        assert review_log.exists()
+        assert review_log.read_text() == "reviewer line one\nreviewer line two\n"
+
+    def test_run_review_streams_lines(self, tmp_path: Path) -> None:
+        """review.run_review forwards each streamed agent line to on_line."""
+        from ralph_py.review import ReviewMode, run_review
+        from ralph_py.ui.plain import PlainUI as _PlainUI
+        from ralph_py.verify import VerificationResult
+
+        class _Agent:
+            @property
+            def name(self) -> str:
+                return "fake"
+
+            def run(self, prompt: str, cwd: Path | None = None,
+                    timeout: float | None = None) -> Any:
+                yield from ["line-a", "line-b"]
+
+            @property
+            def final_message(self) -> str | None:
+                return None
+
+        (tmp_path / "prd.json").write_text(
+            '{"branchName": "b", "userStories": []}'
+        )
+        seen: list[str] = []
+        run_review(
+            _Agent(), tmp_path / "prd.json", tmp_path, "main",
+            VerificationResult(passed=True, checks=[]),
+            ReviewMode.ADVISORY, _PlainUI(no_color=True, file=io.StringIO()),
+            diff_content="+x\n",
+            on_line=seen.append,
+        )
+        assert seen == ["line-a", "line-b"]
