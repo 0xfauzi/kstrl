@@ -102,6 +102,21 @@ class KstrlTuiApp(App[int]):
         )
         self._pending_prompts: dict[str, PromptRequest] = {}
         self._stopping = False
+        # D6 launch seam: injectable so Pilot tests drive a fake
+        # session; the default binds the real substrate lazily.
+        self.start_session: Callable[[object], object] = (
+            self._default_start_session
+        )
+        self._session: object | None = None
+        self._session_notified = False
+
+    def _default_start_session(self, spec: object) -> object:
+        from typing import cast
+
+        from kstrl.launch import LaunchSpec
+        from kstrl.tui.session import start_run_session
+
+        return start_run_session(cast("LaunchSpec", spec), self.root_dir)
 
     # Compat views for screens and tests that duck-pull off the app.
     @property
@@ -132,6 +147,8 @@ class KstrlTuiApp(App[int]):
             ))
         self.set_interval(self.poll_interval, self._poll)
         self.set_interval(1.0, self._tick_ages)
+        if self.mode is Mode.HOME:
+            self.set_interval(0.5, self._check_session)
         if self.mode is Mode.EMBEDDED:
             self.set_interval(0.5, self._check_orchestrator)
             if self.channel is not None:
@@ -223,8 +240,16 @@ class KstrlTuiApp(App[int]):
     def action_nav_back(self) -> None:
         # The stack floor is 2: Textual's hidden default screen plus
         # the base screen this mode pushed (home, or the dash board).
-        if len(self.screen_stack) > 2:
-            self.pop_screen()
+        if len(self.screen_stack) <= 2:
+            return
+        below = self.screen_stack[-2]
+        if isinstance(below, HomeScreen) and self.session_in_flight():
+            # The run owns its board while in flight; q offers a stop.
+            self.notify(
+                "run in flight - press q to stop it", severity="warning",
+            )
+            return
+        self.pop_screen()
 
     # -- home mode (D1) ------------------------------------------------------
 
@@ -246,13 +271,97 @@ class KstrlTuiApp(App[int]):
 
     def close_run(self) -> None:
         """Tear down the observe context when navigation lands back on
-        home. CLI-scoped contexts (dash/embedded) are never closed."""
+        home. CLI-scoped contexts (dash/embedded) are never closed,
+        and an in-flight launched session keeps running (the nav
+        guards keep its board up; this is only a belt-and-braces
+        no-op for that state)."""
         run = self.run_context
         if run is None or run.owns_app_exit:
             return
-        if run.channel is not None:
+        if run.handle is not None and not run.handle.done():
+            return
+        session = self._session
+        if session is not None:
+            close = getattr(session, "close", None)
+            if close is not None:
+                close()
+            self._session = None
+        elif run.channel is not None:
             run.channel.detach()
+        if run.handle is not None:
+            run.handle.join(timeout=2)
         self.run_context = None
+
+    def session_in_flight(self) -> bool:
+        run = self.run_context
+        return (
+            self.mode is Mode.HOME
+            and run is not None
+            and run.handle is not None
+            and not run.handle.done()
+        )
+
+    def launch(self, spec: object) -> None:
+        """Start a command session (D6) and put its board over home."""
+        if self.session_in_flight():
+            self.notify("a run is already in flight", severity="warning")
+            return
+        from kstrl.tui.session import LaunchError
+
+        try:
+            session = self.start_session(spec)
+        except LaunchError as exc:
+            self.notify(str(exc), severity="error")
+            return
+        # The seam is duck-typed so Pilot tests can inject fakes.
+        from typing import Any, cast
+
+        from kstrl.tui.dispatch import initial_screens_for_kind
+
+        sess = cast(Any, session)
+        run = RunContext.observe(
+            Path(sess.run_dir), self.root_dir, owns_app_exit=False,
+        )
+        run.channel = sess.channel
+        run.handle = sess.handle
+        self.run_context = run
+        self._session = session
+        self._session_notified = False
+        self._stopping = False
+        run.channel.attach(
+            lambda req: self.call_from_thread(self.on_prompt_request, req),
+        )
+        # Replace any form screens with the run's board stack.
+        while len(self.screen_stack) > 2:
+            self.pop_screen()
+        kind = str(getattr(session, "kind", "factory"))
+        for screen in initial_screens_for_kind(
+            kind, observe_only=False,
+        )():
+            self.push_screen(screen)
+        self._poll()
+
+    def _check_session(self) -> None:
+        """HOME-mode counterpart of _check_orchestrator: a finished
+        launched session notifies and keeps the board up (post-mortem
+        reading); escape then pops home and tears it down."""
+        run = self.run_context
+        if (
+            self.mode is not Mode.HOME
+            or run is None
+            or run.handle is None
+            or not run.handle.done()
+            or self._session_notified
+        ):
+            return
+        self._session_notified = True
+        self._poll()  # final drain
+        code = run.handle.exit_code
+        self.notify(
+            f"run finished (exit {code}) - escape returns home",
+            severity="information" if code == 0 else "error",
+            timeout=10,
+        )
 
     # -- embedded mode (PR F) ------------------------------------------------
 
@@ -271,8 +380,16 @@ class KstrlTuiApp(App[int]):
         self._pending_prompts[request.request_id] = request
         self._open_prompt(request)
 
+    def _active_channel(self) -> QueueInteractionChannel | None:
+        """The embedded CLI channel, or the home-launched session's."""
+        if self.channel is not None:
+            return self.channel
+        run = self.run_context
+        return run.channel if run is not None else None
+
     def _open_prompt(self, request: PromptRequest) -> None:
-        if self.channel is None:
+        channel = self._active_channel()
+        if channel is None:
             return
 
         def _resolve(choice: int | None) -> None:
@@ -285,9 +402,7 @@ class KstrlTuiApp(App[int]):
                     severity="warning",
                 )
                 return
-            if self.channel is not None and self.channel.resolve(
-                request.request_id, choice,
-            ):
+            if channel.resolve(request.request_id, choice):
                 self._pending_prompts.pop(request.request_id, None)
 
         if request.kind is PromptKind.CHECKPOINT and request.checkpoint:
@@ -308,6 +423,31 @@ class KstrlTuiApp(App[int]):
 
     def action_quit_or_detach(self) -> None:
         if self.mode is Mode.HOME:
+            if self.session_in_flight():
+                run = self.run_context
+                session_handle = run.handle if run is not None else None
+                if session_handle is None:
+                    return
+                if self._stopping or session_handle.stop.is_set():
+                    # Second request escalates to force + quit, exactly
+                    # like the embedded flow.
+                    session_handle.stop.request("forced from TUI", force=True)
+                    self.exit(130)
+                    return
+
+                def _session_stop(stop_run: bool | None) -> None:
+                    if not stop_run or session_handle is None:
+                        return
+                    self._stopping = True
+                    session_handle.stop.request("stopped from TUI")
+                    self.notify(
+                        "shutting down - the board stays up until the "
+                        "run finishes",
+                        timeout=10,
+                    )
+
+                self.push_screen(QuitModal(), _session_stop)
+                return
             if isinstance(self.screen, HomeScreen):
                 self.exit(0)
                 return

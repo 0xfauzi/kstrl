@@ -52,6 +52,18 @@ class HomeCommand:
 # D6 launch forms all append here.
 HOME_COMMANDS: list[HomeCommand] = [
     HomeCommand(
+        "factory", "factory",
+        "launch a factory run from the manifest",
+    ),
+    HomeCommand(
+        "decompose", "decompose",
+        "decompose a spec into components + PRDs",
+    ),
+    HomeCommand(
+        "retry", "retry",
+        "retry a failed component from the manifest",
+    ),
+    HomeCommand(
         "dash", "dashboard",
         "open the newest run (enter on a row opens that run)",
     ),
@@ -66,6 +78,14 @@ HOME_COMMANDS: list[HomeCommand] = [
     HomeCommand(
         "init", "init",
         "scaffold kstrl into a project (wizard)",
+    ),
+    HomeCommand(
+        "feature", "feature",
+        "CLI: ks feature --prd <path> (opens the same embedded TUI)",
+    ),
+    HomeCommand(
+        "understand", "understand",
+        "CLI: ks understand (opens the same embedded TUI)",
     ),
 ]
 
@@ -277,3 +297,21 @@ class HomeScreen(Screen[None]):
             from kstrl.tui.screens.init_wizard import InitWizardScreen
 
             self.app.push_screen(InitWizardScreen())
+        elif event.option_id == "factory":
+            from kstrl.tui.screens.launch import FactoryLaunchForm
+
+            self.app.push_screen(FactoryLaunchForm())
+        elif event.option_id == "decompose":
+            from kstrl.tui.screens.launch import DecomposeLaunchForm
+
+            self.app.push_screen(DecomposeLaunchForm())
+        elif event.option_id == "retry":
+            from kstrl.tui.screens.retry import RetryScreen
+
+            self.app.push_screen(RetryScreen())
+        elif event.option_id in ("feature", "understand"):
+            self.app.notify(
+                f"run `ks {event.option_id} --tui` from the CLI - its "
+                "argument resolution lives there and opens the same "
+                "embedded dashboard",
+            )

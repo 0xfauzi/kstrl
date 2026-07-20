@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -166,11 +165,13 @@ class TestConfigScreen:
         app = _app(tmp_path, report)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.2)
+            from kstrl.tui.screens.home import HOME_COMMANDS
+
             commands = app.screen.query_one("#home-commands")
             commands.focus()
-            deadline = time.monotonic() + 3
-            while not isinstance(app.screen, ConfigScreen):
-                await pilot.press("down")
-                await pilot.press("enter")
-                await pilot.pause(0.1)
-                assert time.monotonic() < deadline, "config never opened"
+            commands.highlighted = [  # type: ignore[attr-defined]
+                c.command_id for c in HOME_COMMANDS
+            ].index("config")
+            await pilot.press("enter")
+            await pilot.pause(0.2)
+            assert isinstance(app.screen, ConfigScreen)

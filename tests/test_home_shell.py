@@ -133,9 +133,14 @@ class TestHomeScreen:
         app = _home_app(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.2)
+            from kstrl.tui.screens.home import HOME_COMMANDS
+
             commands = app.screen.query_one("#home-commands")
             commands.focus()
-            await pilot.press("down")  # highlight the first entry
+            dash_index = [
+                c.command_id for c in HOME_COMMANDS
+            ].index("dash")
+            commands.highlighted = dash_index  # type: ignore[attr-defined]
             await pilot.press("enter")
             await pilot.pause(0.2)
             assert isinstance(app.screen, OverviewScreen)

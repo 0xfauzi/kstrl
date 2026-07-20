@@ -389,6 +389,41 @@ CheckpointModal {
     padding: 0 1;
 }
 
+/* ---- launch forms + retry ------------------------------------------------ */
+
+#launch-root {
+    padding: 0 1;
+}
+
+#launch-title, #retry-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#launch-note {
+    height: 1;
+    padding: 0 1;
+}
+
+#launch-errors {
+    height: 1;
+    padding: 0 1;
+}
+
+#retry-table {
+    height: 1fr;
+    background: $background;
+}
+
+#retry-detail {
+    height: 6;
+    padding: 1 2;
+    background: $surface;
+}
+
 /* ---- evolve screen ------------------------------------------------------- */
 
 #evolve-tabs {
