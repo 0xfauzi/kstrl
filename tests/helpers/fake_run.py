@@ -257,3 +257,90 @@ def write_fake_feature_run(
                                  duration_seconds=110.0))
     bus.close()
     return paths.root
+
+
+def write_fake_decompose_run(
+    root: Path, *,
+    run_id: str = "decompose-20260720-150000.000000-fake",
+    blockers: int = 0,
+    minors: int = 1,
+    attempts: int = 1,
+    components: tuple[str, ...] = ("database", "api"),
+) -> Path:
+    """A decompose-kind run: architect attempts, spec issues, the
+    forming DAG, per-component PRD artifacts (TUI surface C4).
+    ``blockers`` > 0 makes it a halted run (no plan, no PRDs)."""
+    paths = ev.RunPaths.for_run(root, run_id)
+    bus = ev.EventBus(
+        ev.JsonlSink(paths.events_file), run_id=run_id,
+        component="architect",
+    )
+    bus.emit(ev.RunStarted(project="fake-project", components=0))
+    bus.emit(ev.RunPlan(components=(
+        {"id": "architect", "title": "Architect / PRD red-team",
+         "deps": []},
+    )))
+    bus.emit(ev.ComponentStarted(component="architect"))
+    log_path = paths.engineer_log("architect")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(1, attempts + 1):
+        bus.emit(ev.PhaseStarted(component="architect", phase="decompose",
+                                 attempt=attempt))
+        with open(log_path, "a", encoding="utf-8") as log:
+            log.write(f'{{"components": [... attempt {attempt} ...]}}\n')
+        bus.emit(ev.PhaseCompleted(
+            component="architect", phase="decompose",
+            passed=attempt == attempts, duration_seconds=30.0,
+            detail="" if attempt == attempts else "JSON extraction failed",
+        ))
+    bus.emit(ev.PhaseStarted(component="architect", phase="audit", attempt=1))
+    for n in range(blockers):
+        bus.emit(ev.SpecIssueRecorded(
+            severity="blocker", kind="ambiguity",
+            summary=f"Blocking ambiguity {n + 1}",
+            location="spec.md", suggestion="Resolve it",
+        ))
+    for n in range(minors):
+        bus.emit(ev.SpecIssueRecorded(
+            severity="minor", kind="missing_detail",
+            summary=f"Minor gap {n + 1}",
+        ))
+    bus.emit(ev.ArtifactWritten(label="spec_issues",
+                                path="scripts/kstrl/spec-issues.json"))
+    bus.emit(ev.PhaseCompleted(
+        component="architect", phase="audit", passed=blockers == 0,
+        detail=f"{blockers} blocker(s)" if blockers else "",
+        duration_seconds=1.0,
+    ))
+    if blockers:
+        bus.emit(ev.ComponentFailed(
+            component="architect",
+            error=f"spec halted: {blockers} blocker-severity issue(s)",
+        ))
+        bus.emit(ev.RunCompleted(completed=0, failed=1, skipped=0,
+                                 duration_seconds=31.0))
+        bus.close()
+        return paths.root
+    bus.emit(ev.RunPlan(components=(
+        {"id": "architect", "title": "Architect / PRD red-team",
+         "deps": []},
+        *(
+            {"id": cid, "title": cid.title(),
+             "deps": [components[i - 1]] if i else []}
+            for i, cid in enumerate(components)
+        ),
+    )))
+    for cid in components:
+        bus.emit(ev.ArtifactWritten(
+            component=cid, label="prd",
+            path=f"scripts/kstrl/feature/{cid}/prd.json",
+        ))
+    bus.emit(ev.ArtifactWritten(label="manifest",
+                                path="scripts/kstrl/manifest.json"))
+    bus.emit(ev.ComponentCompleted(component="architect",
+                                   duration_seconds=35.0,
+                                   iterations=attempts))
+    bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0,
+                             duration_seconds=35.0))
+    bus.close()
+    return paths.root
