@@ -695,6 +695,12 @@ def build_knowledge_context(
         "Durable facts captured from prior successful iterations. Treat as"
         " ground truth unless contradicted by the current diff."
     )
+    parts.append(
+        "When a fact informs a decision you make, record it in"
+        " progress.txt as a `Facts used:` bullet quoting the fact's"
+        " first sentence verbatim. This is how fact utilization is"
+        " measured; unrecorded usage counts as unused."
+    )
     parts.append("")
 
     core_section = _format_section(f"Current component ({component.id})", core_kept)

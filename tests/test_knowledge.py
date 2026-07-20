@@ -577,6 +577,26 @@ class TestPackFacts:
 
 
 class TestBuildKnowledgeContext:
+    def test_prefix_instructs_fact_usage_recording(
+        self, tmp_path: Path,
+    ) -> None:
+        """The utilization metric matches a fact's opening snippet in
+        progress.txt/diff (measure_fact_utilization). Two real factory
+        runs measured 0/7 because nothing ASKED the engineer to echo
+        consumed facts (2026-07-20) - the prefix must carry the
+        recording instruction or the lower-bound metric can never
+        register genuine usage."""
+        knowledge_root = tmp_path / "knowledge"
+        knowledge_root.mkdir()
+        write_facts([_make_fact()], knowledge_root, "comp-a", "run-1")
+        manifest = _make_manifest([_make_component("comp-a")])
+        config = KnowledgeConfig(knowledge_root=knowledge_root, enabled=True)
+        result = build_knowledge_context(
+            manifest, manifest.components[0], knowledge_root, config,
+        )
+        assert "Facts used:" in result
+        assert "progress.txt" in result
+
     def test_empty_when_no_facts(self, tmp_path: Path) -> None:
         manifest = _make_manifest([_make_component("a"), _make_component("b")])
         comp = manifest.components[0]
