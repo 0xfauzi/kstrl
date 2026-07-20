@@ -27,6 +27,7 @@ def _sample_events() -> list[ev.Event]:
         ev.ComponentStarted(component="comp-a"),
         ev.ComponentCompleted(component="comp-a", duration_seconds=12.34, iterations=4),
         ev.ComponentFailed(component="comp-b", error="boom"),
+        ev.ComponentSkipped(component="comp-c", reason="operator stopped"),
         ev.CircuitBreakerTripped(component="comp-b", iterations=5, error="no progress"),
         ev.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"),
         ev.VerificationResultEvent(

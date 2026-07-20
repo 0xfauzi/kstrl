@@ -44,8 +44,7 @@ class ComponentState:
     component_id: str
     title: str = ""
     deps: tuple[str, ...] = ()
-    # pending | running | verifying | completed | merge_pending | failed
-    # ("skipped" only ever comes from the manifest join - no event marks it)
+    # pending | running | verifying | completed | merge_pending | failed | skipped
     status: str = "pending"
     phase: str = ""
     phase_explicit: bool = False  # a phase_started was seen; inference stops
@@ -264,6 +263,11 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.error = event.error
         if comp.phase_explicit:
             comp.phase = "failed"
+    elif isinstance(event, ev.ComponentSkipped):
+        comp.status = "skipped"
+        comp.error = event.reason
+        if comp.phase_explicit:
+            comp.phase = "skipped"
     elif isinstance(event, ev.CircuitBreakerTripped):
         comp.error = event.error
     elif isinstance(event, ev.ComponentRetrying):
