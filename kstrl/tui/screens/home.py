@@ -63,6 +63,10 @@ HOME_COMMANDS: list[HomeCommand] = [
         "evolve", "evolve",
         "harness proposals, failure patterns, experiment trends",
     ),
+    HomeCommand(
+        "init", "init",
+        "scaffold kstrl into a project (wizard)",
+    ),
 ]
 
 
@@ -269,3 +273,7 @@ class HomeScreen(Screen[None]):
             from kstrl.tui.screens.evolve import EvolveScreen
 
             self.app.push_screen(EvolveScreen())
+        elif event.option_id == "init":
+            from kstrl.tui.screens.init_wizard import InitWizardScreen
+
+            self.app.push_screen(InitWizardScreen())

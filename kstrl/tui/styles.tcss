@@ -292,6 +292,103 @@ CheckpointModal {
     padding: 0 1;
 }
 
+/* ---- forms + init wizard ------------------------------------------------- */
+
+.form-field {
+    height: 1;
+    margin-bottom: 1;
+}
+
+.form-label {
+    width: 14;
+    padding: 0 1;
+}
+
+.form-field Input {
+    width: 1fr;
+    height: 1;
+    border: none;
+    background: $surface;
+    padding: 0 1;
+}
+
+.form-field Select {
+    width: 1fr;
+    height: 1;
+}
+
+.form-hint {
+    width: auto;
+    padding: 0 1;
+}
+
+.path-marker {
+    width: 14;
+    padding: 0 1;
+}
+
+#wizard-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#wizard-root {
+    padding: 0 1;
+}
+
+#wizard-detected, #wizard-errors {
+    height: 1;
+    padding: 0 1;
+}
+
+.wizard-buttons {
+    height: 3;
+    margin-top: 1;
+}
+
+.wizard-buttons Button {
+    margin: 0 1;
+    min-width: 14;
+    border: none;
+    height: 1;
+    background: $panel;
+    color: $foreground;
+    text-style: none;
+}
+
+.wizard-buttons .default-choice {
+    background: $accent;
+    color: $background;
+    text-style: bold;
+}
+
+#wizard-plan-title, #wizard-log-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#wizard-plan {
+    height: auto;
+    padding: 0 1;
+}
+
+#wizard-log-scroll {
+    height: 1fr;
+    background: $background;
+    padding: 0 1;
+}
+
+#wizard-outcome {
+    height: 1;
+    padding: 0 1;
+}
+
 /* ---- evolve screen ------------------------------------------------------- */
 
 #evolve-tabs {
