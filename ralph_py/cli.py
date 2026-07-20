@@ -34,6 +34,11 @@ from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
 from ralph_py.decompose import SpecBlockerError, decompose_spec
 from ralph_py.factory import FactoryConfig, run_factory
 from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
+from ralph_py.interaction import (
+    PromptKind,
+    PromptRequest,
+    UiInteractionChannel,
+)
 from ralph_py.loop import run_loop
 from ralph_py.manifest import Manifest
 from ralph_py.observability import (
@@ -1214,18 +1219,20 @@ def feature(
     if implementation_auto_run:
         ui_impl.info("IMPLEMENTATION_AUTO_RUN enabled: skipping review gate")
     else:
-        if not ui_impl.can_prompt():
+        channel = UiInteractionChannel(ui_impl)
+        if not channel.can_prompt():
             ui_impl.err(
                 "Interactive review required. Re-run with --implementation-auto-run."
             )
             sys.exit(2)
 
-        choice = ui_impl.choose(
-            "Review the understand file and confirm implementation start:",
-            ["Start implementation", "Quit to amend"],
+        response = channel.request(PromptRequest(
+            kind=PromptKind.CONFIRM,
+            header="Review the understand file and confirm implementation start:",
+            options=("Start implementation", "Quit to amend"),
             default=0,
-        )
-        if choice != 0:
+        ))
+        if not response.answered or response.choice != 0:
             ui_impl.info("Amend the understand file and re-run `ralph feature`.")
             sys.exit(0)
 
@@ -2005,13 +2012,15 @@ def factory(
         deps = f" (depends on: {dep_list})" if dep_list else ""
         ui_impl.info(f"  {i}. {comp_id} [{status}]{deps}")
 
-    if not yes and ui_impl.can_prompt():
-        choice = ui_impl.choose(
-            "Proceed with factory execution?",
-            ["Start", "Quit"],
+    _factory_channel = UiInteractionChannel(ui_impl)
+    if not yes and _factory_channel.can_prompt():
+        response = _factory_channel.request(PromptRequest(
+            kind=PromptKind.CONFIRM,
+            header="Proceed with factory execution?",
+            options=("Start", "Quit"),
             default=0,
-        )
-        if choice != 0:
+        ))
+        if response.answered and response.choice != 0:
             sys.exit(0)
 
     ralph_dir = root_dir / "scripts" / "ralph"
@@ -2737,13 +2746,15 @@ def retry(
 
     manifest.save(manifest_file)
 
-    if not yes and ui_impl.can_prompt():
-        choice = ui_impl.choose(
-            f"Re-enter the factory to retry '{component_id}'?",
-            ["Start", "Quit"],
+    _retry_channel = UiInteractionChannel(ui_impl)
+    if not yes and _retry_channel.can_prompt():
+        response = _retry_channel.request(PromptRequest(
+            kind=PromptKind.CONFIRM,
+            header=f"Re-enter the factory to retry '{component_id}'?",
+            options=("Start", "Quit"),
             default=0,
-        )
-        if choice != 0:
+        ))
+        if response.answered and response.choice != 0:
             sys.exit(0)
 
     # Config assembly mirrors `ralph factory` with no flags: every phase
@@ -3064,11 +3075,22 @@ def _evolve_apply(
             continue
         ui_impl.info(f"{pid}: {proposal['title']}")
         ui_impl.info(f"  Convention: {proposal['convention']}")
-        if not evo_config.auto_apply_computational and not click.confirm(
-            f"Append this convention to {claude_md}?", default=False,
-        ):
-            ui_impl.info(f"  {pid} not applied (declined).")
-            continue
+        if not evo_config.auto_apply_computational:
+            # PR A: the old bare click.confirm raised click.Abort on
+            # non-TTY EOF and crashed the command. Piped input
+            # ("echo y | ralph evolve --apply ...") must keep working,
+            # so this stays click.confirm - with EOF now meaning
+            # "declined", never a crash.
+            try:
+                confirmed = click.confirm(
+                    f"Append this convention to {claude_md}?", default=False,
+                )
+            except click.Abort:
+                ui_impl.info("")
+                confirmed = False
+            if not confirmed:
+                ui_impl.info(f"  {pid} not applied (declined).")
+                continue
         if not _append_to_agent_learnings(
             claude_md, pid, proposal["convention"],
         ):

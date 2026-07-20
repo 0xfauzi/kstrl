@@ -12,6 +12,12 @@ from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from ralph_py.breaker import BreakerConfig, NoProgressBreaker
 from ralph_py.events import EventBus, IterationCompleted, IterationStarted
+from ralph_py.interaction import (
+    InteractionChannel,
+    PromptKind,
+    PromptRequest,
+    UiInteractionChannel,
+)
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
 
@@ -60,6 +66,7 @@ def run_loop(
     breaker_config: BreakerConfig | None = None,
     *,
     bus: EventBus | None = None,
+    interaction: InteractionChannel | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -190,6 +197,10 @@ def run_loop(
     else:
         ui.info("ALLOWED_PATHS is empty; enforcement disabled")
 
+    # PR A: one interaction channel for the whole loop (guards + pause).
+    channel: InteractionChannel = (
+        interaction if interaction is not None else UiInteractionChannel(ui)
+    )
     loop_start = time.monotonic()
     iteration_durations: list[float] = []
     timed_out_iterations = 0
@@ -269,7 +280,9 @@ def run_loop(
         # When enforcement fails the iteration is treated as failed even
         # if the marker was seen.
         if config.allowed_paths and is_repo:
-            ok, _ = guards.enforce_allowed_paths(config, ui, cwd)
+            ok, _ = guards.enforce_allowed_paths(
+                config, ui, cwd, interaction=channel,
+            )
             if not ok:
                 return LoopResult(
                     completed=False,
@@ -334,17 +347,18 @@ def run_loop(
                 usage=collect_usage(agent),
             )
 
-        # Interactive pause
-        if config.interactive and ui.can_prompt():
-            choice = ui.choose(
-                "Iteration complete. What next?",
-                ["Continue", "Skip interactive", "Quit"],
+        # Interactive pause (PR A: through the interaction seam)
+        if config.interactive and channel.can_prompt():
+            response = channel.request(PromptRequest(
+                kind=PromptKind.ITERATION,
+                header="Iteration complete. What next?",
+                options=("Continue", "Skip interactive", "Quit"),
                 default=0,
-            )
-            if choice == 1:
+            ))
+            if response.answered and response.choice == 1:
                 # Disable interactive for remaining iterations
                 config.interactive = False
-            elif choice == 2:
+            elif response.answered and response.choice == 2:
                 return LoopResult(
                     completed=False, iterations=iteration, exit_code=0,
                     usage=collect_usage(agent),

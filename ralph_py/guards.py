@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ralph_py import git
+from ralph_py.interaction import (
+    InteractionChannel,
+    PromptKind,
+    PromptRequest,
+    UiInteractionChannel,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,6 +57,7 @@ def enforce_allowed_paths(
     config: RalphConfig,
     ui: UI,
     cwd: Path | None = None,
+    interaction: InteractionChannel | None = None,
 ) -> tuple[bool, list[str]]:
     """Enforce ALLOWED_PATHS after an iteration.
 
@@ -91,17 +98,23 @@ def enforce_allowed_paths(
         )
         return False, violations
 
-    # Interactive mode - prompt for action
-    if not ui.can_prompt():
+    # Interactive mode - prompt for action (PR A: through the seam)
+    channel = interaction if interaction is not None else UiInteractionChannel(ui)
+    if not channel.can_prompt():
         # Non-TTY in interactive mode - take default action (quit)
         ui.warn("Non-TTY in interactive mode, defaulting to quit")
         return False, violations
 
-    choice = ui.choose(
-        "Disallowed changes detected. What would you like to do?",
-        ["Quit", "Revert and continue", "Continue anyway"],
+    response = channel.request(PromptRequest(
+        kind=PromptKind.GUARD,
+        header="Disallowed changes detected. What would you like to do?",
+        options=("Quit", "Revert and continue", "Continue anyway"),
         default=0,
-    )
+    ))
+    if not response.answered:
+        ui.warn("Prompt unavailable, defaulting to quit")
+        return False, violations
+    choice = response.choice
 
     if choice == 0:
         # Quit

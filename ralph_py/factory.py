@@ -48,6 +48,7 @@ from ralph_py.events import (
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.fixtures import FixturesConfig
 from ralph_py.git import fetch_base_branch, resolve_base_ref
+from ralph_py.interaction import InteractionChannel
 from ralph_py.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
@@ -1363,6 +1364,8 @@ def run_factory(
     ui: UI,
     root_dir: Path,
     manifest_path: Path | None = None,
+    *,
+    interaction: InteractionChannel | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -1393,6 +1396,7 @@ def run_factory(
         return _run_factory_locked(
             manifest, factory_config, base_config, ui, root_dir,
             manifest_path=manifest_path, lock_held=run_lock.held,
+            interaction=interaction,
         )
     finally:
         run_lock.release()
@@ -1406,6 +1410,7 @@ def _run_factory_locked(
     root_dir: Path,
     manifest_path: Path | None,
     lock_held: bool,
+    interaction: InteractionChannel | None = None,
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -1627,6 +1632,7 @@ def _run_factory_locked(
         bus=bus,
         journal_path=journal_path,
         run_paths=run_paths,
+        interaction=interaction,
         notify=notify,
         review_selection=review_selection,
         security_selection=security_selection,
