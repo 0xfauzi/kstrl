@@ -24,6 +24,7 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `RALPH_AGENT_TYPE` | str | unset | `claude-code\|claude-sdk\|codex\|auto` (`claude-sdk` needs the `sdk` extra: `uv sync --extra sdk`) |
 | `RALPH_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Non-positive or unparseable values are ignored |
 | `RALPH_UI` | str | auto | `auto\|rich\|plain` |
+| `RALPH_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `RALPH_ASCII` | bool | false | ASCII-only UI |
 

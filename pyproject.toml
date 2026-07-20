@@ -36,6 +36,7 @@ dev = [
     # The sdk extra is part of the dev set so the R7.6 unit tests and
     # mypy always exercise the adapter+runner.
     "claude-agent-sdk>=0.2.123,<0.3",
+    "pytest-textual-snapshot>=1.0.0",
 ]
 
 [build-system]

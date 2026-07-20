@@ -105,11 +105,48 @@ If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (t
 
 **Resolve**: either revert the prompt change or update the fixture's `must_detect` if the change deliberately narrowed scope. Do not just unskip the test — a calibration regression is the signal you wrote the system to produce.
 
+## The dashboard (TUI)
+
+`ralph factory` on a terminal runs the embedded dashboard by default
+(`--no-tui`, `--ui plain`, or `RALPH_NO_TUI=1` opt out; automatic
+selection uses plain output for non-TTY stdio, while explicit `--tui`
+requires a terminal). `ralph dash` attaches a read-only
+dashboard to a live run from another terminal, or replays a finished
+one (`--run-id` takes a unique prefix; newest run is the default).
+
+Keys: `enter` opens a component's detail (phase timeline, findings,
+live transcript, evidence paths), `escape` returns, `f` toggles
+transcript follow, `c` reopens a pending E6 checkpoint, `q` quits.
+
+Quit semantics differ by mode. In `ralph dash`, `q` detaches
+immediately - the run is not yours to stop. Embedded, `q` asks first:
+confirming group-kills in-flight agents, runs the worktree cleanup
+pass, flushes the manifest, and exits 130; a second `q` (or second
+Ctrl-C) force-kills. This is also what Ctrl-C now does in plain mode -
+the pre-TUI behavior (skipped cleanup, orphaned agents) was a bug,
+fixed in the same rewrite.
+
+The E6 checkpoint modal shows the diff excerpt, review + security
+findings, and the attempt's spend; approve/reject/retry with
+`a`/`r`/`t`, or `escape` to leave it pending (the run stays blocked -
+that is what a checkpoint is - and the banner points back at it).
+
+Tradeoff to know: in embedded mode, notify hooks run with their
+output captured (a hook writing to the terminal would corrupt the
+alt screen - measured in the Stage 0 spike), so a `printf '\a'`
+terminal bell only rings in plain mode. Everything the dashboard
+shows also exists on disk: `.ralph/runs/<run_id>/events.jsonl`
+(schema-v2 event stream), `components/<id>/engineer.log` (agent
+transcripts), `components/<id>/{review,security,distill}.log` (phase
+transcripts), and `orchestrator.log` (embedded-mode narration). When
+a run breaks, those files are the record; the TUI is only a view.
+
 ## Where to find things
 
 - Tracker for the hardening roadmap: `docs/adversarial-roadmap.md`
 - Adversarial design overview: `docs/adversarial-design.md`
 - Env-var reference: `docs/env-vars.md`
 - Per-run captures: `.ralph/evolution.jsonl`, `.ralph/experiments.tsv`
+- Run event stream + transcripts: `.ralph/runs/<run_id>/`
 - Distillation debug dumps: `.ralph/knowledge/<comp>/<run>/_distill_raw.txt` (on failure)
 - Phase F sample real-world run log: `docs/phase-f-run-log.md`

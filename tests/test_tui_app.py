@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from unittest.mock import PropertyMock, patch
 
 from rich.text import Text
 
@@ -109,6 +110,20 @@ class TestOverview:
             await pilot.pause()
 
             assert app.store.state.total_tokens == initial_tokens
+
+    async def test_timers_ignore_empty_screen_stack_during_teardown(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            with patch.object(
+                RalphTuiApp, "screen_stack", new_callable=PropertyMock,
+                return_value=[],
+            ):
+                app._poll()
+                app._tick_ages()
 
 
 class TestRenderHelpers:
