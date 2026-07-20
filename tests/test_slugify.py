@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tools.slugify import slugify, slugify_max
+from tools.slugify import slugify, slugify_max, unique_slug
 
 
 class TestSlugify:
@@ -135,3 +135,48 @@ class TestSlugifySeparatorValidation:
 
     def test_non_alnum_multi_char_separator_still_allowed(self) -> None:
         assert slugify("Hello World", separator="::") == "hello::world"
+
+
+class TestUniqueSlug:
+    def test_returns_slug_unchanged_when_not_in_existing_set(self) -> None:
+        assert unique_slug("Post", set()) == "post"
+
+    def test_unchanged_slug_not_present_in_larger_existing_set(self) -> None:
+        assert unique_slug("Post", {"other-post", "another"}) == "post"
+
+    def test_appends_suffix_2_on_first_collision(self) -> None:
+        assert unique_slug("Post", {"post"}) == "post-2"
+
+    def test_appends_suffix_3_when_suffix_2_also_collides(self) -> None:
+        assert unique_slug("Post", {"post", "post-2"}) == "post-3"
+
+    def test_keeps_incrementing_past_multiple_collisions(self) -> None:
+        existing = {"post", "post-2", "post-3", "post-4"}
+        assert unique_slug("Post", existing) == "post-5"
+
+    def test_empty_slug_maps_to_untitled(self) -> None:
+        assert unique_slug("!!!", set()) == "untitled"
+
+    def test_untitled_collision_resolution(self) -> None:
+        assert unique_slug("!!!", {"untitled"}) == "untitled-2"
+
+    def test_untitled_collision_resolution_multiple(self) -> None:
+        assert unique_slug("!!!", {"untitled", "untitled-2"}) == "untitled-3"
+
+    def test_does_not_mutate_existing_set(self) -> None:
+        existing = {"post"}
+        result = unique_slug("Post", existing)
+        assert result == "post-2"
+        assert existing == {"post"}
+
+    def test_custom_separator_used_for_suffix(self) -> None:
+        assert unique_slug("Post", {"post"}, separator="_") == "post_2"
+
+    def test_sequential_calls_build_a_unique_set(self) -> None:
+        existing: set[str] = set()
+        slugs = []
+        for _ in range(3):
+            slug = unique_slug("Post", existing)
+            existing.add(slug)
+            slugs.append(slug)
+        assert slugs == ["post", "post-2", "post-3"]

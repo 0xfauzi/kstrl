@@ -72,3 +72,27 @@ def slugify_max(text: str, max_length: int, separator: str = "-") -> str:
     if not fitted:
         return words[0][:max_length]
     return separator.join(fitted)
+
+
+def unique_slug(text: str, existing: set[str], separator: str = "-") -> str:
+    """Slugify text and disambiguate it against a set of existing slugs.
+
+    If slugify(text, separator) is empty (e.g. text is all punctuation),
+    it is treated as "untitled" before uniqueness is checked. If the
+    resulting slug is already present in existing, a numeric suffix
+    (separator + N, starting at N=2) is appended and incremented until a
+    slug not in existing is found. The existing set is read-only and is
+    never mutated by this function.
+    """
+    slug = slugify(text, separator=separator)
+    if not slug:
+        slug = "untitled"
+    if slug not in existing:
+        return slug
+
+    suffix = 2
+    candidate = f"{slug}{separator}{suffix}"
+    while candidate in existing:
+        suffix += 1
+        candidate = f"{slug}{separator}{suffix}"
+    return candidate
