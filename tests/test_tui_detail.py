@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import Mock
 
 from ralph_py.agents.base import UsageTotals
 from ralph_py.findings import Finding
 from ralph_py.interaction import CheckpointContext, PromptKind, PromptRequest
+from ralph_py.reducer import ComponentState
 from ralph_py.tui.app import Mode, RalphTuiApp
 from ralph_py.tui.screens.checkpoint import CheckpointModal
 from ralph_py.tui.screens.component import ComponentScreen
@@ -51,8 +53,6 @@ def _usage_totals() -> UsageTotals:
     totals.total_tokens = 4321
     totals.cost_usd = 1.25
     return totals
-
-
 class TestComponentScreen:
     async def test_enter_opens_detail_and_escape_returns(
         self, tmp_path: Path,
@@ -88,8 +88,8 @@ class TestComponentScreen:
             timeline = render_timeline(
                 app.store.state.components["comp-a"],
             ).plain
-            assert "engineer ✓" in timeline
-            assert "review ✓" in timeline
+            assert "engineer pass" in timeline
+            assert "review pass" in timeline
 
     async def test_follow_toggle(self, tmp_path: Path) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
@@ -106,6 +106,46 @@ class TestComponentScreen:
             assert tail.follow is False
             await pilot.press("f")
             assert tail.follow is True
+
+    async def test_poll_during_screen_mount_is_safe(self, tmp_path: Path) -> None:
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.open_component("comp-a")
+
+            app._poll()
+
+            await pilot.pause()
+            assert isinstance(app.screen, ComponentScreen)
+
+    async def test_findings_rollover_rebuilds_same_length_table(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.open_component("comp-a")
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ComponentScreen)
+            comp = app.store.state.components["comp-a"]
+            comp.recent_findings = [
+                {"phase": "review", "severity": "low", "location": str(i)}
+                for i in range(3)
+            ]
+            screen.refresh_state(app.store.state, None)
+            table = screen.query_one(FindingsTable)
+            assert table.row_count == 3
+            comp.recent_findings = [
+                {"phase": "review", "severity": "low", "location": str(i)}
+                for i in range(1, 4)
+            ]
+            screen.refresh_state(app.store.state, None)
+
+            assert table.row_count == 3
+            assert str(table.get_row_at(2)[3]) == "3"
 
 
 class TestCheckpointModal:
@@ -148,3 +188,29 @@ class TestCheckpointModal:
                 await pilot.press(key)
                 await pilot.pause()
         assert results == [1, 2, None]
+
+    def test_unknown_button_does_not_default_to_approval(self) -> None:
+        modal = CheckpointModal(_checkpoint_request())
+        modal.dismiss = Mock()  # type: ignore[method-assign]
+        event = Mock()
+        event.button.id = "unexpected"
+
+        modal.on_button_pressed(event)
+
+        modal.dismiss.assert_not_called()
+
+
+class TestPhaseTimeline:
+    def test_retry_of_completed_phase_is_still_shown_running(self) -> None:
+        comp = ComponentState(
+            component_id="comp-a", status="running", phase="engineer",
+            attempt=2, phase_history=[{
+                "phase": "engineer", "passed": False,
+                "duration_seconds": 1.0, "attempt": 1,
+            }],
+        )
+
+        timeline = render_timeline(comp).plain
+
+        assert "engineer fail" in timeline
+        assert "engineer ..." in timeline

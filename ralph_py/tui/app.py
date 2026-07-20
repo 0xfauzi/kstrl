@@ -104,16 +104,19 @@ class RalphTuiApp(App[int]):
     # -- data flow -----------------------------------------------------------
 
     def _poll(self) -> None:
-        changed = self.store.apply_events(self.tailer.poll_events())
+        chunk = self.tailer.poll_events()
+        if chunk.truncated:
+            self.store.reset()
+        changed = self.store.apply_events(chunk.events)
         screen = self.screen
         if changed:
-            if isinstance(screen, ComponentScreen):
+            if isinstance(screen, ComponentScreen) and screen.ready:
                 screen.refresh_state(self.store.state, self.store.manifest())
-            else:
+            elif not isinstance(screen, ComponentScreen):
                 screen.post_message(StateChanged(self.store.state))
         # Transcript: ONLY the top component screen's component
         # (finding 3 - never all components at once).
-        if isinstance(screen, ComponentScreen):
+        if isinstance(screen, ComponentScreen) and screen.ready:
             screen.feed_transcript(
                 self._transcript_tailer(screen.component_id).poll(),
             )

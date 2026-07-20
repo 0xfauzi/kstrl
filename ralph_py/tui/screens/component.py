@@ -39,6 +39,11 @@ class ComponentScreen(Screen[None]):
         yield EvidencePanel(id="evidence")
         yield Footer()
 
+    @property
+    def ready(self) -> bool:
+        """Whether compose has mounted the widgets used by poll delivery."""
+        return next(iter(self.query(TranscriptTail)), None) is not None
+
     def on_mount(self) -> None:
         # Initial fill happens here, not at push time - compose has not
         # run yet when the app pushes the screen. Duck-typed pull keeps

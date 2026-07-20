@@ -19,7 +19,7 @@ import pytest
 
 from ralph_py.agents.base import UsageRecord, UsageTotals
 from ralph_py.config import RalphConfig
-from ralph_py.events import EventBus, V1CompatSink
+from ralph_py.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
 from ralph_py.factory import (
     AdversarialAgentSelection,
     ComponentResult,
@@ -897,6 +897,8 @@ class TestSchedulerFacingTransitions:
 
     def test_scheduler_backstop_failure(self, tmp_path: Path) -> None:
         pipeline, manifest, result, _ = _make_pipeline(tmp_path)
+        captured: list[Event] = []
+        pipeline.bus.add_sink(CallbackSink(captured.append))
         comp = manifest.get_component("comp-a")
         assert comp is not None
         pipeline.begin_attempt(comp)
@@ -909,6 +911,11 @@ class TestSchedulerFacingTransitions:
         assert result.failed == ["comp-a"]
         # The worktree entry survives: a leaked worker may still own it.
         assert "comp-a" in pipeline.worktree_paths
+        completed = [e for e in captured if isinstance(e, PhaseCompleted)]
+        assert len(completed) == 1
+        assert completed[0].phase == "engineer"
+        assert completed[0].passed is False
+        assert completed[0].detail == "component timeout"
 
 
 class TestDistillPlacement:

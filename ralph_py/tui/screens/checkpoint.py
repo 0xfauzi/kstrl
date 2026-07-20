@@ -10,7 +10,7 @@ never opens it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -45,6 +45,9 @@ class CheckpointModal(ModalScreen[int | None]):
         Binding("a", "decide(0)", "Approve"),
         Binding("r", "decide(1)", "Reject"),
         Binding("t", "decide(2)", "Retry"),
+        Binding("1", "decide(0)", show=False),
+        Binding("2", "decide(1)", show=False),
+        Binding("3", "decide(2)", show=False),
         Binding("escape", "leave_pending", "Later"),
     ]
 
@@ -91,17 +94,33 @@ class CheckpointModal(ModalScreen[int | None]):
                         diff_text.append("  (no diff captured)\n", style="dim")
                     yield Static(diff_text)
             with Horizontal(id="checkpoint-buttons"):
-                yield Button("Approve (a)", id="approve", variant="success")
-                yield Button("Reject (r)", id="reject", variant="error")
-                yield Button("Retry (t)", id="retry", variant="warning")
+                variants = ("success", "error", "warning")
+                for index, option in enumerate(self.request.options):
+                    yield Button(
+                        f"{option} ({index + 1})",
+                        id=f"choice-{index}",
+                        variant=cast(
+                            Literal[
+                                "default", "primary", "success", "warning",
+                                "error",
+                            ],
+                            variants[min(index, len(variants) - 1)],
+                        ),
+                    )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss({"approve": 0, "reject": 1, "retry": 2}[
-            event.button.id or "approve"
-        ])
+        button_id = event.button.id or ""
+        if not button_id.startswith("choice-"):
+            return
+        try:
+            choice = int(button_id.removeprefix("choice-"))
+        except ValueError:
+            return
+        self.action_decide(choice)
 
     def action_decide(self, choice: int) -> None:
-        self.dismiss(choice)
+        if 0 <= choice < len(self.request.options):
+            self.dismiss(choice)
 
     def action_leave_pending(self) -> None:
         self.dismiss(None)

@@ -48,6 +48,27 @@ if TYPE_CHECKING:
 ANSI_RESTORE = "\x1b[?1049l\x1b[?25h\x1b[0m"
 
 
+def _install_exclusive_root_handler(
+    root_logger: logging.Logger, handler: logging.Handler,
+) -> list[logging.Handler]:
+    """Route root-logger output only to ``handler`` until restored."""
+    previous = list(root_logger.handlers)
+    for existing in previous:
+        root_logger.removeHandler(existing)
+    root_logger.addHandler(handler)
+    return previous
+
+
+def _restore_root_handlers(
+    root_logger: logging.Logger,
+    handler: logging.Handler,
+    previous: list[logging.Handler],
+) -> None:
+    root_logger.removeHandler(handler)
+    for existing in previous:
+        root_logger.addHandler(existing)
+
+
 def run_factory_embedded(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -79,7 +100,9 @@ def run_factory_embedded(
     log_handler = logging.FileHandler(
         run_paths.root / "orchestrator.log", encoding="utf-8",
     )
-    root_logger.addHandler(log_handler)
+    previous_log_handlers = _install_exclusive_root_handler(
+        root_logger, log_handler,
+    )
 
     uninstall = install_signal_handlers(stop)
     handle: OrchestratorHandle | None = None
@@ -115,7 +138,9 @@ def run_factory_embedded(
         if handle is not None:
             handle.join()
         uninstall()
-        root_logger.removeHandler(log_handler)
+        _restore_root_handlers(
+            root_logger, log_handler, previous_log_handlers,
+        )
         log_handler.close()
         try:
             log_fh.close()
@@ -130,10 +155,10 @@ def _plain_fallback(handle: OrchestratorHandle, run_dir: Path) -> int:
     renderer = UIBackedRenderer(PlainUI(no_color=True))
     tailer = RunTailer(run_dir)
     while True:
-        for event in tailer.poll_events():
+        for event in tailer.poll_events().events:
             renderer.handle(event)
         if handle.done():
-            for event in tailer.poll_events():  # final drain
+            for event in tailer.poll_events().events:  # final drain
                 renderer.handle(event)
             return handle.exit_code
         time.sleep(0.5)

@@ -1,5 +1,9 @@
 # Ralph
 
+[![CI](https://github.com/0xfauzi/ralph-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/ralph-loop/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Ralph is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
 The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. Ralph automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work.
@@ -10,32 +14,34 @@ Most agent wrappers are retry loops: run the agent, check if it's done, retry if
 
 ```mermaid
 flowchart TD
-    PRD["PRD + Prompt"] --> FF["Phase 0: Feedforward\nModule map, interfaces,\ndependency graph, conventions"]
-    FF --> Knowledge["Knowledge prefix\nDurable facts from prior components"]
-    Knowledge --> Agent["Implementing agent\nClaude Code, Codex, or custom"]
-    Agent --> P1["Phase 1: Mechanical verification\nTests, typecheck, lint, scope,\nbad patterns, optional self-critique"]
-    P1 -->|fail| Retry["Structured retry context\nSource lines + fix hints"]
+    PRD["PRD + Prompt"] --> FF["Phase 0: Feedforward<br/>Module map, interfaces,<br/>dependency graph, conventions"]
+    FF --> Knowledge["Knowledge prefix<br/>Durable facts from prior components"]
+    Knowledge --> Agent["Implementing agent<br/>Claude Code, Codex, or custom"]
+    Agent --> P1["Phase 1: Mechanical verification<br/>Tests, typecheck, lint, scope,<br/>bad patterns, optional self-critique"]
+    P1 -->|fail| Retry["Structured retry context<br/>Source lines + fix hints"]
     Retry --> Agent
-    P1 -->|pass| P2["Phase 2: Code reviewer\nPRD criteria + concerns:\nscope_creep, test_quality,\ndead_code, error_handling..."]
+    P1 -->|pass| P2["Phase 2: Code reviewer<br/>PRD criteria + concerns:<br/>scope_creep, test_quality,<br/>dead_code, error_handling..."]
     P2 -->|fail| Retry
-    P2 -->|pass| P25["Phase 2.5: Security reviewer\nInjection, auth_bypass,\nhardcoded_secret, crypto,\nrace, SSRF, XSS, DoS\nMapped to OWASP+CWE"]
+    P2 -->|pass| P25["Phase 2.5: Security reviewer<br/>Injection, auth_bypass,<br/>hardcoded_secret, crypto,<br/>race, SSRF, XSS, DoS<br/>Mapped to OWASP+CWE"]
     P25 -->|fail| Retry
-    P25 -->|pass| Distill["Knowledge distiller\nDurable facts written to\n.ralph/knowledge/<comp>/<run>/\nbefore the PR is created"]
-    Distill --> HITL["Optional human checkpoint\npause_before_pr_merge"]
+    P25 -->|pass| Distill["Knowledge distiller<br/>Durable facts written to<br/>.ralph/knowledge/&lt;comp&gt;/&lt;run&gt;/<br/>before the PR is created"]
+    Distill --> HITL["Optional human checkpoint<br/>pause_before_pr_merge"]
     HITL --> PR["Create + merge PR"]
-    PR --> P3["Phase 3: Contract testing\nTier-by-tier merge +\nintegration tests"]
+    PR --> P3["Phase 3: Contract testing<br/>Tier-by-tier merge +<br/>integration tests"]
     P3 -->|fail breaker| Retry
     P3 -->|pass| Done["Done"]
-    P1 --> Journal["Evolution journal\nPatterns, concern hit-rate,\nharness improvement proposals"]
+    P1 --> Journal["Evolution journal<br/>Patterns, concern hit-rate,<br/>harness improvement proposals"]
     P2 --> Journal
     P25 --> Journal
 ```
 
-Phase 0 also includes an architect/PRD-red-team pass at decompose time that halts on blocker-severity spec issues. See [docs/adversarial-design.md](docs/adversarial-design.md) for the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) for every env var, and [docs/runbook.md](docs/runbook.md) for operator failure recovery.
+Phase 0 also includes an architect/PRD-red-team pass at decompose time that halts on blocker-severity spec issues.
+
+**Documentation**: [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
 ## Quick start
 
-Ralph is not published to PyPI (the `ralph-cli` name there is an unrelated project). Install from a clone:
+Ralph is not published to PyPI - the `ralph-cli` name there belongs to an unrelated project. Install from a clone:
 
 ```bash
 git clone https://github.com/0xfauzi/ralph-loop.git
@@ -50,13 +56,17 @@ ralph run 25                       # let the agent work for up to 25 iterations
 
 You need at least one AI coding agent CLI:
 
-| Agent | Install | Models |
-|-------|---------|--------|
+| Agent | Install | Example models |
+|-------|---------|----------------|
 | Claude Code (recommended) | [claude.ai/code](https://claude.ai/code) | sonnet, opus, haiku |
-| OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | o3, o4-mini |
+| OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | gpt-5, o3 |
 | Custom | Any command that reads stdin | - |
 
-**Python-first honesty note**: Ralph works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in ralph.toml, but they get a reduced feedforward context (module map and conventions only).
+Ralph does not validate model names: `[agent].model` is passed straight through to the CLI (`claude --model` / `codex -m`), so any model the installed CLI accepts works.
+
+There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect.
+
+**Python-first**: Ralph works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in ralph.toml, but they get a reduced feedforward context (module map and conventions only).
 
 ## How it works
 
@@ -95,15 +105,13 @@ When the agent signals completion, ralph doesn't just trust it. Every run goes t
 When verification fails, ralph doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
 
 ```
-1. src/api/auth.py:23
-   error: Argument 1 to "verify_password" has incompatible type "str | None"
-
-   21 |     password = request.form.get("password")
-   22 |     user = get_user(username)
- > 23 |     if verify_password(password, user.password_hash):
-   24 |         return create_token(user)
-
-   FIX: Add a None check before calling verify_password, or provide a default value.
+[mypy] Found 1 error in 1 file (checked 14 source files)
+  src/api/auth.py:23 [arg-type] Argument 1 to "verify_password" has incompatible type "str | None"; expected "str"
+    |     21 |     password = request.form.get("password")
+    |     22 |     user = get_user(username)
+    | >   23 |     if verify_password(password, user.password_hash):
+    |     24 |         return create_token(user)
+    hint: Type mismatch in argument - convert or check the value before passing it.
 ```
 
 ### Continuous learning - the harness improves itself
@@ -112,12 +120,12 @@ After each factory run, ralph records outcomes to an evolution journal. Over mul
 
 ```mermaid
 flowchart LR
-    Run1["Factory run N"] --> Record["Record outcomes\n.ralph/evolution.jsonl\n.ralph/experiments.tsv"]
-    Record --> Extract["Extract patterns\nGroup by error signature"]
-    Extract --> Propose["Generate proposals\n.ralph/proposals/*.md"]
+    Run1["Factory run N"] --> Record["Record outcomes<br/>.ralph/evolution.jsonl<br/>.ralph/experiments.tsv"]
+    Record --> Extract["Extract patterns<br/>Group by error signature"]
+    Extract --> Propose["Generate proposals<br/>.ralph/proposals/*.md"]
     Propose --> Review["Human review"]
-    Review -->|approve| Apply["Update CLAUDE.md,\npyproject.toml,\nfeedforward config"]
-    Apply --> Run2["Factory run N+1\nBenefits from\nimproved harness"]
+    Review -->|approve| Apply["Update CLAUDE.md,<br/>pyproject.toml,<br/>feedforward config"]
+    Apply --> Run2["Factory run N+1<br/>Benefits from<br/>improved harness"]
 ```
 
 ```bash
@@ -138,33 +146,33 @@ ralph decompose --spec features.md --project-name myproject
 ralph factory --manifest scripts/ralph/manifest.json --max-parallel 4
 ```
 
-Each component runs in an isolated git worktree with its own PRD. `ralph run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
+Each component runs in an isolated git worktree (`.ralph/worktrees/<run>/<component>`) with its own PRD. `ralph run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
 ```mermaid
 flowchart TD
-    Spec["Markdown spec"] --> Decompose["ralph decompose\nLLM-driven spec decomposition"]
-    Decompose --> Manifest["Manifest\nComponent DAG with dependencies"]
-    Manifest --> Validate["Validate DAG\nTopological sort, cycle detection"]
-    Validate --> Schedule["Schedule components\nRespect dependency order"]
+    Spec["Markdown spec"] --> Decompose["ralph decompose<br/>LLM-driven spec decomposition"]
+    Decompose --> Manifest["Manifest<br/>Component DAG with dependencies"]
+    Manifest --> Validate["Validate DAG<br/>Topological sort, cycle detection"]
+    Validate --> Schedule["Schedule components<br/>Respect dependency order"]
 
-    Schedule --> WT1["Worktree A\nComponent A"]
-    Schedule --> WT2["Worktree B\nComponent B"]
-    Schedule --> WT3["Worktree C\nComponent C"]
+    Schedule --> WT1["Worktree A<br/>Component A"]
+    Schedule --> WT2["Worktree B<br/>Component B"]
+    Schedule --> WT3["Worktree C<br/>Component C"]
 
-    WT1 --> V1["Phase 0-2\nFeedforward + verify + review"]
-    WT2 --> V2["Phase 0-2\nFeedforward + verify + review"]
-    WT3 --> V3["Phase 0-2\nFeedforward + verify + review"]
+    WT1 --> V1["Phase 0-2<br/>Feedforward + verify + review"]
+    WT2 --> V2["Phase 0-2<br/>Feedforward + verify + review"]
+    WT3 --> V3["Phase 0-2<br/>Feedforward + verify + review"]
 
     V1 --> PR1["PR + merge"]
     V2 --> PR2["PR + merge"]
     V3 --> PR3["PR + merge"]
 
-    PR1 --> Contract["Phase 3: Contract testing\nTier-by-tier merge + integration tests"]
+    PR1 --> Contract["Phase 3: Contract testing<br/>Tier-by-tier merge + integration tests"]
     PR2 --> Contract
     PR3 --> Contract
 
     Contract -->|pass| Done["Done"]
-    Contract -->|fail| Bisect["Bisect breaker\nIdentify which component\nbroke integration"]
+    Contract -->|fail| Bisect["Bisect breaker<br/>Identify which component<br/>broke integration"]
     Bisect --> Schedule
 ```
 
@@ -264,10 +272,11 @@ Ralph reads `ralph.toml` at the project root; copy [ralph.toml.example](ralph.to
 ```toml
 # Agent selection
 [agent]
-type = ""              # "claude" | "codex" | "custom"
-command = ""           # shell command (only used when type = "custom")
-model = ""             # e.g. "sonnet" (claude) or "o3" (codex); empty = agent default
+type = ""              # "claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect
+command = ""           # custom agent shell command; overrides type
+model = ""             # e.g. "sonnet" (claude) or "gpt-5" (codex); empty = agent default
 reasoning_effort = ""  # low | medium | high | max (model-dependent)
+budget_usd = ""        # in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)
 
 # Loop behavior
 [run]
@@ -308,7 +317,7 @@ scheduler_backstop_margin = 60.0  # extra slack before the scheduler declares a 
 max_parallel = 4                   # concurrent component workers
 max_retries = 3                    # per-component retry budget across all phases
 retry_delay = 5.0                  # seconds between retry attempts
-use_worktrees = true               # isolate each component in .ralph/worktrees/<id>
+use_worktrees = true               # isolate each component in .ralph/worktrees/<run>/<id>
 single_pr = false                  # one PR for the whole run instead of per-component
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
@@ -399,6 +408,12 @@ lookback_runs = 10                           # past runs to analyze
 auto_propose = true                          # generate proposals after each factory run
 auto_apply_computational = false             # auto-apply computational proposals
 
+# Run-milestone notification hooks (R3.2)
+[notify]
+on_complete = ""       # shell hook fired once when the run finishes; empty = disabled
+on_first_failure = ""  # shell hook fired once on the first component failure
+hook_timeout = 30.0    # seconds before a hook command is killed
+
 # Linear integration (R7.4; default off)
 [linear]
 enabled = false                             # mirror runs into Linear (project/issues/status via GitHub linking)
@@ -453,24 +468,24 @@ This is what happens inside each component's execution loop:
 ```mermaid
 flowchart TD
     subgraph Init["Initialization"]
-        A1["Load config\ntoml + env vars + CLI flags"] --> A2["Load PRD"]
+        A1["Load config<br/>toml + env vars + CLI flags"] --> A2["Load PRD"]
         A2 --> A3["Checkout branch"]
-        A3 --> A4["Run scaffold\n(if configured)"]
-        A4 --> A5["Build feedforward context\nModule map, interfaces,\ndependency graph, conventions"]
+        A3 --> A4["Run scaffold<br/>(if configured)"]
+        A4 --> A5["Build feedforward context<br/>Module map, interfaces,<br/>dependency graph, conventions"]
     end
 
     subgraph Iteration["Iteration (repeats up to N times)"]
-        B1["Build prompt\nfeedforward + retry context + instructions"] --> B2["Run agent\nStream output line by line"]
-        B2 --> B3{"COMPLETE\nmarker?"}
-        B3 -->|No| B4["Enforce allowed paths\nRevert out-of-scope changes"]
+        B1["Build prompt<br/>feedforward + retry context + instructions"] --> B2["Run agent<br/>Stream output line by line"]
+        B2 --> B3{"COMPLETE<br/>marker?"}
+        B3 -->|No| B4["Enforce allowed paths<br/>Revert out-of-scope changes"]
         B4 --> B1
-        B3 -->|Yes| B5["Phase 1: Mechanical verification\nTests, typecheck, lint, scope"]
+        B3 -->|Yes| B5["Phase 1: Mechanical verification<br/>Tests, typecheck, lint, scope"]
     end
 
     subgraph Verify["Verification"]
-        B5 -->|fail| B6["Parse failures\nSource context + fix hints"]
+        B5 -->|fail| B6["Parse failures<br/>Source context + fix hints"]
         B6 --> B1
-        B5 -->|pass| B7["Phase 2: Review\nSecond-opinion agent"]
+        B5 -->|pass| B7["Phase 2: Review<br/>Second-opinion agent"]
         B7 -->|fail| B6
         B7 -->|pass| B8["Complete"]
     end
@@ -494,7 +509,7 @@ flowchart TB
     end
 
     subgraph Execution["Agent execution"]
-        Loop["Agentic loop\n(iterate until COMPLETE)"]
+        Loop["Agentic loop<br/>(iterate until COMPLETE)"]
     end
 
     subgraph Phase1["Phase 1: Mechanical verification"]
@@ -506,11 +521,11 @@ flowchart TB
     end
 
     subgraph Phase2["Phase 2: Review"]
-        Review["Second-opinion agent\nreviews diff against spec"]
+        Review["Second-opinion agent<br/>reviews diff against spec"]
     end
 
     subgraph Phase3["Phase 3: Contract testing"]
-        Contract["Tier-by-tier merge\n+ integration tests"]
+        Contract["Tier-by-tier merge<br/>+ integration tests"]
     end
 
     subgraph Learning["Continuous learning"]
@@ -543,7 +558,7 @@ git clone https://github.com/0xfauzi/ralph-loop.git
 cd ralph-loop
 uv sync
 uv tool install -e .
-uv run pytest tests/           # 1119 tests measured at the time of writing (2026-07)
+uv run pytest tests/           # 1695 tests collected at the time of writing (2026-07)
 uv run mypy ralph_py/ --strict
 uv run ruff check ralph_py/ tests/
 ```
