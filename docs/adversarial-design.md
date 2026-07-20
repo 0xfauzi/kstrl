@@ -151,6 +151,11 @@ uv run python -m ralph_py.calibration compare \
 
 `RALPH_CALIBRATION_REVIEWER_MODEL` optionally pins the reviewer model within the overridden family. Override runs record their model id as `<base>+reviewer:<type>/<model>` so `compare` surfaces the family change as its cross-model warning instead of hiding it.
 
+#### Recorded baselines
+
+- **Same-family (2026-07-20, haiku):** `tests/adversarial_fixtures/_results/baseline-20260720-113835.json`. Reviewer 4/4, security 6/6, security_hard 4/4 - all detected 3/3, reviewer/security false-positive rate 0.0 (0/8 clean fixtures). This is Baseline 1 above.
+- **Cross-family (codex reviewer):** NOT YET CAPTURED. Until Baseline 2 is run, the same-family-vs-cross-family correlated-miss delta is uncomputed, so the effect size of the R7.1 rotation is not yet evidenced (see Known limitation 1). R7.1 stays `[~]` in `docs/remediation-roadmap.md` pending this run.
+
 ### Model drift (R5.5, H2-extended)
 
 Baselines record the model id, and an always-run structural test (`tests/test_calibration.py::TestFixtureStructure::test_warns_when_calibration_model_differs_from_newest_baseline`) warns - never fails - when `RALPH_CALIBRATION_MODEL` differs from the newest baseline's recorded model. H2 extended: calibration re-runs on model change, not just prompt change; a detection rate measured against an older model does not transfer.

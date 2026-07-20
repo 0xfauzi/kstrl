@@ -1,0 +1,716 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20260720-113835",
+  "runs_per_fixture": 3,
+  "summary": {
+    "security": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_hard": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_cwe": {
+        "CWE-639": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-367": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-208": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect": {
+      "fixtures_total": 3,
+      "fixtures_detected": 3,
+      "detection_rate": 1.0,
+      "by_category": {
+        "spec_issues": {
+          "fixtures_total": 3,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_allowed_paths": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "allowed_paths": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "security",
+      "fixture_id": "sec-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:8-14"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:5-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:5-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:5-12"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:15"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-14"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:24"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-06-multihop-authz",
+      "category": null,
+      "cwe": "CWE-639",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:41-49"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical authz_bypass at src/blog/moderation.py:25-49"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:24-48"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-07-second-order-injection",
+      "category": null,
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:25-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/projects/analytics.py:24-29"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/projects/analytics.py:24-28"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-08-toctou-race",
+      "category": null,
+      "cwe": "CWE-367",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high race_condition at src/wallet/redeem.py:24-35"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:17-36"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:27-35"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-09-timing-oracle",
+      "category": null,
+      "cwe": "CWE-208",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high auth_bypass at src/webhooks/signing.py:18-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical broken_crypto at src/webhooks/signing.py:14-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical broken_crypto at src/webhooks/signing.py:15-23"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/parser.py:5, 15-31"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/parser.py:16-17, 20-22, 25-28, 31"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:15-30"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py (entire diff chunk)"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:6-17"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:38"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:24-38"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:26-39"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 10 issues (exact_kind_match=True): [('blocker', 'undefined_failure_mode'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('blocker', 'unstated_assumption'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 10 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 13 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 16 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'unstated_assumption'), ('minor', 'ambiguity')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=False): [('blocker', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=True): [('blocker', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('minor', 'ambiguity')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 17 issues (exact_kind_match=True): [('blocker', 'ambiguity'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 13 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'undefined_failure_mode'), ('blocker', 'missing_detail'), ('blocker', 'missing_detail'), ('major', 'contradiction'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 12 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "category": "allowed_paths",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/url-slugifier/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/ralph/feature/url-slugifier/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/ralph/feature/url-slugifier/']"
+        }
+      ]
+    }
+  ],
+  "false_positive_analysis": {
+    "fp_rate_max": 0.34,
+    "roles": {
+      "security_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      }
+    }
+  }
+}
