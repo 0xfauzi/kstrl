@@ -1,16 +1,16 @@
-# Ralph
+# kstrl
 
-[![CI](https://github.com/0xfauzi/ralph-loop/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/ralph-loop/actions/workflows/ci.yml)
+[![CI](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Ralph is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
+kstrl (pronounced "kestrel", formerly kstrl) is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
-The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. Ralph automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
+The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. kstrl automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
 
-## What makes ralph different
+## What makes kstrl different
 
-Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. Ralph applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
+Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. kstrl applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
 
 ```mermaid
 flowchart TD
@@ -24,7 +24,7 @@ flowchart TD
     P2 -->|fail| Retry
     P2 -->|pass| P25["Phase 2.5: Security reviewer<br/>Injection, auth_bypass,<br/>hardcoded_secret, crypto,<br/>race, SSRF, XSS, DoS<br/>Mapped to OWASP+CWE"]
     P25 -->|fail| Retry
-    P25 -->|pass| Distill["Knowledge distiller<br/>Durable facts written to<br/>.ralph/knowledge/&lt;comp&gt;/&lt;run&gt;/<br/>before the PR is created"]
+    P25 -->|pass| Distill["Knowledge distiller<br/>Durable facts written to<br/>.kstrl/knowledge/&lt;comp&gt;/&lt;run&gt;/<br/>before the PR is created"]
     Distill --> HITL["Optional human checkpoint<br/>pause_before_pr_merge"]
     HITL --> PR["Create + merge PR"]
     PR --> P3["Phase 3: Contract testing<br/>Tier-by-tier merge +<br/>integration tests"]
@@ -41,20 +41,19 @@ Phase 0 also includes an architect/PRD-red-team pass at decompose time that halt
 
 ## Quick start
 
-Ralph is not published to PyPI - the `ralph-cli` name there belongs to an unrelated project. Install from a clone:
+Install from PyPI (or from a clone for development):
 
 ```bash
-git clone https://github.com/0xfauzi/ralph-loop.git
-cd ralph-loop
-uv tool install -e .               # installs the `ralph` command (requires Python 3.11+, uv)
+uv tool install kstrl              # installs `ks` and `kstrl` (requires Python 3.11+, uv)
+# or: git clone https://github.com/0xfauzi/kstrl.git && cd kstrl && uv tool install -e .
 
 cd your-project
-ralph init .                       # scaffold ralph.toml and prompt/PRD templates
-$EDITOR scripts/ralph/prd.json     # define what to build (user stories + acceptance criteria)
-ralph run 25                       # let the agent work for up to 25 iterations
+ks init .                          # scaffold kstrl.toml and prompt/PRD templates
+$EDITOR scripts/kstrl/prd.json     # define what to build (user stories + acceptance criteria)
+ks run 25                          # let the agent work for up to 25 iterations
 ```
 
-Factory runs on a terminal open a live dashboard automatically (`--no-tui` opts out); `ralph dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ralph status` prints the same state for scripts and CI.
+Factory runs on a terminal open a live dashboard automatically (`--no-tui` opts out); `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI.
 
 You need at least one AI coding agent CLI:
 
@@ -64,17 +63,17 @@ You need at least one AI coding agent CLI:
 | OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | gpt-5, o3 |
 | Custom | Any command that reads stdin | - |
 
-Ralph does not validate model names: `[agent].model` is passed straight through to the CLI (`claude --model` / `codex -m`), so any model the installed CLI accepts works.
+kstrl does not validate model names: `[agent].model` is passed straight through to the CLI (`claude --model` / `codex -m`), so any model the installed CLI accepts works.
 
 There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect.
 
-**Python-first**: Ralph works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in ralph.toml, but they get a reduced feedforward context (module map and conventions only).
+**Python-first**: kstrl works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in kstrl.toml, but they get a reduced feedforward context (module map and conventions only).
 
 ## How it works
 
 ### Phase 0: Feedforward - give the agent context before it starts
 
-Before the agent writes a single line, ralph computationally analyzes the codebase and injects structural context into the prompt. No LLM calls, no token cost - pure static analysis:
+Before the agent writes a single line, kstrl computationally analyzes the codebase and injects structural context into the prompt. No LLM calls, no token cost - pure static analysis:
 
 - **Module map** - directory tree with file counts and lines of code
 - **Public interfaces** - classes and function signatures extracted via Python's `ast` module
@@ -85,7 +84,7 @@ This reduces wasted iterations. The agent knows "this project uses httpx, not re
 
 ### Phases 1-3: Verification - check the output, not just the completion marker
 
-When the agent signals completion, ralph doesn't just trust it. Every run goes through mechanical verification:
+When the agent signals completion, kstrl doesn't just trust it. Every run goes through mechanical verification:
 
 **Phase 1 - Mechanical checks** (computational, fast):
 - Test suite passes
@@ -104,7 +103,7 @@ When the agent signals completion, ralph doesn't just trust it. Every run goes t
 - Runs integration tests at each tier
 - Bisects to identify which component broke integration
 
-When verification fails, ralph doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
+When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
 
 ```
 [mypy] Found 1 error in 1 file (checked 14 source files)
@@ -118,41 +117,41 @@ When verification fails, ralph doesn't dump raw stderr into the retry prompt. It
 
 ### Continuous learning - the harness improves itself
 
-After each factory run, ralph records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements.
+After each factory run, kstrl records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements.
 
 ```mermaid
 flowchart LR
-    Run1["Factory run N"] --> Record["Record outcomes<br/>.ralph/evolution.jsonl<br/>.ralph/experiments.tsv"]
+    Run1["Factory run N"] --> Record["Record outcomes<br/>.kstrl/evolution.jsonl<br/>.kstrl/experiments.tsv"]
     Record --> Extract["Extract patterns<br/>Group by error signature"]
-    Extract --> Propose["Generate proposals<br/>.ralph/proposals/*.md"]
+    Extract --> Propose["Generate proposals<br/>.kstrl/proposals/*.md"]
     Propose --> Review["Human review"]
     Review -->|approve| Apply["Update CLAUDE.md,<br/>pyproject.toml,<br/>feedforward config"]
     Apply --> Run2["Factory run N+1<br/>Benefits from<br/>improved harness"]
 ```
 
 ```bash
-ralph evolve              # analyze recent runs, find patterns
-ralph evolve --status     # show experiment trends (retry rate over time)
+ks evolve              # analyze recent runs, find patterns
+ks evolve --status     # show experiment trends (retry rate over time)
 ```
 
-If the agent keeps triggering the same linter rule across components, `ralph evolve` proposes adding a convention to CLAUDE.md. If typecheck failures recur on Optional types, it proposes a mypy config change. Proposals are written as markdown files for human review.
+If the agent keeps triggering the same linter rule across components, `ks evolve` proposes adding a convention to CLAUDE.md. If typecheck failures recur on Optional types, it proposes a mypy config change. Proposals are written as markdown files for human review.
 
-This is the meta-loop: ralph doesn't just retry - it learns what causes failures and updates its own controls to prevent them.
+This is the meta-loop: kstrl doesn't just retry - it learns what causes failures and updates its own controls to prevent them.
 
 ## Factory mode - parallel multi-component execution
 
-For large features, ralph decomposes a spec into independent components and runs them in parallel:
+For large features, kstrl decomposes a spec into independent components and runs them in parallel:
 
 ```bash
-ralph decompose --spec features.md --project-name myproject
-ralph factory --manifest scripts/ralph/manifest.json --max-parallel 4
+kstrl decompose --spec features.md --project-name myproject
+kstrl factory --manifest scripts/kstrl/manifest.json --max-parallel 4
 ```
 
-Each component runs in an isolated git worktree (`.ralph/worktrees/<run>/<component>`) with its own PRD. `ralph run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
+Each component runs in an isolated git worktree (`.kstrl/worktrees/<run>/<component>`) with its own PRD. `ks run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
 ```mermaid
 flowchart TD
-    Spec["Markdown spec"] --> Decompose["ralph decompose<br/>LLM-driven spec decomposition"]
+    Spec["Markdown spec"] --> Decompose["kstrl decompose<br/>LLM-driven spec decomposition"]
     Decompose --> Manifest["Manifest<br/>Component DAG with dependencies"]
     Manifest --> Validate["Validate DAG<br/>Topological sort, cycle detection"]
     Validate --> Schedule["Schedule components<br/>Respect dependency order"]
@@ -180,23 +179,23 @@ flowchart TD
 
 ## The dashboard - watch the factory work
 
-`ralph factory` on a terminal runs an embedded [Textual](https://github.com/Textualize/textual) dashboard (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `RALPH_NO_TUI=1`). The screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
+`ks factory` on a terminal runs an embedded [Textual](https://github.com/Textualize/textual) dashboard (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `KSTRL_NO_TUI=1`). The screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
 
 The overview board shows every component's status, authoritative phase, attempt, last-event age, and spend - here with `auth-core` and `api-routes` running in parallel workers while `ui-shell` waits on its dependency:
 
-<img src="docs/img/tui-overview.svg" alt="ralph dashboard overview: component board with statuses, phases and cost meter" width="100%">
+<img src="docs/img/tui-overview.svg" alt="kstrl dashboard overview: component board with statuses, phases and cost meter" width="100%">
 
 `enter` drills into a component: the phase timeline with verdicts and durations, the typed adversarial findings stream (severity and reviewing-model attribution), the live engineer transcript, and the evidence paths you would visit if something broke:
 
-<img src="docs/img/tui-detail.svg" alt="ralph component detail: phase timeline, findings, live transcript" width="100%">
+<img src="docs/img/tui-detail.svg" alt="kstrl component detail: phase timeline, findings, live transcript" width="100%">
 
 With `pause_before_pr_merge` enabled, the E6 human checkpoint opens as a real inspection surface - the diff excerpt, both finding streams, and what the attempt cost - instead of a y/n prompt. `a` approves, `r` rejects (fails the component and skips dependents), `t` consumes a retry, `escape` leaves it pending while you look around the dashboard:
 
-<img src="docs/img/tui-checkpoint.svg" alt="ralph E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
+<img src="docs/img/tui-checkpoint.svg" alt="kstrl E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
 
-Keys: `enter` component detail, `escape` back, `f` toggle transcript follow, `c` reopen a pending checkpoint, `q` quit. Quit semantics differ by mode: in `ralph dash` (observe-only) `q` detaches immediately; embedded, `q` asks first - confirming group-kills in-flight agents, runs worktree cleanup, flushes the manifest, and exits 130, and a second `q` (or Ctrl-C) force-kills.
+Keys: `enter` component detail, `escape` back, `f` toggle transcript follow, `c` reopen a pending checkpoint, `q` quit. Quit semantics differ by mode: in `ks dash` (observe-only) `q` detaches immediately; embedded, `q` asks first - confirming group-kills in-flight agents, runs worktree cleanup, flushes the manifest, and exits 130, and a second `q` (or Ctrl-C) force-kills.
 
-The dashboard is a view, never the record. Every run appends typed schema-versioned events to `.ralph/runs/<run_id>/events.jsonl`, per-component engineer transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. `ralph dash` and the embedded view tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. The legacy `.ralph/progress.jsonl` keeps being written byte-compatibly for existing consumers.
+The dashboard is a view, never the record. Every run appends typed schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl`, per-component engineer transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. `ks dash` and the embedded view tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. The legacy `.kstrl/progress.jsonl` keeps being written byte-compatibly for existing consumers.
 
 One honesty note carried through every surface: token and cost figures are CLI self-reports, so whenever any call went unreported the meter renders a `+` marker and treats the total as a lower bound - the dashboard never turns an honest number into a false one.
 
@@ -204,7 +203,7 @@ One honesty note carried through every surface: token and cost figures are CLI s
 
 Agent-generated tests can be written to pass trivially. Approved fixtures are input/output pairs, declared in the PRD, that the agent's code must satisfy - they run during Phase 1 mechanical verification, outside the project's own pytest, so a gamed conftest cannot deselect them.
 
-Fixtures are **off by default**. Enable them in ralph.toml (they also do nothing unless the PRD has a `fixtures` array):
+Fixtures are **off by default**. Enable them in kstrl.toml (they also do nothing unless the PRD has a `fixtures` array):
 
 ```toml
 [fixtures]
@@ -213,7 +212,7 @@ enabled = true
 
 ```json
 {
-  "branchName": "ralph/auth",
+  "branchName": "kstrl/auth",
   "fixtures": [
     {
       "description": "Login returns token",
@@ -246,16 +245,16 @@ Because the PRD is LLM-emitted, fixture definitions are treated as untrusted inp
 - **`function` fixtures run in a subprocess**, never in the harness process. The module/function spec travels as JSON to a `sys.executable` runner with cwd set to the component worktree, the same scrubbed environment, and a timeout. Two consequences: fixtures run under the harness's Python interpreter (not the project's venv), so keep them free of project-only third-party imports; and the `returns` comparison is JSON-shaped (dicts, lists, strings, numbers, booleans, null).
 - **`file` fixtures cannot leave the worktree.** Absolute paths, `..` components, and symlink escapes are rejected.
 
-**Snapshot regression**, behind the same `enabled` flag: when every fixture passes, actual outputs are saved to `snapshot_dir` keyed by component id; later runs fail Phase 1 if a previously-passing fixture fails or its output changes. If a change is intentional, delete `.ralph/snapshots/<component>.json` to reset the baseline. Snapshots resolve against the repo root, not the worktree, so they survive worktree recreation between runs.
+**Snapshot regression**, behind the same `enabled` flag: when every fixture passes, actual outputs are saved to `snapshot_dir` keyed by component id; later runs fail Phase 1 if a previously-passing fixture fails or its output changes. If a change is intentional, delete `.kstrl/snapshots/<component>.json` to reset the baseline. Snapshots resolve against the repo root, not the worktree, so they survive worktree recreation between runs.
 
 See the `[fixtures]` keys in the configuration reference below.
 
 ## Why not just use Claude Code directly?
 
-You can, and for small tasks you should. Ralph is for when you want to:
+You can, and for small tasks you should. kstrl is for when you want to:
 
 - **Define success criteria before starting** - acceptance criteria, path restrictions - not just "make it work"
-- **Walk away** - Ralph runs unattended with structured verification, not just a completion marker
+- **Walk away** - kstrl runs unattended with structured verification, not just a completion marker
 - **Watch it without babysitting it** - a live dashboard over a replayable event log; attach, detach, or inspect after the fact
 - **Give the agent context** - feedforward injection means fewer wasted iterations discovering the codebase
 - **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
@@ -287,7 +286,7 @@ Run `ks COMMAND --help` for the full option list of any command.
 
 ## Configuration
 
-Ralph reads `ralph.toml` at the project root; copy [ralph.toml.example](ralph.toml.example) to start. Precedence: CLI flags > environment variables > ralph.toml > dataclass defaults. `ralph config show` prints the fully resolved config with the source of each value.
+kstrl reads `kstrl.toml` at the project root; copy [kstrl.toml.example](kstrl.toml.example) to start. Precedence: CLI flags > environment variables > kstrl.toml > dataclass defaults. `ks config show` prints the fully resolved config with the source of each value.
 
 <!-- BEGIN GENERATED: config-reference -->
 <!-- Generated by scripts/gen_docs.py - do not edit by hand. -->
@@ -461,7 +460,7 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 
 ```json
 {
-  "branchName": "ralph/login-feature",
+  "branchName": "kstrl/login-feature",
   "allowedPaths": ["src/", "tests/"],
   "userStories": [
     {
@@ -480,7 +479,7 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 }
 ```
 
-The agent updates `passes` and `notes` as it works. Ralph reads these between iterations to decide whether to continue. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify.
+The agent updates `passes` and `notes` as it works. kstrl reads these between iterations to decide whether to continue. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify.
 
 `allowedPaths` is optional for a hand-written PRD (it feeds the Phase 1 diff-scope check); the architect is required to emit it for every decomposed component.
 
@@ -579,8 +578,8 @@ For multi-component factory runs, each component goes through this pipeline inde
 ## Development
 
 ```bash
-git clone https://github.com/0xfauzi/ralph-loop.git
-cd ralph-loop
+git clone https://github.com/0xfauzi/kstrl.git
+cd kstrl-loop
 uv sync
 uv tool install -e .
 uv run pytest tests/           # 1777 tests collected at the time of writing (2026-07)

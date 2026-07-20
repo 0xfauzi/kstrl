@@ -37,7 +37,7 @@ from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
 from kstrl.tui.state import StateStore
 from kstrl.tui.tail import RunTailer, TextTailer
-from kstrl.tui.theme import RALPH_THEME
+from kstrl.tui.theme import KSTRL_THEME
 
 DEFAULT_POLL_INTERVAL = 0.2  # measured, spike G1
 
@@ -49,7 +49,7 @@ class Mode(StrEnum):
 
 class KstrlTuiApp(App[int]):
     CSS_PATH = "styles.tcss"
-    TITLE = "ralph"
+    TITLE = "kstrl"
     BINDINGS = [
         Binding("q", "quit_or_detach", "Detach"),
         # Spike finding 1: raw mode delivers ctrl+c as a KEY - unbound
@@ -82,8 +82,8 @@ class KstrlTuiApp(App[int]):
         self._stopping = False
 
     def on_mount(self) -> None:
-        self.register_theme(RALPH_THEME)
-        self.theme = "ralph"
+        self.register_theme(KSTRL_THEME)
+        self.theme = "kstrl"
         self.push_screen(OverviewScreen(
             observe_only=self.mode is Mode.DASH,
         ))

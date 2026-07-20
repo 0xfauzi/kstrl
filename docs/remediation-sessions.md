@@ -1,5 +1,7 @@
 # Remediation Execution Plan: Copy/Paste Session Prompts
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 Companion to `docs/remediation-roadmap.md` (the WHAT). This file is the HOW:
 one prompt per Claude Code session, grouped into waves you can run in
 parallel. Paste a prompt into a fresh session, review the PR it produces,

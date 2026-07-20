@@ -2,7 +2,7 @@
 
 A tiny security-relevant utility that signs and verifies messages with HMAC-SHA256.
 Single self-contained Python module, single component. Used as a cheap end-to-end
-validation target for the Ralph factory pipeline.
+validation target for the kstrl factory pipeline.
 
 ## Functional requirements
 

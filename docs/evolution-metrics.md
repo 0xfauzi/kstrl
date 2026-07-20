@@ -4,7 +4,7 @@ This document defines every metric the evolution layer records: what is
 measured, where it comes from, and what it does NOT mean. Definitions
 describe the code as implemented (R6.4); nothing here is aspirational.
 
-## Journal: `.ralph/evolution.jsonl`
+## Journal: `.kstrl/evolution.jsonl`
 
 Append-only JSONL. Every entry carries `schema_version` so future format
 migrations are detectable.
@@ -12,7 +12,7 @@ migrations are detectable.
 - **Version 2** (current): structured failure signatures (R6.1).
 - **Version 1**: entries without a `schema_version` field (pre-R6
   shape). Wave 1 (R4.1) archived the polluted v1 journals to
-  `.ralph/archive/`; they are kept for forensic reference only and are
+  `.kstrl/archive/`; they are kept for forensic reference only and are
   never read by current metrics. Fresh journals contain v2 entries only.
 
 ### Entry types
@@ -44,7 +44,7 @@ migrations are detectable.
 | `findings_summary` | Aggregates of `findings`: `total`, `by_phase`, `by_severity`, `by_category`, `by_owasp`, `infrastructure_errors`. |
 | `usage` | R3.1 per-phase token/cost self-reports (lower bounds when `unreported_calls` > 0). |
 
-## Experiments: `.ralph/experiments.tsv`
+## Experiments: `.kstrl/experiments.tsv`
 
 One row per factory run, appended by `record_run`. Columns:
 
@@ -64,7 +64,7 @@ One row per factory run, appended by `record_run`. Columns:
 Rows written before a column existed keep their shorter header;
 `get_experiment_trends` (csv.DictReader) tolerates both shapes.
 
-## Concern hit rate (`ralph evolve` internals, D8)
+## Concern hit rate (`ks evolve` internals, D8)
 
 `get_concern_hit_rate` consumes `findings_summary.by_category` on
 `component_result` entries (R6.2). A component counts as "with concern"
@@ -74,18 +74,18 @@ non-execution, not adversarial signal, and are excluded. `by_category`
 in the result sums finding counts (not component counts) per category
 across the window.
 
-## Proposals: `.ralph/proposals/prop-NNN.md`
+## Proposals: `.kstrl/proposals/prop-NNN.md`
 
-- IDs are monotonic across `ralph evolve` invocations: numbering
+- IDs are monotonic across `ks evolve` invocations: numbering
   continues after the highest `prop-NNN.md` already on disk (R6.2).
 - Existing proposal files are never overwritten; a proposal whose title
   already exists on disk is skipped, not duplicated.
-- `ralph evolve --apply PROP-NNN` (or `all`) really applies only
+- `ks evolve --apply PROP-NNN` (or `all`) really applies only
   convention-type proposals (computational, target `claude_md`): after
   explicit confirmation it appends the convention to the project
   CLAUDE.md `## Agent Learnings` section and stamps the proposal file
   with `**Applied**: <timestamp>` so a re-apply is a no-op.
   `[evolution] auto_apply_computational = true` skips the confirmation
   prompt. Every other target prints manual instructions (R6.3).
-- `[evolution] auto_propose = false` restricts `ralph evolve` to
+- `[evolution] auto_propose = false` restricts `ks evolve` to
   pattern reporting; no proposal files are generated.

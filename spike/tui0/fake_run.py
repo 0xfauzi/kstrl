@@ -1,10 +1,10 @@
-"""Synthetic Ralph run generator for the TUI spike (Stage 0).
+"""Synthetic kstrl run generator for the TUI spike (Stage 0).
 
 Writes a plausible schema-v2 run directory:
 
-    <out>/.ralph/runs/<run_id>/events.jsonl
-    <out>/.ralph/runs/<run_id>/components/<comp_id>/engineer.jsonl
-    <out>/.ralph/runs/<run_id>/components/<comp_id>/engineer.log
+    <out>/.kstrl/runs/<run_id>/events.jsonl
+    <out>/.kstrl/runs/<run_id>/components/<comp_id>/engineer.jsonl
+    <out>/.kstrl/runs/<run_id>/components/<comp_id>/engineer.log
 
 Every record carries ``t_emit`` (time.time() at write) so a tailer can
 measure end-to-end latency. ``--rate`` scales event frequency (1.0 =
@@ -12,7 +12,7 @@ realistic, 10.0 = storm). ``--torn-tail-every N`` writes a partial JSON
 line (no newline), flushes, sleeps 200ms, then completes it - the tailer
 must never crash or drop records on this.
 
-This is a spike artifact: stdlib only, no ralph_py imports.
+This is a spike artifact: stdlib only, no kstrl imports.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ SEVERITIES = ["critical", "high", "medium", "low", "advisory"]
 CATEGORIES = ["scope_creep", "security_concern", "test_quality", "missing_error_handling"]
 
 TRANSCRIPT_LINES = [
-    "Reading PRD stories from scripts/ralph/feature/{c}/prd.json",
+    "Reading PRD stories from scripts/kstrl/feature/{c}/prd.json",
     "Running: uv run pytest tests/ -x -q",
     "  12 passed in 3.41s",
     "Editing src/{c}/handler.py: add retry wrapper around fetch()",
@@ -41,7 +41,7 @@ TRANSCRIPT_LINES = [
 
 class RunWriter:
     def __init__(self, out: Path, run_id: str, torn_every: int, seed: int) -> None:
-        self.run_dir = out / ".ralph" / "runs" / run_id
+        self.run_dir = out / ".kstrl" / "runs" / run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.run_id = run_id
         self.events_path = self.run_dir / "events.jsonl"

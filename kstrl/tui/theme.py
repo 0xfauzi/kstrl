@@ -1,4 +1,4 @@
-"""The Ralph theme: one committed palette, one accent (design pass).
+"""The kstrl theme: one committed palette, one accent (design pass).
 
 Direction (user-confirmed): dense pro-tool register, warm amber
 identity - a factory control room, not a stock Textual demo. Rules:
@@ -47,8 +47,8 @@ MUTED = "#a2967f"     # dim ink for secondary text (>=4.5:1 on BACKGROUND)
 
 EMPTY_CELL = "·"      # dim placeholder; a "-" column reads as broken
 
-RALPH_THEME = Theme(
-    name="ralph",
+KSTRL_THEME = Theme(
+    name="kstrl",
     primary=ACCENT,
     secondary=STEEL,
     accent=ACCENT,
@@ -70,7 +70,7 @@ RALPH_THEME = Theme(
 )
 
 # status -> (glyph, theme color) - the single source of truth.
-# Unicode by user decision: every terminal ralph targets is UTF-8;
+# Unicode by user decision: every terminal kstrl targets is UTF-8;
 # the plain-mode/ascii fallback paths never render these.
 STATUS_GLYPHS: dict[str, tuple[str, str]] = {
     "pending": ("○", MUTED),

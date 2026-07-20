@@ -1,5 +1,7 @@
 # Remediation Roadmap: Full-System Review Fixes to A+
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 Durable tracker for fixing every finding from the 2026-07-13 full-system review
 (report: https://claude.ai/code/artifact/0996ac84-8acf-4000-a526-72d4b0994832)
 and raising every review dimension to A+.
@@ -30,6 +32,9 @@ Process rules that bind this plan:
 1. **Install story** (R2.5): publish `ralph-cli` to PyPI under a new unclaimed
    name (`ralph-factory`?) OR document clone-install as the only path. The
    current README command installs an unrelated project.
+   **Decided 2026-07-20: the project renamed to kstrl (CLI `ks`); publish
+   to PyPI as `kstrl`** (name verified unclaimed; user claims it with
+   `uv build && uv publish` post-merge, rename PR series #122-#125).
 2. **Second model family for review rotation** (R7.1): which family reviews
    Claude-engineered code (codex CLI is already an adapter). Needed before the
    correlated-failure gate in the A+ criteria can be measured.

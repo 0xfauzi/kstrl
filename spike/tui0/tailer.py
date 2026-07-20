@@ -1,6 +1,6 @@
 """Polling JSONL/text tailers for the TUI spike.
 
-The production shape (graduates to ralph_py/tui/tail.py in PR C):
+The production shape (graduates to kstrl/tui/tail.py in PR C):
 byte-offset polling with a partial-line buffer, tolerant of torn tails
 (a JSON line written in two flushes) and file truncation/replacement.
 Stdlib only.

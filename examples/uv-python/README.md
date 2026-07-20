@@ -1,6 +1,6 @@
-# uv + Ralph example project
+# uv + kstrl example project
 
-This directory is a **minimal uv-managed Python project** (via `pyproject.toml`) that includes Ralph prompt and PRD files under `scripts/kstrl/`.
+This directory is a **minimal uv-managed Python project** (via `pyproject.toml`) that includes kstrl prompt and PRD files under `scripts/kstrl/`.
 
 ## Requirements
 
@@ -24,28 +24,28 @@ uv run pytest
 Run the example CLI:
 
 ```bash
-uv run ralph-uv-example Alice
+uv run kstrl-uv-example Alice
 ```
 
-## Ralph (agent loop) in this example
+## kstrl (agent loop) in this example
 
-Ralph uses files in:
+kstrl uses files in:
 - `scripts/kstrl/` (prompt, PRD, progress, and understanding prompts)
 
 Try a **dry run** (just echo the prompt through):
 
 ```bash
-AGENT_CMD="cat" RALPH_BRANCH="" uv run python -m ralph_py run 1
+AGENT_CMD="cat" KSTRL_BRANCH="" uv run python -m kstrl run 1
 ```
 
 Try a **fake agent** that immediately completes:
 
 ```bash
-AGENT_CMD="printf 'hello\\n<promise>COMPLETE</promise>\\n'" RALPH_BRANCH="" uv run python -m ralph_py run 3
+AGENT_CMD="printf 'hello\\n<promise>COMPLETE</promise>\\n'" KSTRL_BRANCH="" uv run python -m kstrl run 3
 ```
 
 Notes:
-- This example directory is inside the top-level git repo, so **branch checkout would affect the main repo**. Use `RALPH_BRANCH=""` to disable branch checkout while you experiment.
+- This example directory is inside the top-level git repo, so **branch checkout would affect the main repo**. Use `KSTRL_BRANCH=""` to disable branch checkout while you experiment.
 - The agent instructions live in `scripts/kstrl/prompt.md`.
 - The PRD lives in `scripts/kstrl/prd.json`.
 
@@ -53,18 +53,18 @@ Notes:
 
 ```bash
 # Force plain output (no rich UI)
-RALPH_UI=plain uv run python -m ralph_py run 1
+KSTRL_UI=plain uv run python -m kstrl run 1
 
 # ASCII separators (no box-drawing chars)
-RALPH_ASCII=1 uv run python -m ralph_py run 1
+KSTRL_ASCII=1 uv run python -m kstrl run 1
 
 # Disable ANSI colors
-NO_COLOR=1 uv run python -m ralph_py run 1
+NO_COLOR=1 uv run python -m kstrl run 1
 ```
 
 ## Codex knobs
 
 ```bash
 # Lower reasoning effort (faster/cheaper; model-dependent)
-MODEL_REASONING_EFFORT=low uv run python -m ralph_py run 1
+MODEL_REASONING_EFFORT=low uv run python -m kstrl run 1
 ```

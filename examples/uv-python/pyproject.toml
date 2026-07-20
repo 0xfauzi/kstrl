@@ -1,15 +1,15 @@
 [project]
-name = "ralph-uv-example"
+name = "kstrl-uv-example"
 version = "0.1.0"
-description = "Example uv-managed Python project that includes the Ralph harness."
+description = "Example uv-managed Python project that includes the kstrl harness."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "ralph-py",
+    "kstrl",
 ]
 
 [project.scripts]
-ralph-uv-example = "ralph_uv_example.cli:main"
+kstrl-uv-example = "kstrl_uv_example.cli:main"
 
 [dependency-groups]
 dev = [
@@ -22,7 +22,7 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ralph_uv_example"]
+packages = ["src/kstrl_uv_example"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -36,4 +36,4 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = []
 
 [tool.uv.sources]
-ralph-py = { path = "../../", editable = true }
+kstrl = { path = "../../", editable = true }

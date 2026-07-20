@@ -1692,7 +1692,7 @@ def decompose(
     "tui",
     default=None,
     help="Embedded dashboard (default: auto - on when stdin/stdout are "
-         "TTYs and --ui is not plain; RALPH_NO_TUI=1 forces off)",
+         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
 )
 def factory(
     tui: bool | None,

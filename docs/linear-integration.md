@@ -19,22 +19,22 @@ team_id = "540e2302-e91c-42a7-92d7-e2f274bbf298"   # your team UUID
 ```
 
 ```sh
-export RALPH_LINEAR_TOKEN="lin_api_..."   # or an OAuth app-actor token
+export KSTRL_LINEAR_TOKEN="lin_api_..."   # or an OAuth app-actor token
 ```
 
 The token env var NAME is configurable (`token_env`); the token value
 never appears in code, config files, logs, or error messages. All
-knobs: see `docs/env-vars.md` and `ralph.toml.example`.
+knobs: see `docs/env-vars.md` and `kstrl.toml.example`.
 
 ## What happens where
 
 | Moment | Linear effect | Mechanism |
 |---|---|---|
-| `ralph decompose` | Project created; one issue per component (stories as a checklist); non-blocker spec_issues filed as Triage issues | `linear.sync_decompose`, called from `decompose_spec` |
-| Branch creation | Issue moves to In Progress when the PR opens | Issue identifier rides the branch name (`ralph/factory/exc-42-<comp>`); zero API calls |
+| `ks decompose` | Project created; one issue per component (stories as a checklist); non-blocker spec_issues filed as Triage issues | `linear.sync_decompose`, called from `decompose_spec` |
+| Branch creation | Issue moves to In Progress when the PR opens | Issue identifier rides the branch name (`kstrl/factory/exc-42-<comp>`); zero API calls |
 | PR merge | Issue moves to Done | `Fixes EXC-42` trailer in the PR body; zero API calls |
 | Component failure / budget halt | Comment on the issue | `LinearSink` on the progress log |
-| `ralph retry` / resume | Same issues updated, never duplicated | ids persisted in the manifest |
+| `ks retry` / resume | Same issues updated, never duplicated | ids persisted in the manifest |
 
 Status transitions therefore cost ralph **zero** API calls; the only
 mutations are decompose-time creates and failure comments. Per-team
@@ -168,7 +168,7 @@ ralph act as its own app identity instead:
    workspace-scoped app installs; this is roadmap user decision 3).
 5. Exchange the returned `code` for a token:
    `curl -X POST https://api.linear.app/oauth/token -d "grant_type=authorization_code" -d "code=<CODE>" -d "redirect_uri=<CALLBACK>" -d "client_id=<CLIENT_ID>" -d "client_secret=<CLIENT_SECRET>"`
-6. Put the resulting access token in `RALPH_LINEAR_TOKEN` and set
+6. Put the resulting access token in `KSTRL_LINEAR_TOKEN` and set
    `auth_mode = "oauth"` (or leave `auto`). No ralph code changes are
    needed - the client already sends OAuth tokens as
    `Authorization: Bearer`.

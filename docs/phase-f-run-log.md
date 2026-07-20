@@ -1,5 +1,7 @@
 # Phase F: Real-world Validation Run Log
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 Spec: `examples/file-upload-spec.md`
 Sandbox: `/tmp/ralph-phase-f-sandbox/`
 Date: 2026-05-27
