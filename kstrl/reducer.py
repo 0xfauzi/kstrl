@@ -32,6 +32,9 @@ from kstrl.observability import latest_run_id, parse_event_ts, read_progress_eve
 
 # Bounded so a security-heavy run cannot bloat the state.
 MAX_RECENT_FINDINGS = 50
+MAX_SPEC_ISSUES = 100
+MAX_ARTIFACTS = 100
+SPEC_ISSUE_SEVERITIES = frozenset({"blocker", "major", "minor"})
 
 
 @dataclass
@@ -89,6 +92,12 @@ class RunState:
     max_total_tokens: int = 0
     max_adversarial_calls: int = 0
     unknown_events: int = 0
+    # Decompose vocabulary (run-scoped). Counts are complete; the lists
+    # are FIFO-bounded so a pathological stream cannot grow state.
+    spec_issue_counts: dict[str, int] = field(default_factory=dict)
+    spec_issues: list[dict[str, str]] = field(default_factory=list)
+    # {"label", "path", "component"} per artifact_written.
+    artifacts: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def kind(self) -> str:
@@ -179,6 +188,37 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             comp.last_event_ts = event.ts or comp.last_event_ts
             if not event.passed:
                 comp.error = f"contract failed at tier {event.tier}"
+        return
+
+    if isinstance(event, ev.SpecIssueRecorded):
+        severity = (
+            event.severity
+            if event.severity in SPEC_ISSUE_SEVERITIES
+            else "unknown"
+        )
+        state.spec_issue_counts[severity] = (
+            state.spec_issue_counts.get(severity, 0) + 1
+        )
+        state.spec_issues.append({
+            "severity": severity,
+            "kind": event.kind,
+            "summary": event.summary,
+            "location": event.location,
+            "suggestion": event.suggestion,
+        })
+        if len(state.spec_issues) > MAX_SPEC_ISSUES:
+            del state.spec_issues[0]
+        return
+    if isinstance(event, ev.ArtifactWritten):
+        # Run-scoped even when a component is stamped (per-component
+        # PRDs): artifacts are a run-level record.
+        state.artifacts.append({
+            "label": event.label,
+            "path": event.path,
+            "component": event.component,
+        })
+        if len(state.artifacts) > MAX_ARTIFACTS:
+            del state.artifacts[0]
         return
 
     if not event.component:
