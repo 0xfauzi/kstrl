@@ -1470,9 +1470,8 @@ def decompose(
             )
             sys.exit(2)
         from kstrl.runid import mint_run_id
+        from kstrl.tui.dispatch import initial_screens_for_kind
         from kstrl.tui.embed import EmbeddedContext, run_embedded
-        from kstrl.tui.screens.component import ComponentScreen
-        from kstrl.tui.screens.overview import OverviewScreen
 
         def _target(embed_ctx: EmbeddedContext) -> int:
             command_run = open_command_run(
@@ -1487,10 +1486,9 @@ def decompose(
         sys.exit(run_embedded(
             _target, root_dir=root_dir,
             run_id=mint_run_id("decompose"),
-            screen_factory=lambda: [
-                OverviewScreen(observe_only=False),
-                ComponentScreen("architect"),
-            ],
+            screen_factory=initial_screens_for_kind(
+                "decompose", observe_only=False,
+            ),
         ))
 
     command_run = open_command_run(
@@ -2473,10 +2471,14 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
         _sys.exit(1)
 
     from kstrl.tui.app import KstrlTuiApp, Mode
+    from kstrl.tui.dispatch import initial_screens_for_kind
 
     app = KstrlTuiApp(
         run_dir=ref.run_dir, root_dir=root_dir,
         mode=Mode.DASH, poll_interval=poll,
+        screen_factory=initial_screens_for_kind(
+            ref.kind, observe_only=True,
+        ),
     )
     try:
         code = app.run()
@@ -2530,6 +2532,14 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     is_flag=True,
     help="Disable colors",
 )
+@click.option(
+    "--tui/--no-tui",
+    "tui",
+    default=None,
+    help="Open the dashboard for the newest run (default: auto - on "
+         "when stdin/stdout are TTYs, --ui is not plain, and --watch "
+         "is not set; KSTRL_NO_TUI=1 forces off)",
+)
 def status(
     root: Path | None,
     manifest_path: Path | None,
@@ -2538,20 +2548,55 @@ def status(
     interval: float,
     ui: str,
     no_color: bool,
+    tui: bool | None,
 ) -> None:
     """Show per-component status from the manifest + progress log.
 
-    R3.2: joins the factory manifest with the ProgressLog (default
-    .kstrl/progress.jsonl): per component status, retries, branch,
-    timestamps, plus phase, attempt, last-event age, usage totals and
-    evidence paths for the latest run found in the log. Works
-    manifest-only when no log exists.
+    On a TTY this opens the dashboard for the newest run of any kind
+    (post-mortem or live); the plain text report remains the contract
+    for pipes/CI, --no-tui, --watch, and KSTRL_NO_TUI=1.
+
+    R3.2 (plain report): joins the factory manifest with the
+    ProgressLog (default .kstrl/progress.jsonl): per component status,
+    retries, branch, timestamps, plus phase, attempt, last-event age,
+    usage totals and evidence paths for the latest run found in the
+    log. Works manifest-only when no log exists.
     """
     import time as _time
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+    use_tui = tui if tui is not None else (
+        sys.stdout.isatty()
+        and sys.stdin.isatty()
+        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and _normalize_ui_mode(ui) != "plain"
+        and not watch
+    )
+    if use_tui:
+        from kstrl.tui.runs import latest_run
+
+        ref = latest_run(root_dir)
+        if ref is not None:
+            from kstrl.tui.app import KstrlTuiApp, Mode
+            from kstrl.tui.dispatch import initial_screens_for_kind
+
+            app = KstrlTuiApp(
+                run_dir=ref.run_dir, root_dir=root_dir, mode=Mode.DASH,
+                screen_factory=initial_screens_for_kind(
+                    ref.kind, observe_only=True,
+                ),
+            )
+            try:
+                code = app.run()
+            finally:
+                sys.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m")
+                sys.stdout.flush()
+            sys.exit(code or 0)
+        # No run dirs yet: fall through to the plain report, whose
+        # missing-manifest guidance is the useful answer here.
 
     if manifest_path is not None:
         candidates = [manifest_path]
