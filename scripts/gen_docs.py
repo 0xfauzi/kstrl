@@ -125,6 +125,7 @@ def _section_specs() -> list[SectionSpec]:
     from ralph_py.feedforward import FeedforwardConfig
     from ralph_py.fixtures import FixturesConfig
     from ralph_py.knowledge import KnowledgeConfig
+    from ralph_py.linear import LinearConfig
     from ralph_py.sandbox import SandboxConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.timeout import TimeoutConfig
@@ -274,6 +275,12 @@ def _section_specs() -> list[SectionSpec]:
             lambda root: EvolutionConfig.load(root_dir=root),
             EvolutionConfig(), probe_undocumented_fields=True,
         ),
+        SectionSpec(
+            "linear", "Linear integration (R7.4; default off)",
+            identity_keys(LinearConfig, [f.name for f in dataclasses.fields(LinearConfig)]),
+            lambda root: LinearConfig.load(root_dir=root),
+            LinearConfig(), probe_undocumented_fields=True,
+        ),
     ]
     return specs
 
@@ -382,6 +389,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("evolution", "lookback_runs"): "past runs to analyze",
     ("evolution", "auto_propose"): "generate proposals after each factory run",
     ("evolution", "auto_apply_computational"): "auto-apply computational proposals",
+    ("linear", "enabled"): "mirror runs into Linear (project/issues/status via GitHub linking)",
+    ("linear", "team_id"): "Linear team UUID (required when enabled)",
+    ("linear", "token_env"): "NAME of the env var holding the API token",
+    ("linear", "auth_mode"): "auto | api_key | oauth (auto sniffs the lin_api_ prefix)",
+    ("linear", "api_url"): "GraphQL endpoint",
+    ("linear", "dry_run"): "record mutations instead of sending them",
+    ("linear", "timeout_seconds"): "per-request timeout",
+    ("linear", "min_request_interval"): "client-side throttle between requests (seconds)",
 }
 
 # Sentinel values for keys whose loader validates against an enum; the
@@ -394,6 +409,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str] = {
     ("security", "fail_threshold"): "low",
     ("contract", "mode"): "final",
     ("knowledge", "dependency_scope"): "transitive",
+    ("linear", "auth_mode"): "oauth",
 }
 
 

@@ -34,6 +34,7 @@ from ralph_py.knowledge import (
     distill_facts,
     measure_fact_utilization,
 )
+from ralph_py.linear import LinearConfig, build_linear_sink
 from ralph_py.manifest import Component, ComponentStatus, Manifest
 from ralph_py.observability import (
     NotifyConfig,
@@ -101,6 +102,10 @@ class FactoryConfig:
     # R3.2: [notify] hooks (on_complete / on_first_failure shell
     # commands). None means run_factory loads NotifyConfig.load(root_dir).
     notify_config: NotifyConfig | None = None
+    # R7.4: [linear] integration. None means run_factory loads
+    # LinearConfig.load(root_dir). Observability only: the sink attaches
+    # to the progress log and its failures never affect the run.
+    linear_config: LinearConfig | None = None
     # E4: per-run hard cap on adversarial LLM calls (review + security
     # + knowledge distill). 0 means unbounded. Once exceeded the
     # remaining components skip those phases with an informational log
@@ -1284,7 +1289,20 @@ def _run_factory_locked(
             factory_config.progress_log_path
             or root_dir / ".ralph" / "progress.jsonl"
         )
-        progress_log = ProgressLog(log_path, run_id=run_id)
+        progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
+
+    # R7.4: Linear sink - mirrors failure/budget events onto the issues
+    # the decompose hook mapped in the manifest. Observability only;
+    # build_linear_sink returns None (with a warning) rather than ever
+    # failing the run, and emit() isolates sink exceptions.
+    linear_sink = build_linear_sink(
+        manifest,
+        factory_config.linear_config or LinearConfig.load(root_dir),
+        run_id=run_id,
+        warn=ui.warn,
+    )
+    if linear_sink is not None:
+        progress_log.attach_sink(linear_sink)
 
     # R3.2: notification hooks - each condition fires at most once per
     # run, and hook failures only ever warn.

@@ -161,3 +161,20 @@ min_pattern_frequency = 2
 lookback_runs = 10
 auto_propose = true                # generate proposals after each factory run
 auto_apply_computational = false   # auto-apply computational proposals
+
+# Linear integration (R7.4). Off by default. When enabled, decompose
+# creates one Linear project per manifest and one issue per component
+# (user stories as a checklist), files non-blocker spec issues into
+# Triage, carries the issue identifier in branch names, and adds a
+# "Fixes <ID>" trailer to PR bodies so Linear's GitHub integration
+# drives status transitions with zero API calls from ralph. The token
+# is read from the env var named by token_env and never stored here.
+[linear]
+enabled = false
+team_id = ""                       # Linear team UUID (required when enabled)
+token_env = "RALPH_LINEAR_TOKEN"   # env var holding the API key / OAuth token
+auth_mode = "auto"                 # auto | api_key | oauth
+api_url = "https://api.linear.app/graphql"
+dry_run = false                    # log mutations instead of sending them
+timeout_seconds = 30.0
+min_request_interval = 0.5         # client-side throttle (shared rate pool)
