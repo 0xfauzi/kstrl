@@ -19,6 +19,7 @@ import pytest
 
 from ralph_py.agents.base import UsageRecord, UsageTotals
 from ralph_py.config import RalphConfig
+from ralph_py.events import EventBus, V1CompatSink
 from ralph_py.factory import (
     AdversarialAgentSelection,
     ComponentResult,
@@ -171,7 +172,11 @@ def _make_pipeline(
         ui=ui,
         root_dir=tmp_path,
         run_id="run-test",
-        progress_log=ProgressLog(tmp_path / "progress.jsonl", run_id="run-test"),
+        bus=EventBus(
+            V1CompatSink(ProgressLog(tmp_path / "progress.jsonl", run_id="run-test")),
+            run_id="run-test",
+        ),
+        journal_path=tmp_path / "progress.jsonl",
         notify=NotifyHooks(
             NotifyConfig(), run_id="run-test", project="test", warn=ui.warn,
         ),

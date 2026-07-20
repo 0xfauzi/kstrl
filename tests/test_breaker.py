@@ -25,6 +25,7 @@ from ralph_py.config import RalphConfig
 from ralph_py.factory import ComponentResult
 from ralph_py.loop import run_loop
 from ralph_py.manifest import ComponentStatus
+from ralph_py.observability import read_progress_events
 from ralph_py.ui.plain import PlainUI
 
 
@@ -336,7 +337,8 @@ class TestPipelineRouting:
         assert pipeline.component_failure_signatures["comp-a"] == [
             "engineer:no-progress-stall",
         ]
-        events = pipeline.progress_log.read_events()
+        assert pipeline.journal_path is not None
+        events = read_progress_events(pipeline.journal_path)
         tripped = [
             e for e in events if e["event"] == "circuit_breaker_tripped"
         ]
