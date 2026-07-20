@@ -14,7 +14,7 @@ documented and a new command cannot be silently omitted.
 
 The config reference is verified behaviorally, not transcribed: for
 every documented ``[section]`` key the script writes a sentinel value
-into a throwaway ralph.toml, runs the real loader, and asserts the
+into a throwaway kstrl.toml, runs the real loader, and asserts the
 resolved config changed. It also probes every *undocumented* dataclass
 field name of the per-section configs and fails if one turns out to be
 a live toml key. Defaults shown in the output come from the dataclass
@@ -182,7 +182,7 @@ def _section_specs() -> list[SectionSpec]:
         ),
         SectionSpec(
             "git", "Branch handling",
-            {"branch": "ralph_branch", "auto_checkout": "auto_checkout"},
+            {"branch": "kstrl_branch", "auto_checkout": "auto_checkout"},
             ralph_loader, ralph_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
@@ -519,7 +519,7 @@ def _verify_sections(specs: list[SectionSpec]) -> None:
         # spuriously differ on fields the toml never touched.
         probe_root = Path(tmp) / "probe"
         probe_root.mkdir()
-        toml_path = probe_root / "ralph.toml"
+        toml_path = probe_root / "kstrl.toml"
 
         baselines = {spec.section: spec.loader(probe_root) for spec in specs}
         _write_probe_toml(toml_path, specs, extra)
@@ -531,7 +531,7 @@ def _verify_sections(specs: list[SectionSpec]) -> None:
                 if getattr(probed, field_name) == getattr(baseline, field_name):
                     errors.append(
                         f"[{spec.section}] {key}: documented but setting it in "
-                        f"ralph.toml did not change {type(baseline).__name__}.{field_name}"
+                        f"kstrl.toml did not change {type(baseline).__name__}.{field_name}"
                     )
             for field_name in extra.get(spec.section, ()):
                 if getattr(probed, field_name) != getattr(baseline, field_name):
@@ -570,7 +570,7 @@ def build_config_reference() -> str:
         "<!-- Defaults come from the config dataclasses; every key is probed\n"
         "     against the real loaders before this section is emitted. -->\n\n"
         f"```toml\n{body}\n```\n\n"
-        "Environment variables override ralph.toml, and CLI flags override both.\n"
+        "Environment variables override kstrl.toml, and CLI flags override both.\n"
         "See [docs/env-vars.md](docs/env-vars.md) for the full env-var mapping.\n"
     )
 

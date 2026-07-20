@@ -368,8 +368,8 @@ Otherwise end normally.
 # scaffolding changes no effective value; uncommenting a line is the
 # explicit opt-in. Content mirrors ralph.toml.example trimmed to keys the
 # loaders actually read, plus the [timeout] section wired in R0.1.
-DEFAULT_RALPH_TOML = """\
-# Ralph configuration (scaffolded by `ralph init`).
+DEFAULT_KSTRL_TOML = """\
+# kstrl configuration (scaffolded by `ks init`).
 # Every key is commented out and shows its built-in default: uncomment a
 # line to override it. Precedence: CLI flag > environment variable > this
 # file > built-in default. See docs/env-vars.md for the env-var mapping.
@@ -524,7 +524,7 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.ok("scripts/ralph/ exists")
 
     ui.section("Create defaults")
-    _create_if_missing(root / "ralph.toml", DEFAULT_RALPH_TOML, ui)
+    _create_if_missing(root / "kstrl.toml", DEFAULT_KSTRL_TOML, ui)
     _create_if_missing(ralph_dir / "prompt.md", DEFAULT_PROMPT, ui)
     _create_if_missing(ralph_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
     _create_if_missing(ralph_dir / "progress.txt", DEFAULT_PROGRESS, ui)

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import envcompat, git
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
@@ -215,29 +215,27 @@ class VerifyConfig:
     def from_env(cls) -> VerifyConfig:
         """Load verify config from environment variables."""
         return cls(
-            test_command=os.environ.get("RALPH_VERIFY_TEST_CMD"),
-            typecheck_command=os.environ.get("RALPH_VERIFY_TYPECHECK_CMD"),
-            lint_command=os.environ.get("RALPH_VERIFY_LINT_CMD"),
-            dead_code_cleanup=os.environ.get("RALPH_DEAD_CODE_CLEANUP", "") == "1",
-            dead_code_command=os.environ.get("RALPH_DEAD_CODE_CMD"),
-            mutation_testing=os.environ.get("RALPH_MUTATION_TESTING", "") == "1",
+            test_command=envcompat.get("KSTRL_VERIFY_TEST_CMD"),
+            typecheck_command=envcompat.get("KSTRL_VERIFY_TYPECHECK_CMD"),
+            lint_command=envcompat.get("KSTRL_VERIFY_LINT_CMD"),
+            dead_code_cleanup=envcompat.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
+            dead_code_command=envcompat.get("KSTRL_DEAD_CODE_CMD"),
+            mutation_testing=envcompat.get("KSTRL_MUTATION_TESTING", "") == "1",
             mutation_threshold=float(
-                os.environ.get("RALPH_MUTATION_THRESHOLD", "50")
+                envcompat.get("KSTRL_MUTATION_THRESHOLD", "50")
             ),
             mutation_timeout=float(
-                os.environ.get("RALPH_MUTATION_TIMEOUT", "600")
+                envcompat.get("KSTRL_MUTATION_TIMEOUT", "600")
             ),
             subprocess_timeout=float(
-                os.environ.get("RALPH_TIMEOUT_VERIFY", "300")
+                envcompat.get("KSTRL_TIMEOUT_VERIFY", "300")
             ),
-            require_self_critique=os.environ.get(
-                "RALPH_VERIFY_REQUIRE_SELF_CRITIQUE", "",
+            require_self_critique=envcompat.get("KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE", "",
             ) == "1",
             self_critique_min_bullets=int(
-                os.environ.get("RALPH_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
+                envcompat.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
             ),
-            progress_file_path=os.environ.get(
-                "RALPH_VERIFY_PROGRESS_FILE",
+            progress_file_path=envcompat.get("KSTRL_VERIFY_PROGRESS_FILE",
                 "scripts/ralph/progress.txt",
             ),
         )
@@ -245,11 +243,11 @@ class VerifyConfig:
     @classmethod
     def load(cls, root_dir: Path | None = None) -> VerifyConfig:
         """Load verify config with precedence: env > toml > defaults."""
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "verify")
+        section = load_toml_section(resolve_config_file(root_dir), "verify")
         if "test_command" in section:
             config.test_command = str(section["test_command"]) or None
         if "typecheck_command" in section:
@@ -283,26 +281,26 @@ class VerifyConfig:
         # Env overrides. Each var is applied only when it is explicitly
         # set in the environment: the previous compare-against-default
         # heuristic silently dropped an env value that happened to equal
-        # the dataclass default (e.g. RALPH_MUTATION_THRESHOLD=50 could
+        # the dataclass default (e.g. KSTRL_MUTATION_THRESHOLD=50 could
         # not override a toml mutation_threshold), breaking the
         # env-beats-toml precedence contract (R2.1).
         env = cls.from_env()
         env_var_to_field = {
-            "RALPH_VERIFY_TEST_CMD": "test_command",
-            "RALPH_VERIFY_TYPECHECK_CMD": "typecheck_command",
-            "RALPH_VERIFY_LINT_CMD": "lint_command",
-            "RALPH_DEAD_CODE_CLEANUP": "dead_code_cleanup",
-            "RALPH_DEAD_CODE_CMD": "dead_code_command",
-            "RALPH_MUTATION_TESTING": "mutation_testing",
-            "RALPH_MUTATION_THRESHOLD": "mutation_threshold",
-            "RALPH_MUTATION_TIMEOUT": "mutation_timeout",
-            "RALPH_TIMEOUT_VERIFY": "subprocess_timeout",
-            "RALPH_VERIFY_REQUIRE_SELF_CRITIQUE": "require_self_critique",
-            "RALPH_VERIFY_SELF_CRITIQUE_MIN_BULLETS": "self_critique_min_bullets",
-            "RALPH_VERIFY_PROGRESS_FILE": "progress_file_path",
+            "KSTRL_VERIFY_TEST_CMD": "test_command",
+            "KSTRL_VERIFY_TYPECHECK_CMD": "typecheck_command",
+            "KSTRL_VERIFY_LINT_CMD": "lint_command",
+            "KSTRL_DEAD_CODE_CLEANUP": "dead_code_cleanup",
+            "KSTRL_DEAD_CODE_CMD": "dead_code_command",
+            "KSTRL_MUTATION_TESTING": "mutation_testing",
+            "KSTRL_MUTATION_THRESHOLD": "mutation_threshold",
+            "KSTRL_MUTATION_TIMEOUT": "mutation_timeout",
+            "KSTRL_TIMEOUT_VERIFY": "subprocess_timeout",
+            "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE": "require_self_critique",
+            "KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS": "self_critique_min_bullets",
+            "KSTRL_VERIFY_PROGRESS_FILE": "progress_file_path",
         }
         for env_var, field_name in env_var_to_field.items():
-            if env_var in os.environ:
+            if envcompat.contains(env_var):
                 setattr(config, field_name, getattr(env, field_name))
         return config
 

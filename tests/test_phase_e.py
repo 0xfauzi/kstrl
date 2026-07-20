@@ -103,7 +103,7 @@ class TestE4BudgetCap:
             prompt_file=root / "scripts/ralph/prompt.md",
             prd_file=root / "scripts/ralph/prd.json",
             sleep_seconds=0, agent_cmd="echo test",
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
 
@@ -226,7 +226,7 @@ class TestE6HitlCheckpoint:
             prompt_file=scaffold / "prompt.md",
             prd_file=scaffold / "prd.json",
             sleep_seconds=0, agent_cmd="echo test",
-            ralph_branch="", ralph_branch_explicit=True,
+            kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
         )
         success = ComponentResult("comp-a", success=True, iterations=1)

@@ -12,6 +12,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl import envcompat
+
 # Directories to always skip during tree walks
 _SKIP_DIRS = frozenset({
     "__pycache__", "node_modules", ".git", "venv", ".venv", ".ralph",
@@ -50,11 +52,11 @@ class FeedforwardConfig:
     @classmethod
     def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
         """Load feedforward config with precedence: env > toml > defaults."""
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "feedforward")
+        section = load_toml_section(resolve_config_file(root_dir), "feedforward")
         for key in (
             "enabled", "module_map", "public_interfaces",
             "dependency_graph", "conventions",
@@ -68,23 +70,22 @@ class FeedforwardConfig:
 
 
 _ENV_MAP: dict[str, tuple[str, type]] = {
-    "RALPH_FEEDFORWARD_ENABLED": ("enabled", bool),
-    "RALPH_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
-    "RALPH_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
-    "RALPH_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
-    "RALPH_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
-    "RALPH_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
+    "KSTRL_FEEDFORWARD_ENABLED": ("enabled", bool),
+    "KSTRL_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
+    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
+    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
+    "KSTRL_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
+    "KSTRL_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
 }
 
 
 def _apply_env_overrides(config: FeedforwardConfig) -> None:
     """Overlay env vars that are explicitly set; unset vars leave the
     existing value untouched (so toml values survive the overlay)."""
-    import os
 
     for env_key, (field_name, caster) in _ENV_MAP.items():
-        if env_key in os.environ:
-            raw = os.environ[env_key]
+        if envcompat.contains(env_key):
+            raw = envcompat.require(env_key)
             if caster is bool:
                 setattr(config, field_name, raw.lower() in {"1", "true", "yes"})
             else:

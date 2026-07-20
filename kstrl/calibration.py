@@ -617,15 +617,23 @@ def reviewer_override_from_env(
     """(agent_type, model) override for the reviewer and security
     calibration agents (R7.1), read from
     ``RALPH_CALIBRATION_REVIEWER_AGENT_TYPE`` /
-    ``RALPH_CALIBRATION_REVIEWER_MODEL``. Empty values mean unset.
+    ``KSTRL_CALIBRATION_REVIEWER_MODEL``. Empty values mean unset.
 
     The override exists so the calibration suite can measure the
     same-family vs cross-family correlated-miss delta: one baseline with
     no override (same family end to end), one with the reviewer roles on
     the second family. The architect always keeps the base calibration
     agent - rotation applies to reviewers, not the spec red-team."""
-    agent_type = environ.get("RALPH_CALIBRATION_REVIEWER_AGENT_TYPE") or None
-    model = environ.get("RALPH_CALIBRATION_REVIEWER_MODEL") or None
+    agent_type = (
+        environ.get("KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE")
+        or environ.get("RALPH_CALIBRATION_REVIEWER_AGENT_TYPE")
+        or None
+    )
+    model = (
+        environ.get("KSTRL_CALIBRATION_REVIEWER_MODEL")
+        or environ.get("RALPH_CALIBRATION_REVIEWER_MODEL")
+        or None
+    )
     return agent_type, model
 
 
@@ -689,7 +697,7 @@ def model_drift_message(results_dir: Path, configured_model: str) -> str | None:
         f"newest baseline's model {baseline.model!r} ({path.name}). "
         "H2-extended: calibration must be re-run on model change, not just "
         "prompt change - capture a fresh baseline with "
-        "RALPH_RUN_CALIBRATION=1 before trusting detection rates."
+        "KSTRL_RUN_CALIBRATION=1 before trusting detection rates."
     )
 
 

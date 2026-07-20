@@ -15,7 +15,6 @@ them; that is a false positive.
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,7 +22,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import envcompat, git
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -282,22 +281,22 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> SecurityConfig:
         return cls(
-            mode=os.environ.get("RALPH_SECURITY_MODE", SecurityMode.SKIP.value),
-            agent_cmd=os.environ.get("RALPH_SECURITY_AGENT_CMD") or None,
-            agent_type=os.environ.get("RALPH_SECURITY_AGENT_TYPE") or None,
-            model=os.environ.get("RALPH_SECURITY_MODEL") or None,
-            timeout_seconds=float(os.environ.get("RALPH_SECURITY_TIMEOUT", "600")),
-            fail_threshold=os.environ.get("RALPH_SECURITY_FAIL_THRESHOLD", "high"),
+            mode=envcompat.get("KSTRL_SECURITY_MODE", SecurityMode.SKIP.value),
+            agent_cmd=envcompat.get("KSTRL_SECURITY_AGENT_CMD") or None,
+            agent_type=envcompat.get("KSTRL_SECURITY_AGENT_TYPE") or None,
+            model=envcompat.get("KSTRL_SECURITY_MODEL") or None,
+            timeout_seconds=float(envcompat.get("KSTRL_SECURITY_TIMEOUT", "600")),
+            fail_threshold=envcompat.get("KSTRL_SECURITY_FAIL_THRESHOLD", "high"),
         )
 
     @classmethod
     def load(cls, root_dir: Path | None = None) -> SecurityConfig:
         """Load security config with precedence: env > toml > defaults."""
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "security")
+        section = load_toml_section(resolve_config_file(root_dir), "security")
         if "mode" in section:
             config.mode = str(section["mode"])
         if "agent_cmd" in section:
@@ -311,18 +310,18 @@ class SecurityConfig:
         if "fail_threshold" in section:
             config.fail_threshold = str(section["fail_threshold"])
         # Env overrides
-        if "RALPH_SECURITY_MODE" in os.environ:
-            config.mode = os.environ["RALPH_SECURITY_MODE"]
-        if "RALPH_SECURITY_AGENT_CMD" in os.environ:
-            config.agent_cmd = os.environ["RALPH_SECURITY_AGENT_CMD"] or None
-        if "RALPH_SECURITY_AGENT_TYPE" in os.environ:
-            config.agent_type = os.environ["RALPH_SECURITY_AGENT_TYPE"] or None
-        if "RALPH_SECURITY_MODEL" in os.environ:
-            config.model = os.environ["RALPH_SECURITY_MODEL"] or None
-        if "RALPH_SECURITY_TIMEOUT" in os.environ:
-            config.timeout_seconds = float(os.environ["RALPH_SECURITY_TIMEOUT"])
-        if "RALPH_SECURITY_FAIL_THRESHOLD" in os.environ:
-            config.fail_threshold = os.environ["RALPH_SECURITY_FAIL_THRESHOLD"]
+        if envcompat.contains("KSTRL_SECURITY_MODE"):
+            config.mode = envcompat.require("KSTRL_SECURITY_MODE")
+        if envcompat.contains("KSTRL_SECURITY_AGENT_CMD"):
+            config.agent_cmd = envcompat.require("KSTRL_SECURITY_AGENT_CMD") or None
+        if envcompat.contains("KSTRL_SECURITY_AGENT_TYPE"):
+            config.agent_type = envcompat.require("KSTRL_SECURITY_AGENT_TYPE") or None
+        if envcompat.contains("KSTRL_SECURITY_MODEL"):
+            config.model = envcompat.require("KSTRL_SECURITY_MODEL") or None
+        if envcompat.contains("KSTRL_SECURITY_TIMEOUT"):
+            config.timeout_seconds = float(envcompat.require("KSTRL_SECURITY_TIMEOUT"))
+        if envcompat.contains("KSTRL_SECURITY_FAIL_THRESHOLD"):
+            config.fail_threshold = envcompat.require("KSTRL_SECURITY_FAIL_THRESHOLD")
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
         return config

@@ -86,8 +86,8 @@ auto_checkout = false
 """,
     )
     config = KstrlConfig.from_toml(toml_path, tmp_path)
-    assert config.ralph_branch == "feature/x"
-    assert config.ralph_branch_explicit is True
+    assert config.kstrl_branch == "feature/x"
+    assert config.kstrl_branch_explicit is True
     assert config.auto_checkout is False
 
 
@@ -215,8 +215,8 @@ def test_load_defaults_when_no_toml_and_no_env(
     assert config.sleep_seconds == 2.0
     assert config.agent_type is None
     assert config.agent_cmd is None
-    assert config.ralph_branch is None
-    assert config.ralph_branch_explicit is False
+    assert config.kstrl_branch is None
+    assert config.kstrl_branch_explicit is False
 
 
 def test_load_auto_discovers_ralph_toml(
@@ -249,8 +249,8 @@ def test_load_env_branch_marks_explicit(
 ) -> None:
     monkeypatch.setenv("RALPH_BRANCH", "")
     config = KstrlConfig.load(tmp_path)
-    assert config.ralph_branch == ""
-    assert config.ralph_branch_explicit is True
+    assert config.kstrl_branch == ""
+    assert config.kstrl_branch_explicit is True
 
 
 def test_load_env_paths_resolved_against_root(
@@ -264,7 +264,7 @@ def test_load_env_paths_resolved_against_root(
 def test_load_toml_empty_branch_does_not_mark_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ralph.toml.example documents `branch = ""` as 'empty = use PRD
+    """kstrl.toml.example documents `branch = ""` as 'empty = use PRD
     branchName'. An empty TOML branch must therefore NOT mark explicit,
     so loop._determine_branch falls through to PRD lookup instead of
     skipping checkout. Env var RALPH_BRANCH="" retains its historical
@@ -279,8 +279,8 @@ branch = ""
 """,
     )
     config = KstrlConfig.load(tmp_path)
-    assert config.ralph_branch is None
-    assert config.ralph_branch_explicit is False
+    assert config.kstrl_branch is None
+    assert config.kstrl_branch_explicit is False
 
 
 def test_load_toml_nonempty_branch_marks_explicit(
@@ -296,8 +296,8 @@ branch = "feature/foo"
 """,
     )
     config = KstrlConfig.load(tmp_path)
-    assert config.ralph_branch == "feature/foo"
-    assert config.ralph_branch_explicit is True
+    assert config.kstrl_branch == "feature/foo"
+    assert config.kstrl_branch_explicit is True
 
 
 # ---------------------------------------------------------------------------
