@@ -33,13 +33,14 @@ from kstrl.interaction import (
 )
 from kstrl.tui.bridge import OrchestratorHandle
 from kstrl.tui.messages import StateChanged
+from kstrl.tui.runcontext import RunContext
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
+from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
 from kstrl.tui.state import StateStore
-from kstrl.tui.tail import RunTailer, TextTailer
 from kstrl.tui.theme import KSTRL_THEME
 
 DEFAULT_POLL_INTERVAL = 0.2  # measured, spike G1
@@ -51,6 +52,7 @@ ScreenStackFactory = Callable[[], list[Screen[None]]]
 class Mode(StrEnum):
     DASH = "dash"
     EMBEDDED = "embedded"
+    HOME = "home"
 
 
 class KstrlTuiApp(App[int]):
@@ -62,13 +64,18 @@ class KstrlTuiApp(App[int]):
         # it does nothing at all.
         Binding("ctrl+c", "quit_or_detach", show=False),
         Binding("c", "answer_checkpoint", "Checkpoint", show=False),
+        # App-level fallback: screens with their own escape binding
+        # (modals, detail screens) win; on a base screen this pops
+        # toward home when there is anywhere to pop to. (Named
+        # nav_back: Textual's App already owns an async action_back.)
+        Binding("escape", "nav_back", show=False),
     ]
 
     def __init__(
         self,
         *,
-        run_dir: Path,
         root_dir: Path,
+        run_dir: Path | None = None,
         mode: Mode = Mode.DASH,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         channel: QueueInteractionChannel | None = None,
@@ -76,23 +83,43 @@ class KstrlTuiApp(App[int]):
         screen_factory: ScreenStackFactory | None = None,
     ) -> None:
         super().__init__()
-        self.run_dir = run_dir
         self.root_dir = root_dir
         self.mode = mode
         self.poll_interval = poll_interval
         self.channel = channel
         self.orchestrator = orchestrator
         self.screen_factory = screen_factory
-        self.tailer = RunTailer(run_dir)
-        self.store = StateStore(root_dir, run_id=run_dir.name)
-        self._transcript_tailers: dict[str, TextTailer] = {}
+        # CLI-scoped modes (dash/embedded) are born bound to one run;
+        # HOME opens and closes contexts as the user navigates. Named
+        # run_context because App.run() is Textual's entry point.
+        self.run_context: RunContext | None = (
+            RunContext.observe(run_dir, root_dir)
+            if run_dir is not None else None
+        )
         self._pending_prompts: dict[str, PromptRequest] = {}
         self._stopping = False
+
+    # Compat views for screens and tests that duck-pull off the app.
+    @property
+    def store(self) -> StateStore | None:
+        return (
+            self.run_context.store
+            if self.run_context is not None else None
+        )
+
+    @property
+    def run_dir(self) -> Path | None:
+        return (
+            self.run_context.run_dir
+            if self.run_context is not None else None
+        )
 
     def on_mount(self) -> None:
         self.register_theme(KSTRL_THEME)
         self.theme = "kstrl"
-        if self.screen_factory is not None:
+        if self.mode is Mode.HOME:
+            self.push_screen(HomeScreen())
+        elif self.screen_factory is not None:
             for screen in self.screen_factory():
                 self.push_screen(screen)
         else:
@@ -132,24 +159,29 @@ class KstrlTuiApp(App[int]):
           humanize(); truncation rebuilds replay history into state
           but must not re-narrate it into the feed).
         """
-        chunk = self.tailer.poll_events()
+        run = self.run_context
+        if run is None:
+            return
+        chunk = run.tailer.poll_events()
         if chunk.truncated:
-            self.store.reset()
-        changed = self.store.apply_events(chunk.events)
+            run.store.reset()
+        changed = run.store.apply_events(chunk.events)
         screen_stack = self.screen_stack
         if not screen_stack:
             return
         screen = screen_stack[-1]
+        if isinstance(screen, HomeScreen):
+            return  # home renders discovery, not one run's stream
         component_id = str(getattr(screen, "transcript_component", ""))
         ready = bool(getattr(screen, "ready", True))
         if changed:
             if component_id:
                 if ready:
                     screen.refresh_state(  # type: ignore[attr-defined]
-                        self.store.state, self.store.manifest(),
+                        run.store.state, run.store.manifest(),
                     )
             else:
-                screen.post_message(StateChanged(self.store.state))
+                screen.post_message(StateChanged(run.store.state))
             feed = getattr(screen, "feed_events", None)
             if feed is not None and not chunk.truncated:
                 feed(chunk.events)
@@ -157,25 +189,17 @@ class KstrlTuiApp(App[int]):
             feed_transcript = getattr(screen, "feed_transcript", None)
             if feed_transcript is not None:
                 feed_transcript(
-                    self._transcript_tailer(component_id).poll(),
+                    run.transcript_tailer(component_id).poll(),
                 )
 
-    def _transcript_tailer(self, component_id: str) -> TextTailer:
-        tailer = self._transcript_tailers.get(component_id)
-        if tailer is None:
-            tailer = TextTailer(
-                self.run_dir / "components" / component_id / "engineer.log",
-            )
-            self._transcript_tailers[component_id] = tailer
-        return tailer
-
     def _tick_ages(self) -> None:
+        run = self.run_context
         screen_stack = self.screen_stack
-        if not screen_stack:
+        if run is None or not screen_stack:
             return
         tick = getattr(screen_stack[-1], "tick_ages", None)
         if tick is not None:
-            tick(self.store.state)
+            tick(run.store.state)
 
     # -- navigation ----------------------------------------------------------
 
@@ -191,6 +215,40 @@ class KstrlTuiApp(App[int]):
     def open_component(self, component_id: str) -> None:
         # The screen fills itself in on_mount (compose must run first).
         self.push_screen(ComponentScreen(component_id))
+
+    def action_nav_back(self) -> None:
+        # The stack floor is 2: Textual's hidden default screen plus
+        # the base screen this mode pushed (home, or the dash board).
+        if len(self.screen_stack) > 2:
+            self.pop_screen()
+
+    # -- home mode (D1) ------------------------------------------------------
+
+    def open_run(self, ref: object) -> None:
+        """Open an observe context for a discovered run and push its
+        kind-appropriate screen stack over home."""
+        run_dir = getattr(ref, "run_dir", None)
+        kind = str(getattr(ref, "kind", "factory"))
+        if run_dir is None:
+            return
+        from kstrl.tui.dispatch import initial_screens_for_kind
+
+        self.run_context = RunContext.observe(
+            run_dir, self.root_dir, owns_app_exit=False,
+        )
+        for screen in initial_screens_for_kind(kind, observe_only=True)():
+            self.push_screen(screen)
+        self._poll()
+
+    def close_run(self) -> None:
+        """Tear down the observe context when navigation lands back on
+        home. CLI-scoped contexts (dash/embedded) are never closed."""
+        run = self.run_context
+        if run is None or run.owns_app_exit:
+            return
+        if run.channel is not None:
+            run.channel.detach()
+        self.run_context = None
 
     # -- embedded mode (PR F) ------------------------------------------------
 
@@ -245,6 +303,16 @@ class KstrlTuiApp(App[int]):
             return
 
     def action_quit_or_detach(self) -> None:
+        if self.mode is Mode.HOME:
+            if isinstance(self.screen, HomeScreen):
+                self.exit(0)
+                return
+            # q above home pops back to it (teardown happens on the
+            # home screen's resume); quitting the app is home's call.
+            # Floor 2 = Textual's default screen + HomeScreen.
+            while len(self.screen_stack) > 2:
+                self.pop_screen()
+            return
         if self.mode is Mode.DASH:
             # Detach immediately; the run (if live) is not ours to stop.
             self.exit(0)
