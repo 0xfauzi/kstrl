@@ -76,7 +76,10 @@ class RalphTuiApp(App[int]):
     # -- data flow -----------------------------------------------------------
 
     def _poll(self) -> None:
-        changed = self.store.apply_events(self.tailer.poll_events())
+        chunk = self.tailer.poll_events()
+        if chunk.truncated:
+            self.store.reset()
+        changed = self.store.apply_events(chunk.events)
         screen = self.screen
         if changed:
             if isinstance(screen, ComponentScreen):

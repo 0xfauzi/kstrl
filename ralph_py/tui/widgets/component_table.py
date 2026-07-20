@@ -17,13 +17,13 @@ if TYPE_CHECKING:
     from ralph_py.reducer import ComponentState, RunState
 
 STATUS_GLYPHS = {
-    "pending": ("·", "dim"),
-    "running": ("▶", "yellow"),
-    "verifying": ("⚙", "cyan"),
-    "completed": ("✓", "green"),
-    "merge_pending": ("⏸", "magenta"),
-    "failed": ("✗", "red"),
-    "skipped": ("○", "dim"),
+    "pending": (".", "dim"),
+    "running": (">", "yellow"),
+    "verifying": ("~", "cyan"),
+    "completed": ("+", "green"),
+    "merge_pending": ("=", "magenta"),
+    "failed": ("x", "red"),
+    "skipped": ("-", "dim"),
 }
 
 COLUMNS = ("", "component", "status", "phase", "att", "iter",
@@ -44,7 +44,7 @@ def _age(ts: float, now: float) -> str:
 def _row_values(comp: ComponentState, now: float) -> tuple[Text | str, ...]:
     glyph, style = STATUS_GLYPHS.get(comp.status, ("?", "dim"))
     marker = "+" if comp.unreported_calls else ""
-    checkpoint = " ⛳" if comp.checkpoint_open else ""
+    checkpoint = " !" if comp.checkpoint_open else ""
     return (
         Text(glyph, style=style),
         Text(f"{comp.component_id}{checkpoint}"),

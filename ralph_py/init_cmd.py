@@ -375,9 +375,9 @@ DEFAULT_RALPH_TOML = """\
 # file > built-in default. See docs/env-vars.md for the env-var mapping.
 
 [agent]
-# type = ""                        # "claude" | "codex" | "custom" (empty = auto-detect)
-# command = ""                     # shell command (only used when type = "custom")
-# model = ""                       # e.g. "sonnet" for claude, "o3" for codex (empty = agent default)
+# type = ""                        # "claude-code" | "claude-sdk" | "codex" (empty = auto-detect)
+# command = ""                     # custom agent shell command; overrides type
+# model = ""                       # e.g. "sonnet" for claude, "gpt-5" for codex (empty = agent default)
 # reasoning_effort = ""            # low|medium|high|max
 
 [run]

@@ -32,6 +32,10 @@ class StateStore:
             apply(self._state, event)
         return bool(events)
 
+    def reset(self) -> None:
+        """Discard folded event state before applying a rebuilt snapshot."""
+        self._state = RunState(run_id=self._state.run_id)
+
     def manifest(self) -> Manifest | None:
         """The factory manifest, reloaded only when its mtime moves."""
         path = self.root_dir / "scripts" / "ralph" / "manifest.json"

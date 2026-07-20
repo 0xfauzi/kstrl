@@ -126,6 +126,7 @@ def _section_specs() -> list[SectionSpec]:
     from ralph_py.fixtures import FixturesConfig
     from ralph_py.knowledge import KnowledgeConfig
     from ralph_py.linear import LinearConfig
+    from ralph_py.observability import NotifyConfig
     from ralph_py.sandbox import SandboxConfig
     from ralph_py.security import SecurityConfig
     from ralph_py.timeout import TimeoutConfig
@@ -155,6 +156,7 @@ def _section_specs() -> list[SectionSpec]:
                 "command": "agent_cmd",
                 "model": "model",
                 "reasoning_effort": "model_reasoning_effort",
+                "budget_usd": "agent_budget_usd",
             },
             ralph_loader, ralph_defaults, probe_undocumented_fields=False,
         ),
@@ -276,6 +278,14 @@ def _section_specs() -> list[SectionSpec]:
             EvolutionConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
+            "notify", "Run-milestone notification hooks (R3.2)",
+            identity_keys(NotifyConfig, [
+                f.name for f in dataclasses.fields(NotifyConfig)
+            ]),
+            lambda root: NotifyConfig.load(root_dir=root),
+            NotifyConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
             "linear", "Linear integration (R7.4; default off)",
             identity_keys(LinearConfig, [f.name for f in dataclasses.fields(LinearConfig)]),
             lambda root: LinearConfig.load(root_dir=root),
@@ -288,10 +298,13 @@ def _section_specs() -> list[SectionSpec]:
 # One-line description per documented key. Regeneration fails when a key
 # has no description, so new keys cannot land undocumented.
 KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
-    ("agent", "type"): '"claude" | "codex" | "custom"',
-    ("agent", "command"): "shell command (only used when type = \"custom\")",
-    ("agent", "model"): 'e.g. "sonnet" (claude) or "o3" (codex); empty = agent default',
+    ("agent", "type"):
+        '"claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect',
+    ("agent", "command"): "custom agent shell command; overrides type",
+    ("agent", "model"): 'e.g. "sonnet" (claude) or "gpt-5" (codex); empty = agent default',
     ("agent", "reasoning_effort"): "low | medium | high | max (model-dependent)",
+    ("agent", "budget_usd"):
+        "in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)",
     ("run", "max_iterations"): "iteration budget per component",
     ("run", "sleep_seconds"): "pause between iterations",
     ("run", "interactive"): "human-in-the-loop mode for the legacy loop",
@@ -315,7 +328,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "max_parallel"): "concurrent component workers",
     ("factory", "max_retries"): "per-component retry budget across all phases",
     ("factory", "retry_delay"): "seconds between retry attempts",
-    ("factory", "use_worktrees"): "isolate each component in .ralph/worktrees/<id>",
+    ("factory", "use_worktrees"): "isolate each component in .ralph/worktrees/<run>/<id>",
     ("factory", "single_pr"): "one PR for the whole run instead of per-component",
     ("factory", "create_prs"): "push + merge PRs via gh",
     ("factory", "review_mode"): "hard | advisory | skip (Phase 2)",
@@ -389,6 +402,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("evolution", "lookback_runs"): "past runs to analyze",
     ("evolution", "auto_propose"): "generate proposals after each factory run",
     ("evolution", "auto_apply_computational"): "auto-apply computational proposals",
+    ("notify", "on_complete"):
+        "shell hook fired once when the run finishes; empty = disabled",
+    ("notify", "on_first_failure"):
+        "shell hook fired once on the first component failure",
+    ("notify", "hook_timeout"): "seconds before a hook command is killed",
     ("linear", "enabled"): "mirror runs into Linear (project/issues/status via GitHub linking)",
     ("linear", "team_id"): "Linear team UUID (required when enabled)",
     ("linear", "token_env"): "NAME of the env var holding the API token",
@@ -399,10 +417,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("linear", "min_request_interval"): "client-side throttle between requests (seconds)",
 }
 
-# Sentinel values for keys whose loader validates against an enum; the
-# generic type-derived sentinel would be rejected.
-ENUM_SENTINELS: dict[tuple[str, str], str] = {
+# Sentinel values for keys whose loader validates the value (enum
+# membership, or a typed check the generic type-derived sentinel would
+# fail - e.g. budget_usd ignores non-numeric and non-positive values).
+ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("agent", "type"): "codex",
+    ("agent", "budget_usd"): 123.5,
     ("agent", "reasoning_effort"): "high",
     ("factory", "review_mode"): "advisory",
     ("security", "mode"): "hard",

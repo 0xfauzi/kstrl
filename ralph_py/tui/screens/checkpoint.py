@@ -96,9 +96,10 @@ class CheckpointModal(ModalScreen[int | None]):
                 yield Button("Retry (t)", id="retry", variant="warning")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss({"approve": 0, "reject": 1, "retry": 2}[
-            event.button.id or "approve"
-        ])
+        choices = {"approve": 0, "reject": 1, "retry": 2}
+        choice = choices.get(event.button.id or "")
+        if choice is not None:
+            self.dismiss(choice)
 
     def action_decide(self, choice: int) -> None:
         self.dismiss(choice)

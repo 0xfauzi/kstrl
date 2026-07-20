@@ -19,20 +19,24 @@ def render_timeline(comp: ComponentState) -> Text:
     for i, entry in enumerate(comp.phase_history):
         if i:
             text.append("  ->  ", style="dim")
-        verdict = "✓" if entry.get("passed") else "✗"
+        verdict = "pass" if entry.get("passed") else "fail"
         style = "green" if entry.get("passed") else "red"
         duration = entry.get("duration_seconds") or 0.0
         text.append(f"{entry.get('phase', '?')} {verdict}", style=style)
         if duration:
             text.append(f" {duration:.0f}s", style="dim")
     current = comp.phase
-    finished_phases = {e.get("phase") for e in comp.phase_history}
+    current_finished = any(
+        entry.get("phase") == current
+        and entry.get("attempt") == comp.attempt
+        for entry in comp.phase_history
+    )
     if current and comp.status in ("running", "verifying") and (
-        current not in finished_phases
+        not current_finished
     ):
         if comp.phase_history:
             text.append("  ->  ", style="dim")
-        text.append(f"{current} …", style="bold yellow")
+        text.append(f"{current} ...", style="bold yellow")
     return text
 
 
