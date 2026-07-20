@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +28,8 @@ from kstrl.agents import (
     CodexAgent,
     get_agent,
 )
-from kstrl.agents.base import Agent, UsageRecord
+from kstrl.agents.base import Agent
+from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
@@ -48,6 +48,7 @@ from kstrl.events import (
     RunStarted,
 )
 from kstrl.factory import FactoryConfig, run_factory
+from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
     PromptKind,
@@ -367,38 +368,6 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
             return rel.parts[3]
 
     return prd_path.stem
-
-
-class LoggingAgent:
-    """Agent wrapper that appends streamed output to a log file."""
-
-    def __init__(self, agent: Agent, log_path: Path) -> None:
-        self._agent = agent
-        self._log_path = log_path
-
-    @property
-    def name(self) -> str:
-        return self._agent.name
-
-    def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
-    ) -> Iterator[str]:
-        self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._log_path.open("a") as handle:
-            for line in self._agent.run(prompt, cwd, timeout):
-                handle.write(f"{line}\n")
-                handle.flush()
-                yield line
-
-    @property
-    def final_message(self) -> str | None:
-        return self._agent.final_message
-
-    @property
-    def usage_records(self) -> list[UsageRecord]:
-        """R3.1: forward the wrapped agent's usage records."""
-        records = getattr(self._agent, "usage_records", None)
-        return list(records) if records is not None else []
 
 
 def _timestamp() -> str:
@@ -1251,61 +1220,6 @@ def feature(
 
     log_dir = root_dir / ".kstrl" / "logs" / f"feature_{feature_name}"
 
-    def log_path(label: str, attempt: int | None = None) -> Path:
-        stamp = _timestamp()
-        if attempt is None:
-            name = f"{label}_{stamp}.log"
-        else:
-            name = f"{label}_{attempt:02d}_{stamp}.log"
-        return log_dir / name
-
-    def build_repair_prd(log_file: Path, attempt: int) -> Path:
-        repair_dir = feature_dir / "repairs"
-        repair_dir.mkdir(parents=True, exist_ok=True)
-        repair_path = repair_dir / f"repair_{_timestamp()}.json"
-        latest_path = repair_dir / "latest.json"
-
-        verification: list[str] = []
-        seen: set[str] = set()
-        for story in prd_doc.user_stories:
-            for item in story.acceptance_criteria:
-                lower = item.lower()
-                has_check = "typecheck" in lower or "tests" in lower or "lint" in lower
-                if has_check and "pass" in lower:
-                    if item not in seen:
-                        seen.add(item)
-                        verification.append(item)
-
-        try:
-            rel_log = log_file.relative_to(root_dir)
-            log_ref = rel_log.as_posix()
-        except ValueError:
-            log_ref = str(log_file)
-
-        criteria = [f"Repair failures reported in {log_ref}"]
-        criteria.extend(verification)
-
-        repair_story = {
-            "id": f"REPAIR-{attempt:02d}",
-            "title": "Repair failures from last run",
-            "acceptanceCriteria": criteria,
-            "priority": 1,
-            "passes": False,
-            "notes": f"Original PRD: {prd_path}",
-        }
-        repair_doc = {
-            "branchName": prd_doc.branch_name,
-            "userStories": [repair_story],
-        }
-        with open(repair_path, "w") as handle:
-            json.dump(repair_doc, handle, indent=2)
-            handle.write("\n")
-        with open(latest_path, "w") as handle:
-            json.dump(repair_doc, handle, indent=2)
-            handle.write("\n")
-
-        return repair_path
-
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
 
@@ -1324,111 +1238,37 @@ def feature(
         max_budget_usd=base_config.agent_budget_usd,
     )
 
-    # Feature understanding phase
-    understand_config = copy.deepcopy(base_config)
-    understand_config.max_iterations = understand_iterations_value
     if _use_cli_value(ctx, "understand_prompt"):
-        understand_config.prompt_file = _resolve_path(
+        understand_prompt_file: Path | None = _resolve_path(
             root_dir, understand_prompt, kstrl_dir / "feature_understand_prompt.md"
         )
     elif "PROMPT_FILE" not in os.environ:
-        understand_config.prompt_file = kstrl_dir / "feature_understand_prompt.md"
-    understand_config.prd_file = prd_path
-    rel_feature_understand = feature_understand.relative_to(root_dir).as_posix()
-    understand_config.allowed_paths = [rel_feature_understand]
-    if _use_cli_value(ctx, "branch"):
-        understand_config.kstrl_branch = branch
-        understand_config.kstrl_branch_explicit = True
-
-    timeouts = TimeoutConfig.load(root_dir)
-    breaker_config = BreakerConfig.load(root_dir)
-
-    understand_log = log_path("understand")
-    understand_agent = LoggingAgent(agent, understand_log)
-    understand_result = run_loop(
-        understand_config, ui_impl, understand_agent, root_dir,
-        timeouts=timeouts, breaker_config=breaker_config,
-    )
-    if understand_result.exit_code != 0:
-        sys.exit(understand_result.exit_code)
-
-    # Review gate
-    ui_impl.section("Feature understand review")
-    ui_impl.kv("Understand file", str(feature_understand))
-    if implementation_auto_run:
-        ui_impl.info("IMPLEMENTATION_AUTO_RUN enabled: skipping review gate")
+        understand_prompt_file = kstrl_dir / "feature_understand_prompt.md"
     else:
-        channel = UiInteractionChannel(ui_impl)
-        if not channel.can_prompt():
-            ui_impl.err(
-                "Interactive review required. Re-run with --implementation-auto-run."
-            )
-            sys.exit(2)
+        understand_prompt_file = None
 
-        response = channel.request(PromptRequest(
-            kind=PromptKind.CONFIRM,
-            header="Review the understand file and confirm implementation start:",
-            options=("Start implementation", "Quit to amend"),
-            default=0,
-        ))
-        if not response.answered or response.choice != 0:
-            ui_impl.info("Amend the understand file and re-run `ralph feature`.")
-            sys.exit(0)
-
-    # Implementation phase
-    run_config = copy.deepcopy(base_config)
-    run_config.prd_file = prd_path
-    run_config.max_iterations = len(prd_doc.user_stories)
-    if run_config.max_iterations == 0:
-        ui_impl.warn("PRD has no user stories. Skipping implementation.")
-        sys.exit(0)
-    run_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
-    if _use_cli_value(ctx, "implementation_allowed_paths"):
-        run_config.allowed_paths = _parse_paths(implementation_allowed_paths)
-    if _use_cli_value(ctx, "branch"):
-        run_config.kstrl_branch = branch
-        run_config.kstrl_branch_explicit = True
-
-    run_log = log_path("run")
-    run_agent = LoggingAgent(agent, run_log)
-    result = run_loop(
-        run_config, ui_impl, run_agent, root_dir,
-        timeouts=timeouts, breaker_config=breaker_config,
+    params = FeatureParams(
+        prd_path=prd_path,
+        prd_doc=prd_doc,
+        feature_name=feature_name,
+        feature_dir=feature_dir,
+        feature_understand=feature_understand,
+        log_dir=log_dir,
+        understand_iterations=understand_iterations_value,
+        understand_prompt_file=understand_prompt_file,
+        implementation_auto_run=implementation_auto_run,
+        repair_max_runs=repair_max_runs,
+        repair_iterations=repair_iterations,
+        repair_agent_cmd=repair_agent_cmd,
+        branch_override=branch if _use_cli_value(ctx, "branch") else None,
+        allowed_paths_override=(
+            _parse_paths(implementation_allowed_paths)
+            if _use_cli_value(ctx, "implementation_allowed_paths")
+            else None
+        ),
+        sandbox=sandbox_cfg,
     )
-    if result.exit_code == 0 or repair_max_runs == 0 or result.iterations == 0:
-        sys.exit(result.exit_code)
-
-    last_log = run_log
-    repair_result = result
-    for attempt in range(1, repair_max_runs + 1):
-        repair_prd = build_repair_prd(last_log, attempt)
-        repair_config = copy.deepcopy(base_config)
-        repair_config.prd_file = repair_prd
-        repair_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
-        repair_config.max_iterations = repair_iterations
-        if _use_cli_value(ctx, "implementation_allowed_paths"):
-            repair_config.allowed_paths = _parse_paths(implementation_allowed_paths)
-        repair_config.kstrl_branch = ""
-        repair_config.kstrl_branch_explicit = True
-
-        repair_log = log_path("repair", attempt)
-        repair_agent_base = get_agent(
-            repair_agent_cmd or base_config.agent_cmd,
-            base_config.model,
-            base_config.model_reasoning_effort,
-            base_config.agent_type,
-            sandbox=sandbox_cfg,
-        )
-        repair_agent = LoggingAgent(repair_agent_base, repair_log)
-        repair_result = run_loop(
-            repair_config, ui_impl, repair_agent, root_dir,
-            timeouts=timeouts, breaker_config=breaker_config,
-        )
-        if repair_result.exit_code == 0:
-            sys.exit(0)
-        last_log = repair_log
-
-    sys.exit(repair_result.exit_code)
+    sys.exit(run_feature(params, base_config, agent, ui_impl, root_dir))
 
 
 @cli.command()
