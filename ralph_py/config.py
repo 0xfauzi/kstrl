@@ -56,7 +56,11 @@ class RalphConfig:
     agent_cmd: str | None = None
     model: str | None = None
     model_reasoning_effort: str | None = None
-    agent_type: str | None = None  # "claude-code", "codex", "auto", or None
+    # "claude-code", "claude-sdk", "codex", "auto", or None
+    agent_type: str | None = None
+    # R7.6: in-loop USD budget ceiling; enforced only by the claude-sdk
+    # adapter (per-turn, inside the agent loop). None = no ceiling.
+    agent_budget_usd: float | None = None
 
     # Timeouts live in ralph_py.timeout.TimeoutConfig (the single source
     # for agent_iteration / component_total; R0.1). RalphConfig used to
@@ -189,6 +193,10 @@ def _apply_toml_overrides(
         reasoning = agent.get("reasoning_effort")
         if isinstance(reasoning, str) and reasoning:
             config.model_reasoning_effort = reasoning
+        budget = agent.get("budget_usd")
+        if isinstance(budget, (int, float)) and not isinstance(budget, bool):
+            if budget > 0:
+                config.agent_budget_usd = float(budget)
 
     run = data.get("run")
     if isinstance(run, dict):
@@ -271,6 +279,13 @@ def _apply_env_overrides(config: RalphConfig, root_dir: Path) -> None:
         config.model_reasoning_effort = os.environ["MODEL_REASONING_EFFORT"]
     if "RALPH_AGENT_TYPE" in os.environ:
         config.agent_type = os.environ["RALPH_AGENT_TYPE"]
+    if "RALPH_AGENT_BUDGET_USD" in os.environ:
+        try:
+            budget_value = float(os.environ["RALPH_AGENT_BUDGET_USD"])
+        except ValueError:
+            budget_value = 0.0
+        if budget_value > 0:
+            config.agent_budget_usd = budget_value
     if "RALPH_UI" in os.environ:
         config.ui_mode = os.environ["RALPH_UI"]
     if "NO_COLOR" in os.environ:

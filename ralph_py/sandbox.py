@@ -133,8 +133,14 @@ def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:
     ]
 
 
-def claude_sandbox_args(config: SandboxConfig | None) -> list[str]:
-    """``claude --print`` argv fragment for the operator's sandbox intent.
+def claude_sandbox_settings(config: SandboxConfig | None) -> str | None:
+    """Claude settings JSON payload for the operator's sandbox intent.
+
+    The single source of the payload for BOTH invocation surfaces: the
+    CLI adapter passes it via ``--settings`` (R7.5, measured) and the
+    claude-sdk adapter passes the same string via
+    ``ClaudeAgentOptions.settings`` (R7.6) - the SDK forwards it to the
+    same CLI flag, so the two paths cannot drift.
 
     Always sets ``allowUnsandboxedCommands: false`` (the default true
     would let a failed command re-run OUTSIDE the sandbox). In the
@@ -144,7 +150,7 @@ def claude_sandbox_args(config: SandboxConfig | None) -> list[str]:
     :func:`claude_sandbox_drops_skip_permissions`).
     """
     if config is None or not config.enabled:
-        return []
+        return None
     settings: dict[str, object] = {
         "sandbox": {
             "enabled": True,
@@ -155,7 +161,18 @@ def claude_sandbox_args(config: SandboxConfig | None) -> list[str]:
         settings["permissions"] = {
             "allow": list(_CLAUDE_SANDBOXED_TOOL_ALLOW),
         }
-    return ["--settings", json.dumps(settings)]
+    return json.dumps(settings)
+
+
+def claude_sandbox_args(config: SandboxConfig | None) -> list[str]:
+    """``claude --print`` argv fragment for the operator's sandbox intent.
+
+    Thin argv wrapper over :func:`claude_sandbox_settings`.
+    """
+    settings = claude_sandbox_settings(config)
+    if settings is None:
+        return []
+    return ["--settings", settings]
 
 
 def claude_sandbox_drops_skip_permissions(

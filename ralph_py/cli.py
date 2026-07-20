@@ -21,7 +21,12 @@ import click
 from click.core import ParameterSource
 
 from ralph_py import __version__
-from ralph_py.agents import ClaudeCodeAgent, CodexAgent, get_agent
+from ralph_py.agents import (
+    ClaudeCodeAgent,
+    ClaudeSdkAgent,
+    CodexAgent,
+    get_agent,
+)
 from ralph_py.agents.base import Agent, UsageRecord
 from ralph_py.breaker import BreakerConfig
 from ralph_py.config import RalphConfig, _parse_paths, load_toml_section
@@ -58,6 +63,7 @@ _AGENT_TYPE_ALIASES: dict[str, str] = {
     "auto": "auto",
     "claude": "claude-code",
     "claude-code": "claude-code",
+    "claude-sdk": "claude-sdk",
     "codex": "codex",
     "custom": "custom",
 }
@@ -88,7 +94,7 @@ def _agent_preflight(
         return (
             agent_type,
             f"Unknown agent type {agent_type!r} "
-            "(expected: claude, codex, custom, or auto)",
+            "(expected: claude, claude-sdk, codex, custom, or auto)",
             "Fix [agent].type in ralph.toml, RALPH_AGENT_TYPE, or --agent-type",
         )
     if canonical == "custom":
@@ -105,6 +111,16 @@ def _agent_preflight(
                 "Install Claude Code, or use --agent-cmd / change [agent].type",
             )
         return "claude-code", None, None
+    if canonical == "claude-sdk":
+        if not ClaudeSdkAgent.is_available():
+            return (
+                agent_type,
+                "claude-agent-sdk is not installed "
+                "(config selects agent type 'claude-sdk')",
+                "Install the sdk extra (uv sync --extra sdk), "
+                "or change [agent].type",
+            )
+        return "claude-sdk", None, None
     if canonical == "codex":
         if not CodexAgent.is_available():
             return (
@@ -825,6 +841,7 @@ def understand(
     agent = get_agent(
         config.agent_cmd, config.model, config.model_reasoning_effort,
         config.agent_type, sandbox=sandbox_cfg,
+        max_budget_usd=config.agent_budget_usd,
     )
 
     result = run_loop(
@@ -1141,6 +1158,7 @@ def feature(
         base_config.model_reasoning_effort,
         base_config.agent_type,
         sandbox=sandbox_cfg,
+        max_budget_usd=base_config.agent_budget_usd,
     )
 
     # Feature understanding phase
@@ -1292,7 +1310,7 @@ def feature(
 )
 @click.option(
     "--agent-type",
-    type=click.Choice(["auto", "claude-code", "codex"]),
+    type=click.Choice(["auto", "claude-code", "claude-sdk", "codex"]),
     default="auto",
     help="Agent type",
 )
@@ -1605,7 +1623,7 @@ def decompose(
 )
 @click.option(
     "--agent-type",
-    type=click.Choice(["auto", "claude-code", "codex"]),
+    type=click.Choice(["auto", "claude-code", "claude-sdk", "codex"]),
     default="auto",
     help="Agent type",
 )

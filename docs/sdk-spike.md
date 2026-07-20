@@ -8,6 +8,13 @@ battery must pass against the SDK transport, and the sandbox settings
 pass-through must be re-measured through `ClaudeAgentOptions`. Tracked
 as R7.6 in `docs/remediation-roadmap.md`.
 
+**IMPLEMENTED + GATE PASSED 2026-07-20** (same day): see R7.6 in the
+roadmap for the evidence. Note the timeout-semantics concern below was
+CONFIRMED by measurement - the SDK transport spawns the CLI without
+`start_new_session` and only signals the direct child on close - which
+is why the adapter runs the SDK inside a runner subprocess owned by the
+R0.1 DeadlineStreamer rather than in-process.
+
 Written comparison for **user decision 5** (adopt the Claude Agent SDK
 for agent invocation, or stay on CLI subprocesses). Per the
 measure-don't-assume rule, every claim below was measured on
