@@ -252,3 +252,122 @@ class TestStatusProgressLogJoin:
         assert "comp-a: completed" in output
         assert "phase:" not in output
         assert "Run state" not in output
+
+
+class TestStatusV2Layout:
+    """Chunk 8: status renders from the v2 run-dir stream when present."""
+
+    def _write_v2_run(self, root: Path, run_id: str = "factory-20260720-000005.000000-t",
+                      checkpoint_open: bool = False) -> None:
+        from ralph_py import events as ev
+
+        paths = ev.RunPaths.for_run(root, run_id)
+        bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
+        bus.emit(ev.RunStarted(project="demo", components=2))
+        bus.emit(ev.RunPlan(
+            components=(
+                {"id": "comp-a", "title": "A", "deps": []},
+                {"id": "comp-b", "title": "B", "deps": ["comp-a"]},
+            ),
+            max_total_tokens=100000, max_adversarial_calls=10,
+        ))
+        bus.emit(ev.ComponentStarted(component="comp-a"))
+        bus.emit(ev.PhaseStarted(component="comp-a", phase="engineer", attempt=1))
+        bus.emit(ev.PhaseCompleted(component="comp-a", phase="engineer", passed=True))
+        bus.emit(ev.PhaseStarted(component="comp-a", phase="review", attempt=1))
+        bus.emit(ev.ComponentUsage(
+            component="comp-a", phase="engineer", calls=3, known_calls=2,
+            unreported_calls=1, total_tokens=7000, cost_usd=2.5,
+        ))
+        bus.emit(ev.PrCreated(component="comp-a", pr_number=9, pr_url="http://pr/9"))
+        bus.emit(ev.PrMerged(component="comp-a", pr_number=9, pr_url="http://pr/9"))
+        bus.emit(ev.ComponentStarted(component="comp-b"))
+        bus.emit(ev.PhaseStarted(component="comp-b", phase="engineer", attempt=1))
+        if checkpoint_open:
+            bus.emit(ev.CheckpointRequested(
+                component="comp-b", kind="pr_merge", question="ok?",
+            ))
+        worker = ev.EventBus(
+            ev.JsonlSink(paths.engineer_events("comp-b")),
+            run_id=run_id, source="worker", component="comp-b",
+        )
+        worker.emit(ev.WorkerHeartbeat(pid=1, elapsed_seconds=5.0))
+        bus.close()
+        worker.close()
+
+    def _manifest_with_running_b(self, tmp_path: Path, run_id: str) -> None:
+        manifest = _synthetic_manifest()
+        manifest.components[1].status = "running"
+        manifest.components[1].error = ""
+        manifest.run_id = run_id
+        manifest.save(tmp_path / "scripts" / "ralph" / "manifest.json")
+
+    def test_v2_stream_preferred_and_rendered(self, tmp_path: Path) -> None:
+        run_id = "factory-20260720-000005.000000-t"
+        self._write_v2_run(tmp_path, run_id)
+        self._manifest_with_running_b(tmp_path, run_id)
+        # A stale v1 log must lose to the v2 dir:
+        ProgressLog(
+            tmp_path / ".ralph" / "progress.jsonl", run_id="old-run",
+        ).factory_started("stale-project", 1)
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+        assert exit_code == 0
+        assert "events.jsonl" in output
+        assert run_id in output
+        assert "old-run" not in output
+        # Authoritative (explicit) phase, not inference:
+        assert re.search(r"phase:\s+review", output)
+        # Run usage rollup with the lower-bound marker:
+        assert "7000+ tokens" in output
+        assert "$2.5000+" in output
+        assert "100000 token cap" in output
+        # PR state annotation from the event stream:
+        assert "https://github.com/x/y/pull/12 (merged)" in output
+        # Worker heartbeat surfaced for the running component:
+        assert "last heartbeat" in output
+
+    def test_open_checkpoint_surfaced(self, tmp_path: Path) -> None:
+        run_id = "factory-20260720-000006.000000-t"
+        self._write_v2_run(tmp_path, run_id, checkpoint_open=True)
+        self._manifest_with_running_b(tmp_path, run_id)
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+        assert exit_code == 0
+        assert "pr_merge awaiting decision" in output
+
+    def test_manifest_run_id_selects_older_dir(self, tmp_path: Path) -> None:
+        old_id = "factory-20260720-000001.000000-t"
+        new_id = "factory-20260720-000009.000000-t"
+        self._write_v2_run(tmp_path, old_id)
+        self._write_v2_run(tmp_path, new_id)
+        self._manifest_with_running_b(tmp_path, old_id)
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+        assert exit_code == 0
+        assert old_id in output
+        assert new_id not in output
+
+    def test_stale_manifest_run_id_falls_back_to_newest(
+        self, tmp_path: Path,
+    ) -> None:
+        real_id = "factory-20260720-000009.000000-t"
+        self._write_v2_run(tmp_path, real_id)
+        self._manifest_with_running_b(tmp_path, "factory-19990101-gone")
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+        assert exit_code == 0
+        assert real_id in output
+
+    def test_explicit_progress_log_pins_v1_arm(self, tmp_path: Path) -> None:
+        self._write_v2_run(tmp_path)
+        manifest = _synthetic_manifest()
+        manifest.save(tmp_path / "scripts" / "ralph" / "manifest.json")
+        v1 = tmp_path / "custom-progress.jsonl"
+        log = ProgressLog(v1, run_id="pinned-run")
+        log.factory_started("demo", 2)
+        log.component_started("comp-a")
+        exit_code, output = _invoke_status(
+            "--root", str(tmp_path), "--progress-log", str(v1),
+        )
+        assert exit_code == 0
+        assert "pinned-run" in output
+        assert "custom-progress.jsonl" in output
+        assert "events.jsonl" not in output
