@@ -142,8 +142,6 @@ def run_feature(
     Returns the flow's exit code. ``interaction`` defaults to the
     terminal channel; ``stop_check`` threads into every run_loop.
     """
-    del stop_check  # C3 wires this into run_loop alongside the bus
-
     # Feature understanding phase
     understand_config = copy.deepcopy(base_config)
     understand_config.max_iterations = params.understand_iterations
@@ -166,8 +164,9 @@ def run_feature(
     understand_result = run_loop(
         understand_config, ui, understand_agent, root_dir,
         timeouts=timeouts, breaker_config=breaker_config,
+        interaction=interaction, stop_check=stop_check,
     )
-    if understand_result.exit_code != 0:
+    if not understand_result.completed:
         return understand_result.exit_code
 
     # Review gate
@@ -215,6 +214,7 @@ def run_feature(
     result = run_loop(
         run_config, ui, run_agent, root_dir,
         timeouts=timeouts, breaker_config=breaker_config,
+        interaction=interaction, stop_check=stop_check,
     )
     if (
         result.exit_code == 0
@@ -248,6 +248,7 @@ def run_feature(
         repair_result = run_loop(
             repair_config, ui, repair_agent, root_dir,
             timeouts=timeouts, breaker_config=breaker_config,
+            interaction=interaction, stop_check=stop_check,
         )
         if repair_result.exit_code == 0:
             return 0
