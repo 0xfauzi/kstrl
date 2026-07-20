@@ -11,6 +11,7 @@ from ralph_py import git, guards
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from ralph_py.breaker import BreakerConfig, NoProgressBreaker
+from ralph_py.events import EventBus, IterationCompleted, IterationStarted
 from ralph_py.prd import PRD
 from ralph_py.timeout import TimeoutConfig
 
@@ -57,6 +58,8 @@ def run_loop(
     context_prefix: str | None = None,
     timeouts: TimeoutConfig | None = None,
     breaker_config: BreakerConfig | None = None,
+    *,
+    bus: EventBus | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -206,6 +209,10 @@ def run_loop(
     for iteration in range(1, config.max_iterations + 1):
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
         iter_start = time.monotonic()
+        if bus is not None:
+            bus.emit(IterationStarted(
+                iteration=iteration, max_iterations=config.max_iterations,
+            ))
 
         # Bound the iteration by the per-iteration limit AND the remaining
         # component budget, so one iteration cannot blow far past the
@@ -240,6 +247,13 @@ def run_loop(
 
         iter_duration = time.monotonic() - iter_start
         iteration_durations.append(iter_duration)
+        if bus is not None:
+            bus.emit(IterationCompleted(
+                iteration=iteration,
+                duration_seconds=round(iter_duration, 2),
+                completed=completion_seen,
+                timed_out=iteration_timed_out,
+            ))
 
         if iteration_timed_out:
             timed_out_iterations += 1

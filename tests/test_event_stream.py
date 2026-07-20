@@ -410,3 +410,125 @@ class TestPhaseTranscripts:
             on_line=seen.append,
         )
         assert seen == ["line-a", "line-b"]
+
+
+class TestWorkerChannel:
+    def _worker_args(self, root: Path, events_dir: Path | None,
+                     agent_cmd: str) -> dict[str, Any]:
+        from ralph_py.factory import _run_component  # noqa: F401 - existence
+        _setup_project(root, ["comp-a"])
+        return dict(
+            component_id="comp-a",
+            prd_path_str="scripts/ralph/feature/comp-a/prd.json",
+            worktree_path_str=str(root),
+            root_dir_str=str(root),
+            prompt_file_str="scripts/ralph/prompt.md",
+            agent_cmd=agent_cmd,
+            model=None, reasoning=None, agent_type=None,
+            sleep_seconds=0.0,
+            max_iterations=1,
+            events_dir_str=str(events_dir) if events_dir else None,
+            run_id="run-w",
+            redirect_output=False,  # NEVER dup2 inside the test process
+        )
+
+    def test_worker_writes_events_and_transcript(
+        self, tmp_path: Path, capfd: Any,
+    ) -> None:
+        from ralph_py.factory import _run_component
+
+        events_dir = tmp_path / ".ralph" / "runs" / "run-w"
+        result = _run_component(**self._worker_args(
+            tmp_path, events_dir, "echo engineer-output-line",
+        ))
+        assert result.component_id == "comp-a"
+
+        comp_dir = events_dir / "components" / "comp-a"
+        worker_events = ev.read_events(comp_dir / "engineer.jsonl")
+        assert worker_events, "worker emitted no events"
+        assert all(e.source == "worker" for e in worker_events)
+        assert all(e.component == "comp-a" for e in worker_events)
+        names = [type(e).type for e in worker_events]
+        assert "iteration_started" in names
+        assert "iteration_completed" in names
+        assert "log" in names  # bridge narration (banner, sections)
+
+        transcript = (comp_dir / "engineer.log").read_text()
+        assert "engineer-output-line" in transcript
+
+        # The bridge path writes NOTHING to the inherited terminal.
+        out, err = capfd.readouterr()
+        assert out == ""
+        assert err == ""
+
+    def test_worker_without_events_dir_keeps_legacy_stderr(
+        self, tmp_path: Path, capfd: Any,
+    ) -> None:
+        from ralph_py.factory import _run_component
+
+        _run_component(**self._worker_args(
+            tmp_path, None, "echo legacy-line",
+        ))
+        _, err = capfd.readouterr()
+        assert "legacy-line" in err  # PlainUI on stderr, as before
+
+    def test_heartbeat_thread_emits(self) -> None:
+        import time as _time
+
+        from ralph_py.factory import _start_heartbeat
+
+        captured: list[ev.Event] = []
+        bus = ev.EventBus(
+            ev.CallbackSink(captured.append),
+            run_id="run-h", source="worker", component="comp-a",
+        )
+        stop = _start_heartbeat(bus, interval=0.01)
+        _time.sleep(0.08)
+        stop()
+        beats = [e for e in captured if isinstance(e, ev.WorkerHeartbeat)]
+        assert beats, "no heartbeat emitted"
+        assert beats[0].pid > 0
+        count_after_stop = len(beats)
+        _time.sleep(0.05)
+        assert len([
+            e for e in captured if isinstance(e, ev.WorkerHeartbeat)
+        ]) == count_after_stop  # stopped means stopped
+
+    def test_inline_factory_tees_live_lines_and_persists_files(
+        self, tmp_path: Path,
+    ) -> None:
+        """max_parallel=1 runs the REAL worker in-process: the parent UI
+        still shows live AI lines, while events + transcript land in the
+        run dir (the same layout as pool mode)."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root)
+        ui_buffer = io.StringIO()
+
+        marker = "<promise>COMPLETE</promise>"
+        base = _make_base_config(root)
+        base.agent_cmd = f"echo '{marker}'"
+        with patch("ralph_py.git.get_diff_content", return_value=""):
+            result = run_factory(
+                manifest, config, base,
+                PlainUI(no_color=True, file=ui_buffer), root,
+            )
+        # The echo agent emits the completion marker: component succeeds.
+        assert "comp-a" in result.completed
+
+        # Live tee: the AI line reached the parent UI.
+        assert marker in ui_buffer.getvalue()
+
+        run_dir = _events_file(root).parent
+        comp_dir = run_dir / "components" / "comp-a"
+        assert (comp_dir / "engineer.log").exists()
+        assert marker in (comp_dir / "engineer.log").read_text()
+        worker_events = ev.read_events(comp_dir / "engineer.jsonl")
+        assert any(
+            isinstance(e, ev.IterationCompleted) and e.completed
+            for e in worker_events
+        )
+
+        # The reducer merges worker files into the run view.
+        state, _ = reducer.load_run_state(root)
+        assert state.components["comp-a"].iteration == 1
