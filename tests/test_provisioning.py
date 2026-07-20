@@ -2,7 +2,7 @@
 
 Acceptance scenario is docs/phase-f-e2e-validation-v12.log:
 
-- ``scripts/ralph/`` is gitignored, so a fresh worktree never contains the
+- ``scripts/kstrl/`` is gitignored, so a fresh worktree never contains the
   customized prompt.md or the component PRD via git. ``_run_component``
   must copy them (plus CLAUDE.md/AGENTS.md) from ``root_dir`` -- resolved
   against ``root_dir`` explicitly, never the worker's inherited CWD (the
@@ -46,7 +46,7 @@ def _git(*args: str, cwd: Path) -> None:
 
 
 def _init_repo(root: Path, allowed_paths: list[str] | None = None) -> None:
-    """Real git repo shaped like a ralph project: scripts/ralph/ (prompt +
+    """Real git repo shaped like a ralph project: scripts/kstrl/ (prompt +
     PRD), CLAUDE.md, and AGENTS.md are all gitignored, so none of them
     reach a fresh worktree through git -- provisioning must copy them."""
     root.mkdir(parents=True, exist_ok=True)
@@ -54,18 +54,18 @@ def _init_repo(root: Path, allowed_paths: list[str] | None = None) -> None:
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
     (root / ".gitignore").write_text(
-        "scripts/ralph/\nCLAUDE.md\nAGENTS.md\n"
+        "scripts/kstrl/\nCLAUDE.md\nAGENTS.md\n"
     )
     (root / "README.md").write_text("seed\n")
     _git("add", ".gitignore", "README.md", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     feature_dir = ralph_dir / "feature" / "comp-a"
     feature_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text(CUSTOM_PROMPT)
     prd: dict[str, object] = {
-        "branchName": "ralph/factory/comp-a",
+        "branchName": "kstrl/factory/comp-a",
         "userStories": [{
             "id": "US-001", "title": "Test",
             "acceptanceCriteria": ["AC1"],
@@ -84,8 +84,8 @@ def _manifest() -> Manifest:
         base_branch="main", single_pr=False,
         components=[Component(
             id="comp-a", title="A", description="", dependencies=[],
-            prd_path="scripts/ralph/feature/comp-a/prd.json",
-            branch_name="ralph/factory/comp-a",
+            prd_path="scripts/kstrl/feature/comp-a/prd.json",
+            branch_name="kstrl/factory/comp-a",
         )],
     )
 
@@ -104,8 +104,8 @@ def _factory_config(max_retries: int = 0) -> FactoryConfig:
 
 def _base_config(root: Path, agent_cmd: str) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -134,7 +134,7 @@ class TestWorktreeProvisioning:
         # prompt it received (stdin) and the provisioned files.
         agent_cmd = (
             f"cat > {dump}/prompt-received.txt; "
-            f"cp scripts/ralph/prompt.md {dump}/prompt-in-worktree.md; "
+            f"cp scripts/kstrl/prompt.md {dump}/prompt-in-worktree.md; "
             f"cp CLAUDE.md {dump}/claude-in-worktree.md; "
             f"[ -e AGENTS.md ] && echo present > {dump}/agents-present.txt; "
             + COMPLETE_LINE

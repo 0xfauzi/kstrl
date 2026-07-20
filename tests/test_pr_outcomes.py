@@ -69,7 +69,7 @@ def _make_repo(
     uncommitted file so H-1 violations (checkout mutation) are visible.
     """
     root = tmp_path / "repo"
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -80,7 +80,7 @@ def _make_repo(
         feature.mkdir(parents=True)
         (feature / "prd.json").write_text(_prd_json())
     (root / ".gitignore").write_text(
-        ".ralph/\nscripts/ralph/manifest.json\n"
+        ".kstrl/\nscripts/kstrl/manifest.json\n"
     )
     _git("init", "-b", "main", cwd=root)
     _git("config", "user.email", "ralph-test@example.com", cwd=root)
@@ -189,13 +189,13 @@ def _two_component_manifest() -> Manifest:
         components=[
             Component(
                 "alpha", "Alpha", "First", [],
-                "scripts/ralph/feature/alpha/prd.json",
-                "ralph/factory/alpha",
+                "scripts/kstrl/feature/alpha/prd.json",
+                "kstrl/factory/alpha",
             ),
             Component(
                 "beta", "Beta", "Depends on alpha", ["alpha"],
-                "scripts/ralph/feature/beta/prd.json",
-                "ralph/factory/beta",
+                "scripts/kstrl/feature/beta/prd.json",
+                "kstrl/factory/beta",
             ),
         ],
     )
@@ -219,8 +219,8 @@ def _factory_config(**overrides: object) -> FactoryConfig:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,

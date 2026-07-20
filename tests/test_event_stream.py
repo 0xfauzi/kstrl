@@ -3,7 +3,7 @@
 Runs the real run_factory with a stubbed worker and asserts the three
 contracts of the dual-write:
 
-1. .ralph/runs/<run_id>/events.jsonl exists and every line is schema 2.
+1. .kstrl/runs/<run_id>/events.jsonl exists and every line is schema 2.
 2. The v1 progress.jsonl produced through V1CompatSink is exactly the
    projection of the v2 stream (same events, same order, same data) -
    the load-bearing regression net for every progress.jsonl consumer.
@@ -36,7 +36,7 @@ from kstrl.verify import VerifyConfig
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -60,8 +60,8 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
         comp_id, comp_id.title(), "Desc", deps or [],
-        f"scripts/ralph/feature/{comp_id}/prd.json",
-        f"ralph/factory/{comp_id}",
+        f"scripts/kstrl/feature/{comp_id}/prd.json",
+        f"kstrl/factory/{comp_id}",
     )
 
 
@@ -74,8 +74,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
 
 def _make_base_config(root_dir: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root_dir / "scripts" / "ralph" / "prompt.md",
-        prd_file=root_dir / "scripts" / "ralph" / "prd.json",
+        prompt_file=root_dir / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root_dir / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -132,7 +132,7 @@ def _run_stub_factory(root: Path, comp_ids: list[str],
 
 
 def _events_file(root: Path) -> Path:
-    run_dirs = sorted((root / ".ralph" / "runs").iterdir())
+    run_dirs = sorted((root / ".kstrl" / "runs").iterdir())
     assert run_dirs, "no v2 run dir written"
     return run_dirs[-1] / "events.jsonl"
 
@@ -226,12 +226,12 @@ class TestDualWrite:
                 PlainUI(no_color=True, file=io.StringIO()), root,
             )
         assert not (root / "progress.jsonl").exists()
-        assert not (root / ".ralph" / "runs").exists()
+        assert not (root / ".kstrl" / "runs").exists()
 
     def test_journal_offsets_still_bracket_v1_file(self, tmp_path: Path) -> None:
         """Manifest journal_offset_start/end stay pegged to the v1 file."""
         root = _run_stub_factory(tmp_path, ["comp-a"])
-        manifest = Manifest.load(root / "scripts" / "ralph" / "manifest.json")
+        manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert comp.journal_offset_start >= 0
@@ -419,10 +419,10 @@ class TestWorkerChannel:
         _setup_project(root, ["comp-a"])
         return dict(
             component_id="comp-a",
-            prd_path_str="scripts/ralph/feature/comp-a/prd.json",
+            prd_path_str="scripts/kstrl/feature/comp-a/prd.json",
             worktree_path_str=str(root),
             root_dir_str=str(root),
-            prompt_file_str="scripts/ralph/prompt.md",
+            prompt_file_str="scripts/kstrl/prompt.md",
             agent_cmd=agent_cmd,
             model=None, reasoning=None, agent_type=None,
             sleep_seconds=0.0,
@@ -437,7 +437,7 @@ class TestWorkerChannel:
     ) -> None:
         from kstrl.factory import _run_component
 
-        events_dir = tmp_path / ".ralph" / "runs" / "run-w"
+        events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
         result = _run_component(**self._worker_args(
             tmp_path, events_dir, "echo engineer-output-line",
         ))
@@ -480,7 +480,7 @@ class TestWorkerChannel:
         ), patch("kstrl.factory._start_heartbeat") as start_heartbeat:
             try:
                 _run_component(**self._worker_args(
-                    tmp_path, tmp_path / ".ralph" / "runs" / "run-w", "bad",
+                    tmp_path, tmp_path / ".kstrl" / "runs" / "run-w", "bad",
                 ))
             except RuntimeError as exc:
                 assert str(exc) == "no agent"
@@ -505,7 +505,7 @@ class TestWorkerChannel:
             def final_message(self) -> str | None:
                 return None
 
-        events_dir = tmp_path / ".ralph" / "runs" / "run-w"
+        events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
         with patch("kstrl.agents.get_agent", return_value=CrashingAgent()):
             result = _run_component(**self._worker_args(
                 tmp_path, events_dir, "crash",

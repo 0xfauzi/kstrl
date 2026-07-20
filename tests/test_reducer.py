@@ -283,7 +283,7 @@ class TestLoadRunState:
         worker.close()
 
     def _write_v1(self, root: Path, run_id: str, project: str) -> None:
-        log = ProgressLog(root / ".ralph" / "progress.jsonl", run_id=run_id)
+        log = ProgressLog(root / ".kstrl" / "progress.jsonl", run_id=run_id)
         log.factory_started(project, 1)
         log.component_started("z")
 

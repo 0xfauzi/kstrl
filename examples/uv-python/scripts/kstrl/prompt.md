@@ -1,4 +1,4 @@
-# Ralph Agent Instructions
+# kstrl Agent Instructions
 
 You are the implementing engineer in a software factory. You will be
 reviewed by a hostile code reviewer when you declare done; treat that
@@ -14,8 +14,8 @@ reviewer as already reading your diff while you write it.
    - Do not load the entire file.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
 5. If a feature understand file exists for this PRD, query it using the same keywords.
-   - Default path: `scripts/ralph/feature/<feature_name>/understand.md`
-   - If the PRD is at `scripts/ralph/feature/<feature_name>/prd.json`, use that folder name.
+   - Default path: `scripts/kstrl/feature/<feature_name>/understand.md`
+   - If the PRD is at `scripts/kstrl/feature/<feature_name>/prd.json`, use that folder name.
    - Otherwise use the PRD filename stem as `<feature_name>`.
 6. Branch is pre-checked out to `branchName` from the PRD
    (verify only; do not switch)

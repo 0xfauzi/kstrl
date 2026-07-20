@@ -1,6 +1,6 @@
 """Run discovery for `ralph dash` (stage 3 PR C).
 
-A run is a directory under ``.ralph/runs/<run_id>/`` containing
+A run is a directory under ``.kstrl/runs/<run_id>/`` containing
 events.jsonl. run_ids are lexicographically sortable by construction
 (``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>``), which discovery exploits.
 
@@ -77,7 +77,7 @@ def factory_lock_held(root_dir: Path) -> bool:
     """Non-blocking probe of the run-level flock. True = a factory run
     holds it right now. POSIX-only; returns False where fcntl is
     unavailable (mirrors the factory's own degradation)."""
-    lock_path = root_dir / ".ralph" / "factory.lock"
+    lock_path = root_dir / ".kstrl" / "factory.lock"
     if not lock_path.exists():
         return False
     try:
@@ -98,7 +98,7 @@ def factory_lock_held(root_dir: Path) -> bool:
 
 def discover_runs(root_dir: Path) -> list[RunRef]:
     """All runs with an events.jsonl, newest first."""
-    runs_root = root_dir / ".ralph" / "runs"
+    runs_root = root_dir / ".kstrl" / "runs"
     refs: list[RunRef] = []
     lock_held = factory_lock_held(root_dir)
     try:

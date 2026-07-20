@@ -40,7 +40,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
-COMP_PRD_PATH = "scripts/ralph/feature/comp-a/prd.json"
+COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
 # Header emitted by feedforward.build_feedforward_context; asserting on it
 # proves Phase 0 context reached the engineer prompt.
 FEEDFORWARD_HEADER = "=== CODEBASE CONTEXT (auto-generated) ==="
@@ -68,10 +68,10 @@ def _init_repo(root: Path) -> None:
     _git("add", "src/app.py", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
-    feature_dir = root / "scripts" / "ralph" / "feature" / "comp-a"
+    feature_dir = root / "scripts" / "kstrl" / "feature" / "comp-a"
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(json.dumps({
-        "branchName": "ralph/factory/comp-a",
+        "branchName": "kstrl/factory/comp-a",
         "userStories": [{
             "id": "US-001", "title": "Test",
             "acceptanceCriteria": ["AC1"],
@@ -87,7 +87,7 @@ def _manifest() -> Manifest:
         components=[Component(
             id="comp-a", title="A", description="", dependencies=[],
             prd_path=COMP_PRD_PATH,
-            branch_name="ralph/factory/comp-a",
+            branch_name="kstrl/factory/comp-a",
         )],
     )
 
@@ -104,8 +104,8 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
 
 def _base_config(root: Path, agent_cmd: str, **overrides: Any) -> KstrlConfig:
     defaults: dict[str, Any] = dict(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -279,10 +279,10 @@ class TestCliWiring:
 
     def _write_run_prd(self, root: Path) -> None:
         """R2.4: `ralph run` preflights prd.json before run_factory."""
-        prd_path = root / "scripts" / "ralph" / "prd.json"
+        prd_path = root / "scripts" / "kstrl" / "prd.json"
         prd_path.parent.mkdir(parents=True, exist_ok=True)
         prd_path.write_text(
-            json.dumps({"branchName": "ralph/test", "userStories": []})
+            json.dumps({"branchName": "kstrl/test", "userStories": []})
         )
 
     def test_run_no_verify_sets_skip_sentinel(
@@ -416,7 +416,7 @@ class TestFeedforwardAndPrdPathEndToEnd:
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert str(root / comp.prd_path) in prompt
-        assert "scripts/ralph/prd.json" not in prompt
+        assert "scripts/kstrl/prd.json" not in prompt
 
         # The skip sentinel flowed through the real CLI stack.
         assert "Phase 1 SKIPPED" in result.output
@@ -459,7 +459,7 @@ class TestFeedforwardAndPrdPathEndToEnd:
 
         prompt = dump.read_text()
         assert str(root / comp.prd_path) in prompt
-        assert "scripts/ralph/prd.json" not in prompt
+        assert "scripts/kstrl/prd.json" not in prompt
 
 
 class TestDefaultPromptPlaceholderContract:
@@ -470,15 +470,15 @@ class TestDefaultPromptPlaceholderContract:
         assert "$prd_path" in DEFAULT_PROMPT
         assert "$progress_path" in DEFAULT_PROMPT
         assert "$codebase_map_path" in DEFAULT_PROMPT
-        assert "scripts/ralph/prd.json" not in DEFAULT_PROMPT
-        assert "scripts/ralph/progress.txt" not in DEFAULT_PROMPT
+        assert "scripts/kstrl/prd.json" not in DEFAULT_PROMPT
+        assert "scripts/kstrl/progress.txt" not in DEFAULT_PROMPT
 
     def test_rendering_matches_loop_substitution(self) -> None:
-        prd = "/w/scripts/ralph/feature/comp-a/prd.json"
+        prd = "/w/scripts/kstrl/feature/comp-a/prd.json"
         rendered = Template(DEFAULT_PROMPT).safe_substitute(
             prd_path=prd,
-            progress_path="/w/scripts/ralph/progress.txt",
-            codebase_map_path="/w/scripts/ralph/codebase_map.md",
+            progress_path="/w/scripts/kstrl/progress.txt",
+            codebase_map_path="/w/scripts/kstrl/codebase_map.md",
         )
         assert prd in rendered
         for leftover in ("$prd_path", "$progress_path", "$codebase_map_path"):

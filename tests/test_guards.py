@@ -30,7 +30,7 @@ class TestPathIsAllowed:
         assert path_is_allowed("anything.txt", []) is False
 
     def test_nested_directory(self) -> None:
-        assert path_is_allowed("scripts/ralph/codebase_map.md", ["scripts/ralph/"]) is True
+        assert path_is_allowed("scripts/kstrl/codebase_map.md", ["scripts/kstrl/"]) is True
 
     def test_exact_directory_match(self) -> None:
         # "foo/" should match path "foo" as a directory

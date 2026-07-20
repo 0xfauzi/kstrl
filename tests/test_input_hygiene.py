@@ -1,7 +1,7 @@
 """R0.6 input hygiene: LLM-emitted component ids and branch names.
 
-Component ids become filesystem path segments (.ralph/worktrees/<id>,
-scripts/ralph/feature/<id>) and branch segments (ralph/factory/<id>);
+Component ids become filesystem path segments (.kstrl/worktrees/<id>,
+scripts/kstrl/feature/<id>) and branch segments (kstrl/factory/<id>);
 branch names reach git argv in ref position. These tests prove that
 traversal ids, option-injection branch names, and unicode confusables
 are rejected at every parse boundary, and that the legitimate shapes
@@ -89,7 +89,7 @@ REJECTED_BRANCH_NAMES = [
     f"br{EN_DASH}anch",
     "..",
     "a..b",
-    "ralph/../main",
+    "kstrl/../main",
     " main",
     "main ",
     "my branch",
@@ -100,7 +100,7 @@ REJECTED_BRANCH_NAMES = [
     "trailing-slash/",
     "a//b",
     ".hidden",
-    "ralph/.hidden",
+    "kstrl/.hidden",
     "branch.",
     "branch.lock",
     "",
@@ -111,15 +111,15 @@ ACCEPTED_BRANCH_NAMES = [
     "main",
     "master",
     "develop",
-    "ralph/run",  # ralph run default
-    "ralph/factory/auth-service",
-    "ralph/factory/comp-a",
-    "ralph/auth-feature",
-    "ralph/c1",
+    "kstrl/run",  # ralph run default
+    "kstrl/factory/auth-service",
+    "kstrl/factory/comp-a",
+    "kstrl/auth-feature",
+    "kstrl/c1",
     "test-branch",
     "feature/foo_bar",
     "release-1.2.3",
-    "ralph/contract-0-20260713",  # contract temp branches
+    "kstrl/contract-0-20260713",  # contract temp branches
     "a" * 200,
 ]
 
@@ -163,7 +163,7 @@ class TestValidateBranchName:
 
 def _manifest_data(
     comp_id: str = "comp-a",
-    branch_name: str = "ralph/factory/comp-a",
+    branch_name: str = "kstrl/factory/comp-a",
     base_branch: str = "main",
 ) -> dict[str, object]:
     return {
@@ -178,7 +178,7 @@ def _manifest_data(
                 "title": "Component A",
                 "description": "A component",
                 "dependencies": [],
-                "prdPath": f"scripts/ralph/feature/{comp_id}/prd.json",
+                "prdPath": f"scripts/kstrl/feature/{comp_id}/prd.json",
                 "branchName": branch_name,
             }
         ],
@@ -214,9 +214,9 @@ class TestManifestSchemaHygiene:
 class TestFromPrdHygiene:
     def test_legitimate_branch_accepted(self, tmp_path: Path) -> None:
         manifest = Manifest.from_prd(
-            prd_path=tmp_path / "prd.json", branch="ralph/auth",
+            prd_path=tmp_path / "prd.json", branch="kstrl/auth",
         )
-        assert manifest.components[0].branch_name == "ralph/auth"
+        assert manifest.components[0].branch_name == "kstrl/auth"
 
     @pytest.mark.parametrize("branch", ["-evil", "my branch", "a..b"])
     def test_bad_branch_rejected(self, tmp_path: Path, branch: str) -> None:
@@ -227,7 +227,7 @@ class TestFromPrdHygiene:
         with pytest.raises(ValueError, match="Invalid base branch"):
             Manifest.from_prd(
                 prd_path=tmp_path / "prd.json",
-                branch="ralph/auth",
+                branch="kstrl/auth",
                 base_branch="-evil",
             )
 
@@ -241,7 +241,7 @@ def _decompose_output(comp_id: str) -> str:
                 "description": "A component",
                 "dependencies": [],
                 "allowedPaths": [
-                    "src/", "tests/", f"scripts/ralph/feature/{comp_id}/",
+                    "src/", "tests/", f"scripts/kstrl/feature/{comp_id}/",
                 ],
                 "userStories": [
                     {
@@ -301,7 +301,7 @@ class TestDecomposeValidationHygiene:
         validation error verbatim and attempt 2 succeeds."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         agent = SequenceAgent([
             _decompose_output("../../repo"),
@@ -321,7 +321,7 @@ class TestDecomposeValidationHygiene:
         assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
         assert "../../repo" in agent.prompts[1]
         assert manifest.components[0].id == "auth-service"
-        assert manifest.components[0].branch_name == "ralph/factory/auth-service"
+        assert manifest.components[0].branch_name == "kstrl/factory/auth-service"
 
     def test_unsafe_project_name_rejected_in_single_pr(
         self, tmp_path: Path,
@@ -330,7 +330,7 @@ class TestDecomposeValidationHygiene:
         an unsafe name is rejected, not sanitized."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         agent = SequenceAgent([_decompose_output("auth-service")])
         with pytest.raises(ValueError, match="Cannot derive a git branch"):
@@ -374,11 +374,11 @@ class TestGitArgvSeparators:
     def test_push_branch_legitimate(self, git_repo_with_origin: Path) -> None:
         repo = git_repo_with_origin
         subprocess.run(
-            ["git", "checkout", "-qb", "ralph/factory/comp-a"],
+            ["git", "checkout", "-qb", "kstrl/factory/comp-a"],
             cwd=repo, check=True,
         )
         # R0.2: push_branch returns None on success, an error otherwise.
-        assert push_branch("ralph/factory/comp-a", repo) is None
+        assert push_branch("kstrl/factory/comp-a", repo) is None
 
     def test_push_branch_option_shape_fails_closed(
         self, git_repo_with_origin: Path,
@@ -414,7 +414,7 @@ class TestGitArgvSeparators:
         self, git_repo_with_origin: Path,
     ) -> None:
         repo = git_repo_with_origin
-        assert create_branch_from("ralph/factory/api", "main", cwd=repo) is True
+        assert create_branch_from("kstrl/factory/api", "main", cwd=repo) is True
         assert checkout_existing("main", cwd=repo) is True
 
     # NOTE: no fail-closed test for checkout_existing("-q"): for git
@@ -458,8 +458,8 @@ class TestPrArgvShapes:
             title="Component A",
             description="A component",
             dependencies=[],
-            prd_path="scripts/ralph/feature/comp-a/prd.json",
-            branch_name="ralph/factory/comp-a",
+            prd_path="scripts/kstrl/feature/comp-a/prd.json",
+            branch_name="kstrl/factory/comp-a",
         )
         manifest = Manifest(
             version="1",
@@ -477,7 +477,7 @@ class TestPrArgvShapes:
         assert pr_number == 7
         assert pr_url == "https://github.com/o/r/pull/7"
         (argv,) = captured
-        assert "--head=ralph/factory/comp-a" in argv
+        assert "--head=kstrl/factory/comp-a" in argv
         assert "--base=main" in argv
 
     def test_push_branch_uses_separator(
@@ -492,6 +492,6 @@ class TestPrArgvShapes:
         monkeypatch.setattr(pr_module.subprocess, "run", fake_run)
 
         # R0.2: push_branch returns None on success, an error otherwise.
-        assert push_branch("ralph/factory/comp-a", tmp_path) is None
+        assert push_branch("kstrl/factory/comp-a", tmp_path) is None
         (argv,) = captured
-        assert argv.index("--") < argv.index("ralph/factory/comp-a")
+        assert argv.index("--") < argv.index("kstrl/factory/comp-a")

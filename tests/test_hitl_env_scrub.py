@@ -58,7 +58,7 @@ class ScriptedUI(PlainUI):
 def _scaffold(
     tmp_path: Path, comp_ids: list[str], deps: dict[str, list[str]],
 ) -> tuple[Manifest, KstrlConfig]:
-    scaffold = tmp_path / "scripts" / "ralph"
+    scaffold = tmp_path / "scripts" / "kstrl"
     scaffold.mkdir(parents=True)
     (scaffold / "prompt.md").write_text("p")
     (scaffold / "prd.json").write_text(
@@ -78,8 +78,8 @@ def _scaffold(
         components.append(Component(
             id=cid, title=cid, description="",
             dependencies=deps.get(cid, []),
-            prd_path=f"scripts/ralph/feature/{cid}/prd.json",
-            branch_name=f"ralph/{cid}",
+            prd_path=f"scripts/kstrl/feature/{cid}/prd.json",
+            branch_name=f"kstrl/{cid}",
         ))
     manifest = Manifest(
         version="1", spec_file="s", project_name="t",

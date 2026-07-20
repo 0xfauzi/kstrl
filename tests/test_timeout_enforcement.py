@@ -91,13 +91,13 @@ def _init_repo(root: Path) -> None:
     _git("init", "-q", "-b", "main", cwd=root)
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt\n")
     feature_dir = ralph_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(json.dumps({
-        "branchName": "ralph/factory/a",
+        "branchName": "kstrl/factory/a",
         "userStories": [{
             "id": "US-001", "title": "Test",
             "acceptanceCriteria": ["AC1"],
@@ -477,7 +477,7 @@ class _RecordingAgent:
 
 
 def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -566,7 +566,7 @@ class TestFactoryComponentTimeout:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
         (ralph_dir / "prompt.md").write_text("test prompt")
         feature_dir = ralph_dir / "feature" / "a"
@@ -585,7 +585,7 @@ class TestFactoryComponentTimeout:
             version="1", spec_file="spec.md", project_name="t",
             base_branch="main", single_pr=False,
             components=[Component(
-                "a", "A", "", [], "scripts/ralph/feature/a/prd.json", "b/a",
+                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json", "b/a",
             )],
         )
         config = FactoryConfig(
@@ -632,8 +632,8 @@ class TestFactoryComponentTimeout:
             version="1", spec_file="spec.md", project_name="t",
             base_branch="main", single_pr=False,
             components=[Component(
-                "a", "A", "", [], "scripts/ralph/feature/a/prd.json",
-                "ralph/factory/a",
+                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json",
+                "kstrl/factory/a",
             )],
         )
         config = FactoryConfig(
@@ -645,8 +645,8 @@ class TestFactoryComponentTimeout:
             ),
         )
         base = KstrlConfig(
-            prompt_file=tmp_path / "scripts" / "ralph" / "prompt.md",
-            prd_file=tmp_path / "scripts" / "ralph" / "prd.json",
+            prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
+            prd_file=tmp_path / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="exec sleep 300",
             kstrl_branch="", kstrl_branch_explicit=True,
@@ -786,8 +786,8 @@ class TestSchedulerBackstop:
             version="1", spec_file="spec.md", project_name="t",
             base_branch="main", single_pr=False,
             components=[Component(
-                "a", "A", "", [], "scripts/ralph/feature/a/prd.json",
-                "ralph/factory/a", scaffold="sleep 5",
+                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json",
+                "kstrl/factory/a", scaffold="sleep 5",
             )],
         )
         config = FactoryConfig(
@@ -799,8 +799,8 @@ class TestSchedulerBackstop:
             ),
         )
         base = KstrlConfig(
-            prompt_file=tmp_path / "scripts" / "ralph" / "prompt.md",
-            prd_file=tmp_path / "scripts" / "ralph" / "prd.json",
+            prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
+            prd_file=tmp_path / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo done",
             kstrl_branch="", kstrl_branch_explicit=True,
@@ -822,8 +822,8 @@ class TestSchedulerBackstop:
         assert comp.status == "failed"
         assert comp.error == "component timeout"
         # Leaked worker's worktree is kept, not ripped out from under it.
-        # R0.5: worktrees are keyed .ralph/worktrees/<run_id>/<component_id>
-        leaked = list((tmp_path / ".ralph" / "worktrees").glob("*/a"))
+        # R0.5: worktrees are keyed .kstrl/worktrees/<run_id>/<component_id>
+        leaked = list((tmp_path / ".kstrl" / "worktrees").glob("*/a"))
         assert leaked, "leaked worker's worktree was removed"
 
 

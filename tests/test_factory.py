@@ -34,8 +34,8 @@ def _make_manifest(
 
 def _make_base_config(root_dir: Path) -> KstrlConfig:
     """Build a base config for factory tests."""
-    prompt = root_dir / "scripts" / "ralph" / "prompt.md"
-    prd = root_dir / "scripts" / "ralph" / "prd.json"
+    prompt = root_dir / "scripts" / "kstrl" / "prompt.md"
+    prd = root_dir / "scripts" / "kstrl" / "prd.json"
     return KstrlConfig(
         prompt_file=prompt,
         prd_file=prd,
@@ -50,7 +50,7 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
 
 def _setup_project(tmp_path: Path) -> Path:
     """Create minimal project structure for factory tests."""
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -135,8 +135,8 @@ class TestRunFactoryExecution:
         manifest = _make_manifest([
             Component(
                 "comp-a", "Component A", "Desc",
-                [], "scripts/ralph/feature/comp-a/prd.json",
-                "ralph/factory/comp-a",
+                [], "scripts/kstrl/feature/comp-a/prd.json",
+                "kstrl/factory/comp-a",
             ),
         ])
         config = FactoryConfig(
@@ -152,7 +152,7 @@ class TestRunFactoryExecution:
         ui = PlainUI(no_color=True)
 
         # Create PRD for the component
-        feature_dir = root / "scripts" / "ralph" / "feature" / "comp-a"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -198,8 +198,8 @@ class TestRunFactoryExecution:
     def test_crash_recovery_resets_running(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
 
-        prd_rel = "scripts/ralph/feature/a/prd.json"
-        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -240,8 +240,8 @@ class TestRunFactoryExecution:
     def test_crash_recovery_resets_verifying(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
 
-        prd_rel = "scripts/ralph/feature/a/prd.json"
-        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -282,8 +282,8 @@ class TestRunFactoryExecution:
     def test_manifest_saved_during_execution(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
 
-        prd_rel = "scripts/ralph/feature/a/prd.json"
-        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -311,7 +311,7 @@ class TestRunFactoryExecution:
 
         # This duplicate PRD creation already exists above, remove the second one
         success_result = ComponentResult("a", success=True, iterations=1)
-        manifest_path = root / "scripts" / "ralph" / "manifest.json"
+        manifest_path = root / "scripts" / "kstrl" / "manifest.json"
 
         with patch(
             "kstrl.factory._run_component", return_value=success_result,
@@ -325,7 +325,7 @@ class TestRunFactoryExecution:
     def test_verification_failure_triggers_retry(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
 
-        prd_rel = "scripts/ralph/feature/a/prd.json"
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
         manifest = _make_manifest([
             Component("a", "A", "", [], prd_rel, "b/a"),
         ])
@@ -345,7 +345,7 @@ class TestRunFactoryExecution:
         ui = PlainUI(no_color=True)
 
         # Create PRD with a non-passing story (verify will fail)
-        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -382,7 +382,7 @@ class TestEvolutionRecording:
         self, tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path)
-        prd_rel = "scripts/ralph/feature/a/prd.json"
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
         manifest = _make_manifest([
             Component("a", "A", "", [], prd_rel, "b/a"),
         ])
@@ -401,7 +401,7 @@ class TestEvolutionRecording:
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
 
-        feature_dir = root / "scripts" / "ralph" / "feature" / "a"
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -420,7 +420,7 @@ class TestEvolutionRecording:
 
         assert "a" in result.failed
 
-        journal_path = root / ".ralph" / "evolution.jsonl"
+        journal_path = root / ".kstrl" / "evolution.jsonl"
         entries = [
             json.loads(line)
             for line in journal_path.read_text().strip().splitlines()

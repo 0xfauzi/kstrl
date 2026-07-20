@@ -431,7 +431,7 @@ class TestEvolutionIntegration:
                 Component(
                     id="auth", title="Auth", description="",
                     dependencies=[], prd_path="prd.json",
-                    branch_name="ralph/auth",
+                    branch_name="kstrl/auth",
                     status=ComponentStatus.FAILED.value,
                     error="Tests failed (exit code 1)",
                     retries=2,
@@ -441,7 +441,7 @@ class TestEvolutionIntegration:
                 Component(
                     id="api", title="API", description="",
                     dependencies=["auth"], prd_path="prd.json",
-                    branch_name="ralph/api",
+                    branch_name="kstrl/api",
                     status=ComponentStatus.COMPLETED.value,
                     error="",
                     retries=0,
@@ -451,7 +451,7 @@ class TestEvolutionIntegration:
                 Component(
                     id="db", title="DB", description="",
                     dependencies=[], prd_path="prd.json",
-                    branch_name="ralph/db",
+                    branch_name="kstrl/db",
                     status=ComponentStatus.FAILED.value,
                     error="Tests failed (exit code 1)",
                     retries=1,
@@ -515,7 +515,7 @@ class TestEvolutionIntegration:
                     Component(
                         id=f"comp-{i}", title="C", description="",
                         dependencies=[], prd_path="prd.json",
-                        branch_name=f"ralph/c{i}",
+                        branch_name=f"kstrl/c{i}",
                         status=ComponentStatus.COMPLETED.value,
                     ),
                 ],
@@ -573,13 +573,13 @@ class TestManifestFromPrd:
 
         prd_path = tmp_path / "prd.json"
         prd_path.write_text(json.dumps({
-            "branchName": "ralph/auth-feature",
+            "branchName": "kstrl/auth-feature",
             "userStories": [],
         }))
 
         m = Manifest.from_prd(
             prd_path=prd_path,
-            branch="ralph/auth-feature",
+            branch="kstrl/auth-feature",
             base_branch="main",
         )
         assert len(m.components) == 1
@@ -593,7 +593,7 @@ class TestManifestFromPrd:
 
         m = Manifest.from_prd(
             prd_path=Path("prd.json"),
-            branch="ralph/user-dashboard",
+            branch="kstrl/user-dashboard",
         )
         assert m.project_name == "user-dashboard"
 
@@ -601,18 +601,18 @@ class TestManifestFromPrd:
         from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
-            prd_path=Path("scripts/ralph/feature/login/prd.json"),
+            prd_path=Path("scripts/kstrl/feature/login/prd.json"),
             branch="",
         )
         assert m.project_name == "prd"
-        assert m.components[0].branch_name == "ralph/prd"
+        assert m.components[0].branch_name == "kstrl/prd"
 
     def test_roundtrip_serialize(self, tmp_path: Path) -> None:
         from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
-            prd_path=Path("scripts/ralph/prd.json"),
-            branch="ralph/test",
+            prd_path=Path("scripts/kstrl/prd.json"),
+            branch="kstrl/test",
         )
         out = tmp_path / "manifest.json"
         m.save(out)
@@ -626,7 +626,7 @@ class TestManifestFromPrd:
 
         m = Manifest.from_prd(
             prd_path=Path("prd.json"),
-            branch="ralph/x",
+            branch="kstrl/x",
         )
         errors = m.validate_dag()
         assert errors == []

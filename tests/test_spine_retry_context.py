@@ -48,9 +48,9 @@ class TestRetryContextPropagation:
         root = tmp_path / "repo"
         init_ralph_repo(root, (COMP,))
         # PRD with an allowedPaths scope: only src/ may change.
-        prd_path = root / "scripts" / "ralph" / "feature" / COMP / "prd.json"
+        prd_path = root / "scripts" / "kstrl" / "feature" / COMP / "prd.json"
         prd_path.write_text(json.dumps({
-            "branchName": f"ralph/factory/{COMP}",
+            "branchName": f"kstrl/factory/{COMP}",
             "userStories": [{
                 "id": "US-001", "title": "Test",
                 "acceptanceCriteria": ["AC1"],

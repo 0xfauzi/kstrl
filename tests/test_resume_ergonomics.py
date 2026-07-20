@@ -55,13 +55,13 @@ def _write_prd(path: Path, story_ids: list[str]) -> None:
 
 
 def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
-    (tmp_path / "scripts" / "ralph").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "scripts" / "ralph" / "prompt.md").write_text("p")
-    (tmp_path / "scripts" / "ralph" / "prd.json").write_text(
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("p")
+    (tmp_path / "scripts" / "kstrl" / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     for comp_id in comp_ids:
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / comp_id
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
         _write_prd(feature_dir / "prd.json", ["US-001"])
     return tmp_path
@@ -74,8 +74,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
         components=[
             Component(
                 id=i, title=i, description="", dependencies=[],
-                prd_path=f"scripts/ralph/feature/{i}/prd.json",
-                branch_name=f"ralph/{i}",
+                prd_path=f"scripts/kstrl/feature/{i}/prd.json",
+                branch_name=f"kstrl/{i}",
             )
             for i in ids
         ],
@@ -84,8 +84,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts/ralph/prompt.md",
-        prd_file=root / "scripts/ralph/prd.json",
+        prompt_file=root / "scripts/kstrl/prompt.md",
+        prd_file=root / "scripts/kstrl/prd.json",
         sleep_seconds=0, agent_cmd="echo test",
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -120,7 +120,7 @@ def _init_git_repo(root: Path) -> None:
     _git(root, "init", "-q", "-b", "main")
     _git(root, "config", "user.email", "r33@test")
     _git(root, "config", "user.name", "R33 Test")
-    (root / ".gitignore").write_text("scripts/ralph/\n.ralph/\n")
+    (root / ".gitignore").write_text("scripts/kstrl/\n.kstrl/\n")
     (root / "README.md").write_text("seed\n")
     _git(root, "add", ".gitignore", "README.md")
     _git(root, "commit", "-q", "-m", "init")
@@ -201,7 +201,7 @@ class TestManifestRunMetadata:
             "components": [{
                 "id": "comp-a", "title": "a", "description": "",
                 "dependencies": [], "prdPath": "p.json",
-                "branchName": "ralph/comp-a",
+                "branchName": "kstrl/comp-a",
             }],
         }))
         loaded = Manifest.load(path)
@@ -269,13 +269,13 @@ class TestResetForRetry:
         manifest = self._failed_manifest()
         manifest.components.append(Component(
             id="comp-e", title="e", description="", dependencies=[],
-            prd_path="p.json", branch_name="ralph/comp-e",
+            prd_path="p.json", branch_name="kstrl/comp-e",
             status=ComponentStatus.FAILED.value, error="other failure",
         ))
         manifest.components.append(Component(
             id="comp-f", title="f", description="",
             dependencies=["comp-a", "comp-e"],
-            prd_path="p.json", branch_name="ralph/comp-f",
+            prd_path="p.json", branch_name="kstrl/comp-f",
             status=ComponentStatus.SKIPPED.value,
             error="Dependency 'comp-e' failed",
         ))
@@ -313,7 +313,7 @@ class TestRunMetadataPersistence:
         assert comp is not None
         assert comp.completed_at != ""
         saved = json.loads(
-            (root / "scripts" / "ralph" / "manifest.json").read_text()
+            (root / "scripts" / "kstrl" / "manifest.json").read_text()
         )
         assert saved["runId"] == manifest.run_id
         assert saved["completedAt"] == manifest.completed_at
@@ -440,7 +440,7 @@ class TestKeepWorktreesOnFailure:
         config = _factory_config(
             use_worktrees=True,
             keep_worktrees_on_failure=keep,
-            progress_log_path=root / ".ralph" / "progress.jsonl",
+            progress_log_path=root / ".kstrl" / "progress.jsonl",
         )
         failure = ComponentResult(
             "comp-a", success=False, iterations=1, error="agent died",
@@ -464,11 +464,11 @@ class TestKeepWorktreesOnFailure:
         assert comp.evidence_worktree != ""
         kept = Path(comp.evidence_worktree)
         assert kept.exists(), "failed worktree must survive cleanup"
-        assert kept == tmp_path / ".ralph" / "worktrees" / manifest.run_id / "comp-a"
+        assert kept == tmp_path / ".kstrl" / "worktrees" / manifest.run_id / "comp-a"
 
         # Evidence pointers persisted to disk.
         saved = json.loads(
-            (tmp_path / "scripts" / "ralph" / "manifest.json").read_text()
+            (tmp_path / "scripts" / "kstrl" / "manifest.json").read_text()
         )
         saved_comp = saved["components"][0]
         assert saved_comp["evidenceWorktree"] == comp.evidence_worktree
@@ -495,7 +495,7 @@ class TestKeepWorktreesOnFailure:
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert comp.evidence_worktree == ""
-        run_dir = tmp_path / ".ralph" / "worktrees" / manifest.run_id
+        run_dir = tmp_path / ".kstrl" / "worktrees" / manifest.run_id
         assert not (run_dir / "comp-a").exists()
 
     def test_next_run_prune_preserves_kept_evidence(
@@ -533,15 +533,15 @@ class TestRetryCli:
         _init_git_repo(root)
         _scaffold(root, ["comp-a", "comp-b"])
         # Branch from the failed attempt, with a commit not on main.
-        _git(root, "checkout", "-q", "-b", "ralph/comp-a")
+        _git(root, "checkout", "-q", "-b", "kstrl/comp-a")
         (root / "half-done.txt").write_text("partial\n")
         _git(root, "add", "half-done.txt")
         _git(root, "commit", "-q", "-m", "failed attempt")
         _git(root, "checkout", "-q", "main")
         # Kept evidence worktree on that branch.
-        wt = root / ".ralph" / "worktrees" / "run-old" / "comp-a"
+        wt = root / ".kstrl" / "worktrees" / "run-old" / "comp-a"
         wt.parent.mkdir(parents=True, exist_ok=True)
-        _git(root, "worktree", "add", str(wt), "ralph/comp-a")
+        _git(root, "worktree", "add", str(wt), "kstrl/comp-a")
 
         manifest = _make_manifest(["comp-a", "comp-b"])
         a, b = manifest.components
@@ -554,7 +554,7 @@ class TestRetryCli:
         a.evidence_worktree = str(wt)
         b.status = ComponentStatus.SKIPPED.value
         b.error = "Dependency 'comp-a' failed"
-        manifest_file = root / "scripts" / "ralph" / "manifest.json"
+        manifest_file = root / "scripts" / "kstrl" / "manifest.json"
         manifest.save(manifest_file)
         return manifest_file
 
@@ -611,12 +611,12 @@ class TestRetryCli:
         # stale-branch preflight cannot refuse the re-run.
         branch = subprocess.run(
             ["git", "rev-parse", "--verify", "--quiet",
-             "refs/heads/ralph/comp-a"],
+             "refs/heads/kstrl/comp-a"],
             cwd=tmp_path, capture_output=True, timeout=30,
         )
         assert branch.returncode != 0, "failed-attempt branch must be deleted"
         assert not (
-            tmp_path / ".ralph" / "worktrees" / "run-old" / "comp-a"
+            tmp_path / ".kstrl" / "worktrees" / "run-old" / "comp-a"
         ).exists()
 
     def test_retry_rejects_non_failed_component(

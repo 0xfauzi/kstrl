@@ -72,7 +72,7 @@ class TestDiscovery:
 
     def test_log_text_does_not_mark_run_complete(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-150000.000000-log"
-        run_dir = tmp_path / ".ralph" / "runs" / run_id
+        run_dir = tmp_path / ".kstrl" / "runs" / run_id
         run_dir.mkdir(parents=True)
         (run_dir / "events.jsonl").write_text(json.dumps({
             "event": "log",
@@ -94,10 +94,10 @@ class TestDiscovery:
             tmp_path, FakeRunSpec(components=1, complete=False),
             run_id=run_id,
         )
-        events = tmp_path / ".ralph" / "runs" / run_id / "events.jsonl"
+        events = tmp_path / ".kstrl" / "runs" / run_id / "events.jsonl"
         old = time.time() - 3600
         os.utime(events, (old, old))
-        lock = tmp_path / ".ralph" / "factory.lock"
+        lock = tmp_path / ".kstrl" / "factory.lock"
         with open(lock, "a+") as holder:
             fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             ref = find_run(tmp_path, run_id)
@@ -111,7 +111,7 @@ class TestFactoryLockProbe:
         assert factory_lock_held(tmp_path) is False
 
     def test_unheld_lock_file(self, tmp_path: Path) -> None:
-        lock = tmp_path / ".ralph" / "factory.lock"
+        lock = tmp_path / ".kstrl" / "factory.lock"
         lock.parent.mkdir(parents=True)
         lock.write_text("12345\n")
         assert factory_lock_held(tmp_path) is False
@@ -119,7 +119,7 @@ class TestFactoryLockProbe:
     def test_held_lock_detected(self, tmp_path: Path) -> None:
         import fcntl
 
-        lock = tmp_path / ".ralph" / "factory.lock"
+        lock = tmp_path / ".kstrl" / "factory.lock"
         lock.parent.mkdir(parents=True)
         with open(lock, "a+") as holder:
             fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)

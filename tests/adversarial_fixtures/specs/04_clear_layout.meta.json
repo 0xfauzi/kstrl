@@ -5,7 +5,7 @@
     "non_halting": true,
     "every_component_has_allowed_paths": true,
     "excludes_harness_internals": [
-      ".ralph/",
+      ".kstrl/",
       "pyproject.toml",
       "package.json",
       "kstrl/",
@@ -15,8 +15,8 @@
     "includes_test_root_prefix": "tests/",
     "includes_feature_subtree": true
   },
-  "description": "A clear, unambiguous spec that the architect should not halt on. Tests whether the v1.2.0 prompt's allowedPaths rules produce a sensible per-component scope: directories included (src + tests + feature subtree), harness internals excluded, no .ralph/ or pyproject.toml leaks.",
+  "description": "A clear, unambiguous spec that the architect should not halt on. Tests whether the v1.2.0 prompt's allowedPaths rules produce a sensible per-component scope: directories included (src + tests + feature subtree), harness internals excluded, no .kstrl/ or pyproject.toml leaks.",
   "expected_components": [
-    {"id": "slugify", "expected_allowed_paths_contain": ["src/", "tests/", "scripts/ralph/feature/slugify/"]}
+    {"id": "slugify", "expected_allowed_paths_contain": ["src/", "tests/", "scripts/kstrl/feature/slugify/"]}
   ]
 }

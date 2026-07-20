@@ -31,8 +31,8 @@ def _synthetic_manifest() -> Manifest:
                 title="Component A",
                 description="",
                 dependencies=[],
-                prd_path="scripts/ralph/feature/comp-a/prd.json",
-                branch_name="ralph/factory/comp-a",
+                prd_path="scripts/kstrl/feature/comp-a/prd.json",
+                branch_name="kstrl/factory/comp-a",
                 status="completed",
                 retries=0,
                 started_at="2026-07-18T10:00:00",
@@ -44,8 +44,8 @@ def _synthetic_manifest() -> Manifest:
                 title="Component B",
                 description="",
                 dependencies=["comp-a"],
-                prd_path="scripts/ralph/feature/comp-b/prd.json",
-                branch_name="ralph/factory/comp-b",
+                prd_path="scripts/kstrl/feature/comp-b/prd.json",
+                branch_name="kstrl/factory/comp-b",
                 status="failed",
                 retries=2,
                 error="tests failed",
@@ -63,7 +63,7 @@ def _invoke_status(*args: str) -> tuple[int, str]:
 
 class TestStatusCommand:
     def test_renders_synthetic_manifest(self, tmp_path: Path) -> None:
-        manifest_path = tmp_path / "scripts" / "ralph" / "manifest.json"
+        manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
         _synthetic_manifest().save(manifest_path)
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -72,8 +72,8 @@ class TestStatusCommand:
         assert "demo" in output
         assert "comp-a: completed" in output
         assert "comp-b: failed" in output
-        assert "ralph/factory/comp-a" in output
-        assert "ralph/factory/comp-b" in output
+        assert "kstrl/factory/comp-a" in output
+        assert "kstrl/factory/comp-b" in output
         assert "2026-07-18T10:00:00" in output
         assert "2026-07-18T10:20:00" in output
         assert "2" in output  # comp-b retries
@@ -81,7 +81,7 @@ class TestStatusCommand:
         assert "https://github.com/x/y/pull/12" in output
 
     def test_falls_back_to_run_manifest(self, tmp_path: Path) -> None:
-        manifest_path = tmp_path / "scripts" / "ralph" / "run-manifest.json"
+        manifest_path = tmp_path / "scripts" / "kstrl" / "run-manifest.json"
         _synthetic_manifest().save(manifest_path)
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -95,10 +95,10 @@ class TestStatusCommand:
     ) -> None:
         factory_manifest = _synthetic_manifest()
         factory_manifest.project_name = "factory-project"
-        factory_manifest.save(tmp_path / "scripts" / "ralph" / "manifest.json")
+        factory_manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
         run_manifest = _synthetic_manifest()
         run_manifest.project_name = "run-project"
-        run_manifest.save(tmp_path / "scripts" / "ralph" / "run-manifest.json")
+        run_manifest.save(tmp_path / "scripts" / "kstrl" / "run-manifest.json")
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
@@ -125,7 +125,7 @@ class TestStatusCommand:
         assert "ralph factory" in output
 
     def test_corrupt_manifest_fails_cleanly(self, tmp_path: Path) -> None:
-        manifest_path = tmp_path / "scripts" / "ralph" / "manifest.json"
+        manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
         manifest_path.parent.mkdir(parents=True)
         manifest_path.write_text("{not json")
 
@@ -137,7 +137,7 @@ class TestStatusCommand:
 
 def _write_progress_log(root: Path, run_id: str = "run-2") -> Path:
     """Synthetic two-run log: the stale run must not leak into output."""
-    log_path = root / ".ralph" / "progress.jsonl"
+    log_path = root / ".kstrl" / "progress.jsonl"
     old = ProgressLog(log_path, run_id="run-1")
     old.factory_started("demo", 2)
     old.component_failed("comp-a", "stale failure from run-1")
@@ -160,7 +160,7 @@ class TestStatusProgressLogJoin:
 
     def test_joins_log_detail_onto_components(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         _write_progress_log(tmp_path)
 
@@ -182,7 +182,7 @@ class TestStatusProgressLogJoin:
 
     def test_latest_run_wins(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         _write_progress_log(tmp_path)
 
@@ -193,11 +193,11 @@ class TestStatusProgressLogJoin:
 
     def test_evidence_paths_listed_when_present(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         _write_progress_log(tmp_path)
-        worktree = tmp_path / ".ralph" / "worktrees" / "run-2" / "comp-a"
-        debug_dir = tmp_path / ".ralph" / "debug" / "run-2" / "comp-b"
+        worktree = tmp_path / ".kstrl" / "worktrees" / "run-2" / "comp-a"
+        debug_dir = tmp_path / ".kstrl" / "debug" / "run-2" / "comp-b"
         worktree.mkdir(parents=True)
         debug_dir.mkdir(parents=True)
 
@@ -207,12 +207,12 @@ class TestStatusProgressLogJoin:
         assert str(debug_dir) in output
         # No evidence line for paths that do not exist.
         assert str(
-            tmp_path / ".ralph" / "debug" / "run-2" / "comp-a",
+            tmp_path / ".kstrl" / "debug" / "run-2" / "comp-a",
         ) not in output
 
     def test_run_state_line(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         log_path = _write_progress_log(tmp_path)
 
@@ -227,7 +227,7 @@ class TestStatusProgressLogJoin:
 
     def test_explicit_progress_log_flag(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         custom = tmp_path / "elsewhere.jsonl"
         ProgressLog(custom, run_id="run-x").component_started("comp-a")
@@ -243,7 +243,7 @@ class TestStatusProgressLogJoin:
     def test_manifest_only_when_no_log(self, tmp_path: Path) -> None:
         """Without a log the R2.4 manifest-only view still renders."""
         _synthetic_manifest().save(
-            tmp_path / "scripts" / "ralph" / "manifest.json",
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -300,7 +300,7 @@ class TestStatusV2Layout:
         manifest.components[1].status = "running"
         manifest.components[1].error = ""
         manifest.run_id = run_id
-        manifest.save(tmp_path / "scripts" / "ralph" / "manifest.json")
+        manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
 
     def test_v2_stream_preferred_and_rendered(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-000005.000000-t"
@@ -308,7 +308,7 @@ class TestStatusV2Layout:
         self._manifest_with_running_b(tmp_path, run_id)
         # A stale v1 log must lose to the v2 dir:
         ProgressLog(
-            tmp_path / ".ralph" / "progress.jsonl", run_id="old-run",
+            tmp_path / ".kstrl" / "progress.jsonl", run_id="old-run",
         ).factory_started("stale-project", 1)
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -359,7 +359,7 @@ class TestStatusV2Layout:
     def test_explicit_progress_log_pins_v1_arm(self, tmp_path: Path) -> None:
         self._write_v2_run(tmp_path)
         manifest = _synthetic_manifest()
-        manifest.save(tmp_path / "scripts" / "ralph" / "manifest.json")
+        manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
         v1 = tmp_path / "custom-progress.jsonl"
         log = ProgressLog(v1, run_id="pinned-run")
         log.factory_started("demo", 2)

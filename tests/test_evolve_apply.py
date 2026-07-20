@@ -53,7 +53,7 @@ def _root_with_proposal(
     (tmp_path / "CLAUDE.md").write_text(CLAUDE_MD)
     journal = EvolutionJournal(EvolutionConfig())
     proposals = journal.propose_improvements([pattern or _linter_pattern()])
-    journal.save_proposals(proposals, tmp_path / ".ralph" / "proposals")
+    journal.save_proposals(proposals, tmp_path / ".kstrl" / "proposals")
     return tmp_path
 
 
@@ -83,7 +83,7 @@ class TestEvolveApply:
         assert "existing convention" in content
         # Proposal stamped as applied.
         proposal_text = (
-            root / ".ralph" / "proposals" / "prop-001.md"
+            root / ".kstrl" / "proposals" / "prop-001.md"
         ).read_text()
         assert "**Applied**:" in proposal_text
 
@@ -106,7 +106,7 @@ class TestEvolveApply:
         content = (root / "CLAUDE.md").read_text()
         assert "S608" not in content
         proposal_text = (
-            root / ".ralph" / "proposals" / "prop-001.md"
+            root / ".kstrl" / "proposals" / "prop-001.md"
         ).read_text()
         assert "**Applied**:" not in proposal_text
 
@@ -191,7 +191,7 @@ class TestAutoPropose:
                 "failure_signatures": ["linter:S608"],
                 "findings_summary": {"total": 0, "by_category": {}},
             })
-        journal_path = root / ".ralph" / "evolution.jsonl"
+        journal_path = root / ".kstrl" / "evolution.jsonl"
         journal_path.parent.mkdir(parents=True, exist_ok=True)
         journal_path.write_text(
             "\n".join(json.dumps(e) for e in entries) + "\n"
@@ -208,7 +208,7 @@ class TestAutoPropose:
         assert exit_code == 0, output
         assert "S608" in output
         assert "auto_propose is disabled" in output
-        assert not (tmp_path / ".ralph" / "proposals").exists()
+        assert not (tmp_path / ".kstrl" / "proposals").exists()
 
     def test_auto_propose_default_generates_monotonic_ids(
         self, tmp_path: Path,
@@ -218,7 +218,7 @@ class TestAutoPropose:
         self._journal_with_pattern(tmp_path)
         exit_code, output = _invoke(tmp_path)
         assert exit_code == 0, output
-        proposals_dir = tmp_path / ".ralph" / "proposals"
+        proposals_dir = tmp_path / ".kstrl" / "proposals"
         assert (proposals_dir / "prop-001.md").exists()
         first_content = (proposals_dir / "prop-001.md").read_text()
 
@@ -232,7 +232,7 @@ class TestAutoPropose:
         assert "already exist" in output
 
         # A new signature appears: numbering continues at PROP-002.
-        journal_path = tmp_path / ".ralph" / "evolution.jsonl"
+        journal_path = tmp_path / ".kstrl" / "evolution.jsonl"
         extra = []
         for run_id in ("run-003", "run-004"):
             extra.append({

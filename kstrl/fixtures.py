@@ -66,7 +66,7 @@ class FixturesConfig:
 
     enabled: bool = False
     snapshot_on_success: bool = True
-    snapshot_dir: Path = field(default_factory=lambda: Path(".ralph/snapshots"))
+    snapshot_dir: Path = field(default_factory=lambda: Path(".kstrl/snapshots"))
     timeout: float = 30.0
 
     @classmethod
@@ -80,7 +80,7 @@ class FixturesConfig:
                 envcompat.get("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
             ),
             snapshot_dir=Path(
-                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".ralph/snapshots")
+                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".kstrl/snapshots")
             ),
             timeout=float(envcompat.get("KSTRL_FIXTURES_TIMEOUT", "30")),
         )

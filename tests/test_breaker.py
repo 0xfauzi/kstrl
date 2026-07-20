@@ -194,7 +194,7 @@ class _ScriptedAgent:
 
 
 def _loop_config(root: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = root / "scripts" / "ralph"
+    ralph_dir = root / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     return KstrlConfig(

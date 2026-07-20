@@ -54,8 +54,8 @@ def _init_repo(root: Path) -> None:
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
         comp_id, comp_id.title(), "Desc", deps or [],
-        f"scripts/ralph/feature/{comp_id}/prd.json",
-        f"ralph/factory/{comp_id}",
+        f"scripts/kstrl/feature/{comp_id}/prd.json",
+        f"kstrl/factory/{comp_id}",
     )
 
 
@@ -68,8 +68,8 @@ def _manifest(components: list[Component]) -> Manifest:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",
@@ -137,8 +137,8 @@ class TestUnifiedSchedulingLoop:
             real_setup_calls.append(comp_id)
             if comp_id == "comp-a":
                 raise RuntimeError("worktree add failed (simulated)")
-            wt = tmp_path / ".ralph" / "worktrees" / "run" / comp_id
-            prd = wt / "scripts" / "ralph" / "feature" / comp_id / "prd.json"
+            wt = tmp_path / ".kstrl" / "worktrees" / "run" / comp_id
+            prd = wt / "scripts" / "kstrl" / "feature" / comp_id / "prd.json"
             prd.parent.mkdir(parents=True, exist_ok=True)
             prd.write_text(
                 '{"branchName": "test", "userStories": [{"id": "US-001", '
@@ -169,7 +169,7 @@ class TestUnifiedSchedulingLoop:
         assert result.failed == ["comp-a"]
         assert result.completed == ["comp-b"]
         assert real_setup_calls == ["comp-a", "comp-b"]
-        run_dir = sorted((tmp_path / ".ralph" / "runs").iterdir())[-1]
+        run_dir = sorted((tmp_path / ".kstrl" / "runs").iterdir())[-1]
         events = ev.read_events(run_dir / "events.jsonl")
         engineer_starts = [
             event for event in events

@@ -600,7 +600,7 @@ def linear_branch_name(identifier: str, comp_id: str) -> str:
     the format Linear's own "Copy git branch name" emits - so the
     GitHub integration links the PR to the issue with zero API calls.
     """
-    return f"ralph/factory/{identifier.lower()}-{comp_id}"
+    return f"kstrl/factory/{identifier.lower()}-{comp_id}"
 
 
 def _story_checklist(comp_data: dict[str, Any]) -> str:

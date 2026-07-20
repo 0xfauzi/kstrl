@@ -40,7 +40,7 @@ pytestmark = pytest.mark.spine
 
 RUN_ID = "spine-run-1"
 COMP = "comp-a"
-BRANCH = "ralph/factory/comp-a"
+BRANCH = "kstrl/factory/comp-a"
 
 # Child that takes an exclusive flock on the given path and holds it
 # until killed, standing in for a live contending ralph process.
@@ -61,7 +61,7 @@ from pathlib import Path
 from kstrl.factory import _setup_worktree
 root = Path(sys.argv[1])
 Path(sys.argv[2]).write_text("ready")
-wt = _setup_worktree("comp-a", "ralph/factory/comp-a", "main", root, sys.argv[3])
+wt = _setup_worktree("comp-a", "kstrl/factory/comp-a", "main", root, sys.argv[3])
 print(wt, flush=True)
 """
 
@@ -104,7 +104,7 @@ class TestWorktreeLifecycle:
 
         wt = _setup_worktree(COMP, BRANCH, "develop", root, RUN_ID)
 
-        assert wt == root / ".ralph" / "worktrees" / RUN_ID / COMP
+        assert wt == root / ".kstrl" / "worktrees" / RUN_ID / COMP
         assert wt.is_dir()
         assert _worktree_registered(root, wt)
         assert git("branch", "--show-current", cwd=wt) == BRANCH
@@ -247,10 +247,10 @@ class TestComponentLockTwoProcessExclusion:
         a 1s hold with the child still running is exclusion, not noise."""
         root = tmp_path / "repo"
         _init_plain_repo(root)
-        lock_path = root / ".ralph" / "worktrees" / f"{COMP}.lock"
+        lock_path = root / ".kstrl" / "worktrees" / f"{COMP}.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         ready = tmp_path / "child-ready"
-        worktree_path = root / ".ralph" / "worktrees" / RUN_ID / COMP
+        worktree_path = root / ".kstrl" / "worktrees" / RUN_ID / COMP
 
         holder = subprocess.Popen(
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(lock_path)],
@@ -308,14 +308,14 @@ class TestRunLockTwoProcessExclusion:
     def test_run_lock_refuses_second_invocation_until_holder_exits(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """While a real process holds .ralph/factory.lock, run_factory
+        """While a real process holds .kstrl/factory.lock, run_factory
         refuses to start (exit 2, nothing scheduled). Once the holder
         dies the same invocation succeeds: the flock dies with its
         process, so a stale lock FILE can never wedge the factory."""
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
         init_ralph_repo(root, (COMP,))
-        lock_path = root / ".ralph" / "factory.lock"
+        lock_path = root / ".kstrl" / "factory.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 
         holder = subprocess.Popen(
@@ -335,7 +335,7 @@ class TestRunLockTwoProcessExclusion:
             assert refused.exit_code == 2
             assert refused.completed == []
             assert manifest.components[0].status == "pending"
-            assert not (root / ".ralph" / "worktrees").exists()
+            assert not (root / ".kstrl" / "worktrees").exists()
         finally:
             holder.kill()
             holder.wait(timeout=10)

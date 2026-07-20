@@ -48,7 +48,7 @@ pytestmark = pytest.mark.spine
 def _checkout_state(root: Path) -> dict[str, Any]:
     """Byte-level fingerprint of the user's checkout.
 
-    Hashes every file under ``root`` except ``.git/`` and ``.ralph/``
+    Hashes every file under ``root`` except ``.git/`` and ``.kstrl/``
     (branches and run state legitimately change during a factory run;
     the user's working tree must not), plus the git-visible state of the
     checkout itself: HEAD, current branch, and porcelain status.
@@ -56,7 +56,7 @@ def _checkout_state(root: Path) -> dict[str, Any]:
     files: dict[str, str] = {}
     for path in sorted(root.rglob("*")):
         rel = path.relative_to(root)
-        if rel.parts[0] in (".git", ".ralph"):
+        if rel.parts[0] in (".git", ".kstrl"):
             continue
         if path.is_file():
             files[str(rel)] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -83,9 +83,9 @@ def _contract_events(progress_path: Path) -> list[tuple[int, bool, str | None]]:
 
 
 def _assert_no_contract_debris(root: Path) -> None:
-    """No temp worktree survived under .ralph/contract/ and git tracks
+    """No temp worktree survived under .kstrl/contract/ and git tracks
     only the main checkout afterward."""
-    contract_dir = root / ".ralph" / "contract"
+    contract_dir = root / ".kstrl" / "contract"
     if contract_dir.exists():
         assert list(contract_dir.iterdir()) == []
     listing = git("worktree", "list", "--porcelain", cwd=root)
@@ -338,7 +338,7 @@ class TestContractBreakerRerun:
         # The fix landed on beta's real branch: beta.txt in, broken.txt
         # gone.
         branch_files = git(
-            "ls-tree", "--name-only", "ralph/factory/beta", cwd=root,
+            "ls-tree", "--name-only", "kstrl/factory/beta", cwd=root,
         ).splitlines()
         assert "beta.txt" in branch_files
         assert "broken.txt" not in branch_files

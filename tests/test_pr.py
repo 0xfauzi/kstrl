@@ -22,8 +22,8 @@ def _test_manifest() -> Manifest:
                 title="Database Schema",
                 description="Create the database tables",
                 dependencies=[],
-                prd_path="scripts/ralph/feature/database/prd.json",
-                branch_name="ralph/factory/database",
+                prd_path="scripts/kstrl/feature/database/prd.json",
+                branch_name="kstrl/factory/database",
                 status="completed",
                 pr_number=10,
                 pr_url="https://github.com/test/repo/pull/10",
@@ -33,8 +33,8 @@ def _test_manifest() -> Manifest:
                 title="API Endpoints",
                 description="Create REST API endpoints",
                 dependencies=["database"],
-                prd_path="scripts/ralph/feature/api/prd.json",
-                branch_name="ralph/factory/api",
+                prd_path="scripts/kstrl/feature/api/prd.json",
+                branch_name="kstrl/factory/api",
                 status="completed",
             ),
         ],
@@ -76,7 +76,7 @@ class TestGeneratePrBody:
     def test_body_contains_prd_path(self) -> None:
         manifest = _test_manifest()
         body = _generate_pr_body(manifest.components[0], manifest)
-        assert "scripts/ralph/feature/database/prd.json" in body
+        assert "scripts/kstrl/feature/database/prd.json" in body
 
     def test_body_contains_dependencies_with_links(self) -> None:
         manifest = _test_manifest()

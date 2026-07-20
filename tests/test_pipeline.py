@@ -63,8 +63,8 @@ class _ChoiceUI(PlainUI):
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
         comp_id, comp_id.title(), "Desc", deps or [],
-        f"scripts/ralph/feature/{comp_id}/prd.json",
-        f"ralph/factory/{comp_id}",
+        f"scripts/kstrl/feature/{comp_id}/prd.json",
+        f"kstrl/factory/{comp_id}",
     )
 
 
@@ -81,8 +81,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",

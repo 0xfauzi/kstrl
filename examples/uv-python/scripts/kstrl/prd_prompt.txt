@@ -1,4 +1,4 @@
-You are a product manager and QA lead. Produce a PRD as a single JSON object meant to be saved as `scripts/ralph/prd.json`.
+You are a product manager and QA lead. Produce a PRD as a single JSON object meant to be saved as `scripts/kstrl/prd.json`.
 
 Output requirements:
 - Output ONLY valid JSON (no Markdown, no code fences, no comments).
@@ -12,8 +12,8 @@ Output requirements:
 
 Schema (example shape only, do not copy the text):
 {
-  "branchName": "ralph/feature-name",
-  "allowedPaths": ["src/", "tests/", "scripts/ralph/"],
+  "branchName": "kstrl/feature-name",
+  "allowedPaths": ["src/", "tests/", "scripts/kstrl/"],
   "userStories": [
     {
       "id": "US-001",
@@ -36,7 +36,7 @@ Content rules:
 - "priority": lower number = higher priority. Priorities must be unique and start at 1.
 - "acceptanceCriteria": explicit, testable, ordered checks. Include verification commands with expected outcomes.
 - Always include typecheck and test criteria using the commands specified in the context below.
-- "allowedPaths": include it whenever the feature's blast radius is known. It feeds the harness diff-scope check: changes outside these paths fail Phase 1 verification. List the directories the stories will touch, plus "scripts/ralph/" so the agent can update the PRD and progress files. Omit it only when the feature genuinely may touch the whole repo.
+- "allowedPaths": include it whenever the feature's blast radius is known. It feeds the harness diff-scope check: changes outside these paths fail Phase 1 verification. List the directories the stories will touch, plus "scripts/kstrl/" so the agent can update the PRD and progress files. Omit it only when the feature genuinely may touch the whole repo.
 - Do not invent UI elements, endpoints, or files that are not described in the context.
 - Cover core flows first, then important edge cases implied by the context.
 - If the context mentions existing patterns or conventions, criteria should verify the new code follows them.
@@ -51,7 +51,7 @@ CONTEXT - Fill in the sections below, then feed this entire file to an LLM
 
 
 ## Branch Name
-<!-- What should the git branch be called? e.g., ralph/add-user-auth -->
+<!-- What should the git branch be called? e.g., kstrl/add-user-auth -->
 
 
 

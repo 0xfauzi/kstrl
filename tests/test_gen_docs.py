@@ -135,13 +135,13 @@ class TestExampleProjectContract:
         from kstrl.init_cmd import DEFAULT_PROMPT
 
         example = (
-            REPO_ROOT / "examples" / "uv-python" / "scripts" / "ralph" / "prompt.md"
+            REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prompt.md"
         ).read_text(encoding="utf-8")
         assert example == DEFAULT_PROMPT
 
     def test_example_prd_prompt_allows_allowed_paths(self) -> None:
         text = (
-            REPO_ROOT / "examples" / "uv-python" / "scripts" / "ralph" / "prd_prompt.txt"
+            REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prd_prompt.txt"
         ).read_text(encoding="utf-8")
         assert "allowedPaths" in text
         assert "exactly these keys: \"branchName\", \"userStories\"" not in text

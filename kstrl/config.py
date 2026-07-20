@@ -40,11 +40,11 @@ class KstrlConfig:
     """Configuration for Ralph agentic loop."""
 
     max_iterations: int = 10
-    prompt_file: Path = field(default_factory=lambda: Path("scripts/ralph/prompt.md"))
-    prd_file: Path = field(default_factory=lambda: Path("scripts/ralph/prd.json"))
-    progress_file: Path = field(default_factory=lambda: Path("scripts/ralph/progress.txt"))
+    prompt_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prompt.md"))
+    prd_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prd.json"))
+    progress_file: Path = field(default_factory=lambda: Path("scripts/kstrl/progress.txt"))
     codebase_map_file: Path = field(
-        default_factory=lambda: Path("scripts/ralph/codebase_map.md")
+        default_factory=lambda: Path("scripts/kstrl/codebase_map.md")
     )
     sleep_seconds: float = 2.0
     interactive: bool = False
@@ -82,10 +82,10 @@ class KstrlConfig:
         config = cls()
         # Default file paths are resolved against root_dir so the config is
         # immediately usable regardless of cwd at the call site.
-        config.prompt_file = root_dir / "scripts/ralph/prompt.md"
-        config.prd_file = root_dir / "scripts/ralph/prd.json"
-        config.progress_file = root_dir / "scripts/ralph/progress.txt"
-        config.codebase_map_file = root_dir / "scripts/ralph/codebase_map.md"
+        config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+        config.prd_file = root_dir / "scripts/kstrl/prd.json"
+        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
+        config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
         _apply_env_overrides(config, root_dir)
         return config
 
@@ -95,10 +95,10 @@ class KstrlConfig:
         if root_dir is None:
             root_dir = toml_path.parent if toml_path.is_absolute() else Path.cwd()
         config = cls()
-        config.prompt_file = root_dir / "scripts/ralph/prompt.md"
-        config.prd_file = root_dir / "scripts/ralph/prd.json"
-        config.progress_file = root_dir / "scripts/ralph/progress.txt"
-        config.codebase_map_file = root_dir / "scripts/ralph/codebase_map.md"
+        config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+        config.prd_file = root_dir / "scripts/kstrl/prd.json"
+        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
+        config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
         if toml_path.exists():
             _apply_toml_overrides(config, toml_path, root_dir)
         return config
@@ -121,10 +121,10 @@ class KstrlConfig:
             toml_path = resolve_config_file(root_dir)
 
         config = cls()
-        config.prompt_file = root_dir / "scripts/ralph/prompt.md"
-        config.prd_file = root_dir / "scripts/ralph/prd.json"
-        config.progress_file = root_dir / "scripts/ralph/progress.txt"
-        config.codebase_map_file = root_dir / "scripts/ralph/codebase_map.md"
+        config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+        config.prd_file = root_dir / "scripts/kstrl/prd.json"
+        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
+        config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
 
         if toml_path.exists():
             _apply_toml_overrides(config, toml_path, root_dir)

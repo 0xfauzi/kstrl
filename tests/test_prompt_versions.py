@@ -81,24 +81,24 @@ _VERSIONS: dict[str, str] = {
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DECOMPOSE_PROMPT": (
-        "2569fe04042197cc5b83455762949476e830dadf6ed13b98f3c2921d084b6523",
-        "1.4.0",
+        "64585413da183f61d6eaa1605279d8577472514e6ca2d02761621d2c3cccfbe8",
+        "1.4.1",
     ),
     "REVIEWER_PROMPT": (
-        "4ba50b9ab16a8597459b0b5e15b70cb0b57f8c04d1b238d4340b5293388674a9",
-        "1.1.0",
+        "987f8a7d0de3957c5917f0d34c9e3a086ab2fa815eb06d7d3cad3424cf7c5347",
+        "1.1.1",
     ),
     "SECURITY_PROMPT": (
-        "ad8fa39294e1adf3304c90af891286839c5dbe95b41ad29e222b2a45191c7be9",
-        "1.1.0",
+        "36d8b55d8b33cd9517839efe8e9f9036503c6c740dd97087f3d4844ff39254f5",
+        "1.1.1",
     ),
     "DISTILL_PROMPT": (
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
         "1.1.0",
     ),
     "DEFAULT_PROMPT": (
-        "aa7fa6acb045dc6105d1a4c4ce8b687e1e04289c7b751eb0373b7c59dca3f7ae",
-        "1.1.0",
+        "4f7370f5f4efb2d9b89ce6ae09fcbf7e5c3c8fb3db22cdeb07a9221ccbc638dc",
+        "1.1.1",
     ),
 }
 
@@ -179,7 +179,7 @@ def test_distill_prompt_snapshot_unchanged() -> None:
 
 
 def test_default_engineer_prompt_snapshot_unchanged() -> None:
-    """H3-engineer: the per-project ``scripts/ralph/prompt.md`` is
+    """H3-engineer: the per-project ``scripts/kstrl/prompt.md`` is
     user-editable, but the harness-shipped DEFAULT_PROMPT template at
     ``kstrl/init_cmd.py`` is the adversarial-role definition for the
     engineer phase. Snapshot-protected on the same terms as the other

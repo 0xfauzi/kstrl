@@ -57,7 +57,7 @@ class KnowledgeConfig:
     """Configuration for the per-component knowledge layer."""
 
     enabled: bool = True
-    knowledge_root: Path = field(default_factory=lambda: Path(".ralph/knowledge"))
+    knowledge_root: Path = field(default_factory=lambda: Path(".kstrl/knowledge"))
     max_core_tokens: int = 2000
     max_dependency_tokens: int = 1000
     max_sibling_tokens: int = 500
@@ -96,7 +96,7 @@ class KnowledgeConfig:
             root_dir = Path.cwd()
 
         config = cls()
-        config.knowledge_root = root_dir / ".ralph" / "knowledge"
+        config.knowledge_root = root_dir / ".kstrl" / "knowledge"
 
         from kstrl.config import resolve_config_file
 
@@ -143,7 +143,7 @@ class KnowledgeConfig:
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        config.knowledge_root = root_dir / ".ralph" / "knowledge"
+        config.knowledge_root = root_dir / ".kstrl" / "knowledge"
         _apply_knowledge_env_overrides(config)
         return config
 

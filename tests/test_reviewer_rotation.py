@@ -399,7 +399,7 @@ class TestModelTagEndToEnd:
         comp = Component(
             id="comp-a", title="Comp A", description="does things",
             dependencies=[], prd_path="prd.json",
-            branch_name="ralph/factory/comp-a",
+            branch_name="kstrl/factory/comp-a",
         )
         comp.review_findings = result.as_pr_body_section()
         comp.findings = result.as_findings()
@@ -447,7 +447,7 @@ class TestHomogeneityWarningFires:
         assert result.exit_code == 0
         homogeneity = [w for w in ui.warnings if "Homogeneity risk" in w]
         assert len(homogeneity) == 2  # once per enabled phase, per run
-        events = read_progress_events(tmp_path / ".ralph" / "progress.jsonl")
+        events = read_progress_events(tmp_path / ".kstrl" / "progress.jsonl")
         selections = [
             e for e in events if e["event"] == "adversarial_agent_selected"
         ]

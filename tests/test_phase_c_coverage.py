@@ -74,20 +74,20 @@ def _component(comp_id: str, deps: list[str] | None = None) -> Component:
         title=f"Component {comp_id}",
         description=f"desc {comp_id}",
         dependencies=deps or [],
-        prd_path=f"scripts/ralph/feature/{comp_id}/prd.json",
-        branch_name=f"ralph/{comp_id}",
+        prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
+        branch_name=f"kstrl/{comp_id}",
     )
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
     """Lay down minimal scaffold + per-component PRDs."""
-    (tmp_path / "scripts" / "ralph").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "scripts" / "ralph" / "prompt.md").write_text("test prompt")
-    (tmp_path / "scripts" / "ralph" / "prd.json").write_text(
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("test prompt")
+    (tmp_path / "scripts" / "kstrl" / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     for comp_id in component_ids:
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / comp_id
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -102,8 +102,8 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
 
 def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root / "scripts/ralph/prompt.md",
-        prd_file=root / "scripts/ralph/prd.json",
+        prompt_file=root / "scripts/kstrl/prompt.md",
+        prd_file=root / "scripts/kstrl/prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",
@@ -372,7 +372,7 @@ class TestC6ConcurrentFactory:
     no mocks. The first invocation is held mid-run by a gated engineer;
     while it is live, a second invocation on the same root must be
     refused with exit code 2 (wave-3 R0.5 semantics: the run-level
-    ``.ralph/factory.lock`` flock refuses, it does not queue). Deleting
+    ``.kstrl/factory.lock`` flock refuses, it does not queue). Deleting
     the flock from _acquire_run_lock makes the second invocation proceed
     instead, so this test fails without it.
 

@@ -3,7 +3,7 @@
 The load-bearing test here is golden parity: V1CompatSink fed stamped v2
 events must produce byte-equivalent progress.jsonl lines (modulo ts) to
 calling the real ProgressLog convenience methods directly. That parity
-is what lets the whole migration keep .ralph/progress.jsonl consumers
+is what lets the whole migration keep .kstrl/progress.jsonl consumers
 (ralph status v1 arm, the Linear ProgressSink) untouched.
 """
 
@@ -375,7 +375,7 @@ class TestV1CompatGoldenParity:
 class TestRunPaths:
     def test_layout(self, tmp_path: Path) -> None:
         rp = ev.RunPaths.for_run(tmp_path, "run-42")
-        assert rp.events_file == tmp_path / ".ralph" / "runs" / "run-42" / "events.jsonl"
+        assert rp.events_file == tmp_path / ".kstrl" / "runs" / "run-42" / "events.jsonl"
         assert rp.engineer_events("c1").name == "engineer.jsonl"
         assert rp.engineer_log("c1").parent == rp.component_dir("c1")
         assert rp.phase_log("c1", "review").name == "review.log"

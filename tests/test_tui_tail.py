@@ -126,7 +126,7 @@ class TestRunTailer:
         stepper = stream_fake_run(
             tmp_path, FakeRunSpec(components=2), run_id=run_id,
         )
-        tailer = RunTailer(tmp_path / ".ralph" / "runs" / run_id)
+        tailer = RunTailer(tmp_path / ".kstrl" / "runs" / run_id)
         state = reducer.RunState()
         polls_with_events = 0
         for _ in stepper:
@@ -144,7 +144,7 @@ class TestRunTailer:
 
     def test_worker_files_discovered_late(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-140000.000000-t"
-        run_dir = tmp_path / ".ralph" / "runs" / run_id
+        run_dir = tmp_path / ".kstrl" / "runs" / run_id
         bus = ev.EventBus(
             ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_id,
         )
@@ -165,7 +165,7 @@ class TestRunTailer:
 
     def test_merged_order_by_ts(self, tmp_path: Path) -> None:
         write_fake_run(tmp_path, FakeRunSpec(components=2))
-        run_dir = tmp_path / ".ralph" / "runs"
+        run_dir = tmp_path / ".kstrl" / "runs"
         (run_dir,) = list(run_dir.iterdir())
         events = RunTailer(run_dir).poll_events().events
         timestamps = [e.ts for e in events]

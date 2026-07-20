@@ -16,7 +16,7 @@ from kstrl import envcompat
 
 # Directories to always skip during tree walks
 _SKIP_DIRS = frozenset({
-    "__pycache__", "node_modules", ".git", "venv", ".venv", ".ralph",
+    "__pycache__", "node_modules", ".git", "venv", ".venv", ".kstrl",
 })
 
 # Source file extensions we care about
@@ -152,7 +152,7 @@ def _walk_source_dirs(root: Path) -> list[tuple[Path, int, int]]:
 def build_module_map(root: Path) -> str:
     """Build an indented tree of source directories with file and LOC counts.
 
-    Skips hidden dirs, __pycache__, node_modules, .git, venv, .venv, .ralph.
+    Skips hidden dirs, __pycache__, node_modules, .git, venv, .venv, .kstrl.
     Caps at 50 directories.
     """
     entries = _walk_source_dirs(root)

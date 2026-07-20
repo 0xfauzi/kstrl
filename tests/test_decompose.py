@@ -48,7 +48,7 @@ VALID_DECOMPOSE_OUTPUT = json.dumps({
             "description": "Create the database tables",
             "dependencies": [],
             "allowedPaths": [
-                "src/", "tests/", "scripts/ralph/feature/database/",
+                "src/", "tests/", "scripts/kstrl/feature/database/",
             ],
             "userStories": [
                 {
@@ -67,7 +67,7 @@ VALID_DECOMPOSE_OUTPUT = json.dumps({
             "description": "Create REST API endpoints",
             "dependencies": ["database"],
             "allowedPaths": [
-                "src/", "tests/", "scripts/ralph/feature/api/",
+                "src/", "tests/", "scripts/kstrl/feature/api/",
             ],
             "userStories": [
                 {
@@ -270,7 +270,7 @@ class TestValidateDecomposeOutput:
                     "allowedPaths": [
                         "src/",
                         "tests/",
-                        "scripts/ralph/feature/comp-a/",
+                        "scripts/kstrl/feature/comp-a/",
                     ],
                     "userStories": [
                         {
@@ -358,7 +358,7 @@ class TestSpecIssues:
     def test_decompose_raises_on_blocker(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec\nDo something good.")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         output = json.dumps({
             "spec_issues": [{
@@ -388,7 +388,7 @@ class TestSpecIssues:
     def test_decompose_continues_on_non_blockers(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         output = json.dumps({
             "spec_issues": [{
@@ -403,7 +403,7 @@ class TestSpecIssues:
                     "description": "x",
                     "dependencies": [],
                     "allowedPaths": [
-                        "src/", "tests/", "scripts/ralph/feature/comp-a/",
+                        "src/", "tests/", "scripts/kstrl/feature/comp-a/",
                     ],
                     "userStories": [{
                         "id": "US-001",
@@ -438,7 +438,7 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# My Feature\nBuild a user management system.")
 
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
@@ -461,21 +461,21 @@ class TestDecomposeSpec:
         assert manifest.project_name == "test-project"
 
         # Verify PRD files were created
-        db_prd = tmp_path / "scripts" / "ralph" / "feature" / "database" / "prd.json"
+        db_prd = tmp_path / "scripts" / "kstrl" / "feature" / "database" / "prd.json"
         assert db_prd.exists()
         prd = PRD.load(db_prd)
         assert len(prd.user_stories) == 1
         assert prd.user_stories[0].id == "US-001"
 
         # Verify manifest was saved
-        manifest_path = tmp_path / "scripts" / "ralph" / "manifest.json"
+        manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
         assert manifest_path.exists()
 
     def test_single_pr_mode_uses_shared_branch(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
@@ -500,7 +500,7 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
@@ -526,7 +526,7 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
 
         call_count = 0
@@ -566,7 +566,7 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "ralph"
+        ralph_dir = tmp_path / "scripts" / "kstrl"
         ralph_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent("always invalid")
@@ -633,7 +633,7 @@ def _single_component_output(
                 "description": "x",
                 "dependencies": [],
                 "allowedPaths": [
-                    "src/", "tests/", "scripts/ralph/feature/comp-a/",
+                    "src/", "tests/", "scripts/kstrl/feature/comp-a/",
                 ],
                 "userStories": stories,
             }
@@ -674,7 +674,7 @@ class TestVacuousPrdRejection:
         error and attempt 2 succeeds."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         agent = SequenceAgent([
             _single_component_output([_story(passes=True)]),
@@ -723,7 +723,7 @@ class TestSpecIssuesPersistence:
     ) -> Path:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
         decompose_spec(
             spec_path=spec_file,
             project_name="test",
@@ -733,12 +733,12 @@ class TestSpecIssuesPersistence:
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
         )
-        return tmp_path / "scripts" / "ralph" / "spec-issues.json"
+        return tmp_path / "scripts" / "kstrl" / "spec-issues.json"
 
     def test_artifact_written_on_halt(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
         with pytest.raises(SpecBlockerError) as exc_info:
@@ -752,7 +752,7 @@ class TestSpecIssuesPersistence:
                 root_dir=tmp_path,
             )
 
-        artifact = tmp_path / "scripts" / "ralph" / "spec-issues.json"
+        artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
         assert artifact.exists()
         assert exc_info.value.artifact_path == artifact
 
@@ -795,7 +795,7 @@ class TestSpecIssuesPersistence:
         assert content["issues"] == []
 
     def _read_journal_events(self, tmp_path: Path) -> list[dict[str, object]]:
-        journal = tmp_path / ".ralph" / "evolution.jsonl"
+        journal = tmp_path / ".kstrl" / "evolution.jsonl"
         assert journal.exists(), "journal event was not written"
         entries = [
             json.loads(line)
@@ -807,7 +807,7 @@ class TestSpecIssuesPersistence:
     def test_journal_event_on_halt(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
         with pytest.raises(SpecBlockerError):
@@ -825,7 +825,7 @@ class TestSpecIssuesPersistence:
         assert len(events) == 1
         assert events[0]["halted"] is True
         assert events[0]["counts"] == {"blocker": 1, "major": 0, "minor": 0}
-        assert events[0]["artifact"] == "scripts/ralph/spec-issues.json"
+        assert events[0]["artifact"] == "scripts/kstrl/spec-issues.json"
 
     def test_journal_event_on_success(self, tmp_path: Path) -> None:
         self._run(
@@ -847,7 +847,7 @@ class TestPrdValidationInsideRetryLoop:
         back through the retry loop instead of crashing after it."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         malformed = _story()
         del malformed["notes"]
@@ -870,7 +870,7 @@ class TestPrdValidationInsideRetryLoop:
         assert "notes" in agent.prompts[1]
         assert len(manifest.components) == 1
         prd_path = (
-            tmp_path / "scripts" / "ralph" / "feature" / "comp-a" / "prd.json"
+            tmp_path / "scripts" / "kstrl" / "feature" / "comp-a" / "prd.json"
         )
         assert prd_path.exists()
         assert PRD.load(prd_path).user_stories[0].id == "US-001"
@@ -882,7 +882,7 @@ class TestPrdValidationInsideRetryLoop:
         dirs, or a manifest behind."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         malformed = _story()
         del malformed["notes"]
@@ -899,8 +899,8 @@ class TestPrdValidationInsideRetryLoop:
                 max_retries=2,
             )
 
-        assert not (tmp_path / "scripts" / "ralph" / "feature").exists()
-        assert not (tmp_path / "scripts" / "ralph" / "manifest.json").exists()
+        assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
+        assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         assert list(tmp_path.rglob("prd.json")) == []
 
     def test_write_failure_cleans_up_partial_prds(
@@ -913,7 +913,7 @@ class TestPrdValidationInsideRetryLoop:
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
         real_generate = decompose_mod._generate_component_prd
         calls: list[str] = []
@@ -944,7 +944,7 @@ class TestPrdValidationInsideRetryLoop:
 
         assert calls == ["database", "api"]
         assert list(tmp_path.rglob("prd.json")) == []
-        assert not (tmp_path / "scripts" / "ralph" / "feature").exists()
-        assert not (tmp_path / "scripts" / "ralph" / "manifest.json").exists()
+        assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
+        assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         # The audit artifact is deliberately kept.
-        assert (tmp_path / "scripts" / "ralph" / "spec-issues.json").exists()
+        assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

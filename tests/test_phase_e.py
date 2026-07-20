@@ -68,12 +68,12 @@ class TestE5ConfidenceRename:
 
 class TestE4BudgetCap:
     def _scaffold(self, tmp_path: Path, comp_id: str) -> Path:
-        (tmp_path / "scripts" / "ralph").mkdir(parents=True)
-        (tmp_path / "scripts" / "ralph" / "prompt.md").write_text("p")
-        (tmp_path / "scripts" / "ralph" / "prd.json").write_text(
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("p")
+        (tmp_path / "scripts" / "kstrl" / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
-        feature_dir = tmp_path / "scripts" / "ralph" / "feature" / comp_id
+        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "t",
@@ -91,8 +91,8 @@ class TestE4BudgetCap:
             components=[
                 Component(
                     id=i, title=i, description="", dependencies=[],
-                    prd_path=f"scripts/ralph/feature/{i}/prd.json",
-                    branch_name=f"ralph/{i}",
+                    prd_path=f"scripts/kstrl/feature/{i}/prd.json",
+                    branch_name=f"kstrl/{i}",
                 )
                 for i in ids
             ],
@@ -100,8 +100,8 @@ class TestE4BudgetCap:
 
     def _base_config(self, root: Path) -> KstrlConfig:
         return KstrlConfig(
-            prompt_file=root / "scripts/ralph/prompt.md",
-            prd_file=root / "scripts/ralph/prd.json",
+            prompt_file=root / "scripts/kstrl/prompt.md",
+            prd_file=root / "scripts/kstrl/prd.json",
             sleep_seconds=0, agent_cmd="echo test",
             kstrl_branch="", kstrl_branch_explicit=True,
             ui_mode="plain", no_color=True,
@@ -141,7 +141,7 @@ class TestE4BudgetCap:
         self, tmp_path: Path,
     ) -> None:
         root = self._scaffold(tmp_path, "comp-a")
-        feature_b = root / "scripts/ralph/feature/comp-b"
+        feature_b = root / "scripts/kstrl/feature/comp-b"
         feature_b.mkdir(parents=True)
         (feature_b / "prd.json").write_text(json.dumps({
             "branchName": "t",
@@ -188,7 +188,7 @@ class TestE6HitlCheckpoint:
         (PlainUI in tests), the factory must log a warning and proceed
         rather than block indefinitely."""
         from kstrl.factory import ComponentResult
-        scaffold = tmp_path / "scripts" / "ralph"
+        scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)
         (scaffold / "prompt.md").write_text("p")
         (scaffold / "prd.json").write_text(
@@ -208,8 +208,8 @@ class TestE6HitlCheckpoint:
             base_branch="main", single_pr=False,
             components=[Component(
                 id="comp-a", title="A", description="", dependencies=[],
-                prd_path="scripts/ralph/feature/comp-a/prd.json",
-                branch_name="ralph/a",
+                prd_path="scripts/kstrl/feature/comp-a/prd.json",
+                branch_name="kstrl/a",
             )],
         )
         config = FactoryConfig(
@@ -252,7 +252,7 @@ class TestE6HitlCheckpoint:
 class TestE2StripSelfCritique:
     def test_strips_self_critique_block(self) -> None:
         diff = """\
-diff --git a/scripts/ralph/progress.txt b/scripts/ralph/progress.txt
+diff --git a/scripts/kstrl/progress.txt b/scripts/kstrl/progress.txt
 +## Iteration 1 - US-001
 +- What I did: added the function
 +## Self-Critique

@@ -613,17 +613,17 @@
         {
           "caught": true,
           "error": false,
-          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/url-slugifier/']"
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/test_slugify.py', 'scripts/kstrl/feature/url-slugifier/']"
         },
         {
           "caught": true,
           "error": false,
-          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/ralph/feature/url-slugifier/']"
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/kstrl/feature/url-slugifier/']"
         },
         {
           "caught": true,
           "error": false,
-          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/ralph/feature/url-slugifier/']"
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/', 'tests/', 'scripts/kstrl/feature/url-slugifier/']"
         }
       ]
     }

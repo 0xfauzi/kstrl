@@ -22,7 +22,7 @@ def _iso_now() -> str:
 
 # R0.6 input hygiene: component ids and branch names are LLM-emitted
 # (architect output) and flow into filesystem paths
-# (.ralph/worktrees/<id>, scripts/ralph/feature/<id>) and git argv
+# (.kstrl/worktrees/<id>, scripts/kstrl/feature/<id>) and git argv
 # (git worktree add, git push -u origin <branch>). Both are validated
 # against conservative allowlists at every parse boundary. Rejection is
 # deliberate - silent sanitizing would hide architect drift.
@@ -73,7 +73,7 @@ def validate_branch_name(branch: str) -> str | None:
     Branch names reach git argv in ref position (git push, git worktree
     add, git merge). The rules reject option injection (leading '-'),
     traversal ('..'), whitespace, ':', and unicode lookalikes via an
-    ASCII allowlist, while accepting the ralph/factory/<id> pattern and
+    ASCII allowlist, while accepting the kstrl/factory/<id> pattern and
     ordinary user branches.
     """
     if not branch:
@@ -176,7 +176,7 @@ class Component:
     # contract/..., check = the specific gate within it). The evidence
     # pointers say where the last attempt's artifacts live:
     # evidence_worktree is the kept worktree path ("" when removed),
-    # evidence_debug_dir the .ralph/debug/<run>/<comp> raw-output dir,
+    # evidence_debug_dir the .kstrl/debug/<run>/<comp> raw-output dir,
     # and the journal offsets bracket the attempt's slice of the
     # progress log (byte offsets; -1 = not recorded).
     failed_phase: str = ""
@@ -222,19 +222,19 @@ class Manifest:
 
         Used by ``ralph run`` to delegate to the factory pipeline.
         If *project_name* is not given, it is derived from the branch name
-        (e.g. ``ralph/auth`` becomes ``auth``) or the PRD file stem.
+        (e.g. ``kstrl/auth`` becomes ``auth``) or the PRD file stem.
         """
         rel_prd = str(prd_path)
 
         # Derive a meaningful project name when not provided
         if not project_name:
             if branch:
-                # "ralph/auth-service" -> "auth-service"
+                # "kstrl/auth-service" -> "auth-service"
                 project_name = branch.rsplit("/", 1)[-1]
             else:
                 project_name = prd_path.stem or "run"
 
-        effective_branch = branch or f"ralph/{project_name}"
+        effective_branch = branch or f"kstrl/{project_name}"
         branch_error = validate_branch_name(effective_branch)
         if branch_error:
             raise ValueError(f"Invalid branch name for run: {branch_error}")

@@ -123,7 +123,7 @@ class FactoryConfig:
     # Observability. R3.2: the progress log defaults ON so a walk-away
     # run always leaves a consumable event trail; progress_log_enabled
     # = false (toml/env) turns it off. progress_log_path=None means the
-    # default <root>/.ralph/progress.jsonl.
+    # default <root>/.kstrl/progress.jsonl.
     progress_log_path: Path | None = None
     progress_log_enabled: bool = True
     # R3.2: [notify] hooks (on_complete / on_first_failure shell
@@ -159,7 +159,7 @@ class FactoryConfig:
     # confirmation before the component is parked as MERGE_PENDING.
     merge_timeout: float = 300.0
     # R0.5: proceed even when another invocation holds the run-level
-    # .ralph/factory.lock. Deliberately CLI-only (no toml/env source):
+    # .kstrl/factory.lock. Deliberately CLI-only (no toml/env source):
     # forcing past the lock can corrupt a live run's worktrees and
     # manifest, so it must be an explicit per-invocation decision.
     force_lock: bool = False
@@ -539,7 +539,7 @@ class _RunLock:
 
 
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
-    """Take the run-level flock on ``.ralph/factory.lock`` (R0.5, H-7).
+    """Take the run-level flock on ``.kstrl/factory.lock`` (R0.5, H-7).
 
     Held for the entire run so a second ``ralph factory`` / ``ralph run``
     on the same root refuses to start instead of destroying the first
@@ -551,7 +551,9 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
     to no exclusion with a warning. ``force=True`` proceeds past a held
     lock with a warning instead of raising FactoryLockHeldError.
     """
-    lock_path = root_dir / ".ralph" / "factory.lock"
+    from kstrl.statedir import state_dir
+
+    lock_path = state_dir(root_dir) / "factory.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         import fcntl
@@ -629,13 +631,13 @@ def _setup_worktree(
 ) -> Path:
     """Create a git worktree for a component.
 
-    Worktrees are keyed ``.ralph/worktrees/<run_id>/<component_id>``
+    Worktrees are keyed ``.kstrl/worktrees/<run_id>/<component_id>``
     (R0.5, H-7): two invocations never share a worktree path, so setup
     can only ever remove a leftover from an earlier attempt of THIS run
     (a retry), never another invocation's in-flight worktree. Run-level
-    exclusion itself is the ``.ralph/factory.lock`` flock in run_factory.
+    exclusion itself is the ``.kstrl/factory.lock`` flock in run_factory.
 
-    A per-host fcntl flock on ``.ralph/worktrees/<component_id>.lock``
+    A per-host fcntl flock on ``.kstrl/worktrees/<component_id>.lock``
     (run-agnostic on purpose) still serializes the git commands here for
     the degraded modes that run without the run-level lock (Windows,
     ``--force-lock``), where two invocations could otherwise race on the
@@ -650,10 +652,10 @@ def _setup_worktree(
     POSIX only. On Windows the fcntl import fails; we degrade to the
     pre-lock behavior and document the limitation in the runbook.
     """
-    worktree_base = root_dir / ".ralph" / "worktrees" / run_id
+    worktree_base = root_dir / ".kstrl" / "worktrees" / run_id
     worktree_base.mkdir(parents=True, exist_ok=True)
     worktree_path = worktree_base / component_id
-    lock_path = root_dir / ".ralph" / "worktrees" / f"{component_id}.lock"
+    lock_path = root_dir / ".kstrl" / "worktrees" / f"{component_id}.lock"
 
     lock_fp = None
     try:
@@ -736,7 +738,7 @@ def _setup_worktree(
 
 def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> None:
     """Remove a git worktree for a component of the current run."""
-    worktree_path = root_dir / ".ralph" / "worktrees" / run_id / component_id
+    worktree_path = root_dir / ".kstrl" / "worktrees" / run_id / component_id
     if not worktree_path.exists():
         return
     subprocess.run(
@@ -775,7 +777,7 @@ def _prune_stale_worktrees(
 
     Only called when the run-level flock is genuinely held: any prior
     holder has exited (flock dies with its process), so everything under
-    ``.ralph/worktrees/`` that is not ours - other runs' ``<run_id>/``
+    ``.kstrl/worktrees/`` that is not ours - other runs' ``<run_id>/``
     dirs, and pre-R0.5 flat-layout ``<component_id>/`` worktrees - is
     orphaned and safe to remove. Includes worktrees kept for leaked
     workers (R0.1): their owning run is gone, so by the next invocation
@@ -795,7 +797,7 @@ def _prune_stale_worktrees(
         except OSError:
             return False
 
-    worktree_root = root_dir / ".ralph" / "worktrees"
+    worktree_root = root_dir / ".kstrl" / "worktrees"
     if not worktree_root.exists():
         return
     removed = 0
@@ -930,8 +932,8 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
-    progress_file_str: str = "scripts/ralph/progress.txt",
-    codebase_map_file_str: str = "scripts/ralph/codebase_map.md",
+    progress_file_str: str = "scripts/kstrl/progress.txt",
+    codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
     max_iterations: int = 10,
@@ -973,7 +975,7 @@ def _run_component(
     worktree_path = Path(worktree_path_str)
     # R0.4: every copy source below resolves against root_dir, never the
     # worker's inherited CWD. prompt.md and the PRD live under gitignored
-    # scripts/ralph/, so a fresh worktree NEVER contains them via git; if
+    # scripts/kstrl/, so a fresh worktree NEVER contains them via git; if
     # a CWD-relative lookup missed them (e.g. --root from another
     # directory) the copies silently no-op'd and the engineer fell back
     # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
@@ -1022,7 +1024,7 @@ def _run_component(
     # DEFAULT_PROMPT >= 1.1.0 and the scaffolded prompt.md) is substituted
     # at runtime by loop.py with config.prd_file, so the agent reads the
     # SAME per-component PRD that check_prd_stories re-reads (R2.3, H-11)
-    # without overwriting scripts/ralph/prd.json.
+    # without overwriting scripts/kstrl/prd.json.
 
     # Copy prompt into worktree if needed
     worktree_prompt = worktree_path / prompt_file_str
@@ -1508,10 +1510,10 @@ def run_factory(
     ``manifest_path`` is where run state is SAVED as well as where it was
     loaded from (R0.5, H-15): ``--manifest /custom.json`` must persist to
     /custom.json and ``ralph run`` to its own run-manifest.json, never to
-    another invocation's resumable ``scripts/ralph/manifest.json``. None
-    keeps the historical default of ``<root>/scripts/ralph/manifest.json``.
+    another invocation's resumable ``scripts/kstrl/manifest.json``. None
+    keeps the historical default of ``<root>/scripts/kstrl/manifest.json``.
 
-    Holds the run-level ``.ralph/factory.lock`` flock for the whole run
+    Holds the run-level ``.kstrl/factory.lock`` flock for the whole run
     (R0.5, H-7); a contending invocation is refused with exit code 2
     unless it passes ``--force-lock``.
     """
@@ -1555,7 +1557,7 @@ def _run_factory_locked(
     # Stable run id shared by evolution journal and knowledge layer.
     # current_run_id() carries microseconds plus a random nonce, so two
     # factory invocations launched within the same UTC second neither
-    # collide on .ralph/knowledge/<comp>/<run_id>/ directories nor
+    # collide on .kstrl/knowledge/<comp>/<run_id>/ directories nor
     # order ambiguously (R1.6: same-second knowledge run dirs must sort
     # by creation time, not by nonce).
     # PR F needs the run dir known before the TUI starts: the caller
@@ -1570,13 +1572,13 @@ def _run_factory_locked(
     # list is a journal concern.
     component_failure_signatures: dict[str, list[str]] = {}
 
-    # Set up progress log. R3.2: defaults ON under .ralph/ so a
+    # Set up progress log. R3.2: defaults ON under .kstrl/ so a
     # walk-away run always leaves an event trail `ralph status` can
     # join; [factory] progress_log_enabled = false (or env) opts out.
     # Every event carries run_id so runs sharing the default file stay
     # distinguishable.
     # Dual-write (TUI rewrite chunk 3): typed schema-v2 events go to
-    # .ralph/runs/<run_id>/events.jsonl via the EventBus; V1CompatSink
+    # .kstrl/runs/<run_id>/events.jsonl via the EventBus; V1CompatSink
     # delegates the v1-named subset to a real ProgressLog so the
     # progress.jsonl byte format AND its attached ProgressSink
     # observers (Linear, R7.4) stay untouched. progress_log_enabled =
@@ -1600,7 +1602,7 @@ def _run_factory_locked(
     else:
         log_path = (
             factory_config.progress_log_path
-            or root_dir / ".ralph" / "progress.jsonl"
+            or root_dir / ".kstrl" / "progress.jsonl"
         )
         progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
         journal_path = log_path
@@ -1729,7 +1731,7 @@ def _run_factory_locked(
             comp.status = ComponentStatus.PENDING.value
 
     if manifest_path is None:
-        manifest_path = root_dir / "scripts" / "ralph" / "manifest.json"
+        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
 
     # R3.3: persist which run owns this manifest state. completed_at is
     # blanked while the run is in flight and stamped in the summary
@@ -2195,7 +2197,7 @@ def _run_factory_locked(
         # stays for the next run's prune pass (which preserves recorded
         # evidence worktrees of still-FAILED components).
         try:
-            os.rmdir(root_dir / ".ralph" / "worktrees" / run_id)
+            os.rmdir(root_dir / ".kstrl" / "worktrees" / run_id)
         except OSError:
             pass
         ui.ok("Worktrees cleaned up")
@@ -2274,7 +2276,7 @@ def _run_factory_locked(
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's
-            # checkout is untouched, but .ralph/contract holds stale
+            # checkout is untouched, but .kstrl/contract holds stale
             # state - fail the run loudly instead of continuing.
             ui.err(f"  Contract cleanup FAILED: {exc}")
             factory_result.contract_failures.append(

@@ -338,7 +338,9 @@ def _sort_key(event: ev.Event) -> tuple[float, str, int]:
 
 
 def _v2_run_dirs(root_dir: Path) -> list[Path]:
-    runs_root = root_dir / ".ralph" / "runs"
+    from kstrl.statedir import state_dir
+
+    runs_root = state_dir(root_dir) / "runs"
     try:
         candidates = [
             d for d in runs_root.iterdir()
@@ -372,9 +374,9 @@ def load_run_state(
     """Reconstruct run state from disk.
 
     Resolution order:
-    1. ``.ralph/runs/<run_id>/`` (or the newest run dir when ``run_id``
+    1. ``.kstrl/runs/<run_id>/`` (or the newest run dir when ``run_id``
        is empty) - the v2 layout, workers' engineer.jsonl merged in.
-    2. ``.ralph/progress.jsonl`` up-converted - the v1 fallback.
+    2. ``.kstrl/progress.jsonl`` up-converted - the v1 fallback.
 
     Returns ``(state, source_path)``; ``source_path`` is None when no
     stream exists (state is then empty).
@@ -387,7 +389,7 @@ def load_run_state(
         events = read_run_dir(run_dir)
         return fold(events, run_id=run_id), run_dir / "events.jsonl"
 
-    v1_path = root_dir / ".ralph" / "progress.jsonl"
+    v1_path = root_dir / ".kstrl" / "progress.jsonl"
     raw = read_progress_events(v1_path)
     if not raw:
         return RunState(run_id=run_id), None

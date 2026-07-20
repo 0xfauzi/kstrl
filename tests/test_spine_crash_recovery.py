@@ -7,7 +7,7 @@ in-flight command signals via a marker file, then sleeps, so the kill
 provably lands inside the phase under test. That leaves exactly the
 state crash recovery must handle: a manifest persisted with an
 intermediate status, a provisioned worktree under the run-scoped
-``.ralph/worktrees/<run_id>/`` layout, and the component branch checked
+``.kstrl/worktrees/<run_id>/`` layout, and the component branch checked
 out there.
 
 The restart then proves the R0.5 recovery contract end to end:
@@ -49,7 +49,7 @@ from tests.spine_utils import (
 pytestmark = pytest.mark.spine
 
 COMP = "comp-a"
-BRANCH = f"ralph/factory/{COMP}"
+BRANCH = f"kstrl/factory/{COMP}"
 
 # Real factory run in a child process. argv: root, manifest_path,
 # verify test command, engineer agent command.
@@ -76,8 +76,8 @@ result = run_factory(
         ),
     ),
     KstrlConfig(
-        prompt_file=root / "scripts" / "ralph" / "prompt.md",
-        prd_file=root / "scripts" / "ralph" / "prd.json",
+        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0, agent_cmd=sys.argv[4],
         kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
@@ -136,7 +136,7 @@ def _assert_crashed_state(
     survived. Returns the stale worktree path."""
     crashed = Manifest.load(manifest_path)
     assert crashed.components[0].status == expected_status
-    stale_worktrees = sorted((root / ".ralph" / "worktrees").glob(f"*/{COMP}"))
+    stale_worktrees = sorted((root / ".kstrl" / "worktrees").glob(f"*/{COMP}"))
     assert len(stale_worktrees) == 1, (
         f"expected exactly one crashed worktree, found {stale_worktrees}"
     )
@@ -144,7 +144,7 @@ def _assert_crashed_state(
 
 
 def _no_worktree_dirs_left(root: Path) -> bool:
-    worktree_root = root / ".ralph" / "worktrees"
+    worktree_root = root / ".kstrl" / "worktrees"
     if not worktree_root.exists():
         return True
     return not any(p.is_dir() for p in worktree_root.iterdir())

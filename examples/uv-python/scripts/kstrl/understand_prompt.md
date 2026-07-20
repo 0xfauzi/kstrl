@@ -7,13 +7,13 @@ You are running a **codebase understanding** loop. Your job is to explore the ex
 **Hard rule:** do NOT modify application code, tests, configs, dependencies, or CI.
 
 **The only file you may edit is:**
-- `scripts/ralph/codebase_map.md`
+- `scripts/kstrl/codebase_map.md`
 
 If you think code changes are needed, write that as a note in the map under **Open questions / Follow-ups**. Do not implement changes in this mode.
 
 ## What to do
 
-1. Read `scripts/ralph/codebase_map.md`.
+1. Read `scripts/kstrl/codebase_map.md`.
 2. Choose ONE topic to investigate this iteration:
    - If `codebase_map.md` has a **Next Topics** checklist, pick the first unchecked item.
    - Otherwise follow this default order:
@@ -35,7 +35,7 @@ If you think code changes are needed, write that as a note in the map under **Op
    - app entrypoints (server/main)
    - routes/controllers
    - data layer (models, migrations)
-4. Update **ONLY** `scripts/ralph/codebase_map.md`:
+4. Update **ONLY** `scripts/kstrl/codebase_map.md`:
    - Append a new **Iteration Notes** section for this topic (template below)
    - If you used a Next Topics checklist, mark the topic as done (`[x]`)
    - Keep notes concise, factual, and verifiable
@@ -50,7 +50,7 @@ If you think code changes are needed, write that as a note in the map under **Op
 
 ## Iteration Notes format
 
-Append this to the END of `scripts/ralph/codebase_map.md`:
+Append this to the END of `scripts/kstrl/codebase_map.md`:
 
 ## [YYYY-MM-DD] - [Topic]
 

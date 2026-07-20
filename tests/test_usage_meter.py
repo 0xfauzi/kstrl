@@ -390,7 +390,7 @@ class FakeUsageAgent:
 
 
 def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -491,8 +491,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
 
 def _make_base_config(root_dir: Path) -> KstrlConfig:
     return KstrlConfig(
-        prompt_file=root_dir / "scripts" / "ralph" / "prompt.md",
-        prd_file=root_dir / "scripts" / "ralph" / "prd.json",
+        prompt_file=root_dir / "scripts" / "kstrl" / "prompt.md",
+        prd_file=root_dir / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",
@@ -503,7 +503,7 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
-    ralph_dir = tmp_path / "scripts" / "ralph"
+    ralph_dir = tmp_path / "scripts" / "kstrl"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
@@ -529,8 +529,8 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
         comp_id, comp_id.title(), "Desc", deps or [],
-        f"scripts/ralph/feature/{comp_id}/prd.json",
-        f"ralph/factory/{comp_id}",
+        f"scripts/kstrl/feature/{comp_id}/prd.json",
+        f"kstrl/factory/{comp_id}",
     )
 
 
@@ -563,7 +563,7 @@ def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
 
 
 def _read_journal(tmp_path: Path) -> list[dict[str, Any]]:
-    journal_path = tmp_path / ".ralph" / "evolution.jsonl"
+    journal_path = tmp_path / ".kstrl" / "evolution.jsonl"
     entries = []
     for line in journal_path.read_text().splitlines():
         if line.strip():
@@ -602,7 +602,7 @@ class TestFactoryUsageAggregation:
         assert comp_entry["usage"]["engineer"]["cost_usd"] == pytest.approx(0.05)
 
         # experiments.tsv gains the totals columns.
-        tsv = (root / ".ralph" / "experiments.tsv").read_text().splitlines()
+        tsv = (root / ".kstrl" / "experiments.tsv").read_text().splitlines()
         header = tsv[0].split("\t")
         row = dict(zip(header, tsv[1].split("\t"), strict=True))
         assert row["total_tokens"] == "1200"
@@ -741,7 +741,7 @@ class TestFactoryUsageAggregation:
         entries = _read_journal(root)
         comp_entry = next(e for e in entries if e["component_id"] == "comp-a")
         assert comp_entry["usage"] == {}
-        tsv = (root / ".ralph" / "experiments.tsv").read_text().splitlines()
+        tsv = (root / ".kstrl" / "experiments.tsv").read_text().splitlines()
         header = tsv[0].split("\t")
         row = dict(zip(header, tsv[1].split("\t"), strict=True))
         assert row["total_tokens"] == "0"
@@ -769,7 +769,7 @@ class TestFactoryUsageAggregation:
 
         out = ui_buffer.getvalue()
         assert "lower bounds" in out
-        tsv = (root / ".ralph" / "experiments.tsv").read_text().splitlines()
+        tsv = (root / ".kstrl" / "experiments.tsv").read_text().splitlines()
         header = tsv[0].split("\t")
         row = dict(zip(header, tsv[1].split("\t"), strict=True))
         assert row["unreported_calls"] == "1"

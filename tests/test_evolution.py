@@ -47,7 +47,7 @@ def _make_component(
         description=f"Description of {id}",
         dependencies=[],
         prd_path=f"prd/{id}.json",
-        branch_name=f"ralph/{id}",
+        branch_name=f"kstrl/{id}",
         status=status,
         error=error,
         retries=retries,

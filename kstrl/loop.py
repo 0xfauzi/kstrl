@@ -136,7 +136,7 @@ def run_loop(
     #
     # The fallback is announced explicitly so the operator can tell
     # "we used the default" from "we used your customized prompt at
-    # scripts/ralph/prompt.md", which matters when reading the
+    # scripts/kstrl/prompt.md", which matters when reading the
     # iteration log later.
     from string import Template
     if config.prompt_file.exists():

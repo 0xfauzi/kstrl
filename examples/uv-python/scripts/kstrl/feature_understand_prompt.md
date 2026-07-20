@@ -8,7 +8,7 @@ Your job is to build a focused, evidence-based map of the code that this feature
 **Hard rule:** do NOT modify application code, tests, configs, dependencies, or CI.
 
 **The only file you may edit is the feature understand file, for example:**
-- `scripts/ralph/feature/<feature_name>/understand.md`
+- `scripts/kstrl/feature/<feature_name>/understand.md`
 
 If you think code changes are needed, write that as a note in the feature understand file
 under **Open questions / Follow-ups**. Do not implement changes in this mode.
@@ -17,7 +17,7 @@ under **Open questions / Follow-ups**. Do not implement changes in this mode.
 
 1. Read the feature PRD file you were given.
 2. Derive a short list of keywords from the PRD intent, not just exact wording.
-3. Read `scripts/ralph/codebase_map.md` and query only the sections relevant to this feature.
+3. Read `scripts/kstrl/codebase_map.md` and query only the sections relevant to this feature.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
    - Do not load the entire file.
 4. Investigate by reading docs, configs, and code. Prefer fast, high-signal entrypoints:

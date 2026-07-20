@@ -42,7 +42,7 @@ def _prd_data(
     fixtures: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {
-        "branchName": "ralph/fixtures-test",
+        "branchName": "kstrl/fixtures-test",
         "userStories": [_story()],
     }
     if fixtures is not None:
@@ -759,7 +759,7 @@ class TestFixturesConfigLoad:
         assert config.timeout == 30.0
         # Relative snapshot_dir resolves against the repo root so
         # snapshots survive worktree recreation between runs.
-        assert config.snapshot_dir == tmp_path / ".ralph/snapshots"
+        assert config.snapshot_dir == tmp_path / ".kstrl/snapshots"
 
     def test_load_from_toml(self, tmp_path: Path) -> None:
         (tmp_path / "ralph.toml").write_text(

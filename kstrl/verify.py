@@ -209,7 +209,7 @@ class VerifyConfig:
     # iteration's progress.txt entry omits the block.
     require_self_critique: bool = False
     self_critique_min_bullets: int = 3
-    progress_file_path: str = "scripts/ralph/progress.txt"
+    progress_file_path: str = "scripts/kstrl/progress.txt"
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -236,7 +236,7 @@ class VerifyConfig:
                 envcompat.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
             ),
             progress_file_path=envcompat.get("KSTRL_VERIFY_PROGRESS_FILE",
-                "scripts/ralph/progress.txt",
+                "scripts/kstrl/progress.txt",
             ),
         )
 

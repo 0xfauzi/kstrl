@@ -20,7 +20,7 @@ from kstrl.prd import PRD
 
 def _make_prd_payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
-        "branchName": "ralph/test",
+        "branchName": "kstrl/test",
         "userStories": [
             {
                 "id": "US-001",
@@ -44,7 +44,7 @@ class TestValidateSchemaAllowedPaths:
 
     def test_array_of_strings_is_valid(self) -> None:
         payload = _make_prd_payload(
-            allowedPaths=["src/", "tests/", "scripts/ralph/feature/x/"],
+            allowedPaths=["src/", "tests/", "scripts/kstrl/feature/x/"],
         )
         assert PRD.validate_schema(payload) == []
 
@@ -90,12 +90,12 @@ class TestLoadAllowedPaths:
         path = tmp_path / "prd.json"
         path.write_text(
             json.dumps(_make_prd_payload(
-                allowedPaths=["src/", "tests/", "scripts/ralph/feature/x/"],
+                allowedPaths=["src/", "tests/", "scripts/kstrl/feature/x/"],
             )),
         )
         prd = PRD.load(path)
         assert prd.allowed_paths == [
-            "src/", "tests/", "scripts/ralph/feature/x/",
+            "src/", "tests/", "scripts/kstrl/feature/x/",
         ]
 
     def test_load_with_invalid_allowed_paths_rejected_at_load(
