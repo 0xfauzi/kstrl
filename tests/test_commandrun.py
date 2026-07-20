@@ -65,23 +65,44 @@ class TestOpenCommandRun:
         """Console narration lands in the run stream (chunk-7 wiring),
         and close() un-stamps the shared bus for post-run lines."""
         rendered: list[ev.Event] = []
-        bus = ev.EventBus(ev.CallbackSink(rendered.append))
+        bus = ev.EventBus(
+            ev.CallbackSink(rendered.append),
+            run_id="outer-run", component="outer-component",
+        )
         ui = EventBridgeUI(bus, prompter=NullPrompter())
         run = open_command_run(
             ui, tmp_path, "decompose", component="architect",
             enabled=True, heartbeat=False,
         )
         assert run.bus is bus
+        assert bus.run_id == run.run_id
         assert bus.component == "architect"
         ui.info("resolved spec")
         run.close()
-        assert bus.component == ""
+        assert bus.run_id == "outer-run"
+        assert bus.component == "outer-component"
         ui.info("post-run narration")
         events = _events_on_disk(run)
         assert [e["event"] for e in events] == ["log"]
         assert events[0]["component"] == "architect"
         # The post-close line rendered to the console but not the file.
         assert len(rendered) == 2
+
+    def test_bridge_run_level_session_clears_inherited_component(
+        self, tmp_path: Path,
+    ) -> None:
+        bus = ev.EventBus(run_id="outer-run", component="outer-component")
+        ui = EventBridgeUI(bus, prompter=NullPrompter())
+        run = open_command_run(
+            ui, tmp_path, "decompose", enabled=True, heartbeat=False,
+        )
+        assert bus.component == ""
+        run.bus.emit(ev.RunStarted(project="p"))
+        run.close()
+
+        assert bus.run_id == "outer-run"
+        assert bus.component == "outer-component"
+        assert _events_on_disk(run)[0]["component"] == ""
 
     def test_heartbeat_started_when_enabled(self, tmp_path: Path) -> None:
         run = open_command_run(

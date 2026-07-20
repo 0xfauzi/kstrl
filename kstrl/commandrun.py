@@ -117,6 +117,7 @@ class CommandRun:
     _sinks: list[EventSink] = field(default_factory=list)
     _stop_heartbeat: Callable[[], None] | None = None
     _transcripts: dict[str, TextIO] = field(default_factory=dict)
+    _restore_run_id: str | None = None
     _restore_component: str | None = None
 
     @property
@@ -165,6 +166,9 @@ class CommandRun:
             except OSError:
                 pass
         self._transcripts.clear()
+        if self._restore_run_id is not None:
+            self.bus.run_id = self._restore_run_id
+            self._restore_run_id = None
         if self._restore_component is not None:
             self.bus.component = self._restore_component
             self._restore_component = None
@@ -195,18 +199,20 @@ def open_command_run(
         enabled = FactoryConfig.load(root_dir).progress_log_enabled
     rid = run_id or mint_run_id(kind)
 
+    restore_run_id: str | None = None
     restore_component: str | None = None
     if isinstance(ui, EventBridgeUI):
         bus = ui.bus
+        restore_run_id = bus.run_id
+        restore_component = bus.component
         bus.run_id = rid
-        if component:
-            restore_component = bus.component
-            bus.component = component
+        bus.component = component
     else:
         bus = EventBus(run_id=rid, component=component)
 
     run = CommandRun(
         run_id=rid, kind=kind, bus=bus, paths=None,
+        _restore_run_id=restore_run_id,
         _restore_component=restore_component,
     )
     if not enabled:
