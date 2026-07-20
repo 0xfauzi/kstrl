@@ -40,6 +40,15 @@ class TestCustomSeparator:
     def test_custom_separator_collapse(self) -> None:
         assert slugify("hello...world", separator="_") == "hello_world"
 
+    def test_backslash_separator(self) -> None:
+        assert slugify("hello world", separator="\\") == "hello\\world"
+
+    def test_dot_separator(self) -> None:
+        assert slugify("a b c", separator=".") == "a.b.c"
+
+    def test_pipe_separator(self) -> None:
+        assert slugify("foo bar", separator="|") == "foo|bar"
+
 
 class TestSeparatorValidation:
     def test_multi_char_separator(self) -> None:
@@ -47,12 +56,20 @@ class TestSeparatorValidation:
             slugify("hello", separator="ab")
 
     def test_digit_separator(self) -> None:
-        with pytest.raises(ValueError, match="alphanumeric"):
+        with pytest.raises(ValueError, match="punctuation"):
             slugify("hello", separator="1")
 
     def test_letter_separator(self) -> None:
-        with pytest.raises(ValueError, match="alphanumeric"):
+        with pytest.raises(ValueError, match="punctuation"):
             slugify("hello", separator="a")
+
+    def test_whitespace_separator(self) -> None:
+        with pytest.raises(ValueError, match="punctuation"):
+            slugify("hello", separator=" ")
+
+    def test_tab_separator(self) -> None:
+        with pytest.raises(ValueError, match="punctuation"):
+            slugify("hello", separator="\t")
 
 
 class TestEdgeCases:
