@@ -1,5 +1,13 @@
 # Agent SDK spike: SDK-driven engineer vs CLI subprocess (R7.5)
 
+**DECIDED 2026-07-20: GO**, as scoped by the recommendation below - an
+ADDITIONAL `claude-sdk` adapter behind the existing `Agent` protocol for
+the claude-code engineer path, not a replacement for the subprocess
+adapters. The production-wiring gate stands unchanged: the R0.1 timeout
+battery must pass against the SDK transport, and the sandbox settings
+pass-through must be re-measured through `ClaudeAgentOptions`. Tracked
+as R7.6 in `docs/remediation-roadmap.md`.
+
 Written comparison for **user decision 5** (adopt the Claude Agent SDK
 for agent invocation, or stay on CLI subprocesses). Per the
 measure-don't-assume rule, every claim below was measured on

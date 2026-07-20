@@ -138,10 +138,15 @@ To measure the same-family vs cross-family correlated-miss delta, the calibratio
 RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
   uv run pytest tests/test_calibration.py -v
 
-# Baseline 2: reviewer + security roles on the second family (codex CLI)
+# Baseline 2: reviewer + security roles on the second family (codex CLI).
+# Two codex-specific requirements (measured; see the gotcha note below):
+#   - pin RALPH_CALIBRATION_REVIEWER_MODEL (haiku is claude-only -> HTTP 400)
+#   - --basetemp INSIDE a git repo (codex refuses a non-git cwd)
+CODEX_REPO=$(mktemp -d); git init -q "$CODEX_REPO"
 RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
   RALPH_CALIBRATION_REVIEWER_AGENT_TYPE=codex \
-  uv run pytest tests/test_calibration.py -v
+  RALPH_CALIBRATION_REVIEWER_MODEL=gpt-5.5 \
+  uv run pytest tests/test_calibration.py -v --basetemp="$CODEX_REPO/pt"
 
 # Compare (the cross-model warning is expected: the delta measures the family change)
 uv run python -m ralph_py.calibration compare \
@@ -150,6 +155,27 @@ uv run python -m ralph_py.calibration compare \
 ```
 
 `RALPH_CALIBRATION_REVIEWER_MODEL` optionally pins the reviewer model within the overridden family. Override runs record their model id as `<base>+reviewer:<type>/<model>` so `compare` surfaces the family change as its cross-model warning instead of hiding it.
+
+Gotcha (codex 0.134 on a ChatGPT account, measured 2026-07-20): the cross-family command above needs two things the same-family run does not, or it silently records a miss on every fixture. (1) Pin `RALPH_CALIBRATION_REVIEWER_MODEL` to a valid codex model (e.g. `gpt-5.5`). Without it the override forwards `RALPH_CALIBRATION_MODEL` (`haiku`) to `codex exec -m haiku`, which a ChatGPT-account codex rejects with HTTP 400 - but codex still exits 0 and prints the error as output, so the parser sees no findings and scores a clean miss (not an infrastructure error). (2) Add `--basetemp=<dir inside a git repo>` to pytest (an empty throwaway `git init` dir works; pytest empties the basetemp, so make it a SUBDIR of the repo, not the repo root). Calibration runs each agent in an empty `tmp_path`, and `codex exec` refuses a non-git cwd (`Not inside a trusted directory and --skip-git-repo-check was not specified`) and fast-exits - again a silent miss. The `claude` CLI has neither restriction, so the same-family run needs no special handling; the runbook's plain 2c command only works for a claude-family reviewer.
+
+#### Recorded baselines
+
+- **Same-family (2026-07-20, haiku):** `tests/adversarial_fixtures/_results/baseline-20260720-113835.json`. Reviewer 4/4, security 6/6, security_hard 4/4 - all detected 3/3, reviewer/security false-positive rate 0.0 (0/8 clean fixtures). This is Baseline 1 above.
+- **Cross-family (2026-07-20, `codex`/gpt-5.5 on reviewer+security, haiku architect):** captured; artifact `baseline-20260720-123959.json` (label `haiku+reviewer:codex/gpt-5.5`). NOT committed to the repo results dir: it is not the canonical baseline and would trip `test_repo_baselines_match_default_model`, which asserts the newest committed baseline uses the default model. `compare` same-family -> cross-family = PASS (cross-model warning expected). Deltas, 3 runs each, 0 infrastructure errors:
+  - reviewer 1.00 -> 1.00; security_hard 1.00 -> 1.00; architect unchanged (stays haiku in both).
+  - security detection 1.00 -> 0.94: codex missed `sec-05-broken-jwt-verify` (auth_bypass) in 1 of 3 runs (2/3); every other security fixture stayed 3/3.
+  - security false-positive rate 0.0 -> 0.25: codex false-flagged `sec-neg-02-constant-time-compare` in 2 of 3 runs (still under `FP_RATE_MAX` 0.34); reviewer FP stayed 0.0.
+  - **Interpretation:** no measurable correlated-miss BENEFIT is visible on this fixture set, because both families already sit at the detection ceiling (same-family catches 100%, including all 4 "hard" positives), so there is nothing for the second family to additionally catch. The only cross-family deltas are codex being marginally noisier (one flaky miss, one extra false positive). A real correlated-miss delta requires fixtures that a single family sometimes MISSES - the same gap as the R5.2 hard-positive finding (4/4 caught = not actually hard). So the rotation's effect size remains unevidenced until the fixtures have genuinely-missable cases, even though both baselines are now recorded.
+
+### Hard-positive hardness: measured, and genuinely caught (R5.2, 2026-07-20)
+
+The R5.2 acceptance check wants `security_hard.detection_rate < 1.0`, on the premise that a baseline catching all four "hard" positives means they are too easy. The 2026-07-20 capture returned 1.0 (all four caught 3/3), so this was investigated before concluding the fixtures are defective:
+
+- **The matcher is not lenient.** `security_caught` requires a finding whose category is in the fixture's `category_any_of`, AND whose location contains `evidence_path_contains` (the specific vulnerable file), AND whose severity meets the floor. A finding elsewhere, or of the wrong category, does not count.
+- **The catches are genuine.** Re-running each hard fixture and reading the model's `explanation` shows mechanism-level reasoning, not category guessing: multihop-authz ("deletes a comment by id without verifying it belongs to the authorized post"), second-order-injection ("validated at entry but quotes allowed, then interpolated at the analytics sink"), TOCTOU ("non-atomic read-check-write, not in one transaction, under concurrent requests"), timing-oracle ("returns on first mismatch; recover the signature byte-by-byte by latency").
+- **Even tell-free variants are caught.** Rewriting the timing oracle to remove its tell - replacing the hand-rolled `_secure_equals` early-return loop with a plain `return expected == provided` (still non-constant-time, but innocent-looking) - haiku still flagged the timing side channel 5/5, naming constant-time comparison each time.
+
+Conclusion: these are well-designed subtle bugs; haiku is simply a competent reviewer for OWASP-classic categories, and `detection_rate < 1.0` is not reachable for them without contriving scenarios that hide the security-relevant operation itself. The hard positives keep their value as a regression net (the `MIN_ROLE_DETECTION_RATE` / `MAX_ROLE_DETECTION_DROP` floors still fire if a prompt edit degrades them) and as a cross-family / weaker-model gradient; they are recorded but NOT gated. On this evidence R5.2's original `detection_rate < 1.0` bar was dropped and R5.2 was closed (2026-07-20, user decision): the hard positives stay as genuinely-subtle, measured-not-gated fixtures protected by the detection-drop floors. See remediation-roadmap R5.2.
 
 ### Model drift (R5.5, H2-extended)
 
