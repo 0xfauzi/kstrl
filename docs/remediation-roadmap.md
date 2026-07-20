@@ -542,12 +542,23 @@ third, all in one measured cycle.
     RESULT (2026-07-20, haiku, `baseline-20260720-113835.json`):
     `security_hard.detection_rate == 1.0` - all four hard positives
     (multihop-authz, second-order-injection, TOCTOU, timing-oracle) caught
-    3/3 with 0 errors. ACCEPTANCE FAILED: the fixtures are NOT hard for the
-    current security prompt at haiku tier, so R5.2 stays `[~]` and the hard
-    fixtures need another iteration to become genuinely missable. Open
-    question flagged for the iteration: confirm the hard-fixture matcher
-    requires the SPECIFIC planted vuln, not merely any security finding, so
-    the 1.0 is a true catch and not a lenient match.
+    3/3 with 0 errors. INVESTIGATED 2026-07-20 (see docs/adversarial-design.md
+    "Hard-positive hardness"): (1) the matcher is NOT lenient - `security_caught`
+    pins category + the specific vulnerable file + severity floor; (2) the
+    catches are GENUINE - the model's explanations reason about each mechanism
+    (missing comment->post rebinding, store-then-read taint, non-atomic
+    read-check-write, first-mismatch early return); (3) even a tell-free
+    timing-oracle variant (`return expected == provided`, no suspicious helper)
+    is caught 5/5 with correct constant-time reasoning. So `detection_rate < 1.0`
+    is NOT reachable for these OWASP-classic categories at haiku tier without
+    contriving scenarios that hide the security operation itself - the fixtures
+    are well-designed, haiku is just competent. RECOMMENDATION (user decision
+    pending): drop the `< 1.0` hardness gate and reframe R5.2 acceptance to
+    "hard positives are genuinely subtle (documented `why_hard`), measured not
+    gated, and protected by the `MIN_ROLE_DETECTION_RATE` /
+    `MAX_ROLE_DETECTION_DROP` regression floors" - then close R5.2 `[x]`. The
+    alternative (keep authoring missable fixtures) is not recommended: the
+    evidence shows it leads to contrivance for these categories.
 - [x] R5.3 (M) **The prompt-edit batch** (one calibration cycle; H2 + H3 apply)
   NOTE: code + prompt edits landed (all four prompts bumped + snapshotted;
   per-run delimiters unit-tested; injection-efficacy fixtures added). CLOSED
