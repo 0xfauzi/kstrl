@@ -5,13 +5,11 @@ from __future__ import annotations
 import copy
 import json
 import os
-import re
 import sys
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +30,9 @@ from kstrl.agents import (
 )
 from kstrl.agents.base import Agent, UsageRecord
 from kstrl.breaker import BreakerConfig
-from kstrl.config import KstrlConfig, _parse_paths, load_toml_section, resolve_config_file
+from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
+from kstrl.config_report import build_config_report
+from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
@@ -41,6 +41,7 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.launch import assemble_factory_configs
 from kstrl.loop import run_loop
 from kstrl.manifest import Manifest
 from kstrl.observability import (
@@ -51,7 +52,11 @@ from kstrl.observability import (
 )
 from kstrl.output import build_console
 from kstrl.prd import PRD
+from kstrl.proposals import append_to_agent_learnings as _append_to_agent_learnings
+from kstrl.proposals import existing_proposal_titles as _existing_proposal_titles
+from kstrl.proposals import mark_applied, parse_proposal_file
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
+from kstrl.retry_plan import RetryError, prepare_retry
 from kstrl.sandbox import SandboxConfig
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
@@ -283,28 +288,6 @@ def _apply_cli_overrides(
     return overridden
 
 
-@contextmanager
-def _scrubbed_environ() -> Iterator[None]:
-    """Temporarily clear os.environ so a loader sees toml + defaults only.
-
-    Used by ``config show`` to isolate the env contribution: a field
-    whose value changes when the environment disappears was env-set.
-    """
-    saved = dict(os.environ)
-    os.environ.clear()
-    try:
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(saved)
-
-
-def _format_config_value(value: Any) -> str:
-    if isinstance(value, Path):
-        return str(value)
-    return repr(value)
-
-
 def _collect_toml_notes(
     notes: list[str],
     section: str,
@@ -358,17 +341,6 @@ def _resolve_path(root: Path, value: str | None, default: Path) -> Path:
     if path.is_absolute():
         return path
     return root / path
-
-
-def _normalize_ui_mode(value: str) -> str:
-    normalized = (value or "auto").strip().lower()
-    if normalized == "gum":
-        return "rich"
-    if normalized in {"plain", "off", "no", "0"}:
-        return "plain"
-    if normalized not in {"auto", "rich", "plain"}:
-        return "auto"
-    return normalized
 
 
 def _derive_feature_name(prd_path: Path, root: Path) -> str:
@@ -2111,47 +2083,6 @@ def factory(
 # Display structure for the KstrlConfig-backed ralph.toml sections:
 # section -> [(toml_key, dataclass_field)]. Mirrors DEFAULT_KSTRL_TOML in
 # init_cmd.py plus the env/flag-only UI knobs (ui_mode, no_color).
-_KSTRL_SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
-    ("agent", [
-        ("type", "agent_type"),
-        ("command", "agent_cmd"),
-        ("model", "model"),
-        ("reasoning_effort", "model_reasoning_effort"),
-    ]),
-    ("run", [
-        ("max_iterations", "max_iterations"),
-        ("sleep_seconds", "sleep_seconds"),
-        ("interactive", "interactive"),
-    ]),
-    ("paths", [
-        ("prompt", "prompt_file"),
-        ("prd", "prd_file"),
-        ("progress", "progress_file"),
-        ("codebase_map", "codebase_map_file"),
-        ("allowed", "allowed_paths"),
-    ]),
-    ("git", [
-        ("branch", "kstrl_branch"),
-        ("auto_checkout", "auto_checkout"),
-    ]),
-    ("ui", [
-        ("ascii", "ascii_only"),
-        ("ui_mode", "ui_mode"),
-        ("no_color", "no_color"),
-    ]),
-]
-
-
-def _ralph_config_defaults(root_dir: Path) -> KstrlConfig:
-    """Built-in KstrlConfig defaults with paths anchored like load()."""
-    config = KstrlConfig()
-    config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
-    config.prd_file = root_dir / "scripts/kstrl/prd.json"
-    config.progress_file = root_dir / "scripts/kstrl/progress.txt"
-    config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
-    return config
-
-
 @cli.group(name="config")
 def config_group() -> None:
     """Inspect Ralph configuration."""
@@ -2214,132 +2145,34 @@ def config_show(
     """
     ctx = click.get_current_context()
     root_dir = root.resolve() if root else Path.cwd()
-    toml_path = resolve_config_file(root_dir)
 
-    from kstrl.contract import ContractConfig
-    from kstrl.evolution import EvolutionConfig
-    from kstrl.feedforward import FeedforwardConfig
-    from kstrl.knowledge import KnowledgeConfig
-    from kstrl.linear import LinearConfig
-    from kstrl.observability import NotifyConfig
-    from kstrl.security import SecurityConfig
-    from kstrl.verify import VerifyConfig
-
-    # (section, loader, knob fields) - the documented ralph.toml surface.
-    phase_sections: list[tuple[str, Any, list[str]]] = [
-        ("factory", FactoryConfig.load, [
-            "max_parallel", "max_retries", "retry_delay", "use_worktrees",
-            "single_pr", "create_prs", "review_mode", "merge_timeout",
-            "max_adversarial_calls", "max_total_tokens",
-            "pause_before_pr_merge", "progress_log_enabled",
-            "keep_worktrees_on_failure",
-        ]),
-        ("verify", VerifyConfig.load, [
-            "test_command", "typecheck_command", "lint_command",
-            "check_diff_scope", "check_bad_patterns", "dead_code_cleanup",
-            "dead_code_command", "mutation_testing", "mutation_threshold",
-            "mutation_timeout", "subprocess_timeout", "require_self_critique",
-            "self_critique_min_bullets", "progress_file_path",
-        ]),
-        ("security", SecurityConfig.load, [
-            "mode", "fail_threshold", "timeout_seconds", "agent_cmd",
-            "agent_type", "model",
-        ]),
-        ("contract", ContractConfig.load, ["mode", "test_command", "timeout"]),
-        ("feedforward", FeedforwardConfig.load, [
-            "enabled", "module_map", "public_interfaces", "dependency_graph",
-            "conventions", "max_context_tokens",
-        ]),
-        ("knowledge", KnowledgeConfig.load, [
-            "enabled", "max_core_tokens", "max_dependency_tokens",
-            "max_sibling_tokens", "distill_timeout_seconds", "distill_model",
-            "max_facts_per_distill", "dependency_scope",
-        ]),
-        ("evolution", EvolutionConfig.load, [
-            "enabled", "journal_path", "experiments_path",
-            "min_pattern_frequency", "lookback_runs", "auto_propose",
-            "auto_apply_computational",
-        ]),
-        ("timeout", TimeoutConfig.load, [
-            f.name for f in dataclass_fields(TimeoutConfig)
-        ]),
-        ("notify", NotifyConfig.load, [
-            "on_complete", "on_first_failure", "hook_timeout",
-        ]),
-        ("linear", LinearConfig.load, [
-            "enabled", "team_id", "token_env", "auth_mode", "api_url",
-            "dry_run", "timeout_seconds", "min_request_interval",
-        ]),
-    ]
+    def _overlay(config: KstrlConfig) -> set[str]:
+        return _apply_cli_overrides(
+            ctx, config, root_dir,
+            prompt_default=root_dir / "scripts/kstrl/prompt.md",
+            prd_default=root_dir / "scripts/kstrl/prd.json",
+        )
 
     try:
-        resolved_ralph = KstrlConfig.load(root_dir)
-        phase_resolved = {name: loader(root_dir) for name, loader, _ in phase_sections}
-        with _scrubbed_environ():
-            noenv_ralph = KstrlConfig.load(root_dir)
-            phase_noenv = {
-                name: loader(root_dir) for name, loader, _ in phase_sections
-            }
-        phase_toml_keys = {
-            name: set(load_toml_section(toml_path, name).keys())
-            for name, _, _ in phase_sections
-        }
+        report = build_config_report(root_dir, overlay=_overlay)
     except ValueError as exc:
         click.echo(f"error: {exc}", err=True)
         sys.exit(1)
 
-    defaults_ralph = _ralph_config_defaults(root_dir)
-
-    # Per-field sources for KstrlConfig, computed BEFORE flag overlay.
-    ralph_sources: dict[str, str] = {}
-    for f in dataclass_fields(KstrlConfig):
-        if getattr(resolved_ralph, f.name) != getattr(noenv_ralph, f.name):
-            ralph_sources[f.name] = "env"
-        elif getattr(noenv_ralph, f.name) != getattr(defaults_ralph, f.name):
-            ralph_sources[f.name] = "toml"
-        else:
-            ralph_sources[f.name] = "default"
-
-    flag_fields = _apply_cli_overrides(
-        ctx, resolved_ralph, root_dir,
-        prompt_default=root_dir / "scripts/kstrl/prompt.md",
-        prd_default=root_dir / "scripts/kstrl/prd.json",
-    )
-    for name in flag_fields:
-        ralph_sources[name] = "flag"
-    resolved_ralph.ui_mode = _normalize_ui_mode(resolved_ralph.ui_mode)
-
+    toml_path = report.toml_path
     click.echo(f"# Resolved kstrl config for {root_dir}")
-    click.echo(f"# ralph.toml: {toml_path if toml_path.exists() else '(absent)'}")
+    click.echo(f"# ralph.toml: {toml_path if report.toml_exists else '(absent)'}")
     click.echo("")
 
-    for section, keys in _KSTRL_SHOW_SECTIONS:
-        click.echo(f"[{section}]")
-        for toml_key, field_name in keys:
-            value = getattr(resolved_ralph, field_name)
-            source = ralph_sources[field_name]
-            click.echo(
-                f"  {toml_key} = {_format_config_value(value)}  ({source})"
-            )
-        click.echo("")
-
-    for section, _, knob_fields in phase_sections:
-        resolved = phase_resolved[section]
-        noenv = phase_noenv[section]
-        toml_keys = phase_toml_keys[section]
-        click.echo(f"[{section}]")
-        for field_name in knob_fields:
-            value = getattr(resolved, field_name)
-            if value != getattr(noenv, field_name):
-                source = "env"
-            elif field_name in toml_keys:
-                source = "toml"
-            else:
-                source = "default"
-            click.echo(
-                f"  {field_name} = {_format_config_value(value)}  ({source})"
-            )
-        click.echo("")
+    section = ""
+    for row in report.rows:
+        if row.section != section:
+            if section:
+                click.echo("")
+            section = row.section
+            click.echo(f"[{section}]")
+        click.echo(f"  {row.key} = {row.value}  ({row.source})")
+    click.echo("")
 
     sys.exit(0)
 
@@ -2770,9 +2603,6 @@ def retry(
     exactly like `ralph factory` invoked without flags. The run-level
     factory lock applies as usual.
     """
-    import shutil as _shutil
-    import subprocess as _sp
-
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
@@ -2791,78 +2621,13 @@ def retry(
         ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
         sys.exit(1)
 
-    comp = manifest.get_component(component_id)
-    evidence_worktree = comp.evidence_worktree if comp else ""
-    failed_branch = comp.branch_name if comp else ""
-
     try:
-        reset_dependents = manifest.reset_for_retry(component_id)
+        prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-
-    ui_impl.section("Retry plan")
-    ui_impl.kv("Component", component_id)
-    ui_impl.kv(
-        "Cascade-skipped dependents reset",
-        ", ".join(reset_dependents) if reset_dependents else "(none)",
-    )
-    ui_impl.kv("Manifest", str(manifest_file))
-
-    # The failed attempt's worktree and branch are superseded by the
-    # fresh attempt; remove them so provisioning and the stale-branch
-    # preflight start clean. In single_pr mode every component shares
-    # one branch carrying completed components' commits - never delete
-    # it here.
-    if evidence_worktree and Path(evidence_worktree).exists():
-        _sp.run(
-            ["git", "worktree", "remove", "--force", evidence_worktree],
-            cwd=root_dir, capture_output=True, timeout=30,
-        )
-        _shutil.rmtree(evidence_worktree, ignore_errors=True)
-        _sp.run(
-            ["git", "worktree", "prune"],
-            cwd=root_dir, capture_output=True, timeout=30,
-        )
-        ui_impl.info(
-            f"Removed the failed attempt's evidence worktree: "
-            f"{evidence_worktree}"
-        )
-    if failed_branch and not manifest.single_pr:
-        branch_exists = _sp.run(
-            ["git", "rev-parse", "--verify", "--quiet",
-             f"refs/heads/{failed_branch}"],
-            cwd=root_dir, capture_output=True, timeout=30,
-        )
-        if branch_exists.returncode == 0:
-            deleted = _sp.run(
-                ["git", "branch", "-D", failed_branch],
-                cwd=root_dir, capture_output=True, text=True, timeout=30,
-            )
-            if deleted.returncode == 0:
-                ui_impl.info(
-                    f"Deleted branch '{failed_branch}' from the failed "
-                    f"attempt; the retry recreates it from "
-                    f"'{manifest.base_branch}'"
-                )
-            else:
-                ui_impl.err(
-                    f"Could not delete branch '{failed_branch}': "
-                    f"{deleted.stderr.strip()}"
-                )
-                ui_impl.info(
-                    "Delete it manually (git branch -D "
-                    f"{failed_branch}) and re-run; the factory refuses "
-                    "to silently reuse stale branches (R0.5)."
-                )
-                sys.exit(1)
-    elif manifest.single_pr:
-        ui_impl.warn(
-            "single_pr mode: the shared branch is left in place; if the "
-            "run is refused at branch preflight, resolve it manually"
-        )
-
-    manifest.save(manifest_file)
+    except RetryError:
+        sys.exit(1)
 
     _retry_channel = UiInteractionChannel(ui_impl)
     if not yes and _retry_channel.can_prompt():
@@ -2877,34 +2642,14 @@ def retry(
 
     # Config assembly mirrors `ralph factory` with no flags: every phase
     # config resolves env > ralph.toml > defaults (R2.1 control plane).
-    from kstrl.contract import ContractConfig
-    from kstrl.feedforward import FeedforwardConfig
-    from kstrl.security import SecurityConfig
-    from kstrl.verify import VerifyConfig
-
-    base_config = KstrlConfig.load(root_dir)
-    base_config.ui_mode = "plain"
-    base_config.no_color = True
-    if not base_config.prompt_file.exists():
-        default_prompt = root_dir / "scripts" / "kstrl" / "prompt.md"
-        if default_prompt.exists():
-            base_config.prompt_file = default_prompt
-    _check_agent_preflight(base_config, ui_impl)
-
-    factory_config = FactoryConfig.load(root_dir)
-    factory_config.single_pr = manifest.single_pr
-    factory_config.verify_config = VerifyConfig.load(root_dir)
-    factory_config.security_config = SecurityConfig.load(root_dir)
-    contract_resolved = ContractConfig.load(root_dir)
-    factory_config.contract_config = (
-        contract_resolved if contract_resolved.mode != "skip" else None
+    factory_config, base_config = assemble_factory_configs(
+        root_dir,
+        single_pr=manifest.single_pr,
+        progress_log_path=progress_log,
+        force_lock=force_lock,
+        keep_worktrees_on_failure=keep_worktrees_on_failure,
     )
-    factory_config.feedforward_config = FeedforwardConfig.load(root_dir)
-    factory_config.timeout_config = TimeoutConfig.load(root_dir)
-    factory_config.progress_log_path = progress_log
-    factory_config.force_lock = force_lock
-    if keep_worktrees_on_failure:
-        factory_config.keep_worktrees_on_failure = True
+    _check_agent_preflight(base_config, ui_impl)
 
     stop = StopController()
     uninstall = install_signal_handlers(stop)
@@ -3067,84 +2812,6 @@ def evolve(
     sys.exit(0)
 
 
-_PROPOSAL_TITLE_RE = re.compile(r"^# (PROP-\d+): (.+)$")
-_PROPOSAL_FIELD_RE = re.compile(r"^\*\*(Type|Target)\*\*: (.+)$")
-_PROPOSAL_APPLIED_RE = re.compile(r"^\*\*Applied\*\*: (.+)$")
-
-
-def _existing_proposal_titles(proposals_dir: Path) -> set[str]:
-    """Titles of every proposal already saved to disk."""
-    titles: set[str] = set()
-    if not proposals_dir.is_dir():
-        return titles
-    for path in sorted(proposals_dir.glob("prop-*.md")):
-        try:
-            first_line = path.read_text().splitlines()[0]
-        except (OSError, IndexError):
-            continue
-        m = _PROPOSAL_TITLE_RE.match(first_line)
-        if m:
-            titles.add(m.group(2))
-    return titles
-
-
-def _parse_proposal_file(path: Path) -> dict[str, str]:
-    """Parse the structured fields save_proposals writes.
-
-    Returns keys: id, title, type, target, convention (the blockquote
-    body of the suggested change, "" when none), applied (timestamp or
-    "")."""
-    parsed = {
-        "id": "", "title": "", "type": "", "target": "",
-        "convention": "", "applied": "",
-    }
-    convention_lines: list[str] = []
-    for line in path.read_text().splitlines():
-        m = _PROPOSAL_TITLE_RE.match(line)
-        if m and not parsed["id"]:
-            parsed["id"], parsed["title"] = m.group(1), m.group(2)
-            continue
-        m = _PROPOSAL_FIELD_RE.match(line)
-        if m:
-            parsed[m.group(1).lower()] = m.group(2).strip()
-            continue
-        m = _PROPOSAL_APPLIED_RE.match(line)
-        if m:
-            parsed["applied"] = m.group(1).strip()
-            continue
-        if line.startswith("> "):
-            convention_lines.append(line[2:].strip())
-    parsed["convention"] = " ".join(convention_lines).strip()
-    return parsed
-
-
-def _append_to_agent_learnings(
-    claude_md: Path, proposal_id: str, convention: str,
-) -> bool:
-    """Append one convention bullet to the end of the "## Agent
-    Learnings" section of the project CLAUDE.md. Returns False (no
-    write) when the file or the section is missing - the caller then
-    falls back to honest manual instructions instead of guessing a
-    location."""
-    try:
-        content = claude_md.read_text()
-    except OSError:
-        return False
-    marker = "## Agent Learnings"
-    idx = content.find(marker)
-    if idx == -1:
-        return False
-    # End of the section = next level-2 header after it, else EOF.
-    next_header = content.find("\n## ", idx + len(marker))
-    insert_at = len(content) if next_header == -1 else next_header
-    entry = f"- {convention} (applied from {proposal_id} by ralph evolve)\n"
-    head = content[:insert_at]
-    if not head.endswith("\n"):
-        head += "\n"
-    claude_md.write_text(head + entry + content[insert_at:])
-    return True
-
-
 def _evolve_apply(
     apply_id: str,
     proposals_dir: Path,
@@ -3157,7 +2824,9 @@ def _evolve_apply(
     Agent Learnings section after explicit confirmation
     (auto_apply_computational=true skips the prompt); every other
     proposal type prints honest manual instructions - no false
-    "applied" claims."""
+    "applied" claims. Mechanics live in kstrl.proposals (shared with
+    the evolve screen); narration and the click.confirm wrapper stay
+    here."""
     if apply_id.lower() == "all":
         paths = sorted(proposals_dir.glob("prop-*.md"))
         if not paths:
@@ -3176,29 +2845,24 @@ def _evolve_apply(
     claude_md = root_dir / "CLAUDE.md"
     failures = 0
     for path in paths:
-        proposal = _parse_proposal_file(path)
-        pid = proposal["id"] or path.stem.upper()
-        if proposal["applied"]:
+        proposal = parse_proposal_file(path)
+        pid = proposal.display_id
+        if proposal.applied:
             ui_impl.info(
-                f"{pid} already applied at {proposal['applied']}; skipping."
+                f"{pid} already applied at {proposal.applied}; skipping."
             )
             continue
-        is_convention = (
-            proposal["type"] == "computational"
-            and proposal["target"] == "claude_md"
-            and bool(proposal["convention"])
-        )
-        if not is_convention:
-            ui_impl.info(f"{pid}: {proposal['title']}")
+        if not proposal.is_convention:
+            ui_impl.info(f"{pid}: {proposal.title}")
             ui_impl.warn(
                 f"  Automated apply only covers convention-type proposals "
                 f"(target claude_md). This one targets "
-                f"'{proposal['target'] or 'unknown'}': review {path} and "
+                f"'{proposal.target or 'unknown'}': review {path} and "
                 f"apply it manually."
             )
             continue
-        ui_impl.info(f"{pid}: {proposal['title']}")
-        ui_impl.info(f"  Convention: {proposal['convention']}")
+        ui_impl.info(f"{pid}: {proposal.title}")
+        ui_impl.info(f"  Convention: {proposal.convention}")
         if not evo_config.auto_apply_computational:
             # PR A: the old bare click.confirm raised click.Abort on
             # non-TTY EOF and crashed the command. Piped input
@@ -3216,7 +2880,7 @@ def _evolve_apply(
                 ui_impl.info(f"  {pid} not applied (declined).")
                 continue
         if not _append_to_agent_learnings(
-            claude_md, pid, proposal["convention"],
+            claude_md, pid, proposal.convention,
         ):
             ui_impl.err(
                 f"  Could not apply {pid}: {claude_md} is missing or has "
@@ -3225,9 +2889,7 @@ def _evolve_apply(
             )
             failures += 1
             continue
-        applied_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        with open(path, "a") as f:
-            f.write(f"\n**Applied**: {applied_at}\n")
+        mark_applied(path)
         ui_impl.ok(f"  {pid} appended to {claude_md}.")
     return 1 if failures else 0
 

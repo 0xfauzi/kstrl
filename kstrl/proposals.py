@@ -1,0 +1,191 @@
+"""Harness-proposal files: parsing and the convention apply path.
+
+Extracted from cli's evolve helpers (TUI surface B1) so the plain
+``ks evolve --apply`` flow and the evolve screen share one engine.
+The proposal file format is what ``evolution.save_proposals`` writes:
+a ``# PROP-NNN: title`` heading, ``**Type**``/``**Target**`` fields,
+the suggested change as a ``> `` blockquote, and an ``**Applied**``
+stamp once applied.
+
+Only convention-type proposals (computational, target claude_md) have
+an automated apply; everything else honestly requires manual review -
+``apply_proposal`` never fakes an "applied" claim (R6.3).
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+PROPOSAL_TITLE_RE = re.compile(r"^# (PROP-\d+): (.+)$")
+PROPOSAL_FIELD_RE = re.compile(r"^\*\*(Type|Target)\*\*: (.+)$")
+PROPOSAL_APPLIED_RE = re.compile(r"^\*\*Applied\*\*: (.+)$")
+
+
+@dataclass(frozen=True)
+class Proposal:
+    path: Path
+    id: str
+    title: str
+    type: str
+    target: str
+    convention: str  # blockquote body of the suggested change; "" = none
+    applied: str  # timestamp, "" = not applied
+
+    @property
+    def display_id(self) -> str:
+        return self.id or self.path.stem.upper()
+
+    @property
+    def is_convention(self) -> bool:
+        """Whether the automated apply path covers this proposal."""
+        return (
+            self.type == "computational"
+            and self.target == "claude_md"
+            and bool(self.convention)
+        )
+
+
+@dataclass(frozen=True)
+class ApplyOutcome:
+    status: str  # applied | declined | already_applied | manual_required | error
+    message: str = ""
+
+
+def existing_proposal_titles(proposals_dir: Path) -> set[str]:
+    """Titles of every proposal already saved to disk."""
+    titles: set[str] = set()
+    if not proposals_dir.is_dir():
+        return titles
+    for path in sorted(proposals_dir.glob("prop-*.md")):
+        try:
+            first_line = path.read_text().splitlines()[0]
+        except (OSError, IndexError):
+            continue
+        m = PROPOSAL_TITLE_RE.match(first_line)
+        if m:
+            titles.add(m.group(2))
+    return titles
+
+
+def parse_proposal_file(path: Path) -> Proposal:
+    """Parse the structured fields save_proposals writes."""
+    parsed = {
+        "id": "", "title": "", "type": "", "target": "",
+        "applied": "",
+    }
+    convention_lines: list[str] = []
+    for line in path.read_text().splitlines():
+        m = PROPOSAL_TITLE_RE.match(line)
+        if m and not parsed["id"]:
+            parsed["id"], parsed["title"] = m.group(1), m.group(2)
+            continue
+        m = PROPOSAL_FIELD_RE.match(line)
+        if m:
+            parsed[m.group(1).lower()] = m.group(2).strip()
+            continue
+        m = PROPOSAL_APPLIED_RE.match(line)
+        if m:
+            parsed["applied"] = m.group(1).strip()
+            continue
+        if line.startswith("> "):
+            convention_lines.append(line[2:].strip())
+    return Proposal(
+        path=path,
+        id=parsed["id"],
+        title=parsed["title"],
+        type=parsed["type"],
+        target=parsed["target"],
+        convention=" ".join(convention_lines).strip(),
+        applied=parsed["applied"],
+    )
+
+
+def list_proposals(proposals_dir: Path) -> list[Proposal]:
+    if not proposals_dir.is_dir():
+        return []
+    proposals: list[Proposal] = []
+    for path in sorted(proposals_dir.glob("prop-*.md")):
+        try:
+            proposals.append(parse_proposal_file(path))
+        except OSError:
+            continue
+    return proposals
+
+
+def append_to_agent_learnings(
+    claude_md: Path, proposal_id: str, convention: str,
+) -> bool:
+    """Append one convention bullet to the end of the "## Agent
+    Learnings" section of the project CLAUDE.md. Returns False (no
+    write) when the file or the section is missing - the caller then
+    falls back to honest manual instructions instead of guessing a
+    location."""
+    try:
+        content = claude_md.read_text()
+    except OSError:
+        return False
+    marker = "## Agent Learnings"
+    idx = content.find(marker)
+    if idx == -1:
+        return False
+    # End of the section = next level-2 header after it, else EOF.
+    next_header = content.find("\n## ", idx + len(marker))
+    insert_at = len(content) if next_header == -1 else next_header
+    entry = f"- {convention} (applied from {proposal_id} by ralph evolve)\n"
+    head = content[:insert_at]
+    if not head.endswith("\n"):
+        head += "\n"
+    claude_md.write_text(head + entry + content[insert_at:])
+    return True
+
+
+def mark_applied(path: Path, when: str | None = None) -> str:
+    """Stamp the proposal file as applied; returns the timestamp."""
+    applied_at = when or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with open(path, "a") as f:
+        f.write(f"\n**Applied**: {applied_at}\n")
+    return applied_at
+
+
+def apply_proposal(
+    proposal: Proposal,
+    root_dir: Path,
+    *,
+    confirm: Callable[[str], bool],
+) -> ApplyOutcome:
+    """Apply one proposal through the confirm seam.
+
+    ``confirm`` receives the prompt text and answers yes/no - the CLI
+    wraps click.confirm (piped-stdin semantics preserved), the TUI's
+    modal has ALREADY confirmed and passes ``lambda _: True``.
+    """
+    pid = proposal.display_id
+    claude_md = root_dir / "CLAUDE.md"
+    if proposal.applied:
+        return ApplyOutcome(
+            "already_applied",
+            f"{pid} already applied at {proposal.applied}; skipping.",
+        )
+    if not proposal.is_convention:
+        return ApplyOutcome(
+            "manual_required",
+            f"Automated apply only covers convention-type proposals "
+            f"(target claude_md). This one targets "
+            f"'{proposal.target or 'unknown'}': review {proposal.path} "
+            f"and apply it manually.",
+        )
+    if not confirm(f"Append this convention to {claude_md}?"):
+        return ApplyOutcome("declined", f"{pid} not applied (declined).")
+    if not append_to_agent_learnings(claude_md, pid, proposal.convention):
+        return ApplyOutcome(
+            "error",
+            f"Could not apply {pid}: {claude_md} is missing or has no "
+            f"'## Agent Learnings' section. Add the section or apply "
+            f"manually from {proposal.path}.",
+        )
+    mark_applied(proposal.path)
+    return ApplyOutcome("applied", f"{pid} appended to {claude_md}.")
