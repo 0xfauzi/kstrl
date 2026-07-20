@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import shutil
 import subprocess
+import sys
+import threading
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.breaker import BreakerConfig
@@ -36,6 +39,7 @@ from ralph_py.events import (
     RunPlan,
     RunStarted,
     V1CompatSink,
+    WorkerHeartbeat,
 )
 from ralph_py.events import (
     ContractResult as ContractResultEvent,
@@ -932,14 +936,29 @@ def _run_component(
     sandbox_enabled: bool = False,
     sandbox_allow_network: bool = False,
     agent_budget_usd: float | None = None,
+    events_dir_str: str | None = None,
+    run_id: str = "",
+    redirect_output: bool = True,
+    live_line: Callable[[str], None] | None = None,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
     Top-level function (picklable for ProcessPoolExecutor).
     Creates all objects internally - no shared state.
+
+    Chunk 6 (TUI rewrite): with ``events_dir_str`` set, the worker
+    writes typed events to <events_dir>/components/<id>/engineer.jsonl,
+    the raw agent transcript to engineer.log, and (pool mode) dup2's
+    its inherited stdout/stderr onto that same log so parallel workers
+    stop interleaving raw lines on the parent terminal. ``live_line``
+    (inline mode only - never pickled) mirrors each transcript line to
+    the parent's UI so sequential runs keep live engineer output.
+    Without ``events_dir_str`` the legacy PlainUI-on-stderr behavior is
+    preserved for direct callers.
     """
     from ralph_py.agents import get_agent
     from ralph_py.loop import run_loop
+    from ralph_py.ui.bridge import EventBridgeUI, NullPrompter
     from ralph_py.ui.plain import PlainUI
 
     start = time.monotonic()
@@ -952,7 +971,25 @@ def _run_component(
     # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
     root_dir = Path(root_dir_str)
 
-    ui = PlainUI(no_color=True)
+    ui: UI
+    worker_bus: EventBus | None = None
+    transcript_fh: TextIO | None = None
+    stop_heartbeat: Callable[[], None] | None = None
+    run_paths: RunPaths | None = None
+    if events_dir_str is None:
+        ui = PlainUI(no_color=True)
+    else:
+        run_paths = RunPaths(root=Path(events_dir_str))
+        comp_dir = run_paths.component_dir(component_id)
+        try:
+            comp_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        if redirect_output:
+            # dup2 BEFORE any threads start (chunk 6 invariant); stray
+            # library writes land in the transcript, never the terminal.
+            _redirect_worker_output(run_paths.engineer_log(component_id))
+
     agent = get_agent(
         agent_cmd, model, reasoning, agent_type,
         sandbox=SandboxConfig(
@@ -1070,11 +1107,39 @@ def _run_component(
         test_timeout=breaker_test_timeout,
     )
 
+    # Start event-owned resources only after setup succeeds. A get_agent,
+    # file-copy, or config failure therefore cannot leak a heartbeat thread
+    # or open JSONL/transcript handles in a reusable pool worker.
+    if run_paths is not None:
+        try:
+            transcript_fh = open(
+                run_paths.engineer_log(component_id),
+                "a", buffering=1, encoding="utf-8",
+            )
+        except OSError:
+            transcript_fh = None
+
+        def _transcript(line: str) -> None:
+            if transcript_fh is not None:
+                transcript_fh.write(line + "\n")
+            if live_line is not None:
+                live_line(line)
+
+        worker_bus = EventBus(
+            JsonlSink(run_paths.engineer_events(component_id)),
+            run_id=run_id, source="worker", component=component_id,
+        )
+        ui = EventBridgeUI(
+            worker_bus, prompter=NullPrompter(), transcript=_transcript,
+        )
+        stop_heartbeat = _start_heartbeat(worker_bus)
+
     try:
         result = run_loop(
             config, ui, agent, worktree_path,
             context_prefix=context_prefix, timeouts=timeouts,
             breaker_config=breaker_config,
+            bus=worker_bus,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -1120,6 +1185,63 @@ def _run_component(
             # cost tokens; collect what the agent recorded (R3.1).
             usage=collect_usage(agent),
         )
+    finally:
+        if stop_heartbeat is not None:
+            stop_heartbeat()
+        if worker_bus is not None:
+            worker_bus.close()
+        if transcript_fh is not None:
+            try:
+                transcript_fh.close()
+            except OSError:
+                pass
+
+
+_HEARTBEAT_INTERVAL_SECONDS = 15.0
+
+
+def _redirect_worker_output(log_path: Path) -> None:
+    """Point the worker's fds 1/2 (and sys.stdout/stderr) at its
+    transcript so nothing reaches the parent terminal (chunk 6). Best
+    effort: a worker that cannot redirect keeps inherited fds rather
+    than dying."""
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        f = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+        os.dup2(f.fileno(), 1)
+        os.dup2(f.fileno(), 2)
+        sys.stdout = f
+        sys.stderr = f
+    except OSError:
+        pass
+
+
+def _start_heartbeat(
+    bus: EventBus, interval: float | None = None,
+) -> Callable[[], None]:
+    """Emit WorkerHeartbeat every ``interval`` seconds on a daemon
+    thread until the returned stop callable runs. JsonlSink's lock
+    makes the cross-thread emit safe."""
+    stop_event = threading.Event()
+    period = _HEARTBEAT_INTERVAL_SECONDS if interval is None else interval
+    started = time.monotonic()
+    pid = os.getpid()
+
+    def _beat() -> None:
+        while not stop_event.wait(period):
+            bus.emit(WorkerHeartbeat(
+                pid=pid,
+                elapsed_seconds=round(time.monotonic() - started, 1),
+            ))
+
+    thread = threading.Thread(target=_beat, daemon=True, name="ralph-heartbeat")
+    thread.start()
+
+    def _stop() -> None:
+        stop_event.set()
+        thread.join(timeout=1.0)
+
+    return _stop
 
 
 class _InlineExecutor:
@@ -1705,6 +1827,10 @@ def _run_factory_locked(
             sandbox_cfg.allow_network,
             # R7.6: in-loop USD budget for the claude-sdk engineer.
             base_config.agent_budget_usd,
+            # Chunk 6: worker event channel (None when progress logging
+            # is disabled - transcripts and events off together).
+            str(run_paths.root) if run_paths is not None else None,
+            run_id,
         )
 
     def _run_scheduling_pass() -> None:
@@ -1774,7 +1900,26 @@ def _run_factory_locked(
                         attempt=comp.retries + 1,
                     ))
                     args = _submit_args(comp, wt_path)
-                    future = executor.submit(_run_component, *args)
+                    if isinstance(executor, _InlineExecutor):
+                        # In-process worker: no fd redirection (it would
+                        # hijack the parent terminal), and each transcript
+                        # line mirrors to the parent UI so sequential runs
+                        # keep live engineer output. functools.partial
+                        # binds ralph_py.factory._run_component AT SUBMIT
+                        # TIME, so tests patching it still intercept.
+                        # mypy cannot prove the unknown-length *args
+                        # tuple stops before the kwargs; _submit_args
+                        # ends at run_id by construction.
+                        task = functools.partial(
+                            _run_component, *args,
+                            redirect_output=False,  # type: ignore[misc]
+                            live_line=functools.partial(
+                                ui.stream_line, "AI",
+                            ),
+                        )
+                        future = executor.submit(task)
+                    else:
+                        future = executor.submit(_run_component, *args)
                     running_futures[future] = comp.id
                     if backstop_seconds > 0:
                         future_deadlines[future] = (
