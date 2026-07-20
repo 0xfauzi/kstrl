@@ -81,9 +81,13 @@ class KstrlTuiApp(App[int]):
         channel: QueueInteractionChannel | None = None,
         orchestrator: OrchestratorHandle | None = None,
         screen_factory: ScreenStackFactory | None = None,
+        config_report: object | None = None,
     ) -> None:
         super().__init__()
         self.root_dir = root_dir
+        # Precomputed by run_home_shell BEFORE app.run() - the source
+        # detection scrubs os.environ process-wide (see config_report).
+        self.config_report = config_report
         self.mode = mode
         self.poll_interval = poll_interval
         self.channel = channel

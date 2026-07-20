@@ -55,6 +55,10 @@ HOME_COMMANDS: list[HomeCommand] = [
         "dash", "dashboard",
         "open the newest run (enter on a row opens that run)",
     ),
+    HomeCommand(
+        "config", "config",
+        "resolved configuration with per-value sources",
+    ),
 ]
 
 
@@ -254,3 +258,7 @@ class HomeScreen(Screen[None]):
                     open_run(refs[0])
             else:
                 self.app.notify("no runs yet", severity="warning")
+        elif event.option_id == "config":
+            from kstrl.tui.screens.config import ConfigScreen
+
+            self.app.push_screen(ConfigScreen())
