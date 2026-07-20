@@ -926,20 +926,38 @@ def _understand_core(
     bus.emit(ComponentStarted(component=component))
     bus.emit(PhaseStarted(component=component, phase="understand", attempt=1))
 
-    result = run_loop(
-        config, ui_impl, loop_agent, root_dir,
-        timeouts=TimeoutConfig.load(root_dir),
-        breaker_config=BreakerConfig.load(root_dir),
-        bus=bus,
-        interaction=interaction,
-        stop_check=stop_check,
-    )
+    try:
+        result = run_loop(
+            config, ui_impl, loop_agent, root_dir,
+            timeouts=TimeoutConfig.load(root_dir),
+            breaker_config=BreakerConfig.load(root_dir),
+            bus=bus,
+            interaction=interaction,
+            stop_check=stop_check,
+        )
+    except Exception as exc:
+        duration = round(time.monotonic() - started, 2)
+        detail = f"{type(exc).__name__}: {exc}"
+        bus.emit(PhaseCompleted(
+            component=component, phase="understand", passed=False,
+            detail=detail, duration_seconds=duration,
+        ))
+        bus.emit(ComponentFailed(component=component, error=detail))
+        bus.emit(RunCompleted(
+            completed=0, failed=1, duration_seconds=duration,
+        ))
+        raise
 
     duration = round(time.monotonic() - started, 2)
-    passed = result.exit_code == 0
+    passed = result.completed and result.exit_code == 0
+    failure_detail = (
+        f"exit {result.exit_code}"
+        if result.exit_code != 0
+        else "ended before completion"
+    )
     bus.emit(PhaseCompleted(
         component=component, phase="understand", passed=passed,
-        detail="" if passed else f"exit {result.exit_code}",
+        detail="" if passed else failure_detail,
         duration_seconds=duration,
     ))
     if passed:
@@ -956,7 +974,7 @@ def _understand_core(
     else:
         bus.emit(ComponentFailed(
             component=component,
-            error=f"understand loop exited {result.exit_code}",
+            error=f"understand loop {failure_detail}",
         ))
     bus.emit(RunCompleted(
         completed=1 if passed else 0,

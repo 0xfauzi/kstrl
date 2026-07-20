@@ -34,7 +34,10 @@ class StubAgent:
         yield "editing codebase_map.md"
 
 
-def _fake_run_loop(record: dict[str, Any], exit_code: int = 0) -> Any:
+def _fake_run_loop(
+    record: dict[str, Any], exit_code: int = 0, *,
+    completed: bool | None = None,
+) -> Any:
     def fake(
         config: Any, ui: Any, agent: Any, cwd: Any = None,
         context_prefix: Any = None, timeouts: Any = None,
@@ -50,7 +53,9 @@ def _fake_run_loop(record: dict[str, Any], exit_code: int = 0) -> Any:
                 iteration=1, duration_seconds=5.0, completed=exit_code == 0,
             ))
         return LoopResult(
-            completed=exit_code == 0, iterations=1, exit_code=exit_code,
+            completed=exit_code == 0 if completed is None else completed,
+            iterations=1,
+            exit_code=exit_code,
         )
 
     return fake
@@ -121,6 +126,52 @@ class TestUnderstandRun:
         comp = state.components["understand"]
         assert comp.status == "failed"
         assert state.artifacts == []
+
+    def test_incomplete_zero_exit_folds_as_failure(self, tmp_path: Path) -> None:
+        """Choosing interactive Quit is successful at the shell but did
+        not complete the understand work."""
+        runner = CliRunner()
+        with (
+            patch("kstrl.cli.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli._check_agent_preflight"),
+            patch(
+                "kstrl.cli.run_loop",
+                _fake_run_loop({}, exit_code=0, completed=False),
+            ),
+        ):
+            result = runner.invoke(
+                cli, ["understand", "--root", str(tmp_path)],
+                catch_exceptions=False,
+            )
+        assert result.exit_code == 0
+        state, _ = load_run_state(tmp_path)
+        assert state.finished
+        comp = state.components["understand"]
+        assert comp.status == "failed"
+        assert comp.error == "understand loop ended before completion"
+        assert state.artifacts == []
+
+    def test_exception_records_terminal_failure(self, tmp_path: Path) -> None:
+        def explode(*args: Any, **kwargs: Any) -> LoopResult:
+            raise RuntimeError("agent exploded")
+
+        runner = CliRunner()
+        with (
+            patch("kstrl.cli.get_agent", return_value=StubAgent()),
+            patch("kstrl.cli._check_agent_preflight"),
+            patch("kstrl.cli.run_loop", explode),
+        ):
+            result = runner.invoke(
+                cli, ["understand", "--root", str(tmp_path)],
+            )
+        assert result.exit_code == 1
+        assert isinstance(result.exception, RuntimeError)
+        state, _ = load_run_state(tmp_path)
+        assert state.finished
+        comp = state.components["understand"]
+        assert comp.status == "failed"
+        assert comp.error == "RuntimeError: agent exploded"
+        assert comp.phase_history[-1]["passed"] is False
 
     def test_disabled_gating_leaves_no_run_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
