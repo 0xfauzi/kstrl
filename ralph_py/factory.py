@@ -977,6 +977,7 @@ def _run_component(
     worker_bus: EventBus | None = None
     transcript_fh: TextIO | None = None
     stop_heartbeat: Callable[[], None] | None = None
+    run_paths: RunPaths | None = None
     if events_dir_str is None:
         ui = PlainUI(no_color=True)
     else:
@@ -990,28 +991,7 @@ def _run_component(
             # dup2 BEFORE any threads start (chunk 6 invariant); stray
             # library writes land in the transcript, never the terminal.
             _redirect_worker_output(run_paths.engineer_log(component_id))
-        try:
-            transcript_fh = open(
-                run_paths.engineer_log(component_id),
-                "a", buffering=1, encoding="utf-8",
-            )
-        except OSError:
-            transcript_fh = None
 
-        def _transcript(line: str) -> None:
-            if transcript_fh is not None:
-                transcript_fh.write(line + "\n")
-            if live_line is not None:
-                live_line(line)
-
-        worker_bus = EventBus(
-            JsonlSink(run_paths.engineer_events(component_id)),
-            run_id=run_id, source="worker", component=component_id,
-        )
-        ui = EventBridgeUI(
-            worker_bus, prompter=NullPrompter(), transcript=_transcript,
-        )
-        stop_heartbeat = _start_heartbeat(worker_bus)
     agent = get_agent(
         agent_cmd, model, reasoning, agent_type,
         sandbox=SandboxConfig(
@@ -1128,6 +1108,33 @@ def _run_component(
         test_command=breaker_test_command,
         test_timeout=breaker_test_timeout,
     )
+
+    # Start event-owned resources only after setup succeeds. A get_agent,
+    # file-copy, or config failure therefore cannot leak a heartbeat thread
+    # or open JSONL/transcript handles in a reusable pool worker.
+    if run_paths is not None:
+        try:
+            transcript_fh = open(
+                run_paths.engineer_log(component_id),
+                "a", buffering=1, encoding="utf-8",
+            )
+        except OSError:
+            transcript_fh = None
+
+        def _transcript(line: str) -> None:
+            if transcript_fh is not None:
+                transcript_fh.write(line + "\n")
+            if live_line is not None:
+                live_line(line)
+
+        worker_bus = EventBus(
+            JsonlSink(run_paths.engineer_events(component_id)),
+            run_id=run_id, source="worker", component=component_id,
+        )
+        ui = EventBridgeUI(
+            worker_bus, prompter=NullPrompter(), transcript=_transcript,
+        )
+        stop_heartbeat = _start_heartbeat(worker_bus)
 
     try:
         result = run_loop(
@@ -1894,11 +1901,6 @@ def _run_factory_locked(
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     bus.emit(ComponentStarted(component=comp.id))
-                    # Engineer bracket opener; process_result closes it.
-                    bus.emit(PhaseStarted(
-                        component=comp.id, phase="engineer",
-                        attempt=comp.retries + 1,
-                    ))
                     ui.info(f"  Starting: {comp.id}")
 
                     wt_path = _launch_component(comp)
@@ -1906,6 +1908,13 @@ def _run_factory_locked(
                         transitioned_without_launch += 1
                         continue
 
+                    # Provisioning succeeded: the engineer phase starts
+                    # immediately before submission. process_result closes
+                    # normal exits; fail_scheduler_backstop closes timeouts.
+                    bus.emit(PhaseStarted(
+                        component=comp.id, phase="engineer",
+                        attempt=comp.retries + 1,
+                    ))
                     args = _submit_args(comp, wt_path)
                     if isinstance(executor, _InlineExecutor):
                         # In-process worker: no fd redirection (it would

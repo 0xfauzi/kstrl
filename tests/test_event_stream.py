@@ -472,6 +472,54 @@ class TestWorkerChannel:
         _, err = capfd.readouterr()
         assert "legacy-line" in err  # PlainUI on stderr, as before
 
+    def test_setup_failure_does_not_start_heartbeat(self, tmp_path: Path) -> None:
+        from ralph_py.factory import _run_component
+
+        with patch(
+            "ralph_py.agents.get_agent", side_effect=RuntimeError("no agent"),
+        ), patch("ralph_py.factory._start_heartbeat") as start_heartbeat:
+            try:
+                _run_component(**self._worker_args(
+                    tmp_path, tmp_path / ".ralph" / "runs" / "run-w", "bad",
+                ))
+            except RuntimeError as exc:
+                assert str(exc) == "no agent"
+            else:  # pragma: no cover - get_agent must fail
+                raise AssertionError("expected get_agent failure")
+        start_heartbeat.assert_not_called()
+
+    def test_agent_crash_closes_iteration_event(self, tmp_path: Path) -> None:
+        from ralph_py.factory import _run_component
+
+        class CrashingAgent:
+            usage_records: list[Any] = []
+
+            @property
+            def name(self) -> str:
+                return "crashing"
+
+            def run(self, *args: Any, **kwargs: Any) -> Any:
+                raise RuntimeError("agent crashed")
+
+            @property
+            def final_message(self) -> str | None:
+                return None
+
+        events_dir = tmp_path / ".ralph" / "runs" / "run-w"
+        with patch("ralph_py.agents.get_agent", return_value=CrashingAgent()):
+            result = _run_component(**self._worker_args(
+                tmp_path, events_dir, "crash",
+            ))
+        assert result.success is False
+        assert result.error == "agent crashed"
+        events = ev.read_events(
+            events_dir / "components" / "comp-a" / "engineer.jsonl"
+        )
+        starts = [e for e in events if isinstance(e, ev.IterationStarted)]
+        completed = [e for e in events if isinstance(e, ev.IterationCompleted)]
+        assert len(starts) == len(completed) == 1
+        assert completed[0].completed is False
+
     def test_heartbeat_thread_emits(self) -> None:
         import time as _time
 

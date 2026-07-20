@@ -119,9 +119,21 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     GH_STUB_MERGE ("ok"|"fail"|"fail_once" - fail_once fails the FIRST
     merge call, tracked in GH_STUB_STATE_DIR, then succeeds),
     GH_STUB_VIEW_STATE ("MERGED"|"OPEN"|"CLOSED") and
-    GH_STUB_VIEW_MERGEABLE ("MERGEABLE"|"CONFLICTING"|"UNKNOWN")."""
+    GH_STUB_VIEW_MERGEABLE ("MERGEABLE"|"CONFLICTING"|"UNKNOWN").
+
+    The stub is merge-aware like real GitHub: a successful ``pr merge``
+    drops a marker in GH_STUB_STATE_DIR and ``pr view`` then reports
+    MERGED; before any successful merge it reports OPEN. An explicit
+    GH_STUB_VIEW_STATE always wins (for resume scenarios where the PR
+    merged before the test began). This mirrors the production
+    semantics the _merge_and_wait MERGED-rescue depends on: a failed
+    merge COMMAND on an unmerged PR must not read as merged.
+    """
     bin_dir = tmp_path / "stub-bin"
     bin_dir.mkdir()
+    state_dir = tmp_path / "stub-state"
+    state_dir.mkdir()
+    monkeypatch.setenv("GH_STUB_STATE_DIR", str(state_dir))
     gh = bin_dir / "gh"
     gh.write_text(textwrap.dedent(f"""\
         #!/bin/sh
@@ -147,10 +159,18 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                   echo "stub: pr merge conflict" >&2; exit 1
                 fi
               fi
+              touch "${{GH_STUB_STATE_DIR:-/nonexistent}}/merged" 2>/dev/null
               exit 0 ;;
             view)
+              if [ -n "${{GH_STUB_VIEW_STATE:-}}" ]; then
+                state="$GH_STUB_VIEW_STATE"
+              elif [ -f "${{GH_STUB_STATE_DIR:-/nonexistent}}/merged" ]; then
+                state="MERGED"
+              else
+                state="OPEN"
+              fi
               printf '{{"state": "%s", "mergeable": "%s"}}\\n' \\
-                "${{GH_STUB_VIEW_STATE:-MERGED}}" \\
+                "$state" \\
                 "${{GH_STUB_VIEW_MERGEABLE:-UNKNOWN}}"
               exit 0 ;;
           esac
@@ -417,7 +437,12 @@ class TestMergePendingResume:
 
     def test_resume_repolls_merged_pr_and_unblocks_dependents(
         self, tmp_path: Path, stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # The PR merged BEFORE this resume run - no in-test merge call
+        # exists to flip the stub's merge-aware view state, so the
+        # already-merged reality is pinned explicitly.
+        monkeypatch.setenv("GH_STUB_VIEW_STATE", "MERGED")
         root = _make_repo(tmp_path, ["alpha", "beta"])
         manifest = self._manifest_with_pending_alpha()
 
@@ -495,6 +520,95 @@ class TestPrOutcomeDataclass:
             pushed=True, pr_number=7, pr_url=STUB_PR_URL,
             merged=True, merge_pending=False, error=None,
         )
+
+    def test_merge_command_failure_with_merged_pr_still_completes(
+        self, tmp_path: Path, stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The first real factory run's regression (2026-07-20): gh pr
+        merge exited nonzero on post-merge cleanup while the PR sat
+        MERGED on GitHub, and the component was failed despite a
+        delivered artifact. The merge OUTCOME gates completion (R0.2),
+        so a failed merge COMMAND with a MERGED PR is a success."""
+        monkeypatch.setenv("GH_STUB_MERGE", "fail")
+        monkeypatch.setenv("GH_STUB_VIEW_STATE", "MERGED")
+        root = _make_repo(tmp_path, ["alpha"])
+        manifest = _two_component_manifest()
+        comp = self._single_component(manifest, root)
+
+        outcome = push_create_and_merge_pr(
+            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+        )
+
+        assert outcome.merged is True
+        assert outcome.error is None
+
+    def test_merge_command_failure_with_open_pr_still_fails(
+        self, tmp_path: Path, stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The rescue must not soften REAL merge failures: a failed
+        merge command on a PR that is genuinely not merged stays an
+        error."""
+        monkeypatch.setenv("GH_STUB_MERGE", "fail")
+        root = _make_repo(tmp_path, ["alpha"])
+        manifest = _two_component_manifest()
+        comp = self._single_component(manifest, root)
+
+        outcome = push_create_and_merge_pr(
+            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+        )
+
+        assert outcome.merged is False
+        assert outcome.error is not None
+        assert "merge failed" in outcome.error
+
+    def test_merge_pr_never_passes_delete_branch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """--delete-branch is the measured hazard: its local-branch
+        deletion fails inside a component worktree and gh reports the
+        whole (successful) merge as failed. It must never come back."""
+        from ralph_py import pr as pr_module
+
+        seen: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **kwargs: object) -> object:
+            seen.append(list(cmd))
+
+            class _R:
+                returncode = 1  # force both invocation shapes to run
+                stderr = "nope"
+                stdout = ""
+
+            return _R()
+
+        monkeypatch.setattr(pr_module.subprocess, "run", fake_run)
+        pr_module.merge_pr(7, tmp_path)
+
+        assert len(seen) == 2  # --auto attempt, then direct
+        for cmd in seen:
+            assert "--delete-branch" not in cmd
+
+    def test_remote_branch_deleted_after_confirmed_merge(
+        self, tmp_path: Path, stub_gh: Path,
+    ) -> None:
+        """Explicit remote cleanup replaces gh's --delete-branch: after
+        a confirmed merge the pushed branch is removed from origin so a
+        recreated same-name branch can push fast-forward next run."""
+        root = _make_repo(tmp_path, ["alpha"])
+        manifest = _two_component_manifest()
+        comp = self._single_component(manifest, root)
+
+        outcome = push_create_and_merge_pr(
+            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+        )
+        assert outcome.merged is True
+
+        remote_refs = _git(
+            "ls-remote", "--heads", "origin", cwd=root,
+        )
+        assert comp.branch_name not in remote_refs
 
     def test_wait_timeout_outcome(
         self, tmp_path: Path, stub_gh: Path,
