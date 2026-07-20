@@ -1,0 +1,62 @@
+{
+  "branchName": "ralph/factory/unique-slug",
+  "userStories": [
+    {
+      "id": "US-005",
+      "title": "Return slug unchanged when not in existing set",
+      "acceptanceCriteria": [
+        "WHEN unique_slug('Post', set()) is called THEN it returns 'post'",
+        "WHEN the slug resulting from slugify(text, separator) is not present in the existing set THEN return that slug unchanged"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in unique_slug (tools/slugify.py) alongside US-006/US-007 since a correct, non-half-finished uniqueness check requires the collision-suffix loop and the empty-slug fallback as inseparable parts of the same function (same precedent as slugify_max US-001-US-004). Verified by tests/test_slugify.py::TestUniqueSlug."
+    },
+    {
+      "id": "US-006",
+      "title": "Append numeric suffix for collision resolution",
+      "acceptanceCriteria": [
+        "WHEN unique_slug('Post', {'post'}) is called THEN it returns 'post-2'",
+        "WHEN unique_slug('Post', {'post', 'post-2'}) is called THEN it returns 'post-3'",
+        "WHEN the slug is in the existing set THEN append separator + N where N is the smallest integer >= 2 such that the result is not in existing",
+        "WHEN appending the suffix produces a collision, continue incrementing N until a unique slug is found"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "See US-005 note. Verified by test_appends_suffix_2_on_first_collision, test_appends_suffix_3_when_suffix_2_also_collides, test_keeps_incrementing_past_multiple_collisions."
+    },
+    {
+      "id": "US-007",
+      "title": "Handle empty slug by mapping to 'untitled'",
+      "acceptanceCriteria": [
+        "WHEN unique_slug('!!!', set()) is called THEN it returns 'untitled'",
+        "WHEN slugify produces an empty string THEN treat it as 'untitled' before applying uniqueness logic",
+        "WHEN 'untitled' itself is in the existing set THEN apply the same collision-resolution logic ('untitled-2', 'untitled-3', etc.)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "See US-005 note. Verified by test_empty_slug_maps_to_untitled, test_untitled_collision_resolution, test_untitled_collision_resolution_multiple."
+    },
+    {
+      "id": "US-008",
+      "title": "Code quality, type hints, immutability guarantee, and test coverage",
+      "acceptanceCriteria": [
+        "Code includes 'from __future__ import annotations' at the top of tools/slugify.py",
+        "All function signatures include full type hints matching repo coding standards",
+        "Ruff clean: uv run ruff check tools/slugify.py produces no errors or warnings",
+        "The existing set parameter is never mutated by the function",
+        "All existing tests in tests/test_slugify.py pass unchanged",
+        "New tests added covering all three specified acceptance criteria examples and at least two implementer-chosen edge cases",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "uv run ruff check tools/slugify.py tests/test_slugify.py: clean. uv run mypy tools/slugify.py --strict: clean. uv run pytest tests/test_slugify.py -v: 41 passed (all 30 pre-existing tests pass unchanged, 11 new). Immutability covered by test_does_not_mutate_existing_set (asserts the input set is byte-for-byte unchanged after the call)."
+    }
+  ],
+  "allowedPaths": [
+    "tools/slugify.py",
+    "tests/test_slugify.py",
+    "scripts/ralph/feature/unique-slug/"
+  ]
+}

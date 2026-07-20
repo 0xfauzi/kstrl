@@ -12,6 +12,9 @@ we release our probe immediately).
 
 from __future__ import annotations
 
+import errno
+import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,25 +30,47 @@ class RunRef:
     events_path: Path
     mtime: float
     completed: bool
+    lock_held: bool = False
 
     @property
     def live(self) -> bool:
         return not self.completed and (
+            self.lock_held or
             time.time() - self.mtime < LIVE_MTIME_WINDOW_SECONDS
         )
 
 
 def _run_completed(events_path: Path) -> bool:
-    """factory_completed in the last ~8KB of the stream (cheap check;
-    a torn tail or missing marker just means "not completed")."""
+    """Find a factory_completed event near the end of the stream.
+
+    Parse complete JSONL records rather than searching raw bytes, since a
+    log payload can legitimately contain the event name as ordinary text.
+    A torn tail or missing marker means "not completed".
+    """
     try:
-        size = events_path.stat().st_size
         with open(events_path, "rb") as f:
-            f.seek(max(0, size - _COMPLETED_TAIL_BYTES))
+            size = os.fstat(f.fileno()).st_size
+            start = max(0, size - _COMPLETED_TAIL_BYTES)
+            f.seek(max(0, start - 1))
             tail = f.read()
     except OSError:
         return False
-    return b'"factory_completed"' in tail
+    if start:
+        if tail.startswith(b"\n"):
+            tail = tail[1:]
+        else:
+            _, separator, tail = tail.partition(b"\n")
+            if not separator:
+                return False
+    lines = tail.split(b"\n")
+    for raw in lines:
+        try:
+            obj = json.loads(raw)
+        except (UnicodeDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and obj.get("event") == "factory_completed":
+            return True
+    return False
 
 
 def factory_lock_held(root_dir: Path) -> bool:
@@ -63,8 +88,8 @@ def factory_lock_held(root_dir: Path) -> bool:
         with open(lock_path, "a+") as fp:
             try:
                 fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError:
-                return True  # held by the factory
+            except OSError as exc:
+                return exc.errno in (errno.EACCES, errno.EAGAIN)
             fcntl.flock(fp.fileno(), fcntl.LOCK_UN)
             return False
     except OSError:
@@ -75,6 +100,7 @@ def discover_runs(root_dir: Path) -> list[RunRef]:
     """All runs with an events.jsonl, newest first."""
     runs_root = root_dir / ".ralph" / "runs"
     refs: list[RunRef] = []
+    lock_held = factory_lock_held(root_dir)
     try:
         candidates = sorted(runs_root.iterdir(), key=lambda d: d.name,
                             reverse=True)
@@ -92,6 +118,7 @@ def discover_runs(root_dir: Path) -> list[RunRef]:
             events_path=events_path,
             mtime=mtime,
             completed=_run_completed(events_path),
+            lock_held=lock_held and not refs,
         ))
     return refs
 

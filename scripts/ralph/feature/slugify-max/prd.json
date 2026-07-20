@@ -1,0 +1,61 @@
+{
+  "branchName": "ralph/factory/slugify-max",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Boundary-respecting truncation at word separator",
+      "acceptanceCriteria": [
+        "WHEN slugify_max('Hello Brave World', 11) is called THEN it returns 'hello-brave'",
+        "WHEN slugify_max('Hello Brave World', 10) is called THEN it returns 'hello'",
+        "WHEN max_length is greater than or equal to the full slug length THEN return the entire slug unchanged",
+        "WHEN the slug contains separators and at least one separator fits within max_length THEN truncate at the last fitting word boundary without ending with a separator character"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in slugify_max (tools/slugify.py) alongside US-002/US-003 since a correct, non-half-finished truncation algorithm requires the hard-cut fallback and max_length validation as inseparable parts of the same function. Verified by tests/test_slugify.py::TestSlugifyMax. [2026-07-20 review-fix] Truncation rewritten to split on whole words instead of character-position slicing so multi-character separators (e.g. '__') can never be cut mid-separator (review-confirmed FAIL). Separator is now validated as purely non-alphanumeric via _validate_separator so it can never collide with slug word content. See tests/test_slugify.py::TestSlugifyMaxMultiCharSeparator and ::TestSlugifySeparatorValidation."
+    },
+    {
+      "id": "US-002",
+      "title": "Hard-cut fallback for first words exceeding max_length",
+      "acceptanceCriteria": [
+        "WHEN slugify_max('Extraordinary', 5) is called THEN it returns 'extra'",
+        "WHEN the first word exceeds max_length and no separator fits within max_length THEN perform a hard truncation to exactly max_length characters"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "See US-001 note. Verified by test_hard_truncation_when_first_word_exceeds_max_length and test_hard_truncation_no_separator_present."
+    },
+    {
+      "id": "US-003",
+      "title": "Error handling for invalid max_length parameter",
+      "acceptanceCriteria": [
+        "WHEN slugify_max('x', 0) is called THEN raise ValueError",
+        "WHEN max_length is any negative integer THEN raise ValueError",
+        "WHEN max_length is 1 or greater THEN do not raise ValueError regardless of text input"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "See US-001 note. Verified by test_zero_max_length_raises_value_error, test_negative_max_length_raises_value_error, test_max_length_one_or_greater_never_raises."
+    },
+    {
+      "id": "US-004",
+      "title": "Code quality, type hints, and test coverage",
+      "acceptanceCriteria": [
+        "Code includes 'from __future__ import annotations' at the top of tools/slugify.py",
+        "All function signatures include full type hints matching repo coding standards",
+        "Ruff clean: uv run ruff check tools/slugify.py produces no errors or warnings",
+        "All existing tests in tests/test_slugify.py pass unchanged",
+        "New tests added covering all four specified acceptance criteria examples and at least two implementer-chosen edge cases",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "uv run ruff check tools/slugify.py tests/test_slugify.py: clean. uv run mypy tools/slugify.py --strict: clean. uv run pytest tests/test_slugify.py -v: 19 passed. [2026-07-20 review-fix] After fixing the multi-char-separator and alphanumeric-separator defects (see US-001 notes), re-ran all three: still clean/passing, now 30 passed."
+    }
+  ],
+  "allowedPaths": [
+    "tools/slugify.py",
+    "tests/test_slugify.py",
+    "scripts/ralph/feature/slugify-max/"
+  ]
+}

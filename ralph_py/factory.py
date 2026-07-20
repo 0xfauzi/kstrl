@@ -982,6 +982,7 @@ def _run_component(
     worker_bus: EventBus | None = None
     transcript_fh: TextIO | None = None
     stop_heartbeat: Callable[[], None] | None = None
+    run_paths: RunPaths | None = None
     if events_dir_str is None:
         ui = PlainUI(no_color=True)
     else:
@@ -1000,28 +1001,7 @@ def _run_component(
             # not orphan it. Pool mode only - inline mode runs in the
             # parent, whose handlers belong to the cli/TUI.
             _install_worker_signal_forwarding()
-        try:
-            transcript_fh = open(
-                run_paths.engineer_log(component_id),
-                "a", buffering=1, encoding="utf-8",
-            )
-        except OSError:
-            transcript_fh = None
 
-        def _transcript(line: str) -> None:
-            if transcript_fh is not None:
-                transcript_fh.write(line + "\n")
-            if live_line is not None:
-                live_line(line)
-
-        worker_bus = EventBus(
-            JsonlSink(run_paths.engineer_events(component_id)),
-            run_id=run_id, source="worker", component=component_id,
-        )
-        ui = EventBridgeUI(
-            worker_bus, prompter=NullPrompter(), transcript=_transcript,
-        )
-        stop_heartbeat = _start_heartbeat(worker_bus)
     agent = get_agent(
         agent_cmd, model, reasoning, agent_type,
         sandbox=SandboxConfig(
@@ -1138,6 +1118,33 @@ def _run_component(
         test_command=breaker_test_command,
         test_timeout=breaker_test_timeout,
     )
+
+    # Start event-owned resources only after setup succeeds. A get_agent,
+    # file-copy, or config failure therefore cannot leak a heartbeat thread
+    # or open JSONL/transcript handles in a reusable pool worker.
+    if run_paths is not None:
+        try:
+            transcript_fh = open(
+                run_paths.engineer_log(component_id),
+                "a", buffering=1, encoding="utf-8",
+            )
+        except OSError:
+            transcript_fh = None
+
+        def _transcript(line: str) -> None:
+            if transcript_fh is not None:
+                transcript_fh.write(line + "\n")
+            if live_line is not None:
+                live_line(line)
+
+        worker_bus = EventBus(
+            JsonlSink(run_paths.engineer_events(component_id)),
+            run_id=run_id, source="worker", component=component_id,
+        )
+        ui = EventBridgeUI(
+            worker_bus, prompter=NullPrompter(), transcript=_transcript,
+        )
+        stop_heartbeat = _start_heartbeat(worker_bus)
 
     try:
         result = run_loop(
@@ -1336,51 +1343,62 @@ def _abort_inflight(
     running_futures: dict[Future[ComponentResult], str],
     pipeline: ComponentPipeline,
     ui: UI,
-    reason: str,
+    stop: StopController,
     term_grace: float = 5.0,
 ) -> None:
     """Group-terminate in-flight workers and record their components as
     aborted (PR B). Pool mode SIGTERMs each worker pid - the worker's
     forwarding handler group-kills its agent subprocess and exits 130;
-    stragglers get SIGKILL after the grace period. `_processes` is
-    private executor API: guarded, with the pre-PR-B behavior
-    (shutdown without waiting + leak warning) as the fallback.
+    stragglers get SIGKILL after the grace period. A second stop request
+    skips the rest of that grace period. `_processes` is private executor
+    API, so process objects are inspected defensively and only workers
+    still reported alive are killed.
     """
     procs = getattr(executor, "_processes", None)
-    pids: list[int] = list(procs.keys()) if procs else []
-    if pids:
-        for pid in pids:
+    workers: list[Any] = list(procs.values()) if procs else []
+    if workers:
+        alive = []
+        for worker in workers:
             try:
-                os.kill(pid, signal.SIGTERM)
-            except (ProcessLookupError, OSError):
+                pid = worker.pid
+                if (
+                    isinstance(pid, int)
+                    and pid > 1
+                    and pid != os.getpid()
+                    and worker.is_alive()
+                ):
+                    worker.terminate()
+                    alive.append(worker)
+            except (AssertionError, AttributeError, OSError, ValueError):
                 pass
         deadline = time.monotonic() + term_grace
-        while time.monotonic() < deadline:
-            alive = []
-            for pid in pids:
+        while alive and not stop.force and time.monotonic() < deadline:
+            still_alive = []
+            for worker in alive:
                 try:
-                    os.kill(pid, 0)
-                    alive.append(pid)
-                except (ProcessLookupError, OSError):
+                    if worker.is_alive():
+                        still_alive.append(worker)
+                except (AssertionError, AttributeError, OSError, ValueError):
                     pass
-            if not alive:
-                break
-            time.sleep(0.1)
-        for pid in pids:
+            alive = still_alive
+            if alive and not stop.force:
+                time.sleep(0.1)
+        for worker in alive:
             try:
-                os.kill(pid, signal.SIGKILL)
-            except (ProcessLookupError, OSError):
+                if worker.is_alive():
+                    worker.kill()
+            except (AssertionError, AttributeError, OSError, ValueError):
                 pass
-    else:
-        # Inline executor (or _processes gone): the agents live in THIS
-        # process - group-kill them directly.
+    elif isinstance(executor, _InlineExecutor):
+        # Inline executor: the agents live in THIS process, so group-kill
+        # them directly.
         killed = kill_active_process_groups()
         if killed:
             ui.warn(f"  Terminated {killed} in-flight agent process group(s)")
     for future, comp_id in list(running_futures.items()):
-        pipeline.fail_aborted(comp_id, reason)
+        pipeline.fail_aborted(comp_id, stop.reason)
         running_futures.pop(future, None)
-    ui.warn(f"  Aborted in-flight work: {reason}")
+    ui.warn(f"  Aborted in-flight work: {stop.reason}")
     executor.shutdown(wait=False, cancel_futures=True)
 
 
@@ -2003,7 +2021,7 @@ def _run_factory_locked(
             while True:
                 if stop is not None and stop.is_set():
                     _abort_inflight(
-                        executor, running_futures, pipeline, ui, stop.reason,
+                        executor, running_futures, pipeline, ui, stop,
                     )
                     return
                 ready = manifest.get_ready_components()
@@ -2028,11 +2046,6 @@ def _run_factory_locked(
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     bus.emit(ComponentStarted(component=comp.id))
-                    # Engineer bracket opener; process_result closes it.
-                    bus.emit(PhaseStarted(
-                        component=comp.id, phase="engineer",
-                        attempt=comp.retries + 1,
-                    ))
                     ui.info(f"  Starting: {comp.id}")
 
                     wt_path = _launch_component(comp)
@@ -2040,6 +2053,13 @@ def _run_factory_locked(
                         transitioned_without_launch += 1
                         continue
 
+                    # Provisioning succeeded: the engineer phase starts
+                    # immediately before submission. process_result closes
+                    # normal exits; fail_scheduler_backstop closes timeouts.
+                    bus.emit(PhaseStarted(
+                        component=comp.id, phase="engineer",
+                        attempt=comp.retries + 1,
+                    ))
                     args = _submit_args(comp, wt_path)
                     if isinstance(executor, _InlineExecutor):
                         # In-process worker: no fd redirection (it would
@@ -2087,9 +2107,9 @@ def _run_factory_locked(
                     set(running_futures), wait_timeout, stop,
                 )
                 if stopped:
+                    assert stop is not None
                     _abort_inflight(
-                        executor, running_futures, pipeline, ui,
-                        stop.reason if stop else "stop requested",
+                        executor, running_futures, pipeline, ui, stop,
                     )
                     return
 
