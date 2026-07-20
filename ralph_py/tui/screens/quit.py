@@ -17,8 +17,9 @@ class QuitModal(ModalScreen[bool]):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="quit-dialog"):
-            yield Label("Stop the run?", id="quit-question")
+        dialog = Vertical(id="quit-dialog")
+        dialog.border_title = "stop the run?"
+        with dialog:
             yield Label(
                 "In-flight agents will be group-killed, worktrees "
                 "cleaned, the manifest flushed; the run exits 130. "

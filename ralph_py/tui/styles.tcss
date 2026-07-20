@@ -1,115 +1,250 @@
-/* Ralph dashboard styles (stage 3 PR D). */
+/* Ralph dashboard styles - design pass.
+ *
+ * System: warm near-black ramp, ONE amber accent, state colors
+ * reserved for status. Dense pro-tool register: the screen fills with
+ * data (board + activity feed); dead space is a defect. Rhythm:
+ * 1-line masthead / board / 1-line panel titles / feed / footer.
+ */
+
+Screen {
+    background: $background;
+}
+
+/* ---- masthead --------------------------------------------------------- */
 
 #topbar {
     dock: top;
     height: 1;
-    background: $panel;
+    background: $surface;
+    color: $foreground;
 }
 
 #run-header {
     width: 1fr;
     content-align: left middle;
+    padding: 0 1;
 }
 
 #cost-meter {
     width: auto;
     content-align: right middle;
-    padding: 0 1;
+    padding: 0 2;
 }
 
 #checkpoint-banner {
+    dock: top;
     height: 1;
-    background: $warning 20%;
-    color: $warning;
+    background: $accent 18%;
+    color: $accent;
     text-style: bold;
-    padding: 0 1;
+    padding: 0 2;
 }
+
+/* ---- overview board ---------------------------------------------------- */
 
 #component-table {
-    height: 1fr;
+    height: auto;
+    max-height: 45%;
+    background: $background;
+    padding: 0 1;
+    margin-top: 1;
 }
 
-/* Component detail screen (PR E). */
+#component-table > .datatable--header {
+    background: $background;
+    color: $text-muted;
+    text-style: bold;
+}
+
+#component-table > .datatable--cursor {
+    background: $accent 22%;
+    color: $foreground;
+}
+
+#component-table > .datatable--hover {
+    background: $surface;
+}
+
+/* ---- activity feed ----------------------------------------------------- */
+
+#activity-title {
+    height: 2;
+    margin-top: 1;
+    padding: 0 2;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#activity-feed {
+    height: 1fr;
+    background: $background;
+    padding: 0 2;
+    scrollbar-color: $panel;
+    scrollbar-background: $background;
+    scrollbar-size-vertical: 1;
+}
+
+/* ---- component detail --------------------------------------------------- */
 
 #component-header {
     dock: top;
     height: 1;
-    background: $panel;
+    background: $surface;
+    padding: 0 1;
 }
 
 #phase-timeline {
-    height: auto;
-    padding: 0 1;
+    height: 1;
+    margin: 1 2 0 2;
+}
+
+#findings-title {
+    height: 2;
+    margin-top: 1;
+    padding: 0 2;
+    color: $text-muted;
+    text-style: bold;
     border-bottom: solid $panel;
 }
 
 #findings-table {
     height: auto;
     max-height: 30%;
+    background: $background;
+    padding: 0 1;
+}
+
+#findings-table > .datatable--header {
+    background: $background;
+    color: $text-muted;
+    text-style: bold;
+}
+
+#findings-table > .datatable--cursor {
+    background: $accent 22%;
+    color: $foreground;
+}
+
+#transcript-title {
+    height: 2;
+    margin-top: 1;
+    padding: 0 2;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
 }
 
 #transcript {
     height: 1fr;
-    border-top: solid $accent 40%;
+    background: $background;
+    padding: 0 2;
+    scrollbar-color: $panel;
+    scrollbar-background: $background;
+    scrollbar-size-vertical: 1;
 }
 
 #evidence {
     dock: bottom;
     height: auto;
-    max-height: 8;
-    padding: 0 1;
-    background: $panel;
+    max-height: 7;
+    padding: 0 2;
+    background: $surface;
+    color: $text-muted;
 }
 
-/* E6 checkpoint modal (PR E). */
+/* ---- modals ------------------------------------------------------------- */
 
 CheckpointModal {
     align: center middle;
+    background: $background 60%;
 }
 
 #checkpoint-dialog {
-    width: 90%;
-    max-width: 120;
-    height: 80%;
-    border: thick $warning;
+    width: 92%;
+    max-width: 110;
+    height: 85%;
+    border: round $accent 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
     background: $surface;
     padding: 1 2;
 }
 
 #checkpoint-question {
     text-style: bold;
+    color: $foreground;
 }
 
 #checkpoint-summary {
     height: 1;
     margin-bottom: 1;
+    color: $text-muted;
 }
 
 #checkpoint-body {
     height: 1fr;
-    border: solid $panel;
-    padding: 0 1;
+    background: $background;
+    padding: 1 2;
+    scrollbar-color: $panel;
+    scrollbar-background: $background;
+    scrollbar-size-vertical: 1;
 }
 
 #checkpoint-buttons {
     height: 3;
+    margin-top: 1;
     align-horizontal: center;
 }
 
 #checkpoint-buttons Button {
-    margin: 0 2;
+    margin: 0 1;
+    min-width: 16;
+    border: none;
+    height: 1;
+    background: $panel;
+    color: $foreground;
+    text-style: none;
 }
 
-/* Quit confirmation (PR F). */
+#checkpoint-buttons Button:hover {
+    background: $boost;
+}
+
+#checkpoint-buttons Button:focus {
+    text-style: bold;
+}
+
+/* One primary action; secondary paths stay quiet until focused.
+ * Color names the consequence, not the chrome. choice-0 is always
+ * the affirmative/default option (Approve / Start). */
+#checkpoint-buttons #choice-0 {
+    background: $accent;
+    color: $background;
+    text-style: bold;
+}
+
+#checkpoint-buttons #choice-1 {
+    color: $error;
+}
+
+#checkpoint-buttons #choice-2 {
+    color: $warning;
+}
+
+/* ---- quit modal ---------------------------------------------------------- */
 
 QuitModal {
     align: center middle;
+    background: $background 60%;
 }
 
 #quit-dialog {
-    width: 64;
+    width: 62;
     height: auto;
-    border: thick $error;
+    border: round $error 60%;
+    border-title-color: $error;
+    border-title-style: bold;
     background: $surface;
     padding: 1 2;
 }
@@ -129,5 +264,16 @@ QuitModal {
 }
 
 #quit-buttons Button {
-    margin: 0 2;
+    margin: 0 1;
+    min-width: 18;
+    border: none;
+    height: 1;
+    background: $panel;
+    color: $foreground;
+}
+
+#quit-buttons #stop {
+    background: $error 85%;
+    color: $background;
+    text-style: bold;
 }
