@@ -1328,15 +1328,15 @@ def measure_fact_utilization(
 def current_run_id() -> str:
     """Construct a run id for the knowledge layer.
 
-    Format: ``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>``. The microsecond
-    field makes same-second ids order deterministically by creation time
-    instead of by the random nonce; the nonce still guards against
-    collisions inside the same microsecond. Old-format second-precision
-    ids (factory.py builds one inline for the evolution journal) sort
-    before same-second new-format ids because ``-`` < ``.``.
+    Format: ``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>`` (see
+    ``kstrl.runid`` - the shared minting home since run kinds landed).
+    The microsecond field makes same-second ids order deterministically
+    by creation time instead of by the random nonce; the nonce still
+    guards against collisions inside the same microsecond. Old-format
+    second-precision ids (factory.py builds one inline for the
+    evolution journal) sort before same-second new-format ids because
+    ``-`` < ``.``.
     """
-    import secrets
-    from datetime import UTC, datetime
+    from kstrl.runid import mint_run_id
 
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S.%f")
-    return f"factory-{stamp}-{secrets.token_hex(3)}"
+    return mint_run_id("factory")

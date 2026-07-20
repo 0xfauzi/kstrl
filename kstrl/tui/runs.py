@@ -1,13 +1,16 @@
-"""Run discovery for `ralph dash` (stage 3 PR C).
+"""Run discovery for the dashboard and home shell.
 
 A run is a directory under ``.kstrl/runs/<run_id>/`` containing
-events.jsonl. run_ids are lexicographically sortable by construction
-(``factory-YYYYMMDD-HHMMSS.ffffff-<nonce>``), which discovery exploits.
+events.jsonl. Run ids are ``<kind>-<stamp>-<nonce>`` (kstrl.runid);
+discovery orders by the stamp AFTER the kind prefix, so runs of
+different kinds interleave chronologically instead of grouping by
+kind name.
 
 Liveness is a judgment from two cheap signals: recent events-file
 mtime, or the run-level factory.lock being held (a non-blocking flock
 probe - safe because the factory holds the lock for the whole run and
-we release our probe immediately).
+we release our probe immediately). The lock is a factory-only signal;
+other kinds rely on the mtime window (heartbeats keep it fresh).
 """
 
 from __future__ import annotations
@@ -18,6 +21,8 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from kstrl.runid import run_kind, run_sort_key
 
 LIVE_MTIME_WINDOW_SECONDS = 60.0
 _COMPLETED_TAIL_BYTES = 8192
@@ -31,6 +36,7 @@ class RunRef:
     mtime: float
     completed: bool
     lock_held: bool = False
+    kind: str = "factory"
 
     @property
     def live(self) -> bool:
@@ -96,35 +102,52 @@ def factory_lock_held(root_dir: Path) -> bool:
         return False
 
 
-def discover_runs(root_dir: Path) -> list[RunRef]:
-    """All runs with an events.jsonl, newest first."""
+def discover_runs(
+    root_dir: Path, *, kinds: tuple[str, ...] | None = None,
+) -> list[RunRef]:
+    """All runs with an events.jsonl, newest first.
+
+    ``kinds`` filters to the given run kinds; None means every kind.
+    A held factory.lock is attributed to the newest factory-kind run
+    only - it says nothing about the liveness of other kinds.
+    """
     runs_root = root_dir / ".kstrl" / "runs"
     refs: list[RunRef] = []
     lock_held = factory_lock_held(root_dir)
     try:
-        candidates = sorted(runs_root.iterdir(), key=lambda d: d.name,
+        candidates = sorted(runs_root.iterdir(),
+                            key=lambda d: run_sort_key(d.name),
                             reverse=True)
     except OSError:
         return []
     for run_dir in candidates:
+        kind = run_kind(run_dir.name)
+        if kinds is not None and kind not in kinds:
+            continue
         events_path = run_dir / "events.jsonl"
         try:
             mtime = events_path.stat().st_mtime
         except OSError:
             continue
+        holds_lock = lock_held and kind == "factory"
+        if holds_lock:
+            lock_held = False
         refs.append(RunRef(
             run_id=run_dir.name,
             run_dir=run_dir,
             events_path=events_path,
             mtime=mtime,
             completed=_run_completed(events_path),
-            lock_held=lock_held and not refs,
+            lock_held=holds_lock,
+            kind=kind,
         ))
     return refs
 
 
-def latest_run(root_dir: Path) -> RunRef | None:
-    refs = discover_runs(root_dir)
+def latest_run(
+    root_dir: Path, *, kinds: tuple[str, ...] | None = None,
+) -> RunRef | None:
+    refs = discover_runs(root_dir, kinds=kinds)
     return refs[0] if refs else None
 
 
