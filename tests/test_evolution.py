@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ralph_py.evolution import (
+from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
     EvolutionConfig,
     EvolutionJournal,
@@ -15,8 +15,8 @@ from ralph_py.evolution import (
     signatures_from_verification,
     split_signature,
 )
-from ralph_py.factory import FactoryResult
-from ralph_py.manifest import Component, ComponentStatus, Manifest
+from kstrl.factory import FactoryResult
+from kstrl.manifest import Component, ComponentStatus, Manifest
 
 
 def _make_manifest(
@@ -123,7 +123,7 @@ class TestRecordRun:
         Component.findings alongside the existing scalars, and include
         a findings_summary for fast aggregation. This is what makes the
         typed Finding stream actually load-bearing."""
-        from ralph_py.findings import Finding
+        from kstrl.findings import Finding
 
         journal_path = tmp_path / "evolution.jsonl"
         experiments_path = tmp_path / "experiments.tsv"
@@ -394,8 +394,8 @@ class TestSaveProposals:
 
 class TestSignatureHelpers:
     def test_signatures_from_verification_uses_parser_codes(self) -> None:
-        from ralph_py.parsers import ParsedFailure, ParsedOutput
-        from ralph_py.verify import CheckResult
+        from kstrl.parsers import ParsedFailure, ParsedOutput
+        from kstrl.verify import CheckResult
 
         ruff = ParsedOutput(tool="ruff", failures=[
             ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
@@ -430,7 +430,7 @@ class TestSignatureHelpers:
         assert not any(s.startswith("bad_patterns") for s in sigs)
 
     def test_signatures_from_verification_fallback_slug(self) -> None:
-        from ralph_py.verify import CheckResult
+        from kstrl.verify import CheckResult
 
         checks = [CheckResult(
             name="diff_scope", passed=False,
@@ -447,7 +447,7 @@ class TestSignatureHelpers:
         assert "outside-allowed-scope" in code
 
     def test_signatures_from_findings(self) -> None:
-        from ralph_py.findings import Finding
+        from kstrl.findings import Finding
 
         findings = [
             Finding.from_review_concern(
@@ -464,7 +464,7 @@ class TestSignatureHelpers:
         ]
 
     def test_signatures_from_findings_infrastructure(self) -> None:
-        from ralph_py.findings import Finding
+        from kstrl.findings import Finding
 
         findings = [Finding.infrastructure_error("review", "crashed")]
         assert signatures_from_findings("review", findings) == [
@@ -545,7 +545,7 @@ class TestEvolutionIntegration:
     signature and a nonzero concern hit rate."""
 
     def _failed_component(self, comp_id: str) -> Component:
-        from ralph_py.findings import Finding
+        from kstrl.findings import Finding
 
         comp = _make_component(
             comp_id, status=ComponentStatus.FAILED.value,

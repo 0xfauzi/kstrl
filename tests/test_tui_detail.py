@@ -5,22 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import Mock
 
-from ralph_py.agents.base import UsageTotals
-from ralph_py.findings import Finding
-from ralph_py.interaction import CheckpointContext, PromptKind, PromptRequest
-from ralph_py.reducer import ComponentState
-from ralph_py.tui.app import Mode, RalphTuiApp
-from ralph_py.tui.screens.checkpoint import CheckpointModal
-from ralph_py.tui.screens.component import ComponentScreen
-from ralph_py.tui.screens.overview import OverviewScreen
-from ralph_py.tui.widgets.findings_table import FindingsTable
-from ralph_py.tui.widgets.phase_timeline import render_timeline
-from ralph_py.tui.widgets.transcript import TranscriptTail
+from kstrl.agents.base import UsageTotals
+from kstrl.findings import Finding
+from kstrl.interaction import CheckpointContext, PromptKind, PromptRequest
+from kstrl.reducer import ComponentState
+from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.screens.checkpoint import CheckpointModal
+from kstrl.tui.screens.component import ComponentScreen
+from kstrl.tui.screens.overview import OverviewScreen
+from kstrl.tui.widgets.findings_table import FindingsTable
+from kstrl.tui.widgets.phase_timeline import render_timeline
+from kstrl.tui.widgets.transcript import TranscriptTail
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 
-def _app(root: Path, run_dir: Path) -> RalphTuiApp:
-    return RalphTuiApp(
+def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
+    return KstrlTuiApp(
         run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=0.05,
     )
 

@@ -11,14 +11,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.git import strip_self_critique_from_diff
-from ralph_py.knowledge import _coerce_facts, _parse_fact_md
-from ralph_py.manifest import Component, Manifest
-from ralph_py.review import ReviewResult, parse_review_output
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.git import strip_self_critique_from_diff
+from kstrl.knowledge import _coerce_facts, _parse_fact_md
+from kstrl.manifest import Component, Manifest
+from kstrl.review import ReviewResult, parse_review_output
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 # ---------------------------------------------------------------------------
 # E5 - confidence rename + backwards compat
@@ -98,8 +98,8 @@ class TestE4BudgetCap:
             ],
         )
 
-    def _base_config(self, root: Path) -> RalphConfig:
-        return RalphConfig(
+    def _base_config(self, root: Path) -> KstrlConfig:
+        return KstrlConfig(
             prompt_file=root / "scripts/ralph/prompt.md",
             prd_file=root / "scripts/ralph/prd.json",
             sleep_seconds=0, agent_cmd="echo test",
@@ -124,11 +124,11 @@ class TestE4BudgetCap:
         success = ComponentResult("comp-a", success=True, iterations=1)
         passing_review = ReviewResult(passed=True, mode="hard")
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review", return_value=passing_review,
+            "kstrl.factory.run_review", return_value=passing_review,
         ) as mock_review, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             run_factory(
                 manifest, config, self._base_config(root),
@@ -163,11 +163,11 @@ class TestE4BudgetCap:
         success = ComponentResult("comp-a", success=True, iterations=1)
         passing_review = ReviewResult(passed=True, mode="hard")
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review", return_value=passing_review,
+            "kstrl.factory.run_review", return_value=passing_review,
         ) as mock_review, patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ):
             run_factory(
                 manifest, config, self._base_config(root),
@@ -187,7 +187,7 @@ class TestE6HitlCheckpoint:
         """When pause_before_pr_merge=True but the UI can't prompt
         (PlainUI in tests), the factory must log a warning and proceed
         rather than block indefinitely."""
-        from ralph_py.factory import ComponentResult
+        from kstrl.factory import ComponentResult
         scaffold = tmp_path / "scripts" / "ralph"
         scaffold.mkdir(parents=True)
         (scaffold / "prompt.md").write_text("p")
@@ -222,7 +222,7 @@ class TestE6HitlCheckpoint:
                 check_bad_patterns=False, subprocess_timeout=5.0,
             ),
         )
-        base = RalphConfig(
+        base = KstrlConfig(
             prompt_file=scaffold / "prompt.md",
             prd_file=scaffold / "prd.json",
             sleep_seconds=0, agent_cmd="echo test",
@@ -231,10 +231,10 @@ class TestE6HitlCheckpoint:
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.pr.is_gh_available", return_value=False,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.pr.is_gh_available", return_value=False,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, base, PlainUI(no_color=True), tmp_path,
             )

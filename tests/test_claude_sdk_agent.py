@@ -32,26 +32,26 @@ from typing import Any
 
 import pytest
 
-from ralph_py.agents import ClaudeSdkAgent, get_agent, sdk_runner
-from ralph_py.agents import claude_sdk as claude_sdk_module
-from ralph_py.agents.claude_sdk import (
+from kstrl.agents import ClaudeSdkAgent, get_agent, sdk_runner
+from kstrl.agents import claude_sdk as claude_sdk_module
+from kstrl.agents.claude_sdk import (
     RESULT_PREFIX,
     USAGE_PREFIX,
     _parse_contract_line,
     _usage_record_from_payload,
 )
-from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
-from ralph_py.config import (
-    RalphConfig,
+from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.config import (
+    KstrlConfig,
     _apply_env_overrides,
     _apply_toml_overrides,
 )
-from ralph_py.factory import (
+from kstrl.factory import (
     _CROSS_FAMILY_TYPE,
     _agent_identity,
     _cli_family,
 )
-from ralph_py.sandbox import (
+from kstrl.sandbox import (
     SandboxConfig,
     claude_sandbox_args,
     claude_sandbox_settings,
@@ -209,7 +209,7 @@ class TestAdapterRun:
         assert config["settings"] == claude_sandbox_settings(sandbox)
         assert config["bypass_permissions"] is False
         assert call["timeout"] == 5.0
-        assert call["cmd"][1:] == ["-u", "-m", "ralph_py.agents.sdk_runner"]
+        assert call["cmd"][1:] == ["-u", "-m", "kstrl.agents.sdk_runner"]
 
     def test_no_sandbox_keeps_bypass_permissions(
         self, fake_streamer: type[_FakeStreamer], tmp_path: Path,
@@ -410,7 +410,7 @@ class TestRegistration:
         toml.write_text(
             '[agent]\ntype = "claude-sdk"\nbudget_usd = 2.5\n'
         )
-        config = RalphConfig()
+        config = KstrlConfig()
         _apply_toml_overrides(config, toml, tmp_path)
         assert config.agent_type == "claude-sdk"
         assert config.agent_budget_usd == 2.5
@@ -420,7 +420,7 @@ class TestRegistration:
     ) -> None:
         toml = tmp_path / "ralph.toml"
         toml.write_text("[agent]\nbudget_usd = true\n")
-        config = RalphConfig()
+        config = KstrlConfig()
         _apply_toml_overrides(config, toml, tmp_path)
         assert config.agent_budget_usd is None
         toml.write_text("[agent]\nbudget_usd = 0\n")
@@ -431,7 +431,7 @@ class TestRegistration:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("RALPH_AGENT_BUDGET_USD", "3.75")
-        config = RalphConfig()
+        config = KstrlConfig()
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd == 3.75
 
@@ -439,14 +439,14 @@ class TestRegistration:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("RALPH_AGENT_BUDGET_USD", "lots")
-        config = RalphConfig()
+        config = KstrlConfig()
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd is None
 
     def test_preflight_accepts_available_sdk(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ralph_py import cli
+        from kstrl import cli
 
         monkeypatch.setattr(
             cli.ClaudeSdkAgent, "is_available", classmethod(lambda _: True),
@@ -458,7 +458,7 @@ class TestRegistration:
     def test_preflight_names_missing_sdk_extra(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ralph_py import cli
+        from kstrl import cli
 
         monkeypatch.setattr(
             cli.ClaudeSdkAgent, "is_available", classmethod(lambda _: False),

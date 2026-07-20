@@ -31,8 +31,8 @@ from typing import Any
 
 import pytest
 
-from ralph_py.decompose import SpecIssue
-from ralph_py.linear import (
+from kstrl.decompose import SpecIssue
+from kstrl.linear import (
     DecomposeSync,
     IssueRef,
     LinearClient,
@@ -45,9 +45,9 @@ from ralph_py.linear import (
     resync_components,
     sync_decompose,
 )
-from ralph_py.manifest import ComponentStatus, Manifest, validate_branch_name
-from ralph_py.observability import ProgressLog
-from ralph_py.pr import _generate_pr_body
+from kstrl.manifest import ComponentStatus, Manifest, validate_branch_name
+from kstrl.observability import ProgressLog
+from kstrl.pr import _generate_pr_body
 from tests.spine_utils import component, make_manifest
 
 TEAM_ID = "540e2302-e91c-42a7-92d7-e2f274bbf298"
@@ -183,7 +183,7 @@ def fake_transport(
             raise result
         return FakeResponse(result)
 
-    monkeypatch.setattr("ralph_py.linear.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("kstrl.linear.urllib.request.urlopen", fake_urlopen)
     return requests
 
 
@@ -266,7 +266,7 @@ class TestLinearClient:
             return Garbage()
 
         monkeypatch.setattr(
-            "ralph_py.linear.urllib.request.urlopen", fake_urlopen
+            "kstrl.linear.urllib.request.urlopen", fake_urlopen
         )
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="non-JSON"):
@@ -291,7 +291,7 @@ class TestLinearClient:
         monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
         sleeps: list[float] = []
         monkeypatch.setattr(
-            "ralph_py.linear.time.sleep", lambda s: sleeps.append(s)
+            "kstrl.linear.time.sleep", lambda s: sleeps.append(s)
         )
         limited = {
             "errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]
@@ -309,7 +309,7 @@ class TestLinearClient:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
-        monkeypatch.setattr("ralph_py.linear.time.sleep", lambda s: None)
+        monkeypatch.setattr("kstrl.linear.time.sleep", lambda s: None)
         limited = {
             "errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]
         }

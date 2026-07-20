@@ -27,17 +27,17 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.decompose import (
+from kstrl.config import KstrlConfig
+from kstrl.decompose import (
     _validate_allowed_path_entry,
     _validate_decompose_output,
     decompose_spec,
 )
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.git import _parse_name_status_z, get_diff_names
-from ralph_py.manifest import Component, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import (
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.git import _parse_name_status_z, get_diff_names
+from kstrl.manifest import Component, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import (
     CheckResult,
     VerificationResult,
     VerifyConfig,
@@ -192,7 +192,7 @@ class TestAllowedPathsContentValidation:
     @pytest.mark.parametrize("entry", [
         ".ralph/",
         ".github/",
-        "ralph_py/",
+        "kstrl/",
         "src/ralph/",
         "scripts/ralph/",
         "pyproject.toml",
@@ -205,7 +205,7 @@ class TestAllowedPathsContentValidation:
 
     @pytest.mark.parametrize("entry", [
         ".ralph",           # no trailing slash
-        "./ralph_py/",      # leading ./
+        "./kstrl/",      # leading ./
         "./.ralph",         # both
         "scripts/ralph",    # bare prefix, no slash
     ])
@@ -234,7 +234,7 @@ class TestAllowedPathsContentValidation:
         "scripts/ralph/feature/comp-a/",
         "docs/pyproject.toml",   # manifest NOT at repo root
         "packages/",             # prefix-similar to an excluded name
-        "ralph_py_docs/",
+        "kstrl_docs/",
     ])
     def test_legitimate_entries_accepted(self, entry: str) -> None:
         assert _validate_allowed_path_entry(entry) is None
@@ -361,7 +361,7 @@ class TestDiffScopeFailsClosed:
         assert verification.passed is False
 
 
-def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, RalphConfig]:
+def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlConfig]:
     ralph_dir = tmp_path / "scripts" / "ralph"
     ralph_dir.mkdir(parents=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
@@ -388,7 +388,7 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, RalphCon
             subprocess_timeout=5.0,
         ),
     )
-    base = RalphConfig(
+    base = KstrlConfig(
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",
         sleep_seconds=0,
@@ -431,9 +431,9 @@ class TestFactoryScopeSiteFailsClosed:
 
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
-            patch("ralph_py.factory._run_component", return_value=success),
+            patch("kstrl.factory._run_component", return_value=success),
             patch(
-                "ralph_py.factory.run_mechanical_verification",
+                "kstrl.factory.run_mechanical_verification",
                 side_effect=spy_rmv,
             ),
         ):
@@ -465,9 +465,9 @@ class TestFactoryScopeSiteFailsClosed:
 
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
-            patch("ralph_py.factory._run_component", return_value=success),
+            patch("kstrl.factory._run_component", return_value=success),
             patch(
-                "ralph_py.factory.run_mechanical_verification",
+                "kstrl.factory.run_mechanical_verification",
                 side_effect=spy_rmv,
             ),
         ):
@@ -512,9 +512,9 @@ class TestFactoryScopeSiteFailsClosed:
 
         success = ComponentResult("comp-a", success=True, iterations=1)
         with (
-            patch("ralph_py.factory._run_component", return_value=success),
+            patch("kstrl.factory._run_component", return_value=success),
             patch(
-                "ralph_py.factory.run_mechanical_verification",
+                "kstrl.factory.run_mechanical_verification",
                 side_effect=spy_rmv,
             ),
         ):

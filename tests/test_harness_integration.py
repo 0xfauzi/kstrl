@@ -95,7 +95,7 @@ def _create_project(root: Path) -> None:
 class TestFeedforward:
     def test_module_map(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.feedforward import build_module_map
+        from kstrl.feedforward import build_module_map
 
         result = build_module_map(tmp_path)
         assert "src/" in result or "myapp/" in result
@@ -104,7 +104,7 @@ class TestFeedforward:
 
     def test_public_interfaces(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.feedforward import extract_public_interfaces
+        from kstrl.feedforward import extract_public_interfaces
 
         result = extract_public_interfaces(tmp_path)
         assert "User" in result
@@ -113,7 +113,7 @@ class TestFeedforward:
 
     def test_dependency_graph(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.feedforward import build_dependency_graph
+        from kstrl.feedforward import build_dependency_graph
 
         result = build_dependency_graph(tmp_path)
         # api.py imports from models.py
@@ -121,7 +121,7 @@ class TestFeedforward:
 
     def test_conventions(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.feedforward import extract_conventions
+        from kstrl.feedforward import extract_conventions
 
         result = extract_conventions(tmp_path)
         assert "100" in result  # line-length
@@ -129,7 +129,7 @@ class TestFeedforward:
 
     def test_full_context(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
+        from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
 
         ctx = build_feedforward_context(tmp_path, FeedforwardConfig())
         assert "=== CODEBASE CONTEXT" in ctx
@@ -138,7 +138,7 @@ class TestFeedforward:
         assert "## " in ctx
 
     def test_disabled(self, tmp_path: Path) -> None:
-        from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
+        from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
 
         ctx = build_feedforward_context(tmp_path, FeedforwardConfig(enabled=False))
         assert ctx == ""
@@ -150,7 +150,7 @@ class TestFeedforward:
 
 class TestParsersIntegration:
     def test_parse_real_pytest_failure(self) -> None:
-        from ralph_py.parsers import parse_pytest_output
+        from kstrl.parsers import parse_pytest_output
 
         output = textwrap.dedent("""\
             ============================= test session starts ==============================
@@ -179,7 +179,7 @@ class TestParsersIntegration:
         assert "test_user_missing_arg" in parsed.failures[0].rule_or_test
 
     def test_parse_real_mypy_output(self) -> None:
-        from ralph_py.parsers import parse_mypy_output
+        from kstrl.parsers import parse_mypy_output
 
         output = textwrap.dedent("""\
             src/myapp/api.py:4: error: Missing return statement  [return]
@@ -194,7 +194,7 @@ class TestParsersIntegration:
         assert parsed.failures[0].line == 4
 
     def test_parse_real_ruff_output(self) -> None:
-        from ralph_py.parsers import parse_ruff_output
+        from kstrl.parsers import parse_ruff_output
 
         output = textwrap.dedent("""\
             src/myapp/utils.py:1:8: F401 `json` imported but unused
@@ -208,7 +208,7 @@ class TestParsersIntegration:
 
     def test_source_context_on_real_file(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.parsers import ParsedFailure, add_source_context
+        from kstrl.parsers import ParsedFailure, add_source_context
 
         failure = ParsedFailure(
             file="src/myapp/models.py",
@@ -221,7 +221,7 @@ class TestParsersIntegration:
         assert ">" in failure.source_context  # marker line
 
     def test_fix_hints(self) -> None:
-        from ralph_py.parsers import ParsedFailure, generate_fix_hint
+        from kstrl.parsers import ParsedFailure, generate_fix_hint
 
         # Missing argument
         f = ParsedFailure(message="TypeError: create_user() missing 1 required positional argument: 'email'")
@@ -235,7 +235,7 @@ class TestParsersIntegration:
         assert hint2 != ""
 
     def test_format_for_prompt(self) -> None:
-        from ralph_py.parsers import ParsedFailure, ParsedOutput
+        from kstrl.parsers import ParsedFailure, ParsedOutput
 
         parsed = ParsedOutput(
             tool="pytest",
@@ -264,7 +264,7 @@ class TestParsersIntegration:
 
 class TestFixturesIntegration:
     def test_cli_fixture_passes(self, tmp_path: Path) -> None:
-        from ralph_py.fixtures import Fixture, run_cli_fixture
+        from kstrl.fixtures import Fixture, run_cli_fixture
 
         f = Fixture(
             description="echo works",
@@ -277,7 +277,7 @@ class TestFixturesIntegration:
         assert "hello" in result.actual
 
     def test_cli_fixture_fails(self, tmp_path: Path) -> None:
-        from ralph_py.fixtures import Fixture, run_cli_fixture
+        from kstrl.fixtures import Fixture, run_cli_fixture
 
         f = Fixture(
             description="false fails",
@@ -290,7 +290,7 @@ class TestFixturesIntegration:
 
     def test_file_fixture_on_real_project(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.fixtures import Fixture, run_file_fixture
+        from kstrl.fixtures import Fixture, run_file_fixture
 
         f = Fixture(
             description="models.py exists and has User",
@@ -303,7 +303,7 @@ class TestFixturesIntegration:
 
     def test_file_fixture_missing_content(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.fixtures import Fixture, run_file_fixture
+        from kstrl.fixtures import Fixture, run_file_fixture
 
         f = Fixture(
             description="models.py should NOT have class Admin",
@@ -317,7 +317,7 @@ class TestFixturesIntegration:
     def test_function_fixture(self, tmp_path: Path) -> None:
         # Create a simple module to import
         (tmp_path / "adder.py").write_text("def add(a, b): return a + b\n")
-        from ralph_py.fixtures import Fixture, run_function_fixture
+        from kstrl.fixtures import Fixture, run_function_fixture
 
         f = Fixture(
             description="add(2, 3) returns 5",
@@ -330,7 +330,7 @@ class TestFixturesIntegration:
 
     def test_function_fixture_wrong_return(self, tmp_path: Path) -> None:
         (tmp_path / "adder.py").write_text("def add(a, b): return a + b\n")
-        from ralph_py.fixtures import Fixture, run_function_fixture
+        from kstrl.fixtures import Fixture, run_function_fixture
 
         f = Fixture(
             description="add(2, 3) returns 6 (wrong)",
@@ -346,7 +346,7 @@ class TestFixturesIntegration:
         (tmp_path / "greeter.py").write_text(
             "def greet(name, greeting='hello'): return f'{greeting} {name}'\n"
         )
-        from ralph_py.fixtures import Fixture, run_function_fixture
+        from kstrl.fixtures import Fixture, run_function_fixture
 
         f = Fixture(
             description="greet with kwargs",
@@ -364,7 +364,7 @@ class TestFixturesIntegration:
 
     def test_check_fixtures_pipeline(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from ralph_py.fixtures import Fixture, FixturesConfig, check_fixtures
+        from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures
 
         fixtures = [
             Fixture(
@@ -386,7 +386,7 @@ class TestFixturesIntegration:
         assert "2/2" in result.message or "2 passed" in result.message
 
     def test_snapshot_roundtrip(self, tmp_path: Path) -> None:
-        from ralph_py.fixtures import (
+        from kstrl.fixtures import (
             Fixture,
             FixtureResult,
             check_snapshot_regression,
@@ -420,9 +420,9 @@ class TestFixturesIntegration:
 
 class TestEvolutionIntegration:
     def test_record_and_extract(self, tmp_path: Path) -> None:
-        from ralph_py.evolution import EvolutionConfig, EvolutionJournal
-        from ralph_py.factory import FactoryResult
-        from ralph_py.manifest import Component, ComponentStatus, Manifest
+        from kstrl.evolution import EvolutionConfig, EvolutionJournal
+        from kstrl.factory import FactoryResult
+        from kstrl.manifest import Component, ComponentStatus, Manifest
 
         manifest = Manifest(
             version="1", spec_file="spec.md", project_name="test-project",
@@ -496,9 +496,9 @@ class TestEvolutionIntegration:
         assert "auth" in patterns[0].affected_components or "db" in patterns[0].affected_components
 
     def test_experiment_trends(self, tmp_path: Path) -> None:
-        from ralph_py.evolution import EvolutionConfig, EvolutionJournal
-        from ralph_py.factory import FactoryResult
-        from ralph_py.manifest import Component, ComponentStatus, Manifest
+        from kstrl.evolution import EvolutionConfig, EvolutionJournal
+        from kstrl.factory import FactoryResult
+        from kstrl.manifest import Component, ComponentStatus, Manifest
 
         config = EvolutionConfig(
             journal_path=tmp_path / "evolution.jsonl",
@@ -528,7 +528,7 @@ class TestEvolutionIntegration:
         assert trends[2]["run_id"] == "run-002"
 
     def test_propose_improvements(self, tmp_path: Path) -> None:
-        from ralph_py.evolution import (
+        from kstrl.evolution import (
             EvolutionConfig,
             EvolutionJournal,
             FailurePattern,
@@ -569,7 +569,7 @@ class TestEvolutionIntegration:
 
 class TestManifestFromPrd:
     def test_creates_valid_manifest(self, tmp_path: Path) -> None:
-        from ralph_py.manifest import Manifest
+        from kstrl.manifest import Manifest
 
         prd_path = tmp_path / "prd.json"
         prd_path.write_text(json.dumps({
@@ -589,7 +589,7 @@ class TestManifestFromPrd:
         assert m.project_name == "auth-feature"
 
     def test_derives_project_name_from_branch(self) -> None:
-        from ralph_py.manifest import Manifest
+        from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
             prd_path=Path("prd.json"),
@@ -598,7 +598,7 @@ class TestManifestFromPrd:
         assert m.project_name == "user-dashboard"
 
     def test_derives_project_name_from_prd_stem(self) -> None:
-        from ralph_py.manifest import Manifest
+        from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
             prd_path=Path("scripts/ralph/feature/login/prd.json"),
@@ -608,7 +608,7 @@ class TestManifestFromPrd:
         assert m.components[0].branch_name == "ralph/prd"
 
     def test_roundtrip_serialize(self, tmp_path: Path) -> None:
-        from ralph_py.manifest import Manifest
+        from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
             prd_path=Path("scripts/ralph/prd.json"),
@@ -622,7 +622,7 @@ class TestManifestFromPrd:
         assert loaded.components[0].id == "main"
 
     def test_dag_validation_passes(self) -> None:
-        from ralph_py.manifest import Manifest
+        from kstrl.manifest import Manifest
 
         m = Manifest.from_prd(
             prd_path=Path("prd.json"),

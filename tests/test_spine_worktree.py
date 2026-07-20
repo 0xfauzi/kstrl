@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.factory import _cleanup_worktree, _setup_worktree, run_factory
-from ralph_py.ui.plain import PlainUI
+from kstrl.factory import _cleanup_worktree, _setup_worktree, run_factory
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
     base_config,
     component,
@@ -58,7 +58,7 @@ time.sleep(120)
 _SETUP_CHILD_SCRIPT = """
 import sys
 from pathlib import Path
-from ralph_py.factory import _setup_worktree
+from kstrl.factory import _setup_worktree
 root = Path(sys.argv[1])
 Path(sys.argv[2]).write_text("ready")
 wt = _setup_worktree("comp-a", "ralph/factory/comp-a", "main", root, sys.argv[3])

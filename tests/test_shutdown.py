@@ -20,15 +20,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from ralph_py.agents.proc import DeadlineStreamer, kill_active_process_groups
-from ralph_py.factory import (
+from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
+from kstrl.factory import (
     ComponentResult,
     _abort_inflight,
     _wait_interruptible,
     run_factory,
 )
-from ralph_py.shutdown import StopController, install_signal_handlers
-from ralph_py.ui.plain import PlainUI
+from kstrl.shutdown import StopController, install_signal_handlers
+from kstrl.ui.plain import PlainUI
 from tests.test_event_stream import (
     _component,
     _factory_config,
@@ -207,8 +207,8 @@ class TestFactoryShutdown:
             return ComponentResult(comp_id, success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", side_effect=fake_component,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", side_effect=fake_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, _factory_config(root), _make_base_config(root),
                 PlainUI(no_color=True, file=io.StringIO()), root,
@@ -236,8 +236,8 @@ class TestFactoryShutdown:
 
         buf = io.StringIO()
         with patch(
-            "ralph_py.factory._run_component", side_effect=slow_component,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", side_effect=slow_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, _factory_config(root), _make_base_config(root),
                 PlainUI(no_color=True, file=buf), root,
@@ -260,8 +260,8 @@ class TestFactoryShutdown:
         manifest = _make_manifest([_component("comp-a")])
         result = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(
                 manifest, _factory_config(root), _make_base_config(root),
                 PlainUI(no_color=True, file=io.StringIO()), root,
@@ -275,8 +275,8 @@ class TestFactoryShutdown:
 
 class TestLoopStopCheck:
     def test_stop_between_iterations(self, tmp_path: Path) -> None:
-        from ralph_py.config import RalphConfig
-        from ralph_py.loop import run_loop
+        from kstrl.config import KstrlConfig
+        from kstrl.loop import run_loop
 
         class CountingAgent:
             def __init__(self) -> None:
@@ -306,7 +306,7 @@ class TestLoopStopCheck:
             return calls["n"] > 1  # allow iteration 1, stop iteration 2
 
         agent = CountingAgent()
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=5, sleep_seconds=0,
             prompt_file=tmp_path / "prompt.md",
             prd_file=tmp_path / "prd.json",
@@ -352,7 +352,7 @@ class TestWorkerSigterm:
             stop.request("sigterm spine test")
 
         threading.Thread(target=stop_soon).start()
-        with patch("ralph_py.git.get_diff_content", return_value=""):
+        with patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, base,
                 PlainUI(no_color=True, file=io.StringIO()), root,

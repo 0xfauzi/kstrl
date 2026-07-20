@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ralph_py.parsers import (
+from kstrl.parsers import (
     ParsedFailure,
     ParsedOutput,
     add_source_context,
@@ -74,19 +74,19 @@ class TestParsePytestOutput:
 class TestParseMypyOutput:
     def test_parse_mypy_output(self) -> None:
         raw = (
-            "ralph_py/factory.py:10: error: Incompatible types in assignment [assignment]\n"
-            "ralph_py/manifest.py:25: error: Missing return statement [return]\n"
+            "kstrl/factory.py:10: error: Incompatible types in assignment [assignment]\n"
+            "kstrl/manifest.py:25: error: Missing return statement [return]\n"
             "Found 2 errors in 2 files (checked 10 source files)\n"
         )
         result = parse_mypy_output(raw)
         assert result.tool == "mypy"
         assert result.total_errors == 2
         assert len(result.failures) == 2
-        assert result.failures[0].file == "ralph_py/factory.py"
+        assert result.failures[0].file == "kstrl/factory.py"
         assert result.failures[0].line == 10
         assert result.failures[0].rule_or_test == "assignment"
         assert "Incompatible types" in result.failures[0].message
-        assert result.failures[1].file == "ralph_py/manifest.py"
+        assert result.failures[1].file == "kstrl/manifest.py"
         assert result.failures[1].rule_or_test == "return"
 
     def test_parse_mypy_output_empty(self) -> None:
@@ -111,16 +111,16 @@ class TestParseMypyOutput:
 class TestParseRuffOutput:
     def test_parse_ruff_output(self) -> None:
         raw = (
-            "ralph_py/factory.py:15:1: E501 Line too long (95 > 79)\n"
-            "ralph_py/factory.py:20:1: F401 `os` imported but unused\n"
-            "ralph_py/manifest.py:5:1: F821 Undefined name `foo`\n"
+            "kstrl/factory.py:15:1: E501 Line too long (95 > 79)\n"
+            "kstrl/factory.py:20:1: F401 `os` imported but unused\n"
+            "kstrl/manifest.py:5:1: F821 Undefined name `foo`\n"
             "Found 3 errors.\n"
         )
         result = parse_ruff_output(raw)
         assert result.tool == "ruff"
         assert result.total_errors == 3
         assert len(result.failures) == 3
-        assert result.failures[0].file == "ralph_py/factory.py"
+        assert result.failures[0].file == "kstrl/factory.py"
         assert result.failures[0].line == 15
         assert result.failures[0].rule_or_test == "E501"
         assert "Line too long" in result.failures[0].message
@@ -135,7 +135,7 @@ class TestParseRuffOutput:
 
     def test_parse_ruff_output_with_fix_summary(self) -> None:
         raw = (
-            "ralph_py/factory.py:10:5: W291 trailing whitespace\n"
+            "kstrl/factory.py:10:5: W291 trailing whitespace\n"
             "Found 1 error (1 fixed, 0 remaining).\n"
         )
         result = parse_ruff_output(raw)

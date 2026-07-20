@@ -8,7 +8,7 @@
       ".ralph/",
       "pyproject.toml",
       "package.json",
-      "ralph_py/",
+      "kstrl/",
       "src/ralph/",
       ".github/"
     ],

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import io
 
-from ralph_py.events import CallbackSink, Event, EventBus, Log
-from ralph_py.ui.base import UI
-from ralph_py.ui.bridge import EventBridgeUI, NullPrompter, Prompter
-from ralph_py.ui.plain import PlainUI
+from kstrl.events import CallbackSink, Event, EventBus, Log
+from kstrl.ui.base import UI
+from kstrl.ui.bridge import EventBridgeUI, NullPrompter, Prompter
+from kstrl.ui.plain import PlainUI
 
 
 def _bridge_with_capture(

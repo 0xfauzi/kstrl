@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from ralph_py.review import (
+from kstrl.review import (
     CriterionReview,
     ReviewConcern,
     ReviewMode,
@@ -15,8 +15,8 @@ from ralph_py.review import (
     parse_review_output,
     run_review,
 )
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult
 
 
 class MockReviewAgent:

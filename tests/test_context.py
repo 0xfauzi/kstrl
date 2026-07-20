@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ralph_py.context import IterationContext, IterationRecord
+from kstrl.context import IterationContext, IterationRecord
 
 
 class TestIterationContext:

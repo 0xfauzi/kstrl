@@ -17,10 +17,10 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import ralph_py.cli as cli_mod
-from ralph_py.agents import ClaudeCodeAgent, CodexAgent
-from ralph_py.cli import _agent_preflight, cli
-from ralph_py.factory import FactoryResult
+import kstrl.cli as cli_mod
+from kstrl.agents import ClaudeCodeAgent, CodexAgent
+from kstrl.cli import _agent_preflight, cli
+from kstrl.factory import FactoryResult
 
 
 def _availability(
@@ -368,7 +368,7 @@ class TestFactoryPreflightWiring:
     def test_factory_canonicalizes_toml_claude_alias(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from ralph_py.manifest import Component, Manifest
+        from kstrl.manifest import Component, Manifest
 
         _availability(monkeypatch, claude=True, codex=True)
         root = tmp_path / "proj"
@@ -426,7 +426,7 @@ class TestFactoryPreflightWiring:
         _scaffold(root)
         (root / "ralph.toml").write_text('[agent]\ntype = "clade"\n')
 
-        from ralph_py.manifest import Component, Manifest
+        from kstrl.manifest import Component, Manifest
 
         manifest = Manifest(
             version="1", spec_file="spec.md", project_name="p",

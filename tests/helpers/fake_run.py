@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from ralph_py import events as ev
+from kstrl import events as ev
 
 DEFAULT_RUN_ID = "factory-20260720-120000.000000-fake"
 

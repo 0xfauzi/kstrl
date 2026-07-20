@@ -23,20 +23,20 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.findings import Finding, render_findings_markdown
-from ralph_py.git import GitDiffError, get_diff_content
-from ralph_py.manifest import Component, Manifest
-from ralph_py.review import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.findings import Finding, render_findings_markdown
+from kstrl.git import GitDiffError, get_diff_content
+from kstrl.manifest import Component, Manifest
+from kstrl.review import (
     ReviewMode,
     ReviewResult,
     parse_review_output,
     run_review,
 )
-from ralph_py.security import SecurityConfig, SecurityMode, parse_security_output
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.security import SecurityConfig, SecurityMode, parse_security_output
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 
 
 class MockReviewAgent:
@@ -225,13 +225,13 @@ class TestR11VerdictWhitelist:
 
 class TestR12InfrastructurePaths:
     def _run(self, mode: ReviewMode, tmp_path: Path) -> ReviewResult:
-        from ralph_py.decompose import AgentOutputTooLarge
+        from kstrl.decompose import AgentOutputTooLarge
 
         prd_path = tmp_path / "prd.json"
         _write_prd(prd_path, ["US-001"])
         agent = MockReviewAgent("irrelevant")
         with patch(
-            "ralph_py.review.collect_agent_output",
+            "kstrl.review.collect_agent_output",
             side_effect=AgentOutputTooLarge("output exceeded cap"),
         ):
             return run_review(
@@ -353,7 +353,7 @@ class TestPrBodyDidNotRun:
         return comp, manifest
 
     def test_security_infra_error_is_visible(self) -> None:
-        from ralph_py.pr import _generate_pr_body
+        from kstrl.pr import _generate_pr_body
 
         comp, manifest = self._component([
             Finding.infrastructure_error(
@@ -366,7 +366,7 @@ class TestPrBodyDidNotRun:
         assert "did not actually run" in body
 
     def test_skipped_phase_is_visible(self) -> None:
-        from ralph_py.pr import _generate_pr_body
+        from kstrl.pr import _generate_pr_body
 
         comp, manifest = self._component([
             Finding.phase_skipped("review", "mode=skip"),
@@ -375,7 +375,7 @@ class TestPrBodyDidNotRun:
         assert "PHASE SKIPPED" in body
 
     def test_real_findings_do_not_duplicate_into_status_section(self) -> None:
-        from ralph_py.pr import _generate_pr_body
+        from kstrl.pr import _generate_pr_body
 
         comp, manifest = self._component([
             Finding.from_review_concern(
@@ -420,8 +420,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
     )
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts/ralph/prompt.md",
         prd_file=root / "scripts/ralph/prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -464,8 +464,8 @@ class TestFactorySkipTraces:
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -498,10 +498,10 @@ class TestFactorySkipTraces:
         success = ComponentResult("comp-a", success=True, iterations=1)
         passing = ReviewResult(passed=True, mode="hard")
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review", return_value=passing,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory.run_review", return_value=passing,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -532,8 +532,8 @@ class TestFactorySkipTraces:
         config = _factory_config(review_mode="skip")
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -565,10 +565,10 @@ class TestFactoryReviewerCrash:
             return ComponentResult(comp_id, success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", side_effect=fake_run_component,
+            "kstrl.factory._run_component", side_effect=fake_run_component,
         ), patch(
-            "ralph_py.factory.run_review", side_effect=fake_run_review,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory.run_review", side_effect=fake_run_review,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -591,11 +591,11 @@ class TestFactoryReviewerCrash:
         config = _factory_config(review_mode="advisory")
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review",
+            "kstrl.factory.run_review",
             side_effect=RuntimeError("reviewer exploded"),
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -623,11 +623,11 @@ class TestFactoryReviewerCrash:
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_security_review",
+            "kstrl.factory.run_security_review",
             side_effect=RuntimeError("security agent exploded"),
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -641,7 +641,7 @@ class TestFactoryReviewerCrash:
         ]
         assert len(infra) == 1
         # and the PR body renders the did-not-run callout from it
-        from ralph_py.pr import _generate_pr_body
+        from kstrl.pr import _generate_pr_body
 
         body = _generate_pr_body(comp, manifest)
         assert "INFRASTRUCTURE ERROR" in body
@@ -679,11 +679,11 @@ class TestR13DiffErrors:
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.git.get_diff_content",
+            "kstrl.git.get_diff_content",
             side_effect=GitDiffError("git diff exited 129"),
-        ), patch("ralph_py.factory.run_review") as mock_review:
+        ), patch("kstrl.factory.run_review") as mock_review:
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,

@@ -27,11 +27,11 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import (
     VerifyConfig,
     check_test_suite,
     run_scrubbed,
@@ -57,7 +57,7 @@ class ScriptedUI(PlainUI):
 
 def _scaffold(
     tmp_path: Path, comp_ids: list[str], deps: dict[str, list[str]],
-) -> tuple[Manifest, RalphConfig]:
+) -> tuple[Manifest, KstrlConfig]:
     scaffold = tmp_path / "scripts" / "ralph"
     scaffold.mkdir(parents=True)
     (scaffold / "prompt.md").write_text("p")
@@ -85,7 +85,7 @@ def _scaffold(
         version="1", spec_file="s", project_name="t",
         base_branch="main", single_pr=False, components=components,
     )
-    base = RalphConfig(
+    base = KstrlConfig(
         prompt_file=scaffold / "prompt.md",
         prd_file=scaffold / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -120,10 +120,10 @@ class TestHitlCheckpoint:
         ui = ScriptedUI(choices=[1])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ) as fake_agent, patch(
-            "ralph_py.pr.is_gh_available", return_value=False,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.pr.is_gh_available", return_value=False,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, _checkpoint_config(), base, ui, tmp_path,
             )
@@ -146,10 +146,10 @@ class TestHitlCheckpoint:
         ui = ScriptedUI(choices=[2, 0])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ) as fake_agent, patch(
-            "ralph_py.pr.is_gh_available", return_value=False,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.pr.is_gh_available", return_value=False,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, _checkpoint_config(max_retries=1), base, ui,
                 tmp_path,
@@ -168,10 +168,10 @@ class TestHitlCheckpoint:
         ui = ScriptedUI(choices=[0])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ) as fake_agent, patch(
-            "ralph_py.pr.is_gh_available", return_value=False,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.pr.is_gh_available", return_value=False,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, _checkpoint_config(), base, ui, tmp_path,
             )

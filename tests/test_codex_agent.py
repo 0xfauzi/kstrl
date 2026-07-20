@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.agents.codex import CodexAgent
+from kstrl.agents.codex import CodexAgent
 
 CODEX_AVAILABLE = shutil.which("codex") is not None
 LIVE_CONTRACT_ENABLED = os.environ.get("RALPH_RUN_LIVE_CONTRACT") == "1"
@@ -62,7 +62,7 @@ class TestCodexAgentStructure:
         # monkeypatch restores both the cache slot and subprocess.run on
         # teardown, so other tests see a fresh probe state.
         monkeypatch.setattr(CodexAgent, "_supports_output_last_message", None)
-        monkeypatch.setattr("ralph_py.agents.codex.subprocess.run", fake_run)
+        monkeypatch.setattr("kstrl.agents.codex.subprocess.run", fake_run)
 
         a = CodexAgent._codex_supports_output_last_message()
         b = CodexAgent._codex_supports_output_last_message()
@@ -86,7 +86,7 @@ class TestCodexAgentStructure:
             raise FileNotFoundError("codex not on PATH")
 
         monkeypatch.setattr(CodexAgent, "_supports_output_last_message", None)
-        monkeypatch.setattr("ralph_py.agents.codex.subprocess.run", raising_run)
+        monkeypatch.setattr("kstrl.agents.codex.subprocess.run", raising_run)
 
         assert CodexAgent._codex_supports_output_last_message() is False
         assert CodexAgent._codex_supports_output_last_message() is False

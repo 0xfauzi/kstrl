@@ -21,16 +21,16 @@ from unittest.mock import patch
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.observability import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.observability import (
     NotifyConfig,
     NotifyHooks,
     latest_run_id,
     read_progress_events,
 )
-from ralph_py.ui.plain import PlainUI
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
     base_config,
     component,
@@ -217,8 +217,8 @@ def _setup_plain_project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _plain_base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _plain_base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -310,7 +310,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("ralph_py.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 _two_component_manifest(), config, _plain_base_config(root),
                 PlainUI(no_color=True), root,
@@ -350,7 +350,7 @@ class TestFactoryFiresHooks:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
-        with patch("ralph_py.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 _two_component_manifest(), config, _plain_base_config(root),
                 PlainUI(no_color=True), root,
@@ -427,7 +427,7 @@ class TestMergePendingFiresHook:
         ) -> ComponentResult:
             return ComponentResult(component_id, success=True, iterations=1)
 
-        with patch("ralph_py.factory._run_component", side_effect=fake_run):
+        with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
                 manifest, config, base_config(root),
                 PlainUI(no_color=True), root,

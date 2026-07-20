@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ralph_py.guards import check_violations, path_is_allowed
+from kstrl.guards import check_violations, path_is_allowed
 
 
 class TestPathIsAllowed:

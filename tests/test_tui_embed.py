@@ -12,25 +12,25 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from ralph_py import events as ev
-from ralph_py.factory import FactoryResult
-from ralph_py.interaction import (
+from kstrl import events as ev
+from kstrl.factory import FactoryResult
+from kstrl.interaction import (
     CheckpointContext,
     PromptKind,
     PromptRequest,
     QueueInteractionChannel,
 )
-from ralph_py.observability import NotifyConfig, NotifyHooks
-from ralph_py.shutdown import StopController
-from ralph_py.tui.app import Mode, RalphTuiApp
-from ralph_py.tui.bridge import OrchestratorHandle, start_orchestrator
-from ralph_py.tui.embed import (
+from kstrl.observability import NotifyConfig, NotifyHooks
+from kstrl.shutdown import StopController
+from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.bridge import OrchestratorHandle, start_orchestrator
+from kstrl.tui.embed import (
     _install_exclusive_root_handler,
     _plain_fallback,
     _restore_root_handlers,
 )
-from ralph_py.tui.screens.checkpoint import CheckpointModal
-from ralph_py.tui.screens.quit import QuitModal
+from kstrl.tui.screens.checkpoint import CheckpointModal
+from kstrl.tui.screens.quit import QuitModal
 
 
 def _write_minimal_run(root: Path, run_id: str) -> Path:
@@ -50,7 +50,7 @@ class TestBridge:
         result.exit_code = 0
 
         with patch(
-            "ralph_py.tui.bridge.run_factory", return_value=result,
+            "kstrl.tui.bridge.run_factory", return_value=result,
         ) as fake:
             handle = start_orchestrator(
                 object(), object(), object(), object(),  # type: ignore[arg-type]
@@ -70,7 +70,7 @@ class TestBridge:
         self, tmp_path: Path,
     ) -> None:
         with patch(
-            "ralph_py.tui.bridge.run_factory",
+            "kstrl.tui.bridge.run_factory",
             side_effect=RuntimeError("boom"),
         ):
             handle = start_orchestrator(
@@ -143,7 +143,7 @@ class TestEmbeddedApp:
         stop = StopController()
         decisions: list[int] = []
         handle = _fake_orchestrator(channel, stop, decisions)
-        app = RalphTuiApp(
+        app = KstrlTuiApp(
             run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
             poll_interval=0.05, channel=channel, orchestrator=handle,
         )
@@ -168,7 +168,7 @@ class TestEmbeddedApp:
         channel = QueueInteractionChannel()
         stop = StopController()
         handle = _fake_orchestrator(channel, stop, [], wait_for_stop=True)
-        app = RalphTuiApp(
+        app = KstrlTuiApp(
             run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
             poll_interval=0.05, channel=channel, orchestrator=handle,
         )
@@ -193,7 +193,7 @@ class TestEmbeddedApp:
         channel = QueueInteractionChannel()
         stop = StopController()
         handle = _fake_orchestrator(channel, stop, [], wait_for_stop=True)
-        app = RalphTuiApp(
+        app = KstrlTuiApp(
             run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
             poll_interval=0.05, channel=channel, orchestrator=handle,
         )
@@ -217,7 +217,7 @@ class TestEmbeddedApp:
         stop = StopController()
         decisions: list[int] = []
         handle = _fake_orchestrator(channel, stop, decisions)
-        app = RalphTuiApp(
+        app = KstrlTuiApp(
             run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
             poll_interval=0.05, channel=channel, orchestrator=handle,
         )
@@ -243,7 +243,7 @@ class TestEmbeddedApp:
         self, tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-generic")
-        app = RalphTuiApp(
+        app = KstrlTuiApp(
             run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
             poll_interval=0.05,
         )

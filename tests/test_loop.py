@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from ralph_py.config import RalphConfig
-from ralph_py.loop import COMPLETION_MARKER, run_loop
-from ralph_py.ui.plain import PlainUI
+from kstrl.config import KstrlConfig
+from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.ui.plain import PlainUI
 
 
 class MockAgent:
@@ -46,7 +46,7 @@ class TestRunLoop:
             '{"branchName": "test", "userStories": []}'
         )
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=5,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
@@ -74,7 +74,7 @@ class TestRunLoop:
             '{"branchName": "test", "userStories": []}'
         )
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=3,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
@@ -104,7 +104,7 @@ class TestRunLoop:
         not been ``ralph init``'d, even though the harness ships its
         own engineer prompt that should be used as the default.
         """
-        from ralph_py.init_cmd import DEFAULT_PROMPT
+        from kstrl.init_cmd import DEFAULT_PROMPT
 
         captured_prompts: list[str] = []
 
@@ -121,7 +121,7 @@ class TestRunLoop:
                 yield "starting"
                 yield COMPLETION_MARKER
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=2,
             prompt_file=tmp_path / "nonexistent.md",
             ralph_branch="",
@@ -149,7 +149,7 @@ class TestRunLoop:
             '{"branchName": "test", "userStories": []}'
         )
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=5,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
@@ -204,7 +204,7 @@ class TestRunLoop:
             '{"branchName": "feature/should-not-checkout", "userStories": []}'
         )
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=1,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
@@ -233,7 +233,7 @@ class TestRunLoop:
             '{"branchName": "test", "userStories": []}'
         )
 
-        config = RalphConfig(
+        config = KstrlConfig(
             max_iterations=1,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
@@ -289,7 +289,7 @@ class TestGuardsRunBeforeCompletion:
     cannot bypass enforcement (pre-fix, the marker returned first and the
     guard never saw the violation)."""
 
-    def _git_repo(self, tmp_path: Path) -> RalphConfig:
+    def _git_repo(self, tmp_path: Path) -> KstrlConfig:
         import subprocess
 
         subprocess.run(
@@ -319,7 +319,7 @@ class TestGuardsRunBeforeCompletion:
             ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
             check=True, capture_output=True,
         )
-        return RalphConfig(
+        return KstrlConfig(
             max_iterations=3,
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",

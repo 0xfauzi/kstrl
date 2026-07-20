@@ -21,10 +21,10 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.evolution import EvolutionConfig, EvolutionJournal
-from ralph_py.factory import FactoryResult
-from ralph_py.knowledge import Fact, KnowledgeConfig, write_facts
-from ralph_py.manifest import Component, ComponentStatus, Manifest
+from kstrl.evolution import EvolutionConfig, EvolutionJournal
+from kstrl.factory import FactoryResult
+from kstrl.knowledge import Fact, KnowledgeConfig, write_facts
+from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.conftest import (
     RALPH_ENV_PREFIXES,
     REPO_ROOT,

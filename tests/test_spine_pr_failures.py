@@ -25,9 +25,9 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.factory import FactoryResult, run_factory
-from ralph_py.manifest import ComponentStatus, Manifest
-from ralph_py.ui.plain import PlainUI
+from kstrl.factory import FactoryResult, run_factory
+from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
     STUB_PR_NUMBER,
     STUB_PR_URL,

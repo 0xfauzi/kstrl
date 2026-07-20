@@ -25,8 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ralph_py.fixtures import FixturesConfig
-from ralph_py.verify import VerifyConfig, check_test_suite, run_mechanical_verification
+from kstrl.fixtures import FixturesConfig
+from kstrl.verify import VerifyConfig, check_test_suite, run_mechanical_verification
 
 # The toy project's pytest must resolve inside the scrubbed env
 # (run_scrubbed keeps PATH/VIRTUAL_ENV), so invoke it via the harness

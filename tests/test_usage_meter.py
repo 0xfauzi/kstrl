@@ -26,22 +26,22 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ralph_py.agents.base import UsageRecord, UsageTotals, collect_usage
-from ralph_py.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
-from ralph_py.agents.codex import CodexAgent
-from ralph_py.agents.custom import CustomAgent
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl.agents.base import UsageRecord, UsageTotals, collect_usage
+from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
+from kstrl.agents.codex import CodexAgent
+from kstrl.agents.custom import CustomAgent
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     _format_usage_rollup,
     run_factory,
 )
-from ralph_py.loop import COMPLETION_MARKER, run_loop
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.observability import ProgressLog
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.observability import ProgressLog
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 # Verbatim (trimmed to relevant fields) from the measurement probe:
 # `claude --print --output-format stream-json --verbose` on CLI 2.1.214.
@@ -181,7 +181,7 @@ class TestClaudeUsageExtraction:
     def test_malformed_json_records_parse_error_and_warns(
         self, caplog: pytest.LogCaptureFixture,
     ) -> None:
-        with caplog.at_level(logging.WARNING, "ralph_py.agents.claude_code"):
+        with caplog.at_level(logging.WARNING, "kstrl.agents.claude_code"):
             record = _usage_from_result_event("{not json", 5.0)
         assert record.source == "parse-error"
         assert record.total_tokens is None
@@ -190,7 +190,7 @@ class TestClaudeUsageExtraction:
     def test_event_without_usage_dict_warns_not_raises(
         self, caplog: pytest.LogCaptureFixture,
     ) -> None:
-        with caplog.at_level(logging.WARNING, "ralph_py.agents.claude_code"):
+        with caplog.at_level(logging.WARNING, "kstrl.agents.claude_code"):
             record = _usage_from_result_event(
                 json.dumps({"type": "result", "result": "hi"}), 5.0,
             )
@@ -389,14 +389,14 @@ class FakeUsageAgent:
         return list(self._usage_records)
 
 
-def _loop_config(tmp_path: Path, max_iterations: int) -> RalphConfig:
+def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
     ralph_dir = tmp_path / "scripts" / "ralph"
     ralph_dir.mkdir(parents=True, exist_ok=True)
     (ralph_dir / "prompt.md").write_text("test prompt")
     (ralph_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
-    return RalphConfig(
+    return KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=ralph_dir / "prompt.md",
         prd_file=ralph_dir / "prd.json",
@@ -489,8 +489,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
     )
 
 
-def _make_base_config(root_dir: Path) -> RalphConfig:
-    return RalphConfig(
+def _make_base_config(root_dir: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root_dir / "scripts" / "ralph" / "prompt.md",
         prd_file=root_dir / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0,
@@ -585,8 +585,8 @@ class TestFactoryUsageAggregation:
         ui_buffer = io.StringIO()
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True, file=ui_buffer), root,
@@ -624,7 +624,7 @@ class TestFactoryUsageAggregation:
         assert "1,200" in out
 
     def test_review_phase_usage_attributed(self, tmp_path: Path) -> None:
-        from ralph_py.review import ReviewResult
+        from kstrl.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -640,13 +640,13 @@ class TestFactoryUsageAggregation:
         ))
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ), patch(
-            "ralph_py.agents.get_agent", return_value=review_agent,
+            "kstrl.agents.get_agent", return_value=review_agent,
         ), patch(
-            "ralph_py.factory.run_review",
+            "kstrl.factory.run_review",
             return_value=ReviewResult(passed=True, mode="advisory"),
         ):
             result = run_factory(
@@ -663,8 +663,8 @@ class TestFactoryUsageAggregation:
     def test_all_four_phases_attributed(self, tmp_path: Path) -> None:
         """Engineer, review, security, and distill spend each land under
         their own phase key with the correct totals."""
-        from ralph_py.review import ReviewResult
-        from ralph_py.security import SecurityConfig, SecurityResult
+        from kstrl.review import ReviewResult
+        from kstrl.security import SecurityConfig, SecurityResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         # Re-enable knowledge: distillation is one of the four phases.
@@ -693,19 +693,19 @@ class TestFactoryUsageAggregation:
             return agent
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.git.get_diff_content", return_value="",
+            "kstrl.git.get_diff_content", return_value="",
         ), patch(
-            "ralph_py.agents.get_agent", side_effect=make_agent,
+            "kstrl.agents.get_agent", side_effect=make_agent,
         ), patch(
-            "ralph_py.factory.run_review",
+            "kstrl.factory.run_review",
             return_value=ReviewResult(passed=True, mode="advisory"),
         ), patch(
-            "ralph_py.factory.run_security_review",
+            "kstrl.factory.run_security_review",
             return_value=SecurityResult(passed=True, mode="advisory"),
         ), patch(
-            "ralph_py.factory.distill_facts", return_value=(1, "ok"),
+            "kstrl.factory.distill_facts", return_value=(1, "ok"),
         ):
             result = run_factory(
                 manifest, config, _make_base_config(root),
@@ -730,8 +730,8 @@ class TestFactoryUsageAggregation:
         success = ComponentResult("comp-a", success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True), root,
@@ -760,8 +760,8 @@ class TestFactoryUsageAggregation:
         ui_buffer = io.StringIO()
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True, file=ui_buffer), root,
@@ -794,8 +794,8 @@ class TestTokenBudgetHalt:
             )
 
         with patch(
-            "ralph_py.factory._run_component", side_effect=fake_run_component,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True), root,
@@ -847,8 +847,8 @@ class TestTokenBudgetHalt:
         )
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True), root,
@@ -870,8 +870,8 @@ class TestTokenBudgetHalt:
         )
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True), root,

@@ -5,12 +5,12 @@ One `baseline-<UTC-timestamp>.json` per calibration run of
 Compare two files with:
 
 ```bash
-uv run python -m ralph_py.calibration compare <old.json> <new.json>
+uv run python -m kstrl.calibration compare <old.json> <new.json>
 ```
 
 ## Format v2 (R5.1, `"format_version": 2`)
 
-Defined by `ralph_py/calibration.py` (`build_report` / `load_baseline`).
+Defined by `kstrl/calibration.py` (`build_report` / `load_baseline`).
 
 - Header: `model` (calibration model id - R5.5 warns when it drifts from
   the configured model), `timestamp`, `runs_per_fixture`

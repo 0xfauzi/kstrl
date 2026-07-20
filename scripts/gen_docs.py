@@ -9,7 +9,7 @@ The README's two generated sections sit between marker comments:
 Everything outside the markers is hand-written and untouched.
 
 The CLI reference is introspected from the click command tree
-(``ralph_py.cli:cli``), so a command that does not exist cannot be
+(``kstrl.cli:cli``), so a command that does not exist cannot be
 documented and a new command cannot be silently omitted.
 
 The config reference is verified behaviorally, not transcribed: for
@@ -77,10 +77,10 @@ def _usage_suffix(cmd: click.Command, path: str) -> str:
 
 
 def build_cli_reference() -> str:
-    from ralph_py.cli import cli
+    from kstrl.cli import cli
 
     entries: list[tuple[str, str]] = []
-    for path, cmd in _iter_commands(cli, "ralph"):
+    for path, cmd in _iter_commands(cli, "ks"):
         invocation = f"{path}{_usage_suffix(cmd, path)}"
         entries.append((invocation, cmd.get_short_help_str(limit=120)))
 
@@ -90,7 +90,7 @@ def build_cli_reference() -> str:
     return (
         f"{GENERATED_NOTE}\n\n"
         f"```\n{body}\n```\n\n"
-        "Run `ralph COMMAND --help` for the full option list of any command.\n"
+        "Run `ks COMMAND --help` for the full option list of any command.\n"
     )
 
 
@@ -117,25 +117,25 @@ class SectionSpec:
 
 
 def _section_specs() -> list[SectionSpec]:
-    from ralph_py.breaker import BreakerConfig
-    from ralph_py.config import RalphConfig
-    from ralph_py.contract import ContractConfig
-    from ralph_py.evolution import EvolutionConfig
-    from ralph_py.factory import FactoryConfig
-    from ralph_py.feedforward import FeedforwardConfig
-    from ralph_py.fixtures import FixturesConfig
-    from ralph_py.knowledge import KnowledgeConfig
-    from ralph_py.linear import LinearConfig
-    from ralph_py.observability import NotifyConfig
-    from ralph_py.sandbox import SandboxConfig
-    from ralph_py.security import SecurityConfig
-    from ralph_py.timeout import TimeoutConfig
-    from ralph_py.verify import VerifyConfig
+    from kstrl.breaker import BreakerConfig
+    from kstrl.config import KstrlConfig
+    from kstrl.contract import ContractConfig
+    from kstrl.evolution import EvolutionConfig
+    from kstrl.factory import FactoryConfig
+    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.fixtures import FixturesConfig
+    from kstrl.knowledge import KnowledgeConfig
+    from kstrl.linear import LinearConfig
+    from kstrl.observability import NotifyConfig
+    from kstrl.sandbox import SandboxConfig
+    from kstrl.security import SecurityConfig
+    from kstrl.timeout import TimeoutConfig
+    from kstrl.verify import VerifyConfig
 
     def ralph_loader(root: Path) -> Any:
-        return RalphConfig.load(root_dir=root)
+        return KstrlConfig.load(root_dir=root)
 
-    ralph_defaults = RalphConfig()
+    ralph_defaults = KstrlConfig()
 
     def identity_keys(cfg_cls: Any, names: list[str]) -> dict[str, str]:
         field_names = {f.name for f in dataclasses.fields(cfg_cls)}
@@ -147,7 +147,7 @@ def _section_specs() -> list[SectionSpec]:
         return {n: n for n in names}
 
     specs = [
-        # RalphConfig fans out over five sections with renamed keys; the
+        # KstrlConfig fans out over five sections with renamed keys; the
         # key->field mapping is declared here and verified behaviorally.
         SectionSpec(
             "agent", "Agent selection",

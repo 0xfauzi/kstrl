@@ -1,4 +1,4 @@
-"""R5.1/R5.5: unit tests for the calibration tooling in ralph_py.calibration.
+"""R5.1/R5.5: unit tests for the calibration tooling in kstrl.calibration.
 
 No LLM calls anywhere in this file. These tests prove:
 
@@ -20,8 +20,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ralph_py import calibration
-from ralph_py.calibration import Baseline, FixtureStats
+from kstrl import calibration
+from kstrl.calibration import Baseline, FixtureStats
 
 REPO_RESULTS_DIR = (
     Path(__file__).parent / "adversarial_fixtures" / "_results"

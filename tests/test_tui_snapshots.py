@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from ralph_py.tui.app import Mode, RalphTuiApp
+from kstrl.tui.app import KstrlTuiApp, Mode
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 SIZE = (120, 36)
@@ -24,10 +24,10 @@ def fixed_run(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path, run_dir
 
 
-def _app(root: Path, run_dir: Path) -> RalphTuiApp:
+def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
     # Poll interval high enough that no timer fires between the pilot
     # settling and the snapshot capture (determinism).
-    return RalphTuiApp(
+    return KstrlTuiApp(
         run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=60.0,
     )
 
@@ -37,7 +37,7 @@ def test_overview_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The activity feed stamps wall-clock times; freeze for determinism.
-    from ralph_py.tui.widgets import activity
+    from kstrl.tui.widgets import activity
 
     monkeypatch.setattr(activity, "_stamp", lambda ts: "12:00:00")
     root, run_dir = fixed_run

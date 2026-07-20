@@ -29,15 +29,15 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import ralph_py.cli as cli_mod
-import ralph_py.loop as loop_mod
-from ralph_py.config import RalphConfig
-from ralph_py.factory import FactoryConfig, FactoryResult, run_factory
-from ralph_py.init_cmd import DEFAULT_PROMPT
-from ralph_py.loop import LoopResult
-from ralph_py.manifest import Component, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+import kstrl.cli as cli_mod
+import kstrl.loop as loop_mod
+from kstrl.config import KstrlConfig
+from kstrl.factory import FactoryConfig, FactoryResult, run_factory
+from kstrl.init_cmd import DEFAULT_PROMPT
+from kstrl.loop import LoopResult
+from kstrl.manifest import Component, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/ralph/feature/comp-a/prd.json"
@@ -102,7 +102,7 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
     return FactoryConfig(**defaults)
 
 
-def _base_config(root: Path, agent_cmd: str, **overrides: Any) -> RalphConfig:
+def _base_config(root: Path, agent_cmd: str, **overrides: Any) -> KstrlConfig:
     defaults: dict[str, Any] = dict(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
@@ -111,7 +111,7 @@ def _base_config(root: Path, agent_cmd: str, **overrides: Any) -> RalphConfig:
         ui_mode="plain", no_color=True,
     )
     defaults.update(overrides)
-    return RalphConfig(**defaults)
+    return KstrlConfig(**defaults)
 
 
 class TestIterationForwarding:
@@ -145,15 +145,15 @@ class TestIterationForwarding:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """max_iterations, interactive, and allowed_paths all reach the
-        RalphConfig that _run_component hands to run_loop."""
+        KstrlConfig that _run_component hands to run_loop."""
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
 
-        captured: dict[str, RalphConfig] = {}
+        captured: dict[str, KstrlConfig] = {}
 
         def fake_run_loop(
-            config: RalphConfig, ui: Any, agent: Any,
+            config: KstrlConfig, ui: Any, agent: Any,
             cwd: Path | None = None, context_prefix: str | None = None,
             timeouts: Any = None, breaker_config: Any = None,
             **kwargs: Any,
@@ -266,7 +266,7 @@ class TestCliWiring:
 
         def fake_run_factory(
             manifest: Manifest, factory_config: FactoryConfig,
-            base_config: RalphConfig, ui: Any, root_dir: Path,
+            base_config: KstrlConfig, ui: Any, root_dir: Path,
             manifest_path: Path | None = None,
             **kwargs: Any,
         ) -> FactoryResult:

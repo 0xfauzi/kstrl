@@ -26,7 +26,7 @@ What this file protects against:
    both version stores) is out of in-process reach; see H3-NOTE below.
 
 4. **New prompt without enrollment.** ``test_no_unenrolled_prompt_constants``
-   AST-walks ralph_py/ for any module-level ``*_PROMPT`` constant and
+   AST-walks kstrl/ for any module-level ``*_PROMPT`` constant and
    asserts it is enrolled in ``_PROMPTS``. Adding ``NEW_FANCY_PROMPT``
    without wiring up versioning fails the test.
 
@@ -47,14 +47,14 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
-from ralph_py.init_cmd import (
+from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
+from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
-from ralph_py.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
-from ralph_py.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
-from ralph_py.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
+from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
+from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
 
 
 def _sha256(text: str) -> str:
@@ -141,7 +141,7 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
         "  1. Re-run calibration to verify detection rate did not regress:\n"
         "       RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku "
         "uv run pytest tests/test_calibration.py -v\n"
-        f"  2. Bump {name}_VERSION in ralph_py/ to a new semver "
+        f"  2. Bump {name}_VERSION in kstrl/ to a new semver "
         "(MAJOR for breaking taxonomy changes, MINOR for wording, PATCH for typos).\n"
         f"  3. Update _EXPECTED_SNAPSHOTS[{name!r}] in this file to the new "
         "(hash, version) tuple.\n"
@@ -181,7 +181,7 @@ def test_distill_prompt_snapshot_unchanged() -> None:
 def test_default_engineer_prompt_snapshot_unchanged() -> None:
     """H3-engineer: the per-project ``scripts/ralph/prompt.md`` is
     user-editable, but the harness-shipped DEFAULT_PROMPT template at
-    ``ralph_py/init_cmd.py`` is the adversarial-role definition for the
+    ``kstrl/init_cmd.py`` is the adversarial-role definition for the
     engineer phase. Snapshot-protected on the same terms as the other
     role prompts."""
     _check_snapshot("DEFAULT_PROMPT")
@@ -262,7 +262,7 @@ def test_every_prompt_has_a_recorded_snapshot() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Auto-discovery: a new *_PROMPT in ralph_py/ without enrollment is a bug
+# Auto-discovery: a new *_PROMPT in kstrl/ without enrollment is a bug
 # ---------------------------------------------------------------------------
 
 
@@ -283,7 +283,7 @@ def _is_prompt_value(value: ast.expr | None) -> bool:
 def _module_level_prompt_constants(
     package_root: Path | None = None,
 ) -> dict[str, list[str]]:
-    """Walk ``package_root`` (default: the real ralph_py/) and find every
+    """Walk ``package_root`` (default: the real kstrl/) and find every
     assignment of a string literal or f-string to a ``NAME`` ending in
     ``_PROMPT``. Returns ``{module_filename: [const_name, ...]}``.
 
@@ -295,7 +295,7 @@ def _module_level_prompt_constants(
       ``ast.walk``, not just ``tree.body``)
 
     Used by ``test_no_unenrolled_prompt_constants`` to enforce that
-    every prompt-shaped constant in ``ralph_py/`` is enrolled in
+    every prompt-shaped constant in ``kstrl/`` is enrolled in
     ``_PROMPTS``. The walker errs on the side of inclusion -- a const
     that ``ends in _PROMPT`` and has a string-shaped value is treated
     as a prompt regardless of nesting depth or annotation style.
@@ -305,10 +305,10 @@ def _module_level_prompt_constants(
     re-implementing the walk inline (which would guard nothing).
     """
     found: dict[str, list[str]] = {}
-    ralph_py = package_root or (
-        Path(__file__).resolve().parent.parent / "ralph_py"
+    kstrl = package_root or (
+        Path(__file__).resolve().parent.parent / "kstrl"
     )
-    for py_file in sorted(ralph_py.rglob("*.py")):
+    for py_file in sorted(kstrl.rglob("*.py")):
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
         except SyntaxError:
@@ -346,12 +346,12 @@ def _module_level_prompt_constants(
                 if name not in seen:
                     seen.add(name)
                     unique.append(name)
-            found[str(py_file.relative_to(ralph_py.parent))] = unique
+            found[str(py_file.relative_to(kstrl.parent))] = unique
     return found
 
 
 def test_no_unenrolled_prompt_constants() -> None:
-    """If someone adds ``NEW_PROMPT = \"...\"`` to a ralph_py module
+    """If someone adds ``NEW_PROMPT = \"...\"`` to a kstrl module
     without wiring it into ``_PROMPTS`` / ``_VERSIONS`` /
     ``_EXPECTED_SNAPSHOTS``, this test fails so the new prompt cannot
     silently slip past H3 protection."""
@@ -363,7 +363,7 @@ def test_no_unenrolled_prompt_constants() -> None:
             if name not in enrolled:
                 leaked.append(f"{module_file}::{name}")
     assert not leaked, (
-        "Module-level *_PROMPT constants found in ralph_py/ that are NOT "
+        "Module-level *_PROMPT constants found in kstrl/ that are NOT "
         "enrolled in H3 snapshot protection:\n  "
         + "\n  ".join(leaked)
         + "\n\nFor each, either:\n"
@@ -435,7 +435,7 @@ def test_ast_walker_skips_enrollment_exempt_names(tmp_path: Path) -> None:
 
 def test_enrollment_exempt_names_are_not_stale() -> None:
     """Every entry in ``_ENROLLMENT_EXEMPT_NAMES`` must reference a
-    real module-level string assignment somewhere in ralph_py/. If you
+    real module-level string assignment somewhere in kstrl/. If you
     delete an exempt constant (e.g. you remove DEFAULT_CODEBASE_MAP
     from init_cmd.py), the exempt entry would become dead code that
     silently masks a future name collision.
@@ -444,8 +444,8 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
     entry instead of letting it rot.
     """
     discovered_anywhere: set[str] = set()
-    ralph_py = Path(__file__).resolve().parent.parent / "ralph_py"
-    for py_file in sorted(ralph_py.rglob("*.py")):
+    kstrl = Path(__file__).resolve().parent.parent / "kstrl"
+    for py_file in sorted(kstrl.rglob("*.py")):
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
         except SyntaxError:
@@ -468,7 +468,7 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
     ]
     assert not stale, (
         f"_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "
-        f"correspond to a module-level string constant in ralph_py/: "
+        f"correspond to a module-level string constant in kstrl/: "
         f"{stale}. Remove them, otherwise the exemption silently "
         "masks any future name collision."
     )

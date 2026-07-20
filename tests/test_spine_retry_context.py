@@ -23,10 +23,10 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.factory import run_factory
-from ralph_py.manifest import ComponentStatus
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.factory import run_factory
+from kstrl.manifest import ComponentStatus
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 from tests.spine_utils import (
     base_config,
     component,

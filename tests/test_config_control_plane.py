@@ -9,7 +9,7 @@ so the assertion target is the exact config object the orchestrator
 would receive - not a loader called in isolation.
 
 Nine config surfaces map to ralph.toml sections:
-RalphConfig (agent/run/paths/git/ui), TimeoutConfig ([timeout]),
+KstrlConfig (agent/run/paths/git/ui), TimeoutConfig ([timeout]),
 KnowledgeConfig ([knowledge]), FactoryConfig ([factory]), VerifyConfig
 ([verify]), SecurityConfig ([security]), ContractConfig ([contract]),
 FeedforwardConfig ([feedforward]), EvolutionConfig ([evolution]).
@@ -28,15 +28,15 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
-import ralph_py.cli as cli_mod
-import ralph_py.evolution as evolution_mod
-from ralph_py.evolution import EvolutionConfig
-from ralph_py.factory import FactoryConfig, FactoryResult
-from ralph_py.feedforward import FeedforwardConfig
-from ralph_py.init_cmd import DEFAULT_RALPH_TOML
-from ralph_py.knowledge import KnowledgeConfig
-from ralph_py.manifest import Component, Manifest
-from ralph_py.verify import VerifyConfig
+import kstrl.cli as cli_mod
+import kstrl.evolution as evolution_mod
+from kstrl.evolution import EvolutionConfig
+from kstrl.factory import FactoryConfig, FactoryResult
+from kstrl.feedforward import FeedforwardConfig
+from kstrl.init_cmd import DEFAULT_RALPH_TOML
+from kstrl.knowledge import KnowledgeConfig
+from kstrl.manifest import Component, Manifest
+from kstrl.verify import VerifyConfig
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -247,7 +247,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_base_config_sections(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        # RalphConfig covers the [agent]/[run]/[paths]/[git]/[ui] sections.
+        # KstrlConfig covers the [agent]/[run]/[paths]/[git]/[ui] sections.
         (tmp_path / "ralph.toml").write_text(
             "[agent]\nmodel = \"model-from-toml\"\n"
             "[run]\nsleep_seconds = 0.25\n"
@@ -723,7 +723,7 @@ def _uncomment_scaffold(text: str) -> str:
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("# ") and " = " in stripped and not (
-            stripped.startswith("# Ralph") or stripped[2:3].isupper()
+            stripped.startswith(("# Resolved", "# kstrl")) or stripped[2:3].isupper()
         ):
             lines.append(stripped[2:])
         else:
@@ -772,15 +772,15 @@ class TestInitScaffold:
     def test_uncommented_scaffold_loads_through_every_loader(
         self, tmp_path: Path
     ) -> None:
-        from ralph_py.config import RalphConfig
-        from ralph_py.contract import ContractConfig
-        from ralph_py.security import SecurityConfig
-        from ralph_py.timeout import TimeoutConfig
+        from kstrl.config import KstrlConfig
+        from kstrl.contract import ContractConfig
+        from kstrl.security import SecurityConfig
+        from kstrl.timeout import TimeoutConfig
 
         (tmp_path / "ralph.toml").write_text(
             _uncomment_scaffold(DEFAULT_RALPH_TOML)
         )
-        RalphConfig.load(tmp_path)
+        KstrlConfig.load(tmp_path)
         FactoryConfig.load(tmp_path)
         VerifyConfig.load(tmp_path)
         SecurityConfig.load(tmp_path)

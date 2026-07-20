@@ -16,24 +16,24 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from ralph_py.cli import cli
-from ralph_py.config import RalphConfig
-from ralph_py.evolution import EvolutionConfig
-from ralph_py.factory import (
+from kstrl.cli import cli
+from kstrl.config import KstrlConfig
+from kstrl.evolution import EvolutionConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     FactoryResult,
     run_factory,
 )
-from ralph_py.findings import (
+from kstrl.findings import (
     Finding,
     finding_attempt,
     tag_finding_with_attempt,
 )
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.review import ReviewConcern, ReviewResult
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.review import ReviewConcern, ReviewResult
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 # ---------------------------------------------------------------------------
 # Shared builders (pattern follows tests/test_review_gates.py)
@@ -82,8 +82,8 @@ def _make_manifest(ids: list[str]) -> Manifest:
     )
 
 
-def _base_config(root: Path) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts/ralph/prompt.md",
         prd_file=root / "scripts/ralph/prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -300,8 +300,8 @@ class TestRunMetadataPersistence:
         config = _factory_config()
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -326,7 +326,7 @@ class TestRunMetadataPersistence:
             "comp-a", success=False, iterations=1, error="agent died",
         )
         with patch(
-            "ralph_py.factory._run_component", return_value=failure,
+            "kstrl.factory._run_component", return_value=failure,
         ):
             result = run_factory(
                 manifest, config, _base_config(root),
@@ -370,11 +370,11 @@ class TestPerAttemptFindings:
         )
         passing_review = ReviewResult(passed=True, mode="hard")
         with patch(
-            "ralph_py.factory._run_component", return_value=success,
+            "kstrl.factory._run_component", return_value=success,
         ), patch(
-            "ralph_py.factory.run_review",
+            "kstrl.factory.run_review",
             side_effect=[failing_review, passing_review],
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, _base_config(root),
                 PlainUI(no_color=True), root,
@@ -446,7 +446,7 @@ class TestKeepWorktreesOnFailure:
             "comp-a", success=False, iterations=1, error="agent died",
         )
         with patch(
-            "ralph_py.factory._run_component", return_value=failure,
+            "kstrl.factory._run_component", return_value=failure,
         ):
             result = run_factory(
                 manifest, config, _base_config(root),
@@ -511,7 +511,7 @@ class TestKeepWorktreesOnFailure:
         # not prune the recorded evidence worktree.
         config = _factory_config(use_worktrees=True)
         with patch(
-            "ralph_py.factory._run_component",
+            "kstrl.factory._run_component",
             side_effect=AssertionError("nothing should be scheduled"),
         ):
             run_factory(
@@ -567,7 +567,7 @@ class TestRetryCli:
         def fake_run_factory(
             manifest: Manifest,
             factory_config: FactoryConfig,
-            base_config: RalphConfig,
+            base_config: KstrlConfig,
             ui_impl: object,
             root_dir: Path,
             manifest_path: Path | None = None,
@@ -578,9 +578,9 @@ class TestRetryCli:
             captured["config"] = factory_config
             return FactoryResult(exit_code=0)
 
-        monkeypatch.setattr("ralph_py.cli.run_factory", fake_run_factory)
+        monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
         monkeypatch.setattr(
-            "ralph_py.cli._check_agent_preflight", lambda *a, **k: None,
+            "kstrl.cli._check_agent_preflight", lambda *a, **k: None,
         )
         runner = CliRunner()
         result = runner.invoke(cli, [
@@ -630,7 +630,7 @@ class TestRetryCli:
         manifest.save(manifest_file)
 
         monkeypatch.setattr(
-            "ralph_py.cli._check_agent_preflight", lambda *a, **k: None,
+            "kstrl.cli._check_agent_preflight", lambda *a, **k: None,
         )
         runner = CliRunner()
         result = runner.invoke(cli, [

@@ -33,9 +33,9 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.factory import run_factory
-from ralph_py.manifest import ComponentStatus, Manifest
-from ralph_py.ui.plain import PlainUI
+from kstrl.factory import run_factory
+from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import (
     COMPLETE_LINE,
     base_config,
@@ -56,11 +56,11 @@ BRANCH = f"ralph/factory/{COMP}"
 _DRIVER_SCRIPT = """
 import sys
 from pathlib import Path
-from ralph_py.config import RalphConfig
-from ralph_py.factory import FactoryConfig, run_factory
-from ralph_py.manifest import Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.config import KstrlConfig
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.manifest import Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 root = Path(sys.argv[1])
 manifest_path = Path(sys.argv[2])
@@ -75,7 +75,7 @@ result = run_factory(
             check_bad_patterns=False, subprocess_timeout=300.0,
         ),
     ),
-    RalphConfig(
+    KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd=sys.argv[4],

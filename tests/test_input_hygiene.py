@@ -17,23 +17,23 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py import pr as pr_module
-from ralph_py.decompose import _validate_decompose_output, decompose_spec
-from ralph_py.git import (
+from kstrl import pr as pr_module
+from kstrl.decompose import _validate_decompose_output, decompose_spec
+from kstrl.git import (
     checkout_existing,
     create_branch_from,
     delete_branch,
     get_diff_names,
     merge_branch,
 )
-from ralph_py.manifest import (
+from kstrl.manifest import (
     Component,
     Manifest,
     validate_branch_name,
     validate_component_id,
 )
-from ralph_py.pr import push_branch
-from ralph_py.ui.plain import PlainUI
+from kstrl.pr import push_branch
+from kstrl.ui.plain import PlainUI
 
 # Unicode dash confusables: non-breaking hyphen, minus sign, en dash.
 NB_HYPHEN = "‑"

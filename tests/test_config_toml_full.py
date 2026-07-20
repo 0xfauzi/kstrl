@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.contract import ContractConfig, ContractMode
-from ralph_py.evolution import EvolutionConfig
-from ralph_py.factory import FactoryConfig
-from ralph_py.feedforward import FeedforwardConfig
-from ralph_py.security import SecurityConfig, SecurityMode
-from ralph_py.verify import VerifyConfig
+from kstrl.contract import ContractConfig, ContractMode
+from kstrl.evolution import EvolutionConfig
+from kstrl.factory import FactoryConfig
+from kstrl.feedforward import FeedforwardConfig
+from kstrl.security import SecurityConfig, SecurityMode
+from kstrl.verify import VerifyConfig
 
 
 def _write(path: Path, content: str) -> None:

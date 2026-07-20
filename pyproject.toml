@@ -1,6 +1,6 @@
 [project]
-name = "ralph-cli"
-version = "0.1.0"
+name = "kstrl"
+version = "0.2.0"
 description = "Lightweight agentic loop harness for autonomous AI-driven development."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,7 +24,9 @@ sdk = [
 ]
 
 [project.scripts]
-ralph = "ralph_py.cli:main"
+ks = "kstrl.cli:main"
+kstrl = "kstrl.cli:main"
+ralph = "kstrl.cli:deprecated_ralph_main"
 
 [dependency-groups]
 dev = [
@@ -44,7 +46,7 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ralph_py"]
+packages = ["kstrl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -59,7 +61,7 @@ markers = [
 # enforces lives in .github/coverage-baseline.txt - a MEASURED number,
 # updated only upward (or deliberately, with justification in the PR).
 [tool.coverage.run]
-source = ["ralph_py"]
+source = ["kstrl"]
 relative_files = true
 
 [tool.coverage.report]
@@ -79,14 +81,14 @@ ignore = []
 # against silent prompt drift) and would force a version bump for
 # what is purely cosmetic. The prompt IS the artifact -- keep its
 # bytes stable.
-"ralph_py/decompose.py" = ["E501"]
-"ralph_py/review.py" = ["E501"]
-"ralph_py/security.py" = ["E501"]
-"ralph_py/knowledge.py" = ["E501"]
+"kstrl/decompose.py" = ["E501"]
+"kstrl/review.py" = ["E501"]
+"kstrl/security.py" = ["E501"]
+"kstrl/knowledge.py" = ["E501"]
 # init_cmd.py is full of triple-quoted CLAUDE.md / prompt template
 # strings used to scaffold user projects. Reflowing markdown inside
 # those strings changes the output users see; keep bytes stable.
-"ralph_py/init_cmd.py" = ["E501"]
+"kstrl/init_cmd.py" = ["E501"]
 # Test files contain long literal expected strings (verification
 # output, JSON payloads). Reflowing would obscure the test intent.
 "tests/test_verify.py" = ["E501"]
@@ -99,9 +101,9 @@ python_version = "3.11"
 strict = true
 # `files` is consulted by `uv run mypy` (no args) and by the Ralph
 # factory's new smart-default typecheck command (verify._default_typecheck_command).
-# Listing ralph_py here keeps CLAUDE.md's stated typecheck contract
-# (`uv run mypy ralph_py/ --strict`) and `uv run mypy` invoked from the
+# Listing kstrl here keeps CLAUDE.md's stated typecheck contract
+# (`uv run mypy kstrl/ --strict`) and `uv run mypy` invoked from the
 # factory's verify phase in lockstep -- no command-line override needed.
 # Legacy src/ralph (single-component loop + Textual TUI) was deleted in
-# the legacy-purge cleanup; ralph_py is now the only Python package.
-files = ["ralph_py"]
+# the legacy-purge cleanup; kstrl is now the only Python package.
+files = ["kstrl"]

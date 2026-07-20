@@ -7,18 +7,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ralph_py.findings import (
+from kstrl.findings import (
     Finding,
     render_findings_markdown,
 )
-from ralph_py.manifest import Component, Manifest
-from ralph_py.review import (
+from kstrl.manifest import Component, Manifest
+from kstrl.review import (
     CriterionReview,
     ReviewConcern,
     ReviewResult,
     ReviewVerdict,
 )
-from ralph_py.security import SecurityFinding, SecurityMode, SecurityResult
+from kstrl.security import SecurityFinding, SecurityMode, SecurityResult
 
 
 def _make_component(comp_id: str = "comp-1") -> Component:

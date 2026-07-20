@@ -9,7 +9,7 @@ Acceptance scenario is docs/phase-f-e2e-validation-v12.log:
   logged run fell back to the harness DEFAULT_PROMPT, log line 38).
 - A diff-scope failure's retry prompt must name the base branch and the
   full allowed-paths list. In the logged run the retry agent guessed
-  ``main`` as base, ran ``git checkout main -- ralph_py/...`` reverting
+  ``main`` as base, ran ``git checkout main -- kstrl/...`` reverting
   base-branch content, and failed again.
 
 These tests use real git repos and a real fake-agent subprocess
@@ -24,11 +24,11 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import FactoryConfig, run_factory
-from ralph_py.manifest import Component, Manifest
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.config import KstrlConfig
+from kstrl.factory import FactoryConfig, run_factory
+from kstrl.manifest import Component, Manifest
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 CUSTOM_PROMPT = (
     "CUSTOMIZED-PROMPT-MARKER-7f3a\n"
@@ -102,8 +102,8 @@ def _factory_config(max_retries: int = 0) -> FactoryConfig:
     )
 
 
-def _base_config(root: Path, agent_cmd: str) -> RalphConfig:
-    return RalphConfig(
+def _base_config(root: Path, agent_cmd: str) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "ralph" / "prompt.md",
         prd_file=root / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd=agent_cmd,

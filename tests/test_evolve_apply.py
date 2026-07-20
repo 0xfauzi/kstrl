@@ -13,8 +13,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from ralph_py.cli import _append_to_agent_learnings, cli
-from ralph_py.evolution import (
+from kstrl.cli import _append_to_agent_learnings, cli
+from kstrl.evolution import (
     EvolutionConfig,
     EvolutionJournal,
     FailurePattern,

@@ -20,19 +20,19 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from ralph_py import events as ev
-from ralph_py import reducer
-from ralph_py.agents.base import UsageRecord, UsageTotals
-from ralph_py.config import RalphConfig
-from ralph_py.factory import ComponentResult, FactoryConfig, run_factory
-from ralph_py.manifest import Component, Manifest
-from ralph_py.observability import (
+from kstrl import events as ev
+from kstrl import reducer
+from kstrl.agents.base import UsageRecord, UsageTotals
+from kstrl.config import KstrlConfig
+from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.manifest import Component, Manifest
+from kstrl.observability import (
     latest_run_id,
     read_progress_events,
     summarize_events,
 )
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import VerifyConfig
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
@@ -72,8 +72,8 @@ def _make_manifest(components: list[Component]) -> Manifest:
     )
 
 
-def _make_base_config(root_dir: Path) -> RalphConfig:
-    return RalphConfig(
+def _make_base_config(root_dir: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root_dir / "scripts" / "ralph" / "prompt.md",
         prd_file=root_dir / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
@@ -122,8 +122,8 @@ def _run_stub_factory(root: Path, comp_ids: list[str],
         )
 
     with patch(
-        "ralph_py.factory._run_component", side_effect=fake_component,
-    ), patch("ralph_py.git.get_diff_content", return_value=""):
+        "kstrl.factory._run_component", side_effect=fake_component,
+    ), patch("kstrl.git.get_diff_content", return_value=""):
         run_factory(
             manifest, config, _make_base_config(root),
             PlainUI(no_color=True, file=io.StringIO()), root,
@@ -219,8 +219,8 @@ class TestDualWrite:
             "comp-a", success=True, iterations=1, usage=_usage(10),
         )
         with patch(
-            "ralph_py.factory._run_component", return_value=result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(
                 manifest, config, _make_base_config(root),
                 PlainUI(no_color=True, file=io.StringIO()), root,
@@ -326,9 +326,9 @@ class TestSemanticEvents:
             "comp-a", success=True, iterations=1, usage=_usage(10),
         )
         with patch(
-            "ralph_py.factory._run_component", return_value=result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""), patch(
-            "ralph_py.pr.is_gh_available", return_value=False,
+            "kstrl.factory._run_component", return_value=result,
+        ), patch("kstrl.git.get_diff_content", return_value=""), patch(
+            "kstrl.pr.is_gh_available", return_value=False,
         ):
             run_factory(
                 manifest, config, _make_base_config(root),
@@ -348,7 +348,7 @@ class TestPhaseTranscripts:
     def test_review_transcript_written(self, tmp_path: Path) -> None:
         """The pipeline threads a transcript writer into the review
         hook; lines the reviewer streams land in review.log."""
-        from ralph_py.review import ReviewResult
+        from kstrl.review import ReviewResult
 
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -365,9 +365,9 @@ class TestPhaseTranscripts:
             return ReviewResult(passed=True, mode="advisory")
 
         with patch(
-            "ralph_py.factory._run_component", return_value=result,
-        ), patch("ralph_py.git.get_diff_content", return_value="+x\n"), patch(
-            "ralph_py.factory.run_review", side_effect=fake_review,
+            "kstrl.factory._run_component", return_value=result,
+        ), patch("kstrl.git.get_diff_content", return_value="+x\n"), patch(
+            "kstrl.factory.run_review", side_effect=fake_review,
         ):
             run_factory(
                 manifest, config, _make_base_config(root),
@@ -381,9 +381,9 @@ class TestPhaseTranscripts:
 
     def test_run_review_streams_lines(self, tmp_path: Path) -> None:
         """review.run_review forwards each streamed agent line to on_line."""
-        from ralph_py.review import ReviewMode, run_review
-        from ralph_py.ui.plain import PlainUI as _PlainUI
-        from ralph_py.verify import VerificationResult
+        from kstrl.review import ReviewMode, run_review
+        from kstrl.ui.plain import PlainUI as _PlainUI
+        from kstrl.verify import VerificationResult
 
         class _Agent:
             @property
@@ -415,7 +415,7 @@ class TestPhaseTranscripts:
 class TestWorkerChannel:
     def _worker_args(self, root: Path, events_dir: Path | None,
                      agent_cmd: str) -> dict[str, Any]:
-        from ralph_py.factory import _run_component  # noqa: F401 - existence
+        from kstrl.factory import _run_component  # noqa: F401 - existence
         _setup_project(root, ["comp-a"])
         return dict(
             component_id="comp-a",
@@ -435,7 +435,7 @@ class TestWorkerChannel:
     def test_worker_writes_events_and_transcript(
         self, tmp_path: Path, capfd: Any,
     ) -> None:
-        from ralph_py.factory import _run_component
+        from kstrl.factory import _run_component
 
         events_dir = tmp_path / ".ralph" / "runs" / "run-w"
         result = _run_component(**self._worker_args(
@@ -464,7 +464,7 @@ class TestWorkerChannel:
     def test_worker_without_events_dir_keeps_legacy_stderr(
         self, tmp_path: Path, capfd: Any,
     ) -> None:
-        from ralph_py.factory import _run_component
+        from kstrl.factory import _run_component
 
         _run_component(**self._worker_args(
             tmp_path, None, "echo legacy-line",
@@ -473,11 +473,11 @@ class TestWorkerChannel:
         assert "legacy-line" in err  # PlainUI on stderr, as before
 
     def test_setup_failure_does_not_start_heartbeat(self, tmp_path: Path) -> None:
-        from ralph_py.factory import _run_component
+        from kstrl.factory import _run_component
 
         with patch(
-            "ralph_py.agents.get_agent", side_effect=RuntimeError("no agent"),
-        ), patch("ralph_py.factory._start_heartbeat") as start_heartbeat:
+            "kstrl.agents.get_agent", side_effect=RuntimeError("no agent"),
+        ), patch("kstrl.factory._start_heartbeat") as start_heartbeat:
             try:
                 _run_component(**self._worker_args(
                     tmp_path, tmp_path / ".ralph" / "runs" / "run-w", "bad",
@@ -489,7 +489,7 @@ class TestWorkerChannel:
         start_heartbeat.assert_not_called()
 
     def test_agent_crash_closes_iteration_event(self, tmp_path: Path) -> None:
-        from ralph_py.factory import _run_component
+        from kstrl.factory import _run_component
 
         class CrashingAgent:
             usage_records: list[Any] = []
@@ -506,7 +506,7 @@ class TestWorkerChannel:
                 return None
 
         events_dir = tmp_path / ".ralph" / "runs" / "run-w"
-        with patch("ralph_py.agents.get_agent", return_value=CrashingAgent()):
+        with patch("kstrl.agents.get_agent", return_value=CrashingAgent()):
             result = _run_component(**self._worker_args(
                 tmp_path, events_dir, "crash",
             ))
@@ -523,7 +523,7 @@ class TestWorkerChannel:
     def test_heartbeat_thread_emits(self) -> None:
         import time as _time
 
-        from ralph_py.factory import _start_heartbeat
+        from kstrl.factory import _start_heartbeat
 
         captured: list[ev.Event] = []
         bus = ev.EventBus(
@@ -556,7 +556,7 @@ class TestWorkerChannel:
         marker = "<promise>COMPLETE</promise>"
         base = _make_base_config(root)
         base.agent_cmd = f"echo '{marker}'"
-        with patch("ralph_py.git.get_diff_content", return_value=""):
+        with patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
                 manifest, config, base,
                 PlainUI(no_color=True, file=ui_buffer), root,

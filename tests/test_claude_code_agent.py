@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ralph_py.agents.claude_code import ClaudeCodeAgent
+from kstrl.agents.claude_code import ClaudeCodeAgent
 
 
 class TestClaudeCodeAgent:

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from ralph_py.factory import _run_component, _setup_worktree
+from kstrl.factory import _run_component, _setup_worktree
 from tests.spine_utils import git, init_ralph_repo
 
 pytestmark = pytest.mark.spine

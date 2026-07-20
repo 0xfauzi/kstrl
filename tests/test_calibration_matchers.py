@@ -20,15 +20,15 @@ that de-brittles the architect's ``must_include_kind`` matching.
 
 from __future__ import annotations
 
-from ralph_py import calibration
-from ralph_py.decompose import SpecIssue
-from ralph_py.review import (
+from kstrl import calibration
+from kstrl.decompose import SpecIssue
+from kstrl.review import (
     CriterionReview,
     ReviewConcern,
     ReviewResult,
     ReviewVerdict,
 )
-from ralph_py.security import SecurityFinding, SecurityMode, SecurityResult
+from kstrl.security import SecurityFinding, SecurityMode, SecurityResult
 from tests.test_calibration import (
     architect_caught,
     build_fp_summary,
@@ -506,7 +506,7 @@ class TestKindSynonyms:
         """Guard against a synonym group drifting away from the
         DECOMPOSE taxonomy: every member must be a valid spec-issue
         kind that ``_parse_spec_issues`` would accept."""
-        from ralph_py.decompose import _VALID_KINDS
+        from kstrl.decompose import _VALID_KINDS
 
         for group in calibration.KIND_SYNONYM_GROUPS:
             assert group <= _VALID_KINDS, (

@@ -6,16 +6,16 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ralph_py.config import RalphConfig
-from ralph_py.factory import (
+from kstrl.config import KstrlConfig
+from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     run_factory,
 )
-from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.review import ReviewMode, ReviewResult
-from ralph_py.ui.plain import PlainUI
-from ralph_py.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.review import ReviewMode, ReviewResult
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 
 
 def _make_manifest(
@@ -32,11 +32,11 @@ def _make_manifest(
     )
 
 
-def _make_base_config(root_dir: Path) -> RalphConfig:
+def _make_base_config(root_dir: Path) -> KstrlConfig:
     """Build a base config for factory tests."""
     prompt = root_dir / "scripts" / "ralph" / "prompt.md"
     prd = root_dir / "scripts" / "ralph" / "prd.json"
-    return RalphConfig(
+    return KstrlConfig(
         prompt_file=prompt,
         prd_file=prd,
         sleep_seconds=0,
@@ -166,8 +166,8 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("comp-a", success=True, iterations=3)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "comp-a" in result.completed
@@ -188,7 +188,7 @@ class TestRunFactoryExecution:
 
         fail_result = ComponentResult("a", success=False, error="test failure")
 
-        with patch("ralph_py.factory._run_component", return_value=fail_result):
+        with patch("kstrl.factory._run_component", return_value=fail_result):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.failed
@@ -231,8 +231,8 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("a", success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -273,8 +273,8 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("a", success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -314,8 +314,8 @@ class TestRunFactoryExecution:
         manifest_path = root / "scripts" / "ralph" / "manifest.json"
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             run_factory(manifest, config, base, ui, root)
 
         assert manifest_path.exists()
@@ -359,8 +359,8 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("a", success=True, iterations=1)
 
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ) as mock_run, patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ) as mock_run, patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         # Should fail because tests fail, and retries are exhausted
@@ -414,8 +414,8 @@ class TestEvolutionRecording:
 
         success_result = ComponentResult("a", success=True, iterations=1)
         with patch(
-            "ralph_py.factory._run_component", return_value=success_result,
-        ), patch("ralph_py.git.get_diff_content", return_value=""):
+            "kstrl.factory._run_component", return_value=success_result,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.failed

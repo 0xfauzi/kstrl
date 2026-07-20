@@ -7,7 +7,7 @@ import os
 import time
 from pathlib import Path
 
-from ralph_py.tui.runs import (
+from kstrl.tui.runs import (
     discover_runs,
     factory_lock_held,
     find_run,

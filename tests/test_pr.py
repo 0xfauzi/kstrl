@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from ralph_py.manifest import Component, Manifest
-from ralph_py.pr import _generate_pr_body, is_gh_available
+from kstrl.manifest import Component, Manifest
+from kstrl.pr import _generate_pr_body, is_gh_available
 
 
 def _test_manifest() -> Manifest:

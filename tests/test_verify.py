@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from ralph_py.verify import (
+from kstrl.verify import (
     CheckResult,
     VerificationResult,
     VerifyConfig,
@@ -106,7 +106,7 @@ class TestDefaultTypecheckCommand:
     weren't in the agent's diff."""
 
     def _default(self, cwd: Path) -> str:
-        from ralph_py.verify import _default_typecheck_command
+        from kstrl.verify import _default_typecheck_command
         return _default_typecheck_command(cwd)
 
     def test_no_pyproject_falls_back_to_dot(self, tmp_path: Path) -> None:
@@ -164,13 +164,13 @@ class TestCheckDiffScope:
         assert result.passed is True
 
     def test_all_in_scope(self, tmp_path: Path) -> None:
-        with patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py"]):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]):
             result = check_diff_scope(tmp_path, "main", allowed_paths=["src/"])
         assert result.passed is True
 
     def test_out_of_scope(self, tmp_path: Path) -> None:
         with patch(
-            "ralph_py.verify.git.get_diff_names",
+            "kstrl.verify.git.get_diff_names",
             return_value=["src/main.py", "config/secret.py"],
         ):
             result = check_diff_scope(tmp_path, "main", allowed_paths=["src/"])
@@ -187,7 +187,7 @@ class TestCheckDiffScope:
         recorded e2e run guessed `main`, checked out base-branch content,
         and failed again)."""
         with patch(
-            "ralph_py.verify.git.get_diff_names",
+            "kstrl.verify.git.get_diff_names",
             return_value=["evil.py"],
         ):
             result = check_diff_scope(
@@ -207,13 +207,13 @@ class TestCheckDiffScope:
         (which slices details[:10]) and IterationContext.format_for_prompt.
         The base branch, EVERY allowed path, EVERY shown violation, and the
         truncation marker must survive that pipeline verbatim."""
-        from ralph_py.context import IterationContext
-        from ralph_py.verify import VerificationResult
+        from kstrl.context import IterationContext
+        from kstrl.verify import VerificationResult
 
         allowed = [f"pkg{i}/" for i in range(12)]
         violations = [f"rogue{i}.py" for i in range(20)]
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=violations,
+            "kstrl.verify.git.get_diff_names", return_value=violations,
         ):
             result = check_diff_scope(tmp_path, "main", allowed_paths=allowed)
 
@@ -235,7 +235,7 @@ class TestCheckBadPatterns:
         py_file = tmp_path / "clean.py"
         py_file.write_text("x = 1\n")
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=["clean.py"]
+            "kstrl.verify.git.get_diff_names", return_value=["clean.py"]
         ):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is True
@@ -244,7 +244,7 @@ class TestCheckBadPatterns:
         py_file = tmp_path / "empty.py"
         py_file.write_text("")
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=["empty.py"]
+            "kstrl.verify.git.get_diff_names", return_value=["empty.py"]
         ):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
@@ -254,7 +254,7 @@ class TestCheckBadPatterns:
         py_file = tmp_path / "bad.py"
         py_file.write_text("def f(\n")
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=["bad.py"]
+            "kstrl.verify.git.get_diff_names", return_value=["bad.py"]
         ):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
@@ -264,7 +264,7 @@ class TestCheckBadPatterns:
         py_file = tmp_path / "leak.py"
         py_file.write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=["leak.py"]
+            "kstrl.verify.git.get_diff_names", return_value=["leak.py"]
         ):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
@@ -274,7 +274,7 @@ class TestCheckBadPatterns:
         txt_file = tmp_path / "data.txt"
         txt_file.write_text("")
         with patch(
-            "ralph_py.verify.git.get_diff_names", return_value=["data.txt"]
+            "kstrl.verify.git.get_diff_names", return_value=["data.txt"]
         ):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is True
@@ -627,7 +627,7 @@ class TestCheckMutationScore:
     def test_skips_when_no_py_files_changed(self, tmp_path: Path) -> None:
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("ralph_py.verify.git.get_diff_names", return_value=["readme.md"]),
+            patch("kstrl.verify.git.get_diff_names", return_value=["readme.md"]),
         ):
             result = check_mutation_score(tmp_path, "main")
         assert result.passed is True
@@ -637,7 +637,7 @@ class TestCheckMutationScore:
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
             patch(
-                "ralph_py.verify.git.get_diff_names",
+                "kstrl.verify.git.get_diff_names",
                 return_value=["test_main.py", "tests/test_foo.py"],
             ),
         ):
@@ -649,11 +649,11 @@ class TestCheckMutationScore:
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
             patch(
-                "ralph_py.verify.git.get_diff_names",
+                "kstrl.verify.git.get_diff_names",
                 return_value=["src/main.py"],
             ),
             patch(
-                "ralph_py.verify.run_scrubbed",
+                "kstrl.verify.run_scrubbed",
                 side_effect=sp.TimeoutExpired("mutmut", 600),
             ),
         ):
@@ -694,8 +694,8 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
-            patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
         ):
             result = check_dead_code(tmp_path, "main")
 
@@ -725,8 +725,8 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
-            patch("ralph_py.verify.git.get_diff_names", return_value=["src/main.py", "src/utils.py"]),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py", "src/utils.py"]),
         ):
             result = check_dead_code(tmp_path, "main")
 
@@ -747,7 +747,7 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", return_value="/usr/bin/ruff"),
-            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
         ):
             result = check_dead_code(tmp_path, "main", command="my-custom-checker src/")
 
@@ -767,8 +767,8 @@ class TestCheckDeadCode:
 
         with (
             patch("shutil.which", side_effect=mock_which),
-            patch("ralph_py.verify.run_scrubbed", side_effect=mock_run),
-            patch("ralph_py.verify.git.get_diff_names", return_value=["README.md", "docs/spec.md"]),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.git.get_diff_names", return_value=["README.md", "docs/spec.md"]),
         ):
             result = check_dead_code(tmp_path, "main")
 
@@ -780,13 +780,13 @@ class TestCheckDeadCode:
 
         # Mock everything to pass
         with (
-            patch("ralph_py.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
-            patch("ralph_py.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
-            patch("ralph_py.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
-            patch("ralph_py.verify.check_linter", return_value=CheckResult("linter", True)),
-            patch("ralph_py.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
-            patch("ralph_py.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
-            patch("ralph_py.verify.check_dead_code", return_value=CheckResult("dead_code", True)) as mock_dc,
+            patch("kstrl.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
+            patch("kstrl.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
+            patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
+            patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
+            patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
+            patch("kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
+            patch("kstrl.verify.check_dead_code", return_value=CheckResult("dead_code", True)) as mock_dc,
         ):
             result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
 
@@ -798,12 +798,12 @@ class TestCheckDeadCode:
         config = VerifyConfig(dead_code_cleanup=False)
 
         with (
-            patch("ralph_py.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
-            patch("ralph_py.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
-            patch("ralph_py.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
-            patch("ralph_py.verify.check_linter", return_value=CheckResult("linter", True)),
-            patch("ralph_py.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
-            patch("ralph_py.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
+            patch("kstrl.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
+            patch("kstrl.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
+            patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
+            patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
+            patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
+            patch("kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
         ):
             result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
 
