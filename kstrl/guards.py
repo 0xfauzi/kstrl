@@ -38,6 +38,12 @@ def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
     return False
 
 
+# The harness's own state dir (run event streams, transcripts, logs)
+# is bookkeeping, never a project change: without this every recording
+# command trips its own guard in repos that do not gitignore .kstrl/.
+_STATE_DIR_PREFIXES = (".kstrl/", ".ralph/")
+
+
 def check_violations(changed_files: set[str], allowed_paths: list[str]) -> list[str]:
     """Check for files that violate ALLOWED_PATHS.
 
@@ -48,6 +54,8 @@ def check_violations(changed_files: set[str], allowed_paths: list[str]) -> list[
 
     violations = []
     for file in sorted(changed_files):
+        if file.startswith(_STATE_DIR_PREFIXES):
+            continue
         if not path_is_allowed(file, allowed_paths):
             violations.append(file)
     return violations

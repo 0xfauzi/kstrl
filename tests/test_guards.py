@@ -72,3 +72,28 @@ class TestCheckViolations:
         allowed = ["other/"]
         violations = check_violations(changed, allowed)
         assert violations == ["a.txt", "m.txt", "z.txt"]
+
+
+class TestStateDirExemption:
+    """TUI surface D7: the harness's own state dir is bookkeeping,
+    never a project change - a recording command must not trip its
+    own guard in repos that do not gitignore .kstrl/."""
+
+    def test_state_dir_changes_are_never_violations(self) -> None:
+        violations = check_violations(
+            {
+                ".kstrl/runs/understand-x/events.jsonl",
+                ".kstrl/runs/understand-x/components/understand/engineer.log",
+                ".ralph/progress.jsonl",
+                "src/app.py",
+            },
+            ["scripts/kstrl/codebase_map.md"],
+        )
+        assert violations == ["src/app.py"]
+
+    def test_lookalike_paths_still_flagged(self) -> None:
+        violations = check_violations(
+            {".kstrl-backup/x", "sub/.kstrl/y"},
+            ["scripts/"],
+        )
+        assert violations == [".kstrl-backup/x", "sub/.kstrl/y"]
