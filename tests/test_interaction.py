@@ -49,12 +49,28 @@ class TestUiInteractionChannel:
 
             def choose(self, header: str, options: list[str],
                        default: int = 0) -> int:
-                return 2
+                return 1
 
         channel = UiInteractionChannel(FakeUI(no_color=True, file=io.StringIO()))
         response = channel.request(_req())
         assert response.answered is True
-        assert response.choice == 2
+        assert response.choice == 1
+
+    def test_invalid_ui_choice_degrades_to_default(self) -> None:
+        class InvalidUI(PlainUI):
+            def can_prompt(self) -> bool:
+                return True
+
+            def choose(self, header: str, options: list[str],
+                       default: int = 0) -> int:
+                return len(options)
+
+        channel = UiInteractionChannel(
+            InvalidUI(no_color=True, file=io.StringIO()),
+        )
+        response = channel.request(_req(default=1))
+        assert response.answered is False
+        assert response.choice == 1
 
 
 class TestQueueInteractionChannel:
@@ -101,6 +117,24 @@ class TestQueueInteractionChannel:
     def test_unknown_request_id_rejected(self) -> None:
         channel = QueueInteractionChannel()
         assert channel.resolve("nope", 0) is False
+
+    def test_out_of_range_choice_rejected_without_releasing_waiter(self) -> None:
+        channel = QueueInteractionChannel()
+        seen: list[PromptRequest] = []
+        channel.attach(seen.append)
+        results: list[PromptResponse] = []
+        thread = threading.Thread(
+            target=lambda: results.append(channel.request(_req())),
+        )
+        thread.start()
+        while not seen:
+            time.sleep(0.005)
+        assert channel.resolve(seen[0].request_id, 2) is False
+        assert thread.is_alive()
+        assert channel.resolve(seen[0].request_id, 1) is True
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert results[0].choice == 1
 
     def test_cancel_all_releases_waiters_with_defaults(self) -> None:
         channel = QueueInteractionChannel()
