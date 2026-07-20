@@ -1392,6 +1392,13 @@ def feature(
     is_flag=True,
     help="Disable colors",
 )
+@click.option(
+    "--tui/--no-tui",
+    "tui",
+    default=None,
+    help="Embedded dashboard (default: auto - on when stdin/stdout are "
+         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+)
 def decompose(
     spec: Path,
     root: Path | None,
@@ -1404,6 +1411,7 @@ def decompose(
     agent_type: str,
     ui: str,
     no_color: bool,
+    tui: bool | None,
 ) -> None:
     """Decompose a spec into components and generate PRDs."""
     ctx = click.get_current_context()
@@ -1439,27 +1447,78 @@ def decompose(
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
+    def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
+        try:
+            manifest = decompose_spec(
+                spec_path=spec,
+                project_name=project_name,
+                base_branch=base_branch,
+                single_pr=single_pr,
+                agent=agent,
+                ui=core_ui,
+                root_dir=root_dir,
+                bus=command_run.bus,
+                transcript=command_run.transcript_writer("architect"),
+            )
+            core_ui.ok(f"Decomposed into {len(manifest.components)} components")
+            return 0
+        except SpecBlockerError as exc:
+            core_ui.err(str(exc))
+            # R1.7: point at the durable artifact so the user iterates
+            # against a file, not scrollback.
+            if exc.artifact_path is not None:
+                core_ui.info(f"Spec issues written to: {exc.artifact_path}")
+            return 2
+        except ValueError as exc:
+            core_ui.err(str(exc))
+            return 1
+
+    use_tui = tui if tui is not None else (
+        sys.stdout.isatty()
+        and sys.stdin.isatty()
+        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and _normalize_ui_mode(ui) != "plain"
+    )
+    if use_tui:
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            click.echo(
+                "--tui requires an interactive terminal; use --no-tui "
+                "for non-interactive execution.",
+                err=True,
+            )
+            sys.exit(2)
+        from kstrl.runid import mint_run_id
+        from kstrl.tui.embed import EmbeddedContext, run_embedded
+        from kstrl.tui.screens.component import ComponentScreen
+        from kstrl.tui.screens.overview import OverviewScreen
+
+        def _target(embed_ctx: EmbeddedContext) -> int:
+            command_run = open_command_run(
+                embed_ctx.ui, root_dir, "decompose",
+                component="architect", run_id=embed_ctx.run_id,
+            )
+            try:
+                return _decompose_core(embed_ctx.ui, command_run)
+            finally:
+                command_run.close()
+
+        sys.exit(run_embedded(
+            _target, root_dir=root_dir,
+            run_id=mint_run_id("decompose"),
+            screen_factory=lambda: [
+                OverviewScreen(observe_only=False),
+                ComponentScreen("architect"),
+            ],
+        ))
+
+    command_run = open_command_run(
+        ui_impl, root_dir, "decompose", component="architect",
+    )
     try:
-        manifest = decompose_spec(
-            spec_path=spec,
-            project_name=project_name,
-            base_branch=base_branch,
-            single_pr=single_pr,
-            agent=agent,
-            ui=ui_impl,
-            root_dir=root_dir,
-        )
-        ui_impl.ok(f"Decomposed into {len(manifest.components)} components")
-    except SpecBlockerError as exc:
-        ui_impl.err(str(exc))
-        # R1.7: point at the durable artifact so the user iterates
-        # against a file, not scrollback.
-        if exc.artifact_path is not None:
-            ui_impl.info(f"Spec issues written to: {exc.artifact_path}")
-        sys.exit(2)
-    except ValueError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(1)
+        code = _decompose_core(ui_impl, command_run)
+    finally:
+        command_run.close()
+    sys.exit(code)
 
 
 @cli.command()

@@ -13,6 +13,20 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
+from kstrl.events import (
+    ArtifactWritten,
+    ComponentCompleted,
+    ComponentFailed,
+    ComponentStarted,
+    Event,
+    EventBus,
+    PhaseCompleted,
+    PhaseStarted,
+    RunCompleted,
+    RunPlan,
+    RunStarted,
+    SpecIssueRecorded,
+)
 from kstrl.linear import (
     LinearClient,
     LinearConfig,
@@ -948,7 +962,10 @@ def _generate_component_prd(
     return prd_path
 
 
-def decompose_spec(
+ARCHITECT_COMPONENT = "architect"
+
+
+def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
     base_branch: str,
@@ -957,6 +974,9 @@ def decompose_spec(
     ui: UI,
     root_dir: Path,
     max_retries: int = 3,
+    *,
+    bus: EventBus | None = None,
+    transcript: Callable[[str], None] | None = None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -969,10 +989,36 @@ def decompose_spec(
         ui: UI for output
         root_dir: Project root directory
         max_retries: Max attempts for JSON parsing
+        bus: Optional run event bus (TUI surface C4): the work is
+            projected onto the pseudo-component "architect" - attempts
+            as decompose phases, the red-team pass as an audit phase,
+            spec issues and artifacts as typed events. None = today's
+            behavior exactly.
+        transcript: Optional sink for the architect's streamed lines
+            (the run's transcript file); terminal streaming through
+            ``ui`` is unchanged either way.
 
     Returns:
         Manifest with generated components and PRD files
     """
+    def emit(event: Event) -> None:
+        if bus is not None:
+            bus.emit(event)
+
+    def rel_display(path: Path) -> str:
+        try:
+            return path.relative_to(root_dir).as_posix()
+        except ValueError:
+            return str(path)
+
+    run_started = time.monotonic()
+    emit(RunStarted(project=project_name, components=0))
+    emit(RunPlan(components=(
+        {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team",
+         "deps": []},
+    )))
+    emit(ComponentStarted(component=ARCHITECT_COMPONENT))
+
     ui.section("Spec Decomposition")
     ui.kv("Spec", str(spec_path))
     if spec_path.is_dir():
@@ -988,9 +1034,22 @@ def decompose_spec(
 
     data = None
     last_error: str | None = None
+    attempts_used = 0
 
     for attempt in range(1, max_retries + 1):
+        attempts_used = attempt
         ui.info(f"Decomposition attempt {attempt}/{max_retries}")
+        emit(PhaseStarted(
+            component=ARCHITECT_COMPONENT, phase="decompose", attempt=attempt,
+        ))
+        phase_start = time.monotonic()
+
+        def attempt_failed(detail: str, *, started_at: float) -> None:
+            emit(PhaseCompleted(
+                component=ARCHITECT_COMPONENT, phase="decompose",
+                passed=False, detail=detail[:200],
+                duration_seconds=round(time.monotonic() - started_at, 2),
+            ))
 
         if last_error:
             retry_prompt = (
@@ -1004,20 +1063,30 @@ def decompose_spec(
         output_lines: list[str] = []
         total_bytes = 0
         too_large = False
-        for line in agent.run(retry_prompt, cwd=root_dir):
-            output_lines.append(line)
-            ui.stream_line("AI", line)
-            total_bytes += len(line) + 1
-            if total_bytes > MAX_AGENT_OUTPUT_BYTES:
-                too_large = True
-                ui.warn(
-                    f"Decompose agent emitted >{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
-                    "aborting this attempt."
-                )
-                break
+        try:
+            for line in agent.run(retry_prompt, cwd=root_dir):
+                output_lines.append(line)
+                ui.stream_line("AI", line)
+                if transcript is not None:
+                    transcript(line)
+                total_bytes += len(line) + 1
+                if total_bytes > MAX_AGENT_OUTPUT_BYTES:
+                    too_large = True
+                    ui.warn(
+                        "Decompose agent emitted "
+                        f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
+                        "aborting this attempt."
+                    )
+                    break
+        except BaseException as exc:
+            attempt_failed(
+                f"{type(exc).__name__}: {exc}", started_at=phase_start,
+            )
+            raise
 
         if too_large:
             last_error = "agent output exceeded size cap"
+            attempt_failed(last_error, started_at=phase_start)
             continue
 
         try:
@@ -1025,12 +1094,14 @@ def decompose_spec(
         except ValueError as exc:
             last_error = str(exc)
             ui.warn(f"JSON extraction failed: {last_error}")
+            attempt_failed(last_error, started_at=phase_start)
             continue
 
         validation_errors = _validate_decompose_output(data)
         if validation_errors:
             last_error = "; ".join(validation_errors)
             ui.warn(f"Validation failed: {last_error}")
+            attempt_failed(last_error, started_at=phase_start)
             data = None
             continue
 
@@ -1050,10 +1121,15 @@ def decompose_spec(
         if prd_errors:
             last_error = "; ".join(prd_errors)
             ui.warn(f"PRD validation failed: {last_error}")
+            attempt_failed(last_error, started_at=phase_start)
             data = None
             continue
 
         last_error = None
+        emit(PhaseCompleted(
+            component=ARCHITECT_COMPONENT, phase="decompose", passed=True,
+            duration_seconds=round(time.monotonic() - phase_start, 2),
+        ))
         break
 
     if data is None:
@@ -1069,8 +1145,18 @@ def decompose_spec(
     # success, and clean-audit outcomes alike. If any issue is a
     # blocker, halt before generating PRDs - the architect explicitly
     # judged the spec un-decomposable.
+    emit(PhaseStarted(
+        component=ARCHITECT_COMPONENT, phase="audit", attempt=1,
+    ))
+    audit_start = time.monotonic()
     spec_issues = _parse_spec_issues(data)
     _surface_spec_issues(spec_issues, ui)
+    for issue in spec_issues:
+        emit(SpecIssueRecorded(
+            severity=issue.severity, kind=issue.kind,
+            summary=issue.summary, location=issue.location,
+            suggestion=issue.suggestion,
+        ))
     blockers = [i for i in spec_issues if i.severity == "blocker"]
     artifact_path: Path | None = None
     try:
@@ -1082,6 +1168,9 @@ def decompose_spec(
             halted=bool(blockers),
         )
         ui.ok(f"Spec audit written: {artifact_path}")
+        emit(ArtifactWritten(
+            label="spec_issues", path=rel_display(artifact_path),
+        ))
     except OSError as exc:
         # Loud but non-masking: the blocker halt (or the decompose
         # result) matters more than the artifact write failing.
@@ -1094,8 +1183,36 @@ def decompose_spec(
         halted=bool(blockers),
         ui=ui,
     )
+    emit(PhaseCompleted(
+        component=ARCHITECT_COMPONENT, phase="audit",
+        passed=not blockers,
+        detail=f"{len(blockers)} blocker(s)" if blockers else "",
+        duration_seconds=round(time.monotonic() - audit_start, 2),
+    ))
     if blockers:
+        # The run dir must read as FINISHED, not dead: the halt is the
+        # architect's judgment, delivered before the error propagates.
+        emit(ComponentFailed(
+            component=ARCHITECT_COMPONENT,
+            error=f"spec halted: {len(blockers)} blocker-severity issue(s)",
+        ))
+        emit(RunCompleted(
+            completed=0, failed=1,
+            duration_seconds=round(time.monotonic() - run_started, 2),
+        ))
         raise SpecBlockerError(blockers, artifact_path=artifact_path)
+
+    # The forming DAG, the moment it is known (C5's board draws from
+    # this - no manifest read needed). The architect row stays first.
+    emit(RunPlan(components=(
+        {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team",
+         "deps": []},
+        *(
+            {"id": comp_data["id"], "title": comp_data["title"],
+             "deps": comp_data.get("dependencies", [])}
+            for comp_data in data["components"]
+        ),
+    )))
 
     # R7.4: Linear hook - one project per manifest, one issue per
     # component, non-blocker spec findings into Triage. Runs BEFORE
@@ -1257,6 +1374,20 @@ def decompose_spec(
                 pass
         raise
 
+    # Publish transactional artifacts only after the PRD + manifest
+    # write set commits. If a later write failed, the cleanup above
+    # removed the PRDs and the event stream must not claim they exist.
+    for component_data, prd_file in zip(
+        data["components"], written_prds, strict=True,
+    ):
+        emit(ArtifactWritten(
+            component=component_data["id"], label="prd",
+            path=rel_display(prd_file),
+        ))
+    emit(ArtifactWritten(
+        label="manifest", path=rel_display(manifest_path),
+    ))
+
     ui.section("Decomposition Summary")
     ui.kv("Components", str(len(manifest.components)))
     total_stories = sum(
@@ -1265,4 +1396,58 @@ def decompose_spec(
     )
     ui.kv("Total stories", str(total_stories))
 
+    duration = round(time.monotonic() - run_started, 2)
+    emit(ComponentCompleted(
+        component=ARCHITECT_COMPONENT, duration_seconds=duration,
+        iterations=attempts_used,
+    ))
+    # completed counts THIS run's work item (the architect); the
+    # planned components are the FACTORY run's job.
+    emit(RunCompleted(completed=1, duration_seconds=duration))
+
     return manifest
+
+
+def decompose_spec(
+    spec_path: Path,
+    project_name: str,
+    base_branch: str,
+    single_pr: bool,
+    agent: Agent,
+    ui: UI,
+    root_dir: Path,
+    max_retries: int = 3,
+    *,
+    bus: EventBus | None = None,
+    transcript: Callable[[str], None] | None = None,
+) -> Manifest:
+    """Run decomposition and guarantee a terminal event on every exit."""
+    started = time.monotonic()
+    try:
+        return _decompose_spec_impl(
+            spec_path=spec_path,
+            project_name=project_name,
+            base_branch=base_branch,
+            single_pr=single_pr,
+            agent=agent,
+            ui=ui,
+            root_dir=root_dir,
+            max_retries=max_retries,
+            bus=bus,
+            transcript=transcript,
+        )
+    except SpecBlockerError:
+        # Blocker halts are deliberately finalized at the audit site so
+        # the durable artifact path can be attached to the exception.
+        raise
+    except BaseException as exc:
+        if bus is not None:
+            detail = f"{type(exc).__name__}: {exc}"
+            bus.emit(ComponentFailed(
+                component=ARCHITECT_COMPONENT, error=detail,
+            ))
+            bus.emit(RunCompleted(
+                failed=1,
+                duration_seconds=round(time.monotonic() - started, 2),
+            ))
+        raise
