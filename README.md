@@ -237,6 +237,7 @@ You can, and for small tasks you should. Ralph is for when you want to:
 
 ```
 ralph config show                  Print the fully resolved config with the source of each value.
+ralph dash                         Live dashboard over a factory run (observe-only).
 ralph decompose                    Decompose a spec into components and generate PRDs.
 ralph evolve                       Analyze factory runs and propose harness improvements.
 ralph factory                      Run the software factory - decompose and execute a spec.

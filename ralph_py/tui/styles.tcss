@@ -1,0 +1,30 @@
+/* Ralph dashboard styles (stage 3 PR D). */
+
+#topbar {
+    dock: top;
+    height: 1;
+    background: $panel;
+}
+
+#run-header {
+    width: 1fr;
+    content-align: left middle;
+}
+
+#cost-meter {
+    width: auto;
+    content-align: right middle;
+    padding: 0 1;
+}
+
+#checkpoint-banner {
+    height: 1;
+    background: $warning 20%;
+    color: $warning;
+    text-style: bold;
+    padding: 0 1;
+}
+
+#component-table {
+    height: 1fr;
+}
