@@ -471,7 +471,7 @@ spending, (c) what do I do when I come back to a partial failure.
     coordination note; superseded findings are journaled as
     `findings_superseded` events (attempt-tagged) while `component_result`
     carries only the final attempt's stream.
-- [~] R3.4 (S) **Repo hygiene** [LOW hygiene]
+- [x] R3.4 (S) **Repo hygiene** [LOW hygiene]
   - `.gitignore` covers `.ralph/`; remove the 99MB stale worktree
     (`git worktree remove .claude/worktrees/tender-leakey` after confirming the
     branch has no unique commits: check first, it is a destructive step for the
@@ -487,6 +487,18 @@ spending, (c) what do I do when I come back to a partial failure.
     in the R2.5 PR: `ralph.toml.example` is tracked and the live
     `ralph.toml` is gitignored. Still open: the remaining untracked docs
     artifacts (user decision 6).
+  - CLOSED 2026-07-20 (user decision 6: delete the regenerables):
+    `docs/end-to-end-flow.html` and `docs/phase-f-e2e-validation-v12.log`
+    (both regenerable phase-F artifacts) deleted from the main checkout;
+    `.claude/` (personal settings + live session worktrees) added to
+    `.gitignore` rather than committed or deleted - it hosts running
+    Claude Code sessions. `docs/user-actions.md` (the user's own
+    working checklist, untracked on purpose per its own header) is
+    deliberately NOT touched - the user deletes it when its list is
+    done. Verification note: the earlier "ralph.toml is gitignored"
+    claim is TRUE on main (`/ralph.toml` entry); it looked untracked
+    only because the main checkout sat on the stale pre-entry
+    `fix/r1-4-truncation` branch - resolved by checking main out there.
   - Note (2026-07-19, gate re-run): the live `.ralph/evolution.jsonl` +
     `experiments.tsv` had been re-polluted with synthetic test entries
     (projects "test"/"t", pre-v2 schema) written between the R4.1
