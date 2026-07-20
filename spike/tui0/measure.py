@@ -56,7 +56,7 @@ def run_latency_cell(poll: float, rate: float, duration: float, out_root: Path,
     if rate > 1:
         gen_cmd.append("--churn")  # sustained storm: components never finish
     gen = subprocess.Popen(gen_cmd, stdout=subprocess.PIPE, text=True)
-    runs_root = cell_dir / ".ralph" / "runs"
+    runs_root = cell_dir / ".kstrl" / "runs"
     deadline = time.monotonic() + 10
     run_dir: Path | None = None
     while time.monotonic() < deadline and run_dir is None:

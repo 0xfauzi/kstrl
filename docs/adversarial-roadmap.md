@@ -23,7 +23,7 @@ PR: [#37](https://github.com/0xfauzi/ralph-loop/pull/37) merged 2026-05-27
 - [x] A1 - Sanitize knowledge facts against prompt injection (`_is_injection_attempt` in `knowledge.py`, MAX_CLAIM_LENGTH=500, MAX_EVIDENCE_ITEMS=10, MAX_TAG_ITEMS=8 + 9 tests)
 - [x] A2 - Single-PR mode skips knowledge distillation with a warning (`factory.py::_handle_result` + integration test)
 - [x] A3 - Sub-second run_id collision: `secrets.token_hex(3)` nonce in both `factory.py::run_factory` and `knowledge.py::current_run_id` + collision test
-- [x] A4 - Concurrent worktree clobber: per-host `fcntl.flock` on `.ralph/worktrees/<id>.lock`, POSIX only
+- [x] A4 - Concurrent worktree clobber: per-host `fcntl.flock` on `.kstrl/worktrees/<id>.lock`, POSIX only
 - [x] A5 - Stream size cap: `collect_agent_output` helper with 5MB ceiling, wired into knowledge / security / review / decompose + 2 tests
 - [x] A6 - Self-Critique heading regex tightened (H2/H3 or `- **...**` only), fuzz corpus of accepted + rejected lines
 - [x] A7 - Codex contract test: structural tests + skipped live tests for `--output-last-message`
@@ -41,13 +41,13 @@ PR: _pending push_
 - [x] D1 - 5 security fixtures (SQL injection, command injection, hardcoded secret, predictable token via random.random, broken JWT verify)
 - [x] D2 - 3 reviewer-concern fixtures (dead code, tautological test, scope creep)
 - [x] D3 - 3 vague-spec fixtures (no error handling, unspecified auth, ambiguous perf)
-- [x] D4 - Calibration runner `tests/test_calibration.py` opt-in via `RALPH_RUN_CALIBRATION=1`; structural sanity always runs; per-role detection-rate JSON report at `_results/baseline-<date>.json`
+- [x] D4 - Calibration runner `tests/test_calibration.py` opt-in via `KSTRL_RUN_CALIBRATION=1`; structural sanity always runs; per-role detection-rate JSON report at `_results/baseline-<date>.json`
 - [x] D5 - `SECURITY_CATEGORY_MAP` in security.py maps every category to its OWASP Top 10 bucket + CWE, with helpers `category_owasp` / `category_cwe`
 - [x] D6 - `knowledge.measure_fact_utilization` instruments factory.py post-distill: counts referenced facts via case-insensitive 30-char substring match against shared_diff + progress.txt
 - [x] D7 - `exhaustively_searched` docstring updated to mark it as an unverifiable self-report; calibration suite is the trustworthy verification path
 - [x] D8 - `EvolutionJournal.get_concern_hit_rate` aggregates concerns across recent runs by category
 
-Status: 538 tests passing (+15 D6/D8/structural). 11 calibration tests skipped pending `RALPH_RUN_CALIBRATION=1`. Infrastructure ready; baseline measurement to be captured by the user.
+Status: 538 tests passing (+15 D6/D8/structural). 11 calibration tests skipped pending `KSTRL_RUN_CALIBRATION=1`. Infrastructure ready; baseline measurement to be captured by the user.
 
 Done when: PR merged.
 
@@ -115,12 +115,12 @@ PR (partial): _pending push_
 
 - [-] E1 - Multi-model rotation - SKIPPED per user decision; documented as known limitation
 - [x] E2 - Strip Self-Critique block from reviewer-visible diff via `git.strip_self_critique_from_diff`; review.py invokes it before truncation
-- [x] E3 - Typed `Finding` dataclass at `ralph_py/findings.py`. `Component.findings: list[Finding]` is the source of truth for typed consumers (evolution journal, dashboards). `Component.review_findings` (string) remains the canonical PR-body content because PR readability requires PASS criteria confirmations and pass/fail summary counts that the Finding stream does not carry. Hardening after retrospective: (a) evolution journal serializes `findings` + `findings_summary` aggregator (E3-consume); (b) infrastructure_error promoted into a synthetic Finding so `len(findings)==0` safely means "ran cleanly" (E3-infra); (c) `phase:`, `category:`, `owasp:`, `cwe:` tags populated on every Finding (E3-tags); (d) post-retrospective cleanup reverted `pr.py` to the legacy string after side-by-side rendering showed the new render lost PASS criteria + summary counts and buried criterion text behind a generic `prd_criterion` category. `render_findings_markdown` remains available for ad-hoc dumping. **Framing correction (2026-05-27 second retrospective)**: PR #51's commit message claimed `DEFAULT_PRD_PROMPT` enrollment was because "the PRD-creation prompt shapes the PRD that every downstream adversarial phase depends on." That's true only for users invoking `ralph prd create` manually; the factory bypasses that prompt and generates PRDs via its own `DECOMPOSE_PROMPT` path. The enrollment is still defensible (the prompt is an LLM-shaped artifact that should not silently drift) but the impact framing was stronger than reality.
+- [x] E3 - Typed `Finding` dataclass at `kstrl/findings.py`. `Component.findings: list[Finding]` is the source of truth for typed consumers (evolution journal, dashboards). `Component.review_findings` (string) remains the canonical PR-body content because PR readability requires PASS criteria confirmations and pass/fail summary counts that the Finding stream does not carry. Hardening after retrospective: (a) evolution journal serializes `findings` + `findings_summary` aggregator (E3-consume); (b) infrastructure_error promoted into a synthetic Finding so `len(findings)==0` safely means "ran cleanly" (E3-infra); (c) `phase:`, `category:`, `owasp:`, `cwe:` tags populated on every Finding (E3-tags); (d) post-retrospective cleanup reverted `pr.py` to the legacy string after side-by-side rendering showed the new render lost PASS criteria + summary counts and buried criterion text behind a generic `prd_criterion` category. `render_findings_markdown` remains available for ad-hoc dumping. **Framing correction (2026-05-27 second retrospective)**: PR #51's commit message claimed `DEFAULT_PRD_PROMPT` enrollment was because "the PRD-creation prompt shapes the PRD that every downstream adversarial phase depends on." That's true only for users invoking `ks prd create` manually; the factory bypasses that prompt and generates PRDs via its own `DECOMPOSE_PROMPT` path. The enrollment is still defensible (the prompt is an LLM-shaped artifact that should not silently drift) but the impact framing was stronger than reality.
 - [x] E4 - `FactoryConfig.max_adversarial_calls` shared counter; review/security/distill all consult it; 0 = unbounded (default)
 - [x] E5 - Confidence rename: `verified` -> `review_passed`, new `test_verified` tier added. Legacy `verified` aliased on read for backward compat.
 - [x] E6 - `FactoryConfig.pause_before_pr_merge` HITL checkpoint. Prompts user before push+merge when UI is interactive; warns and proceeds when non-interactive.
 - [~] E7 - Feedforward/knowledge overlap doc - DEFERRED to Phase G (documentation). The dedupe analysis itself is small; addressed there.
-- [x] E8 - `KnowledgeConfig.dependency_scope: str = "direct"` (default) restricts the Dependencies full-text tier to `Component.dependencies` only. Transitive deps still appear in the sibling first-sentence summary tier (downgraded, not hidden). The old behavior is opt-in via `dependency_scope = "transitive"` or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`. **E8-telemetry follow-up**: `build_knowledge_context` writes per-component `(excluded_dep_count, withheld_fact_count)` events to `<knowledge_root>/_e8_dependency_scope.jsonl` whenever direct scope hides facts, so silent regressions are observable. Read via `read_dependency_scope_telemetry`. 8 new tests across `test_knowledge.py` covering scope behavior + telemetry.
+- [x] E8 - `KnowledgeConfig.dependency_scope: str = "direct"` (default) restricts the Dependencies full-text tier to `Component.dependencies` only. Transitive deps still appear in the sibling first-sentence summary tier (downgraded, not hidden). The old behavior is opt-in via `dependency_scope = "transitive"` or `KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`. **E8-telemetry follow-up**: `build_knowledge_context` writes per-component `(excluded_dep_count, withheld_fact_count)` events to `<knowledge_root>/_e8_dependency_scope.jsonl` whenever direct scope hides facts, so silent regressions are observable. Read via `read_dependency_scope_telemetry`. 8 new tests across `test_knowledge.py` covering scope behavior + telemetry.
 - [x] E9 - ReviewResult.infrastructure_error added (parallel to SecurityResult.infrastructure_error); parse failures set it; downstream can distinguish "clean review" from "review never ran"
 
 Status: 7 of 8 items shipped (E2/E3/E4/E5/E6/E8/E9). E1 permanently skipped per user; E7 folded into Phase G. Deferred-follow-up PRs (E3, E8) merged 2026-05-27. 25+ new tests across the E-series.
@@ -136,7 +136,7 @@ PR: _pending push_
 - [x] G1 - README.md phase diagram extended to show all 8 roles (architect, engineer, P1 mechanical, P2 reviewer, P2.5 security, HITL, knowledge distiller, P3 contract)
 - [x] G2 - CLAUDE.md created at repo root with role taxonomy and H1-H4 process rules
 - [x] G3 - docs/env-vars.md - single canonical env-var reference across every config
-- [x] G4 - ralph.toml.example extended with [factory] [verify] [security] [contract] [feedforward] [evolution] sections
+- [x] G4 - kstrl.toml.example extended with [factory] [verify] [security] [contract] [feedforward] [evolution] sections
 - [x] G5 - ~/.claude/plans/zazzy-orbiting-sketch.md marked SUPERSEDED; points to this tracker
 - [x] G6 - docs/adversarial-design.md - role taxonomy, pipeline, invariants, known limitations, E7 feedforward-vs-knowledge clarification
 - [x] G7 - docs/runbook.md - operator recovery procedures for every named failure mode

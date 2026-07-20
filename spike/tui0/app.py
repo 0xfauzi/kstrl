@@ -1,6 +1,6 @@
 """Minimal Textual tailer app for the TUI spike.
 
-Tails the newest run under <root>/.ralph/runs/, folds events with a
+Tails the newest run under <root>/.kstrl/runs/, folds events with a
 30-line inline reducer, renders a component DataTable + transcript
 RichLog + a latency/event-count header.
 
@@ -40,9 +40,9 @@ from textual.widgets import Button, DataTable, Footer, Label, RichLog, Static  #
 
 
 def newest_run_dir(root: Path) -> Path:
-    runs = sorted((root / ".ralph" / "runs").iterdir())
+    runs = sorted((root / ".kstrl" / "runs").iterdir())
     if not runs:
-        raise SystemExit(f"no runs under {root}/.ralph/runs")
+        raise SystemExit(f"no runs under {root}/.kstrl/runs")
     return runs[-1]
 
 

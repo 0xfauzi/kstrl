@@ -1,7 +1,7 @@
-# DESIGN.md - Ralph dashboard visual system
+# DESIGN.md - kstrl dashboard visual system
 
 Terminal UI (Textual). The single source of truth for tokens is
-`kstrl/tui/theme.py` (`RALPH_THEME`); this file documents intent.
+`kstrl/tui/theme.py` (`KSTRL_THEME`); this file documents intent.
 
 ## Theme
 

@@ -12,18 +12,18 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 
 | Role | Module | Prompt | Phase | What it catches |
 |---|---|---|---|---|
-| **Architect / PRD red-team** | `ralph_py/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Halts the pipeline via `SpecBlockerError` when any blocker-severity issue is found. |
-| **Engineer** | `ralph_py/init_cmd.py` (`DEFAULT_PROMPT`) + per-project `scripts/ralph/prompt.md` | (project-specific) | Iteration | Implements one story per iteration. Required to emit a `## Self-Critique` block with >=3 substantive failure-mode bullets before declaring done (mechanically enforced by `verify.check_self_critique` when `VerifyConfig.require_self_critique` is True). |
-| **Mechanical verifier** | `ralph_py/verify.py` | (no LLM) | Phase 1 | PRD stories pass-marked, tests/typecheck/lint green, diff-scope and bad-pattern checks, optional dead-code / mutation / self-critique. |
-| **Code reviewer** | `ralph_py/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
-| **Security reviewer** | `ralph_py/security.py` | `SECURITY_PROMPT` | Phase 2.5 | Threat-model framing: injection, auth_bypass, hardcoded_secret, unsafe_deserialization, broken_crypto, predictable_randomness, missing_input_validation, race_condition, SSRF, XSS, open_redirect, information_disclosure, denial_of_service. Each category mapped to OWASP Top 10 + CWE via `SECURITY_CATEGORY_MAP`. |
-| **Contract tester** | `ralph_py/contract.py` | (no LLM) | Phase 3 | Cross-component integration tests on merged tier branches. Failing tier identifies a breaker component, sent back through Phase 1+ for retry. |
-| **Knowledge distiller** | `ralph_py/knowledge.py` | `DISTILL_PROMPT` | Pre-PR | Captures durable facts about the artifact for downstream components. Runs after the Phase 2/2.5 gates pass and BEFORE the PR is created, so the distilled diff is the component's true delta (not polluted by the merge pulling main in). Voyager-style write gate: only fires when Phase 2 review passed. The placement is a named pipeline step (`ComponentPipeline._phase_distill` in `ralph_py/pipeline.py`, decided in R7.3): moving it post-merge would break the true-delta invariant. `tests/test_pipeline.py::TestDistillPlacement` pins the pre-PR ordering. |
-| **Human checkpoint (E6)** | `ralph_py/factory.py` | (interactive) | Pre-merge | Optional. When `FactoryConfig.pause_before_pr_merge=True` and UI is interactive, prompts a human to approve or reject before PR creation. Off by default. |
+| **Architect / PRD red-team** | `kstrl/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Halts the pipeline via `SpecBlockerError` when any blocker-severity issue is found. |
+| **Engineer** | `kstrl/init_cmd.py` (`DEFAULT_PROMPT`) + per-project `scripts/kstrl/prompt.md` | (project-specific) | Iteration | Implements one story per iteration. Required to emit a `## Self-Critique` block with >=3 substantive failure-mode bullets before declaring done (mechanically enforced by `verify.check_self_critique` when `VerifyConfig.require_self_critique` is True). |
+| **Mechanical verifier** | `kstrl/verify.py` | (no LLM) | Phase 1 | PRD stories pass-marked, tests/typecheck/lint green, diff-scope and bad-pattern checks, optional dead-code / mutation / self-critique. |
+| **Code reviewer** | `kstrl/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
+| **Security reviewer** | `kstrl/security.py` | `SECURITY_PROMPT` | Phase 2.5 | Threat-model framing: injection, auth_bypass, hardcoded_secret, unsafe_deserialization, broken_crypto, predictable_randomness, missing_input_validation, race_condition, SSRF, XSS, open_redirect, information_disclosure, denial_of_service. Each category mapped to OWASP Top 10 + CWE via `SECURITY_CATEGORY_MAP`. |
+| **Contract tester** | `kstrl/contract.py` | (no LLM) | Phase 3 | Cross-component integration tests on merged tier branches. Failing tier identifies a breaker component, sent back through Phase 1+ for retry. |
+| **Knowledge distiller** | `kstrl/knowledge.py` | `DISTILL_PROMPT` | Pre-PR | Captures durable facts about the artifact for downstream components. Runs after the Phase 2/2.5 gates pass and BEFORE the PR is created, so the distilled diff is the component's true delta (not polluted by the merge pulling main in). Voyager-style write gate: only fires when Phase 2 review passed. The placement is a named pipeline step (`ComponentPipeline._phase_distill` in `kstrl/pipeline.py`, decided in R7.3): moving it post-merge would break the true-delta invariant. `tests/test_pipeline.py::TestDistillPlacement` pins the pre-PR ordering. |
+| **Human checkpoint (E6)** | `kstrl/factory.py` | (interactive) | Pre-merge | Optional. When `FactoryConfig.pause_before_pr_merge=True` and UI is interactive, prompts a human to approve or reject before PR creation. Off by default. |
 
 ## Findings model (E3)
 
-Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`ralph_py/findings.py`) before landing on `Component.findings: list[Finding]`. **Consumers**: `pr.py` renders findings into the PR body via `render_findings_markdown` (the legacy `review_findings` string is a fallback for legacy manifests); `evolution.py::record_run` serializes `findings` + a `findings_summary` aggregator into the journal.
+Every finding produced by Phase 2 (`ReviewResult`) or Phase 2.5 (`SecurityResult`) is converted into a typed `Finding` (`kstrl/findings.py`) before landing on `Component.findings: list[Finding]`. **Consumers**: `pr.py` renders findings into the PR body via `render_findings_markdown` (the legacy `review_findings` string is a fallback for legacy manifests); `evolution.py::record_run` serializes `findings` + a `findings_summary` aggregator into the journal.
 
 The fields are:
 
@@ -82,7 +82,7 @@ spec.md
 
 1. **Halt over heroics.** Architect's `SpecBlockerError` stops the pipeline rather than proceeding with a vague spec. Mechanical verification failures retry up to `FactoryConfig.max_retries` then mark the component failed and cascade-skip dependents.
 2. **Hard mode means hard fail.** Phase 2 / Phase 2.5 in `hard` mode block on findings at or above the configured threshold. Infrastructure failures (agent crash, parse error) in hard mode count as failures, not silent passes (Phase A1 + E9).
-3. **Latest-run-dir wins for facts.** Knowledge files at `.ralph/knowledge/<component_id>/<run_id>/<fact_id>.md`. A breaker retry naturally orphans the old run dir.
+3. **Latest-run-dir wins for facts.** Knowledge files at `.kstrl/knowledge/<component_id>/<run_id>/<fact_id>.md`. A breaker retry naturally orphans the old run dir.
 4. **No prompt injection through knowledge.** Fact claims that match role markers (`<system>`, `<|im_*|>`), `ignore previous instructions` patterns, or `## Instructions` headings are rejected at coercion time (Phase A1).
 5. **No infinite cost.** `FactoryConfig.max_adversarial_calls` is a hard cap across review + security + distill (Phase E4). Stream-size cap of 5MB per agent invocation prevents pathological output (Phase A5).
 6. **Audit trail.** Evolution journal records every component result. Concerns surface to `EvolutionJournal.get_concern_hit_rate()` for aggregate dashboards. Knowledge fact utilization is measured per component via `knowledge.measure_fact_utilization()`.
@@ -94,26 +94,26 @@ Calibration is the trustworthy verification path for "do the adversarial roles a
 
 To run:
 ```bash
-RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
+KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
 ```
 
-Each run executes every fixture `RALPH_CALIBRATION_RUNS` times (default 3, R5.1) and writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` in the v2 format defined by `ralph_py/calibration.py`: per-fixture *consistency* (fraction of completed runs that caught the planted issue; agent-infrastructure errors are excluded from the denominator, unparseable model output counts as a miss), per-role and per-category (per-CWE for security) detection rates, the run count, and the model id. Fixtures cover security (5), reviewer concerns (3), and vague specs (3), plus one non-halting allowedPaths fixture.
+Each run executes every fixture `KSTRL_CALIBRATION_RUNS` times (default 3, R5.1) and writes `tests/adversarial_fixtures/_results/baseline-<UTC>.json` in the v2 format defined by `kstrl/calibration.py`: per-fixture *consistency* (fraction of completed runs that caught the planted issue; agent-infrastructure errors are excluded from the denominator, unparseable model output counts as a miss), per-role and per-category (per-CWE for security) detection rates, the run count, and the model id. Fixtures cover security (5), reviewer concerns (3), and vague specs (3), plus one non-halting allowedPaths fixture.
 
 The fixtures themselves live in `tests/adversarial_fixtures/{security,concerns,specs}/` with paired `.meta.json` files describing the planted bug and the must-detect category.
 
 ### Threshold gates instead of hard asserts (R5.1)
 
-A truth signal that is expected to be red is not a signal, so the suite no longer hard-asserts each single run. A fixture test passes when a majority of its completed runs detect the planted issue (`FIXTURE_DETECTION_THRESHOLD = 0.5`, i.e. 2 of 3 at the default run count): one flaky miss is reported as reduced consistency, a fixture that misses most runs fails the suite. Set `RALPH_CALIBRATION_RUNS=1` for a cheap single-run smoke (it degrades to the old hard-assert behavior and is too coarse for baseline capture).
+A truth signal that is expected to be red is not a signal, so the suite no longer hard-asserts each single run. A fixture test passes when a majority of its completed runs detect the planted issue (`FIXTURE_DETECTION_THRESHOLD = 0.5`, i.e. 2 of 3 at the default run count): one flaky miss is reported as reduced consistency, a fixture that misses most runs fails the suite. Set `KSTRL_CALIBRATION_RUNS=1` for a cheap single-run smoke (it degrades to the old hard-assert behavior and is too coarse for baseline capture).
 
 ### Comparing baselines (H2's "compare" step, concretely)
 
 ```bash
-uv run python -m ralph_py.calibration compare \
+uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<old>.json \
   tests/adversarial_fixtures/_results/baseline-<new>.json
 ```
 
-Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `ralph_py/calibration.py` with sizing rationale inline:
+Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline:
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -135,28 +135,28 @@ To measure the same-family vs cross-family correlated-miss delta, the calibratio
 
 ```bash
 # Baseline 1: same family end to end
-RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
+KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
   uv run pytest tests/test_calibration.py -v
 
 # Baseline 2: reviewer + security roles on the second family (codex CLI).
 # Two codex-specific requirements (measured; see the gotcha note below):
-#   - pin RALPH_CALIBRATION_REVIEWER_MODEL (haiku is claude-only -> HTTP 400)
+#   - pin KSTRL_CALIBRATION_REVIEWER_MODEL (haiku is claude-only -> HTTP 400)
 #   - --basetemp INSIDE a git repo (codex refuses a non-git cwd)
 CODEX_REPO=$(mktemp -d); git init -q "$CODEX_REPO"
-RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku \
-  RALPH_CALIBRATION_REVIEWER_AGENT_TYPE=codex \
-  RALPH_CALIBRATION_REVIEWER_MODEL=gpt-5.5 \
+KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
+  KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE=codex \
+  KSTRL_CALIBRATION_REVIEWER_MODEL=gpt-5.5 \
   uv run pytest tests/test_calibration.py -v --basetemp="$CODEX_REPO/pt"
 
 # Compare (the cross-model warning is expected: the delta measures the family change)
-uv run python -m ralph_py.calibration compare \
+uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<same-family>.json \
   tests/adversarial_fixtures/_results/baseline-<cross-family>.json
 ```
 
-`RALPH_CALIBRATION_REVIEWER_MODEL` optionally pins the reviewer model within the overridden family. Override runs record their model id as `<base>+reviewer:<type>/<model>` so `compare` surfaces the family change as its cross-model warning instead of hiding it.
+`KSTRL_CALIBRATION_REVIEWER_MODEL` optionally pins the reviewer model within the overridden family. Override runs record their model id as `<base>+reviewer:<type>/<model>` so `compare` surfaces the family change as its cross-model warning instead of hiding it.
 
-Gotcha (codex 0.134 on a ChatGPT account, measured 2026-07-20): the cross-family command above needs two things the same-family run does not, or it silently records a miss on every fixture. (1) Pin `RALPH_CALIBRATION_REVIEWER_MODEL` to a valid codex model (e.g. `gpt-5.5`). Without it the override forwards `RALPH_CALIBRATION_MODEL` (`haiku`) to `codex exec -m haiku`, which a ChatGPT-account codex rejects with HTTP 400 - but codex still exits 0 and prints the error as output, so the parser sees no findings and scores a clean miss (not an infrastructure error). (2) Add `--basetemp=<dir inside a git repo>` to pytest (an empty throwaway `git init` dir works; pytest empties the basetemp, so make it a SUBDIR of the repo, not the repo root). Calibration runs each agent in an empty `tmp_path`, and `codex exec` refuses a non-git cwd (`Not inside a trusted directory and --skip-git-repo-check was not specified`) and fast-exits - again a silent miss. The `claude` CLI has neither restriction, so the same-family run needs no special handling; the runbook's plain 2c command only works for a claude-family reviewer.
+Gotcha (codex 0.134 on a ChatGPT account, measured 2026-07-20): the cross-family command above needs two things the same-family run does not, or it silently records a miss on every fixture. (1) Pin `KSTRL_CALIBRATION_REVIEWER_MODEL` to a valid codex model (e.g. `gpt-5.5`). Without it the override forwards `KSTRL_CALIBRATION_MODEL` (`haiku`) to `codex exec -m haiku`, which a ChatGPT-account codex rejects with HTTP 400 - but codex still exits 0 and prints the error as output, so the parser sees no findings and scores a clean miss (not an infrastructure error). (2) Add `--basetemp=<dir inside a git repo>` to pytest (an empty throwaway `git init` dir works; pytest empties the basetemp, so make it a SUBDIR of the repo, not the repo root). Calibration runs each agent in an empty `tmp_path`, and `codex exec` refuses a non-git cwd (`Not inside a trusted directory and --skip-git-repo-check was not specified`) and fast-exits - again a silent miss. The `claude` CLI has neither restriction, so the same-family run needs no special handling; the runbook's plain 2c command only works for a claude-family reviewer.
 
 #### Recorded baselines
 
@@ -179,14 +179,14 @@ Conclusion: these are well-designed subtle bugs; haiku is simply a competent rev
 
 ### Model drift (R5.5, H2-extended)
 
-Baselines record the model id, and an always-run structural test (`tests/test_calibration.py::TestFixtureStructure::test_warns_when_calibration_model_differs_from_newest_baseline`) warns - never fails - when `RALPH_CALIBRATION_MODEL` differs from the newest baseline's recorded model. H2 extended: calibration re-runs on model change, not just prompt change; a detection rate measured against an older model does not transfer.
+Baselines record the model id, and an always-run structural test (`tests/test_calibration.py::TestFixtureStructure::test_warns_when_calibration_model_differs_from_newest_baseline`) warns - never fails - when `KSTRL_CALIBRATION_MODEL` differs from the newest baseline's recorded model. H2 extended: calibration re-runs on model change, not just prompt change; a detection rate measured against an older model does not transfer.
 
 ## Feedforward vs knowledge (E7)
 
 Two memory surfaces exist for the implementing agent. They look similar but serve different jobs:
 
-- **Feedforward** (`ralph_py/feedforward.py`) is *computed* fresh each iteration. Walks the worktree, builds a module map with LOC counts, lists public interfaces from `__init__.py` / `__all__`, infers a dependency graph from imports, and extracts conventions from `pyproject.toml` / `package.json` / etc. No LLM, no persistence. Used to ground the implementing agent in the current code shape.
-- **Knowledge** (`ralph_py/knowledge.py`) is *distilled* by an LLM after a component completes and persists across runs. Stored at `.ralph/knowledge/<component>/<run>/<fact>.md`. Three-tier retrieval (core / dependency / sibling) injects relevant facts into the prompt of downstream components.
+- **Feedforward** (`kstrl/feedforward.py`) is *computed* fresh each iteration. Walks the worktree, builds a module map with LOC counts, lists public interfaces from `__init__.py` / `__all__`, infers a dependency graph from imports, and extracts conventions from `pyproject.toml` / `package.json` / etc. No LLM, no persistence. Used to ground the implementing agent in the current code shape.
+- **Knowledge** (`kstrl/knowledge.py`) is *distilled* by an LLM after a component completes and persists across runs. Stored at `.kstrl/knowledge/<component>/<run>/<fact>.md`. Three-tier retrieval (core / dependency / sibling) injects relevant facts into the prompt of downstream components.
 
 The overlap: both can describe what a component exports. The distinction:
 - Feedforward describes what *exists* at this instant (computationally extracted).
@@ -198,7 +198,7 @@ If a feedforward entry says `auth.middleware.verify_token(token: str) -> User`, 
 
 The knowledge layer's "Dependencies" tier defaults to `direct` scope: only facts from `Component.dependencies` (the import surface declared in the manifest) appear in the full-text tier. Transitive dependencies still surface in the sibling summary tier (first-sentence only).
 
-Rationale: the typical reason a component needs full-text facts about a transitive dependency is that the manifest is missing a direct edge - i.e. the architect under-specified imports. Forcing the user to add the edge is better than silently injecting every transitive ancestor's facts into every downstream prompt. For projects that genuinely need the old behavior, `KnowledgeConfig.dependency_scope = "transitive"` (or `RALPH_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`) restores it.
+Rationale: the typical reason a component needs full-text facts about a transitive dependency is that the manifest is missing a direct edge - i.e. the architect under-specified imports. Forcing the user to add the edge is better than silently injecting every transitive ancestor's facts into every downstream prompt. For projects that genuinely need the old behavior, `KnowledgeConfig.dependency_scope = "transitive"` (or `KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE=transitive`) restores it.
 
 ### Telemetry for the direct-vs-transitive gap (E8-telemetry)
 
@@ -211,7 +211,7 @@ Healthy state: empty file. Persistent non-zero values per build are the signal t
 1. **Correlated failure (partially mitigated by R7.1 rotation).** The review and security phases now default to the OPPOSITE model family from the engineer when that CLI is available (user decision 2: the OpenAI family via the codex CLI reviews Claude-engineered code; a codex engineer flips the default to claude-code). Explicit reviewer config always wins; when the cross family's CLI is missing (or the engineer runs a custom command whose family is unknowable) the factory prints a homogeneity warning naming the self-preference risk and falls back to the old same-family behavior. Every reviewer-produced `Finding` carries a `model:<id>` tag, the PR body's findings sections name the reviewer model, and the journal serializes the tag - so same-family and cross-family review outcomes stay attributable and measurable. What REMAINS correlated: the architect, engineer, and knowledge distiller still run on the primary family, so a spec misreading or implementation blind spot shared by that family is not caught by rotation - treat architect+engineer+distiller agreement as one data point. The correlated-miss delta is measured, not assumed: capture same-family vs cross-family calibration baselines (see "Reviewer-family override" below) before trusting the rotation's effect size.
 2. **`exhaustively_searched` is self-reported.** Both reviewer and security results expose the flag, but it cannot be verified at runtime. The trustworthy signal is calibration rate, not the flag.
 3. **Fact-utilization is a lower bound.** `measure_fact_utilization` uses a 30-character case-insensitive substring match. LLMs paraphrase, so a false negative just means we under-count.
-4. **Calibration baseline is non-deterministic.** LLMs vary; the suite now runs each fixture `RALPH_CALIBRATION_RUNS` times (default 3) and reports per-fixture consistency (R5.1), but 3 runs is still a small sample - treat a consistency of 2/3 as "flaky", not as a precise 0.67.
+4. **Calibration baseline is non-deterministic.** LLMs vary; the suite now runs each fixture `KSTRL_CALIBRATION_RUNS` times (default 3) and reports per-fixture consistency (R5.1), but 3 runs is still a small sample - treat a consistency of 2/3 as "flaky", not as a precise 0.67.
 5. **Windows is not supported for concurrent worktrees.** `fcntl.flock` is POSIX-only (Phase A4); on Windows the lock is silently skipped and concurrent factory invocations against the same worktree directory can clobber each other.
 6. **The fact-injection prompt is trusted code.** A future model that ignores the engineer prompt's "treat as ground truth" framing could be misled by injected facts. The Phase A1 sanitizer is a defense-in-depth pattern, not a guarantee.
 
@@ -225,9 +225,9 @@ H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to it
 
 1. **Prompt edit without snapshot bump**: hash differs from recorded hash, test fails.
 2. **Version constant change without snapshot bump**: live version differs from snapshot version, test fails.
-3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `ralph_py/` and fails on any unprotected prompt.
+3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `kstrl/` and fails on any unprotected prompt.
 
-The engineer prompt template (`init_cmd.DEFAULT_PROMPT`, used to scaffold per-project `scripts/ralph/prompt.md`) is also enrolled, not just the four LLM-driven role prompts.
+The engineer prompt template (`init_cmd.DEFAULT_PROMPT`, used to scaffold per-project `scripts/kstrl/prompt.md`) is also enrolled, not just the four LLM-driven role prompts.
 
 The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving together. That is what makes the H2 calibration step a real gate rather than a polite suggestion. H3 cannot prevent a determined developer from leaving the version pinned while updating both hash and snapshot to the *previous* version number; that bypass requires explicit deception in the snapshot file and is the irreducible limit of code-side enforcement.
 

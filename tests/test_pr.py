@@ -93,4 +93,4 @@ class TestGeneratePrBody:
     def test_body_contains_attribution(self) -> None:
         manifest = _test_manifest()
         body = _generate_pr_body(manifest.components[0], manifest)
-        assert "Ralph" in body
+        assert "kstrl" in body

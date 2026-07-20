@@ -1,10 +1,10 @@
-# CLAUDE.md - Ralph
+# CLAUDE.md - kstrl
 
 ## Project Overview
 
 - **Language**: Python (FastAPI / pytest / uv toolchain)
-- **Project**: Ralph - an adversarial coding-agent harness
-- **Layout**: `kstrl/` is the canonical factory implementation. `src/ralph/` is the legacy single-component loop (out of scope for the adversarial roadmap).
+- **Project**: kstrl (formerly Ralph) - an adversarial coding-agent harness
+- **Layout**: `kstrl/` (renamed from `ralph_py/`, 2026-07-20) is the canonical factory implementation. The legacy `src/ralph/` single-component loop was deleted; only compatibility guards still reference its name.
 
 ## Verification commands
 
@@ -17,12 +17,12 @@ Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so
 
 ## Adversarial role taxonomy
 
-Ralph's factory uses eight distinct roles. Three are LLM-driven adversarial passes; the rest are mechanical or computational. Full taxonomy with file:line references is in [docs/adversarial-design.md](docs/adversarial-design.md).
+kstrl's factory uses eight distinct roles. Three are LLM-driven adversarial passes; the rest are mechanical or computational. Full taxonomy with file:line references is in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 | Role | Prompt | What it catches |
 |---|---|---|
 | Architect / PRD red-team | `decompose.DECOMPOSE_PROMPT` | Spec ambiguity, missing failure modes, unstated assumptions |
-| Engineer | per-project `scripts/ralph/prompt.md` | Implements one story per iteration; emits required `## Self-Critique` block |
+| Engineer | per-project `scripts/kstrl/prompt.md` | Implements one story per iteration; emits required `## Self-Critique` block |
 | Mechanical verifier | `verify.run_mechanical_verification` (no LLM) | tests / typecheck / lint / diff-scope / bad-patterns / self-critique-shape |
 | Code reviewer | `review.REVIEWER_PROMPT` | PRD criteria + concerns (scope_creep, security_concern, test_quality, etc.) |
 | Security reviewer | `security.SECURITY_PROMPT` | OWASP-mapped vuln categories |
@@ -97,4 +97,4 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 ### Conventions
 
 - Phase numbers are sticky: Phase 0 feedforward, Phase 1 verify, Phase 2 review, Phase 2.5 security, Phase 3 contract. New phases get fractional numbers to preserve ordering semantics.
-- Every config dataclass should have `from_env()` AND `load(root_dir)`; the load method reads `[<section>]` from `ralph.toml` and overlays env on top.
+- Every config dataclass should have `from_env()` AND `load(root_dir)`; the load method reads `[<section>]` from `kstrl.toml` and overlays env on top.

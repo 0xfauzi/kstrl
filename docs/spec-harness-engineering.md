@@ -1,5 +1,7 @@
 # Spec: Harness Engineering for Ralph
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 **Status**: Draft
 **Date**: 2026-04-09
 **Source**: Bockeleer, "Harness Engineering for Coding Agent Users" (martinfowler.com, April 2026); hwchase17/autoresearch-agents; aiming-lab/AutoResearchClaw

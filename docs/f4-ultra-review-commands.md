@@ -1,5 +1,7 @@
 # F4: Ultra-Review Commands for the Hardening Cycle
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 Per H1 of the hardening roadmap, the assistant does not run `/code-review` on
 its own code. This doc lists the cumulative set of PRs from the hardening
 cycle along with the exact `/code-review ultra` commands to invoke.

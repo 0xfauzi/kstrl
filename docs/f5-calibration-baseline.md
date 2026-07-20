@@ -1,5 +1,7 @@
 # F5 Calibration Baseline — 2026-05-27
 
+> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
+
 First end-to-end calibration baseline against real LLM calls. Captures the
 detection rate of each adversarial role on the planted-bug fixtures shipped in
 Phase D.
