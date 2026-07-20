@@ -86,6 +86,23 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
 - **Two real factory runs** (knowledge + evolution A+ gates): knowledge
   fact-utilization telemetry nonzero, and one `ralph evolve` proposal
   traceable to a real recorded signature.
+  CAPTURED 2026-07-20 on the slugify project (real specs, empty journals,
+  claude engineer + codex reviewers per the R7.1 default, PRs #99/#108/#111
+  merged into the throwaway `factory/e2e-base` base):
+  fact-utilization 3/12 on `unique-slug` (dependency-tier facts from
+  `slugify-utility`, lower-bound echo metric); evolution journal holds
+  real v2 entries with real durations and 5 real signature patterns;
+  `ralph evolve` (with the documented `[evolution]
+  min_pattern_frequency = 1` operator setting - every real signature was
+  a singleton) generated PROP-002 tracing to the recorded
+  `merge-failed-for-pr-failed-to-delete-local-branch` signature - the
+  same defect the runs surfaced and the fix PR closed. The runs also
+  surfaced and led to fixes for four real defects (merged-PR-as-failure,
+  factory agent-type alias fallthrough, stale-remote-branch push
+  rejection, unrecorded fact usage) and exercised hard-mode review
+  halting (codex blocked a haiku engineer terminally), the contract
+  phase (integrated check passed on 2 merged components), and the full
+  PR lifecycle end to end.
 
 Execution order: R0 -> R1 -> R2 -> R4 -> R3 -> R5 -> R6 -> R7.
 R4 (test spine) deliberately precedes R3/R5: the spine tests are the regression
