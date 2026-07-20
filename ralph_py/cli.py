@@ -2076,6 +2076,13 @@ def factory(
         and _normalize_ui_mode(ui) != "plain"
     )
     if use_tui:
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            click.echo(
+                "--tui requires an interactive terminal; use --no-tui "
+                "for non-interactive execution.",
+                err=True,
+            )
+            sys.exit(2)
         # PR F: embedded dashboard. The pre-execution confirm already
         # happened on the plain terminal (plan decision: no
         # modal-before-app); everything from here renders in Textual.

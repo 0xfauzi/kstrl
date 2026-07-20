@@ -3,6 +3,8 @@ quit flow, notify capture."""
 
 from __future__ import annotations
 
+import io
+import logging
 import subprocess
 import threading
 import time
@@ -22,6 +24,11 @@ from ralph_py.observability import NotifyConfig, NotifyHooks
 from ralph_py.shutdown import StopController
 from ralph_py.tui.app import Mode, RalphTuiApp
 from ralph_py.tui.bridge import OrchestratorHandle, start_orchestrator
+from ralph_py.tui.embed import (
+    _install_exclusive_root_handler,
+    _plain_fallback,
+    _restore_root_handlers,
+)
 from ralph_py.tui.screens.checkpoint import CheckpointModal
 from ralph_py.tui.screens.quit import QuitModal
 
@@ -231,6 +238,67 @@ class TestEmbeddedApp:
                 await pilot.pause(0.05)
                 assert time.monotonic() < deadline
         assert decisions == [2]
+
+    async def test_generic_prompt_uses_request_labels_and_valid_choices(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = _write_minimal_run(tmp_path, "factory-20260720-generic")
+        app = RalphTuiApp(
+            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            poll_interval=0.05,
+        )
+        request = PromptRequest(
+            kind=PromptKind.ITERATION,
+            header="Iteration complete. What next?",
+            options=("Continue", "Quit"),
+        )
+        results: list[int | None] = []
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.push_screen(CheckpointModal(request), results.append)
+            await pilot.pause()
+            labels = [button.label.plain for button in app.screen.query("Button")]
+            assert labels == ["Continue (1)", "Quit (2)"]
+            await pilot.press("t")
+            await pilot.pause()
+            assert isinstance(app.screen, CheckpointModal)
+            await pilot.press("2")
+            await pilot.pause()
+
+        assert results == [1]
+
+
+class TestFallbackAndLogging:
+    def test_plain_fallback_accepts_tailer_chunks(self, tmp_path: Path) -> None:
+        run_dir = _write_minimal_run(tmp_path, "factory-20260720-fallback")
+        result = FactoryResult()
+        result.exit_code = 7
+        thread = threading.Thread(target=lambda: None)
+        thread.start()
+        thread.join()
+        handle = OrchestratorHandle(
+            thread=thread, stop=StopController(), result_box=[result],
+        )
+
+        assert _plain_fallback(handle, run_dir) == 7
+
+    def test_root_logging_is_exclusive_and_restored(self) -> None:
+        logger = logging.Logger("embed-test")
+        old_stream = io.StringIO()
+        tui_stream = io.StringIO()
+        old_handler = logging.StreamHandler(old_stream)
+        tui_handler = logging.StreamHandler(tui_stream)
+        logger.addHandler(old_handler)
+
+        previous = _install_exclusive_root_handler(logger, tui_handler)
+        logger.warning("during tui")
+        _restore_root_handlers(logger, tui_handler, previous)
+        logger.warning("after tui")
+
+        assert "during tui" not in old_stream.getvalue()
+        assert "after tui" in old_stream.getvalue()
+        assert "during tui" in tui_stream.getvalue()
+        assert "after tui" not in tui_stream.getvalue()
 
 
 class TestNotifyCapture:
