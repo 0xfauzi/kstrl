@@ -126,14 +126,19 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         if event.breaker:
             line.append(f" · breaker {event.breaker}", style=theme.MUTED)
     elif isinstance(event, ev.SpecIssueRecorded):
-        severe = event.severity == "blocker"
+        severity = (
+            event.severity
+            if event.severity in {"blocker", "major", "minor"}
+            else "unknown"
+        )
+        severe = severity == "blocker"
         line.append(
             "▲ ",
             style=f"bold {theme.ERROR}" if severe else theme.WARNING,
         )
         line.append("spec issue ", style="bold" if severe else "")
         line.append(
-            f"[{event.severity}] ",
+            f"[{severity}] ",
             style=theme.ERROR if severe else theme.WARNING,
         )
         line.append(event.summary[:90])
@@ -141,7 +146,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
             line.append(f" at {event.location}", style=theme.MUTED)
     elif isinstance(event, ev.ArtifactWritten):
         line.append("⇣ ", style=theme.MUTED)
-        line.append(f"{event.label} written", style=theme.MUTED)
+        line.append(f"{event.label or 'artifact'} written", style=theme.MUTED)
         if event.path:
             line.append(f" · {event.path}", style=theme.MUTED)
     elif isinstance(event, ev.RunCompleted):

@@ -34,6 +34,7 @@ from kstrl.observability import latest_run_id, parse_event_ts, read_progress_eve
 MAX_RECENT_FINDINGS = 50
 MAX_SPEC_ISSUES = 100
 MAX_ARTIFACTS = 100
+SPEC_ISSUE_SEVERITIES = frozenset({"blocker", "major", "minor"})
 
 
 @dataclass
@@ -190,12 +191,16 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         return
 
     if isinstance(event, ev.SpecIssueRecorded):
-        severity = event.severity or "unknown"
+        severity = (
+            event.severity
+            if event.severity in SPEC_ISSUE_SEVERITIES
+            else "unknown"
+        )
         state.spec_issue_counts[severity] = (
             state.spec_issue_counts.get(severity, 0) + 1
         )
         state.spec_issues.append({
-            "severity": event.severity,
+            "severity": severity,
             "kind": event.kind,
             "summary": event.summary,
             "location": event.location,

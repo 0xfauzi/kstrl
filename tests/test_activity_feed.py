@@ -36,6 +36,11 @@ class TestSpecIssueLines:
         assert line is not None
         assert "x" * 200 not in line.plain
 
+    def test_unknown_severity_is_named(self) -> None:
+        line = humanize(ev.SpecIssueRecorded(severity="future", summary="s"))
+        assert line is not None
+        assert "[unknown]" in line.plain
+
 
 class TestArtifactLines:
     def test_label_and_path(self) -> None:
@@ -50,6 +55,11 @@ class TestArtifactLines:
         line = humanize(ev.ArtifactWritten(label="spec_issues"))
         assert line is not None
         assert "spec_issues written" in line.plain
+
+    def test_unlabelled_artifact_has_readable_fallback(self) -> None:
+        line = humanize(ev.ArtifactWritten())
+        assert line is not None
+        assert "artifact written" in line.plain
 
 
 class TestCurationControl:

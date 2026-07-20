@@ -235,6 +235,15 @@ class TestDecomposeVocabulary:
     def test_defaulted_severity_counts_as_unknown(self) -> None:
         state = reducer.fold(_stamped([ev.SpecIssueRecorded(summary="s")]))
         assert state.spec_issue_counts == {"unknown": 1}
+        assert state.spec_issues[0]["severity"] == "unknown"
+
+    def test_unrecognised_severities_share_the_unknown_bucket(self) -> None:
+        state = reducer.fold(_stamped([
+            ev.SpecIssueRecorded(severity=f"future-{i}", summary="s")
+            for i in range(200)
+        ]))
+        assert state.spec_issue_counts == {"unknown": 200}
+        assert {i["severity"] for i in state.spec_issues} == {"unknown"}
 
 
 class TestFoldApplyEquivalence:
