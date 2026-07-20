@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
@@ -36,15 +37,14 @@ from ralph_py.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from ralph_py.loop import run_loop
 from ralph_py.manifest import Manifest
 from ralph_py.observability import (
-    RunActivity,
     event_age_seconds,
     format_age,
     latest_run_id,
     read_progress_events,
-    summarize_events,
 )
 from ralph_py.output import build_console
 from ralph_py.prd import PRD
+from ralph_py.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from ralph_py.sandbox import SandboxConfig
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui.base import UI
@@ -2296,35 +2296,58 @@ def _age_label(ts: str) -> str:
     return f"{format_age(age)} ago"
 
 
+def _age_label_epoch(ts: float) -> str:
+    """"5m ago" for a float epoch timestamp (reducer times), or ""."""
+    if ts <= 0:
+        return ""
+    age = max(0.0, time.time() - ts)
+    return f"{format_age(age)} ago"
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
     ui_impl: UI,
-    activity: RunActivity | None = None,
-    log_path: Path | None = None,
+    state: RunState | None = None,
+    source_path: Path | None = None,
     root_dir: Path | None = None,
 ) -> None:
     """Render the per-component status view from a manifest.
 
-    ``activity`` is an observability.RunActivity joined onto the same
-    per-component skeleton (R3.2): phase, attempt, last-event age, cost
-    totals and evidence paths ride along when a progress log exists.
+    ``state`` is the reducer's RunState joined onto the same
+    per-component skeleton (chunk 8): phase (authoritative under the v2
+    layout, inferred for v1 logs), attempt, last-event age, usage
+    totals, PR/checkpoint/heartbeat detail, and evidence paths.
     """
     ui_impl.section("Ralph status")
     ui_impl.kv("Project", manifest.project_name)
     ui_impl.kv("Manifest", str(manifest_file))
     ui_impl.kv("Base branch", manifest.base_branch)
 
-    if activity is not None and log_path is not None:
-        ui_impl.kv("Progress log", str(log_path))
-        if activity.run_id:
-            ui_impl.kv("Run id", activity.run_id)
-        if activity.last_event_ts:
-            age = _age_label(activity.last_event_ts)
-            state = "finished" if activity.finished else "in flight"
+    if state is not None and source_path is not None:
+        label = (
+            "Events" if source_path.name == "events.jsonl" else "Progress log"
+        )
+        ui_impl.kv(label, str(source_path))
+        if state.run_id:
+            ui_impl.kv("Run id", state.run_id)
+        if state.last_event_ts:
+            age = _age_label_epoch(state.last_event_ts)
+            run_state = "finished" if state.finished else "in flight"
             ui_impl.kv(
                 "Run state",
-                f"{state} (last event {age})" if age else state,
+                f"{run_state} (last event {age})" if age else run_state,
+            )
+        if state.usage_calls:
+            note = "+" if state.unreported_calls else ""
+            ui_impl.kv(
+                "Run usage",
+                f"{state.total_tokens}{note} tokens, "
+                f"${state.cost_usd:.4f}{note}"
+                + (
+                    f" of {state.max_total_tokens} token cap"
+                    if state.max_total_tokens else ""
+                ),
             )
 
     counts: dict[str, int] = {}
@@ -2342,46 +2365,68 @@ def _render_status(
             ui_impl.kv("  started_at", comp.started_at)
         if comp.completed_at:
             ui_impl.kv("  completed_at", comp.completed_at)
+
+        comp_state: ComponentState | None = (
+            state.components.get(comp.id) if state is not None else None
+        )
         if comp.pr_url:
-            ui_impl.kv("  pr", comp.pr_url)
+            pr_note = (
+                f" ({comp_state.pr_state})"
+                if comp_state is not None and comp_state.pr_state else ""
+            )
+            ui_impl.kv("  pr", f"{comp.pr_url}{pr_note}")
+        elif comp_state is not None and comp_state.pr_url:
+            ui_impl.kv(
+                "  pr", f"{comp_state.pr_url} ({comp_state.pr_state})",
+            )
         if comp.error:
             ui_impl.kv("  error", comp.error)
 
-        comp_activity = (
-            activity.components.get(comp.id) if activity is not None else None
-        )
-        if comp_activity is not None:
-            if comp_activity.phase:
-                ui_impl.kv("  phase", comp_activity.phase)
-            attempt = comp_activity.attempt or comp.retries + 1
+        if comp_state is not None:
+            if comp_state.phase:
+                ui_impl.kv("  phase", comp_state.phase)
+            attempt = comp_state.attempt or comp.retries + 1
             ui_impl.kv("  attempt", str(attempt))
-            if comp_activity.last_event:
-                age = _age_label(comp_activity.last_event_ts)
+            if comp_state.last_event:
+                age = _age_label_epoch(comp_state.last_event_ts)
                 ui_impl.kv(
                     "  last event",
-                    f"{comp_activity.last_event} ({age})"
-                    if age else comp_activity.last_event,
+                    f"{comp_state.last_event} ({age})"
+                    if age else comp_state.last_event,
                 )
-            if comp_activity.usage_calls:
+            if comp_state.checkpoint_open:
+                ui_impl.kv(
+                    "  checkpoint",
+                    f"{comp_state.checkpoint_open} awaiting decision",
+                )
+            if (
+                comp_state.last_heartbeat_ts
+                and comp.status in ("running", "verifying")
+            ):
+                ui_impl.kv(
+                    "  worker",
+                    f"last heartbeat {_age_label_epoch(comp_state.last_heartbeat_ts)}",
+                )
+            if comp_state.usage_calls:
                 note = (
-                    f" (lower bound: {comp_activity.unreported_calls} "
+                    f" (lower bound: {comp_state.unreported_calls} "
                     f"call(s) unreported)"
-                    if comp_activity.unreported_calls else ""
+                    if comp_state.unreported_calls else ""
                 )
                 ui_impl.kv(
                     "  usage",
-                    f"{comp_activity.total_tokens} tokens, "
-                    f"${comp_activity.cost_usd:.4f}, "
-                    f"{comp_activity.usage_calls} calls{note}",
+                    f"{comp_state.total_tokens} tokens, "
+                    f"${comp_state.cost_usd:.4f}, "
+                    f"{comp_state.usage_calls} calls{note}",
                 )
         # Evidence paths: whatever this run left on disk for the
         # component (worktree kept after a failure, adversarial raw
         # outputs under .ralph/debug/).
-        if root_dir is not None and activity is not None and activity.run_id:
+        if root_dir is not None and state is not None and state.run_id:
             evidence = [
                 path for path in (
-                    root_dir / ".ralph" / "worktrees" / activity.run_id / comp.id,
-                    root_dir / ".ralph" / "debug" / activity.run_id / comp.id,
+                    root_dir / ".ralph" / "worktrees" / state.run_id / comp.id,
+                    root_dir / ".ralph" / "debug" / state.run_id / comp.id,
                 )
                 if path.exists()
             ]
@@ -2464,7 +2509,32 @@ def status(
             root_dir / "scripts" / "ralph" / "run-manifest.json",
         ]
 
-    log_path = progress_log_path or root_dir / ".ralph" / "progress.jsonl"
+    def _load_state(manifest: Manifest) -> tuple[RunState | None, Path | None]:
+        """Chunk 8: the versioned reader.
+
+        An explicit --progress-log pins the v1 arm on that file.
+        Otherwise the reducer resolves the newest v2 run dir (preferring
+        the manifest's recorded run when it still exists on disk) and
+        falls back to v1 progress.jsonl up-conversion.
+        """
+        if progress_log_path is not None:
+            raw = read_progress_events(progress_log_path)
+            if not raw:
+                return None, None
+            rid = latest_run_id(raw)
+            return (
+                fold((upconvert_v1(e) for e in raw), run_id=rid),
+                progress_log_path,
+            )
+        state, source = load_run_state(root_dir, manifest.run_id or "")
+        if manifest.run_id and (source is None or not state.started_ts):
+            # The recorded run left no stream (dir pruned, or a v1 log
+            # that predates it): fall back to the newest stream rather
+            # than rendering nothing.
+            state, source = load_run_state(root_dir)
+        if source is None:
+            return None, None
+        return state, source
 
     def _load_and_render() -> int:
         manifest_file = next((p for p in candidates if p.exists()), None)
@@ -2482,14 +2552,10 @@ def status(
             ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
             return 1
 
-        events = read_progress_events(log_path)
-        activity: RunActivity | None = None
-        if events:
-            activity = summarize_events(events, latest_run_id(events))
-
+        state, source_path = _load_state(manifest)
         _render_status(
             manifest, manifest_file, ui_impl,
-            activity=activity, log_path=log_path if events else None,
+            state=state, source_path=source_path,
             root_dir=root_dir,
         )
         return 0
