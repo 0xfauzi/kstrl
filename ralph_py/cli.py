@@ -2469,7 +2469,7 @@ def _render_status(
 )
 @click.option(
     "--poll",
-    type=float,
+    type=click.FloatRange(min=0, min_open=True),
     default=0.2,
     help="Tail poll interval in seconds (default: 0.2, spike-measured)",
 )

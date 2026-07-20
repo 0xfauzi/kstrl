@@ -70,8 +70,10 @@ class RalphTuiApp(App[int]):
         self._poll()  # catch-up fold before the first frame settles
 
     def _poll(self) -> None:
-        events = self.tailer.poll_events()
-        if self.store.apply_events(events):
+        chunk = self.tailer.poll_events()
+        if chunk.truncated:
+            self.store.reset()
+        if self.store.apply_events(chunk.events):
             self.screen.post_message(StateChanged(self.store.state))
 
     def _tick_ages(self) -> None:
