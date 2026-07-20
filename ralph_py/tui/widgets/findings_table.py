@@ -29,11 +29,13 @@ class FindingsTable(DataTable[Text | str]):
         for column in COLUMNS:
             self.add_column(column, key=column)
         self._rendered = 0
+        self._snapshot: list[dict[str, Any]] = []
 
     def update_state(self, comp: ComponentState) -> None:
         findings: list[dict[str, Any]] = comp.recent_findings
-        if len(findings) < self._rendered:
-            # Bounded list rolled over (or a retry superseded): rebuild.
+        if findings[:self._rendered] != self._snapshot:
+            # The bounded list rolled over (possibly at the same length),
+            # or a rebuilt event snapshot replaced prior rows.
             self.clear()
             self._rendered = 0
         for finding in findings[self._rendered:]:
@@ -47,3 +49,4 @@ class FindingsTable(DataTable[Text | str]):
                 str(finding.get("attempt", "")),
             )
         self._rendered = len(findings)
+        self._snapshot = [dict(finding) for finding in findings]

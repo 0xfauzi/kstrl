@@ -42,7 +42,7 @@ from ralph_py import events as ev
 from ralph_py import git
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.context import IterationContext, IterationRecord
-from ralph_py.findings import MODEL_TAG_PREFIX, Finding, tag_finding_with_attempt
+from ralph_py.findings import Finding, finding_model, tag_finding_with_attempt
 from ralph_py.fixtures import FixturesConfig
 from ralph_py.interaction import (
     CheckpointContext,
@@ -451,14 +451,6 @@ class ComponentPipeline:
         # Chunk 4: stream each finding as a typed event the moment it is
         # recorded (the manifest only carries them at transition time).
         for finding in new_findings:
-            model = next(
-                (
-                    tag[len(MODEL_TAG_PREFIX):]
-                    for tag in finding.tags
-                    if tag.startswith(MODEL_TAG_PREFIX)
-                ),
-                "",
-            )
             self.bus.emit(ev.FindingRecorded(
                 component=comp.id,
                 phase=finding.phase,
@@ -467,7 +459,7 @@ class ComponentPipeline:
                 location=finding.location,
                 explanation=finding.explanation,
                 attempt=attempt,
-                model=model,
+                model=finding_model(finding) or "",
             ))
 
     def begin_attempt(self, comp: Component) -> None:
@@ -858,6 +850,15 @@ class ComponentPipeline:
             skipped = self.manifest.cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
             self.factory_result.skipped.extend(skipped)
+            started = self._attempt_started_monotonic.get(comp_id)
+            duration = time.monotonic() - started if started is not None else 0.0
+            self.bus.emit(ev.PhaseCompleted(
+                component=comp_id,
+                phase="engineer",
+                passed=False,
+                detail="component timeout",
+                duration_seconds=round(duration, 2),
+            ))
             self.bus.emit(ev.ComponentFailed(
                 component=comp_id, error="component timeout",
             ))

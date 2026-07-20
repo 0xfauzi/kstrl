@@ -37,7 +37,7 @@ class CheckpointBanner(Static):
             "answer in the `ralph factory` terminal"
             if observe_only else "press c to answer"
         )
-        self.update(f"⛳ checkpoint pending: {names} - {hint}")
+        self.update(f"checkpoint pending: {names} - {hint}")
 
 
 class OverviewScreen(Screen[None]):

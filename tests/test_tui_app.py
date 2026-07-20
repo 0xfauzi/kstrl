@@ -6,6 +6,7 @@ drives the real app without a terminal.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from rich.text import Text
@@ -92,6 +93,22 @@ class TestOverview:
             await pilot.pause()
             await pilot.press("ctrl+c")
         assert app.return_value == 0
+
+    async def test_stream_replacement_resets_before_rebuild(
+        self, tmp_path: Path,
+    ) -> None:
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            initial_tokens = app.store.state.total_tokens
+            replacement = tmp_path / "events.jsonl"
+            replacement.write_bytes((run_dir / "events.jsonl").read_bytes())
+            os.replace(replacement, run_dir / "events.jsonl")
+            app._poll()
+            await pilot.pause()
+
+            assert app.store.state.total_tokens == initial_tokens
 
 
 class TestRenderHelpers:

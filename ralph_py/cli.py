@@ -1390,10 +1390,18 @@ def decompose(
         else os.environ.get("RALPH_AGENT_TYPE", "auto")
     )
 
-    if not effective_cmd and not CodexAgent.is_available() and not ClaudeCodeAgent.is_available():
-        ui_impl.err("No agent available (codex and claude not found in PATH)")
-        ui_impl.info("Install an agent or use --agent-cmd to specify a custom one")
+    # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
+    # "claude" before get_agent, whose unrecognized-type fallthrough is
+    # codex; the preflight also covers the no-agent-available check.
+    canonical_type, type_error, type_hint = _agent_preflight(
+        effective_cmd, effective_type,
+    )
+    if type_error:
+        ui_impl.err(type_error)
+        if type_hint:
+            ui_impl.info(type_hint)
         sys.exit(1)
+    effective_type = canonical_type or effective_type
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
@@ -1758,10 +1766,18 @@ def factory(
         else os.environ.get("RALPH_AGENT_TYPE", "auto")
     )
 
-    if not effective_cmd and not CodexAgent.is_available() and not ClaudeCodeAgent.is_available():
-        ui_impl.err("No agent available (codex and claude not found in PATH)")
-        ui_impl.info("Install an agent or use --agent-cmd to specify a custom one")
+    # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
+    # "claude" before get_agent, whose unrecognized-type fallthrough is
+    # codex; the preflight also covers the no-agent-available check.
+    canonical_type, type_error, type_hint = _agent_preflight(
+        effective_cmd, effective_type,
+    )
+    if type_error:
+        ui_impl.err(type_error)
+        if type_hint:
+            ui_impl.info(type_hint)
         sys.exit(1)
+    effective_type = canonical_type or effective_type
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
@@ -2036,6 +2052,13 @@ def factory(
         base_config.sleep_seconds = sleep
     base_config.ui_mode = "plain"
     base_config.no_color = True
+
+    # R2.4 mirror for the factory path (measured 2026-07-20 on the first
+    # real factory run): without this, a toml alias like type = "claude"
+    # reaches get_agent RAW in every engineer worker and silently falls
+    # through to the codex default - and _cli_family misreads the
+    # engineer family, inverting the R7.1 reviewer rotation.
+    _check_agent_preflight(base_config, ui_impl)
 
     # Ensure prompt file exists
     if not base_config.prompt_file.exists():
@@ -2471,7 +2494,7 @@ def _render_status(
 )
 @click.option(
     "--poll",
-    type=float,
+    type=click.FloatRange(min=0, min_open=True),
     default=0.2,
     help="Tail poll interval in seconds (default: 0.2, spike-measured)",
 )

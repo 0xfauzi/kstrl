@@ -356,3 +356,109 @@ class TestRunPrdPreflight:
         # downstream get_agent calls select the agent preflight verified.
         base_config = factory_calls[0]["args"][2]
         assert base_config.agent_type == "auto"
+
+
+class TestFactoryPreflightWiring:
+    """R2.4 mirror on the factory path (measured 2026-07-20 on the first
+    real factory run): toml ``[agent] type = "claude"`` reached
+    ``get_agent`` RAW in every engineer worker and silently fell through
+    to the codex default - inverting the R7.1 rotation's family
+    detection along the way."""
+
+    def test_factory_canonicalizes_toml_claude_alias(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from ralph_py.manifest import Component, Manifest
+
+        _availability(monkeypatch, claude=True, codex=True)
+        root = tmp_path / "proj"
+        root.mkdir()
+        _scaffold(root)
+        (root / "ralph.toml").write_text('[agent]\ntype = "claude"\n')
+
+        manifest = Manifest(
+            version="1", spec_file="spec.md", project_name="p",
+            base_branch="main", single_pr=False,
+            components=[Component(
+                "alpha", "Alpha", "First", [],
+                "scripts/ralph/feature/alpha/prd.json",
+                "ralph/factory/alpha",
+            )],
+        )
+        manifest_file = tmp_path / "manifest.json"
+        manifest_file.write_text("{}")  # click existence check only
+        monkeypatch.setattr(
+            cli_mod.Manifest, "load",
+            classmethod(lambda cls, path: manifest),
+        )
+
+        captured: dict[str, Any] = {}
+
+        def fake_run_factory(
+            manifest_arg: Any, factory_config: Any, base_config: Any,
+            *args: Any, **kwargs: Any,
+        ) -> SimpleNamespace:
+            captured["agent_type"] = base_config.agent_type
+            return SimpleNamespace(exit_code=0)
+
+        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "factory", "--manifest", str(manifest_file),
+                "--root", str(root), "--yes",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert captured.get("agent_type") == "claude-code", result.output
+
+    def test_factory_blocks_unknown_agent_type_loudly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The other half of the fallthrough hazard: a typo'd type must
+        exit with the R2.4 error, never reach a codex engineer."""
+        _availability(monkeypatch, claude=True, codex=True)
+        root = tmp_path / "proj"
+        root.mkdir()
+        _scaffold(root)
+        (root / "ralph.toml").write_text('[agent]\ntype = "clade"\n')
+
+        from ralph_py.manifest import Component, Manifest
+
+        manifest = Manifest(
+            version="1", spec_file="spec.md", project_name="p",
+            base_branch="main", single_pr=False,
+            components=[Component(
+                "alpha", "Alpha", "First", [],
+                "scripts/ralph/feature/alpha/prd.json",
+                "ralph/factory/alpha",
+            )],
+        )
+        manifest_file = tmp_path / "manifest.json"
+        manifest_file.write_text("{}")
+        monkeypatch.setattr(
+            cli_mod.Manifest, "load",
+            classmethod(lambda cls, path: manifest),
+        )
+
+        called: list[bool] = []
+        monkeypatch.setattr(
+            cli_mod, "run_factory",
+            lambda *a, **k: called.append(True) or SimpleNamespace(exit_code=0),
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "factory", "--manifest", str(manifest_file),
+                "--root", str(root), "--yes",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Unknown agent type" in result.output
+        assert not called

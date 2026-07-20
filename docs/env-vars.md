@@ -23,12 +23,24 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `MODEL_REASONING_EFFORT` | str | unset | `low\|medium\|high\|max` |
 | `RALPH_AGENT_TYPE` | str | unset | `claude-code\|claude-sdk\|codex\|auto` (`claude-sdk` needs the `sdk` extra: `uv sync --extra sdk`) |
 | `RALPH_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Non-positive or unparseable values are ignored |
-| `RALPH_TIMEOUT_AGENT_ITERATION` | float | 1800 | Per-agent.run() timeout (seconds) |
-| `RALPH_TIMEOUT_COMPONENT` | float | 7200 | Per-component total timeout |
-| `RALPH_TIMEOUT_DEFAULT` | float | 60 | Generic subprocess timeout |
 | `RALPH_UI` | str | auto | `auto\|rich\|plain` |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `RALPH_ASCII` | bool | false | ASCII-only UI |
+
+## TimeoutConfig (`[timeout]`)
+
+All values are seconds; 0 or less disables that limit.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `RALPH_TIMEOUT_GIT` | float | 30 | Per git subprocess |
+| `RALPH_TIMEOUT_AGENT_ITERATION` | float | 1800 | One engineer iteration |
+| `RALPH_TIMEOUT_COMPONENT` | float | 7200 | Wall clock per component across iterations |
+| `RALPH_TIMEOUT_VERIFY` | float | 300 | Each Phase 1 check subprocess (also read by `VerifyConfig.subprocess_timeout`) |
+| `RALPH_TIMEOUT_REVIEW` | float | 600 | Phase 2 reviewer call |
+| `RALPH_TIMEOUT_CONTRACT` | float | 600 | Phase 3 contract test run (also read by `ContractConfig.timeout`) |
+| `RALPH_TIMEOUT_DEFAULT` | float | 60 | Any other subprocess |
+| `RALPH_TIMEOUT_BACKSTOP_MARGIN` | float | 60 | Extra slack before the scheduler declares a worker dead |
 
 ## FactoryConfig (`[factory]`)
 
@@ -39,7 +51,10 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `FACTORY_RETRY_DELAY` | float | 5.0 |
 | `FACTORY_MERGE_TIMEOUT` | float | 300.0 |
 | `RALPH_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (unbounded) |
+| `RALPH_FACTORY_MAX_TOTAL_TOKENS` | int | 0 (unbounded) |
 | `RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
+| `RALPH_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
+| `RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in ralph.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
@@ -83,6 +98,17 @@ agent's worktree by construction on both CLIs.
 | `RALPH_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
 | `RALPH_VERIFY_PROGRESS_FILE` | path | `scripts/ralph/progress.txt` |
 
+## FixturesConfig (`[fixtures]`)
+
+Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-supplied commands and import PRD-named modules, so the operator must opt in explicitly.
+
+| Env var | Type | Default |
+|---|---|---|
+| `RALPH_FIXTURES_ENABLED` | bool | false |
+| `RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS` | bool | true |
+| `RALPH_FIXTURES_SNAPSHOT_DIR` | path | `.ralph/snapshots` (relative = against the repo root) |
+| `RALPH_FIXTURES_TIMEOUT` | float | 30 |
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |
@@ -97,14 +123,14 @@ Invalid mode raises ValueError (Phase B8).
 
 | Env var | Type | Default |
 |---|---|---|
-| `RALPH_SECURITY_MODE` | str | `advisory` (`skip\|advisory\|hard`) |
+| `RALPH_SECURITY_MODE` | str | `skip` (`skip\|advisory\|hard`) |
 | `RALPH_SECURITY_AGENT_CMD` | str | unset |
 | `RALPH_SECURITY_AGENT_TYPE` | str | unset |
 | `RALPH_SECURITY_MODEL` | str | unset |
 | `RALPH_SECURITY_TIMEOUT` | float | 600 |
 | `RALPH_SECURITY_FAIL_THRESHOLD` | str | `high` (`critical\|high\|medium\|low`) |
 
-Invalid mode or threshold raises ValueError (Phase B8). Note: the `ralph_py factory` CLI defaults `--security-mode` to `skip` for backward compat; the dataclass default of `advisory` only applies to programmatic construction.
+Invalid mode or threshold raises ValueError (Phase B8). The default mode is `skip` everywhere (dataclass, env, CLI); enable the pass with `advisory` or `hard`.
 
 ## KnowledgeConfig (`[knowledge]`)
 
@@ -139,6 +165,16 @@ Invalid mode or threshold raises ValueError (Phase B8). Note: the `ralph_py fact
 | `RALPH_EVOLUTION_ENABLED` | bool | true |
 | `RALPH_EVOLUTION_JOURNAL_PATH` | path | `.ralph/evolution.jsonl` |
 | `RALPH_EVOLUTION_LOOKBACK_RUNS` | int | 10 |
+
+## NotifyConfig (`[notify]`)
+
+Run-milestone shell hooks (R3.2), each fired at most once per run. The hook command runs via the shell with `RALPH_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending`), `RALPH_NOTIFY_RUN_ID`, `RALPH_NOTIFY_PROJECT`, `RALPH_NOTIFY_COMPONENT` and `RALPH_NOTIFY_DETAIL` set in its environment.
+
+| Env var | Type | Default |
+|---|---|---|
+| `RALPH_NOTIFY_ON_COMPLETE` | str | unset (hook disabled) |
+| `RALPH_NOTIFY_ON_FIRST_FAILURE` | str | unset (hook disabled) |
+| `RALPH_NOTIFY_HOOK_TIMEOUT` | float | 30 |
 
 ## LinearConfig (`[linear]`)
 

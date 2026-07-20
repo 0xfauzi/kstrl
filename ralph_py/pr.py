@@ -102,7 +102,15 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
     """Merge a PR via gh CLI with auto-merge.
 
     Uses --auto so GitHub merges once status checks pass.
-    Uses --delete-branch to clean up the feature branch.
+
+    Deliberately does NOT pass ``--delete-branch`` (measured 2026-07-20
+    on the first real factory run): gh's local-branch deletion fails
+    when the branch is checked out in the component worktree - which it
+    always is at merge time - and gh then exits nonzero even though the
+    PR itself merged, turning a successful merge into a reported
+    failure. Remote-branch cleanup is an explicit post-confirmation
+    step in ``_merge_and_wait``; local branches are handled by the
+    factory's stale-branch machinery on the next run.
 
     Returns an error message, or None when a merge was initiated
     (confirmation is wait_for_merge's job).
@@ -116,7 +124,7 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
         result = subprocess.run(
             [
                 "gh", "pr", "merge", str(pr_number),
-                f"--{method}", "--delete-branch", "--auto",
+                f"--{method}", "--auto",
             ],
             cwd=cwd,
             capture_output=True,
@@ -128,7 +136,7 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
             result = subprocess.run(
                 [
                     "gh", "pr", "merge", str(pr_number),
-                    f"--{method}", "--delete-branch",
+                    f"--{method}",
                 ],
                 cwd=cwd,
                 capture_output=True,
@@ -266,6 +274,33 @@ def wait_for_merge(
     return "pending"
 
 
+def _delete_remote_branch(branch: str, cwd: Path) -> str | None:
+    """Best-effort remote-branch delete after a confirmed merge.
+
+    Replaces gh's ``--delete-branch`` (see :func:`merge_pr` for why that
+    flag is a hazard). A stale remote branch would make the next push of
+    a recreated same-name branch non-fast-forward, so this is cleanup
+    with a correctness angle - but it must never gate the merge outcome:
+    the caller logs the returned error and moves on.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "push", "--delete", "--", "origin", branch],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PUSH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return f"remote branch delete of {branch} timed out"
+    if result.returncode != 0:
+        return (
+            result.stderr.strip()
+            or f"remote branch delete of {branch} failed"
+        )
+    return None
+
+
 def _merge_and_wait(
     pr_number: int,
     pr_url: str,
@@ -274,9 +309,23 @@ def _merge_and_wait(
     ui: UI,
     merge_method: str,
     merge_timeout: float,
+    head_branch: str | None = None,
 ) -> PrOutcome:
     """Shared merge-initiate + confirm + fetch tail of the PR lifecycle."""
     merge_error = merge_pr(pr_number, cwd, merge_method)
+    if merge_error:
+        # gh pr merge can exit nonzero AFTER the merge itself succeeded
+        # (measured 2026-07-20 on the first real factory run: branch
+        # cleanup failed post-merge and gh reported failure while the PR
+        # sat MERGED on GitHub). R0.2 gates completion on the merge
+        # OUTCOME, so consult the PR state before declaring failure.
+        if _pr_state(pr_number, cwd) == "MERGED":
+            ui.warn(
+                f"  gh pr merge #{pr_number} reported an error "
+                f"({merge_error}) but the PR state is MERGED; "
+                f"continuing on the confirmed outcome"
+            )
+            merge_error = None
     if merge_error:
         ui.warn(f"  Failed to merge #{pr_number}: {merge_error}")
         # R7.5: distinguish "conflicting with base" from every other
@@ -300,6 +349,14 @@ def _merge_and_wait(
     state = wait_for_merge(pr_number, cwd, timeout=merge_timeout)
     if state == "merged":
         ui.ok(f"  PR #{pr_number} merged")
+        if head_branch:
+            delete_error = _delete_remote_branch(head_branch, cwd)
+            if delete_error:
+                ui.warn(
+                    f"  Remote cleanup of {head_branch} failed "
+                    f"({delete_error}); a later same-name push may need "
+                    f"the stale remote branch removed first"
+                )
         # Fetch (never pull, H-1) so origin/<base> includes the merged
         # code for downstream worktrees; the operator's checkout is
         # untouched. A failed fetch does not un-merge the PR, but it
@@ -395,6 +452,7 @@ def push_create_and_merge_pr(
         return _merge_and_wait(
             pr_number, component.pr_url, manifest.base_branch,
             cwd, ui, merge_method, merge_timeout,
+            head_branch=component.branch_name,
         )
 
     # Push
@@ -420,6 +478,7 @@ def push_create_and_merge_pr(
     return _merge_and_wait(
         pr_number, pr_url, manifest.base_branch,
         cwd, ui, merge_method, merge_timeout,
+        head_branch=component.branch_name,
     )
 
 
