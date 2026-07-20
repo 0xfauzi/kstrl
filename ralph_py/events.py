@@ -395,6 +395,9 @@ class FindingRecorded(Event):
     location: str = ""
     explanation: str = ""
     attempt: int = 0
+    # R7.1 attribution: the reviewing model identity ("codex (gpt-5)"),
+    # extracted from the finding's model: tag; "" when no reviewer ran.
+    model: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)

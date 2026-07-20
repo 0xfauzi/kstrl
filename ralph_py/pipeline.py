@@ -42,7 +42,7 @@ from ralph_py import events as ev
 from ralph_py import git
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.context import IterationContext, IterationRecord
-from ralph_py.findings import Finding, tag_finding_with_attempt
+from ralph_py.findings import Finding, finding_model, tag_finding_with_attempt
 from ralph_py.fixtures import FixturesConfig
 from ralph_py.interaction import (
     CheckpointContext,
@@ -459,6 +459,7 @@ class ComponentPipeline:
                 location=finding.location,
                 explanation=finding.explanation,
                 attempt=attempt,
+                model=finding_model(finding) or "",
             ))
 
     def begin_attempt(self, comp: Component) -> None:

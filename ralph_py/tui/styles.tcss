@@ -28,3 +28,74 @@
 #component-table {
     height: 1fr;
 }
+
+/* Component detail screen (PR E). */
+
+#component-header {
+    dock: top;
+    height: 1;
+    background: $panel;
+}
+
+#phase-timeline {
+    height: auto;
+    padding: 0 1;
+    border-bottom: solid $panel;
+}
+
+#findings-table {
+    height: auto;
+    max-height: 30%;
+}
+
+#transcript {
+    height: 1fr;
+    border-top: solid $accent 40%;
+}
+
+#evidence {
+    dock: bottom;
+    height: auto;
+    max-height: 8;
+    padding: 0 1;
+    background: $panel;
+}
+
+/* E6 checkpoint modal (PR E). */
+
+CheckpointModal {
+    align: center middle;
+}
+
+#checkpoint-dialog {
+    width: 90%;
+    max-width: 120;
+    height: 80%;
+    border: thick $warning;
+    background: $surface;
+    padding: 1 2;
+}
+
+#checkpoint-question {
+    text-style: bold;
+}
+
+#checkpoint-summary {
+    height: 1;
+    margin-bottom: 1;
+}
+
+#checkpoint-body {
+    height: 1fr;
+    border: solid $panel;
+    padding: 0 1;
+}
+
+#checkpoint-buttons {
+    height: 3;
+    align-horizontal: center;
+}
+
+#checkpoint-buttons Button {
+    margin: 0 2;
+}
