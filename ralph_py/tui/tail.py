@@ -156,10 +156,31 @@ class RunTailer:
                     entry / "engineer.jsonl",
                 )
 
-    def poll_events(self) -> list[Event]:
+    def _poll_once(self) -> TailChunk:
         self._discover_workers()
-        events = self._events.poll().events
+        run_chunk = self._events.poll()
+        events = run_chunk.events
+        truncated = run_chunk.truncated
         for tailer in self._workers.values():
-            events.extend(tailer.poll().events)
+            worker_chunk = tailer.poll()
+            events.extend(worker_chunk.events)
+            truncated = truncated or worker_chunk.truncated
         events.sort(key=lambda e: (e.ts, e.source, e.seq))
-        return events
+        return TailChunk(events=events, truncated=truncated)
+
+    def poll_events(self) -> TailChunk:
+        """Return new events, rebuilding a full snapshot after rewrites.
+
+        A reducer cannot safely apply a replaced worker stream on top of
+        its old state. If any constituent file reports truncation, reset
+        every offset and return one complete, consistently ordered snapshot
+        with ``truncated=True`` so the consumer can reset before folding it.
+        """
+        chunk = self._poll_once()
+        if not chunk.truncated:
+            return chunk
+        self._events = JsonlTailer(self.run_dir / "events.jsonl")
+        self._workers = {}
+        rebuilt = self._poll_once()
+        rebuilt.truncated = True
+        return rebuilt
