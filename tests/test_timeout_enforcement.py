@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from ralph_py.agents.claude_code import ClaudeCodeAgent
+from ralph_py.agents.claude_sdk import ClaudeSdkAgent
 from ralph_py.agents.codex import CodexAgent
 from ralph_py.agents.custom import CustomAgent
 from ralph_py.agents.proc import TIMEOUT_MESSAGE_PREFIX
@@ -264,6 +265,112 @@ class TestCodexAgentDeadline:
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.final_message is None
         assert _wait_pid_dead(_read_pid(pidfile))
+
+
+class TestClaudeSdkAgentDeadline:
+    """R0.1 battery against the SDK transport (R7.6 gate).
+
+    The claude-sdk adapter runs the SDK in a runner subprocess spawned
+    through DeadlineStreamer precisely because the SDK's own transport
+    spawns the CLI WITHOUT ``start_new_session`` and only signals the
+    direct child on close (measured 2026-07-20, SDK 0.2.123) - so these
+    tests drive the REAL runner + REAL SDK against fake CLIs injected
+    via ``ClaudeAgentOptions.cli_path`` and assert the whole tree dies
+    on breach. Startup overhead is measured (~0.2s SDK import), so the
+    deadlines below have ample margin.
+    """
+
+    def _fake_cli(self, tmp_path: Path, body: str) -> Path:
+        fake = tmp_path / "fake-claude"
+        fake.write_text("#!/bin/sh\n" + body)
+        fake.chmod(0o755)
+        return fake
+
+    def _agent(self, cli: Path) -> ClaudeSdkAgent:
+        agent = ClaudeSdkAgent(model="haiku")
+        agent._cli_path = str(cli)
+        return agent
+
+    def test_silent_hang_is_killed(self, tmp_path: Path) -> None:
+        """A CLI that never answers the SDK handshake (no output at
+        all) still trips the wall-clock deadline; the SDK's own 60s
+        initialize timeout never gets the chance to matter."""
+        pidfile = tmp_path / "cli.pid"
+        cli = self._fake_cli(
+            tmp_path, f"echo $$ > {pidfile}\nexec sleep 300\n",
+        )
+        agent = self._agent(cli)
+        start = time.monotonic()
+        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 4.0 + KILL_BOUND_SECONDS
+        assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
+        assert agent.usage_records[-1].source == "timeout"
+        assert _wait_pid_dead(_read_pid(pidfile))
+
+    def test_hang_after_output_is_killed(self, tmp_path: Path) -> None:
+        """Output before the hang must not reset the absolute deadline.
+
+        The marker goes to the CLI's stderr, which is inherited from
+        the runner and merged into the adapter stream - visible without
+        having to speak the SDK's stdout JSON protocol."""
+        pidfile = tmp_path / "cli.pid"
+        cli = self._fake_cli(
+            tmp_path,
+            f"echo fake-cli-started 1>&2\n"
+            f"echo $$ > {pidfile}\nexec sleep 300\n",
+        )
+        agent = self._agent(cli)
+        start = time.monotonic()
+        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
+        elapsed = time.monotonic() - start
+
+        assert elapsed < 4.0 + KILL_BOUND_SECONDS
+        assert "fake-cli-started" in lines
+        assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
+        assert _wait_pid_dead(_read_pid(pidfile))
+
+    def test_grandchild_is_killed_too(self, tmp_path: Path) -> None:
+        """The R7.6 gate's core case: a tool-like process spawned BY the
+        CLI (a grandchild of the runner, great-grandchild of the
+        harness) dies on breach. This is exactly what the SDK's own
+        direct-child close() cannot guarantee and why the runner owns
+        the process group."""
+        grandchild_pidfile = tmp_path / "grandchild.pid"
+        cli = self._fake_cli(
+            tmp_path,
+            f"sleep 300 &\necho $! > {grandchild_pidfile}\nwait\n",
+        )
+        agent = self._agent(cli)
+        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
+
+        assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
+        assert _wait_pid_dead(_read_pid(grandchild_pidfile))
+
+    def test_missing_sdk_fails_fast_with_install_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without the sdk extra the runner emits the install hint and
+        exits - no hang, no timeout, no traceback spew."""
+        shadow = tmp_path / "shadow" / "claude_agent_sdk"
+        shadow.mkdir(parents=True)
+        (shadow / "__init__.py").write_text(
+            'raise ImportError("claude-agent-sdk deliberately shadowed")\n'
+        )
+        monkeypatch.setenv("PYTHONPATH", str(tmp_path / "shadow"))
+
+        agent = ClaudeSdkAgent()
+        start = time.monotonic()
+        lines = list(agent.run("prompt", tmp_path, timeout=30.0))
+        elapsed = time.monotonic() - start
+
+        assert elapsed < KILL_BOUND_SECONDS
+        assert any("claude-agent-sdk is not installed" in line for line in lines)
+        assert not any(
+            line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines
+        )
+        assert agent.usage_records[-1].source == "unavailable"
 
 
 class TestSignalGroupSafety:

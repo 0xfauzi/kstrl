@@ -10,6 +10,15 @@ dependencies = [
     "click>=8.0.0",
 ]
 
+# R7.6: the claude-sdk agent adapter is opt-in because the SDK carries a
+# heavy transitive set (anyio, mcp, starlette, uvicorn, ...) while the
+# core harness runs on rich+click. agent_type = "claude-sdk" without the
+# extra fails loudly with the install hint.
+[project.optional-dependencies]
+sdk = [
+    "claude-agent-sdk>=0.2.123,<0.3",
+]
+
 [project.scripts]
 ralph = "ralph_py.cli:main"
 
@@ -20,6 +29,9 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.6.0",
     "mypy>=1.10.0",
+    # The sdk extra is part of the dev set so the R7.6 unit tests and
+    # mypy always exercise the adapter+runner.
+    "claude-agent-sdk>=0.2.123,<0.3",
 ]
 
 [build-system]

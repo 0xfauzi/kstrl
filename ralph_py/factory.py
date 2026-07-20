@@ -268,13 +268,16 @@ def _cli_family(
     agent_type: str | None,
     claude_available: bool,
 ) -> str | None:
-    """Which CLI family a (cmd, type) config resolves to, mirroring
+    """Which MODEL family a (cmd, type) config resolves to, mirroring
     ``agents.get_agent`` dispatch exactly: a custom command is an
-    unknown family (None); "auto"/None auto-detects claude-code first;
-    any unrecognized type string falls through to codex."""
+    unknown family (None); "claude-sdk" is the Claude family through
+    the SDK transport (R7.6 - without this branch it would fall through
+    to codex and INVERT the R7.1 rotation for SDK engineers);
+    "auto"/None auto-detects claude-code first; any unrecognized type
+    string falls through to codex."""
     if agent_cmd:
         return None
-    if agent_type == "claude-code":
+    if agent_type in ("claude-code", "claude-sdk"):
         return "claude-code"
     if agent_type in (None, "auto"):
         return "claude-code" if claude_available else "codex"
@@ -289,14 +292,20 @@ def _agent_identity(
 ) -> str:
     """Reviewing-model identity for a configuration, matching the agent
     adapters' ``name`` property ("codex (gpt-5)", "claude-code",
-    "custom (<cmd>)") so findings attributed before an agent exists
-    match what a live run stamps on its results."""
+    "claude-sdk (haiku)", "custom (<cmd>)") so findings attributed
+    before an agent exists match what a live run stamps on its
+    results. "claude-sdk" keeps its own identity label (the adapter
+    name is the transport, distinct from its claude-code FAMILY used
+    for rotation)."""
     if agent_cmd:
         return f"custom ({agent_cmd})"
-    family = _cli_family(agent_cmd, agent_type, claude_available) or "unknown"
+    if agent_type == "claude-sdk":
+        label = "claude-sdk"
+    else:
+        label = _cli_family(agent_cmd, agent_type, claude_available) or "unknown"
     if model:
-        return f"{family} ({model})"
-    return family
+        return f"{label} ({model})"
+    return label
 
 
 @dataclass(frozen=True)
@@ -906,6 +915,7 @@ def _run_component(
     breaker_test_timeout: float = 300.0,
     sandbox_enabled: bool = False,
     sandbox_allow_network: bool = False,
+    agent_budget_usd: float | None = None,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -932,6 +942,7 @@ def _run_component(
         sandbox=SandboxConfig(
             enabled=sandbox_enabled, allow_network=sandbox_allow_network,
         ),
+        max_budget_usd=agent_budget_usd,
     )
 
     # Copy PRD into worktree if needed
@@ -1652,6 +1663,8 @@ def _run_factory_locked(
             # R7.5: OS-level sandbox intent for the engineer's agent CLI.
             sandbox_cfg.enabled,
             sandbox_cfg.allow_network,
+            # R7.6: in-loop USD budget for the claude-sdk engineer.
+            base_config.agent_budget_usd,
         )
 
     def _run_scheduling_pass() -> None:

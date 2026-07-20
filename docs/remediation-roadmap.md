@@ -780,12 +780,12 @@ by an integration test with a synthetic-but-realistic journal).
     a written comparison, per the measure-don't-assume rule. DONE:
     docs/sdk-spike.md (measured; recommendation GO, scoped to a fourth
     adapter); DECIDED 2026-07-20: GO (see user decision 5 and R7.6).
-- [ ] R7.6 (M) **`claude-sdk` adapter** [user decision 5: GO, 2026-07-20]
+- [x] R7.6 (M) **`claude-sdk` adapter** [user decision 5: GO, 2026-07-20]
   - A fourth agent adapter (`agent_type = "claude-sdk"`) over
-    `claude-agent-sdk`, behind the existing `Agent` protocol (asyncio bridge
-    inside `run()`), for the claude-code engineer path. Subprocess adapters
-    stay: codex rotation (R7.1) and the custom escape hatch depend on them,
-    and they are the fallback if the SDK regresses.
+    `claude-agent-sdk`, behind the existing `Agent` protocol, for the
+    claude-code engineer path. Subprocess adapters stay: codex rotation
+    (R7.1) and the custom escape hatch depend on them, and they are the
+    fallback if the SDK regresses.
   - Why (measured, docs/sdk-spike.md): pre-hoc `PreToolUse` guardrails (a
     hook denied a real out-of-scope write during the spike - prevention where
     Ralph today has detection), typed in-loop `max_budget_usd` enforcement
@@ -797,6 +797,34 @@ by an integration test with a synthetic-but-realistic journal).
     pass against the SDK transport, and the sandbox settings pass-through
     (R7.5) must be re-measured through `ClaudeAgentOptions`. New dependency
     (`claude-agent-sdk`) enters the runtime set - flag it in the PR.
+  - DONE (2026-07-20). ONE deviation from the sketch above, forced by a
+    measurement: SDK 0.2.123's `SubprocessCLITransport` spawns the CLI via
+    `anyio.open_process` WITHOUT `start_new_session` and `close()` signals
+    only the direct child - the CLI shares the harness's process group, so
+    an in-process asyncio bridge can neither killpg (it would kill the
+    harness) nor stop grandchild orphaning, i.e. it cannot pass the R0.1
+    gate. The adapter therefore runs the SDK in a runner subprocess
+    (`ralph_py/agents/sdk_runner.py`) spawned through the R0.1-proven
+    DeadlineStreamer: the CLI + tool processes are grandchildren inside the
+    runner's session and die with it on breach. Structured records cross
+    back on a same-repo prefixed JSON-line contract.
+    GATE EVIDENCE: `tests/test_timeout_enforcement.py::TestClaudeSdkAgentDeadline`
+    (real runner + real SDK vs fake CLIs via `ClaudeAgentOptions.cli_path`:
+    silent hang, hang-after-output, GRANDCHILD KILL, missing-SDK fast-fail);
+    sandbox re-measured live through `ClaudeAgentOptions.settings` (same
+    payload as the CLI path via the shared `claude_sandbox_settings`
+    helper): curl -> `CONNECT tunnel failed, response 403` with file tools
+    still working - the R7.5 signature. Also measured live: typed usage
+    end-to-end (source `claude-sdk-typed`), workspace-guard denial with
+    agent recovery, budget breach halting in-loop with cost bounded to one
+    turn. Measured gotcha: the SDK raises a PLAIN `Exception` (not
+    `ClaudeSDKError`) for in-stream error results such as a budget breach -
+    the runner catches broadly and emits the contract error record instead
+    of a traceback. Packaging: optional extra `sdk` (user decision -
+    core runtime stays rich+click; the extra is in the dev group so tests
+    and mypy always cover the adapter); `[agent] budget_usd` /
+    `RALPH_AGENT_BUDGET_USD` config landed; `_cli_family` maps claude-sdk
+    to the claude family so R7.1 rotation still assigns codex reviewers.
 
 Done when: cross-family review is the measured default; fixtures run sandboxed
 in Phase 1 on an opt-in project; a factory run appears in Linear end-to-end

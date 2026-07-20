@@ -21,7 +21,8 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `AGENT_CMD` | str | unset | Custom shell command for the agent (overrides type) |
 | `MODEL` | str | unset | Model name passed to the agent |
 | `MODEL_REASONING_EFFORT` | str | unset | `low\|medium\|high\|max` |
-| `RALPH_AGENT_TYPE` | str | unset | `claude-code\|codex\|auto` |
+| `RALPH_AGENT_TYPE` | str | unset | `claude-code\|claude-sdk\|codex\|auto` (`claude-sdk` needs the `sdk` extra: `uv sync --extra sdk`) |
+| `RALPH_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Non-positive or unparseable values are ignored |
 | `RALPH_TIMEOUT_AGENT_ITERATION` | float | 1800 | Per-agent.run() timeout (seconds) |
 | `RALPH_TIMEOUT_COMPONENT` | float | 7200 | Per-component total timeout |
 | `RALPH_TIMEOUT_DEFAULT` | float | 60 | Generic subprocess timeout |
