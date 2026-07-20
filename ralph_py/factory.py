@@ -24,6 +24,20 @@ from ralph_py.contract import (
     ContractResult,
     run_contract_testing,
 )
+from ralph_py.events import (
+    AdversarialAgentSelected,
+    ComponentFailed,
+    ComponentStarted,
+    EventBus,
+    JsonlSink,
+    RunCompleted,
+    RunPaths,
+    RunStarted,
+    V1CompatSink,
+)
+from ralph_py.events import (
+    ContractResult as ContractResultEvent,
+)
 from ralph_py.feedforward import FeedforwardConfig, build_feedforward_context
 from ralph_py.fixtures import FixturesConfig
 from ralph_py.git import fetch_base_branch, resolve_base_ref
@@ -1292,7 +1306,15 @@ def _run_factory_locked(
     # join; [factory] progress_log_enabled = false (or env) opts out.
     # Every event carries run_id so runs sharing the default file stay
     # distinguishable.
+    # Dual-write (TUI rewrite chunk 3): typed schema-v2 events go to
+    # .ralph/runs/<run_id>/events.jsonl via the EventBus; V1CompatSink
+    # delegates the v1-named subset to a real ProgressLog so the
+    # progress.jsonl byte format AND its attached ProgressSink
+    # observers (Linear, R7.4) stay untouched. progress_log_enabled =
+    # false suppresses BOTH files (symmetric opt-out).
     progress_log: ProgressLog
+    bus = EventBus(run_id=run_id)
+    journal_path: Path | None = None
     if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
     else:
@@ -1301,6 +1323,10 @@ def _run_factory_locked(
             or root_dir / ".ralph" / "progress.jsonl"
         )
         progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
+        journal_path = log_path
+        run_paths = RunPaths.for_run(root_dir, run_id)
+        bus.add_sink(JsonlSink(run_paths.events_file))
+        bus.add_sink(V1CompatSink(progress_log))
 
     # R7.4: Linear sink - mirrors failure/budget events onto the issues
     # the decompose hook mapped in the manifest. Observability only;
@@ -1324,7 +1350,9 @@ def _run_factory_locked(
         warn=ui.warn,
     )
 
-    progress_log.factory_started(manifest.project_name, len(manifest.components))
+    bus.emit(RunStarted(
+        project=manifest.project_name, components=len(manifest.components),
+    ))
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -1375,17 +1403,14 @@ def _run_factory_locked(
             continue
         if _sel.warning:
             ui.warn(f"  {_sel.warning}")
-        progress_log.emit(
-            "adversarial_agent_selected",
-            data={
-                "phase": _sel.phase,
-                "source": _sel.source,
-                "identity": _sel.identity,
-                "agent_type": _sel.agent_type,
-                "model": _sel.model,
-                "homogeneous": _sel.warning is not None,
-            },
-        )
+        bus.emit(AdversarialAgentSelected(
+            phase=_sel.phase,
+            agent_source=_sel.source,
+            identity=_sel.identity,
+            agent_type=_sel.agent_type,
+            model=_sel.model,
+            homogeneous=_sel.warning is not None,
+        ))
 
     # Validate DAG
     ui.section("Factory: Validating DAG")
@@ -1448,7 +1473,8 @@ def _run_factory_locked(
         ui=ui,
         root_dir=root_dir,
         run_id=run_id,
-        progress_log=progress_log,
+        bus=bus,
+        journal_path=journal_path,
         notify=notify,
         review_selection=review_selection,
         security_selection=security_selection,
@@ -1718,7 +1744,7 @@ def _run_factory_locked(
                         continue
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
-                    progress_log.component_started(comp.id)
+                    bus.emit(ComponentStarted(component=comp.id))
                     ui.info(f"  Starting: {comp.id}")
 
                     wt_path = _launch_component(comp)
@@ -1914,9 +1940,10 @@ def _run_factory_locked(
             break
 
         for cr in contract_results:
-            progress_log.contract_result(
-                cr.tier, cr.passed, cr.breaker, cr.duration_seconds,
-            )
+            bus.emit(ContractResultEvent(
+                tier=cr.tier, passed=cr.passed, breaker=cr.breaker,
+                duration_seconds=round(cr.duration_seconds, 2),
+            ))
             _record_contract_event(cr)
 
         failures = [cr for cr in contract_results if not cr.passed]
@@ -1983,11 +2010,13 @@ def _run_factory_locked(
                     factory_result.completed.remove(cr.breaker)
                 if cr.breaker not in factory_result.failed:
                     factory_result.failed.append(cr.breaker)
-                progress_log.component_failed(
-                    cr.breaker,
-                    f"Contract test failed at tier {cr.tier} "
-                    f"(retries exhausted)",
-                )
+                bus.emit(ComponentFailed(
+                    component=cr.breaker,
+                    error=(
+                        f"Contract test failed at tier {cr.tier} "
+                        f"(retries exhausted)"
+                    ),
+                ))
                 notify.fire_first_failure(
                     cr.breaker,
                     f"Contract test failed at tier {cr.tier} "
@@ -2031,12 +2060,13 @@ def _run_factory_locked(
 
     # Summary
     factory_duration = time.monotonic() - factory_start
-    progress_log.factory_completed(
-        len(factory_result.completed),
-        len(factory_result.failed),
-        len(factory_result.skipped),
-        factory_duration,
-    )
+    bus.emit(RunCompleted(
+        completed=len(factory_result.completed),
+        failed=len(factory_result.failed),
+        skipped=len(factory_result.skipped),
+        duration_seconds=round(factory_duration, 2),
+    ))
+    bus.close()
 
     # R0.2: collect components parked awaiting merge confirmation. Built
     # from the manifest (not accumulated during the run) so it reflects
@@ -2082,14 +2112,14 @@ def _run_factory_locked(
                 )
             if (
                 failed_comp.journal_offset_start >= 0
-                and not isinstance(progress_log, NullProgressLog)
+                and journal_path is not None
             ):
                 end = (
                     str(failed_comp.journal_offset_end)
                     if failed_comp.journal_offset_end >= 0 else "end"
                 )
                 ui.info(
-                    f"    journal: {progress_log.path} bytes "
+                    f"    journal: {journal_path} bytes "
                     f"[{failed_comp.journal_offset_start}:{end}]"
                 )
             ui.info(f"    retry with: ralph retry {failed_id}")

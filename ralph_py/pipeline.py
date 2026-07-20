@@ -37,13 +37,14 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ralph_py import events as ev
 from ralph_py import git
 from ralph_py.agents.base import UsageTotals, collect_usage
 from ralph_py.context import IterationContext, IterationRecord
 from ralph_py.findings import Finding, tag_finding_with_attempt
 from ralph_py.fixtures import FixturesConfig
 from ralph_py.manifest import Component, ComponentStatus, Manifest
-from ralph_py.observability import NotifyHooks, NullProgressLog, ProgressLog
+from ralph_py.observability import NotifyHooks
 from ralph_py.prd import PRD
 from ralph_py.review import ReviewMode, ReviewResult
 from ralph_py.security import SecurityMode, SecurityResult
@@ -235,7 +236,8 @@ class ComponentPipeline:
         ui: UI,
         root_dir: Path,
         run_id: str,
-        progress_log: ProgressLog | NullProgressLog,
+        bus: ev.EventBus,
+        journal_path: Path | None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
         security_selection: AdversarialAgentSelection | None,
@@ -254,7 +256,8 @@ class ComponentPipeline:
         self.ui = ui
         self.root_dir = root_dir
         self.run_id = run_id
-        self.progress_log = progress_log
+        self.bus = bus
+        self.journal_path = journal_path
         self.notify = notify
         self.review_selection = review_selection
         self.security_selection = security_selection
@@ -324,7 +327,9 @@ class ComponentPipeline:
         )
         slot.merge(totals)
         self.run_usage.merge(totals)
-        self.progress_log.component_usage(comp_id, phase, totals.to_dict())
+        self.bus.emit(ev.ComponentUsage(
+            component=comp_id, phase=phase, **totals.to_dict(),
+        ))
 
     def token_budget_exceeded(self) -> bool:
         cap = self.factory_config.max_total_tokens
@@ -335,14 +340,19 @@ class ComponentPipeline:
     # ------------------------------------------------------------------
 
     def _journal_offset(self) -> int:
-        """Current byte size of the progress log; used to bracket one
+        """Current byte size of the v1 progress log; used to bracket one
         attempt's slice of events (R3.3). -1 when no real progress log
-        is configured for this run."""
-        if isinstance(self.progress_log, NullProgressLog):
+        is configured for this run. Deliberately pegged to the v1 compat
+        file, NOT events.jsonl - the manifest's journal_offset_start/end
+        semantics must not silently repoint (plan: explicit future
+        schema decision)."""
+        if self.journal_path is None:
             return -1
         try:
-            log_path = self.progress_log.path
-            return log_path.stat().st_size if log_path.exists() else 0
+            return (
+                self.journal_path.stat().st_size
+                if self.journal_path.exists() else 0
+            )
         except OSError:
             return -1
 
@@ -511,7 +521,9 @@ class ComponentPipeline:
             comp.error = error
             if context_json:
                 self.component_contexts[comp.id] = context_json
-            self.progress_log.component_retrying(comp.id, comp.retries, error)
+            self.bus.emit(ev.ComponentRetrying(
+                component=comp.id, attempt=comp.retries, reason=error,
+            ))
             self.ui.info(
                 f"  Retrying '{comp.id}' "
                 f"(attempt {comp.retries}/{self.factory_config.max_retries}): "
@@ -547,7 +559,7 @@ class ComponentPipeline:
         skipped = self.manifest.cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
         self.factory_result.skipped.extend(skipped)
-        self.progress_log.component_failed(comp.id, error)
+        self.bus.emit(ev.ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
         self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
         self.manifest.save(self.manifest_path)
@@ -569,10 +581,11 @@ class ComponentPipeline:
         self._add_findings(comp, [Finding.infrastructure_error(
             phase=phase, explanation=error,
         )])
-        self.progress_log.budget_exceeded(
-            comp.id, self.run_usage.total_tokens,
-            self.factory_config.max_total_tokens,
-        )
+        self.bus.emit(ev.BudgetExceeded(
+            component=comp.id,
+            total_tokens=self.run_usage.total_tokens,
+            max_total_tokens=self.factory_config.max_total_tokens,
+        ))
         return self.fail(
             comp, error, phase=phase, check="token_budget",
             signatures=["token_budget:exceeded"],
@@ -589,9 +602,10 @@ class ComponentPipeline:
         comp.completed_at = _iso_now()
         self._end_attempt(comp)
         self.factory_result.completed.append(comp.id)
-        self.progress_log.component_completed(
-            comp.id, duration_seconds, iterations,
-        )
+        self.bus.emit(ev.ComponentCompleted(
+            component=comp.id, duration_seconds=duration_seconds,
+            iterations=iterations,
+        ))
         self.ui.ok(
             f"  COMPLETED: {comp.id} "
             f"({iterations} iterations, "
@@ -609,10 +623,9 @@ class ComponentPipeline:
         merge_pending event so the slice includes it."""
         comp.status = ComponentStatus.MERGE_PENDING.value
         comp.error = error
-        self.progress_log.emit(
-            "merge_pending", comp.id,
-            {"pr_url": comp.pr_url, "error": comp.error},
-        )
+        self.bus.emit(ev.MergePendingV1(
+            component=comp.id, pr_url=comp.pr_url, error=comp.error,
+        ))
         self.notify.fire_merge_pending(comp.id, comp.error)
         self._end_attempt(comp)
         self.ui.warn(
@@ -695,7 +708,7 @@ class ComponentPipeline:
         skipped = self.manifest.cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
         self.factory_result.skipped.extend(skipped)
-        self.progress_log.component_failed(comp.id, comp.error)
+        self.bus.emit(ev.ComponentFailed(component=comp.id, error=comp.error))
         self.notify.fire_first_failure(comp.id, comp.error)
         self.ui.err(f"  Failed: {comp.id}: {comp.error[:120]}")
         self.manifest.save(self.manifest_path)
@@ -728,9 +741,9 @@ class ComponentPipeline:
             skipped = self.manifest.cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
             self.factory_result.skipped.extend(skipped)
-            self.progress_log.component_failed(
-                comp_id, "component timeout",
-            )
+            self.bus.emit(ev.ComponentFailed(
+                component=comp_id, error="component timeout",
+            ))
             self.notify.fire_first_failure(comp_id, "component timeout")
         self.ui.err(
             f"  Failed: {comp_id}: component timeout "
@@ -792,9 +805,11 @@ class ComponentPipeline:
                     self.component_failure_signatures.pop(comp.id, None)
                     comp.completed_at = _iso_now()
                     self.factory_result.completed.append(comp.id)
-                    self.progress_log.component_completed(
-                        comp.id, comp.duration_seconds, comp.iteration_count,
-                    )
+                    self.bus.emit(ev.ComponentCompleted(
+                        component=comp.id,
+                        duration_seconds=comp.duration_seconds,
+                        iterations=comp.iteration_count,
+                    ))
                     self.ui.ok(
                         f"  PR #{pr_number} merged; '{comp.id}' completed"
                     )
@@ -810,7 +825,9 @@ class ComponentPipeline:
                     skipped = self.manifest.cascade_skip(comp.id)
                     self.factory_result.failed.append(comp.id)
                     self.factory_result.skipped.extend(skipped)
-                    self.progress_log.component_failed(comp.id, comp.error)
+                    self.bus.emit(ev.ComponentFailed(
+                        component=comp.id, error=comp.error,
+                    ))
                     self.notify.fire_first_failure(comp.id, comp.error)
                     self.ui.err(f"  Failed: {comp.id}: {comp.error}")
                 else:
@@ -831,10 +848,9 @@ class ComponentPipeline:
         the findings stream and the journal, so "ran clean" and
         "never ran" are distinguishable downstream."""
         self._add_findings(comp, [Finding.phase_skipped(phase, reason)])
-        self.progress_log.emit(
-            "phase_skipped", comp.id,
-            {"phase": phase, "reason": reason},
-        )
+        self.bus.emit(ev.PhaseSkipped(
+            component=comp.id, phase=phase, reason=reason,
+        ))
 
     def process_result(
         self, comp_id: str, comp_result: ComponentResult,
@@ -876,9 +892,10 @@ class ComponentPipeline:
             # signature for the evolution journal.
             if comp_result.no_progress:
                 error = comp_result.error or "no-progress circuit breaker tripped"
-                self.progress_log.circuit_breaker_tripped(
-                    comp_id, comp_result.iterations, error,
-                )
+                self.bus.emit(ev.CircuitBreakerTripped(
+                    component=comp_id, iterations=comp_result.iterations,
+                    error=error,
+                ))
                 return PipelineOutcome(
                     transition=self.fail(
                         comp, error,
@@ -1107,14 +1124,14 @@ class ComponentPipeline:
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
-        self.progress_log.verification_result(
-            comp.id, verification.passed,
-            check_names=[c.name for c in verification.checks],
-            failures=[
+        self.bus.emit(ev.VerificationResultEvent(
+            component=comp.id, passed=verification.passed,
+            checks=tuple(c.name for c in verification.checks),
+            failures=tuple(
                 c.message for c in verification.checks if not c.passed
-            ],
-            duration=verify_duration,
-        )
+            ),
+            duration_seconds=round(verify_duration, 2),
+        ))
 
         if not verification.passed:
             failing = [c for c in verification.checks if not c.passed]
@@ -1174,9 +1191,7 @@ class ComponentPipeline:
                     f"review/security/knowledge cannot run: {exc}"
                 ),
             )])
-            self.progress_log.emit(
-                "diff_fetch_failed", comp.id, {"error": str(exc)},
-            )
+            self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
                 f"git diff against {self.manifest.base_branch} failed: {exc}"
@@ -1233,10 +1248,10 @@ class ComponentPipeline:
                         "(R1.4: an unreviewable diff must not merge)"
                     ),
                 )])
-                self.progress_log.emit(
-                    "diff_unsplittable", comp.id,
-                    {"error": str(exc), "diff_chars": len(review_diff)},
-                )
+                self.bus.emit(ev.DiffUnsplittable(
+                    component=comp.id, error=str(exc),
+                    diff_chars=len(review_diff),
+                ))
                 ctx = IterationContext.from_json(
                     comp_result.context_json or "{}",
                 )
@@ -1260,13 +1275,10 @@ class ComponentPipeline:
                         signatures=["review:diff-unsplittable"],
                     ),
                 )
-            self.progress_log.emit(
-                "diff_chunked", comp.id,
-                {
-                    "chunks": len(review_chunks),
-                    "diff_chars": len(review_diff),
-                },
-            )
+            self.bus.emit(ev.DiffChunked(
+                component=comp.id, chunks=len(review_chunks),
+                diff_chars=len(review_diff),
+            ))
 
         return DiffPhaseResult(
             diff=shared_diff, review_diff=review_diff, chunks=review_chunks,
@@ -1321,14 +1333,10 @@ class ComponentPipeline:
                 self._add_findings(comp, [Finding.infrastructure_error(
                     phase="review", explanation=error,
                 )])
-                self.progress_log.emit(
-                    "chunk_budget_insufficient", comp.id,
-                    {
-                        "phase": "review",
-                        "chunks": len(review_chunks),
-                        "remaining": remaining,
-                    },
-                )
+                self.bus.emit(ev.ChunkBudgetInsufficient(
+                    component=comp.id, phase="review",
+                    chunks=len(review_chunks), remaining=remaining,
+                ))
                 return ReviewPhaseResult(
                     ran=False,
                     failure=PhaseFailure(
@@ -1440,13 +1448,13 @@ class ComponentPipeline:
         # historical meaning of fail_count = "failed PRD criteria".
         # Concern counts ride along separately via fail_concerns /
         # advisory_concerns so dashboards can distinguish.
-        self.progress_log.review_result(
-            comp.id, review_result.passed,
+        self.bus.emit(ev.ReviewResultEvent(
+            component=comp.id, passed=review_result.passed,
             mode=review_mode.value,
             fail_count=review_result.criterion_fail_count,
             advisory_count=review_result.criterion_advisory_count,
-            duration=review_result.duration_seconds,
-        )
+            duration_seconds=round(review_result.duration_seconds, 2),
+        ))
 
         if not review_result.passed:
             reason = (
@@ -1552,14 +1560,10 @@ class ComponentPipeline:
                 self._add_findings(comp, [Finding.infrastructure_error(
                     phase="security", explanation=error,
                 )])
-                self.progress_log.emit(
-                    "chunk_budget_insufficient", comp.id,
-                    {
-                        "phase": "security",
-                        "chunks": len(review_chunks),
-                        "remaining": remaining,
-                    },
-                )
+                self.bus.emit(ev.ChunkBudgetInsufficient(
+                    component=comp.id, phase="security",
+                    chunks=len(review_chunks), remaining=remaining,
+                ))
                 return SecurityPhaseResult(
                     ran=False,
                     failure=PhaseFailure(
@@ -1674,13 +1678,13 @@ class ComponentPipeline:
             )
 
         if sec_result is not None:
-            self.progress_log.review_result(
-                comp.id, sec_result.passed,
+            self.bus.emit(ev.ReviewResultEvent(
+                component=comp.id, passed=sec_result.passed,
                 mode=f"security-{sec_config.mode}",
                 fail_count=sec_result.critical_count + sec_result.high_count,
                 advisory_count=len(sec_result.findings),
-                duration=sec_result.duration_seconds,
-            )
+                duration_seconds=round(sec_result.duration_seconds, 2),
+            ))
 
             # E3: source-of-truth typed findings list, plus the
             # legacy rendered string for PR body / manifest readers.
