@@ -51,6 +51,7 @@ from ralph_py.output import build_console
 from ralph_py.prd import PRD
 from ralph_py.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from ralph_py.sandbox import SandboxConfig
+from ralph_py.shutdown import StopController, install_signal_handlers
 from ralph_py.timeout import TimeoutConfig
 from ralph_py.ui.base import UI
 
@@ -641,10 +642,16 @@ def run(
 
     # R0.5 (H-15): `ralph run` persists to its own run-manifest.json so
     # it can never clobber a factory run's resumable manifest.json.
-    factory_result = run_factory(
-        manifest, factory_cfg, config, ui_impl, root_dir,
-        manifest_path=root_dir / "scripts" / "ralph" / "run-manifest.json",
-    )
+    stop = StopController()
+    uninstall = install_signal_handlers(stop)
+    try:
+        factory_result = run_factory(
+            manifest, factory_cfg, config, ui_impl, root_dir,
+            manifest_path=root_dir / "scripts" / "ralph" / "run-manifest.json",
+            stop=stop,
+        )
+    finally:
+        uninstall()
     sys.exit(factory_result.exit_code)
 
 
@@ -2031,10 +2038,16 @@ def factory(
     # R0.5 (H-15): state saves back to the file it was loaded from.
     # --manifest /custom.json persists to /custom.json; --spec runs keep
     # the default scripts/ralph/manifest.json that decompose wrote.
-    result = run_factory(
-        manifest, factory_config, base_config, ui_impl, root_dir,
-        manifest_path=manifest_path,
-    )
+    stop = StopController()
+    uninstall = install_signal_handlers(stop)
+    try:
+        result = run_factory(
+            manifest, factory_config, base_config, ui_impl, root_dir,
+            manifest_path=manifest_path,
+            stop=stop,
+        )
+    finally:
+        uninstall()
     sys.exit(result.exit_code)
 
 
@@ -2765,10 +2778,16 @@ def retry(
     if keep_worktrees_on_failure:
         factory_config.keep_worktrees_on_failure = True
 
-    result = run_factory(
-        manifest, factory_config, base_config, ui_impl, root_dir,
-        manifest_path=manifest_file,
-    )
+    stop = StopController()
+    uninstall = install_signal_handlers(stop)
+    try:
+        result = run_factory(
+            manifest, factory_config, base_config, ui_impl, root_dir,
+            manifest_path=manifest_file,
+            stop=stop,
+        )
+    finally:
+        uninstall()
     sys.exit(result.exit_code)
 
 

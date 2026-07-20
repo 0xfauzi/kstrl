@@ -626,6 +626,19 @@ class ComponentPipeline:
             comp, error, phase=phase, check=check, signatures=signatures,
         )
 
+    def fail_aborted(self, comp_id: str, reason: str) -> None:
+        """PR B: a shutdown aborted this component's in-flight attempt.
+        Recorded as a plain FAILED with phase="aborted" so a resume can
+        retry it; distinct from every organic failure signature."""
+        comp = self.manifest.get_component(comp_id)
+        if comp is None:
+            return
+        self.fail(
+            comp, f"aborted: {reason}",
+            phase="aborted", check="shutdown",
+            signatures=["aborted:shutdown"],
+        )
+
     def fail(
         self,
         comp: Component,

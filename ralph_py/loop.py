@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -67,6 +68,7 @@ def run_loop(
     *,
     bus: EventBus | None = None,
     interaction: InteractionChannel | None = None,
+    stop_check: Callable[[], bool] | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -218,6 +220,15 @@ def run_loop(
         )
 
     for iteration in range(1, config.max_iterations + 1):
+        if stop_check is not None and stop_check():
+            ui.warn("Stop requested; ending loop before next iteration")
+            return LoopResult(
+                completed=False, iterations=iteration - 1, exit_code=130,
+                duration_seconds=time.monotonic() - loop_start,
+                iteration_durations=iteration_durations,
+                timed_out_iterations=timed_out_iterations,
+                usage=collect_usage(agent),
+            )
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
         iter_start = time.monotonic()
         if bus is not None:
