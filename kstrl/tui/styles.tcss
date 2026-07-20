@@ -232,6 +232,69 @@ CheckpointModal {
     color: $warning;
 }
 
+/* ---- decompose screen ---------------------------------------------------- */
+/* Same register as the component screen: strips are 1 line, panel
+ * titles 2 (the border-bottom needs its own row), the transcript
+ * fills what remains. */
+
+#decompose-header {
+    height: 1;
+    padding: 0 1;
+}
+
+#attempt-strip {
+    height: 1;
+    padding: 0 1;
+}
+
+#dag-title, #triage-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#dag-table {
+    height: auto;
+    max-height: 40%;
+    background: $background;
+}
+
+#issues-strip {
+    height: 1;
+    padding: 0 1;
+}
+
+#decompose-summary {
+    height: 1;
+    padding: 0 1;
+}
+
+#decompose-transcript-title {
+    height: 2;
+    padding: 0 1;
+    border-bottom: solid $panel;
+}
+
+/* ---- spec triage --------------------------------------------------------- */
+
+#triage-banner {
+    height: 1;
+    padding: 0 1;
+}
+
+#triage-table {
+    height: 1fr;
+    background: $background;
+}
+
+#triage-detail {
+    height: 6;
+    padding: 1 2;
+    background: $surface;
+}
+
 /* ---- options modal ------------------------------------------------------- */
 /* Lean prompt surface for every non-checkpoint request (feature gate,
  * apply/retry confirms). Same chrome family as the checkpoint modal;
