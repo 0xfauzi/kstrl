@@ -508,12 +508,18 @@ class NotifyHooks:
         run_id: str = "",
         project: str = "",
         warn: Callable[[str], None] | None = None,
+        capture_output: bool = False,
     ) -> None:
         self._config = config
         self._run_id = run_id
         self._project = project
         self._warn = warn or (lambda _msg: None)
         self._fired: set[str] = set()
+        # PR F: when a TUI owns the terminal, hook output must not
+        # reach the inherited fds (measured alt-screen corruption in
+        # the Stage 0 spike). Default False keeps terminal bells
+        # working for plain-mode users.
+        self.capture_output = capture_output
 
     def fire_complete(self, detail: str = "") -> None:
         self._fire("run_complete", self._config.on_complete, detail=detail)
@@ -551,9 +557,11 @@ class NotifyHooks:
             "RALPH_NOTIFY_DETAIL": detail,
         })
         try:
+            sink = subprocess.DEVNULL if self.capture_output else None
             proc = subprocess.run(
                 command, shell=True, env=env,
                 stdin=subprocess.DEVNULL,
+                stdout=sink, stderr=sink,
                 timeout=self._config.hook_timeout,
             )
             if proc.returncode != 0:

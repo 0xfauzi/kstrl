@@ -1685,7 +1685,15 @@ def decompose(
     is_flag=True,
     help="Disable colors",
 )
+@click.option(
+    "--tui/--no-tui",
+    "tui",
+    default=None,
+    help="Embedded dashboard (default: auto - on when stdin/stdout are "
+         "TTYs and --ui is not plain; RALPH_NO_TUI=1 forces off)",
+)
 def factory(
+    tui: bool | None,
     spec: Path | None,
     manifest_path: Path | None,
     root: Path | None,
@@ -2061,6 +2069,30 @@ def factory(
     # R0.5 (H-15): state saves back to the file it was loaded from.
     # --manifest /custom.json persists to /custom.json; --spec runs keep
     # the default scripts/ralph/manifest.json that decompose wrote.
+    use_tui = tui if tui is not None else (
+        sys.stdout.isatty()
+        and sys.stdin.isatty()
+        and os.environ.get("RALPH_NO_TUI") != "1"
+        and _normalize_ui_mode(ui) != "plain"
+    )
+    if use_tui:
+        if not (sys.stdout.isatty() and sys.stdin.isatty()):
+            click.echo(
+                "--tui requires an interactive terminal; use --no-tui "
+                "for non-interactive execution.",
+                err=True,
+            )
+            sys.exit(2)
+        # PR F: embedded dashboard. The pre-execution confirm already
+        # happened on the plain terminal (plan decision: no
+        # modal-before-app); everything from here renders in Textual.
+        from ralph_py.tui.embed import run_factory_embedded
+
+        sys.exit(run_factory_embedded(
+            manifest, factory_config, base_config, root_dir,
+            manifest_path,
+        ))
+
     stop = StopController()
     uninstall = install_signal_handlers(stop)
     try:
