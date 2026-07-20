@@ -108,8 +108,9 @@ If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (t
 ## The dashboard (TUI)
 
 `ralph factory` on a terminal runs the embedded dashboard by default
-(`--no-tui`, `--ui plain`, or `RALPH_NO_TUI=1` opt out; non-TTY stdio
-always falls back to plain output). `ralph dash` attaches a read-only
+(`--no-tui`, `--ui plain`, or `RALPH_NO_TUI=1` opt out; automatic
+selection uses plain output for non-TTY stdio, while explicit `--tui`
+requires a terminal). `ralph dash` attaches a read-only
 dashboard to a live run from another terminal, or replays a finished
 one (`--run-id` takes a unique prefix; newest run is the default).
 

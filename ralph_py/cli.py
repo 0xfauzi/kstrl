@@ -2682,7 +2682,7 @@ def status(
             and not watch
         ):
             ui_impl.info("")
-            ui_impl.info("Live view: ralph dash")
+            ui_impl.info("Dashboard: ralph dash")
         return 0
 
     if not watch:

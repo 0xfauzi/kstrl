@@ -1,7 +1,7 @@
 """Stage 3 PR G (TUI rewrite): SVG snapshot tests.
 
-Kept deliberately few (overview, detail, checkpoint modal) at a fixed
-size over the fixed-run_id fixture, so churn stays reviewable. Update
+Kept deliberately few (overview and detail) at a fixed size over the
+fixed-run_id fixture, so churn stays reviewable. Update
 with: uv run pytest tests/test_tui_snapshots.py --snapshot-update
 """
 

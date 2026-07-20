@@ -108,7 +108,10 @@ class RalphTuiApp(App[int]):
         if chunk.truncated:
             self.store.reset()
         changed = self.store.apply_events(chunk.events)
-        screen = self.screen
+        screen_stack = self.screen_stack
+        if not screen_stack:
+            return
+        screen = screen_stack[-1]
         if changed:
             if isinstance(screen, ComponentScreen) and screen.ready:
                 screen.refresh_state(self.store.state, self.store.manifest())
@@ -131,7 +134,10 @@ class RalphTuiApp(App[int]):
         return tailer
 
     def _tick_ages(self) -> None:
-        screen = self.screen
+        screen_stack = self.screen_stack
+        if not screen_stack:
+            return
+        screen = screen_stack[-1]
         if isinstance(screen, OverviewScreen):
             screen.tick_ages(self.store.state)
 
