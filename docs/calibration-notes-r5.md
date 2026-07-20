@@ -159,7 +159,11 @@ false positives on the clean-but-nontrivial diffs.
   2026-07-20, model: haiku, report `baseline-20260720-113835.json`.
 
 R5.1 and R5.3 move from `[~]` to `[x]` in `docs/remediation-roadmap.md`.
-Separately, R5.2's hardness acceptance (`security_hard.detection_rate < 1.0`)
-FAILED in this same run (1.0 - all 4 hard positives caught 3/3), so R5.2
-stays `[~]`: the hard fixtures need another iteration to be genuinely
-missable.
+Separately, R5.2's original hardness bar (`security_hard.detection_rate < 1.0`)
+came back 1.0 (all 4 hard positives caught 3/3) in this same run. It was
+investigated (the matcher is strict, the catches are genuine, and even a
+tell-free timing-oracle variant is caught 5/5) and then REFRAMED and closed
+`[x]`: the `< 1.0` gate is ill-posed for a capable model, so the hard
+positives are kept as genuinely-subtle, measured-not-gated fixtures protected
+by the detection-drop floors. See `docs/adversarial-design.md` "Hard-positive
+hardness".

@@ -58,11 +58,14 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   (haiku, 3 runs, `baseline-20260720-113835.json`). Green-at-baseline over 3
   runs (compare vs the 2026-05-27 reference: `PASS`, architect 0.67 -> 1.00,
   no role below floor). R5.1 and R5.3 acceptance MET (no regression;
-  injection fixtures caught 3/3). R5.2 hardness acceptance FAILED:
-  `summary.security_hard.detection_rate == 1.0` (all 4 hard positives caught
-  3/3 at haiku), so the hard fixtures need another iteration - R5.2 stays
-  `[~]`. NOT captured: the fresh old-prompt "before" run (2d back-fill,
-  optional); no-regression is anchored to the recorded 2026-05-27 reference.
+  injection fixtures caught 3/3). R5.2: the original hardness bar
+  (`summary.security_hard.detection_rate < 1.0`) came back 1.0, was
+  investigated (matcher strict, catches genuine, tell-free variant still
+  caught 5/5), and was REFRAMED then closed `[x]` - the `< 1.0` gate is
+  ill-posed for a capable model; hard positives are measured-not-gated and
+  protected by the detection-drop floors. NOT captured: the fresh old-prompt
+  "before" run (2d back-fill, optional); no-regression is anchored to the
+  recorded 2026-05-27 reference.
 - **Reviewer-family baseline pair** (R7.1): BOTH CAPTURED 2026-07-20.
   Same-family (above) + cross-family (`codex`/gpt-5.5 on reviewer+security,
   artifact `baseline-20260720-123959.json`, not committed - see note). Delta:
@@ -516,7 +519,7 @@ third, all in one measured cycle.
   - Fix matcher brittleness: `must_include_kind` accepts a documented synonym
     map (e.g. `unstated_assumption` ~ `missing_detail`) OR grades kind
     separately from detection so a paraphrased kind is a partial hit, not a miss.
-- [~] R5.2 (M) **Fixture expansion** [T-cal, research topic 4]
+- [x] R5.2 (M) **Fixture expansion** [T-cal, research topic 4]
   - Hard positives: multi-hop authz bug, second-order injection, TOCTOU race,
     subtle timing oracle: at least 4 that Haiku does NOT trivially catch
     (validated empirically during authoring: if the baseline catches all
@@ -535,10 +538,13 @@ third, all in one measured cycle.
     `false_positive_analysis` block (per-role `fp_rate` vs `FP_RATE_MAX`)
     injected into the R5.1 v2 report test-side (ralph_py/calibration untouched,
     out of scope). Structural + FP-math tests are green with zero LLM calls.
-    `[~]` PENDING the empirical ACCEPTANCE check: the user runs calibration
-    (commands in the PR body) and confirms the baseline does NOT trivially
-    catch all 4 hard positives, i.e. `summary.security_hard.detection_rate
-    < 1.0`. If it is 1.0, the fixtures are too easy and need another iteration.
+    ACCEPTANCE (reframed 2026-07-20, see below): hard positives are genuinely
+    subtle (each documents `why_hard`), MEASURED not gated, and protected from
+    silent degradation by the `MIN_ROLE_DETECTION_RATE` /
+    `MAX_ROLE_DETECTION_DROP` floors. The original bar
+    (`summary.security_hard.detection_rate < 1.0`, "if the baseline catches all
+    they are too easy") was DROPPED as ill-posed for a capable model - see the
+    investigation result below.
     RESULT (2026-07-20, haiku, `baseline-20260720-113835.json`):
     `security_hard.detection_rate == 1.0` - all four hard positives
     (multihop-authz, second-order-injection, TOCTOU, timing-oracle) caught
@@ -552,13 +558,13 @@ third, all in one measured cycle.
     is caught 5/5 with correct constant-time reasoning. So `detection_rate < 1.0`
     is NOT reachable for these OWASP-classic categories at haiku tier without
     contriving scenarios that hide the security operation itself - the fixtures
-    are well-designed, haiku is just competent. RECOMMENDATION (user decision
-    pending): drop the `< 1.0` hardness gate and reframe R5.2 acceptance to
+    are well-designed, haiku is just competent. CLOSED to `[x]` 2026-07-20 (user
+    decision): dropped the `< 1.0` hardness gate and reframed acceptance to
     "hard positives are genuinely subtle (documented `why_hard`), measured not
     gated, and protected by the `MIN_ROLE_DETECTION_RATE` /
-    `MAX_ROLE_DETECTION_DROP` regression floors" - then close R5.2 `[x]`. The
-    alternative (keep authoring missable fixtures) is not recommended: the
-    evidence shows it leads to contrivance for these categories.
+    `MAX_ROLE_DETECTION_DROP` regression floors". The fixtures are kept as-is.
+    The rejected alternative (keep authoring missable fixtures) leads to
+    contrivance for these categories, per the evidence above.
 - [x] R5.3 (M) **The prompt-edit batch** (one calibration cycle; H2 + H3 apply)
   NOTE: code + prompt edits landed (all four prompts bumped + snapshotted;
   per-run delimiters unit-tested; injection-efficacy fixtures added). CLOSED
