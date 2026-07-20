@@ -1,0 +1,79 @@
+{
+  "branchName": "ralph/factory/slugify-utility",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Basic ASCII and Unicode slugification",
+      "acceptanceCriteria": [
+        "WHEN input is \"Hello, World!\" WITH default separator THEN output is \"hello-world\"",
+        "WHEN input is \"Cr\u00e8me Br\u00fbl\u00e9e\" WITH default separator THEN output is \"creme-brulee\"",
+        "WHEN input contains only non-alphanumeric characters THEN output is empty string",
+        "Typecheck passes: uv run mypy tools/ --strict",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Whitespace and punctuation collapsing",
+      "acceptanceCriteria": [
+        "WHEN input is \"  --spaced--  out__ \" WITH default separator THEN output is \"spaced-out\"",
+        "WHEN input contains consecutive runs of punctuation/spaces/underscores THEN they collapse to a single separator",
+        "WHEN output would have leading or trailing separators THEN they are stripped",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Custom separator support",
+      "acceptanceCriteria": [
+        "WHEN input is \"a b\" WITH separator=\"_\" THEN output is \"a_b\"",
+        "WHEN input is empty string WITH separator=\"_\" THEN output is empty string",
+        "WHEN separator is not the default character THEN the specified separator is used for collapsing",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Separator validation and error handling",
+      "acceptanceCriteria": [
+        "WHEN separator is multi-character string \"ab\" THEN raise ValueError with message naming the single-character constraint",
+        "WHEN separator is alphanumeric character \"1\" THEN raise ValueError with message naming the punctuation constraint",
+        "WHEN ValueError is raised THEN the error message names which constraint was violated",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Edge cases, test coverage, and code quality",
+      "acceptanceCriteria": [
+        "WHEN test suite runs THEN it covers all acceptance criteria from other user stories",
+        "WHEN test suite runs THEN it includes at least two implementer-chosen edge cases (e.g., only-digits, leading/trailing non-alphanumeric, high Unicode characters)",
+        "WHEN source is analyzed THEN all function signatures have type hints and include `from __future__ import annotations`",
+        "Typecheck passes: uv run mypy tools/ --strict",
+        "Linting passes: uv run ruff check tools/ tests/test_slugify.py",
+        "Tests pass: uv run pytest tests/test_slugify.py -v"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    }
+  ],
+  "allowedPaths": [
+    "tools/slugify.py",
+    "tools/__init__.py",
+    "tests/test_slugify.py",
+    "scripts/ralph/feature/slugify-utility/"
+  ]
+}
