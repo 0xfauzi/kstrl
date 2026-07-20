@@ -125,6 +125,25 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         line.append("passed" if event.passed else "failed", style=style)
         if event.breaker:
             line.append(f" · breaker {event.breaker}", style=theme.MUTED)
+    elif isinstance(event, ev.SpecIssueRecorded):
+        severe = event.severity == "blocker"
+        line.append(
+            "▲ ",
+            style=f"bold {theme.ERROR}" if severe else theme.WARNING,
+        )
+        line.append("spec issue ", style="bold" if severe else "")
+        line.append(
+            f"[{event.severity}] ",
+            style=theme.ERROR if severe else theme.WARNING,
+        )
+        line.append(event.summary[:90])
+        if event.location:
+            line.append(f" at {event.location}", style=theme.MUTED)
+    elif isinstance(event, ev.ArtifactWritten):
+        line.append("⇣ ", style=theme.MUTED)
+        line.append(f"{event.label} written", style=theme.MUTED)
+        if event.path:
+            line.append(f" · {event.path}", style=theme.MUTED)
     elif isinstance(event, ev.RunCompleted):
         line.append("■ ", style="bold")
         line.append(

@@ -401,6 +401,32 @@ class FindingRecorded(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class SpecIssueRecorded(Event):
+    """One architect spec issue, streamed as decompose parses it.
+
+    Mirrors decompose.SpecIssue; ``kind`` is the architect's issue
+    taxonomy (ambiguity, contradiction, ...), not a run kind.
+    """
+
+    type: ClassVar[str] = "spec_issue_recorded"
+    severity: str = ""  # blocker | major | minor
+    kind: str = ""
+    summary: str = ""
+    location: str = ""
+    suggestion: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArtifactWritten(Event):
+    """A durable output landed on disk (prd, manifest, spec-issues,
+    codebase map...). ``path`` is root-relative when possible."""
+
+    type: ClassVar[str] = "artifact_written"
+    label: str = ""
+    path: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
 class Log(Event):
     """The escape hatch for imperative narration (the old UI protocol).
 

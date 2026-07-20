@@ -185,6 +185,58 @@ class TestLifecycleFold:
         assert "b" not in state.components
 
 
+class TestDecomposeVocabulary:
+    def test_spec_issues_folded_with_counts(self) -> None:
+        state = reducer.fold(_stamped([
+            ev.SpecIssueRecorded(severity="blocker", kind="ambiguity",
+                                 summary="A or B?", location="spec.md:3",
+                                 suggestion="pick one"),
+            ev.SpecIssueRecorded(severity="minor", kind="style",
+                                 summary="nit"),
+            ev.SpecIssueRecorded(severity="minor", kind="style",
+                                 summary="nit 2"),
+        ]))
+        assert state.spec_issue_counts == {"blocker": 1, "minor": 2}
+        assert state.spec_issues[0] == {
+            "severity": "blocker", "kind": "ambiguity",
+            "summary": "A or B?", "location": "spec.md:3",
+            "suggestion": "pick one",
+        }
+
+    def test_artifacts_recorded_run_level_with_component(self) -> None:
+        state = reducer.fold(_stamped([
+            ev.ArtifactWritten(label="spec_issues",
+                               path="scripts/kstrl/spec-issues.json"),
+            ev.ArtifactWritten(component="comp-a", label="prd",
+                               path="scripts/kstrl/feature/comp-a/prd.json"),
+        ]))
+        assert [a["label"] for a in state.artifacts] == [
+            "spec_issues", "prd",
+        ]
+        assert state.artifacts[1]["component"] == "comp-a"
+        # Run-scoped: the component stamp does not create a component.
+        assert "comp-a" not in state.components
+
+    def test_lists_bounded_counts_complete(self) -> None:
+        overflow = reducer.MAX_SPEC_ISSUES + 20
+        pool: list[ev.Event] = [
+            ev.SpecIssueRecorded(severity="minor", summary=f"issue {i}")
+            for i in range(overflow)
+        ]
+        pool.extend(ev.ArtifactWritten(label="prd", path=f"p{i}.json")
+                    for i in range(reducer.MAX_ARTIFACTS + 20))
+        state = reducer.fold(_stamped(pool))
+        assert len(state.spec_issues) == reducer.MAX_SPEC_ISSUES
+        # FIFO trim: the oldest fell off, the count stays honest.
+        assert state.spec_issues[0]["summary"] == "issue 20"
+        assert state.spec_issue_counts == {"minor": overflow}
+        assert len(state.artifacts) == reducer.MAX_ARTIFACTS
+
+    def test_defaulted_severity_counts_as_unknown(self) -> None:
+        state = reducer.fold(_stamped([ev.SpecIssueRecorded(summary="s")]))
+        assert state.spec_issue_counts == {"unknown": 1}
+
+
 class TestFoldApplyEquivalence:
     def test_fold_equals_incremental_apply_at_random_splits(self) -> None:
         rng = random.Random(7)
@@ -204,6 +256,11 @@ class TestFoldApplyEquivalence:
                 ev.ComponentCompleted(component=c, iterations=rng.randint(1, 5)),
                 ev.ComponentFailed(component=c, error="err"),
                 ev.WorkerHeartbeat(component=c, pid=1, elapsed_seconds=1.0),
+                ev.SpecIssueRecorded(
+                    severity=rng.choice(["blocker", "major", "minor"]),
+                    kind="ambiguity", summary="s", location="spec.md:1",
+                ),
+                ev.ArtifactWritten(component=c, label="prd", path="p.json"),
             ]))
         stamped = _stamped(pool)
         folded = reducer.fold(stamped, run_id="run-1")

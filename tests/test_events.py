@@ -78,6 +78,11 @@ def _sample_events() -> list[ev.Event]:
         ev.FindingRecorded(component="comp-a", phase="review", category="test_quality",
                            severity="fail", location="a.py:10",
                            explanation="weak assert", attempt=1),
+        ev.SpecIssueRecorded(severity="blocker", kind="ambiguity",
+                             summary="Spec contradicts itself",
+                             location="spec.md:12", suggestion="pick one"),
+        ev.ArtifactWritten(component="comp-a", label="prd",
+                           path="scripts/kstrl/feature/comp-a/prd.json"),
         ev.Log(severity="warn", kind="kv", key="Root", text="/tmp/x"),
     ]
 
@@ -353,6 +358,8 @@ class TestV1CompatGoldenParity:
         bus.emit(ev.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=1.0))
         bus.emit(ev.Log(text="narration"))
         bus.emit(ev.PrMerged(component="a", pr_number=1, pr_url="u"))
+        bus.emit(ev.SpecIssueRecorded(severity="blocker", summary="s"))
+        bus.emit(ev.ArtifactWritten(label="manifest", path="m.json"))
         assert read_progress_events(compat_path) == []
 
     def test_progress_sinks_still_fed(self, tmp_path: Path) -> None:
