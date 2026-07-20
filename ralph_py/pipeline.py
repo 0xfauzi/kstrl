@@ -836,6 +836,15 @@ class ComponentPipeline:
             skipped = self.manifest.cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
             self.factory_result.skipped.extend(skipped)
+            started = self._attempt_started_monotonic.get(comp_id)
+            duration = time.monotonic() - started if started is not None else 0.0
+            self.bus.emit(ev.PhaseCompleted(
+                component=comp_id,
+                phase="engineer",
+                passed=False,
+                detail="component timeout",
+                duration_seconds=round(duration, 2),
+            ))
             self.bus.emit(ev.ComponentFailed(
                 component=comp_id, error="component timeout",
             ))
