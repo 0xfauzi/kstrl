@@ -70,8 +70,9 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   FP 0.0 -> 0.25 (codex false-flags constant-time-compare), everything else
   unchanged; `compare` = PASS. No correlated-miss BENEFIT is visible because
   both families are at the detection ceiling on this fixture set (same gap as
-  the R5.2 hard-positive finding). Recording requirement met; effect size
-  still unevidenced. See docs/adversarial-design.md "Recorded baselines".
+  the R5.2 hard-positive finding). Recording requirement met; R7.1 CLOSED to
+  `[x]` (user decision 2026-07-20) with the effect-size caveat recorded. See
+  docs/adversarial-design.md "Recorded baselines".
 - **EARS/DECOMPOSE 1.4.0 capture** (R7.5): CAPTURED 2026-07-20 in the same run
   (`DECOMPOSE_PROMPT_VERSION == 1.4.0` on main; architect 3/3 + allowedPaths
   1/1). The remaining R7.5 blocker is the SDK go/no-go (user decision 5), so
@@ -638,7 +639,7 @@ by an integration test with a synthetic-but-realistic journal).
 
 ## Phase R7 - Strategic (the A+ differentiators)
 
-- [~] R7.1 (M) **Cross-model review rotation** [research topic 3; user decision 2]
+- [x] R7.1 (M) **Cross-model review rotation** [research topic 3; user decision 2]
   - Default `review_model`/`security_model` to a different family than the
     engineer's when a second CLI is available; warn on homogeneity; record the
     reviewing model identity on every Finding and in the PR body.
@@ -661,11 +662,13 @@ by an integration test with a synthetic-but-realistic journal).
     No correlated-miss BENEFIT is measurable: both families are at the
     detection ceiling (same-family already catches 100%, incl. all 4 hard
     positives), so there is nothing for rotation to additionally catch - the
-    SAME gap as the R5.2 hard-fixture finding. The literal blocker ("record
-    BOTH baselines") is cleared; whether that is enough to close R7.1, or it
-    should stay `[~]` until genuinely-missable fixtures let the delta show a
-    real effect size, is a user call. Full write-up + the codex-invocation
-    gotcha in docs/adversarial-design.md "Reviewer-family override".
+    SAME gap as the R5.2 hard-fixture finding. CLOSED to `[x]` 2026-07-20 (user
+    decision): the acceptance blocker "record BOTH baselines" is met and the
+    rotation code shipped. CAVEAT (recorded, not resolved): the correlated-miss
+    effect size is UNEVIDENCED because the fixtures are at the detection
+    ceiling; revisit once R5.2 provides genuinely-missable fixtures that let
+    the delta show a real effect. Full write-up + the codex-invocation gotcha
+    in docs/adversarial-design.md "Reviewer-family override".
 - [x] R7.2 (M) **Wire fixtures, sandboxed** [CRIT-3, H-6; user decision 4]
   - Function fixtures execute in a subprocess (`sys.executable -c`) with the
     R2.6 scrubbed env: never in the harness process.
