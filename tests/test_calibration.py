@@ -10,7 +10,7 @@ When run, the suite iterates over fixtures in
 ``tests/adversarial_fixtures/{security,concerns,specs}/``, feeds each
 fixture's diff or spec to the corresponding role prompt against a
 fast model (Haiku-class), and gates on detection over
-``RALPH_CALIBRATION_RUNS`` runs per fixture (default 3, R5.1): a
+``KSTRL_CALIBRATION_RUNS`` runs per fixture (default 3, R5.1): a
 fixture passes when a majority of its completed runs catch the
 planted issue (``calibration.FIXTURE_DETECTION_THRESHOLD``), so
 single-run LLM variance is reported as consistency instead of
@@ -80,12 +80,19 @@ from kstrl.security import (
     parse_security_output,
 )
 
-CALIBRATION_ENABLED = os.environ.get("RALPH_RUN_CALIBRATION") == "1"
-CALIBRATION_MODEL = os.environ.get("RALPH_CALIBRATION_MODEL", "haiku")
+CALIBRATION_ENABLED = "1" in (
+    os.environ.get("KSTRL_RUN_CALIBRATION"),
+    os.environ.get("RALPH_RUN_CALIBRATION"),
+)
+CALIBRATION_MODEL = (
+    os.environ.get("KSTRL_CALIBRATION_MODEL")
+    or os.environ.get("RALPH_CALIBRATION_MODEL")
+    or "haiku"
+)
 CALIBRATION_RUNS = int(
-    os.environ.get(
-        "RALPH_CALIBRATION_RUNS", str(calibration.DEFAULT_CALIBRATION_RUNS),
-    )
+    os.environ.get("KSTRL_CALIBRATION_RUNS")
+    or os.environ.get("RALPH_CALIBRATION_RUNS")
+    or str(calibration.DEFAULT_CALIBRATION_RUNS)
 )
 # R7.1: optional reviewer-family override so the user can capture
 # same-family vs cross-family baselines with the same tooling. Applies
@@ -157,7 +164,7 @@ def render_verification(meta: dict) -> str:
 # TestFixtureStructure still run without the env var.
 _skip_unless_calibrating = pytest.mark.skipif(
     not CALIBRATION_ENABLED,
-    reason="Calibration suite requires RALPH_RUN_CALIBRATION=1 (makes real LLM calls)",
+    reason="Calibration suite requires KSTRL_RUN_CALIBRATION=1 (makes real LLM calls)",
 )
 
 

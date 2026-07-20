@@ -33,7 +33,7 @@ import kstrl.evolution as evolution_mod
 from kstrl.evolution import EvolutionConfig
 from kstrl.factory import FactoryConfig, FactoryResult
 from kstrl.feedforward import FeedforwardConfig
-from kstrl.init_cmd import DEFAULT_RALPH_TOML
+from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.verify import VerifyConfig
@@ -732,13 +732,13 @@ def _uncomment_scaffold(text: str) -> str:
 
 
 class TestInitScaffold:
-    def test_init_creates_ralph_toml(self, tmp_path: Path) -> None:
+    def test_init_creates_kstrl_toml(self, tmp_path: Path) -> None:
         runner = CliRunner()
         result = runner.invoke(
             cli_mod.cli, ["init", str(tmp_path), "--ui", "plain"]
         )
         assert result.exit_code == 0, result.output
-        toml_path = tmp_path / "ralph.toml"
+        toml_path = tmp_path / "kstrl.toml"
         assert toml_path.exists()
         data = tomllib.loads(toml_path.read_text())
         assert set(data.keys()) == EXPECTED_SCAFFOLD_SECTIONS
@@ -760,7 +760,7 @@ class TestInitScaffold:
     def test_scaffold_keys_are_real(self) -> None:
         # Uncomment every key and check each against the loader key sets;
         # a scaffold key the loaders do not read fails here.
-        data = tomllib.loads(_uncomment_scaffold(DEFAULT_RALPH_TOML))
+        data = tomllib.loads(_uncomment_scaffold(DEFAULT_KSTRL_TOML))
         assert set(data.keys()) == EXPECTED_SCAFFOLD_SECTIONS
         for section, keys in data.items():
             unexpected = set(keys) - EXPECTED_SCAFFOLD_KEYS[section]
@@ -778,7 +778,7 @@ class TestInitScaffold:
         from kstrl.timeout import TimeoutConfig
 
         (tmp_path / "ralph.toml").write_text(
-            _uncomment_scaffold(DEFAULT_RALPH_TOML)
+            _uncomment_scaffold(DEFAULT_KSTRL_TOML)
         )
         KstrlConfig.load(tmp_path)
         FactoryConfig.load(tmp_path)

@@ -5,9 +5,12 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from kstrl import envcompat
 
 
 def _parse_bool(value: str | None) -> bool:
@@ -48,8 +51,8 @@ class KstrlConfig:
     allowed_paths: list[str] = field(default_factory=list)
 
     # Branch config - None means use PRD, "" means skip
-    ralph_branch: str | None = None
-    ralph_branch_explicit: bool = False  # Was RALPH_BRANCH env var set?
+    kstrl_branch: str | None = None
+    kstrl_branch_explicit: bool = False  # Was RALPH_BRANCH env var set?
     auto_checkout: bool = True
 
     # Agent config
@@ -108,13 +111,14 @@ class KstrlConfig:
     ) -> KstrlConfig:
         """Load configuration with precedence: env > toml > dataclass defaults.
 
-        If ``toml_path`` is omitted, ``<root_dir>/ralph.toml`` is auto-discovered.
+        If ``toml_path`` is omitted, ``<root_dir>/kstrl.toml`` is
+        auto-discovered (legacy ``ralph.toml`` honored with a warning).
         Missing TOML file is fine (defaults are used). Malformed TOML raises.
         """
         if root_dir is None:
             root_dir = Path.cwd()
         if toml_path is None:
-            toml_path = root_dir / "ralph.toml"
+            toml_path = resolve_config_file(root_dir)
 
         config = cls()
         config.prompt_file = root_dir / "scripts/ralph/prompt.md"
@@ -138,6 +142,34 @@ class KstrlConfig:
             errors.append(f"Prompt file not found: {self.prompt_file}")
 
         return errors
+
+
+_warned_legacy_toml: set[Path] = set()
+
+
+def resolve_config_file(root_dir: Path) -> Path:
+    """Return the config file for ``root_dir``: kstrl.toml, else ralph.toml.
+
+    ``kstrl.toml`` is the primary name after the rename. When only the
+    legacy ``ralph.toml`` exists it is honored for one release with a
+    once-per-root DeprecationWarning telling the operator to
+    ``mv ralph.toml kstrl.toml``. When neither exists the primary path
+    is returned (loaders no-op on a missing file).
+    """
+    primary = root_dir / "kstrl.toml"
+    if primary.exists():
+        return primary
+    legacy = root_dir / "ralph.toml"
+    if legacy.exists():
+        if root_dir not in _warned_legacy_toml:
+            _warned_legacy_toml.add(root_dir)
+            warnings.warn(
+                f"{legacy} is deprecated; rename it: mv ralph.toml kstrl.toml",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return legacy
+    return primary
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -231,8 +263,8 @@ def _apply_toml_overrides(
             # var `RALPH_BRANCH=""` (handled below) keeps its historical
             # meaning of "explicit skip".
             if isinstance(branch, str) and branch:
-                config.ralph_branch = branch
-                config.ralph_branch_explicit = True
+                config.kstrl_branch = branch
+                config.kstrl_branch_explicit = True
         if "auto_checkout" in git_section:
             config.auto_checkout = bool(git_section["auto_checkout"])
 
@@ -266,29 +298,29 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
         config.interactive = _parse_bool(os.environ.get("INTERACTIVE"))
     if "ALLOWED_PATHS" in os.environ:
         config.allowed_paths = _parse_paths(os.environ.get("ALLOWED_PATHS"))
-    if "RALPH_BRANCH" in os.environ:
-        config.ralph_branch = os.environ["RALPH_BRANCH"]
-        config.ralph_branch_explicit = True
-    if "RALPH_AUTO_CHECKOUT" in os.environ:
-        config.auto_checkout = _parse_bool(os.environ.get("RALPH_AUTO_CHECKOUT"))
+    if envcompat.contains("KSTRL_BRANCH"):
+        config.kstrl_branch = envcompat.require("KSTRL_BRANCH")
+        config.kstrl_branch_explicit = True
+    if envcompat.contains("KSTRL_AUTO_CHECKOUT"):
+        config.auto_checkout = _parse_bool(envcompat.get("KSTRL_AUTO_CHECKOUT"))
     if "AGENT_CMD" in os.environ:
         config.agent_cmd = os.environ["AGENT_CMD"]
     if "MODEL" in os.environ:
         config.model = os.environ["MODEL"]
     if "MODEL_REASONING_EFFORT" in os.environ:
         config.model_reasoning_effort = os.environ["MODEL_REASONING_EFFORT"]
-    if "RALPH_AGENT_TYPE" in os.environ:
-        config.agent_type = os.environ["RALPH_AGENT_TYPE"]
-    if "RALPH_AGENT_BUDGET_USD" in os.environ:
+    if envcompat.contains("KSTRL_AGENT_TYPE"):
+        config.agent_type = envcompat.require("KSTRL_AGENT_TYPE")
+    if envcompat.contains("KSTRL_AGENT_BUDGET_USD"):
         try:
-            budget_value = float(os.environ["RALPH_AGENT_BUDGET_USD"])
+            budget_value = float(envcompat.require("KSTRL_AGENT_BUDGET_USD"))
         except ValueError:
             budget_value = 0.0
         if budget_value > 0:
             config.agent_budget_usd = budget_value
-    if "RALPH_UI" in os.environ:
-        config.ui_mode = os.environ["RALPH_UI"]
+    if envcompat.contains("KSTRL_UI"):
+        config.ui_mode = envcompat.require("KSTRL_UI")
     if "NO_COLOR" in os.environ:
         config.no_color = True
-    if "RALPH_ASCII" in os.environ:
-        config.ascii_only = _parse_bool(os.environ.get("RALPH_ASCII"))
+    if envcompat.contains("KSTRL_ASCII"):
+        config.ascii_only = _parse_bool(envcompat.get("KSTRL_ASCII"))

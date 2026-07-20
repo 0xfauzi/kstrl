@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from kstrl import envcompat
+
 
 class ProgressSink(Protocol):
     """Observer of progress-log events (R7.4).
@@ -461,12 +463,12 @@ class NotifyConfig:
     @classmethod
     def load(cls, root_dir: Path | None = None) -> NotifyConfig:
         """Load notify config with precedence: env > toml > defaults."""
-        from kstrl.config import load_toml_section
+        from kstrl.config import load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "notify")
+        section = load_toml_section(resolve_config_file(root_dir), "notify")
         if isinstance(section.get("on_complete"), str):
             config.on_complete = section["on_complete"]
         if isinstance(section.get("on_first_failure"), str):
@@ -478,12 +480,12 @@ class NotifyConfig:
 
 
 def _apply_notify_env(config: NotifyConfig) -> None:
-    if "RALPH_NOTIFY_ON_COMPLETE" in os.environ:
-        config.on_complete = os.environ["RALPH_NOTIFY_ON_COMPLETE"]
-    if "RALPH_NOTIFY_ON_FIRST_FAILURE" in os.environ:
-        config.on_first_failure = os.environ["RALPH_NOTIFY_ON_FIRST_FAILURE"]
-    if "RALPH_NOTIFY_HOOK_TIMEOUT" in os.environ:
-        config.hook_timeout = float(os.environ["RALPH_NOTIFY_HOOK_TIMEOUT"])
+    if envcompat.contains("KSTRL_NOTIFY_ON_COMPLETE"):
+        config.on_complete = envcompat.require("KSTRL_NOTIFY_ON_COMPLETE")
+    if envcompat.contains("KSTRL_NOTIFY_ON_FIRST_FAILURE"):
+        config.on_first_failure = envcompat.require("KSTRL_NOTIFY_ON_FIRST_FAILURE")
+    if envcompat.contains("KSTRL_NOTIFY_HOOK_TIMEOUT"):
+        config.hook_timeout = float(envcompat.require("KSTRL_NOTIFY_HOOK_TIMEOUT"))
 
 
 class NotifyHooks:
@@ -549,13 +551,18 @@ class NotifyHooks:
         # second chance on the next failure - once means once.
         self._fired.add(condition)
         env = dict(os.environ)
-        env.update({
-            "RALPH_NOTIFY_EVENT": condition,
-            "RALPH_NOTIFY_RUN_ID": self._run_id,
-            "RALPH_NOTIFY_PROJECT": self._project,
-            "RALPH_NOTIFY_COMPONENT": component_id,
-            "RALPH_NOTIFY_DETAIL": detail,
-        })
+        notify_vars = {
+            "NOTIFY_EVENT": condition,
+            "NOTIFY_RUN_ID": self._run_id,
+            "NOTIFY_PROJECT": self._project,
+            "NOTIFY_COMPONENT": component_id,
+            "NOTIFY_DETAIL": detail,
+        }
+        # KSTRL_* is primary; RALPH_* mirrors kept one release so existing
+        # user hooks keep reading their values during the rename.
+        for suffix, value in notify_vars.items():
+            env[f"KSTRL_{suffix}"] = value
+            env[f"RALPH_{suffix}"] = value
         try:
             sink = subprocess.DEVNULL if self.capture_output else None
             proc = subprocess.run(

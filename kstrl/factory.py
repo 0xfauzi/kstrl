@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO
 
+from kstrl import envcompat
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.breaker import BreakerConfig
@@ -186,19 +187,19 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(
-                os.environ.get("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
+                envcompat.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
             ),
             max_total_tokens=int(
-                os.environ.get("RALPH_FACTORY_MAX_TOTAL_TOKENS", "0")
+                envcompat.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
             ),
             pause_before_pr_merge=_parse_bool(
-                os.environ.get("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE")
+                envcompat.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
             progress_log_enabled=_parse_bool(
-                os.environ.get("RALPH_FACTORY_PROGRESS_LOG_ENABLED", "1")
+                envcompat.get("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "1")
             ),
             keep_worktrees_on_failure=_parse_bool(
-                os.environ.get("RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE")
+                envcompat.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
         )
 
@@ -209,11 +210,11 @@ class FactoryConfig:
         Reads the ``[factory]`` section from ``<root_dir>/ralph.toml`` if
         present, then overlays any matching env vars on top.
         """
-        from kstrl.config import _parse_bool, load_toml_section
+        from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "factory")
+        section = load_toml_section(resolve_config_file(root_dir), "factory")
         if "max_parallel" in section:
             config.max_parallel = int(section["max_parallel"])
         if "max_retries" in section:
@@ -253,25 +254,25 @@ class FactoryConfig:
             config.retry_delay = float(os.environ["FACTORY_RETRY_DELAY"])
         if "FACTORY_MERGE_TIMEOUT" in os.environ:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
-        if "RALPH_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
+        if envcompat.contains("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"):
             config.max_adversarial_calls = int(
-                os.environ["RALPH_FACTORY_MAX_ADVERSARIAL_CALLS"]
+                envcompat.require("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS")
             )
-        if "RALPH_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
+        if envcompat.contains("KSTRL_FACTORY_MAX_TOTAL_TOKENS"):
             config.max_total_tokens = int(
-                os.environ["RALPH_FACTORY_MAX_TOTAL_TOKENS"]
+                envcompat.require("KSTRL_FACTORY_MAX_TOTAL_TOKENS")
             )
-        if "RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
+        if envcompat.contains("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"):
             config.pause_before_pr_merge = _parse_bool(
-                os.environ["RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE"]
+                envcompat.require("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             )
-        if "RALPH_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
+        if envcompat.contains("KSTRL_FACTORY_PROGRESS_LOG_ENABLED"):
             config.progress_log_enabled = _parse_bool(
-                os.environ["RALPH_FACTORY_PROGRESS_LOG_ENABLED"]
+                envcompat.require("KSTRL_FACTORY_PROGRESS_LOG_ENABLED")
             )
-        if "RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE" in os.environ:
+        if envcompat.contains("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"):
             config.keep_worktrees_on_failure = _parse_bool(
-                os.environ["RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
+                envcompat.require("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             )
         return config
 
@@ -1099,8 +1100,8 @@ def _run_component(
         sleep_seconds=sleep_seconds,
         interactive=interactive,
         allowed_paths=list(allowed_paths) if allowed_paths else [],
-        ralph_branch="",
-        ralph_branch_explicit=True,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
         agent_cmd=agent_cmd,
         model=model,
         model_reasoning_effort=reasoning,

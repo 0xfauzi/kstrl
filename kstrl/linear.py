@@ -27,7 +27,7 @@ Design (docs/linear-integration.md has the full rationale):
   sink or the decompose hook.
 
 Auth: the token is read from the env var named by
-``LinearConfig.token_env`` (default ``RALPH_LINEAR_TOKEN``) at call
+``LinearConfig.token_env`` (default ``KSTRL_LINEAR_TOKEN``) at call
 time and never appears in code, config files, logs, or error messages.
 Personal API keys use a bare ``Authorization: <key>`` header; OAuth
 (app-actor) tokens use ``Authorization: Bearer <token>``;
@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 import urllib.error
 import urllib.request
@@ -48,7 +47,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.config import _parse_bool, load_toml_section
+from kstrl import envcompat
+from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 
 if TYPE_CHECKING:
     from kstrl.decompose import SpecIssue
@@ -84,7 +84,7 @@ class LinearConfig:
 
     enabled: bool = False
     team_id: str = ""
-    token_env: str = "RALPH_LINEAR_TOKEN"
+    token_env: str = "KSTRL_LINEAR_TOKEN"
     auth_mode: str = "auto"
     api_url: str = "https://api.linear.app/graphql"
     dry_run: bool = False
@@ -117,19 +117,17 @@ class LinearConfig:
     @classmethod
     def from_env(cls) -> LinearConfig:
         return cls(
-            enabled=_parse_bool(os.environ.get("RALPH_LINEAR_ENABLED")),
-            team_id=os.environ.get("RALPH_LINEAR_TEAM_ID", ""),
-            token_env=os.environ.get(
-                "RALPH_LINEAR_TOKEN_ENV", "RALPH_LINEAR_TOKEN"
+            enabled=_parse_bool(envcompat.get("KSTRL_LINEAR_ENABLED")),
+            team_id=envcompat.get("KSTRL_LINEAR_TEAM_ID", ""),
+            token_env=envcompat.get("KSTRL_LINEAR_TOKEN_ENV", "KSTRL_LINEAR_TOKEN"
             ),
-            auth_mode=os.environ.get("RALPH_LINEAR_AUTH_MODE", "auto"),
-            api_url=os.environ.get(
-                "RALPH_LINEAR_API_URL", "https://api.linear.app/graphql"
+            auth_mode=envcompat.get("KSTRL_LINEAR_AUTH_MODE", "auto"),
+            api_url=envcompat.get("KSTRL_LINEAR_API_URL", "https://api.linear.app/graphql"
             ),
-            dry_run=_parse_bool(os.environ.get("RALPH_LINEAR_DRY_RUN")),
-            timeout_seconds=float(os.environ.get("RALPH_LINEAR_TIMEOUT", "30")),
+            dry_run=_parse_bool(envcompat.get("KSTRL_LINEAR_DRY_RUN")),
+            timeout_seconds=float(envcompat.get("KSTRL_LINEAR_TIMEOUT", "30")),
             min_request_interval=float(
-                os.environ.get("RALPH_LINEAR_MIN_INTERVAL", "0.5")
+                envcompat.get("KSTRL_LINEAR_MIN_INTERVAL", "0.5")
             ),
         )
 
@@ -139,7 +137,7 @@ class LinearConfig:
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "linear")
+        section = load_toml_section(resolve_config_file(root_dir), "linear")
         if "enabled" in section:
             config.enabled = bool(section["enabled"])
         if "team_id" in section:
@@ -157,23 +155,23 @@ class LinearConfig:
         if "min_request_interval" in section:
             config.min_request_interval = float(section["min_request_interval"])
         # Env overrides
-        if "RALPH_LINEAR_ENABLED" in os.environ:
-            config.enabled = _parse_bool(os.environ["RALPH_LINEAR_ENABLED"])
-        if "RALPH_LINEAR_TEAM_ID" in os.environ:
-            config.team_id = os.environ["RALPH_LINEAR_TEAM_ID"]
-        if "RALPH_LINEAR_TOKEN_ENV" in os.environ:
-            config.token_env = os.environ["RALPH_LINEAR_TOKEN_ENV"]
-        if "RALPH_LINEAR_AUTH_MODE" in os.environ:
-            config.auth_mode = os.environ["RALPH_LINEAR_AUTH_MODE"]
-        if "RALPH_LINEAR_API_URL" in os.environ:
-            config.api_url = os.environ["RALPH_LINEAR_API_URL"]
-        if "RALPH_LINEAR_DRY_RUN" in os.environ:
-            config.dry_run = _parse_bool(os.environ["RALPH_LINEAR_DRY_RUN"])
-        if "RALPH_LINEAR_TIMEOUT" in os.environ:
-            config.timeout_seconds = float(os.environ["RALPH_LINEAR_TIMEOUT"])
-        if "RALPH_LINEAR_MIN_INTERVAL" in os.environ:
+        if envcompat.contains("KSTRL_LINEAR_ENABLED"):
+            config.enabled = _parse_bool(envcompat.require("KSTRL_LINEAR_ENABLED"))
+        if envcompat.contains("KSTRL_LINEAR_TEAM_ID"):
+            config.team_id = envcompat.require("KSTRL_LINEAR_TEAM_ID")
+        if envcompat.contains("KSTRL_LINEAR_TOKEN_ENV"):
+            config.token_env = envcompat.require("KSTRL_LINEAR_TOKEN_ENV")
+        if envcompat.contains("KSTRL_LINEAR_AUTH_MODE"):
+            config.auth_mode = envcompat.require("KSTRL_LINEAR_AUTH_MODE")
+        if envcompat.contains("KSTRL_LINEAR_API_URL"):
+            config.api_url = envcompat.require("KSTRL_LINEAR_API_URL")
+        if envcompat.contains("KSTRL_LINEAR_DRY_RUN"):
+            config.dry_run = _parse_bool(envcompat.require("KSTRL_LINEAR_DRY_RUN"))
+        if envcompat.contains("KSTRL_LINEAR_TIMEOUT"):
+            config.timeout_seconds = float(envcompat.require("KSTRL_LINEAR_TIMEOUT"))
+        if envcompat.contains("KSTRL_LINEAR_MIN_INTERVAL"):
             config.min_request_interval = float(
-                os.environ["RALPH_LINEAR_MIN_INTERVAL"]
+                envcompat.require("KSTRL_LINEAR_MIN_INTERVAL")
             )
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
@@ -242,7 +240,7 @@ class LinearClient:
     # -- auth ---------------------------------------------------------
 
     def _token(self) -> str:
-        token = os.environ.get(self.config.token_env, "")
+        token = envcompat.get(self.config.token_env) or ""
         if not token:
             raise LinearError(
                 f"linear: env var {self.config.token_env} is unset or "
@@ -854,7 +852,7 @@ def build_linear_sink(
             "(decompose ran without the hook?); sink inactive"
         )
         return None
-    if not config.dry_run and not os.environ.get(config.token_env, ""):
+    if not config.dry_run and not (envcompat.get(config.token_env) or ""):
         warn(
             f"linear: env var {config.token_env} is unset; sink inactive"
         )

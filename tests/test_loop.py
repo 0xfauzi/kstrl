@@ -51,8 +51,8 @@ class TestRunLoop:
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
         agent = MockAgent(["working...", COMPLETION_MARKER])
@@ -79,8 +79,8 @@ class TestRunLoop:
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
         agent = MockAgent(["still working"])
@@ -124,8 +124,8 @@ class TestRunLoop:
         config = KstrlConfig(
             max_iterations=2,
             prompt_file=tmp_path / "nonexistent.md",
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
 
@@ -154,8 +154,8 @@ class TestRunLoop:
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
         agent = MockAgent(["start", COMPLETION_MARKER, "more output"])
@@ -238,8 +238,8 @@ class TestRunLoop:
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
         )
         ui = PlainUI(no_color=True)
         agent = MockAgent(
@@ -324,8 +324,8 @@ class TestGuardsRunBeforeCompletion:
             prompt_file=ralph_dir / "prompt.md",
             prd_file=ralph_dir / "prd.json",
             sleep_seconds=0,
-            ralph_branch="",
-            ralph_branch_explicit=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
             allowed_paths=["src/"],
         )
 

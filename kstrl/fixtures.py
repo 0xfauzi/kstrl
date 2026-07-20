@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl import envcompat
 from kstrl.prd import PRD
 from kstrl.verify import CheckResult, run_scrubbed
 
@@ -74,14 +75,14 @@ class FixturesConfig:
         from kstrl.config import _parse_bool
 
         return cls(
-            enabled=_parse_bool(os.environ.get("RALPH_FIXTURES_ENABLED")),
+            enabled=_parse_bool(envcompat.get("KSTRL_FIXTURES_ENABLED")),
             snapshot_on_success=_parse_bool(
-                os.environ.get("RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
+                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
             ),
             snapshot_dir=Path(
-                os.environ.get("RALPH_FIXTURES_SNAPSHOT_DIR", ".ralph/snapshots")
+                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".ralph/snapshots")
             ),
-            timeout=float(os.environ.get("RALPH_FIXTURES_TIMEOUT", "30")),
+            timeout=float(envcompat.get("KSTRL_FIXTURES_TIMEOUT", "30")),
         )
 
     @classmethod
@@ -93,12 +94,12 @@ class FixturesConfig:
         recreated across runs, so a worktree-relative snapshot would be
         wiped before the next run could compare against it.
         """
-        from kstrl.config import _parse_bool, load_toml_section
+        from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(root_dir / "ralph.toml", "fixtures")
+        section = load_toml_section(resolve_config_file(root_dir), "fixtures")
         if "enabled" in section:
             config.enabled = bool(section["enabled"])
         if "snapshot_on_success" in section:
@@ -107,16 +108,16 @@ class FixturesConfig:
             config.snapshot_dir = Path(str(section["snapshot_dir"]))
         if "timeout" in section:
             config.timeout = float(section["timeout"])
-        if "RALPH_FIXTURES_ENABLED" in os.environ:
-            config.enabled = _parse_bool(os.environ["RALPH_FIXTURES_ENABLED"])
-        if "RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS" in os.environ:
+        if envcompat.contains("KSTRL_FIXTURES_ENABLED"):
+            config.enabled = _parse_bool(envcompat.require("KSTRL_FIXTURES_ENABLED"))
+        if envcompat.contains("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS"):
             config.snapshot_on_success = _parse_bool(
-                os.environ["RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS"]
+                envcompat.require("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS")
             )
-        if "RALPH_FIXTURES_SNAPSHOT_DIR" in os.environ:
-            config.snapshot_dir = Path(os.environ["RALPH_FIXTURES_SNAPSHOT_DIR"])
-        if "RALPH_FIXTURES_TIMEOUT" in os.environ:
-            config.timeout = float(os.environ["RALPH_FIXTURES_TIMEOUT"])
+        if envcompat.contains("KSTRL_FIXTURES_SNAPSHOT_DIR"):
+            config.snapshot_dir = Path(envcompat.require("KSTRL_FIXTURES_SNAPSHOT_DIR"))
+        if envcompat.contains("KSTRL_FIXTURES_TIMEOUT"):
+            config.timeout = float(envcompat.require("KSTRL_FIXTURES_TIMEOUT"))
         if not config.snapshot_dir.is_absolute():
             config.snapshot_dir = root_dir / config.snapshot_dir
         return config

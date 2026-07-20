@@ -89,7 +89,7 @@ class TestLinearConfig:
     def test_defaults_disabled(self) -> None:
         config = LinearConfig()
         assert config.enabled is False
-        assert config.token_env == "RALPH_LINEAR_TOKEN"
+        assert config.token_env == "KSTRL_LINEAR_TOKEN"
         assert config.auth_mode == "auto"
         assert config.dry_run is False
 
@@ -222,9 +222,10 @@ class TestLinearClient:
     def test_missing_token_names_var_not_value(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         monkeypatch.delenv("RALPH_LINEAR_TOKEN", raising=False)
         client = LinearClient(dry_config(dry_run=False))
-        with pytest.raises(LinearError, match="RALPH_LINEAR_TOKEN"):
+        with pytest.raises(LinearError, match="KSTRL_LINEAR_TOKEN"):
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
 
     def test_token_value_never_in_errors(
@@ -764,6 +765,7 @@ class TestBuildLinearSink:
     def test_live_mode_without_token_warns_inactive(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         monkeypatch.delenv("RALPH_LINEAR_TOKEN", raising=False)
         manifest = make_manifest([component("comp-a")])
         manifest.components[0].linear_issue_id = "issue-uuid-a"
@@ -772,4 +774,4 @@ class TestBuildLinearSink:
             manifest, dry_config(dry_run=False), run_id="r", warn=warn,
         )
         assert sink is None
-        assert any("RALPH_LINEAR_TOKEN" in m for m in warn.messages)
+        assert any("KSTRL_LINEAR_TOKEN" in m for m in warn.messages)

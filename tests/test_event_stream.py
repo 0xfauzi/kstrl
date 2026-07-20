@@ -77,7 +77,7 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
         prompt_file=root_dir / "scripts" / "ralph" / "prompt.md",
         prd_file=root_dir / "scripts" / "ralph" / "prd.json",
         sleep_seconds=0, agent_cmd="echo test",
-        ralph_branch="", ralph_branch_explicit=True,
+        kstrl_branch="", kstrl_branch_explicit=True,
         ui_mode="plain", no_color=True,
     )
 

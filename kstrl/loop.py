@@ -408,11 +408,11 @@ def _determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
         - source: Source description (e.g. "from RALPH_BRANCH", "from PRD")
     """
     # If a branch is configured directly on the config, prefer it.
-    # `ralph_branch_explicit` is used to indicate whether it came from RALPH_BRANCH/--branch.
-    if config.ralph_branch is not None:
-        if config.ralph_branch_explicit:
-            return config.ralph_branch, "from RALPH_BRANCH"
-        return config.ralph_branch, "default"
+    # `kstrl_branch_explicit` is used to indicate whether it came from RALPH_BRANCH/--branch.
+    if config.kstrl_branch is not None:
+        if config.kstrl_branch_explicit:
+            return config.kstrl_branch, "from RALPH_BRANCH"
+        return config.kstrl_branch, "default"
 
     # Try to get from PRD
     if config.prd_file.exists():
