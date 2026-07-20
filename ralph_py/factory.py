@@ -32,6 +32,7 @@ from ralph_py.events import (
     ComponentFailed,
     ComponentStarted,
     EventBus,
+    EventSink,
     JsonlSink,
     PhaseStarted,
     RunCompleted,
@@ -77,6 +78,7 @@ from ralph_py.security import (
     run_security_review,
 )
 from ralph_py.timeout import TimeoutConfig
+from ralph_py.ui.bridge import EventBridgeUI
 from ralph_py.verify import VerifyConfig, run_mechanical_verification
 
 if TYPE_CHECKING:
@@ -1437,9 +1439,19 @@ def _run_factory_locked(
     # observers (Linear, R7.4) stay untouched. progress_log_enabled =
     # false suppresses BOTH files (symmetric opt-out).
     progress_log: ProgressLog
-    bus = EventBus(run_id=run_id)
+    # Chunk 7: when the caller's UI is the event bridge (cli commands
+    # via build_console), reuse ITS bus so the run's file sinks also
+    # capture every imperative Log narration - the imperative call
+    # sites become replayable. Tests passing a bare PlainUI get a
+    # private bus (their UI already prints directly).
+    if isinstance(ui, EventBridgeUI):
+        bus = ui.bus
+        bus.run_id = run_id
+    else:
+        bus = EventBus(run_id=run_id)
     journal_path: Path | None = None
     run_paths: RunPaths | None = None
+    run_file_sinks: list[EventSink] = []
     if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
     else:
@@ -1450,8 +1462,12 @@ def _run_factory_locked(
         progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
         journal_path = log_path
         run_paths = RunPaths.for_run(root_dir, run_id)
-        bus.add_sink(JsonlSink(run_paths.events_file))
-        bus.add_sink(V1CompatSink(progress_log))
+        run_file_sinks = [
+            JsonlSink(run_paths.events_file),
+            V1CompatSink(progress_log),
+        ]
+        for _sink in run_file_sinks:
+            bus.add_sink(_sink)
 
     # R7.4: Linear sink - mirrors failure/budget events onto the issues
     # the decompose hook mapped in the manifest. Observability only;
@@ -2232,7 +2248,11 @@ def _run_factory_locked(
         skipped=len(factory_result.skipped),
         duration_seconds=round(factory_duration, 2),
     ))
-    bus.close()
+    # Detach (not close) the console bus: post-run cli narration must
+    # not reopen the run's files. The file sinks themselves close.
+    for _sink in run_file_sinks:
+        bus.remove_sink(_sink)
+        _sink.close()
 
     # R0.2: collect components parked awaiting merge confirmation. Built
     # from the manifest (not accumulated during the run) so it reflects

@@ -43,11 +43,30 @@ from ralph_py.observability import (
     read_progress_events,
     summarize_events,
 )
+from ralph_py.output import build_console
 from ralph_py.prd import PRD
 from ralph_py.sandbox import SandboxConfig
 from ralph_py.timeout import TimeoutConfig
-from ralph_py.ui import get_ui
 from ralph_py.ui.base import UI
+
+
+def _console_ui(
+    mode: str = "auto",
+    no_color: bool = False,
+    ascii_only: bool = False,
+    force_rich: bool = False,
+) -> UI:
+    """Event-native drop-in for get_ui() (TUI rewrite chunk 7).
+
+    Same signature and mode resolution; returns the console's
+    EventBridgeUI so every line the command narrates becomes a typed
+    Log event, rendered synchronously and byte-identically onto the
+    same concrete UI get_ui() would have picked. run_factory discovers
+    the bus via ``ui.bus`` to attach the run's file sinks.
+    """
+    return build_console(
+        mode, no_color=no_color, ascii_only=ascii_only, force_rich=force_rich,
+    ).ui
 
 
 def _use_cli_value(ctx: click.Context, name: str) -> bool:
@@ -530,7 +549,7 @@ def run(
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(
+    ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,
         config.ascii_only,
@@ -643,7 +662,7 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     DIRECTORY is the target project directory (default: current directory).
     """
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
     exit_code = run_init(directory, ui_impl)
     sys.exit(exit_code)
 
@@ -816,7 +835,7 @@ def understand(
     config.ui_mode = _normalize_ui_mode(config.ui_mode)
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(
+    ui_impl = _console_ui(
         config.ui_mode,
         config.no_color,
         config.ascii_only,
@@ -1013,7 +1032,7 @@ def feature(
 
     # Check codex availability
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(
+    ui_impl = _console_ui(
         base_config.ui_mode,
         base_config.no_color,
         base_config.ascii_only,
@@ -1344,7 +1363,7 @@ def decompose(
     root_dir = root.resolve() if root else Path.cwd()
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
     effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
@@ -1705,14 +1724,14 @@ def factory(
     ctx = click.get_current_context()
 
     if not spec and not manifest_path:
-        ui_impl = get_ui("auto", no_color)
+        ui_impl = _console_ui("auto", no_color)
         ui_impl.err("Either --spec or --manifest is required")
         sys.exit(2)
 
     root_dir = root.resolve() if root else Path.cwd()
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
     effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
@@ -2433,7 +2452,7 @@ def status(
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     if manifest_path is not None:
         candidates = [manifest_path]
@@ -2563,7 +2582,7 @@ def retry(
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     manifest_file = (
         manifest_path if manifest_path is not None
@@ -2749,7 +2768,7 @@ def evolve(
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
-    ui_impl = get_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     # R2.1: honor [evolution] in ralph.toml + env, anchored to --root.
     evo_config = EvolutionConfig.load(root_dir)

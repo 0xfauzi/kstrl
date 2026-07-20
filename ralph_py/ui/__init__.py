@@ -13,7 +13,13 @@ def get_ui(
     ascii_only: bool = False,
     force_rich: bool = False,
 ) -> UI:
-    """Get appropriate UI implementation based on mode and environment."""
+    """Get appropriate UI implementation based on mode and environment.
+
+    Deprecated for cli commands (TUI rewrite chunk 7): new command code
+    should use ``ralph_py.output.build_console()``, which wraps this
+    same resolution in the event-native console. This stays for tests
+    and embedders that want a bare concrete UI.
+    """
     import sys
 
     normalized = (mode or "auto").strip().lower()
