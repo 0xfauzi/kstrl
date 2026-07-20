@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from ralph_py import events as ev
@@ -57,6 +58,25 @@ class TestJsonlTailer:
         assert chunk.truncated is True
         assert [e.to_dict()["data"]["text"] for e in chunk.events] == ["fresh"]
 
+    def test_replaced_larger_file_resets_and_reports(self, tmp_path: Path) -> None:
+        path = tmp_path / "events.jsonl"
+        bus = ev.EventBus(ev.JsonlSink(path), run_id="r")
+        bus.emit(ev.Log(text="old"))
+        tailer = JsonlTailer(path)
+        assert len(tailer.poll().events) == 1
+        replacement = tmp_path / "replacement.jsonl"
+        replacement_bus = ev.EventBus(ev.JsonlSink(replacement), run_id="r")
+        replacement_bus.emit(ev.Log(text="fresh-one"))
+        replacement_bus.emit(ev.Log(text="fresh-two"))
+        os.replace(replacement, path)
+
+        chunk = tailer.poll()
+
+        assert chunk.truncated is True
+        assert [e.to_dict()["data"]["text"] for e in chunk.events] == [
+            "fresh-one", "fresh-two",
+        ]
+
     def test_invalid_json_line_skipped(self, tmp_path: Path) -> None:
         path = tmp_path / "events.jsonl"
         with open(path, "a") as f:
@@ -88,6 +108,12 @@ class TestTextTailer:
         lines = TextTailer(path, max_lines=100).poll()
         assert len(lines) == 100
         assert lines[-1] == "line 499"
+
+    def test_max_lines_must_be_positive(self, tmp_path: Path) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="max_lines must be positive"):
+            TextTailer(tmp_path / "engineer.log", max_lines=0)
 
 
 class TestRunTailer:

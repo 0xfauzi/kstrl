@@ -17,6 +17,7 @@ that shrank (truncated/replaced) resets to offset zero and reports
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,21 +39,24 @@ class JsonlTailer:
         self.path = path
         self._offset = 0
         self._partial = b""
+        self._identity: tuple[int, int] | None = None
 
     def poll(self) -> TailChunk:
         chunk = TailChunk()
         try:
-            size = self.path.stat().st_size
-        except OSError:
-            return chunk
-        if size < self._offset:
-            self._offset = 0
-            self._partial = b""
-            chunk.truncated = True
-        if size == self._offset:
-            return chunk
-        try:
             with open(self.path, "rb") as f:
+                stat = os.fstat(f.fileno())
+                identity = (stat.st_dev, stat.st_ino)
+                if (
+                    self._identity is not None
+                    and identity != self._identity
+                ) or stat.st_size < self._offset:
+                    self._offset = 0
+                    self._partial = b""
+                    chunk.truncated = True
+                self._identity = identity
+                if stat.st_size == self._offset:
+                    return chunk
                 f.seek(self._offset)
                 data = f.read()
                 self._offset = f.tell()
@@ -77,23 +81,28 @@ class TextTailer:
     """Tail a plain-text transcript; yields new complete lines."""
 
     def __init__(self, path: Path, max_lines: int = 2000) -> None:
+        if max_lines <= 0:
+            raise ValueError("max_lines must be positive")
         self.path = path
         self.max_lines = max_lines
         self._offset = 0
         self._partial = b""
+        self._identity: tuple[int, int] | None = None
 
     def poll(self) -> list[str]:
         try:
-            size = self.path.stat().st_size
-        except OSError:
-            return []
-        if size < self._offset:
-            self._offset = 0
-            self._partial = b""
-        if size == self._offset:
-            return []
-        try:
             with open(self.path, "rb") as f:
+                stat = os.fstat(f.fileno())
+                identity = (stat.st_dev, stat.st_ino)
+                if (
+                    self._identity is not None
+                    and identity != self._identity
+                ) or stat.st_size < self._offset:
+                    self._offset = 0
+                    self._partial = b""
+                self._identity = identity
+                if stat.st_size == self._offset:
+                    return []
                 f.seek(self._offset)
                 data = f.read()
                 self._offset = f.tell()
