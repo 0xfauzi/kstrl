@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import sys
-import time
 from typing import TYPE_CHECKING
 
-from rich import box
-from rich.align import Align
 from rich.console import Console
-from rich.live import Live
-from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.text import Text
 
@@ -115,38 +110,15 @@ class RichUI:
         self.console.print()
 
     def startup_art(self) -> None:
-        """Display startup animation."""
+        """Print the static brand mark once (PR G: the 24fps Live
+        animation retired - a blocking intro loop on every start earns
+        its keep worse than one line; spike RESULTS.md set 24fps as the
+        ceiling, not the norm)."""
         if not self._animations_enabled():
             return
-        frames = animated_art.large_loop_frames()
-        if not frames:
-            return
-        delay = 1 / 24
-        panel = Panel(
-            "",
-            title=Text("Ralph", style="bold"),
-            subtitle=Text("agentic loop", style="dim"),
-            border_style="dim",
-            box=box.SQUARE,
-            padding=(1, 2),
-            expand=False,
+        self.console.print(
+            Text(animated_art.brand_mark(), style="bold"), justify="center",
         )
-        try:
-            with Live(panel, console=self.console, refresh_per_second=24, transient=True) as live:
-                for art in frames:
-                    panel = Panel(
-                        Align.center(art),
-                        title=Text("Ralph", style="bold"),
-                        subtitle=Text("agentic loop", style="dim"),
-                        border_style="dim",
-                        box=box.SQUARE,
-                        padding=(1, 2),
-                        expand=False,
-                    )
-                    live.update(panel, refresh=True)
-                    time.sleep(delay)
-        except Exception:
-            self.console.print(panel)
 
     def section(self, text: str) -> None:
         """Display a section header."""

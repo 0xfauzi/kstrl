@@ -27,6 +27,7 @@ Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
 | `RALPH_TIMEOUT_COMPONENT` | float | 7200 | Per-component total timeout |
 | `RALPH_TIMEOUT_DEFAULT` | float | 60 | Generic subprocess timeout |
 | `RALPH_UI` | str | auto | `auto\|rich\|plain` |
+| `RALPH_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `RALPH_ASCII` | bool | false | ASCII-only UI |
 

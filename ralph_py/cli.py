@@ -2646,6 +2646,13 @@ def status(
             state=state, source_path=source_path,
             root_dir=root_dir,
         )
+        if (
+            source_path is not None
+            and source_path.name == "events.jsonl"
+            and not watch
+        ):
+            ui_impl.info("")
+            ui_impl.info("Live view: ralph dash")
         return 0
 
     if not watch:
