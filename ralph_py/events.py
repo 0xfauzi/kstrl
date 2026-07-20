@@ -271,12 +271,15 @@ class ChunkBudgetInsufficient(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class AdversarialAgentSelected(Event):
+    """agent_type/model stay optional (None, not ""): the v1 line wrote
+    JSON null for unset values and byte parity is this chunk's contract."""
+
     type: ClassVar[str] = "adversarial_agent_selected"
     phase: str = ""
     agent_source: str = ""
     identity: str = ""
-    agent_type: str = ""
-    model: str = ""
+    agent_type: str | None = None
+    model: str | None = None
     homogeneous: bool = False
 
 

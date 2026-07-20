@@ -579,6 +579,7 @@ def run_security_review(
     diff_content: str | None = None,
     *,
     debug_dir: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> SecurityResult:
     """Run the security review phase. Always non-fatal: on any
     infrastructure error returns a SecurityResult with empty findings
@@ -613,6 +614,7 @@ def run_security_review(
     try:
         output_lines = collect_agent_output(
             agent, prompt, cwd=worktree_path, timeout=config.timeout_seconds,
+            on_line=on_line,
         )
     except (AgentOutputTooLarge, Exception) as exc:  # noqa: BLE001
         # Agent crashed mid-run OR streamed more than MAX_AGENT_OUTPUT_BYTES.
@@ -747,6 +749,7 @@ def run_chunked_security_review(
     budget_remaining: int | None = None,
     consume_budget: Callable[[], None] | None = None,
     debug_dir: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> SecurityResult:
     """R1.4 (H-16): security-review an oversized diff chunk by chunk,
     one agent pass per chunk, and merge the verdicts.
@@ -779,11 +782,17 @@ def run_chunked_security_review(
         if consume_budget is not None:
             consume_budget()
         ui.info(f"    Security review chunk {i}/{n}...")
+        if on_line is not None:
+            try:
+                on_line(f"--- chunk {i}/{n} ---")
+            except Exception:  # noqa: BLE001 - transcripts never gate
+                on_line = None
         results.append(run_security_review(
             agent, prd_path, worktree_path, base_branch, config, ui,
             diff_content=chunk,
             # Per-chunk subdir: dump_raw_debug writes fixed filenames,
             # so sharing one dir would overwrite earlier chunks' dumps.
             debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+            on_line=on_line,
         ))
     return merge_security_results(results, config.mode)

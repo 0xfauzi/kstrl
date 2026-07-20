@@ -641,6 +641,7 @@ def run_review(
     diff_content: str | None = None,
     *,
     debug_dir: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> ReviewResult:
     """Run the full review: build prompt, run agent, parse output.
 
@@ -682,6 +683,7 @@ def run_review(
         ]
         output_lines = collect_agent_output(
             agent, prompt, cwd=worktree_path, timeout=timeout,
+            on_line=on_line,
         )
     except AgentOutputTooLarge as exc:
         # Hostile/buggy agent flooding output. The review never
@@ -834,6 +836,7 @@ def run_chunked_review(
     budget_remaining: int | None = None,
     consume_budget: Callable[[], None] | None = None,
     debug_dir: Path | None = None,
+    on_line: Callable[[str], None] | None = None,
 ) -> ReviewResult:
     """R1.4 (H-16): review an oversized diff chunk by chunk, one agent
     pass per chunk, and merge the verdicts.
@@ -864,6 +867,11 @@ def run_chunked_review(
         if consume_budget is not None:
             consume_budget()
         ui.info(f"    Review chunk {i}/{n}...")
+        if on_line is not None:
+            try:
+                on_line(f"--- chunk {i}/{n} ---")
+            except Exception:  # noqa: BLE001 - transcripts never gate
+                on_line = None
         results.append(run_review(
             agent, prd_path, worktree_path, base_branch,
             verification_result, mode, ui,
@@ -872,5 +880,6 @@ def run_chunked_review(
             # Per-chunk subdir: dump_raw_debug writes fixed filenames,
             # so sharing one dir would overwrite earlier chunks' dumps.
             debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+            on_line=on_line,
         ))
     return merge_review_results(results, mode.value)
