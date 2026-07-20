@@ -12,7 +12,7 @@
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Implemented in slugify_max (tools/slugify.py) alongside US-002/US-003 since a correct, non-half-finished truncation algorithm requires the hard-cut fallback and max_length validation as inseparable parts of the same function. Verified by tests/test_slugify.py::TestSlugifyMax."
+      "notes": "Implemented in slugify_max (tools/slugify.py) alongside US-002/US-003 since a correct, non-half-finished truncation algorithm requires the hard-cut fallback and max_length validation as inseparable parts of the same function. Verified by tests/test_slugify.py::TestSlugifyMax. [2026-07-20 review-fix] Truncation rewritten to split on whole words instead of character-position slicing so multi-character separators (e.g. '__') can never be cut mid-separator (review-confirmed FAIL). Separator is now validated as purely non-alphanumeric via _validate_separator so it can never collide with slug word content. See tests/test_slugify.py::TestSlugifyMaxMultiCharSeparator and ::TestSlugifySeparatorValidation."
     },
     {
       "id": "US-002",
@@ -50,7 +50,7 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "uv run ruff check tools/slugify.py tests/test_slugify.py: clean. uv run mypy tools/slugify.py --strict: clean. uv run pytest tests/test_slugify.py -v: 19 passed."
+      "notes": "uv run ruff check tools/slugify.py tests/test_slugify.py: clean. uv run mypy tools/slugify.py --strict: clean. uv run pytest tests/test_slugify.py -v: 19 passed. [2026-07-20 review-fix] After fixing the multi-char-separator and alphanumeric-separator defects (see US-001 notes), re-ran all three: still clean/passing, now 30 passed."
     }
   ],
   "allowedPaths": [

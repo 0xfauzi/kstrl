@@ -79,3 +79,59 @@ class TestSlugifyMax:
         for max_length in range(1, 18):
             result = slugify_max("Hello Brave World", max_length)
             assert not result.endswith("-")
+
+
+class TestSlugifyMaxMultiCharSeparator:
+    def test_cut_mid_separator_does_not_leave_partial_fragment(self) -> None:
+        # slug is "foo__bar__baz"; max_length=4 lands one character past
+        # the first underscore of the "foo" -> "bar" separator, i.e.
+        # inside the two-character separator itself.
+        assert slugify_max("foo bar baz", 4, separator="__") == "foo"
+
+    def test_cut_exactly_at_separator_boundary(self) -> None:
+        assert slugify_max("foo bar baz", 3, separator="__") == "foo"
+
+    def test_cut_after_full_word_and_separator(self) -> None:
+        assert slugify_max("foo bar baz", 8, separator="__") == "foo__bar"
+
+    def test_hard_truncation_with_multi_char_separator(self) -> None:
+        assert slugify_max("extraordinarily nice", 5, separator="__") == "extra"
+
+    def test_no_trailing_partial_separator_across_all_cut_points(self) -> None:
+        text = "foo bar baz qux"
+        separator = "__"
+        full = slugify(text, separator=separator)
+        for max_length in range(1, len(full) + 5):
+            result = slugify_max(text, max_length, separator=separator)
+            assert len(result) <= max_length
+            assert not result.endswith("_")
+            assert not result.startswith("_")
+
+
+class TestSlugifySeparatorValidation:
+    def test_alphanumeric_letter_separator_raises(self) -> None:
+        with pytest.raises(ValueError, match="alphanumeric"):
+            slugify("Hello World", separator="x")
+
+    def test_alphanumeric_digit_separator_raises(self) -> None:
+        with pytest.raises(ValueError, match="alphanumeric"):
+            slugify("Hello World", separator="1")
+
+    def test_mixed_alphanumeric_separator_raises(self) -> None:
+        with pytest.raises(ValueError, match="alphanumeric"):
+            slugify("Hello World", separator="a-")
+
+    def test_alphanumeric_separator_raises_via_slugify_max(self) -> None:
+        with pytest.raises(ValueError, match="alphanumeric"):
+            slugify_max("Hello World", 5, separator="ab")
+
+    def test_alphanumeric_separator_cannot_eat_leading_text(self) -> None:
+        # Regression guard: an alphanumeric separator must be rejected
+        # rather than silently stripped from real word content that
+        # happens to match it (e.g. text starting with "xy" and
+        # separator="xy").
+        with pytest.raises(ValueError):
+            slugify("xylophone show", separator="xy")
+
+    def test_non_alnum_multi_char_separator_still_allowed(self) -> None:
+        assert slugify("Hello World", separator="::") == "hello::world"
