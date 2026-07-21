@@ -7,7 +7,7 @@
 
 <h1 align="center">kstrl</h1>
 
-<p align="center"><em>The adversarial software factory. Hand it a spec, walk away, get verified code.</em></p>
+<p align="center"><em>A fleet of AI agents builds your spec in parallel. An adversarial gauntlet attacks every diff. Only code that survives ships - and the factory learns from every run.</em></p>
 
 [![CI](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
@@ -80,9 +80,9 @@ When the agent signals completion, kstrl doesn't just trust it. Every run goes t
 - **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.
 - **Contract testing** (multi-component runs): component branches merge tier-by-tier with integration tests at each tier.
 
-When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
+When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints. A sample of the retry context the agent gets back after a failed typecheck:
 
-```
+```text
 [mypy] Found 1 error in 1 file (checked 14 source files)
   src/api/auth.py:23 [arg-type] Argument 1 to "verify_password" has incompatible type "str | None"; expected "str"
     |     21 |     password = request.form.get("password")
@@ -119,6 +119,24 @@ kstrl factory --manifest scripts/kstrl/manifest.json --max-parallel 4
 Each component runs in an isolated git worktree (`.kstrl/worktrees/<run>/<component>`) with its own PRD. `ks run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
 Scheduling, worktree isolation, merge gating, and the contract-testing bisect are diagrammed in [ARCHITECTURE.md](ARCHITECTURE.md#factory-mode).
+
+## Linear integration - the factory, mirrored into your tracker
+
+Enable the mirror and every factory run shows up in Linear without you lifting a finger:
+
+```toml
+[linear]
+enabled = true
+team_id = "your-team-uuid"
+```
+
+```bash
+export KSTRL_LINEAR_TOKEN="lin_api_..."
+```
+
+`ks decompose` creates a project and one issue per component (user stories as a checklist in the issue body); non-blocker spec findings are filed into Triage. Status transitions ride Linear's own GitHub integration: the component branch carries the issue identifier and the PR body carries a `Fixes ENG-42` trailer, so In Progress on PR-open and Done on merge cost kstrl zero API calls. Failures and budget halts land as a comment on the issue, and retries update the same issues - never duplicates, because issue ids persist in the manifest.
+
+The mirror is observability-only by design: every Linear failure warns and degrades, and nothing in the pipeline ever fails because Linear did. Setup, per-team automation settings, and rate-limit behavior: [docs/linear-integration.md](docs/linear-integration.md).
 
 ## The TUI - the whole surface, not just the factory
 
