@@ -14,6 +14,7 @@ from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.widgets.findings_table import FindingsTable
+from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.phase_timeline import render_timeline
 from kstrl.tui.widgets.transcript import TranscriptTail
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
@@ -146,6 +147,27 @@ class TestComponentScreen:
 
             assert table.row_count == 3
             assert str(table.get_row_at(2)[3]) == "3"
+
+
+class TestOverviewScreenTeardown:
+    async def test_state_update_after_header_removed_is_safe(
+        self, tmp_path: Path,
+    ) -> None:
+        # Regression: a late StateChanged or age-tick can arrive while the
+        # screen is tearing down and RunHeader (composed first) has already
+        # been removed, even though `ready` (which checks the feed, composed
+        # last) still passes. Both entry points must drop the update, not
+        # raise textual.css.query.NoMatches.
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, OverviewScreen)
+            await screen.query_one(RunHeader).remove()
+
+            screen.refresh_state(app.store.state)
+            screen.tick_ages(app.store.state)
 
 
 class TestCheckpointModal:

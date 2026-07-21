@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
@@ -167,20 +168,33 @@ class DecomposeScreen(Screen[None]):
         del manifest  # the folded plan is the source; no manifest join
         if not self.ready:
             return
-        self.query_one(RunHeader).update_state(state)
-        self.query_one(CostMeter).update_state(state)
-        self.query_one("#attempt-strip", Static).update(_attempt_strip(state))
-        self.query_one(DagTable).update_state(state)
-        self.query_one("#issues-strip", Static).update(_issue_strip(state))
-        summary = _summary(state)
-        summary_widget = self.query_one("#decompose-summary", Static)
-        summary_widget.display = summary is not None
-        if summary is not None:
-            summary_widget.update(summary)
+        try:
+            self.query_one(RunHeader).update_state(state)
+            self.query_one(CostMeter).update_state(state)
+            self.query_one("#attempt-strip", Static).update(_attempt_strip(state))
+            self.query_one(DagTable).update_state(state)
+            self.query_one("#issues-strip", Static).update(_issue_strip(state))
+            summary = _summary(state)
+            summary_widget = self.query_one("#decompose-summary", Static)
+            summary_widget.display = summary is not None
+            if summary is not None:
+                summary_widget.update(summary)
+        except NoMatches:
+            # A late StateChanged can arrive while the screen is tearing
+            # down: `ready` still sees the transcript (composed last) but
+            # RunHeader (composed first) is already gone. Dropping the
+            # update is safe - observability writes, not control flow.
+            return
 
     def tick_ages(self, state: RunState) -> None:
-        if self.ready:
+        if not self.ready:
+            return
+        try:
             self.query_one(RunHeader).update_state(state)
+        except NoMatches:
+            # Same teardown race as refresh_state: a timer-driven tick can
+            # fire after RunHeader is removed. Drop it.
+            return
 
     def feed_transcript(self, lines: list[str]) -> None:
         self.query_one(TranscriptTail).feed_lines(lines)
