@@ -8,15 +8,31 @@ that makes reduced-human-gating defensible.
 Tracking issue: [#156](https://github.com/0xfauzi/kstrl/issues/156).
 Milestone: `R8: Dark Factory`.
 
-Provenance: a 2026-07-21 gap analysis diffed Kestrel against a 15-pillar
-reference model synthesized from the software-factory lineage (Cusumano's
-Japanese factories, Greenfield/Short's Microsoft software factories, SEI
-software product lines, DoD DevSecOps reference designs and cATO, lights-out
-manufacturing) and 2024-2026 agentic-SWE literature. Each item below was then
-researched individually with a build-vs-integrate lens; key sources are cited
-inline. Caveat recorded per H4: the definitional/historical claims survived
-adversarial verification; the manufacturing and agentic-SWE claims were
-extracted from sources but not adversarially verified.
+Provenance: the item designs come from 2024-2026 agentic-factory practice
+and research - the "dark factory" pattern of agents planning, implementing,
+testing, and shipping without per-change human review (made possible by
+Claude Code / Codex-class agents), the intake models of OpenHands, GitHub
+Copilot's coding agent, Devin, and Claude Code GitHub Actions, Sentry's
+agent-handoff pattern, the LLM test-gaming and correlated-errors
+literature, and current deploy/mutation tooling. A 2026-07-21 gap analysis
+additionally measured Kestrel against the longer software-factory lineage
+(industrial software production, product lines, DoD DevSecOps and
+continuous authorization, lights-out manufacturing); from that lineage this
+plan borrows the continuous-authorization governance model (autonomy
+earned, bounded, revocable - current DoD practice) and two cautionary
+lessons, nothing more. Each item below was researched individually with a
+build-vs-integrate lens; key sources are cited inline. Caveat recorded per
+H4: the definitional/historical claims survived adversarial verification;
+the manufacturing and agentic-SWE claims were extracted from sources but
+not adversarially verified.
+
+How to read this document: items are numbered R8.1-R8.8, continuing the
+tracker-ID sequence from earlier cycles (A1-H5, then R0-R7 in
+`docs/adversarial-roadmap.md` and `docs/remediation-roadmap.md`); the
+prefix only says which tracker owns the item, and the IDs are used in
+issues, PRs, and commits like ticket numbers. H1-H4 are the standing
+process rules defined below. Newcomers should start with the project wiki
+(Vision and Philosophy, Roadmap), which decodes all project vocabulary.
 
 Status legend: `[ ]` pending - `[~]` in progress - `[x]` done - `[-]` skipped.
 Sizing: S (small diff, <~100 lines), M (one PR), L (multi-PR workstream).
@@ -39,15 +55,23 @@ Process rules that bind this plan (inherited unchanged):
 
 ## The frame: what "dark factory" means here
 
-The research is unambiguous that 100% dark is not a defensible goal. The
-coiners of the modern "software factory" term explicitly denied full
-mechanization; the DoD's most automated reference design retains two human
-touchpoints (merge review, production deploy decision); near-dark physical
-plants keep humans precisely for QA. The defensible end state is the cATO
-shape: **autonomy that is earned after demonstrated baseline compliance,
-bounded by an explicit written envelope, continuously monitored, and revocable
-with automatic reversion to human-gated mode**. Humans move from in-the-loop
-approval to over-the-loop exception handling.
+"Dark factory" is the 2025-2026 agentic pattern: coding agents plan,
+implement, test, and ship software without a human reviewing each change.
+Practitioner accounts of working implementations converge on the same
+preconditions - an evaluator-grade test suite with defenses against agents
+gaming it, constrained permissions enforced outside the agents, a mature
+deterministic pipeline underneath, rollback paths, and humans at an
+oversight layer reached only on boundary conditions.
+
+The research is equally unambiguous that 100% dark is not a defensible
+goal: closed AI-certifies-AI loops lose their verification oracle,
+same-family builder/verifier pairs share blind spots, and monitors who
+never intervene lose the ability to intervene. The defensible end state is
+the continuous-authorization shape (borrowed from current DoD software
+factory practice): **autonomy that is earned after demonstrated baseline
+compliance, bounded by an explicit written envelope, continuously
+monitored, and revocable with automatic reversion to human-gated mode**.
+Humans move from in-the-loop approval to over-the-loop exception handling.
 
 Kestrel's scorecard against the reference model: the verification core
 (adversarial phases, breakers, budgets, audit trail, calibration) is already
