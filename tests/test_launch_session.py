@@ -183,6 +183,80 @@ class TestStartRunSession:
         with pytest.raises(LaunchError, match="does not support"):
             start_run_session(LoopLaunch(), tmp_path)
 
+    def test_invalid_agent_config_fails_before_run_state(
+        self, tmp_path: Path,
+    ) -> None:
+        manifest_dir = tmp_path / "scripts" / "kstrl"
+        manifest_dir.mkdir(parents=True)
+        Manifest(
+            version="1", spec_file="s", project_name="demo",
+            base_branch="main", single_pr=False, components=[],
+        ).save(manifest_dir / "manifest.json")
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ntype = "gemini"\n', encoding="utf-8",
+        )
+
+        with pytest.raises(LaunchError, match="Unknown agent type"):
+            start_run_session(FactoryLaunch(), tmp_path)
+
+        assert not (tmp_path / ".kstrl").exists() or not list(
+            (tmp_path / ".kstrl" / "runs").glob("*"),
+        )
+
+    def test_decompose_canonicalizes_agent_alias(
+        self, tmp_path: Path,
+    ) -> None:
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec\nBuild it.", encoding="utf-8")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ntype = "claude"\n', encoding="utf-8",
+        )
+        with (
+            patch("kstrl.cli.ClaudeCodeAgent.is_available", return_value=True),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
+            ) as get_agent,
+        ):
+            session = start_run_session(
+                DecomposeLaunch(spec_path=spec_file, project_name="demo"),
+                tmp_path,
+            )
+        try:
+            session.handle.join(timeout=15)
+            assert session.handle.exit_code == 0
+        finally:
+            session.close()
+        assert get_agent.call_args.args[3] == "claude-code"
+
+    def test_worker_exception_is_written_to_run_log(
+        self, tmp_path: Path,
+    ) -> None:
+        class ExplodingAgent:
+            def run(self, *args: object, **kwargs: object) -> object:
+                del args, kwargs
+                raise RuntimeError("architect exploded")
+
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec\nBuild it.", encoding="utf-8")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+        )
+        with patch("kstrl.agents.get_agent", return_value=ExplodingAgent()):
+            session = start_run_session(
+                DecomposeLaunch(spec_path=spec_file, project_name="demo"),
+                tmp_path,
+            )
+        session.handle.join(timeout=15)
+        session.close()
+
+        assert session.handle.exit_code == 1
+        assert "architect exploded" in (
+            session.run_dir / "orchestrator.log"
+        ).read_text(encoding="utf-8")
+
     def test_decompose_session_runs_end_to_end(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
@@ -345,6 +419,37 @@ class TestRetryScreen:
             await pilot.pause(0.2)
             detail = str(app.screen.query_one("#retry-detail").renderable)
             assert "nothing to retry" in detail
+
+    async def test_confirmation_does_not_overwrite_changed_manifest(
+        self, tmp_path: Path,
+    ) -> None:
+        manifest_file = self._failed_manifest(tmp_path)
+        app = _home_app(tmp_path)
+        specs: list[Any] = []
+        app.start_session = lambda spec: (
+            specs.append(spec) or FakeSession(tmp_path)
+        )
+        async with app.run_test(size=(130, 40)) as pilot:
+            await pilot.pause(0.2)
+            app.push_screen(RetryScreen())
+            await pilot.pause(0.2)
+            await pilot.press("r")
+            await pilot.pause()
+            assert isinstance(app.screen, OptionsModal)
+
+            changed = Manifest.load(manifest_file)
+            comp = changed.get_component("comp-a")
+            assert comp is not None
+            comp.status = ComponentStatus.COMPLETED.value
+            changed.save(manifest_file)
+
+            await pilot.press("1")
+            await pilot.pause(0.2)
+
+        persisted = Manifest.load(manifest_file).get_component("comp-a")
+        assert persisted is not None
+        assert persisted.status == ComponentStatus.COMPLETED.value
+        assert specs == []
 
 
 class TestDecomposeSessionOnBoard:
