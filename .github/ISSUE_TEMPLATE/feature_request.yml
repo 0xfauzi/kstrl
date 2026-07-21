@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a capability or improvement for kstrl
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, check the [Dark Factory roadmap](https://github.com/0xfauzi/kstrl/blob/main/docs/dark-factory-roadmap.md)
+        and the [R8 milestone](https://github.com/0xfauzi/kstrl/milestone/1) -
+        your idea may already be planned. For open-ended ideas, consider
+        [Discussions](https://github.com/0xfauzi/kstrl/discussions) instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What need or limitation is this solving? Who hits it, and when?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like kstrl to do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why this one.
+    validations:
+      required: false
+  - type: dropdown
+    id: build-vs-integrate
+    attributes:
+      label: Build or integrate?
+      description: kstrl prefers integrating existing tools over building in-house. Does an existing tool cover this?
+      options:
+        - Needs to be built into kstrl
+        - Could integrate an existing tool
+        - Not sure
+    validations:
+      required: false

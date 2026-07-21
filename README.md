@@ -10,6 +10,7 @@
 <p align="center"><em>AI agents write the code. kstrl makes sure it actually works.</em></p>
 
 [![CI](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/kstrl)](https://pypi.org/project/kstrl/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -441,6 +442,10 @@ uv run ruff check kstrl/ tests/
 ```
 
 The CLI reference and config reference sections of this README are generated: edit the source (click commands / config dataclasses) or `scripts/gen_docs.py`, then run `uv run python scripts/gen_docs.py`. CI fails if the generated sections are stale.
+
+## Contributing
+
+Contributions are welcome, including AI-assisted ones - but AI-generated code is never gated by AI self-review, so every change is reviewed by a human and PRs should declare whether an agent wrote them. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, the process rules, and how to pick up roadmap work; the [project wiki](https://github.com/0xfauzi/kstrl/wiki) covers the vision, architecture, and roadmap in depth. To report a vulnerability, see [SECURITY.md](SECURITY.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
