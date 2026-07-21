@@ -308,6 +308,13 @@ class KstrlTuiApp(App[int]):
 
     def action_quit_or_detach(self) -> None:
         if self.mode is Mode.HOME:
+            if bool(getattr(self.screen, "navigation_blocked", False)):
+                self.notify(
+                    "this operation is still writing files; wait for it "
+                    "to finish",
+                    severity="warning",
+                )
+                return
             if isinstance(self.screen, HomeScreen):
                 self.exit(0)
                 return
