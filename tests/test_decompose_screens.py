@@ -7,6 +7,9 @@ from typing import Any
 from unittest.mock import patch
 
 from click.testing import CliRunner
+from rich.text import Text
+from textual.coordinate import Coordinate
+from textual.widgets import DataTable
 
 from kstrl.cli import cli
 from kstrl.tui.app import KstrlTuiApp, Mode
@@ -36,6 +39,9 @@ class TestComputeTiers:
         tiers = compute_tiers({"a": ("b",), "b": ("a",), "c": ()})
         assert tiers["c"] == 0
         assert tiers["a"] == -1 and tiers["b"] == -1
+
+    def test_self_dependency_is_a_cycle(self) -> None:
+        assert compute_tiers({"a": ("a",)}) == {"a": -1}
 
 
 class TestDispatch:
@@ -87,6 +93,13 @@ class TestDecomposeScreen:
             assert summary.display
             assert "2 component(s)" in str(summary.renderable)
 
+            # A replaced event stream may contain a smaller plan; rows
+            # from the old fold must not survive the rebuild.
+            app.store.state.plan_order = ["architect", "database"]
+            app.store.state.components.pop("api")
+            table.update_state(app.store.state)
+            assert {key.value for key in table.rows} == {"database"}
+
     async def test_triage_shows_blocker_banner_and_detail(
         self, tmp_path: Path,
     ) -> None:
@@ -106,6 +119,21 @@ class TestDecomposeScreen:
             text = str(detail.renderable)
             assert "[blocker]" in text
             assert "Resolve it" in text
+
+            # Spec text is untrusted content, not Rich markup. Keeping
+            # every cell as Text prevents tags from being interpreted.
+            app.store.state.spec_issues[0]["summary"] = "[/bold]"
+            app.store.state.spec_issues[0]["location"] = (
+                "[link=https://example.invalid]location[/link]"
+            )
+            app.screen._refresh(app.store.state)
+            table = app.screen.query_one(DataTable)
+            summary_cell = table.get_cell_at(Coordinate(0, 2))
+            location_cell = table.get_cell_at(Coordinate(0, 3))
+            assert isinstance(summary_cell, Text)
+            assert summary_cell.plain == "[/bold]"
+            assert isinstance(location_cell, Text)
+            assert location_cell.plain.startswith("[link=")
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, DecomposeScreen)

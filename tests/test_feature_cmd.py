@@ -155,6 +155,25 @@ class TestExitCodes:
             )
         assert code == 3
 
+    def test_incomplete_understand_stops_before_review(self, tmp_path: Path) -> None:
+        ui, _ = _ui()
+        channel = ScriptedChannel(0)
+        calls = 0
+
+        def incomplete(*args: Any, **kwargs: Any) -> LoopResult:
+            nonlocal calls
+            calls += 1
+            return LoopResult(completed=False, iterations=1, exit_code=0)
+
+        with patch("kstrl.feature_cmd.run_loop", incomplete):
+            code = run_feature(
+                _params(tmp_path), KstrlConfig(), StubAgent(), ui, tmp_path,
+                interaction=channel,
+            )
+        assert code == 0
+        assert calls == 1
+        assert channel.requests == []
+
     def test_empty_prd_skips_implementation(self, tmp_path: Path) -> None:
         ui, stream = _ui()
         with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
@@ -195,3 +214,36 @@ class TestExitCodes:
                 interaction=ScriptedChannel(0),
             )
         assert code == 4
+
+
+class TestControlPropagation:
+    def test_interaction_and_stop_reach_every_loop(self, tmp_path: Path) -> None:
+        ui, _ = _ui()
+        params = _params(tmp_path, repair_max_runs=1)
+        params.implementation_auto_run = True
+        channel = ScriptedChannel(0)
+
+        def stop_check() -> bool:
+            return False
+
+        seen: list[tuple[Any, Any]] = []
+        results = iter((
+            LoopResult(completed=True, iterations=1, exit_code=0),
+            LoopResult(completed=False, iterations=1, exit_code=1),
+            LoopResult(completed=True, iterations=1, exit_code=0),
+        ))
+
+        def record(*args: Any, **kwargs: Any) -> LoopResult:
+            seen.append((kwargs.get("interaction"), kwargs.get("stop_check")))
+            return next(results)
+
+        with (
+            patch("kstrl.feature_cmd.run_loop", record),
+            patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
+        ):
+            code = run_feature(
+                params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                interaction=channel, stop_check=stop_check,
+            )
+        assert code == 0
+        assert seen == [(channel, stop_check)] * 3

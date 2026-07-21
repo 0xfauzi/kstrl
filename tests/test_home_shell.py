@@ -63,6 +63,18 @@ class TestHomeScreen:
             )
             assert "kstrl.toml ✓" in masthead
 
+            # A run discovered after mount belongs at the top, while
+            # the currently selected run stays selected after reorder.
+            table.move_cursor(row=1)  # the older factory run
+            write_fake_run(
+                tmp_path,
+                run_id="factory-20260720-160000.000000-newest",
+            )
+            app.screen.refresh_runs()
+            keys = [str(k.value) for k in table.rows]
+            assert keys[0].endswith("newest")
+            assert table.cursor_row == 2
+
     async def test_missing_toml_warns_in_masthead(
         self, tmp_path: Path,
     ) -> None:
