@@ -59,6 +59,10 @@ HOME_COMMANDS: list[HomeCommand] = [
         "config", "config",
         "resolved configuration with per-value sources",
     ),
+    HomeCommand(
+        "evolve", "evolve",
+        "harness proposals, failure patterns, experiment trends",
+    ),
 ]
 
 
@@ -261,3 +265,7 @@ class HomeScreen(Screen[None]):
             from kstrl.tui.screens.config import ConfigScreen
 
             self.app.push_screen(ConfigScreen())
+        elif event.option_id == "evolve":
+            from kstrl.tui.screens.evolve import EvolveScreen
+
+            self.app.push_screen(EvolveScreen())

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -47,12 +48,13 @@ class OptionsModal(ModalScreen[int | None]):
         dialog = Vertical(id="options-dialog")
         dialog.border_title = self.request.kind.value
         with dialog:
-            yield Label(self.request.header, id="options-question")
+            yield Label(Text(self.request.header), id="options-question")
             with Horizontal(id="options-buttons"):
                 for index, option in enumerate(self.request.options):
                     label = option.split(" (")[0]
                     button = Button(
-                        f"{label} ({index + 1})", id=f"choice-{index}",
+                        Text(f"{label} ({index + 1})"),
+                        id=f"choice-{index}",
                     )
                     if index == self.request.default:
                         button.add_class("default-choice")
