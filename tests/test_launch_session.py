@@ -261,6 +261,9 @@ class TestStartRunSession:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+        )
         with patch(
             "kstrl.agents.get_agent",
             return_value=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
@@ -460,6 +463,9 @@ class TestDecomposeSessionOnBoard:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+        )
         app = _home_app(tmp_path)
         with patch(
             "kstrl.agents.get_agent",
