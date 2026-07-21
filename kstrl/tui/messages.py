@@ -8,6 +8,7 @@ from textual.message import Message
 
 if TYPE_CHECKING:
     from kstrl.reducer import RunState
+    from kstrl.tui.home_data import HomeStats, RunSummary
 
 
 class StateChanged(Message):
@@ -18,3 +19,14 @@ class StateChanged(Message):
     def __init__(self, state: RunState) -> None:
         super().__init__()
         self.state = state
+
+
+class SummariesReady(Message):
+    """The home worker finished folding run summaries (D2)."""
+
+    def __init__(
+        self, summaries: dict[str, RunSummary], stats: HomeStats,
+    ) -> None:
+        super().__init__()
+        self.summaries = summaries
+        self.stats = stats
