@@ -67,7 +67,7 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.15.22",
-    "mypy>=1.10.0",
+    "mypy>=2.3.0",
     # The sdk extra is part of the dev set so the R7.6 unit tests and
     # mypy always exercise the adapter+runner.
     "claude-agent-sdk>=0.2.124,<0.3",
