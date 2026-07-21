@@ -60,7 +60,7 @@ class TestHomeScreen:
             assert keys[0].startswith("decompose-")  # newest first
             assert len(keys) == 2
             masthead = str(
-                app.screen.query_one("#home-masthead").renderable,
+                app.screen.query_one("#home-masthead").content,
             )
             assert "kstrl.toml ✓" in masthead
 
@@ -83,7 +83,7 @@ class TestHomeScreen:
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.2)
             masthead = str(
-                app.screen.query_one("#home-masthead").renderable,
+                app.screen.query_one("#home-masthead").content,
             )
             assert "run ks init" in masthead
 
@@ -188,7 +188,7 @@ class TestHomeScreen:
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.2)
             title = str(
-                app.screen.query_one("#home-runs-title").renderable,
+                app.screen.query_one("#home-runs-title").content,
             )
             assert "none yet" in title
 

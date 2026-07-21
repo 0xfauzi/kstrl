@@ -308,7 +308,7 @@ class TestLaunchForms:
             form.query_one("#factory-parallel", Input).value = "zebra"
             form.query_one("#factory-start", Button).press()
             await pilot.pause()
-            errors = str(form.query_one("#launch-errors").renderable)
+            errors = str(form.query_one("#launch-errors").content)
             assert "must be an integer" in errors
             assert specs == []
             # Fix the field and provide a manifest.
@@ -342,7 +342,7 @@ class TestLaunchForms:
             form = app.screen
             form.query_one("#decompose-start", Button).press()
             await pilot.pause()
-            errors = str(form.query_one("#launch-errors").renderable)
+            errors = str(form.query_one("#launch-errors").content)
             assert "spec path is required" in errors
             assert "project name is required" in errors
             (tmp_path / "spec.md").write_text("# spec")
@@ -397,7 +397,7 @@ class TestRetryScreen:
             screen = app.screen
             table = screen.query_one("#retry-table")
             assert table.row_count == 1  # type: ignore[attr-defined]
-            detail = str(screen.query_one("#retry-detail").renderable)
+            detail = str(screen.query_one("#retry-detail").content)
             assert "review found blocking issues" in detail
             await pilot.press("r")
             await pilot.pause()
@@ -420,7 +420,7 @@ class TestRetryScreen:
             await pilot.pause(0.2)
             app.push_screen(RetryScreen())
             await pilot.pause(0.2)
-            detail = str(app.screen.query_one("#retry-detail").renderable)
+            detail = str(app.screen.query_one("#retry-detail").content)
             assert "nothing to retry" in detail
 
     async def test_confirmation_does_not_overwrite_changed_manifest(
@@ -488,7 +488,7 @@ class TestDecomposeSessionOnBoard:
                 await pilot.pause(0.7)
                 # Board reflects the finished run.
                 summary = str(
-                    app.screen.query_one("#decompose-summary").renderable,
+                    app.screen.query_one("#decompose-summary").content,
                 )
                 assert "2 component(s)" in summary
                 await pilot.press("escape")
