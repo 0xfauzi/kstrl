@@ -1,4 +1,4 @@
-# Ralph Progress Log
+# kstrl Progress Log
 
 ## Codebase Patterns
 - (add reusable patterns here)

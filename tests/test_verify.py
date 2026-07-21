@@ -558,7 +558,7 @@ class TestCheckSelfCritique:
         bullets counted - surrounding sections contribute nothing."""
         progress = tmp_path / "progress.txt"
         progress.write_text(
-            "# Ralph Progress Log\n\n"
+            "# kstrl Progress Log\n\n"
             "## Codebase Patterns\n"
             "- (add reusable patterns here)\n\n"
             "## Iteration Notes\n"

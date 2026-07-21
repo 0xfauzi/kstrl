@@ -77,8 +77,8 @@ class TestContractConfig:
         assert config.timeout == 600.0
 
     def test_from_env(self, monkeypatch) -> None:
-        monkeypatch.setenv("RALPH_CONTRACT_MODE", "final")
-        monkeypatch.setenv("RALPH_CONTRACT_TEST_CMD", "make test")
+        monkeypatch.setenv("KSTRL_CONTRACT_MODE", "final")
+        monkeypatch.setenv("KSTRL_CONTRACT_TEST_CMD", "make test")
         config = ContractConfig.from_env()
         assert config.mode == "final"
         assert config.test_command == "make test"

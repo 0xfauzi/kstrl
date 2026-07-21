@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ralph_uv_example import greet
+from kstrl_uv_example import greet
 
 
 def test_greet() -> None:

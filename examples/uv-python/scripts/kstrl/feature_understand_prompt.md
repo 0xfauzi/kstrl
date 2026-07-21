@@ -1,4 +1,4 @@
-# Ralph Feature Understanding Instructions (Read-Only)
+# kstrl Feature Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
 

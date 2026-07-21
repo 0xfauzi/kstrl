@@ -1,4 +1,4 @@
-"""Custom command agent for Ralph."""
+"""Custom command agent for kstrl."""
 
 from __future__ import annotations
 

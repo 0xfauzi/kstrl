@@ -35,8 +35,8 @@ class TestSandboxConfig:
         assert config.allow_network is False
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_SANDBOX_ENABLED", "1")
-        monkeypatch.setenv("RALPH_SANDBOX_ALLOW_NETWORK", "true")
+        monkeypatch.setenv("KSTRL_SANDBOX_ENABLED", "1")
+        monkeypatch.setenv("KSTRL_SANDBOX_ALLOW_NETWORK", "true")
         config = SandboxConfig.from_env()
         assert config.enabled is True
         assert config.allow_network is True
@@ -44,13 +44,13 @@ class TestSandboxConfig:
     def test_load_toml_and_env_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[sandbox]\nenabled = true\nallow_network = true\n"
         )
         config = SandboxConfig.load(tmp_path)
         assert config.enabled is True
         assert config.allow_network is True
-        monkeypatch.setenv("RALPH_SANDBOX_ALLOW_NETWORK", "0")
+        monkeypatch.setenv("KSTRL_SANDBOX_ALLOW_NETWORK", "0")
         config = SandboxConfig.load(tmp_path)
         assert config.enabled is True
         assert config.allow_network is False

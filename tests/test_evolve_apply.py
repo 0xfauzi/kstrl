@@ -1,4 +1,4 @@
-"""R6.3: `ralph evolve --apply` - the minimal REAL apply path.
+"""R6.3: `ks evolve --apply` - the minimal REAL apply path.
 
 Convention-type proposals (computational, target claude_md) append to
 the project CLAUDE.md Agent Learnings section after explicit
@@ -114,7 +114,7 @@ class TestEvolveApply:
         self, tmp_path: Path,
     ) -> None:
         root = _root_with_proposal(tmp_path)
-        (root / "ralph.toml").write_text(
+        (root / "kstrl.toml").write_text(
             "[evolution]\nauto_apply_computational = true\n"
         )
         # No input provided: a prompt would abort the runner.
@@ -169,7 +169,7 @@ class TestAppendToAgentLearnings:
         assert _append_to_agent_learnings(claude_md, "PROP-007", "new rule")
         content = claude_md.read_text()
         assert content.index("new rule") < content.index("## Footer")
-        assert "- new rule (applied from PROP-007 by ralph evolve)" in content
+        assert "- new rule (applied from PROP-007 by ks evolve)" in content
 
     def test_missing_file_returns_false(self, tmp_path: Path) -> None:
         assert not _append_to_agent_learnings(
@@ -201,7 +201,7 @@ class TestAutoPropose:
         self, tmp_path: Path,
     ) -> None:
         self._journal_with_pattern(tmp_path)
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[evolution]\nauto_propose = false\n"
         )
         exit_code, output = _invoke(tmp_path)
@@ -213,7 +213,7 @@ class TestAutoPropose:
     def test_auto_propose_default_generates_monotonic_ids(
         self, tmp_path: Path,
     ) -> None:
-        """Two `ralph evolve` invocations: the second run neither
+        """Two `ks evolve` invocations: the second run neither
         clobbers nor duplicates; a new pattern continues the numbering."""
         self._journal_with_pattern(tmp_path)
         exit_code, output = _invoke(tmp_path)

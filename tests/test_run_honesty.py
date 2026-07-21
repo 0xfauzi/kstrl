@@ -1,4 +1,4 @@
-"""R2.3: `ralph run` and factory flags are honest (CRIT-8, H-10, H-11).
+"""R2.3: `ks run` and factory flags are honest (CRIT-8, H-10, H-11).
 
 - CRIT-8: max_iterations (N), interactive, and allowed_paths forward from
   the invoking config through ``_submit_args`` into ``_run_component``;
@@ -6,7 +6,7 @@
 - --no-verify: ``FactoryConfig.skip_verification`` is an explicit skip
   sentinel that ``run_factory`` honors - Phase 1 runs ZERO checks, states
   the skip in output, and records a phase_skipped finding.
-- H-10: both ``ralph run`` and ``ralph factory`` wire FeedforwardConfig
+- H-10: both ``ks run`` and ``ks factory`` wire FeedforwardConfig
   (via the toml/env control plane), and the built Phase 0 context reaches
   the engineer prompt.
 - H-11: the rendered engineer prompt names the SAME per-component PRD
@@ -115,14 +115,14 @@ def _base_config(root: Path, agent_cmd: str, **overrides: Any) -> KstrlConfig:
 
 
 class TestIterationForwarding:
-    """CRIT-8: `ralph run N` runs at most N iterations, not 30."""
+    """CRIT-8: `ks run N` runs at most N iterations, not 30."""
 
     def test_n3_executes_exactly_three_iterations(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         count_file = tmp_path / "invocations.txt"
         # Consumes the prompt, records the invocation, never completes.
@@ -148,7 +148,7 @@ class TestIterationForwarding:
         KstrlConfig that _run_component hands to run_loop."""
         root = tmp_path / "repo"
         _init_repo(root)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         captured: dict[str, KstrlConfig] = {}
 
@@ -189,7 +189,7 @@ class TestNoVerifySkipSentinel:
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         marker = tmp_path / "check-ran.marker"
         # Even with a verify_config PRESENT, the sentinel wins: none of
@@ -229,7 +229,7 @@ class TestNoVerifySkipSentinel:
         """Mirror: the same setup without the sentinel does run checks."""
         root = tmp_path / "repo"
         _init_repo(root)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         marker = tmp_path / "check-ran.marker"
         verify_config = VerifyConfig(
@@ -278,7 +278,7 @@ class TestCliWiring:
         return captured
 
     def _write_run_prd(self, root: Path) -> None:
-        """R2.4: `ralph run` preflights prd.json before run_factory."""
+        """R2.4: `ks run` preflights prd.json before run_factory."""
         prd_path = root / "scripts" / "kstrl" / "prd.json"
         prd_path.parent.mkdir(parents=True, exist_ok=True)
         prd_path.write_text(
@@ -329,7 +329,7 @@ class TestCliWiring:
     def test_factory_wires_feedforward_from_control_plane(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """H-10: `ralph factory` passes a FeedforwardConfig loaded from
+        """H-10: `ks factory` passes a FeedforwardConfig loaded from
         toml/env; previously feedforward_config was never set and Phase 0
         silently never ran."""
         captured = self._capture_run_factory(monkeypatch)
@@ -347,14 +347,14 @@ class TestCliWiring:
         assert ff is not None and ff.enabled is True
 
         # toml disables it.
-        (tmp_path / "ralph.toml").write_text("[feedforward]\nenabled = false\n")
+        (tmp_path / "kstrl.toml").write_text("[feedforward]\nenabled = false\n")
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
         ff = captured["factory_config"].feedforward_config
         assert ff is not None and ff.enabled is False
 
         # Env overrides toml.
-        monkeypatch.setenv("RALPH_FEEDFORWARD_ENABLED", "1")
+        monkeypatch.setenv("KSTRL_FEEDFORWARD_ENABLED", "1")
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
         ff = captured["factory_config"].feedforward_config
@@ -379,7 +379,7 @@ class TestCliWiring:
 
 
 class TestFeedforwardAndPrdPathEndToEnd:
-    """Real `ralph factory` CLI run: Phase 0 context and the per-component
+    """Real `ks factory` CLI run: Phase 0 context and the per-component
     PRD path both land in the prompt the engineer receives."""
 
     def test_factory_run_builds_feedforward_and_names_component_prd(
@@ -393,8 +393,8 @@ class TestFeedforwardAndPrdPathEndToEnd:
 
         dump = tmp_path / "prompt-received.txt"
         monkeypatch.setenv("AGENT_CMD", f"cat > {dump}; " + COMPLETE_LINE)
-        monkeypatch.setenv("RALPH_BRANCH", "")
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_BRANCH", "")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         result = CliRunner().invoke(cli_mod.cli, [
             "factory", "--manifest", str(manifest_path),
@@ -429,7 +429,7 @@ class TestFeedforwardAndPrdPathEndToEnd:
         the rendered DEFAULT_PROMPT told the agent to use."""
         root = tmp_path / "repo"
         _init_repo(root)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         dump = tmp_path / "prompt-received.txt"
         manifest = _manifest()

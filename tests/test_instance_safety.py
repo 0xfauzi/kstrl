@@ -5,7 +5,7 @@
   two-process contention), with ``--force-lock`` as the explicit
   override.
 - Manifest save path == manifest load path: a custom ``--manifest``
-  round-trips to the custom file, and ``ralph run`` persists to its own
+  round-trips to the custom file, and ``ks run`` persists to its own
   ``run-manifest.json`` instead of clobbering a factory's resumable
   ``manifest.json``.
 - ``single_pr=True`` forces ``max_parallel=1`` with a printed notice
@@ -67,7 +67,7 @@ def _git_out(*args: str, cwd: Path) -> str:
 
 
 def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
-    """Real git repo shaped like a ralph project (scripts/kstrl/ is
+    """Real git repo shaped like a kstrl project (scripts/kstrl/ is
     gitignored, so provisioning must copy prompt + PRD into worktrees)."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
@@ -78,13 +78,13 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
     _git("add", ".gitignore", "README.md", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "kstrl"
-    (ralph_dir / "feature").mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text(
+    kstrl_dir = root / "scripts" / "kstrl"
+    (kstrl_dir / "feature").mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text(
         "Read the PRD at $prd_path and implement one story.\n"
     )
     for comp_id in comp_ids:
-        feature_dir = ralph_dir / "feature" / comp_id
+        feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
             "branchName": f"kstrl/factory/{comp_id}",
@@ -193,7 +193,7 @@ class TestRunLockContention:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         manifest = _manifest()
         with _HeldLock(root):
@@ -216,7 +216,7 @@ class TestRunLockContention:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         with _HeldLock(root):
             result = _run(root, config=_factory_config(force_lock=True))
@@ -236,7 +236,7 @@ class TestRunLockContention:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         result = _run(root)
         assert result.completed == ["comp-a"]
@@ -256,7 +256,7 @@ class TestManifestPathFidelity:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         custom = tmp_path / "custom-manifest.json"
         _manifest().save(custom)
@@ -277,7 +277,7 @@ class TestManifestPathFidelity:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         result = _run(root)
 
@@ -289,13 +289,13 @@ class TestManifestPathFidelity:
     def test_cli_run_uses_run_manifest_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`ralph run` wires its own run-manifest.json into run_factory
+        """`ks run` wires its own run-manifest.json into run_factory
         so it cannot clobber a factory's resumable manifest.json."""
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = project / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
@@ -318,21 +318,21 @@ class TestManifestPathFidelity:
                 "--force-lock",
             ],
             env={
-                "PROMPT_FILE": str(ralph_dir / "prompt.md"),
-                "PRD_FILE": str(ralph_dir / "prd.json"),
+                "PROMPT_FILE": str(kstrl_dir / "prompt.md"),
+                "PRD_FILE": str(kstrl_dir / "prd.json"),
             },
         )
 
         assert result.exit_code == 0, result.output
         assert captured["manifest_path"] == (
-            ralph_dir / "run-manifest.json"
+            kstrl_dir / "run-manifest.json"
         )
         assert captured["factory_config"].force_lock is True
 
     def test_cli_factory_passes_custom_manifest_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`ralph factory --manifest /x.json` hands that exact path to
+        """`ks factory --manifest /x.json` hands that exact path to
         run_factory as the save path."""
         root = tmp_path / "repo"
         _init_repo(root)
@@ -375,7 +375,7 @@ class TestSinglePrParallelism:
         root = tmp_path / "repo"
         _init_repo(root, comp_ids=("comp-a", "comp-b"))
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         shared_branch = "kstrl/factory/shared"
         manifest = _manifest(
@@ -406,7 +406,7 @@ class TestStaleBranchPolicy:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         # Aborted-run leftover: branch with a commit main does not have.
         _git("branch", "kstrl/factory/comp-a", cwd=root)
@@ -440,7 +440,7 @@ class TestStaleBranchPolicy:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         # Leftover branch pointing at main's tip: fully merged.
         _git("branch", "kstrl/factory/comp-a", "main", cwd=root)
@@ -463,7 +463,7 @@ class TestStaleWorktreePrune:
         root = tmp_path / "repo"
         _init_repo(root)
         monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         worktree_root = root / ".kstrl" / "worktrees"
         old_run_wt = worktree_root / "20250101-000000-000000-dead" / "comp-x"

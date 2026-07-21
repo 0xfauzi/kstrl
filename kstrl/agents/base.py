@@ -1,4 +1,4 @@
-"""Base agent protocol and usage metering types for Ralph."""
+"""Base agent protocol and usage metering types for kstrl."""
 
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ def collect_usage(agent: object) -> UsageTotals:
 
 
 class Agent(Protocol):
-    """Protocol for Ralph agent implementations."""
+    """Protocol for kstrl agent implementations."""
 
     @property
     def name(self) -> str:

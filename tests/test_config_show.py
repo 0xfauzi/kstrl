@@ -1,4 +1,4 @@
-"""R2.4 `ralph config show`: resolved config with per-value sources.
+"""R2.4 `ks config show`: resolved config with per-value sources.
 
 The command is the observability surface for the R2.1 control plane:
 every documented knob prints with the source that produced its value
@@ -43,7 +43,7 @@ class TestConfigShowSources:
     def test_toml_env_flag_default_sources(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[run]\nmax_iterations = 42\n\n[factory]\nmax_parallel = 9\n"
         )
         monkeypatch.setenv("SLEEP_SECONDS", "9.5")
@@ -79,8 +79,8 @@ class TestConfigShowSources:
     def test_phase_env_source_detected(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_TIMEOUT_AGENT_ITERATION", "123")
-        monkeypatch.setenv("RALPH_SECURITY_MODE", "advisory")
+        monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "123")
+        monkeypatch.setenv("KSTRL_SECURITY_MODE", "advisory")
 
         output = self._invoke(tmp_path)
 
@@ -98,12 +98,12 @@ class TestConfigShowSources:
         """The scrubbed-environ probe restores os.environ afterwards."""
         import os
 
-        monkeypatch.setenv("RALPH_CONFIG_SHOW_CANARY", "1")
+        monkeypatch.setenv("KSTRL_CONFIG_SHOW_CANARY", "1")
         self._invoke(tmp_path)
-        assert os.environ.get("RALPH_CONFIG_SHOW_CANARY") == "1"
+        assert os.environ.get("KSTRL_CONFIG_SHOW_CANARY") == "1"
 
     def test_malformed_toml_fails_cleanly(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text("[run\nmax_iterations = 1\n")
+        (tmp_path / "kstrl.toml").write_text("[run\nmax_iterations = 1\n")
         result = CliRunner().invoke(
             cli, ["config", "show", "--root", str(tmp_path)],
         )

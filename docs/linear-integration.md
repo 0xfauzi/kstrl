@@ -151,13 +151,13 @@ handling ("Agent session events") would land as a new adapter beside
 
 The interim setup uses a personal API key (Linear Settings > Security &
 access > Personal API keys; a key created by you acts as you). To make
-ralph act as its own app identity instead:
+kstrl act as its own app identity instead:
 
 1. In Linear, go to Settings > API > OAuth applications > "Create new"
    (`linear.app/settings/api/applications/new`). Linear recommends a
    dedicated workspace for OAuth app management because every admin of
    that workspace can manage the app.
-2. Name it (e.g. "Ralph Factory"), set any callback URL you control
+2. Name it (e.g. "kstrl Factory"), set any callback URL you control
    (for a local flow, `http://localhost:8484/callback` works); note
    the client id and secret.
 3. Build the authorize URL - the `actor=app` parameter is what makes
@@ -169,7 +169,7 @@ ralph act as its own app identity instead:
 5. Exchange the returned `code` for a token:
    `curl -X POST https://api.linear.app/oauth/token -d "grant_type=authorization_code" -d "code=<CODE>" -d "redirect_uri=<CALLBACK>" -d "client_id=<CLIENT_ID>" -d "client_secret=<CLIENT_SECRET>"`
 6. Put the resulting access token in `KSTRL_LINEAR_TOKEN` and set
-   `auth_mode = "oauth"` (or leave `auto`). No ralph code changes are
+   `auth_mode = "oauth"` (or leave `auto`). No kstrl code changes are
    needed - the client already sends OAuth tokens as
    `Authorization: Bearer`.
 

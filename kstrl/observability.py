@@ -12,8 +12,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from kstrl import envcompat
-
 
 class ProgressSink(Protocol):
     """Observer of progress-log events (R7.4).
@@ -299,7 +297,7 @@ def read_progress_events(path: Path) -> list[dict[str, Any]]:
 
     Malformed lines (a crash mid-write leaves at most one) are skipped
     rather than raised: the log is an observability surface and a torn
-    tail line must not make `ralph status` unusable.
+    tail line must not make `ks status` unusable.
     """
     if not path.exists():
         return []
@@ -435,18 +433,18 @@ def summarize_events(
 class NotifyConfig:
     """R3.2 ``[notify]`` section: shell commands fired on run milestones.
 
-    Example one-liners for ralph.toml::
+    Example one-liners for kstrl.toml::
 
         [notify]
         # Terminal bell when the run finishes:
         on_complete = "printf '\\a'"
         # Webhook ping the moment something needs attention:
-        on_first_failure = "curl -fsS -X POST -d \\"$RALPH_NOTIFY_EVENT $RALPH_NOTIFY_COMPONENT\\" https://example.com/hook"
+        on_first_failure = "curl -fsS -X POST -d \\"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\\" https://example.com/hook"
 
     The commands run via the shell with these context variables set:
-    ``RALPH_NOTIFY_EVENT`` (run_complete | first_failure | merge_pending),
-    ``RALPH_NOTIFY_RUN_ID``, ``RALPH_NOTIFY_PROJECT``,
-    ``RALPH_NOTIFY_COMPONENT`` and ``RALPH_NOTIFY_DETAIL``.
+    ``KSTRL_NOTIFY_EVENT`` (run_complete | first_failure | merge_pending),
+    ``KSTRL_NOTIFY_RUN_ID``, ``KSTRL_NOTIFY_PROJECT``,
+    ``KSTRL_NOTIFY_COMPONENT`` and ``KSTRL_NOTIFY_DETAIL``.
     """
 
     on_complete: str = ""
@@ -480,12 +478,12 @@ class NotifyConfig:
 
 
 def _apply_notify_env(config: NotifyConfig) -> None:
-    if envcompat.contains("KSTRL_NOTIFY_ON_COMPLETE"):
-        config.on_complete = envcompat.require("KSTRL_NOTIFY_ON_COMPLETE")
-    if envcompat.contains("KSTRL_NOTIFY_ON_FIRST_FAILURE"):
-        config.on_first_failure = envcompat.require("KSTRL_NOTIFY_ON_FIRST_FAILURE")
-    if envcompat.contains("KSTRL_NOTIFY_HOOK_TIMEOUT"):
-        config.hook_timeout = float(envcompat.require("KSTRL_NOTIFY_HOOK_TIMEOUT"))
+    if "KSTRL_NOTIFY_ON_COMPLETE" in os.environ:
+        config.on_complete = os.environ["KSTRL_NOTIFY_ON_COMPLETE"]
+    if "KSTRL_NOTIFY_ON_FIRST_FAILURE" in os.environ:
+        config.on_first_failure = os.environ["KSTRL_NOTIFY_ON_FIRST_FAILURE"]
+    if "KSTRL_NOTIFY_HOOK_TIMEOUT" in os.environ:
+        config.hook_timeout = float(os.environ["KSTRL_NOTIFY_HOOK_TIMEOUT"])
 
 
 class NotifyHooks:
@@ -497,7 +495,7 @@ class NotifyHooks:
     - first component failure -> ``on_first_failure``
     - first MERGE_PENDING park -> ``on_first_failure`` (the attention
       channel: the run is blocked on a human confirming a merge). The
-      hook can tell the conditions apart via ``RALPH_NOTIFY_EVENT``.
+      hook can tell the conditions apart via ``KSTRL_NOTIFY_EVENT``.
 
     Hooks are observability, never control flow: a hook that fails to
     launch, exits nonzero, or times out produces a warning and nothing
@@ -558,11 +556,11 @@ class NotifyHooks:
             "NOTIFY_COMPONENT": component_id,
             "NOTIFY_DETAIL": detail,
         }
-        # KSTRL_* is primary; RALPH_* mirrors kept one release so existing
+        # KSTRL_* is primary; KSTRL_* mirrors kept one release so existing
         # user hooks keep reading their values during the rename.
         for suffix, value in notify_vars.items():
             env[f"KSTRL_{suffix}"] = value
-            env[f"RALPH_{suffix}"] = value
+            env[f"KSTRL_{suffix}"] = value
         try:
             sink = subprocess.DEVNULL if self.capture_output else None
             proc = subprocess.run(

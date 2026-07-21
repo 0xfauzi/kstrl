@@ -77,9 +77,9 @@ class TestSecurityConfigDefaults:
         assert c.fail_threshold == "high"
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_SECURITY_MODE", "hard")
-        monkeypatch.setenv("RALPH_SECURITY_FAIL_THRESHOLD", "critical")
-        monkeypatch.setenv("RALPH_SECURITY_TIMEOUT", "300")
+        monkeypatch.setenv("KSTRL_SECURITY_MODE", "hard")
+        monkeypatch.setenv("KSTRL_SECURITY_FAIL_THRESHOLD", "critical")
+        monkeypatch.setenv("KSTRL_SECURITY_TIMEOUT", "300")
         c = SecurityConfig.from_env()
         assert c.mode == "hard"
         assert c.fail_threshold == "critical"

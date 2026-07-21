@@ -546,7 +546,7 @@ def _generate_pr_body(
 
     # R7.4: Linear magic-word trailer. "Fixes EXC-42" makes Linear's
     # GitHub integration move the issue to Done when this PR merges -
-    # status transitions cost ralph zero API calls.
+    # status transitions cost kstrl zero API calls.
     if component.linear_issue_identifier:
         lines.append(f"Fixes {component.linear_issue_identifier}")
         lines.append("")

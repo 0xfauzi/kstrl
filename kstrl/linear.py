@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -47,7 +48,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import envcompat
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 
 if TYPE_CHECKING:
@@ -78,7 +78,7 @@ class LinearConfig:
     """``[linear]`` section - Linear integration knobs.
 
     Disabled by default; enabling requires ``team_id`` (the UUID of the
-    Linear team ralph files projects and issues under). ``dry_run``
+    Linear team kstrl files projects and issues under). ``dry_run``
     records mutations instead of sending them (the default in tests).
     """
 
@@ -103,7 +103,7 @@ class LinearConfig:
         if self.enabled and not self.team_id:
             raise ValueError(
                 "LinearConfig.enabled requires team_id (the Linear team "
-                "UUID); set [linear] team_id or RALPH_LINEAR_TEAM_ID"
+                "UUID); set [linear] team_id or KSTRL_LINEAR_TEAM_ID"
             )
         if not self.token_env:
             raise ValueError("LinearConfig.token_env must not be empty")
@@ -117,17 +117,15 @@ class LinearConfig:
     @classmethod
     def from_env(cls) -> LinearConfig:
         return cls(
-            enabled=_parse_bool(envcompat.get("KSTRL_LINEAR_ENABLED")),
-            team_id=envcompat.get("KSTRL_LINEAR_TEAM_ID", ""),
-            token_env=envcompat.get("KSTRL_LINEAR_TOKEN_ENV", "KSTRL_LINEAR_TOKEN"
-            ),
-            auth_mode=envcompat.get("KSTRL_LINEAR_AUTH_MODE", "auto"),
-            api_url=envcompat.get("KSTRL_LINEAR_API_URL", "https://api.linear.app/graphql"
-            ),
-            dry_run=_parse_bool(envcompat.get("KSTRL_LINEAR_DRY_RUN")),
-            timeout_seconds=float(envcompat.get("KSTRL_LINEAR_TIMEOUT", "30")),
+            enabled=_parse_bool(os.environ.get("KSTRL_LINEAR_ENABLED")),
+            team_id=os.environ.get("KSTRL_LINEAR_TEAM_ID", ""),
+            token_env=os.environ.get("KSTRL_LINEAR_TOKEN_ENV", "KSTRL_LINEAR_TOKEN"),
+            auth_mode=os.environ.get("KSTRL_LINEAR_AUTH_MODE", "auto"),
+            api_url=os.environ.get("KSTRL_LINEAR_API_URL", "https://api.linear.app/graphql"),
+            dry_run=_parse_bool(os.environ.get("KSTRL_LINEAR_DRY_RUN")),
+            timeout_seconds=float(os.environ.get("KSTRL_LINEAR_TIMEOUT", "30")),
             min_request_interval=float(
-                envcompat.get("KSTRL_LINEAR_MIN_INTERVAL", "0.5")
+                os.environ.get("KSTRL_LINEAR_MIN_INTERVAL", "0.5")
             ),
         )
 
@@ -155,23 +153,23 @@ class LinearConfig:
         if "min_request_interval" in section:
             config.min_request_interval = float(section["min_request_interval"])
         # Env overrides
-        if envcompat.contains("KSTRL_LINEAR_ENABLED"):
-            config.enabled = _parse_bool(envcompat.require("KSTRL_LINEAR_ENABLED"))
-        if envcompat.contains("KSTRL_LINEAR_TEAM_ID"):
-            config.team_id = envcompat.require("KSTRL_LINEAR_TEAM_ID")
-        if envcompat.contains("KSTRL_LINEAR_TOKEN_ENV"):
-            config.token_env = envcompat.require("KSTRL_LINEAR_TOKEN_ENV")
-        if envcompat.contains("KSTRL_LINEAR_AUTH_MODE"):
-            config.auth_mode = envcompat.require("KSTRL_LINEAR_AUTH_MODE")
-        if envcompat.contains("KSTRL_LINEAR_API_URL"):
-            config.api_url = envcompat.require("KSTRL_LINEAR_API_URL")
-        if envcompat.contains("KSTRL_LINEAR_DRY_RUN"):
-            config.dry_run = _parse_bool(envcompat.require("KSTRL_LINEAR_DRY_RUN"))
-        if envcompat.contains("KSTRL_LINEAR_TIMEOUT"):
-            config.timeout_seconds = float(envcompat.require("KSTRL_LINEAR_TIMEOUT"))
-        if envcompat.contains("KSTRL_LINEAR_MIN_INTERVAL"):
+        if "KSTRL_LINEAR_ENABLED" in os.environ:
+            config.enabled = _parse_bool(os.environ["KSTRL_LINEAR_ENABLED"])
+        if "KSTRL_LINEAR_TEAM_ID" in os.environ:
+            config.team_id = os.environ["KSTRL_LINEAR_TEAM_ID"]
+        if "KSTRL_LINEAR_TOKEN_ENV" in os.environ:
+            config.token_env = os.environ["KSTRL_LINEAR_TOKEN_ENV"]
+        if "KSTRL_LINEAR_AUTH_MODE" in os.environ:
+            config.auth_mode = os.environ["KSTRL_LINEAR_AUTH_MODE"]
+        if "KSTRL_LINEAR_API_URL" in os.environ:
+            config.api_url = os.environ["KSTRL_LINEAR_API_URL"]
+        if "KSTRL_LINEAR_DRY_RUN" in os.environ:
+            config.dry_run = _parse_bool(os.environ["KSTRL_LINEAR_DRY_RUN"])
+        if "KSTRL_LINEAR_TIMEOUT" in os.environ:
+            config.timeout_seconds = float(os.environ["KSTRL_LINEAR_TIMEOUT"])
+        if "KSTRL_LINEAR_MIN_INTERVAL" in os.environ:
             config.min_request_interval = float(
-                envcompat.require("KSTRL_LINEAR_MIN_INTERVAL")
+                os.environ["KSTRL_LINEAR_MIN_INTERVAL"]
             )
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
@@ -240,7 +238,7 @@ class LinearClient:
     # -- auth ---------------------------------------------------------
 
     def _token(self) -> str:
-        token = envcompat.get(self.config.token_env) or ""
+        token = os.environ.get(self.config.token_env) or ""
         if not token:
             raise LinearError(
                 f"linear: env var {self.config.token_env} is unset or "
@@ -315,7 +313,7 @@ class LinearClient:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": self._auth_header(),
-                "User-Agent": "ralph-factory",
+                "User-Agent": "kstrl-factory",
             },
             method="POST",
         )
@@ -620,7 +618,7 @@ def _story_checklist(comp_data: dict[str, Any]) -> str:
 
 
 def _external_key_footer(key: str) -> str:
-    return f"\n\n---\n`ralph external key: {key}`"
+    return f"\n\n---\n`kstrl external key: {key}`"
 
 
 def sync_decompose(
@@ -654,7 +652,7 @@ def sync_decompose(
             team_id=config.team_id,
             client_id=deterministic_uuid(project_key),
             description=(
-                f"Ralph factory run for spec '{project_name}'."
+                f"ks factory run for spec '{project_name}'."
                 f"{_external_key_footer(project_key)}"
             ),
         )
@@ -816,10 +814,10 @@ class LinearSink:
     ) -> str | None:
         if event_type == "component_failed":
             error = str(data.get("error", ""))[:2000]
-            return f"Ralph run `{self._run_id}`: component failed.\n\n{error}"
+            return f"ks run `{self._run_id}`: component failed.\n\n{error}"
         if event_type == "budget_exceeded":
             return (
-                f"Ralph run `{self._run_id}`: run token budget exceeded "
+                f"ks run `{self._run_id}`: run token budget exceeded "
                 f"({data.get('total_tokens')}/{data.get('max_total_tokens')}); "
                 "component failed without further adversarial calls."
             )
@@ -852,7 +850,7 @@ def build_linear_sink(
             "(decompose ran without the hook?); sink inactive"
         )
         return None
-    if not config.dry_run and not (envcompat.get(config.token_env) or ""):
+    if not config.dry_run and not (os.environ.get(config.token_env) or ""):
         warn(
             f"linear: env var {config.token_env} is unset; sink inactive"
         )

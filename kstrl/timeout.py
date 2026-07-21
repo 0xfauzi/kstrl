@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
-
-from kstrl import envcompat
 
 # Field name -> environment variable, shared by from_env and load so the
 # two surfaces cannot drift.
@@ -56,7 +55,7 @@ class TimeoutConfig:
     def load(cls, root_dir: Path | None = None) -> TimeoutConfig:
         """Load timeout config with precedence: env > toml > defaults.
 
-        Reads the ``[timeout]`` section from ``<root_dir>/ralph.toml`` if
+        Reads the ``[timeout]`` section from ``<root_dir>/kstrl.toml`` if
         present, then overlays any explicitly-set env vars on top.
         """
         from kstrl.config import load_toml_section, resolve_config_file
@@ -76,8 +75,8 @@ def _apply_env_overrides(config: TimeoutConfig) -> None:
     """Overlay env vars that are explicitly set; unset vars leave the
     existing value untouched (so toml values survive the overlay)."""
     for field_name, env_var in _ENV_VARS.items():
-        if envcompat.contains(env_var):
-            setattr(config, field_name, float(envcompat.require(env_var)))
+        if env_var in os.environ:
+            setattr(config, field_name, float(os.environ[env_var]))
 
 
 def run_with_timeout(

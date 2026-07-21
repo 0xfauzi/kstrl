@@ -1,4 +1,4 @@
-"""ALLOWED_PATHS enforcement for Ralph."""
+"""ALLOWED_PATHS enforcement for kstrl."""
 
 from __future__ import annotations
 

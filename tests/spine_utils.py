@@ -56,10 +56,10 @@ def git(*args: str, cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def init_ralph_repo(
+def init_kstrl_repo(
     root: Path, comp_ids: tuple[str, ...], with_origin: bool = False,
 ) -> Path | None:
-    """Real git repo shaped like a ralph project.
+    """Real git repo shaped like a kstrl project.
 
     ``scripts/kstrl/`` is gitignored so worktree provisioning (R0.4) must
     copy prompt and PRD files in. Returns the bare origin path when
@@ -74,13 +74,13 @@ def init_ralph_repo(
     git("add", ".gitignore", "README.md", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "kstrl"
-    (ralph_dir / "prompt.md").parent.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text(
+    kstrl_dir = root / "scripts" / "kstrl"
+    (kstrl_dir / "prompt.md").parent.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text(
         "Read the PRD at $prd_path and implement one story.\n"
     )
     for comp_id in comp_ids:
-        feature_dir = ralph_dir / "feature" / comp_id
+        feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
             "branchName": f"kstrl/factory/{comp_id}",

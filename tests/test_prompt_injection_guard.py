@@ -16,7 +16,7 @@ prove three code-side properties for each of the four build paths:
 What these tests do NOT prove (H4): that a live model refuses to follow
 injected instructions. That is measured by the calibration injection
 fixtures (tests/adversarial_fixtures/{concerns,security}/*injection*),
-which require RALPH_RUN_CALIBRATION=1 and a real LLM.
+which require KSTRL_RUN_CALIBRATION=1 and a real LLM.
 """
 
 from __future__ import annotations

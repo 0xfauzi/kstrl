@@ -1,6 +1,6 @@
 """Tests for the SpecKit artifact-set intake (R7.5).
 
-``ralph decompose --spec`` accepts a SpecKit directory
+``ks decompose --spec`` accepts a SpecKit directory
 (spec.md [+ plan.md] [+ tasks.md]); the artifacts are concatenated with
 visible provenance headers and flow through the ordinary
 injection-separation delimiters. The EARS-directive DETECTION quality

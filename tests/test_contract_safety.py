@@ -55,16 +55,16 @@ def _git(*args: str, cwd: Path) -> str:
 
 
 def _init_repo(root: Path) -> None:
-    """Real git repo on main with the ralph scaffolding committed."""
+    """Real git repo on main with the kstrl scaffolding committed."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
     (root / "conflict.txt").write_text("base\n")
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt\n")
-    feature_dir = ralph_dir / "feature" / "a"
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt\n")
+    feature_dir = kstrl_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(json.dumps({
         "branchName": "kstrl/factory/a",
@@ -302,7 +302,7 @@ class TestBreakerRetryReentersScheduling:
         marker that breaks the contract tests, the breaker is reset, the
         scheduling loop re-runs it (run 2 removes the marker), and the
         second contract pass completes the run with exit code 0."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
         _init_repo(root)
         log_path = tmp_path / "progress.jsonl"

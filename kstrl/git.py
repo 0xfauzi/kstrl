@@ -1,4 +1,4 @@
-"""Git operations for Ralph."""
+"""Git operations for kstrl."""
 
 from __future__ import annotations
 

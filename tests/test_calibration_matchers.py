@@ -8,7 +8,7 @@ surfaced -- the security matcher used to reference a nonexistent
 until a real calibration run lit it up.
 
 Why this matters: the calibration suite is gated behind
-``RALPH_RUN_CALIBRATION=1`` and requires real LLM tokens, so its
+``KSTRL_RUN_CALIBRATION=1`` and requires real LLM tokens, so its
 matcher code is naturally under-tested. Unit-testing the matchers
 guarantees they at least *evaluate correctly* against the input shape
 they expect, even when nobody runs the LLM-driven integration.

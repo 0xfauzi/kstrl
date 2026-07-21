@@ -1,4 +1,4 @@
-"""Stage 3 PR C (TUI rewrite): run discovery for `ralph dash`."""
+"""Stage 3 PR C (TUI rewrite): run discovery for `ks dash`."""
 
 from __future__ import annotations
 

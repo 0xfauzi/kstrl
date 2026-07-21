@@ -17,8 +17,8 @@ class TestTimeoutConfig:
         assert config.component_total == 7200.0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_TIMEOUT_GIT", "10")
-        monkeypatch.setenv("RALPH_TIMEOUT_AGENT_ITERATION", "900")
+        monkeypatch.setenv("KSTRL_TIMEOUT_GIT", "10")
+        monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "900")
         config = TimeoutConfig.from_env()
         assert config.git_operation == 10.0
         assert config.agent_iteration == 900.0

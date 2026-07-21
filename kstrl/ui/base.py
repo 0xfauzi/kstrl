@@ -1,4 +1,4 @@
-"""Base UI protocol for Ralph output."""
+"""Base UI protocol for kstrl output."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Protocol
 
 
 class UI(Protocol):
-    """Protocol for Ralph UI implementations."""
+    """Protocol for kstrl UI implementations."""
 
     def title(self, text: str) -> None:
         """Display a large title."""

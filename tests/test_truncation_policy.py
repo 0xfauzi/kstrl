@@ -726,7 +726,7 @@ class TestSinglePassSecurityBudget:
         budget for non-chunked security passes, which would silently
         halve the effective budget. Two components + budget 2 must both
         get their security pass."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = _scaffold(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest(["comp-a", "comp-b"])
         config = _factory_config(

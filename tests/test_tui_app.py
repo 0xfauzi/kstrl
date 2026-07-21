@@ -76,7 +76,7 @@ class TestOverview:
             assert banner.display is True
             rendered = str(banner.render())
             assert "checkpoint pending" in rendered
-            assert "ralph factory" in rendered  # observe-only hint
+            assert "ks factory" in rendered  # observe-only hint
 
     async def test_q_detaches_with_zero(self, tmp_path: Path) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))

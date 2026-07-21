@@ -99,7 +99,7 @@ def generate_data_delimiter() -> str:
     return f"{_DATA_DELIMITER_PREFIX}-{secrets.token_hex(16)}"
 
 
-DECOMPOSE_PROMPT_VERSION = "1.4.1"
+DECOMPOSE_PROMPT_VERSION = "1.4.2"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -207,7 +207,7 @@ Decomposition rules:
     - `.github/` (CI configuration).
     - `pyproject.toml`, `package.json`, `Cargo.toml`, or other build
       manifests at the repo root.
-    - The harness's own packages: `kstrl/`, `ralph_py/`, `src/ralph/`.
+    - The harness's own package: `kstrl/`.
     - `scripts/kstrl/` as a bare prefix. Listing the bare directory
       would let the agent edit the manifest or sibling feature
       subtrees. ONLY list the specific `scripts/kstrl/feature/<id>/`
@@ -479,13 +479,9 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 # sync with the prompt body (which only Session 8C may edit).
 _ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset({
     ".kstrl",          # harness runtime state
-    ".ralph",          # legacy state dir name (pre-rename)
     ".github",         # CI configuration
     "kstrl",           # harness package
-    "ralph_py",        # legacy harness package name (pre-rename)
-    "src/ralph",       # legacy harness package
     "scripts/kstrl",   # bare prefix exposes the manifest + sibling features
-    "scripts/ralph",   # legacy scaffold dir name (pre-rename)
     "pyproject.toml",  # repo-root build manifests
     "package.json",
     "Cargo.toml",

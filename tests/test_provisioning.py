@@ -46,7 +46,7 @@ def _git(*args: str, cwd: Path) -> None:
 
 
 def _init_repo(root: Path, allowed_paths: list[str] | None = None) -> None:
-    """Real git repo shaped like a ralph project: scripts/kstrl/ (prompt +
+    """Real git repo shaped like a kstrl project: scripts/kstrl/ (prompt +
     PRD), CLAUDE.md, and AGENTS.md are all gitignored, so none of them
     reach a fresh worktree through git -- provisioning must copy them."""
     root.mkdir(parents=True, exist_ok=True)
@@ -60,10 +60,10 @@ def _init_repo(root: Path, allowed_paths: list[str] | None = None) -> None:
     _git("add", ".gitignore", "README.md", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
-    ralph_dir = root / "scripts" / "kstrl"
-    feature_dir = ralph_dir / "feature" / "comp-a"
+    kstrl_dir = root / "scripts" / "kstrl"
+    feature_dir = kstrl_dir / "feature" / "comp-a"
     feature_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text(CUSTOM_PROMPT)
+    (kstrl_dir / "prompt.md").write_text(CUSTOM_PROMPT)
     prd: dict[str, object] = {
         "branchName": "kstrl/factory/comp-a",
         "userStories": [{
@@ -126,7 +126,7 @@ class TestWorktreeProvisioning:
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
         monkeypatch.chdir(elsewhere)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         dump = tmp_path / "dump"
         dump.mkdir()
@@ -176,7 +176,7 @@ class TestDiffScopeRetryContext:
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
         monkeypatch.chdir(elsewhere)
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         stamp = tmp_path / "attempt1.stamp"
         dump = tmp_path / "retry-prompt.txt"

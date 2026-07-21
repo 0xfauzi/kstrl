@@ -11,9 +11,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 [`docs/dark-factory-roadmap.md`](docs/dark-factory-roadmap.md) and the
 [R8 milestone](https://github.com/0xfauzi/kstrl/milestone/1).
 
+### Removed
+
+- **Breaking:** the one-release compatibility layer for the pre-rename
+  names. The legacy environment-variable prefix, config filename, state
+  directory, and console script are no longer read or installed. Move to
+  `KSTRL_*`, `kstrl.toml`, `.kstrl/`, and the `ks` (or `kstrl`) command.
+
 ## [0.2.0] - 2026-07-21
 
-The first release under the **kstrl** name (the project was formerly "Ralph").
+The first release under the **kstrl** name.
 
 ### Added
 
@@ -42,9 +49,9 @@ The first release under the **kstrl** name (the project was formerly "Ralph").
 
 ### Changed
 
-- Renamed the project from Ralph to **kstrl** (CLI `ks`/`kstrl`, config
-  `kstrl.toml`, state `.kstrl/`, env prefix `KSTRL_*`). Legacy `RALPH_*` and
-  `.ralph/` are honored for one release with a deprecation warning.
+- Renamed the project to **kstrl** (CLI `ks`/`kstrl`, config `kstrl.toml`,
+  state `.kstrl/`, env prefix `KSTRL_*`). The previous names were honored
+  for one release with a deprecation warning.
 
 [Unreleased]: https://github.com/0xfauzi/kstrl/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/0xfauzi/kstrl/releases/tag/v0.2.0

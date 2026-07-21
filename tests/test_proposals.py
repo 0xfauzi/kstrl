@@ -100,7 +100,7 @@ class TestApply:
         learnings = content.split("## Other Section")[0]
         assert (
             "- Pin every dependency version in pyproject.toml. "
-            "(applied from PROP-001 by ralph evolve)" in learnings
+            "(applied from PROP-001 by ks evolve)" in learnings
         )
         assert "**Applied**:" in proposal.path.read_text()
         assert parse_proposal_file(proposal.path).applied

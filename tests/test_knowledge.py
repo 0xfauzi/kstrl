@@ -129,8 +129,8 @@ class TestKnowledgeConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "RALPH_KNOWLEDGE_ENABLED",
-            "RALPH_KNOWLEDGE_MAX_CORE_TOKENS",
+            "KSTRL_KNOWLEDGE_ENABLED",
+            "KSTRL_KNOWLEDGE_MAX_CORE_TOKENS",
         ):
             monkeypatch.delenv(var, raising=False)
         config = KnowledgeConfig.load(tmp_path)
@@ -142,12 +142,12 @@ class TestKnowledgeConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "RALPH_KNOWLEDGE_ENABLED",
-            "RALPH_KNOWLEDGE_MAX_CORE_TOKENS",
-            "RALPH_KNOWLEDGE_MAX_DEPENDENCY_TOKENS",
+            "KSTRL_KNOWLEDGE_ENABLED",
+            "KSTRL_KNOWLEDGE_MAX_CORE_TOKENS",
+            "KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS",
         ):
             monkeypatch.delenv(var, raising=False)
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             """
 [knowledge]
 enabled = false
@@ -164,7 +164,7 @@ max_dependency_tokens = 50
         """KnowledgeConfig.load must raise ValueError on bad TOML, matching
         KstrlConfig.load. Silently falling back to defaults would hide
         user typos in the [knowledge] section."""
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "this is not = valid = toml = [\n",
         )
         with pytest.raises(ValueError, match="Invalid TOML"):
@@ -173,13 +173,13 @@ max_dependency_tokens = 50
     def test_env_overrides_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             """
 [knowledge]
 max_core_tokens = 9999
 """,
         )
-        monkeypatch.setenv("RALPH_KNOWLEDGE_MAX_CORE_TOKENS", "111")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_MAX_CORE_TOKENS", "111")
         config = KnowledgeConfig.load(tmp_path)
         assert config.max_core_tokens == 111
 
@@ -1666,10 +1666,10 @@ def test_distill_prompt_includes_all_placeholders() -> None:
 
 def _setup_factory_project(tmp_path: Path, component_id: str) -> Path:
     """Create a minimal project layout that satisfies the factory."""
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / component_id
@@ -1762,7 +1762,7 @@ class TestFactoryDistillIntegration:
     def test_distill_disabled_via_env_skips_call(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "false")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "false")
         root = _setup_factory_project(tmp_path, "comp-a")
         manifest = _make_manifest([_make_component("comp-a", dependencies=[])])
         manifest.components[0].prd_path = (

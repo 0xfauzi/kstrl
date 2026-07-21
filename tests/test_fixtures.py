@@ -493,7 +493,7 @@ class TestFunctionFixtureSubprocess:
         # while the harness process's environ and sys.modules stay clean.
         (tmp_path / "evil_side_effect.py").write_text(
             "import os\n"
-            "os.environ['RALPH_FIXTURE_PWNED'] = '1'\n"
+            "os.environ['KSTRL_FIXTURE_PWNED'] = '1'\n"
             "with open('sentinel.txt', 'w') as f:\n"
             "    f.write('imported')\n"
             "def probe():\n"
@@ -510,7 +510,7 @@ class TestFunctionFixtureSubprocess:
         # The agent code DID run (in the subprocess, cwd=worktree)...
         assert (tmp_path / "sentinel.txt").read_text() == "imported"
         # ...but never inside the harness process.
-        assert "RALPH_FIXTURE_PWNED" not in os.environ
+        assert "KSTRL_FIXTURE_PWNED" not in os.environ
         assert "evil_side_effect" not in sys.modules
 
     def test_timeout_kills_subprocess(self, tmp_path: Path) -> None:
@@ -739,10 +739,10 @@ class TestSnapshotWiring:
 
 
 _FIXTURES_ENV_VARS = (
-    "RALPH_FIXTURES_ENABLED",
-    "RALPH_FIXTURES_SNAPSHOT_ON_SUCCESS",
-    "RALPH_FIXTURES_SNAPSHOT_DIR",
-    "RALPH_FIXTURES_TIMEOUT",
+    "KSTRL_FIXTURES_ENABLED",
+    "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS",
+    "KSTRL_FIXTURES_SNAPSHOT_DIR",
+    "KSTRL_FIXTURES_TIMEOUT",
 )
 
 
@@ -762,7 +762,7 @@ class TestFixturesConfigLoad:
         assert config.snapshot_dir == tmp_path / ".kstrl/snapshots"
 
     def test_load_from_toml(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[fixtures]\n"
             "enabled = true\n"
             "snapshot_on_success = false\n"
@@ -778,8 +778,8 @@ class TestFixturesConfigLoad:
     def test_env_beats_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[fixtures]\nenabled = true\n")
-        monkeypatch.setenv("RALPH_FIXTURES_ENABLED", "0")
+        (tmp_path / "kstrl.toml").write_text("[fixtures]\nenabled = true\n")
+        monkeypatch.setenv("KSTRL_FIXTURES_ENABLED", "0")
         config = FixturesConfig.load(tmp_path)
         assert config.enabled is False
 

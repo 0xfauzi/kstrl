@@ -104,7 +104,7 @@ class ReviewResult:
     # as a hint when investigating reviews but DO NOT gate on it - it
     # cannot be verified at runtime. The trustworthy verification path
     # is the planted-bug calibration suite at tests/test_calibration.py
-    # (runs with RALPH_RUN_CALIBRATION=1) which catches reviewers that
+    # (runs with KSTRL_RUN_CALIBRATION=1) which catches reviewers that
     # claim exhaustive coverage but miss known bugs.
     exhaustively_searched: bool = False
     # E9: parallel to SecurityResult.infrastructure_error - True when

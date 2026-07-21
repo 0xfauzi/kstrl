@@ -17,7 +17,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO
 
-from kstrl import envcompat
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.breaker import BreakerConfig
@@ -171,7 +170,7 @@ class FactoryConfig:
     keep_worktrees_on_failure: bool = False
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
-    # env - so `ralph factory` honors the config with no CLI wiring.
+    # env - so `ks factory` honors the config with no CLI wiring.
     # Default-off ([fixtures].enabled = false, roadmap user decision 4):
     # fixtures execute PRD-defined commands, so the operator opts in.
     fixtures_config: FixturesConfig | None = None
@@ -187,19 +186,19 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(
-                envcompat.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
+                os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
             ),
             max_total_tokens=int(
-                envcompat.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
+                os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
             ),
             pause_before_pr_merge=_parse_bool(
-                envcompat.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
+                os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
             progress_log_enabled=_parse_bool(
-                envcompat.get("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "1")
+                os.environ.get("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "1")
             ),
             keep_worktrees_on_failure=_parse_bool(
-                envcompat.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
+                os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
         )
 
@@ -207,7 +206,7 @@ class FactoryConfig:
     def load(cls, root_dir: Path | None = None) -> FactoryConfig:
         """Load factory config with precedence: env > toml > defaults.
 
-        Reads the ``[factory]`` section from ``<root_dir>/ralph.toml`` if
+        Reads the ``[factory]`` section from ``<root_dir>/kstrl.toml`` if
         present, then overlays any matching env vars on top.
         """
         from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
@@ -254,25 +253,25 @@ class FactoryConfig:
             config.retry_delay = float(os.environ["FACTORY_RETRY_DELAY"])
         if "FACTORY_MERGE_TIMEOUT" in os.environ:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
-        if envcompat.contains("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"):
+        if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(
-                envcompat.require("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS")
+                os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"]
             )
-        if envcompat.contains("KSTRL_FACTORY_MAX_TOTAL_TOKENS"):
+        if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
             config.max_total_tokens = int(
-                envcompat.require("KSTRL_FACTORY_MAX_TOTAL_TOKENS")
+                os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]
             )
-        if envcompat.contains("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"):
+        if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
-                envcompat.require("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
+                os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
             )
-        if envcompat.contains("KSTRL_FACTORY_PROGRESS_LOG_ENABLED"):
+        if "KSTRL_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
             config.progress_log_enabled = _parse_bool(
-                envcompat.require("KSTRL_FACTORY_PROGRESS_LOG_ENABLED")
+                os.environ["KSTRL_FACTORY_PROGRESS_LOG_ENABLED"]
             )
-        if envcompat.contains("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"):
+        if "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE" in os.environ:
             config.keep_worktrees_on_failure = _parse_bool(
-                envcompat.require("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
+                os.environ["KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
         return config
 
@@ -541,7 +540,7 @@ class _RunLock:
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
     """Take the run-level flock on ``.kstrl/factory.lock`` (R0.5, H-7).
 
-    Held for the entire run so a second ``ralph factory`` / ``ralph run``
+    Held for the entire run so a second ``ks factory`` / ``ks run``
     on the same root refuses to start instead of destroying the first
     invocation's in-flight worktrees and clobbering its manifest. flock
     releases automatically if the holder dies, so a crashed run never
@@ -586,7 +585,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
             )
             return _RunLock(fp=None, held=False)
         raise FactoryLockHeldError(
-            f"Another ralph invocation{holder_note} holds {lock_path}; "
+            f"Another kstrl invocation{holder_note} holds {lock_path}; "
             f"refusing to start a second factory run on this root. "
             f"Wait for it to finish, or re-run with --force-lock to "
             f"override."
@@ -1091,7 +1090,7 @@ def _run_component(
 
     # R2.3 (CRIT-8): max_iterations, interactive, and allowed_paths come
     # from the invoking config via _submit_args. They were previously
-    # hardcoded here (30 / False / unset), which made `ralph run N`, -i,
+    # hardcoded here (30 / False / unset), which made `ks run N`, -i,
     # and --allowed-paths silent no-ops under the factory pipeline.
     config = KstrlConfig(
         max_iterations=max_iterations,
@@ -1478,7 +1477,7 @@ def run_factory(
 
     ``manifest_path`` is where run state is SAVED as well as where it was
     loaded from (R0.5, H-15): ``--manifest /custom.json`` must persist to
-    /custom.json and ``ralph run`` to its own run-manifest.json, never to
+    /custom.json and ``ks run`` to its own run-manifest.json, never to
     another invocation's resumable ``scripts/kstrl/manifest.json``. None
     keeps the historical default of ``<root>/scripts/kstrl/manifest.json``.
 
@@ -1542,7 +1541,7 @@ def _run_factory_locked(
     component_failure_signatures: dict[str, list[str]] = {}
 
     # Set up progress log. R3.2: defaults ON under .kstrl/ so a
-    # walk-away run always leaves an event trail `ralph status` can
+    # walk-away run always leaves an event trail `ks status` can
     # join; [factory] progress_log_enabled = false (or env) opts out.
     # Every event carries run_id so runs sharing the default file stay
     # distinguishable.
@@ -2181,7 +2180,7 @@ def _run_factory_locked(
         """
         from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
 
-        # R2.1: honor [evolution] in ralph.toml + env, resolved against
+        # R2.1: honor [evolution] in kstrl.toml + env, resolved against
         # the factory root rather than whatever the process CWD is.
         evo_config = EvolutionConfig.load(root_dir)
         if not evo_config.enabled:
@@ -2440,7 +2439,7 @@ def _run_factory_locked(
                     f"    journal: {journal_path} bytes "
                     f"[{failed_comp.journal_offset_start}:{end}]"
                 )
-            ui.info(f"    retry with: ralph retry {failed_id}")
+            ui.info(f"    retry with: ks retry {failed_id}")
     if factory_result.contract_failures:
         ui.kv("Contract failures", str(len(factory_result.contract_failures)))
         for line in factory_result.contract_failures:

@@ -42,7 +42,7 @@ from tests.spine_utils import (
     component,
     factory_config,
     git,
-    init_ralph_repo,
+    init_kstrl_repo,
     make_manifest,
 )
 
@@ -166,9 +166,9 @@ class TestCrashRecovery:
         the restart auto-deletes it, prunes the stale run-dir worktree,
         resets the intermediate status to PENDING, and re-runs to
         COMPLETED."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, (COMP,))
+        init_kstrl_repo(root, (COMP,))
         manifest_path = tmp_path / "manifest.json"
         make_manifest([component(COMP)]).save(manifest_path)
         marker = tmp_path / "phase-started"
@@ -224,9 +224,9 @@ class TestCrashRecovery:
         (exit 2) rather than silently reuse or destroy the branch - loud
         beats lossy (R0.5). Deleting the branch, as the refusal
         instructs, lets the next run complete."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, (COMP,))
+        init_kstrl_repo(root, (COMP,))
         manifest_path = tmp_path / "manifest.json"
         make_manifest([component(COMP)]).save(manifest_path)
         committing_agent = (

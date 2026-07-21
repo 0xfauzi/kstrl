@@ -30,7 +30,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl import envcompat
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -84,7 +83,7 @@ class KnowledgeConfig:
     def load(cls, root_dir: Path | None = None) -> KnowledgeConfig:
         """Load configuration with precedence: env > toml > defaults.
 
-        Reads the [knowledge] section from ``<root_dir>/ralph.toml`` if
+        Reads the [knowledge] section from ``<root_dir>/kstrl.toml`` if
         present, then applies any matching environment variable overrides.
         Raises ValueError on malformed TOML, matching the error policy of
         :meth:`KstrlConfig.load` so the two loaders treat the same file
@@ -155,30 +154,30 @@ def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:
     Re-validates dependency_scope afterwards: env can supply a bad value
     that bypassed ``__post_init__`` at construction time.
     """
-    if envcompat.contains("KSTRL_KNOWLEDGE_ENABLED"):
-        config.enabled = _parse_bool(envcompat.require("KSTRL_KNOWLEDGE_ENABLED"))
-    if envcompat.contains("KSTRL_KNOWLEDGE_MAX_CORE_TOKENS"):
-        config.max_core_tokens = int(envcompat.require("KSTRL_KNOWLEDGE_MAX_CORE_TOKENS"))
-    if envcompat.contains("KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"):
+    if "KSTRL_KNOWLEDGE_ENABLED" in os.environ:
+        config.enabled = _parse_bool(os.environ["KSTRL_KNOWLEDGE_ENABLED"])
+    if "KSTRL_KNOWLEDGE_MAX_CORE_TOKENS" in os.environ:
+        config.max_core_tokens = int(os.environ["KSTRL_KNOWLEDGE_MAX_CORE_TOKENS"])
+    if "KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS" in os.environ:
         config.max_dependency_tokens = int(
-            envcompat.require("KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS")
+            os.environ["KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"]
         )
-    if envcompat.contains("KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS"):
+    if "KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS" in os.environ:
         config.max_sibling_tokens = int(
-            envcompat.require("KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS")
+            os.environ["KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS"]
         )
-    if envcompat.contains("KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS"):
+    if "KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS" in os.environ:
         config.distill_timeout_seconds = float(
-            envcompat.require("KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS")
+            os.environ["KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS"]
         )
-    if envcompat.contains("KSTRL_KNOWLEDGE_DISTILL_MODEL"):
-        config.distill_model = envcompat.require("KSTRL_KNOWLEDGE_DISTILL_MODEL")
-    if envcompat.contains("KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL"):
+    if "KSTRL_KNOWLEDGE_DISTILL_MODEL" in os.environ:
+        config.distill_model = os.environ["KSTRL_KNOWLEDGE_DISTILL_MODEL"]
+    if "KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL" in os.environ:
         config.max_facts_per_distill = int(
-            envcompat.require("KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL")
+            os.environ["KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL"]
         )
-    if envcompat.contains("KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE"):
-        config.dependency_scope = envcompat.require("KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE")
+    if "KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE" in os.environ:
+        config.dependency_scope = os.environ["KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE"]
 
     if config.dependency_scope not in _VALID_DEPENDENCY_SCOPES:
         raise ValueError(

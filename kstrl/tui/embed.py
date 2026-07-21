@@ -192,7 +192,7 @@ def run_factory_embedded(
 
     return run_embedded(
         _target, root_dir=root_dir, run_id=current_run_id(),
-        thread_name="ralph-orchestrator", poll_interval=poll_interval,
+        thread_name="kstrl-orchestrator", poll_interval=poll_interval,
     )
 
 

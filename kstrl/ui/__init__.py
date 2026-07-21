@@ -1,4 +1,4 @@
-"""UI module for Ralph terminal output."""
+"""UI module for kstrl terminal output."""
 
 from kstrl.ui.base import UI
 from kstrl.ui.plain import PlainUI

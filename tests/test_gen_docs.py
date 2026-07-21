@@ -129,7 +129,7 @@ class TestConfigProbing:
 
 class TestExampleProjectContract:
     def test_example_prompt_is_the_current_engineer_contract(self) -> None:
-        """examples/uv-python ships the same engineer prompt `ralph init`
+        """examples/uv-python ships the same engineer prompt `ks init`
         scaffolds, so the example cannot drift behind the contract again
         (pre-R2.5 it lacked the Self-Critique block)."""
         from kstrl.init_cmd import DEFAULT_PROMPT

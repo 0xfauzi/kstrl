@@ -43,7 +43,7 @@ from tests.spine_utils import (
 
 def _count_cmd(count_file: Path) -> str:
     """Shell command that appends one line per invocation."""
-    return f"echo \"$RALPH_NOTIFY_EVENT $RALPH_NOTIFY_COMPONENT\" >> '{count_file}'"
+    return f"echo \"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\" >> '{count_file}'"
 
 
 def _lines(count_file: Path) -> list[str]:
@@ -62,7 +62,7 @@ class TestNotifyConfig:
         assert config.hook_timeout == 30.0
 
     def test_load_reads_notify_section(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[notify]\n"
             "on_complete = \"printf 'a'\"\n"
             'on_first_failure = "curl example.com"\n'
@@ -76,11 +76,11 @@ class TestNotifyConfig:
     def test_env_overrides_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             '[notify]\non_complete = "from-toml"\n'
         )
-        monkeypatch.setenv("RALPH_NOTIFY_ON_COMPLETE", "from-env")
-        monkeypatch.setenv("RALPH_NOTIFY_ON_FIRST_FAILURE", "fail-env")
+        monkeypatch.setenv("KSTRL_NOTIFY_ON_COMPLETE", "from-env")
+        monkeypatch.setenv("KSTRL_NOTIFY_ON_FIRST_FAILURE", "fail-env")
         config = NotifyConfig.load(tmp_path)
         assert config.on_complete == "from-env"
         assert config.on_first_failure == "fail-env"
@@ -130,9 +130,9 @@ class TestNotifyHooksOnce:
     def test_context_env_vars_reach_command(self, tmp_path: Path) -> None:
         out = tmp_path / "env.txt"
         cmd = (
-            'echo "$RALPH_NOTIFY_EVENT|$RALPH_NOTIFY_RUN_ID'
-            '|$RALPH_NOTIFY_PROJECT|$RALPH_NOTIFY_COMPONENT'
-            f"|$RALPH_NOTIFY_DETAIL\" > '{out}'"
+            'echo "$KSTRL_NOTIFY_EVENT|$KSTRL_NOTIFY_RUN_ID'
+            '|$KSTRL_NOTIFY_PROJECT|$KSTRL_NOTIFY_COMPONENT'
+            f"|$KSTRL_NOTIFY_DETAIL\" > '{out}'"
         )
         hooks = NotifyHooks(
             NotifyConfig(on_first_failure=cmd), run_id="r9", project="demo",
@@ -166,7 +166,7 @@ class TestNotifyHooksNonFatal:
         warnings: list[str] = []
         hooks = NotifyHooks(
             NotifyConfig(
-                on_complete="/nonexistent/ralph-notify-binary-xyz",
+                on_complete="/nonexistent/kstrl-notify-binary-xyz",
             ),
             warn=warnings.append,
         )
@@ -208,10 +208,10 @@ def _plain_factory_config(**overrides: object) -> FactoryConfig:
 
 
 def _setup_plain_project(tmp_path: Path) -> Path:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     return tmp_path
@@ -341,7 +341,7 @@ class TestFactoryFiresHooks:
     def test_hook_failure_never_affects_the_run(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)
         config = _plain_factory_config(notify_config=NotifyConfig(
-            on_complete="/nonexistent/ralph-hook-xyz",
+            on_complete="/nonexistent/kstrl-hook-xyz",
             on_first_failure="exit 7",
         ))
 
@@ -362,18 +362,18 @@ class TestFactoryFiresHooks:
 
 
 def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
-    """Real git repo with COMMITTED ralph scaffolding plus a bare origin,
+    """Real git repo with COMMITTED kstrl scaffolding plus a bare origin,
     so worktrees contain the PRDs without the (mocked-out) engineer's
     provisioning step (mirrors tests/test_pr_outcomes.py)."""
     root = tmp_path / "repo"
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     for cid in comp_ids:
-        feature = ralph_dir / "feature" / cid
+        feature = kstrl_dir / "feature" / cid
         feature.mkdir(parents=True)
         (feature / "prd.json").write_text(json.dumps({
             "branchName": f"kstrl/factory/{cid}",
@@ -413,7 +413,7 @@ class TestMergePendingFiresHook:
             "PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         )
         monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         count = tmp_path / "count.txt"
         config = factory_config(
@@ -438,7 +438,7 @@ class TestMergePendingFiresHook:
         assert alpha.status == ComponentStatus.MERGE_PENDING.value
         assert result.merge_pending == ["alpha"]
         assert _lines(count) == ["merge_pending alpha"]
-        # The park is also visible in the progress log for `ralph status`.
+        # The park is also visible in the progress log for `ks status`.
         events = read_progress_events(root / ".kstrl" / "progress.jsonl")
         assert "merge_pending" in [e["event"] for e in events]
 
@@ -452,8 +452,8 @@ class TestNotifyStubIsCounted:
         for _ in range(3):
             subprocess.run(
                 _count_cmd(count), shell=True, check=True,
-                env={**os.environ, "RALPH_NOTIFY_EVENT": "e",
-                     "RALPH_NOTIFY_COMPONENT": "c"},
+                env={**os.environ, "KSTRL_NOTIFY_EVENT": "e",
+                     "KSTRL_NOTIFY_COMPONENT": "c"},
             )
         assert len(_lines(count)) == 3
 

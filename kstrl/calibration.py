@@ -616,7 +616,7 @@ def reviewer_override_from_env(
 ) -> tuple[str | None, str | None]:
     """(agent_type, model) override for the reviewer and security
     calibration agents (R7.1), read from
-    ``RALPH_CALIBRATION_REVIEWER_AGENT_TYPE`` /
+    ``KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE`` /
     ``KSTRL_CALIBRATION_REVIEWER_MODEL``. Empty values mean unset.
 
     The override exists so the calibration suite can measure the
@@ -626,12 +626,12 @@ def reviewer_override_from_env(
     agent - rotation applies to reviewers, not the spec red-team."""
     agent_type = (
         environ.get("KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE")
-        or environ.get("RALPH_CALIBRATION_REVIEWER_AGENT_TYPE")
+        or environ.get("KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE")
         or None
     )
     model = (
         environ.get("KSTRL_CALIBRATION_REVIEWER_MODEL")
-        or environ.get("RALPH_CALIBRATION_REVIEWER_MODEL")
+        or environ.get("KSTRL_CALIBRATION_REVIEWER_MODEL")
         or None
     )
     return agent_type, model

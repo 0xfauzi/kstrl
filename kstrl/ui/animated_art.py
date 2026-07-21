@@ -1,4 +1,4 @@
-"""Static brand mark for Ralph (PR G).
+"""Static brand mark for kstrl (PR G).
 
 The 24fps Lissajous loop animation retired with the TUI rewrite: the
 spike set 24fps as the ceiling, not the norm, and a blocking

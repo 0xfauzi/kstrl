@@ -6,9 +6,9 @@ suite appended hundreds of junk entries to the repository's real
 entries at review time were test pollution), corrupting the data the
 learning loop consumes. Two layers fix that:
 
-1. ``isolate_ralph_state`` (autouse, function-scoped) redirects every
+1. ``isolate_kstrl_state`` (autouse, function-scoped) redirects every
    relative ``.kstrl/...`` default write path into the test's ``tmp_path``.
-2. ``guard_repo_ralph_state`` (autouse, session-scoped) is the enforcement:
+2. ``guard_repo_kstrl_state`` (autouse, session-scoped) is the enforcement:
    it fingerprints the repo's real ``.kstrl/`` before the session and fails
    the run loudly if any test mutated it.
 """
@@ -30,21 +30,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # SecurityConfig, VerifyConfig, EvolutionConfig, KnowledgeConfig). Cleared
 # by prefix so ambient dev-machine env cannot alter from_env/load tests,
 # and so newly added vars in a family are covered without editing this list.
-# Each family is scrubbed in BOTH namespaces during the rename transition:
-# KSTRL_* is primary, RALPH_* is the deprecated alias envcompat still reads.
-RALPH_ENV_PREFIXES: tuple[str, ...] = (
+# The bare FACTORY_ family predates the KSTRL_ namespace and is still read
+# directly by factory config, so it is scrubbed alongside the rest.
+KSTRL_ENV_PREFIXES: tuple[str, ...] = (
     "FACTORY_",
-    "RALPH_FACTORY_",
-    "RALPH_TIMEOUT_",
-    "RALPH_CONTRACT_",
-    "RALPH_SECURITY_",
-    "RALPH_VERIFY_",
-    "RALPH_EVOLUTION_",
-    "RALPH_KNOWLEDGE_",
-    "RALPH_FEEDFORWARD_",
-    "RALPH_MUTATION_",
-    "RALPH_DEAD_CODE_",
-    "RALPH_LINEAR_",
     "KSTRL_FACTORY_",
     "KSTRL_TIMEOUT_",
     "KSTRL_CONTRACT_",
@@ -69,35 +58,35 @@ _LEGACY_ENV_VARS: tuple[str, ...] = (
     "INTERACTIVE",
     "PROMPT_FILE",
     "ALLOWED_PATHS",
-    "RALPH_BRANCH",
+    "KSTRL_BRANCH",
     "KSTRL_BRANCH",
     "PRD_FILE",
-    "RALPH_UI",
+    "KSTRL_UI",
     "KSTRL_UI",
     "GUM_FORCE",
     "NO_COLOR",
-    "RALPH_ASCII",
     "KSTRL_ASCII",
-    "RALPH_AGENT_TYPE",
+    "KSTRL_ASCII",
     "KSTRL_AGENT_TYPE",
-    "RALPH_AUTO_CHECKOUT",
+    "KSTRL_AGENT_TYPE",
     "KSTRL_AUTO_CHECKOUT",
-    "RALPH_AGENT_BUDGET_USD",
+    "KSTRL_AUTO_CHECKOUT",
+    "KSTRL_AGENT_BUDGET_USD",
     "KSTRL_AGENT_BUDGET_USD",
 )
 
 
-def _clear_ralph_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Delete every Ralph-related env var (legacy names + config families)."""
+def _clear_kstrl_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delete every kstrl-related env var (legacy names + config families)."""
     for var in _LEGACY_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
     for var in list(os.environ):
-        if var.startswith(RALPH_ENV_PREFIXES):
+        if var.startswith(KSTRL_ENV_PREFIXES):
             monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture(autouse=True)
-def isolate_ralph_state(
+def isolate_kstrl_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     """Redirect every evolution/experiments/knowledge write path to tmp_path.
@@ -116,29 +105,29 @@ def isolate_ralph_state(
     dirs, proposals) without touching kstrl source.
 
     Ambient env is cleared too, so a dev machine exporting FACTORY_* /
-    RALPH_* values cannot alter from_env/load tests.
+    KSTRL_* values cannot alter from_env/load tests.
 
-    This redirect is convenience; ``guard_repo_ralph_state`` is the
+    This redirect is convenience; ``guard_repo_kstrl_state`` is the
     enforcement.
     """
     monkeypatch.chdir(tmp_path)
-    _clear_ralph_env(monkeypatch)
+    _clear_kstrl_env(monkeypatch)
     return tmp_path
 
 
-def snapshot_ralph_dir(ralph_dir: Path) -> dict[str, str]:
-    """Fingerprint every entry under ``ralph_dir``.
+def snapshot_kstrl_dir(kstrl_dir: Path) -> dict[str, str]:
+    """Fingerprint every entry under ``kstrl_dir``.
 
-    Maps the path relative to ``ralph_dir`` to a sha256 hex digest for
+    Maps the path relative to ``kstrl_dir`` to a sha256 hex digest for
     files, ``"dir"`` for directories, and ``"symlink:<target>"`` for
     symlinks. Returns an empty mapping when the directory does not exist,
     so absent-before/absent-after compares equal.
     """
     snapshot: dict[str, str] = {}
-    if not ralph_dir.exists():
+    if not kstrl_dir.exists():
         return snapshot
-    for path in sorted(ralph_dir.rglob("*")):
-        rel = str(path.relative_to(ralph_dir))
+    for path in sorted(kstrl_dir.rglob("*")):
+        rel = str(path.relative_to(kstrl_dir))
         if path.is_symlink():
             snapshot[rel] = f"symlink:{os.readlink(path)}"
         elif path.is_dir():
@@ -176,7 +165,7 @@ def _guard_root() -> Path:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def guard_repo_ralph_state() -> Generator[None, None, None]:
+def guard_repo_kstrl_state() -> Generator[None, None, None]:
     """FAIL the run loudly if any test mutated the repo's real .kstrl/.
 
     This is the enforcement behind the per-test redirect: the redirect
@@ -186,16 +175,16 @@ def guard_repo_ralph_state() -> Generator[None, None, None]:
     the whole run, so pollution of the learning loop's data can never land
     silently again.
     """
-    ralph_dir = _guard_root() / ".kstrl"
-    before = snapshot_ralph_dir(ralph_dir)
+    kstrl_dir = _guard_root() / ".kstrl"
+    before = snapshot_kstrl_dir(kstrl_dir)
     yield
-    after = snapshot_ralph_dir(ralph_dir)
+    after = snapshot_kstrl_dir(kstrl_dir)
     if before != after:
         pytest.fail(
             "Test suite mutated the repository's real .kstrl/ directory "
-            f"({ralph_dir}).\n"
+            f"({kstrl_dir}).\n"
             "Tests must write only under tmp_path; the autouse "
-            "isolate_ralph_state fixture redirects the default relative "
+            "isolate_kstrl_state fixture redirects the default relative "
             ".kstrl/ paths there, so a mutation here means a test used an "
             "absolute path to the repo. Changes detected:\n"
             + describe_snapshot_diff(before, after),
@@ -205,15 +194,15 @@ def guard_repo_ralph_state() -> Generator[None, None, None]:
 
 @pytest.fixture
 def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
-    """Create a temporary project directory with Ralph structure."""
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
+    """Create a temporary project directory with kstrl structure."""
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
 
     # Create minimal prompt.md
-    (ralph_dir / "prompt.md").write_text("Test prompt\n")
+    (kstrl_dir / "prompt.md").write_text("Test prompt\n")
 
     # Create minimal prd.json
-    (ralph_dir / "prd.json").write_text(
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test-branch", "userStories": []}\n'
     )
 
@@ -229,11 +218,11 @@ def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clear Ralph-related environment variables.
+    """Clear kstrl-related environment variables.
 
-    Covers the legacy single-loop names plus the FACTORY_*/RALPH_* config
-    families. The autouse ``isolate_ralph_state`` fixture already clears
+    Covers the legacy single-loop names plus the FACTORY_*/KSTRL_* config
+    families. The autouse ``isolate_kstrl_state`` fixture already clears
     these for every test; this fixture remains for tests that want to
     state the dependency explicitly.
     """
-    _clear_ralph_env(monkeypatch)
+    _clear_kstrl_env(monkeypatch)

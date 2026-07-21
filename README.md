@@ -14,7 +14,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-kstrl (pronounced "kestrel"; formerly Ralph) is a harness for AI coding agents. Like the bird, it hunts by hovering: it holds position over your codebase, watches everything the agent does, and strikes precisely when something is wrong. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
+kstrl (pronounced "kestrel") is a harness for AI coding agents. Like the bird, it hunts by hovering: it holds position over your codebase, watches everything the agent does, and strikes precisely when something is wrong. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
 The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. kstrl automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
 
@@ -216,7 +216,7 @@ ks decompose                    Decompose a spec into components and generate PR
 ks evolve                       Analyze factory runs and propose harness improvements.
 ks factory                      Run the software factory - decompose and execute a spec.
 ks feature                      Run feature understanding, then implementation.
-ks init [DIRECTORY]             Initialize Ralph in a project directory.
+ks init [DIRECTORY]             Initialize kstrl in a project directory.
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
 ks status                       Show per-component status from the manifest + progress log.

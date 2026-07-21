@@ -26,6 +26,7 @@ Blame attribution (bisection) honesty:
 
 from __future__ import annotations
 
+import os
 import secrets
 import subprocess
 import time
@@ -34,7 +35,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import envcompat, git
+from kstrl import git
 from kstrl.manifest import Manifest
 from kstrl.verify import run_scrubbed
 
@@ -91,9 +92,9 @@ class ContractConfig:
     def from_env(cls) -> ContractConfig:
         """Load contract config from environment variables."""
         return cls(
-            mode=envcompat.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
-            test_command=envcompat.get("KSTRL_CONTRACT_TEST_CMD", "uv run pytest"),
-            timeout=float(envcompat.get("KSTRL_TIMEOUT_CONTRACT", "600")),
+            mode=os.environ.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
+            test_command=os.environ.get("KSTRL_CONTRACT_TEST_CMD", "uv run pytest"),
+            timeout=float(os.environ.get("KSTRL_TIMEOUT_CONTRACT", "600")),
         )
 
     @classmethod
@@ -110,12 +111,12 @@ class ContractConfig:
             config.test_command = str(section["test_command"])
         if "timeout" in section:
             config.timeout = float(section["timeout"])
-        if envcompat.contains("KSTRL_CONTRACT_MODE"):
-            config.mode = envcompat.require("KSTRL_CONTRACT_MODE")
-        if envcompat.contains("KSTRL_CONTRACT_TEST_CMD"):
-            config.test_command = envcompat.require("KSTRL_CONTRACT_TEST_CMD")
-        if envcompat.contains("KSTRL_TIMEOUT_CONTRACT"):
-            config.timeout = float(envcompat.require("KSTRL_TIMEOUT_CONTRACT"))
+        if "KSTRL_CONTRACT_MODE" in os.environ:
+            config.mode = os.environ["KSTRL_CONTRACT_MODE"]
+        if "KSTRL_CONTRACT_TEST_CMD" in os.environ:
+            config.test_command = os.environ["KSTRL_CONTRACT_TEST_CMD"]
+        if "KSTRL_TIMEOUT_CONTRACT" in os.environ:
+            config.timeout = float(os.environ["KSTRL_TIMEOUT_CONTRACT"])
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
         return config

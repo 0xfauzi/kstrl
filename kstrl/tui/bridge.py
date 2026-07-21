@@ -117,5 +117,5 @@ def start_orchestrator(
         ).exit_code
 
     return start_command_thread(
-        _target, stop=stop, name="ralph-orchestrator",
+        _target, stop=stop, name="kstrl-orchestrator",
     )
