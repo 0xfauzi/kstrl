@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
@@ -79,12 +80,20 @@ class OverviewScreen(Screen[None]):
     def refresh_state(self, state: RunState) -> None:
         if not self.ready:
             return
-        self.query_one(RunHeader).update_state(state)
-        self.query_one(CostMeter).update_state(state)
-        self.query_one(ComponentTable).update_state(state)
-        self.query_one(CheckpointBanner).update_state(
-            state, observe_only=self.observe_only,
-        )
+        try:
+            self.query_one(RunHeader).update_state(state)
+            self.query_one(CostMeter).update_state(state)
+            self.query_one(ComponentTable).update_state(state)
+            self.query_one(CheckpointBanner).update_state(
+                state, observe_only=self.observe_only,
+            )
+        except NoMatches:
+            # A late StateChanged can arrive while the screen is being torn
+            # down: `ready` still sees the feed (composed last, removed
+            # late) but RunHeader (composed first) is already gone. Dropping
+            # the update is safe - these are observability writes, not
+            # control flow.
+            return
 
     def feed_events(self, batch: list[ev.Event]) -> None:
         feed = next(iter(self.query(ActivityFeed)), None)
@@ -96,8 +105,13 @@ class OverviewScreen(Screen[None]):
     def tick_ages(self, state: RunState) -> None:
         if not self.ready:
             return
-        self.query_one(RunHeader).update_state(state)
-        self.query_one(ComponentTable).tick_ages(state)
+        try:
+            self.query_one(RunHeader).update_state(state)
+            self.query_one(ComponentTable).tick_ages(state)
+        except NoMatches:
+            # Same teardown race as refresh_state: a timer-driven tick can
+            # fire after RunHeader is removed. Drop it.
+            return
 
     def on_state_changed(self, message: StateChanged) -> None:
         self.refresh_state(message.state)

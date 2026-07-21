@@ -18,6 +18,7 @@ from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.decompose import DecomposeScreen, SpecTriageScreen
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.widgets.dag_table import DagTable, compute_tiers
+from kstrl.tui.widgets.header import RunHeader
 from tests.helpers.fake_run import (
     write_fake_decompose_run,
     write_fake_run,
@@ -99,6 +100,23 @@ class TestDecomposeScreen:
             app.store.state.components.pop("api")
             table.update_state(app.store.state)
             assert {key.value for key in table.rows} == {"database"}
+
+    async def test_state_update_after_header_removed_is_safe(
+        self, tmp_path: Path,
+    ) -> None:
+        # Regression: a late StateChanged or age-tick during teardown finds
+        # RunHeader (composed first) already removed while `ready` (checks
+        # the transcript, composed last) still passes. Must drop, not raise.
+        run_dir = write_fake_decompose_run(tmp_path, attempts=1)
+        app = _decompose_app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            screen = app.screen
+            assert isinstance(screen, DecomposeScreen)
+            await screen.query_one(RunHeader).remove()
+
+            screen.refresh_state(app.store.state, None)
+            screen.tick_ages(app.store.state)
 
     async def test_triage_shows_blocker_banner_and_detail(
         self, tmp_path: Path,
