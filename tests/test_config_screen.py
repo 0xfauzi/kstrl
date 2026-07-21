@@ -17,7 +17,7 @@ from kstrl.config_report import (
 )
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.runcontext import RunContext
-from kstrl.tui.screens.config import ConfigScreen
+from kstrl.tui.screens.config import ConfigScreen, display_value
 from kstrl.tui.screens.home import HomeScreen
 
 
@@ -26,6 +26,18 @@ def _app(tmp_path: Path, report: Any) -> KstrlTuiApp:
         root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05,
         config_report=report,
     )
+
+
+def test_display_value_only_relativizes_paths_inside_root() -> None:
+    root = "/work/repo"
+    assert display_value("/work/repo/src/app.py", root).plain == "src/app.py"
+    assert display_value("/work/repository/app.py", root).plain == (
+        "/work/repository/app.py"
+    )
+    assert display_value(
+        "['/work/repo/src', '/work/repository/tests']", root,
+    ).plain == "['src', '/work/repository/tests']"
+    assert display_value("/work/repo", root).plain == "."
 
 
 @pytest.fixture
@@ -116,6 +128,8 @@ class TestConfigScreen:
 
             class FakeHandle:
                 finished = False
+                # Read by the HOME session watcher once done() flips.
+                exit_code = 0
 
                 def done(self) -> bool:
                     return self.finished

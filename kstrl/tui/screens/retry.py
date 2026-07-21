@@ -25,6 +25,7 @@ from kstrl.launch import FactoryLaunch
 from kstrl.retry_plan import RetryError, prepare_retry, preview_retry
 from kstrl.tui import theme
 from kstrl.tui.screens.options import OptionsModal
+from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.ui.plain import PlainUI
 
 if TYPE_CHECKING:
@@ -56,6 +57,7 @@ class RetryScreen(Screen[None]):
     COLUMNS = ("component", "phase", "check", "retries", "evidence")
 
     def compose(self) -> ComposeResult:
+        yield ContextBar("retry", "rerun a failed component from the manifest")
         yield Static("failed components", id="retry-title")
         yield DataTable(id="retry-table")
         yield Static(id="retry-detail")
@@ -90,6 +92,12 @@ class RetryScreen(Screen[None]):
                 evidence or Text(theme.EMPTY_CELL, style=theme.MUTED),
                 key=comp.id,
             )
+        right = Text()
+        if self._failed:
+            right.append(f"✗ {len(self._failed)} failed", style=theme.ERROR)
+        else:
+            right.append("nothing failed", style=theme.MUTED)
+        self.query_one(ContextBar).set_right(right)
         detail = self.query_one("#retry-detail", Static)
         if manifest is None:
             detail.update(Text(

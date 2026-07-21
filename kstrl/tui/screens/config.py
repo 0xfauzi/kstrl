@@ -14,6 +14,7 @@ about LIVE diff updates starving input, which does not apply here.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -24,9 +25,47 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static
 
 from kstrl.tui import theme
+from kstrl.tui.widgets.context_bar import ContextBar
 
 if TYPE_CHECKING:
     from kstrl.config_report import ConfigReport
+
+MAX_VALUE_WIDTH = 48
+_QUIET_VALUES = frozenset({"None", "''", '""', "[]"})
+
+
+def display_value(raw: str, root: str) -> Text:
+    """Root-relative, width-capped, with unset values quiet.
+
+    The plain report prints absolute reprs; a TABLE that lets a long
+    path push the source column off-screen has failed at its one job,
+    so the view trades verbatim reprs for visibility (the hint bar
+    and `ks config show` keep the full values)."""
+    text = raw
+    if root:
+        # Values may be reprs of path lists, so operate on path tokens
+        # rather than blindly replacing every root-shaped substring.
+        # In particular, /work/repository is not inside /work/repo.
+        token_start = r"(^|[\s'\"\[,({:])"
+        escaped_root = re.escape(root.rstrip("/"))
+        if escaped_root:
+            text = re.sub(
+                rf"{token_start}{escaped_root}/",
+                lambda match: match.group(1),
+                text,
+            )
+            text = re.sub(
+                rf"{token_start}{escaped_root}"
+                r"(?=$|[\s'\"\],)}])",
+                lambda match: f"{match.group(1)}.",
+                text,
+            )
+    if len(text) > MAX_VALUE_WIDTH:
+        half = (MAX_VALUE_WIDTH - 1) // 2
+        text = f"{text[:half]}…{text[-half:]}"
+    if raw in _QUIET_VALUES:
+        return Text(text, style=theme.MUTED)
+    return Text(text)
 
 SOURCE_STYLES = {
     "flag": f"bold {theme.ACCENT}",
@@ -46,8 +85,9 @@ class ConfigScreen(Screen[None]):
     ]
 
     def compose(self) -> ComposeResult:
+        yield ContextBar("config", "resolved values and their sources")
         with Vertical(id="config-root"):
-            yield Input(placeholder="filter (key, section, source...)",
+            yield Input(placeholder="/ filter by key, section, source...",
                         id="config-filter")
             yield Static("resolved config", id="config-title")
             yield DataTable(id="config-table")
@@ -64,6 +104,15 @@ class ConfigScreen(Screen[None]):
         table.zebra_stripes = False
         for column in COLUMNS:
             table.add_column(column, key=column)
+        report = self._report()
+        bar = self.query_one(ContextBar)
+        if report is not None:
+            right = Text()
+            if report.toml_exists:
+                right.append(f"{report.toml_path.name} ✓", style=theme.MUTED)
+            else:
+                right.append("no kstrl.toml", style=theme.WARNING)
+            bar.set_right(right)
         self._render_report()
 
     def _report(self) -> ConfigReport | None:
@@ -84,6 +133,7 @@ class ConfigScreen(Screen[None]):
             ))
             return
         needle = needle.strip().lower()
+        root = str(report.root_dir)
         shown = 0
         for row in report.rows:
             haystack = f"{row.section} {row.key} {row.value} {row.source}"
@@ -93,7 +143,7 @@ class ConfigScreen(Screen[None]):
             table.add_row(
                 Text(row.section, style=theme.MUTED),
                 Text(row.key, style="bold"),
-                Text(row.value),
+                display_value(row.value, root),
                 Text(row.source, style=SOURCE_STYLES.get(row.source, "")),
                 key=f"{row.section}.{row.key}",
             )

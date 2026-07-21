@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.proposals import list_proposals
-from kstrl.reducer import fold, read_run_dir
+from kstrl.reducer import RunState, fold, read_run_dir
 from kstrl.tui.runs import RunRef
 
 
@@ -36,8 +36,11 @@ class HomeStats:
     pending_proposals: int
 
 
-def summarize_run(ref: RunRef) -> RunSummary:
-    state = fold(read_run_dir(ref.run_dir))
+def fold_run(ref: RunRef) -> RunState:
+    return fold(read_run_dir(ref.run_dir))
+
+
+def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
     done = sum(
         1 for comp in state.components.values()
         if comp.status == "completed"
@@ -64,30 +67,45 @@ def summarize_run(ref: RunRef) -> RunSummary:
     )
 
 
+def summarize_run(ref: RunRef) -> RunSummary:
+    return summarize_state(ref, fold_run(ref))
+
+
 class SummaryCache:
-    """Run-stream signature -> RunSummary; recompute only movers."""
+    """Run-stream signature -> summary + folded state; recompute only
+    movers. The signature covers events.jsonl AND every worker stream
+    (a worker append must invalidate even when the top-level mtime
+    holds still). The retained states feed the home preview board -
+    bounded by the run-browser cap, so at most ~15 RunStates live."""
 
     def __init__(self) -> None:
         self._cache: dict[
             str,
             tuple[tuple[tuple[str, int, int, int, int], ...], RunSummary],
         ] = {}
+        self._states: dict[str, RunState] = {}
 
     def refresh(self, refs: list[RunRef]) -> dict[str, RunSummary]:
         out: dict[str, RunSummary] = {}
         active = {ref.run_id for ref in refs}
         for stale in self._cache.keys() - active:
             del self._cache[stale]
+            self._states.pop(stale, None)
         for ref in refs:
             signature = _run_stream_signature(ref)
             hit = self._cache.get(ref.run_id)
             if hit is not None and hit[0] == signature:
                 out[ref.run_id] = hit[1]
                 continue
-            summary = summarize_run(ref)
+            state = fold_run(ref)
+            summary = summarize_state(ref, state)
             self._cache[ref.run_id] = (signature, summary)
+            self._states[ref.run_id] = state
             out[ref.run_id] = summary
         return out
+
+    def state_for(self, run_id: str) -> RunState | None:
+        return self._states.get(run_id)
 
 
 def _run_stream_signature(

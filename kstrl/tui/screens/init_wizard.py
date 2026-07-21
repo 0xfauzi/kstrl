@@ -30,6 +30,7 @@ from kstrl.init_wizard import (
     plan_scaffold,
 )
 from kstrl.tui import theme
+from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 from kstrl.ui.plain import PlainUI
 
@@ -63,49 +64,56 @@ class InitWizardScreen(Screen[None]):
         return self._scaffolding
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="wizard-root"):
-            yield Static("initialize project", id="wizard-title")
-            with Vertical(id="wizard-form"):
-                yield FormField(
-                    "directory",
-                    Input(id="wizard-directory"),
-                    hint="project root to scaffold",
-                )
-                yield FormField(
-                    "agent type",
-                    Select(
-                        [(t or "auto-detect", t) for t in AGENT_TYPES],
-                        value="", allow_blank=False, id="wizard-agent-type",
-                    ),
-                )
-                yield FormField(
-                    "model",
-                    Input(placeholder="agent default", id="wizard-model"),
-                )
-                yield FormField(
-                    "reasoning",
-                    Select(
-                        [(r or "agent default", r) for r in REASONING_LEVELS],
-                        value="", allow_blank=False, id="wizard-reasoning",
-                    ),
-                )
-                yield Static(id="wizard-detected")
-                yield FormErrors(id="wizard-errors")
-                with Horizontal(classes="wizard-buttons"):
-                    yield Button("preview", id="wizard-preview-btn",
-                                 classes="default-choice")
-            with Vertical(id="wizard-preview"):
-                yield Static("plan", id="wizard-plan-title")
-                yield Static(id="wizard-plan")
-                with Horizontal(classes="wizard-buttons"):
-                    yield Button("run init", id="wizard-run-btn",
-                                 classes="default-choice")
-                    yield Button("back", id="wizard-back-btn")
-            with Vertical(id="wizard-result"):
-                yield Static("init transcript", id="wizard-log-title")
-                with VerticalScroll(id="wizard-log-scroll"):
-                    yield Static(id="wizard-log")
-                yield Static(id="wizard-outcome")
+        yield ContextBar(
+            "init", "scaffold is non-destructive - existing files are kept",
+        )
+        with Vertical(classes="dialog-host"):
+            panel = Vertical(classes="dialog-panel", id="wizard-root")
+            panel.border_title = "initialize project"
+            with panel:
+                with Vertical(id="wizard-form"):
+                    yield FormField(
+                        "directory",
+                        Input(id="wizard-directory"),
+                        hint="root to scaffold",
+                    )
+                    yield FormField(
+                        "agent type",
+                        Select(
+                            [(t, t) for t in AGENT_TYPES if t],
+                            allow_blank=True, prompt="auto-detect",
+                            id="wizard-agent-type",
+                        ),
+                    )
+                    yield FormField(
+                        "model",
+                        Input(placeholder="agent default", id="wizard-model"),
+                    )
+                    yield FormField(
+                        "reasoning",
+                        Select(
+                            [(r, r) for r in REASONING_LEVELS if r],
+                            allow_blank=True, prompt="agent default",
+                            id="wizard-reasoning",
+                        ),
+                    )
+                    yield Static(id="wizard-detected")
+                    yield FormErrors(id="wizard-errors")
+                    with Horizontal(classes="wizard-buttons"):
+                        yield Button("preview", id="wizard-preview-btn",
+                                     classes="default-choice")
+                with Vertical(id="wizard-preview"):
+                    yield Static("plan", id="wizard-plan-title")
+                    yield Static(id="wizard-plan")
+                    with Horizontal(classes="wizard-buttons"):
+                        yield Button("run init", id="wizard-run-btn",
+                                     classes="default-choice")
+                        yield Button("back", id="wizard-back-btn")
+                with Vertical(id="wizard-result"):
+                    yield Static("init transcript", id="wizard-log-title")
+                    with VerticalScroll(id="wizard-log-scroll"):
+                        yield Static(id="wizard-log")
+                    yield Static(id="wizard-outcome")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -136,13 +144,11 @@ class InitWizardScreen(Screen[None]):
         ).expanduser()
 
     def _agent_values(self) -> tuple[str, str, str]:
-        agent_type = str(
-            self.query_one("#wizard-agent-type", Select).value or "",
-        )
+        raw_type = self.query_one("#wizard-agent-type", Select).value
+        agent_type = raw_type if isinstance(raw_type, str) else ""
         model = self.query_one("#wizard-model", Input).value.strip()
-        reasoning = str(
-            self.query_one("#wizard-reasoning", Select).value or "",
-        )
+        raw_reasoning = self.query_one("#wizard-reasoning", Select).value
+        reasoning = raw_reasoning if isinstance(raw_reasoning, str) else ""
         return agent_type, model, reasoning
 
     def _render_preview(self) -> None:

@@ -16,15 +16,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Input, Select, Static, Switch
+from textual.widgets import Button, Footer, Input, Select, Switch
 
 from kstrl.launch import DecomposeLaunch, FactoryLaunch
-from kstrl.tui import theme
+from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 
 REVIEW_MODES = ("", "hard", "advisory", "skip")
@@ -34,36 +33,35 @@ class FactoryLaunchForm(Screen[None]):
     BINDINGS = [Binding("escape", "app.pop_screen", "Back")]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="launch-root"):
-            yield Static("launch factory", id="launch-title")
-            yield FormField(
+        yield ContextBar(
+            "launch", "everything unset resolves env > kstrl.toml > defaults",
+        )
+        with Vertical(classes="dialog-host"):
+            panel = Vertical(classes="dialog-panel", id="launch-root")
+            panel.border_title = "launch factory"
+            with panel:
+                yield FormField(
                 "manifest",
                 Input(id="factory-manifest",
                       placeholder="scripts/kstrl/manifest.json"),
-                hint="existing manifest (decompose writes it)",
-            )
-            yield FormField(
-                "max parallel",
-                Input(id="factory-parallel", placeholder="from config"),
-            )
-            yield FormField(
-                "review mode",
-                Select(
-                    [(m or "from config", m) for m in REVIEW_MODES],
-                    value="", allow_blank=False, id="factory-review",
-                ),
-            )
-            yield Static(
-                Text(
-                    "everything else resolves env > kstrl.toml > defaults",
-                    style=theme.MUTED,
-                ),
-                id="launch-note",
-            )
-            yield FormErrors(id="launch-errors")
-            with Horizontal(classes="wizard-buttons"):
-                yield Button("start factory", id="factory-start",
-                             classes="default-choice")
+                    hint="decompose writes it",
+                )
+                yield FormField(
+                    "max parallel",
+                    Input(id="factory-parallel", placeholder="from config"),
+                )
+                yield FormField(
+                    "review mode",
+                    Select(
+                        [(m, m) for m in REVIEW_MODES if m],
+                        allow_blank=True, prompt="from config",
+                        id="factory-review",
+                    ),
+                )
+                yield FormErrors(id="launch-errors")
+                with Horizontal(classes="wizard-buttons"):
+                    yield Button("start factory", id="factory-start",
+                                 classes="default-choice")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -96,7 +94,8 @@ class FactoryLaunchForm(Screen[None]):
         self.query_one(FormErrors).show(errors)
         if errors:
             return
-        review = str(self.query_one("#factory-review", Select).value or "")
+        review_value = self.query_one("#factory-review", Select).value
+        review = review_value if isinstance(review_value, str) else ""
         launch = getattr(self.app, "launch", None)
         if launch is not None:
             launch(FactoryLaunch(
@@ -110,31 +109,36 @@ class DecomposeLaunchForm(Screen[None]):
     BINDINGS = [Binding("escape", "app.pop_screen", "Back")]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="launch-root"):
-            yield Static("launch decompose", id="launch-title")
-            yield FormField(
-                "spec",
-                Input(id="decompose-spec",
-                      placeholder="scripts/kstrl/spec.md"),
-                hint="markdown spec or SpecKit directory",
-            )
-            yield FormField(
-                "project name",
-                Input(id="decompose-project"),
-            )
-            yield FormField(
-                "base branch",
-                Input(value="main", id="decompose-branch"),
-            )
-            yield FormField(
-                "single PR",
-                Switch(value=False, id="decompose-single-pr"),
-                hint="one branch for all components",
-            )
-            yield FormErrors(id="launch-errors")
-            with Horizontal(classes="wizard-buttons"):
-                yield Button("start decompose", id="decompose-start",
-                             classes="default-choice")
+        yield ContextBar(
+            "launch", "everything unset resolves env > kstrl.toml > defaults",
+        )
+        with Vertical(classes="dialog-host"):
+            panel = Vertical(classes="dialog-panel", id="launch-root")
+            panel.border_title = "launch decompose"
+            with panel:
+                yield FormField(
+                    "spec",
+                    Input(id="decompose-spec",
+                          placeholder="scripts/kstrl/spec.md"),
+                    hint="markdown or SpecKit dir",
+                )
+                yield FormField(
+                    "project name",
+                    Input(id="decompose-project"),
+                )
+                yield FormField(
+                    "base branch",
+                    Input(value="main", id="decompose-branch"),
+                )
+                yield FormField(
+                    "single PR",
+                    Switch(value=False, id="decompose-single-pr"),
+                    hint="one branch for all",
+                )
+                yield FormErrors(id="launch-errors")
+                with Horizontal(classes="wizard-buttons"):
+                    yield Button("start decompose", id="decompose-start",
+                                 classes="default-choice")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

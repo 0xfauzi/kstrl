@@ -10,6 +10,76 @@ Screen {
     background: $background;
 }
 
+/* ---- shared chrome (design 2) ------------------------------------------- */
+/* Every table wears the board's dress: muted bold headers on the
+ * screen background, ONE amber cursor tint, quiet scrollbars. The
+ * default Textual chrome (blue cursor, chunky scrollbars) never
+ * appears anywhere. */
+
+DataTable {
+    background: $background;
+}
+
+DataTable > .datatable--header {
+    background: $background;
+    color: $text-muted;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent 22%;
+    color: $foreground;
+}
+
+DataTable > .datatable--hover {
+    background: $surface;
+}
+
+DataTable {
+    scrollbar-color: $panel;
+    scrollbar-background: $background;
+    scrollbar-size-vertical: 1;
+    scrollbar-size-horizontal: 1;
+}
+
+.context-bar {
+    dock: top;
+    height: 1;
+    background: $surface;
+    padding: 0 1;
+}
+
+.context-bar .context-left {
+    width: 1fr;
+    content-align: left middle;
+}
+
+.context-bar .context-right {
+    width: auto;
+    content-align: right middle;
+    padding: 0 1;
+}
+
+/* Forms live in dialog panels (the modal grammar, docked not modal):
+ * round accent border with a title, surface body, constrained width -
+ * a form is a focused conversation, not a full-screen sprawl. */
+
+.dialog-panel {
+    width: 76;
+    height: auto;
+    max-height: 90%;
+    border: round $accent 60%;
+    border-title-color: $accent;
+    border-title-style: bold;
+    background: $surface;
+    padding: 1 2;
+}
+
+.dialog-host {
+    align: center middle;
+    height: 1fr;
+}
+
 /* ---- masthead --------------------------------------------------------- */
 
 #topbar {
@@ -48,21 +118,6 @@ Screen {
     background: $background;
     padding: 0 1;
     margin-top: 1;
-}
-
-#component-table > .datatable--header {
-    background: $background;
-    color: $text-muted;
-    text-style: bold;
-}
-
-#component-table > .datatable--cursor {
-    background: $accent 22%;
-    color: $foreground;
-}
-
-#component-table > .datatable--hover {
-    background: $surface;
 }
 
 /* ---- activity feed ----------------------------------------------------- */
@@ -113,17 +168,6 @@ Screen {
     max-height: 30%;
     background: $background;
     padding: 0 1;
-}
-
-#findings-table > .datatable--header {
-    background: $background;
-    color: $text-muted;
-    text-style: bold;
-}
-
-#findings-table > .datatable--cursor {
-    background: $accent 22%;
-    color: $foreground;
 }
 
 #transcript-title {
@@ -233,6 +277,15 @@ CheckpointModal {
 }
 
 /* ---- home shell ---------------------------------------------------------- */
+/* Control-room layout: 2-line surface header, runs beside the
+ * launcher, and the highlighted run's live board filling the rest -
+ * the same no-dead-space rule as the overview's activity feed. */
+
+#home-header {
+    dock: top;
+    height: 2;
+    background: $surface;
+}
 
 #home-masthead {
     height: 1;
@@ -242,6 +295,21 @@ CheckpointModal {
 #home-stats {
     height: 1;
     padding: 0 1;
+}
+
+#home-columns {
+    height: auto;
+    max-height: 45%;
+    margin-top: 1;
+}
+
+#home-runs-col {
+    width: 2fr;
+}
+
+#home-commands-col {
+    width: 44;
+    margin-left: 2;
 }
 
 #home-runs-title, #home-commands-title {
@@ -254,15 +322,39 @@ CheckpointModal {
 
 #home-runs {
     height: auto;
-    max-height: 45%;
     background: $background;
 }
 
 #home-commands {
-    height: 1fr;
+    height: auto;
     background: $background;
     border: none;
     padding: 0 1;
+}
+
+#home-commands > .option-list--option-highlighted {
+    background: $accent 22%;
+}
+
+#home-preview-title {
+    height: 2;
+    margin-top: 1;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#home-preview {
+    height: 1fr;
+    background: $background;
+    padding: 0 1;
+}
+
+#home-preview-meta {
+    height: 1;
+    padding: 0 1;
+    background: $surface;
 }
 
 /* ---- config screen ------------------------------------------------------- */
@@ -295,7 +387,7 @@ CheckpointModal {
 /* ---- forms + init wizard ------------------------------------------------- */
 
 .form-field {
-    height: 1;
+    height: auto;
     margin-bottom: 1;
 }
 
@@ -308,13 +400,20 @@ CheckpointModal {
     width: 1fr;
     height: 1;
     border: none;
-    background: $surface;
+    background: $background;
     padding: 0 1;
 }
 
 .form-field Select {
     width: 1fr;
     height: 1;
+}
+
+.form-field Select > SelectCurrent {
+    border: none;
+    background: $background;
+    height: 1;
+    padding: 0 1;
 }
 
 .form-hint {
@@ -327,21 +426,12 @@ CheckpointModal {
     padding: 0 1;
 }
 
-#wizard-title {
-    height: 2;
-    padding: 0 1;
-    color: $text-muted;
-    text-style: bold;
-    border-bottom: solid $panel;
-}
-
-#wizard-root {
-    padding: 0 1;
+#wizard-form, #wizard-preview, #wizard-result {
+    height: auto;
 }
 
 #wizard-detected, #wizard-errors {
     height: 1;
-    padding: 0 1;
 }
 
 .wizard-buttons {
@@ -379,7 +469,8 @@ CheckpointModal {
 }
 
 #wizard-log-scroll {
-    height: 1fr;
+    height: auto;
+    max-height: 20;
     background: $background;
     padding: 0 1;
 }
@@ -391,11 +482,7 @@ CheckpointModal {
 
 /* ---- launch forms + retry ------------------------------------------------ */
 
-#launch-root {
-    padding: 0 1;
-}
-
-#launch-title, #retry-title {
+#retry-title {
     height: 2;
     padding: 0 1;
     color: $text-muted;
@@ -403,14 +490,8 @@ CheckpointModal {
     border-bottom: solid $panel;
 }
 
-#launch-note {
-    height: 1;
-    padding: 0 1;
-}
-
 #launch-errors {
     height: 1;
-    padding: 0 1;
 }
 
 #retry-table {
@@ -436,13 +517,16 @@ CheckpointModal {
 
 #proposals-table {
     width: 55%;
+    height: 1fr;
     background: $background;
 }
 
 #proposal-detail {
     width: 1fr;
+    height: 1fr;
     padding: 1 2;
-    background: $surface;
+    background: $background;
+    border-left: solid $panel;
 }
 
 #patterns-table, #trends-table {
@@ -462,6 +546,7 @@ CheckpointModal {
 
 #attempt-strip {
     height: 1;
+    margin-top: 1;
     padding: 0 1;
 }
 
@@ -481,6 +566,7 @@ CheckpointModal {
 
 #issues-strip {
     height: 1;
+    margin-top: 1;
     padding: 0 1;
 }
 
