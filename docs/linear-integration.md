@@ -1,6 +1,6 @@
 # Linear Integration (R7.4)
 
-Ralph mirrors a factory run into Linear: one project per manifest, one
+kstrl mirrors a factory run into Linear: one project per manifest, one
 issue per component, spec findings into Triage, and status transitions
 driven entirely by Linear's GitHub integration. The integration is
 observability only - every Linear failure warns and degrades; nothing
@@ -36,7 +36,7 @@ knobs: see `docs/env-vars.md` and `kstrl.toml.example`.
 | Component failure / budget halt | Comment on the issue | `LinearSink` on the progress log |
 | `ks retry` / resume | Same issues updated, never duplicated | ids persisted in the manifest |
 
-Status transitions therefore cost ralph **zero** API calls; the only
+Status transitions therefore cost kstrl **zero** API calls; the only
 mutations are decompose-time creates and failure comments. Per-team
 automation defaults ("In Progress" on PR open, "Done" on merge) are
 configurable in Linear under Team Settings > Workflows and
