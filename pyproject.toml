@@ -32,7 +32,7 @@ classifiers = [
 ]
 dependencies = [
     "rich>=13.0.0",
-    "click>=8.0.0",
+    "click>=8.4.2",
     # TUI rewrite PR D: the dashboard engine. Pinned <6 (Textualize
     # wind-down risk); 5.3.0 verified compatible with locked rich 14.3.3
     # in the Stage 0 spike (spike/tui0/RESULTS.md).
@@ -45,7 +45,7 @@ dependencies = [
 # extra fails loudly with the install hint.
 [project.optional-dependencies]
 sdk = [
-    "claude-agent-sdk>=0.2.123,<0.3",
+    "claude-agent-sdk>=0.2.124,<0.3",
 ]
 
 [project.urls]
@@ -63,14 +63,14 @@ ralph = "kstrl.cli:deprecated_ralph_main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0.0",
-    "ruff>=0.6.0",
+    "ruff>=0.15.22",
     "mypy>=1.10.0",
     # The sdk extra is part of the dev set so the R7.6 unit tests and
     # mypy always exercise the adapter+runner.
-    "claude-agent-sdk>=0.2.123,<0.3",
+    "claude-agent-sdk>=0.2.124,<0.3",
     "pytest-textual-snapshot>=1.0.0",
 ]
 
