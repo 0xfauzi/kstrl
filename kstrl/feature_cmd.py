@@ -167,6 +167,14 @@ def run_feature(
     """
     component = params.feature_name
     bus = run.bus if run is not None else None
+    guard_ignored_paths: list[str] = []
+    try:
+        relative_log_dir = params.log_dir.relative_to(root_dir).as_posix()
+    except ValueError:
+        pass
+    else:
+        if relative_log_dir.startswith(".kstrl/logs/"):
+            guard_ignored_paths.append(relative_log_dir.rstrip("/") + "/")
 
     def emit(event: Event) -> None:
         if bus is not None:
@@ -236,6 +244,7 @@ def run_feature(
             understand_config, ui, understand_agent, root_dir,
             timeouts=timeouts, breaker_config=breaker_config,
             bus=bus, interaction=interaction, stop_check=stop_check,
+            guard_ignored_paths=guard_ignored_paths,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -340,6 +349,7 @@ def run_feature(
             run_config, ui, run_agent, root_dir,
             timeouts=timeouts, breaker_config=breaker_config,
             bus=bus, interaction=interaction, stop_check=stop_check,
+            guard_ignored_paths=guard_ignored_paths,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -417,6 +427,7 @@ def run_feature(
                 repair_config, ui, repair_agent, root_dir,
                 timeouts=timeouts, breaker_config=breaker_config,
                 bus=bus, interaction=interaction, stop_check=stop_check,
+                guard_ignored_paths=guard_ignored_paths,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"

@@ -75,25 +75,31 @@ class TestCheckViolations:
 
 
 class TestStateDirExemption:
-    """TUI surface D7: the harness's own state dir is bookkeeping,
-    never a project change - a recording command must not trip its
-    own guard in repos that do not gitignore .kstrl/."""
+    """Only the active run's declared state paths are bookkeeping."""
 
-    def test_state_dir_changes_are_never_violations(self) -> None:
+    def test_active_run_state_is_ignored_but_arbitrary_state_is_not(self) -> None:
         violations = check_violations(
             {
                 ".kstrl/runs/understand-x/events.jsonl",
                 ".kstrl/runs/understand-x/components/understand/engineer.log",
-                ".ralph/progress.jsonl",
+                ".kstrl/payload.py",
                 "src/app.py",
             },
             ["scripts/kstrl/codebase_map.md"],
+            [".kstrl/runs/understand-x/"],
         )
-        assert violations == ["src/app.py"]
+        assert violations == [".kstrl/payload.py", "src/app.py"]
 
     def test_lookalike_paths_still_flagged(self) -> None:
         violations = check_violations(
-            {".kstrl-backup/x", "sub/.kstrl/y"},
+            {
+                ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+                "sub/.kstrl/y",
+            },
             ["scripts/"],
+            [".kstrl/runs/understand-x/"],
         )
-        assert violations == [".kstrl-backup/x", "sub/.kstrl/y"]
+        assert violations == [
+            ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+            "sub/.kstrl/y",
+        ]
