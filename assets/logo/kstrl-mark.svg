@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="kstrl: a hovering kestrel mark">
+  <g fill="#1a1a1a">
+    <path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/>
+    <path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/>
+    <path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/>
+    <path d="M32 44 L24 58 L32 55 L40 58 Z"/>
+  </g>
+</svg>

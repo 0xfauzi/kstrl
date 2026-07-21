@@ -1,10 +1,19 @@
-# kstrl
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/kstrl-mark-dark.svg">
+    <img src="assets/logo/kstrl-mark.svg" alt="kstrl mark: a hovering kestrel" width="96">
+  </picture>
+</p>
+
+<h1 align="center">kstrl</h1>
+
+<p align="center"><em>The adversarial software factory. Hand it a spec, walk away, get verified code.</em></p>
 
 [![CI](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-kstrl (pronounced "kestrel", formerly kstrl) is a harness for AI coding agents. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
+kstrl (pronounced "kestrel"; formerly Ralph) is a harness for AI coding agents. Like the bird, it hunts by hovering: it holds position over your codebase, watches everything the agent does, and strikes precisely when something is wrong. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
 
 The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. kstrl automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
 
@@ -13,31 +22,19 @@ The problem it solves: AI coding agents are powerful, but they work on a single 
 Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. kstrl applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
 
 ```mermaid
-flowchart TD
-    PRD["PRD + Prompt"] --> FF["Phase 0: Feedforward<br/>Module map, interfaces,<br/>dependency graph, conventions"]
-    FF --> Knowledge["Knowledge prefix<br/>Durable facts from prior components"]
-    Knowledge --> Agent["Implementing agent<br/>Claude Code, Codex, or custom"]
-    Agent --> P1["Phase 1: Mechanical verification<br/>Tests, typecheck, lint, scope,<br/>bad patterns, optional self-critique"]
-    P1 -->|fail| Retry["Structured retry context<br/>Source lines + fix hints"]
-    Retry --> Agent
-    P1 -->|pass| P2["Phase 2: Code reviewer<br/>PRD criteria + concerns:<br/>scope_creep, test_quality,<br/>dead_code, error_handling..."]
-    P2 -->|fail| Retry
-    P2 -->|pass| P25["Phase 2.5: Security reviewer<br/>Injection, auth_bypass,<br/>hardcoded_secret, crypto,<br/>race, SSRF, XSS, DoS<br/>Mapped to OWASP+CWE"]
-    P25 -->|fail| Retry
-    P25 -->|pass| Distill["Knowledge distiller<br/>Durable facts written to<br/>.kstrl/knowledge/&lt;comp&gt;/&lt;run&gt;/<br/>before the PR is created"]
-    Distill --> HITL["Optional human checkpoint<br/>pause_before_pr_merge"]
-    HITL --> PR["Create + merge PR"]
-    PR --> P3["Phase 3: Contract testing<br/>Tier-by-tier merge +<br/>integration tests"]
-    P3 -->|fail breaker| Retry
-    P3 -->|pass| Done["Done"]
-    P1 --> Journal["Evolution journal<br/>Patterns, concern hit-rate,<br/>harness improvement proposals"]
-    P2 --> Journal
-    P25 --> Journal
+flowchart LR
+    Spec["Feature spec"] --> Context["Computed context<br/>(no LLM)"]
+    Context --> Agent["Implementing<br/>agent"]
+    Agent --> Gauntlet["Adversarial gauntlet<br/>mechanical checks -> code review -> security review"]
+    Gauntlet -->|"fail: structured feedback"| Agent
+    Gauntlet -->|pass| PR["PR + merge"]
+    PR --> Learn["Evolution journal"]
+    Learn -.->|"harness improvements"| Context
 ```
 
-Phase 0 also includes an architect/PRD-red-team pass at decompose time that halts on blocker-severity spec issues.
+The gauntlet is the point: independent adversarial reviewers whose job is to distrust the implementing agent - and a harness that distrusts the reviewers too (empty, partial, or oversized reviews fail closed). The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-**Documentation**: [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
+**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
 ## Quick start
 
@@ -71,37 +68,17 @@ There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that 
 
 ## How it works
 
-### Phase 0: Feedforward - give the agent context before it starts
+### Before the agent acts: computed context
 
-Before the agent writes a single line, kstrl computationally analyzes the codebase and injects structural context into the prompt. No LLM calls, no token cost - pure static analysis:
+kstrl statically analyzes the codebase - module map, public interfaces, dependency graph, active conventions - and injects it into the prompt. No LLM calls, no token cost. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
 
-- **Module map** - directory tree with file counts and lines of code
-- **Public interfaces** - classes and function signatures extracted via Python's `ast` module
-- **Dependency graph** - internal import relationships between modules (Python imports only)
-- **Active conventions** - line length, quote style, type checking mode from pyproject.toml, ruff.toml, .editorconfig
-
-This reduces wasted iterations. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
-
-### Phases 1-3: Verification - check the output, not just the completion marker
+### After the agent acts: the gauntlet
 
 When the agent signals completion, kstrl doesn't just trust it. Every run goes through mechanical verification:
 
-**Phase 1 - Mechanical checks** (computational, fast):
-- Test suite passes
-- Type checker passes
-- Linter passes
-- No changes outside allowed paths
-- No leaked secrets or syntax errors
-- Optional: mutation testing, dead-code check, self-critique shape check
-
-**Phase 2 - Second-opinion review** (inferential, LLM-based):
-- A separate agent reviews the diff against the acceptance criteria
-- Modes: `hard` (failures block), `advisory` (warn only), `skip`
-
-**Phase 3 - Contract testing** (for multi-component runs):
-- Merges component branches tier-by-tier
-- Runs integration tests at each tier
-- Bisects to identify which component broke integration
+- **Mechanical checks** (fast, computational): tests, typecheck, lint, no changes outside allowed paths, no leaked secrets.
+- **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.
+- **Contract testing** (multi-component runs): component branches merge tier-by-tier with integration tests at each tier.
 
 When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It parses tool output into structured failures with file paths, source context, and fix hints:
 
@@ -117,17 +94,9 @@ When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It
 
 ### Continuous learning - the harness improves itself
 
-After each factory run, kstrl records outcomes to an evolution journal. Over multiple runs, it identifies recurring failure patterns and proposes harness improvements.
+After each factory run, kstrl records structured failure signatures to an evolution journal. Over multiple runs, it identifies recurring patterns and proposes harness improvements - as markdown files for human review, never silent self-modification.
 
-```mermaid
-flowchart LR
-    Run1["Factory run N"] --> Record["Record outcomes<br/>.kstrl/evolution.jsonl<br/>.kstrl/experiments.tsv"]
-    Record --> Extract["Extract patterns<br/>Group by error signature"]
-    Extract --> Propose["Generate proposals<br/>.kstrl/proposals/*.md"]
-    Propose --> Review["Human review"]
-    Review -->|approve| Apply["Update CLAUDE.md,<br/>pyproject.toml,<br/>feedforward config"]
-    Apply --> Run2["Factory run N+1<br/>Benefits from<br/>improved harness"]
-```
+
 
 ```bash
 ks evolve              # analyze recent runs, find patterns
@@ -149,33 +118,7 @@ kstrl factory --manifest scripts/kstrl/manifest.json --max-parallel 4
 
 Each component runs in an isolated git worktree (`.kstrl/worktrees/<run>/<component>`) with its own PRD. `ks run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
-```mermaid
-flowchart TD
-    Spec["Markdown spec"] --> Decompose["kstrl decompose<br/>LLM-driven spec decomposition"]
-    Decompose --> Manifest["Manifest<br/>Component DAG with dependencies"]
-    Manifest --> Validate["Validate DAG<br/>Topological sort, cycle detection"]
-    Validate --> Schedule["Schedule components<br/>Respect dependency order"]
-
-    Schedule --> WT1["Worktree A<br/>Component A"]
-    Schedule --> WT2["Worktree B<br/>Component B"]
-    Schedule --> WT3["Worktree C<br/>Component C"]
-
-    WT1 --> V1["Phase 0-2<br/>Feedforward + verify + review"]
-    WT2 --> V2["Phase 0-2<br/>Feedforward + verify + review"]
-    WT3 --> V3["Phase 0-2<br/>Feedforward + verify + review"]
-
-    V1 --> PR1["PR + merge"]
-    V2 --> PR2["PR + merge"]
-    V3 --> PR3["PR + merge"]
-
-    PR1 --> Contract["Phase 3: Contract testing<br/>Tier-by-tier merge + integration tests"]
-    PR2 --> Contract
-    PR3 --> Contract
-
-    Contract -->|pass| Done["Done"]
-    Contract -->|fail| Bisect["Bisect breaker<br/>Identify which component<br/>broke integration"]
-    Bisect --> Schedule
-```
+Scheduling, worktree isolation, merge gating, and the contract-testing bisect are diagrammed in [ARCHITECTURE.md](ARCHITECTURE.md#factory-mode).
 
 ## The TUI - the whole surface, not just the factory
 
@@ -183,29 +126,21 @@ The long-running kstrl surface is available through a terminal UI. Bare `ks` ope
 
 <img src="docs/img/tui-home.svg" alt="kstrl home shell: project masthead, run browser across kinds, command launcher" width="100%">
 
-Long-running commands are event-stream runs whatever door you enter through: `ks factory`, `ks run`, `ks retry`, `ks understand`, `ks feature`, and `ks decompose` all record to `.kstrl/runs/<kind>-<stamp>-<nonce>/` and open their embedded dashboard on a terminal (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `KSTRL_NO_TUI=1`). `ks status` on a terminal opens the dashboard for the newest run of any kind; pipes and `--watch` keep the plain report. A decompose run gets its own screen - architect attempt strip, the component DAG forming live as the plan validates, spec-issue counts with `i` opening the triage view (blockers-first, with the architect's suggestions), and the streaming architect transcript:
-
-<img src="docs/img/tui-decompose.svg" alt="kstrl decompose screen: attempt strip, forming DAG with tiers, spec issues, architect transcript" width="100%">
-
-The factory screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
+Every long-running command (`ks factory`, `ks run`, `ks retry`, `ks understand`, `ks feature`, `ks decompose`) records a replayable event stream and opens its embedded dashboard on a terminal; plain output remains the default for non-TTY use. The screenshots are real, captured from a live toy-project factory run.
 
 The overview board shows every component's status, authoritative phase, attempt, last-event age, and spend - here with `auth-core` and `api-routes` running in parallel workers while `ui-shell` waits on its dependency:
 
 <img src="docs/img/tui-overview.svg" alt="kstrl dashboard overview: component board with statuses, phases and cost meter" width="100%">
 
-`enter` drills into a component: the phase timeline with verdicts and durations, the typed adversarial findings stream (severity and reviewing-model attribution), the live engineer transcript, and the evidence paths you would visit if something broke:
-
-<img src="docs/img/tui-detail.svg" alt="kstrl component detail: phase timeline, findings, live transcript" width="100%">
+`enter` drills into a component: phase timeline with verdicts, the typed findings stream with reviewing-model attribution, the live engineer transcript, and evidence paths.
 
 With `pause_before_pr_merge` enabled, the E6 human checkpoint opens as a real inspection surface - the diff excerpt, both finding streams, and what the attempt cost - instead of a y/n prompt. `a` approves, `r` rejects (fails the component and skips dependents), `t` consumes a retry, `escape` leaves it pending while you look around the dashboard:
 
 <img src="docs/img/tui-checkpoint.svg" alt="kstrl E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
 
-Keys: `enter` component detail, `escape` back (toward home, when the shell is underneath), `f` toggle transcript follow, `c` reopen a pending checkpoint or prompt, `q` quit. Quit semantics differ by mode: in `ks dash` (observe-only) `q` detaches immediately; embedded or home-launched, `q` asks first, then requests a graceful stop and keeps the board up while the command winds down. A second `q` (or Ctrl-C) escalates the stop. A run launched from the home shell keeps its board up when it finishes so you can read the post-mortem; escape then returns home.
+Keys: `enter` detail, `escape` back, `f` follow transcript, `c` reopen a checkpoint, `q` quit (graceful stop when embedded; a second `q` escalates).
 
-The TUI is a view, never the record. Every run - factory, decompose, feature, understand - appends typed schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl` (run ids are kind-prefixed: `factory-…`, `decompose-…`), per-component transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. Non-factory commands project their work onto a pseudo-component (`architect`, the feature name, `understand`) so the same board, reducer, and replay machinery serve every kind. `ks dash` and the embedded views tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. Recording obeys the same `[factory] progress_log_enabled` switch everywhere, and the legacy `.kstrl/progress.jsonl` keeps being written byte-compatibly (by factory runs, its only historical writer) for existing consumers.
-
-One honesty note carried through every surface: token and cost figures are CLI self-reports, so whenever any call went unreported the meter renders a `+` marker and treats the total as a lower bound - the dashboard never turns an honest number into a false one.
+The TUI is a view, never the record: every run appends typed, schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl`, which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction ([details](ARCHITECTURE.md#the-event-stream-substrate)). Cost figures are CLI self-reports: any unreported call renders a `+` marker and the total becomes a lower bound - the dashboard never turns an honest number into a false one.
 
 ## Approved fixtures - behavioral verification you control
 
@@ -227,35 +162,13 @@ enabled = true
       "fixture_type": "cli",
       "input_data": {"command": "curl -s localhost:8000/api/login -d '{\"user\":\"test\"}'"},
       "expected": {"exit_code": 0, "stdout_contains": ["token"]}
-    },
-    {
-      "description": "Config is importable",
-      "fixture_type": "function",
-      "input_data": {"module": "src.config", "function": "get_settings", "args": []},
-      "expected": {"returns": {"debug": false}}
-    },
-    {
-      "description": "Migration file exists",
-      "fixture_type": "file",
-      "input_data": {"path": "migrations/001_users.sql"},
-      "expected": {"exists": true, "contains": ["CREATE TABLE users"]}
     }
   ],
   "userStories": [...]
 }
 ```
 
-Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content). The schema is strict: unknown keys anywhere in a fixture entry are rejected at PRD validation, because a misspelled expectation key (`stdout_containz`) would otherwise be silently ignored and the fixture would pass vacuously.
-
-Because the PRD is LLM-emitted, fixture definitions are treated as untrusted input:
-
-- **`cli` fixtures run without a shell.** The command string is split with `shlex` and executed directly, so shell features - pipes, redirection, `&&`, `$VAR` expansion, globbing - are unsupported; metacharacters reach the program as literal arguments. Each command runs with a scrubbed environment (no API keys or tokens) in its own process group with a timeout.
-- **`function` fixtures run in a subprocess**, never in the harness process. The module/function spec travels as JSON to a `sys.executable` runner with cwd set to the component worktree, the same scrubbed environment, and a timeout. Two consequences: fixtures run under the harness's Python interpreter (not the project's venv), so keep them free of project-only third-party imports; and the `returns` comparison is JSON-shaped (dicts, lists, strings, numbers, booleans, null).
-- **`file` fixtures cannot leave the worktree.** Absolute paths, `..` components, and symlink escapes are rejected.
-
-**Snapshot regression**, behind the same `enabled` flag: when every fixture passes, actual outputs are saved to `snapshot_dir` keyed by component id; later runs fail Phase 1 if a previously-passing fixture fails or its output changes. If a change is intentional, delete `.kstrl/snapshots/<component>.json` to reset the baseline. Snapshots resolve against the repo root, not the worktree, so they survive worktree recreation between runs.
-
-See the `[fixtures]` keys in the configuration reference below.
+Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content). Fixture definitions are LLM-emitted and therefore treated as untrusted: commands run without a shell in a scrubbed environment, functions run in a sandboxed subprocess, and file paths cannot escape the worktree - the full security treatment and the snapshot-regression mechanism are in [ARCHITECTURE.md](ARCHITECTURE.md#the-fixtures-sandbox). See the `[fixtures]` keys in the configuration reference below.
 
 ## Why not just use Claude Code directly?
 
@@ -493,101 +406,13 @@ The agent updates `passes` and `notes` as it works. kstrl reads these between it
 
 ## Architecture
 
-### Iteration lifecycle
-
-This is what happens inside each component's execution loop:
-
-```mermaid
-flowchart TD
-    subgraph Init["Initialization"]
-        A1["Load config<br/>toml + env vars + CLI flags"] --> A2["Load PRD"]
-        A2 --> A3["Checkout branch"]
-        A3 --> A4["Run scaffold<br/>(if configured)"]
-        A4 --> A5["Build feedforward context<br/>Module map, interfaces,<br/>dependency graph, conventions"]
-    end
-
-    subgraph Iteration["Iteration (repeats up to N times)"]
-        B1["Build prompt<br/>feedforward + retry context + instructions"] --> B2["Run agent<br/>Stream output line by line"]
-        B2 --> B3{"COMPLETE<br/>marker?"}
-        B3 -->|No| B4["Enforce allowed paths<br/>Revert out-of-scope changes"]
-        B4 --> B1
-        B3 -->|Yes| B5["Phase 1: Mechanical verification<br/>Tests, typecheck, lint, scope"]
-    end
-
-    subgraph Verify["Verification"]
-        B5 -->|fail| B6["Parse failures<br/>Source context + fix hints"]
-        B6 --> B1
-        B5 -->|pass| B7["Phase 2: Review<br/>Second-opinion agent"]
-        B7 -->|fail| B6
-        B7 -->|pass| B8["Complete"]
-    end
-
-    A5 --> B1
-```
-
-### System overview
-
-```mermaid
-flowchart TB
-    subgraph Input
-        Spec["Feature spec / PRD"]
-    end
-
-    subgraph Phase0["Phase 0: Feedforward"]
-        ModMap["Module map"]
-        Interfaces["Public interfaces"]
-        DepGraph["Dependency graph"]
-        Conventions["Conventions"]
-    end
-
-    subgraph Execution["Agent execution"]
-        Loop["Agentic loop<br/>(iterate until COMPLETE)"]
-    end
-
-    subgraph Phase1["Phase 1: Mechanical verification"]
-        Tests["Test suite"]
-        Types["Type checker"]
-        Lint["Linter"]
-        Scope["Diff scope check"]
-        Patterns["Bad pattern scan"]
-    end
-
-    subgraph Phase2["Phase 2: Review"]
-        Review["Second-opinion agent<br/>reviews diff against spec"]
-    end
-
-    subgraph Phase3["Phase 3: Contract testing"]
-        Contract["Tier-by-tier merge<br/>+ integration tests"]
-    end
-
-    subgraph Learning["Continuous learning"]
-        Journal["Evolution journal"]
-        Experiments["Experiment tracker"]
-        Proposals["Harness proposals"]
-    end
-
-    Spec --> Phase0
-    Phase0 --> Loop
-    Loop --> Phase1
-    Phase1 -->|pass| Phase2
-    Phase1 -->|fail| Loop
-    Phase2 -->|pass| Phase3
-    Phase2 -->|fail| Loop
-    Phase3 -->|pass| Done["Done"]
-    Phase3 -->|fail| Loop
-    Phase1 --> Journal
-    Phase2 --> Journal
-    Journal --> Experiments
-    Experiments --> Proposals
-```
-
-For multi-component factory runs, each component goes through this pipeline independently in parallel git worktrees, with contract testing merging them tier-by-tier after individual verification.
+The detailed system tour - full pipeline diagram, iteration lifecycle, factory scheduling, the event-stream substrate, runtime state layout, and the fixtures sandbox - lives in [ARCHITECTURE.md](ARCHITECTURE.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 ## Development
 
 ```bash
 git clone https://github.com/0xfauzi/kstrl.git
-cd kstrl-loop
+cd kstrl
 uv sync
 uv tool install -e .
 uv run pytest tests/           # 1777 tests collected at the time of writing (2026-07)

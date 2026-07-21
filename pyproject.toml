@@ -23,6 +23,12 @@ sdk = [
     "claude-agent-sdk>=0.2.123,<0.3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/0xfauzi/kstrl"
+Repository = "https://github.com/0xfauzi/kstrl"
+Documentation = "https://github.com/0xfauzi/kstrl#readme"
+Architecture = "https://github.com/0xfauzi/kstrl/blob/main/ARCHITECTURE.md"
+
 [project.scripts]
 ks = "kstrl.cli:main"
 kstrl = "kstrl.cli:main"
