@@ -34,7 +34,7 @@ def compute_tiers(components: dict[str, tuple[str, ...]]) -> dict[str, int]:
     Deps pointing outside the mapping are ignored (a forming plan can
     reference components whose rows have not folded yet)."""
     remaining = {
-        cid: {d for d in deps if d in components and d != cid}
+        cid: {d for d in deps if d in components}
         for cid, deps in components.items()
     }
     tiers: dict[str, int] = {}
@@ -96,6 +96,18 @@ class DagTable(DataTable[Text | str]):
             a["component"]
             for a in state.artifacts if a.get("label") == "prd"
         }
+        desired = [cid for cid in order if cid in state.components]
+        current = [str(key.value) for key in self.rows]
+
+        # A rewritten event stream can replace the plan. Remove rows that
+        # disappeared, and rebuild only when surviving rows changed order.
+        # The normal forming-plan path remains append/update-only.
+        for cid in current:
+            if cid not in desired:
+                self.remove_row(cid)
+        current = [str(key.value) for key in self.rows]
+        if current != desired[:len(current)]:
+            self.clear()
         for cid in order:
             comp = state.components.get(cid)
             if comp is None:

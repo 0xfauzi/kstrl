@@ -261,11 +261,11 @@ class SpecTriageScreen(Screen[None]):
             table.add_row(
                 Text(severity,
                      style=_SEVERITY_STYLES.get(severity, theme.MUTED)),
-                issue.get("kind", "") or Text(theme.EMPTY_CELL,
-                                              style=theme.MUTED),
-                issue.get("summary", ""),
-                issue.get("location", "") or Text(theme.EMPTY_CELL,
-                                                  style=theme.MUTED),
+                Text(issue["kind"]) if issue.get("kind")
+                else Text(theme.EMPTY_CELL, style=theme.MUTED),
+                Text(issue.get("summary", "")),
+                Text(issue["location"]) if issue.get("location")
+                else Text(theme.EMPTY_CELL, style=theme.MUTED),
             )
         if self._issues:
             self._show_detail(0)
