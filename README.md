@@ -7,7 +7,7 @@
 
 <h1 align="center">kstrl</h1>
 
-<p align="center"><em>A fleet of AI agents builds your spec in parallel. An adversarial gauntlet attacks every diff. Only code that survives ships - and the factory learns from every run.</em></p>
+<p align="center"><em>AI agents write the code. kstrl makes sure it actually works.</em></p>
 
 [![CI](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml/badge.svg)](https://github.com/0xfauzi/kstrl/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
@@ -56,9 +56,11 @@ You need at least one AI coding agent CLI:
 
 | Agent | Install | Example models |
 |-------|---------|----------------|
-| Claude Code (recommended) | [claude.ai/code](https://claude.ai/code) | sonnet, opus, haiku |
-| OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | gpt-5, o3 |
+| Claude Code (recommended) | [claude.ai/code](https://claude.ai/code) | `opus`, `sonnet`, `haiku`, `claude-fable-5` |
+| OpenAI Codex | [github.com/openai/codex](https://github.com/openai/codex) | `gpt-5.5`, `gpt-5.4` |
 | Custom | Any command that reads stdin | - |
+
+Model names current as of 2026-07: the claude aliases track the newest release in each tier (today Opus 4.8, Sonnet 5, Haiku 4.5) with `claude-fable-5` as the top-end frontier model, and codex defaults to `gpt-5.5` (the older `gpt-5.x-codex` ids are being retired).
 
 kstrl does not validate model names: `[agent].model` is passed straight through to the CLI (`claude --model` / `codex -m`), so any model the installed CLI accepts works.
 
@@ -237,7 +239,7 @@ kstrl reads `kstrl.toml` at the project root; copy [kstrl.toml.example](kstrl.to
 [agent]
 type = ""              # "claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect
 command = ""           # custom agent shell command; overrides type
-model = ""             # e.g. "sonnet" (claude) or "gpt-5" (codex); empty = agent default
+model = ""             # e.g. "sonnet" (claude) or "gpt-5.5" (codex); empty = agent default
 reasoning_effort = ""  # low | medium | high | max (model-dependent)
 budget_usd = ""        # in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)
 

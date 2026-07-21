@@ -301,7 +301,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("agent", "type"):
         '"claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect',
     ("agent", "command"): "custom agent shell command; overrides type",
-    ("agent", "model"): 'e.g. "sonnet" (claude) or "gpt-5" (codex); empty = agent default',
+    ("agent", "model"): 'e.g. "sonnet" (claude) or "gpt-5.5" (codex); empty = agent default',
     ("agent", "reasoning_effort"): "low | medium | high | max (model-dependent)",
     ("agent", "budget_usd"):
         "in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)",

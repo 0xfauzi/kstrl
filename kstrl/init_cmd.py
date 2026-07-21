@@ -377,7 +377,7 @@ DEFAULT_KSTRL_TOML = """\
 [agent]
 # type = ""                        # "claude-code" | "claude-sdk" | "codex" (empty = auto-detect)
 # command = ""                     # custom agent shell command; overrides type
-# model = ""                       # e.g. "sonnet" for claude, "gpt-5" for codex (empty = agent default)
+# model = ""                       # e.g. "sonnet" for claude, "gpt-5.5" for codex (empty = agent default)
 # reasoning_effort = ""            # low|medium|high|max
 
 [run]

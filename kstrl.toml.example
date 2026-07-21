@@ -5,7 +5,7 @@
 [agent]
 type = ""                          # "claude-code" | "claude-sdk" | "codex" (empty = auto-detect)
 command = ""                       # custom agent shell command; overrides type
-model = ""                         # e.g., "sonnet" for claude, "gpt-5" for codex (empty = default)
+model = ""                         # e.g., "sonnet" for claude, "gpt-5.5" for codex (empty = default)
 reasoning_effort = ""              # low|medium|high|max
 budget_usd = 0                     # in-loop USD ceiling; claude-sdk adapter only; 0 = unlimited (R7.6)
 
