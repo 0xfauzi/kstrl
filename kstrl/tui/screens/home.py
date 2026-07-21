@@ -216,8 +216,7 @@ class HomeScreen(Screen[None]):
 
     def on_summaries_ready(self, message: SummariesReady) -> None:
         self._summarizing = False
-        if message.summaries:
-            self._summaries = message.summaries
+        self._summaries = message.summaries
         if self.ready:
             self.query_one(RunTable).update_runs(
                 list(self._refs.values()), self._summaries,

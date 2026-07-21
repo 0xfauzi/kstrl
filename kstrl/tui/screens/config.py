@@ -93,7 +93,7 @@ class ConfigScreen(Screen[None]):
             table.add_row(
                 Text(row.section, style=theme.MUTED),
                 Text(row.key, style="bold"),
-                row.value,
+                Text(row.value),
                 Text(row.source, style=SOURCE_STYLES.get(row.source, "")),
                 key=f"{row.section}.{row.key}",
             )
@@ -144,7 +144,7 @@ class ConfigScreen(Screen[None]):
 
     def action_back_or_clear(self) -> None:
         filter_input = self.query_one(Input)
-        if filter_input.has_focus and filter_input.value:
+        if filter_input.value:
             filter_input.value = ""
             return
         self.app.pop_screen()
@@ -153,7 +153,8 @@ class ConfigScreen(Screen[None]):
         # The env-scrub is process-wide: never while a launched
         # session's thread could be reading os.environ.
         run_context = getattr(self.app, "run_context", None)
-        if run_context is not None and run_context.handle is not None:
+        handle = run_context.handle if run_context is not None else None
+        if handle is not None and not handle.done():
             self.app.notify(
                 "config refresh is disabled while a run is in flight "
                 "(source detection scrubs the environment)",

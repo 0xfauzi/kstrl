@@ -6,6 +6,7 @@ import io
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -58,6 +59,15 @@ class TwoShotAgent:
             return
         yield from self._good.splitlines()
         self.final_message = self._good.splitlines()[-1]
+
+
+class ExplodingAgent:
+    name = "exploding"
+    final_message: str | None = None
+
+    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+        raise RuntimeError("architect exploded")
+        yield  # pragma: no cover - makes this an iterator
 
 
 def _spec_root(tmp_path: Path) -> Path:
@@ -177,6 +187,37 @@ class TestDecomposeRun:
         run_dir = next(iter(runs_root.iterdir()))
         transcript = run_dir / "components" / "architect" / "engineer.log"
         assert "spec_issues" in transcript.read_text()
+
+    def test_agent_exception_finishes_the_run(self, tmp_path: Path) -> None:
+        with pytest.raises(RuntimeError, match="architect exploded"):
+            _decompose(tmp_path, ExplodingAgent())
+        state, _ = load_run_state(tmp_path)
+        assert state.finished
+        architect = state.components["architect"]
+        assert architect.status == "failed"
+        assert architect.error == "RuntimeError: architect exploded"
+        assert architect.phase_history[-1]["phase"] == "decompose"
+        assert architect.phase_history[-1]["passed"] is False
+
+    def test_rolled_back_prds_are_not_published_as_artifacts(
+        self, tmp_path: Path,
+    ) -> None:
+        with (
+            patch(
+                "kstrl.decompose.Manifest.save",
+                side_effect=OSError("manifest disk full"),
+            ),
+            pytest.raises(OSError, match="manifest disk full"),
+        ):
+            _decompose(tmp_path, MockDecomposeAgent(MINOR_ISSUE_OUTPUT))
+
+        state, _ = load_run_state(tmp_path)
+        assert state.finished
+        architect = state.components["architect"]
+        assert architect.status == "failed"
+        assert architect.error == "OSError: manifest disk full"
+        assert [a["label"] for a in state.artifacts] == ["spec_issues"]
+        assert list((tmp_path / "scripts" / "kstrl").rglob("prd.json")) == []
 
     def test_without_bus_no_run_dir_and_same_result(
         self, tmp_path: Path,

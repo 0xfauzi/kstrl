@@ -5,10 +5,17 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
+from rich.text import Text
+from textual.coordinate import Coordinate
 
-from kstrl.config_report import build_config_report
+from kstrl.config_report import (
+    ConfigReport,
+    ConfigRow,
+    build_config_report,
+)
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.runcontext import RunContext
 from kstrl.tui.screens.config import ConfigScreen
@@ -48,6 +55,25 @@ class TestConfigScreen:
             hint = str(screen.query_one("#config-hint").renderable)
             assert "kstrl.toml" in hint
 
+    async def test_values_render_as_literal_text(
+        self, tmp_path: Path,
+    ) -> None:
+        report = ConfigReport(
+            root_dir=tmp_path,
+            toml_path=tmp_path / "kstrl.toml",
+            toml_exists=False,
+            rows=(ConfigRow("run", "value", "[/bold]", "env"),),
+        )
+        app = _app(tmp_path, report)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            app.push_screen(ConfigScreen())
+            await pilot.pause(0.2)
+            table = app.screen.query_one("#config-table")
+            value = table.get_cell_at(Coordinate(0, 2))
+            assert isinstance(value, Text)
+            assert value.plain == "[/bold]"
+
     async def test_filter_narrows_and_escape_clears_then_pops(
         self, tmp_path: Path, report: Any,
     ) -> None:
@@ -66,13 +92,14 @@ class TestConfigScreen:
             await pilot.pause()
             table = screen.query_one("#config-table")
             assert table.row_count == 1  # type: ignore[attr-defined]
-            # escape with a filter clears it first...
+            # Escape clears an active filter even after focus moved
+            # into the results table.
+            table.focus()  # type: ignore[attr-defined]
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, ConfigScreen)
             assert table.row_count == len(report.rows)  # type: ignore[attr-defined]
-            # ...and out of the input, escape pops the screen.
-            screen.query_one("#config-table").focus()
+            # The next escape pops the screen.
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
@@ -89,20 +116,38 @@ class TestConfigScreen:
             run_dir.mkdir(parents=True)
 
             class FakeHandle:
+                finished = False
+
                 def done(self) -> bool:
-                    return False
+                    return self.finished
 
             context = RunContext.observe(
                 run_dir, tmp_path, owns_app_exit=False,
             )
-            context.handle = cast(Any, FakeHandle())
+            handle = FakeHandle()
+            context.handle = cast(Any, handle)
             app.run_context = context
             app.push_screen(ConfigScreen())
             await pilot.pause(0.2)
+            screen = cast(ConfigScreen, app.screen)
             before = app.config_report
-            await pilot.press("r")
+            screen.action_refresh()
             await pilot.pause()
             assert app.config_report is before  # refused, not recomputed
+
+            # A finished handle no longer has a thread reading the
+            # environment, so refresh is safe again.
+            handle.finished = True
+            refreshed = build_config_report(tmp_path)
+
+            with patch(
+                "kstrl.config_report.build_config_report",
+                return_value=refreshed,
+            ) as build:
+                screen.action_refresh()
+                await pilot.pause()
+            build.assert_called_once_with(tmp_path)
+            assert app.config_report is refreshed
 
     async def test_missing_report_renders_guidance(
         self, tmp_path: Path,

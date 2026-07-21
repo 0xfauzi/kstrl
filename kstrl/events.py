@@ -142,6 +142,14 @@ class ComponentFailed(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class ComponentSkipped(Event):
+    """A planned component that ended intentionally without completing."""
+
+    type: ClassVar[str] = "component_skipped"
+    reason: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
 class CircuitBreakerTripped(Event):
     """R7.5: engineer loop halted on the no-progress breaker."""
 
