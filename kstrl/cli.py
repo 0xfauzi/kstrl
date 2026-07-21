@@ -374,11 +374,26 @@ def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context) -> None:
     """kstrl - Agentic loop harness for AI-driven development."""
-    pass
+    if ctx.invoked_subcommand is not None:
+        return
+    # Bare `ks` on a TTY opens the home shell (D1 user decision);
+    # everywhere else stays byte-identical to click's no-args behavior
+    # (help on stdout, exit 2) - the pipe/CI contract.
+    if (
+        sys.stdout.isatty()
+        and sys.stdin.isatty()
+        and envcompat.get("KSTRL_NO_TUI") != "1"
+    ):
+        from kstrl.tui.home import run_home_shell
+
+        ctx.exit(run_home_shell(Path.cwd()))
+    click.echo(ctx.get_help())
+    ctx.exit(2)
 
 
 @cli.command()

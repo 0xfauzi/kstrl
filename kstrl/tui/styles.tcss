@@ -232,6 +232,34 @@ CheckpointModal {
     color: $warning;
 }
 
+/* ---- home shell ---------------------------------------------------------- */
+
+#home-masthead {
+    height: 1;
+    padding: 0 1;
+}
+
+#home-runs-title, #home-commands-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#home-runs {
+    height: auto;
+    max-height: 45%;
+    background: $background;
+}
+
+#home-commands {
+    height: 1fr;
+    background: $background;
+    border: none;
+    padding: 0 1;
+}
+
 /* ---- decompose screen ---------------------------------------------------- */
 /* Same register as the component screen: strips are 1 line, panel
  * titles 2 (the border-bottom needs its own row), the transcript
