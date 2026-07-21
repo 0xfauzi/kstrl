@@ -1,10 +1,10 @@
 """Run browser table for the home shell (TUI surface D1).
 
-One row per discovered run, newest first, diff-updated like the
-component board (never clear()+rebuild). D1 renders what RunRef alone
-knows - kind, liveness, age; D2 joins the folded summaries (comps,
-tokens, cost) into the remaining columns, which render the honest
-dim dot until then.
+One row per discovered run, newest first. Stable polls update cells in
+place; structural changes rebuild the row order while retaining the
+selected run. D1 renders what RunRef alone knows - kind, liveness, age;
+D2 joins the folded summaries (comps, tokens, cost) into the remaining
+columns, which render the honest dim dot until then.
 """
 
 from __future__ import annotations
@@ -60,9 +60,16 @@ class RunTable(DataTable[Text | str]):
 
     def update_runs(self, refs: list[RunRef]) -> None:
         now = time.time()
-        seen = set()
+        desired = [ref.run_id for ref in refs]
+        current = [str(key.value) for key in self.rows]
+        selected = (
+            current[self.cursor_row]
+            if 0 <= self.cursor_row < len(current) else None
+        )
+        order_changed = current != desired
+        if order_changed:
+            self.clear()
         for ref in refs:
-            seen.add(ref.run_id)
             values = _row_values(ref, now)
             if ref.run_id in self.rows:
                 for key, value in zip(
@@ -71,6 +78,5 @@ class RunTable(DataTable[Text | str]):
                     self.update_cell(ref.run_id, key, value)
             else:
                 self.add_row(*values, key=ref.run_id)
-        stale = [k for k in self.rows if str(k.value) not in seen]
-        for row_key in stale:
-            self.remove_row(row_key)
+        if order_changed and selected in desired:
+            self.move_cursor(row=desired.index(selected))
