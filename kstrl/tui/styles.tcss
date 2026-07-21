@@ -265,6 +265,33 @@ CheckpointModal {
     padding: 0 1;
 }
 
+/* ---- config screen ------------------------------------------------------- */
+
+#config-filter {
+    height: 1;
+    border: none;
+    background: $surface;
+    padding: 0 1;
+}
+
+#config-title {
+    height: 2;
+    padding: 0 1;
+    color: $text-muted;
+    text-style: bold;
+    border-bottom: solid $panel;
+}
+
+#config-table {
+    height: 1fr;
+    background: $background;
+}
+
+#config-hint {
+    height: 1;
+    padding: 0 1;
+}
+
 /* ---- decompose screen ---------------------------------------------------- */
 /* Same register as the component screen: strips are 1 line, panel
  * titles 2 (the border-bottom needs its own row), the transcript

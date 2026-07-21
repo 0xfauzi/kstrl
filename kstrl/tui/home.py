@@ -15,9 +15,20 @@ ANSI_RESTORE = "\x1b[?1049l\x1b[?25h\x1b[0m"
 
 
 def run_home_shell(root_dir: Path) -> int:
+    from kstrl.config_report import ConfigReport, build_config_report
     from kstrl.tui.app import KstrlTuiApp, Mode
 
-    app = KstrlTuiApp(root_dir=root_dir, mode=Mode.HOME)
+    # Computed BEFORE app.run(): source detection scrubs os.environ
+    # process-wide, which must never race a running session's thread.
+    config_report: ConfigReport | None
+    try:
+        config_report = build_config_report(root_dir)
+    except ValueError:
+        config_report = None  # the screen renders the guidance line
+
+    app = KstrlTuiApp(
+        root_dir=root_dir, mode=Mode.HOME, config_report=config_report,
+    )
     try:
         code = app.run()
     finally:
