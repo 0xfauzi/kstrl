@@ -1,11 +1,11 @@
 """Run browser table for the home shell (TUI surface D1/D2).
 
-One row per discovered run, newest first, diff-updated like the
-component board (never clear()+rebuild). Ref-only columns (kind,
-liveness, age) render immediately; the folded summary columns (comps,
-tok, cost) render the honest dim dot until the D2 worker posts
-SummariesReady - and keep R3.1's "+" lower-bound marker whenever the
-run had unreported calls.
+One row per discovered run, newest first. Stable polls update cells in
+place; structural changes rebuild the row order while retaining the
+selected run. Ref-only columns (kind, liveness, age) render immediately;
+the folded summary columns (comps, tok, cost) render the honest dim dot
+until the D2 worker posts SummariesReady, and keep R3.1's "+" lower-bound
+marker whenever the run had unreported calls.
 """
 
 from __future__ import annotations
@@ -100,9 +100,16 @@ class RunTable(DataTable[Text | str]):
     ) -> None:
         now = time.time()
         summaries = summaries or {}
-        seen = set()
+        desired = [ref.run_id for ref in refs]
+        current = [str(key.value) for key in self.rows]
+        selected = (
+            current[self.cursor_row]
+            if 0 <= self.cursor_row < len(current) else None
+        )
+        order_changed = current != desired
+        if order_changed:
+            self.clear()
         for ref in refs:
-            seen.add(ref.run_id)
             values = _row_values(ref, summaries.get(ref.run_id), now)
             if ref.run_id in self.rows:
                 for key, value in zip(
@@ -111,6 +118,5 @@ class RunTable(DataTable[Text | str]):
                     self.update_cell(ref.run_id, key, value)
             else:
                 self.add_row(*values, key=ref.run_id)
-        stale = [k for k in self.rows if str(k.value) not in seen]
-        for row_key in stale:
-            self.remove_row(row_key)
+        if order_changed and selected in desired:
+            self.move_cursor(row=desired.index(selected))

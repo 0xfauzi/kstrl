@@ -965,7 +965,7 @@ def _generate_component_prd(
 ARCHITECT_COMPONENT = "architect"
 
 
-def decompose_spec(
+def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
     base_branch: str,
@@ -1063,19 +1063,26 @@ def decompose_spec(
         output_lines: list[str] = []
         total_bytes = 0
         too_large = False
-        for line in agent.run(retry_prompt, cwd=root_dir):
-            output_lines.append(line)
-            ui.stream_line("AI", line)
-            if transcript is not None:
-                transcript(line)
-            total_bytes += len(line) + 1
-            if total_bytes > MAX_AGENT_OUTPUT_BYTES:
-                too_large = True
-                ui.warn(
-                    f"Decompose agent emitted >{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
-                    "aborting this attempt."
-                )
-                break
+        try:
+            for line in agent.run(retry_prompt, cwd=root_dir):
+                output_lines.append(line)
+                ui.stream_line("AI", line)
+                if transcript is not None:
+                    transcript(line)
+                total_bytes += len(line) + 1
+                if total_bytes > MAX_AGENT_OUTPUT_BYTES:
+                    too_large = True
+                    ui.warn(
+                        "Decompose agent emitted "
+                        f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
+                        "aborting this attempt."
+                    )
+                    break
+        except BaseException as exc:
+            attempt_failed(
+                f"{type(exc).__name__}: {exc}", started_at=phase_start,
+            )
+            raise
 
         if too_large:
             last_error = "agent output exceeded size cap"
@@ -1128,14 +1135,6 @@ def decompose_spec(
     if data is None:
         # No files were written in the retry loop, so terminal failure
         # leaves no partial state behind (R1.8).
-        emit(ComponentFailed(
-            component=ARCHITECT_COMPONENT,
-            error=f"decompose failed after {max_retries} attempts",
-        ))
-        emit(RunCompleted(
-            completed=0, failed=1,
-            duration_seconds=round(time.monotonic() - run_started, 2),
-        ))
         raise ValueError(
             f"Failed to decompose spec after {max_retries} attempts. "
             f"Last error: {last_error}"
@@ -1330,9 +1329,6 @@ def decompose_spec(
                 )
             )
             ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
-            emit(ArtifactWritten(
-                component=comp_id, label="prd", path=rel_prd,
-            ))
 
         manifest = Manifest(
             version="1",
@@ -1361,9 +1357,6 @@ def decompose_spec(
         manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
         manifest.save(manifest_path)
         ui.ok(f"Manifest saved: {manifest_path}")
-        emit(ArtifactWritten(
-            label="manifest", path=rel_display(manifest_path),
-        ))
     except BaseException:
         for prd_file in written_prds:
             try:
@@ -1380,6 +1373,20 @@ def decompose_spec(
             except OSError:
                 pass
         raise
+
+    # Publish transactional artifacts only after the PRD + manifest
+    # write set commits. If a later write failed, the cleanup above
+    # removed the PRDs and the event stream must not claim they exist.
+    for component_data, prd_file in zip(
+        data["components"], written_prds, strict=True,
+    ):
+        emit(ArtifactWritten(
+            component=component_data["id"], label="prd",
+            path=rel_display(prd_file),
+        ))
+    emit(ArtifactWritten(
+        label="manifest", path=rel_display(manifest_path),
+    ))
 
     ui.section("Decomposition Summary")
     ui.kv("Components", str(len(manifest.components)))
@@ -1399,3 +1406,48 @@ def decompose_spec(
     emit(RunCompleted(completed=1, duration_seconds=duration))
 
     return manifest
+
+
+def decompose_spec(
+    spec_path: Path,
+    project_name: str,
+    base_branch: str,
+    single_pr: bool,
+    agent: Agent,
+    ui: UI,
+    root_dir: Path,
+    max_retries: int = 3,
+    *,
+    bus: EventBus | None = None,
+    transcript: Callable[[str], None] | None = None,
+) -> Manifest:
+    """Run decomposition and guarantee a terminal event on every exit."""
+    started = time.monotonic()
+    try:
+        return _decompose_spec_impl(
+            spec_path=spec_path,
+            project_name=project_name,
+            base_branch=base_branch,
+            single_pr=single_pr,
+            agent=agent,
+            ui=ui,
+            root_dir=root_dir,
+            max_retries=max_retries,
+            bus=bus,
+            transcript=transcript,
+        )
+    except SpecBlockerError:
+        # Blocker halts are deliberately finalized at the audit site so
+        # the durable artifact path can be attached to the exception.
+        raise
+    except BaseException as exc:
+        if bus is not None:
+            detail = f"{type(exc).__name__}: {exc}"
+            bus.emit(ComponentFailed(
+                component=ARCHITECT_COMPONENT, error=detail,
+            ))
+            bus.emit(RunCompleted(
+                failed=1,
+                duration_seconds=round(time.monotonic() - started, 2),
+            ))
+        raise
