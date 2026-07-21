@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.home_data import (
+    HomeStats,
     SummaryCache,
     pending_proposal_count,
     summarize_run,
 )
+from kstrl.tui.messages import SummariesReady
 from kstrl.tui.runs import discover_runs
 from tests.helpers.fake_run import (
     FakeRunSpec,
@@ -98,6 +100,25 @@ class TestSummaryCache:
             cache.refresh(moved)
         assert spy.call_count == 1
 
+    def test_moved_worker_stream_recomputes(self, tmp_path: Path) -> None:
+        write_fake_run(tmp_path, FakeRunSpec(components=1))
+        refs = discover_runs(tmp_path)
+        cache = SummaryCache()
+        cache.refresh(refs)
+        worker = next(
+            (refs[0].run_dir / "components").glob("*/engineer.jsonl"),
+        )
+        worker.write_text(worker.read_text() + "\n")
+        unchanged_orchestrator_mtime = refs[0].mtime
+        moved = discover_runs(tmp_path)
+        assert moved[0].mtime == unchanged_orchestrator_mtime
+        with patch(
+            "kstrl.tui.home_data.summarize_run",
+            wraps=summarize_run,
+        ) as spy:
+            cache.refresh(moved)
+        assert spy.call_count == 1
+
 
 class TestPendingProposals:
     def test_counts_unapplied_only(self, tmp_path: Path) -> None:
@@ -140,3 +161,10 @@ class TestHomeSummariesPilot:
             cells = " ".join(str(cell) for cell in row)
             assert "2/2" in cells
             assert "+" in cells  # lower-bound marker rides along
+
+            app.screen.on_summaries_ready(
+                SummariesReady({}, HomeStats(None, 0)),
+            )
+            assert app.screen._summaries == {}
+            row = table.get_row_at(0)  # type: ignore[attr-defined]
+            assert "2/2" not in " ".join(str(cell) for cell in row)

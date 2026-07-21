@@ -2,9 +2,10 @@
 
 Summarizing a run is a full reducer fold (file IO + fold), so the
 home screen computes these on a worker thread, renders honest "·"
-cells until they land, and caches by (run_id, events mtime) so only
-movers recompute. Numbers keep R3.1 semantics: whenever a run has
-unreported calls, its totals are LOWER BOUNDS and carry the "+".
+cells until they land, and caches by every folded stream's identity,
+mtime, and size so only movers recompute. Numbers keep R3.1 semantics:
+whenever a run has unreported calls, its totals are LOWER BOUNDS and
+carry the "+".
 """
 
 from __future__ import annotations
@@ -64,22 +65,60 @@ def summarize_run(ref: RunRef) -> RunSummary:
 
 
 class SummaryCache:
-    """(run_id, events mtime) -> RunSummary; recompute only movers."""
+    """Run-stream signature -> RunSummary; recompute only movers."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, tuple[float, RunSummary]] = {}
+        self._cache: dict[
+            str,
+            tuple[tuple[tuple[str, int, int, int, int], ...], RunSummary],
+        ] = {}
 
     def refresh(self, refs: list[RunRef]) -> dict[str, RunSummary]:
         out: dict[str, RunSummary] = {}
+        active = {ref.run_id for ref in refs}
+        for stale in self._cache.keys() - active:
+            del self._cache[stale]
         for ref in refs:
+            signature = _run_stream_signature(ref)
             hit = self._cache.get(ref.run_id)
-            if hit is not None and hit[0] == ref.mtime:
+            if hit is not None and hit[0] == signature:
                 out[ref.run_id] = hit[1]
                 continue
             summary = summarize_run(ref)
-            self._cache[ref.run_id] = (ref.mtime, summary)
+            self._cache[ref.run_id] = (signature, summary)
             out[ref.run_id] = summary
         return out
+
+
+def _run_stream_signature(
+    ref: RunRef,
+) -> tuple[tuple[str, int, int, int, int], ...]:
+    """Identity for every stream consumed by ``read_run_dir``."""
+    paths = [ref.events_path]
+    components_dir = ref.run_dir / "components"
+    try:
+        component_dirs = sorted(components_dir.iterdir())
+    except OSError:
+        component_dirs = []
+    paths.extend(
+        component_dir / "engineer.jsonl"
+        for component_dir in component_dirs
+        if component_dir.is_dir()
+    )
+    signature: list[tuple[str, int, int, int, int]] = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append((
+            str(path.relative_to(ref.run_dir)),
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_mtime_ns,
+            stat.st_size,
+        ))
+    return tuple(signature)
 
 
 def pending_proposal_count(root_dir: Path) -> int:
