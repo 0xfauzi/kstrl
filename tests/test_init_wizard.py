@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import time
+import tomllib
 from pathlib import Path
+from threading import Event
 from typing import cast
+from unittest.mock import patch
 
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.init_wizard import (
@@ -45,6 +48,17 @@ class TestApplyAgentSettings:
         assert '# type = ""' not in content
         # Untouched sections stay byte-identical.
         assert "# max_iterations = 10" in content
+
+    def test_escapes_free_form_values_as_toml_strings(
+        self, tmp_path: Path,
+    ) -> None:
+        toml = tmp_path / "kstrl.toml"
+        toml.write_text(DEFAULT_KSTRL_TOML)
+        hostile = 'gpt"\n[factory]\nmax_parallel = 99'
+        assert apply_agent_settings(toml, model=hostile)
+        parsed = tomllib.loads(toml.read_text())
+        assert parsed["agent"]["model"] == hostile
+        assert "max_parallel" not in parsed["factory"]
 
     def test_refuses_user_edited_files_without_writing(
         self, tmp_path: Path,
@@ -166,5 +180,64 @@ class TestWizardScreen:
             errors = str(screen.query_one("#wizard-errors").renderable)
             assert "not found" in errors
             assert screen.query_one("#wizard-form").display
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_file_target_blocks_preview(self, tmp_path: Path) -> None:
+        target = tmp_path / "not-a-directory"
+        target.write_text("data")
+        app, screen = await self._run_wizard(tmp_path)
+        try:
+            from textual.widgets import Button, Input
+
+            screen.query_one("#wizard-directory", Input).value = str(target)
+            screen.query_one("#wizard-preview-btn", Button).press()
+            await self._pilot.pause(0.2)
+            errors = str(screen.query_one("#wizard-errors").renderable)
+            assert "not a directory" in errors
+            assert screen.query_one("#wizard-form").display
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_worker_error_is_terminal_and_navigation_waits(
+        self, tmp_path: Path,
+    ) -> None:
+        app, screen = await self._run_wizard(tmp_path)
+        try:
+            from textual.widgets import Button, Static
+
+            screen.query_one("#wizard-preview-btn", Button).press()
+            await self._pilot.pause(0.2)
+            release = Event()
+
+            def fail_init(*args: object) -> int:
+                del args
+                assert release.wait(timeout=5)
+                raise OSError("disk unavailable")
+
+            with patch(
+                "kstrl.tui.screens.init_wizard.run_init",
+                side_effect=fail_init,
+            ):
+                screen.query_one("#wizard-run-btn", Button).press()
+                deadline = time.monotonic() + 5
+                while not screen.navigation_blocked:
+                    await self._pilot.pause(0.05)
+                    assert time.monotonic() < deadline
+                screen.action_back()
+                assert isinstance(app.screen, InitWizardScreen)
+                release.set()
+                deadline = time.monotonic() + 5
+                while screen.navigation_blocked:
+                    await self._pilot.pause(0.1)
+                    assert time.monotonic() < deadline
+            outcome = str(
+                screen.query_one("#wizard-outcome", Static).renderable,
+            )
+            transcript = str(
+                screen.query_one("#wizard-log", Static).renderable,
+            )
+            assert "exited 1" in outcome
+            assert "disk unavailable" in transcript
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)

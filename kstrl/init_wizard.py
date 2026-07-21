@@ -12,6 +12,7 @@ something to guess inside.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,7 +93,8 @@ def apply_agent_settings(
         for index, line in enumerate(lines):
             if line.startswith(prefix):
                 ending = "\n" if line.endswith("\n") else ""
-                lines[index] = f'{key} = "{value}"{ending}'
+                encoded = json.dumps(value, ensure_ascii=False)
+                lines[index] = f"{key} = {encoded}{ending}"
                 break
         else:
             return False  # stock line missing: never guess
