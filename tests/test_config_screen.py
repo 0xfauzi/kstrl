@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 from unittest.mock import patch
 
 import pytest
@@ -129,7 +129,11 @@ class TestConfigScreen:
             class FakeHandle:
                 finished = False
                 # Read by the HOME session watcher once done() flips.
+                # Keep this in sync with kstrl.tui.bridge's handle
+                # interface: the watcher's completion path reads
+                # exit_code AND error_box unconditionally.
                 exit_code = 0
+                error_box: ClassVar[list[BaseException]] = []
 
                 def done(self) -> bool:
                     return self.finished
