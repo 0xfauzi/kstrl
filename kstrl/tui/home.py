@@ -32,6 +32,19 @@ def run_home_shell(root_dir: Path) -> int:
     try:
         code = app.run()
     finally:
+        # A launched session's worker is non-daemon: stop it if the
+        # shell is exiting under it, then join before releasing the
+        # terminal (a dead shell must never orphan a run silently).
+        run = app.run_context
+        if run is not None and run.handle is not None:
+            if not run.handle.done():
+                run.handle.stop.request("home shell exited")
+            if run.channel is not None:
+                run.channel.detach()
+            run.handle.join()
+        session = getattr(app, "_session", None)
+        if session is not None:
+            session.close()
         sys.stdout.write(ANSI_RESTORE)
         sys.stdout.flush()
     return code or 0
