@@ -1,6 +1,6 @@
 # Adversarial Factory Design
 
-This document explains the roles, phases, and invariants that make up the Ralph factory's adversarial design, and the known limitations a user must keep in mind.
+This document explains the roles, phases, and invariants that make up the ks factory's adversarial design, and the known limitations a user must keep in mind.
 
 ## Why adversarial
 

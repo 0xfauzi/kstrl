@@ -4,7 +4,7 @@ The load-bearing test here is golden parity: V1CompatSink fed stamped v2
 events must produce byte-equivalent progress.jsonl lines (modulo ts) to
 calling the real ProgressLog convenience methods directly. That parity
 is what lets the whole migration keep .kstrl/progress.jsonl consumers
-(ralph status v1 arm, the Linear ProgressSink) untouched.
+(ks status v1 arm, the Linear ProgressSink) untouched.
 """
 
 from __future__ import annotations

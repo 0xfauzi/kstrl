@@ -390,16 +390,16 @@ class FakeUsageAgent:
 
 
 def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     return KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=ralph_dir / "prompt.md",
-        prd_file=ralph_dir / "prd.json",
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
         sleep_seconds=0,
         kstrl_branch="",
         kstrl_branch_explicit=True,
@@ -503,17 +503,17 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     # Knowledge distillation off by default in these tests: its agent
     # call would add nondeterministic usage rows.
-    (tmp_path / "ralph.toml").write_text("[knowledge]\nenabled = false\n")
+    (tmp_path / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
     for comp_id in component_ids:
-        feature_dir = ralph_dir / "feature" / comp_id
+        feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -668,7 +668,7 @@ class TestFactoryUsageAggregation:
 
         root = _setup_project(tmp_path, ["comp-a"])
         # Re-enable knowledge: distillation is one of the four phases.
-        (root / "ralph.toml").write_text("[knowledge]\nenabled = true\n")
+        (root / "kstrl.toml").write_text("[knowledge]\nenabled = true\n")
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(
             root,
@@ -928,15 +928,15 @@ class TestMaxTotalTokensConfig:
         assert FactoryConfig().max_total_tokens == 0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_FACTORY_MAX_TOTAL_TOKENS", "250000")
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "250000")
         assert FactoryConfig.from_env().max_total_tokens == 250000
 
     def test_load_toml_and_env_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\nmax_total_tokens = 111\n"
         )
         assert FactoryConfig.load(tmp_path).max_total_tokens == 111
-        monkeypatch.setenv("RALPH_FACTORY_MAX_TOTAL_TOKENS", "222")
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "222")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 222

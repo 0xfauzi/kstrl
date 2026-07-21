@@ -11,10 +11,10 @@ without a clear signal.
 R4.3 network policy: the default suite is network-free. The structural
 tests below never invoke codex (the probe is faked with a counting
 stub). The live-contract tier drives the real codex CLI - an LLM call
-over the network - so it is opt-in behind RALPH_RUN_LIVE_CONTRACT=1
+over the network - so it is opt-in behind KSTRL_RUN_LIVE_CONTRACT=1
 in addition to requiring codex on PATH:
 
-    RALPH_RUN_LIVE_CONTRACT=1 uv run pytest tests/test_codex_agent.py -v
+    KSTRL_RUN_LIVE_CONTRACT=1 uv run pytest tests/test_codex_agent.py -v
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from kstrl.agents.codex import CodexAgent
 CODEX_AVAILABLE = shutil.which("codex") is not None
 LIVE_CONTRACT_ENABLED = "1" in (
     os.environ.get("KSTRL_RUN_LIVE_CONTRACT"),
-    os.environ.get("RALPH_RUN_LIVE_CONTRACT"),
+    os.environ.get("KSTRL_RUN_LIVE_CONTRACT"),
 )
 
 

@@ -23,7 +23,7 @@ a scratch script (not committed; reproduction recipe at the bottom).
 No production code changed as part of this spike.
 
 Setup: `claude-agent-sdk` 0.2.123 (Python), claude CLI 2.1.215,
-model `haiku`, macOS. The "component" was a Ralph-shaped PRD prompt
+model `haiku`, macOS. The "component" was a kstrl-shaped PRD prompt
 (greeter with an EARS-style positive and negative criterion, pytest
 run, DONE marker) executed in a scratch workspace via
 `ClaudeSDKClient` with `permission_mode="bypassPermissions"`,
@@ -43,7 +43,7 @@ explicitly documents parse-drift risk across CLI versions.
 
 ### 2. Hook-based guardrails
 
-CLI subprocess today: no pre-execution hook surface. Ralph's
+CLI subprocess today: no pre-execution hook surface. kstrl's
 allowed-paths guard and mechanical verification run AFTER an
 iteration; an out-of-scope write happens first and is caught later.
 
@@ -69,7 +69,7 @@ typed result - `subtype="error_max_budget_usd"`, `is_error=true`,
 `total_cost_usd=0.0125284` still reported. Granularity note
 (measured): enforcement is per-turn - the run still spent $0.0125
 against a $0.00001 cap before halting, i.e. one turn can overshoot,
-but the halt is inside the agent loop rather than at Ralph's phase
+but the halt is inside the agent loop rather than at kstrl's phase
 boundary, and the overshoot is bounded by one turn instead of one
 phase.
 
@@ -93,15 +93,15 @@ stream mid-run - the CLI path never sees rate-limit state at all.
   cross-family review rotation (codex reviews Claude code) depends on
   the codex CLI, so the subprocess machinery cannot be deleted either
   way.
-- **Timeout/kill semantics are unproven.** Ralph's R0.1 battery
+- **Timeout/kill semantics are unproven.** kstrl's R0.1 battery
   (silent hang detection, `killpg` of grandchildren, bounded waits)
   is measured against `DeadlineStreamer`. The SDK manages its own CLI
-  subprocess; whether a hung tool call is killable within Ralph's
+  subprocess; whether a hung tool call is killable within kstrl's
   deadlines was NOT measured in this spike and must pass the same
   battery before any production wiring.
 - **A new dependency** (`claude-agent-sdk` + its transitive set) in a
   harness that today needs only stdlib + click at runtime.
-- **Async surface.** The SDK is asyncio-first; Ralph's `Agent`
+- **Async surface.** The SDK is asyncio-first; kstrl's `Agent`
   protocol is a synchronous line iterator, so an adapter needs an
   asyncio bridge inside `run()`.
 

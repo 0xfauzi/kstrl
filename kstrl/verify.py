@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import envcompat, git
+from kstrl import git
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
@@ -205,7 +205,7 @@ class VerifyConfig:
     subprocess_timeout: float = 300.0
     # Mechanical enforcement of the engineer prompt's "## Self-Critique"
     # mandate. Off by default to keep this opt-in; set to True (or
-    # RALPH_VERIFY_REQUIRE_SELF_CRITIQUE=1) to fail Phase 1 when an
+    # KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE=1) to fail Phase 1 when an
     # iteration's progress.txt entry omits the block.
     require_self_critique: bool = False
     self_critique_min_bullets: int = 3
@@ -215,28 +215,27 @@ class VerifyConfig:
     def from_env(cls) -> VerifyConfig:
         """Load verify config from environment variables."""
         return cls(
-            test_command=envcompat.get("KSTRL_VERIFY_TEST_CMD"),
-            typecheck_command=envcompat.get("KSTRL_VERIFY_TYPECHECK_CMD"),
-            lint_command=envcompat.get("KSTRL_VERIFY_LINT_CMD"),
-            dead_code_cleanup=envcompat.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
-            dead_code_command=envcompat.get("KSTRL_DEAD_CODE_CMD"),
-            mutation_testing=envcompat.get("KSTRL_MUTATION_TESTING", "") == "1",
+            test_command=os.environ.get("KSTRL_VERIFY_TEST_CMD"),
+            typecheck_command=os.environ.get("KSTRL_VERIFY_TYPECHECK_CMD"),
+            lint_command=os.environ.get("KSTRL_VERIFY_LINT_CMD"),
+            dead_code_cleanup=os.environ.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
+            dead_code_command=os.environ.get("KSTRL_DEAD_CODE_CMD"),
+            mutation_testing=os.environ.get("KSTRL_MUTATION_TESTING", "") == "1",
             mutation_threshold=float(
-                envcompat.get("KSTRL_MUTATION_THRESHOLD", "50")
+                os.environ.get("KSTRL_MUTATION_THRESHOLD", "50")
             ),
             mutation_timeout=float(
-                envcompat.get("KSTRL_MUTATION_TIMEOUT", "600")
+                os.environ.get("KSTRL_MUTATION_TIMEOUT", "600")
             ),
             subprocess_timeout=float(
-                envcompat.get("KSTRL_TIMEOUT_VERIFY", "300")
+                os.environ.get("KSTRL_TIMEOUT_VERIFY", "300")
             ),
-            require_self_critique=envcompat.get("KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE", "",
-            ) == "1",
+            require_self_critique=os.environ.get("KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE", "") == "1",
             self_critique_min_bullets=int(
-                envcompat.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
+                os.environ.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
             ),
-            progress_file_path=envcompat.get("KSTRL_VERIFY_PROGRESS_FILE",
-                "scripts/kstrl/progress.txt",
+            progress_file_path=os.environ.get(
+                "KSTRL_VERIFY_PROGRESS_FILE", "scripts/kstrl/progress.txt",
             ),
         )
 
@@ -300,7 +299,7 @@ class VerifyConfig:
             "KSTRL_VERIFY_PROGRESS_FILE": "progress_file_path",
         }
         for env_var, field_name in env_var_to_field.items():
-            if envcompat.contains(env_var):
+            if env_var in os.environ:
                 setattr(config, field_name, getattr(env, field_name))
         return config
 

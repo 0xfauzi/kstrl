@@ -220,7 +220,7 @@ class Manifest:
     ) -> Manifest:
         """Create a single-component manifest from an existing PRD.
 
-        Used by ``ralph run`` to delegate to the factory pipeline.
+        Used by ``ks run`` to delegate to the factory pipeline.
         If *project_name* is not given, it is derived from the branch name
         (e.g. ``kstrl/auth`` becomes ``auth``) or the PRD file stem.
         """
@@ -245,7 +245,7 @@ class Manifest:
         comp = Component(
             id="main",
             title=project_name,
-            description="Single-component run via ralph run",
+            description="Single-component run via ks run",
             dependencies=[],
             prd_path=rel_prd,
             branch_name=effective_branch,

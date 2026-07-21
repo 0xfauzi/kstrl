@@ -1,4 +1,4 @@
-# Ralph Operator Runbook
+# kstrl Operator Runbook
 
 Recovery procedures for the failure modes that actually happen during factory runs.
 

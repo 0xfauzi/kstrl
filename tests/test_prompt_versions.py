@@ -81,8 +81,8 @@ _VERSIONS: dict[str, str] = {
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DECOMPOSE_PROMPT": (
-        "64585413da183f61d6eaa1605279d8577472514e6ca2d02761621d2c3cccfbe8",
-        "1.4.1",
+        "8bce50b09f19220e58d941fe0b99a0f45d0c4e003d90a40c7570a4af542b1452",
+        "1.4.2",
     ),
     "REVIEWER_PROMPT": (
         "987f8a7d0de3957c5917f0d34c9e3a086ab2fa815eb06d7d3cad3424cf7c5347",
@@ -105,7 +105,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 # Exemption set for the auto-discovery scan. These are user-facing
-# scaffolding templates emitted by ``ralph init`` (progress log files,
+# scaffolding templates emitted by ``ks init`` (progress log files,
 # codebase_map.md, the understand/feature understand instructions); they
 # generate documentation outputs, not adversarial-role outputs, and are
 # out of scope for H3 snapshot protection.
@@ -113,7 +113,7 @@ _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # If you add a NEW template that produces user-facing content rather
 # than adversarial-role output, add its name here with a one-line
 # rationale. (DEFAULT_PRD_PROMPT was previously enrolled here but was
-# deleted along with the manual `ralph prd create` path during the
+# deleted along with the manual `kstrl prd create` path during the
 # legacy-purge cleanup -- the factory is now the only PRD path.)
 _ENROLLMENT_EXEMPT_NAMES = frozenset({
     "DEFAULT_PROGRESS",
@@ -139,7 +139,7 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
     parts.append(
         "\nTo land this change:\n"
         "  1. Re-run calibration to verify detection rate did not regress:\n"
-        "       RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku "
+        "       KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku "
         "uv run pytest tests/test_calibration.py -v\n"
         f"  2. Bump {name}_VERSION in kstrl/ to a new semver "
         "(MAJOR for breaking taxonomy changes, MINOR for wording, PATCH for typos).\n"

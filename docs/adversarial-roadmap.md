@@ -18,7 +18,7 @@ Execution order: A -> D -> F -> B -> C -> E -> G. H is non-code, captured as pol
 
 ## Phase A - Critical correctness fixes
 
-PR: [#37](https://github.com/0xfauzi/ralph-loop/pull/37) merged 2026-05-27
+PR: [#37](https://github.com/0xfauzi/kstrl-loop/pull/37) merged 2026-05-27
 
 - [x] A1 - Sanitize knowledge facts against prompt injection (`_is_injection_attempt` in `knowledge.py`, MAX_CLAIM_LENGTH=500, MAX_EVIDENCE_ITEMS=10, MAX_TAG_ITEMS=8 + 9 tests)
 - [x] A2 - Single-PR mode skips knowledge distillation with a warning (`factory.py::_handle_result` + integration test)
@@ -99,7 +99,7 @@ PR: _pending push_
 - [x] C5 - single_pr mode integration: distill_facts skipped, run completes
 - [x] C6 - Concurrent factory invocation in two threads; Windows-skipped (POSIX flock only)
 - [x] C7 - Already covered by `test_factory.py::test_crash_recovery_resets_running` / `_resets_verifying`; tracker just confirms coverage
-- [x] C8 - Pickling round-trip parametrized across all 8 config dataclasses (Ralph/Factory/Verify/Contract/Feedforward/Evolution/Knowledge/Security)
+- [x] C8 - Pickling round-trip parametrized across all 8 config dataclasses (kstrl/Factory/Verify/Contract/Feedforward/Evolution/Knowledge/Security)
 - [x] C9 - Agent factory matrix: CustomAgent / Codex / Claude / auto-detect
 - [x] C10 - Windows skip markers applied where POSIX features are used
 

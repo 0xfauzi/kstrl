@@ -32,7 +32,7 @@ from tests.spine_utils import (
     component,
     factory_config,
     git,
-    init_ralph_repo,
+    init_kstrl_repo,
     make_manifest,
 )
 
@@ -43,7 +43,7 @@ COMP = "comp-a"
 BRANCH = "kstrl/factory/comp-a"
 
 # Child that takes an exclusive flock on the given path and holds it
-# until killed, standing in for a live contending ralph process.
+# until killed, standing in for a live contending kstrl process.
 _LOCK_HOLDER_SCRIPT = """
 import fcntl, sys, time
 fp = open(sys.argv[1], "a+")
@@ -312,9 +312,9 @@ class TestRunLockTwoProcessExclusion:
         refuses to start (exit 2, nothing scheduled). Once the holder
         dies the same invocation succeeds: the flock dies with its
         process, so a stale lock FILE can never wedge the factory."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, (COMP,))
+        init_kstrl_repo(root, (COMP,))
         lock_path = root / ".kstrl" / "factory.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
 

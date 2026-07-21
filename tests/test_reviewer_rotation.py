@@ -483,15 +483,15 @@ class TestHomogeneityWarningFires:
 class TestCalibrationReviewerOverride:
     def test_override_from_env_reads_both_vars(self) -> None:
         env = {
-            "RALPH_CALIBRATION_REVIEWER_AGENT_TYPE": "codex",
-            "RALPH_CALIBRATION_REVIEWER_MODEL": "gpt-5",
+            "KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE": "codex",
+            "KSTRL_CALIBRATION_REVIEWER_MODEL": "gpt-5",
         }
         assert calibration.reviewer_override_from_env(env) == ("codex", "gpt-5")
 
     def test_override_from_env_treats_empty_as_unset(self) -> None:
         env = {
-            "RALPH_CALIBRATION_REVIEWER_AGENT_TYPE": "",
-            "RALPH_CALIBRATION_REVIEWER_MODEL": "",
+            "KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE": "",
+            "KSTRL_CALIBRATION_REVIEWER_MODEL": "",
         }
         assert calibration.reviewer_override_from_env(env) == (None, None)
         assert calibration.reviewer_override_from_env({}) == (None, None)

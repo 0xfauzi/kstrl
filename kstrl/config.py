@@ -1,16 +1,13 @@
-"""Configuration handling for Ralph."""
+"""Configuration handling for kstrl."""
 
 from __future__ import annotations
 
 import os
 import re
 import tomllib
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-from kstrl import envcompat
 
 
 def _parse_bool(value: str | None) -> bool:
@@ -37,7 +34,7 @@ def _resolve_path(value: str, root_dir: Path) -> Path:
 
 @dataclass
 class KstrlConfig:
-    """Configuration for Ralph agentic loop."""
+    """Configuration for the kstrl agentic loop."""
 
     max_iterations: int = 10
     prompt_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prompt.md"))
@@ -52,7 +49,7 @@ class KstrlConfig:
 
     # Branch config - None means use PRD, "" means skip
     kstrl_branch: str | None = None
-    kstrl_branch_explicit: bool = False  # Was RALPH_BRANCH env var set?
+    kstrl_branch_explicit: bool = False  # Was KSTRL_BRANCH env var set?
     auto_checkout: bool = True
 
     # Agent config
@@ -91,7 +88,7 @@ class KstrlConfig:
 
     @classmethod
     def from_toml(cls, toml_path: Path, root_dir: Path | None = None) -> KstrlConfig:
-        """Load configuration from a ralph.toml file (no env overlay)."""
+        """Load configuration from a kstrl.toml file (no env overlay)."""
         if root_dir is None:
             root_dir = toml_path.parent if toml_path.is_absolute() else Path.cwd()
         config = cls()
@@ -112,7 +109,7 @@ class KstrlConfig:
         """Load configuration with precedence: env > toml > dataclass defaults.
 
         If ``toml_path`` is omitted, ``<root_dir>/kstrl.toml`` is
-        auto-discovered (legacy ``ralph.toml`` honored with a warning).
+        auto-discovered.
         Missing TOML file is fine (defaults are used). Malformed TOML raises.
         """
         if root_dir is None:
@@ -144,32 +141,17 @@ class KstrlConfig:
         return errors
 
 
-_warned_legacy_toml: set[Path] = set()
+CONFIG_FILE_NAME = "kstrl.toml"
 
 
 def resolve_config_file(root_dir: Path) -> Path:
-    """Return the config file for ``root_dir``: kstrl.toml, else ralph.toml.
+    """Return the config file for ``root_dir``.
 
-    ``kstrl.toml`` is the primary name after the rename. When only the
-    legacy ``ralph.toml`` exists it is honored for one release with a
-    once-per-root DeprecationWarning telling the operator to
-    ``mv ralph.toml kstrl.toml``. When neither exists the primary path
-    is returned (loaders no-op on a missing file).
+    Resolving the name in one place keeps it from drifting between the
+    loaders. The path is returned whether or not it exists; loaders
+    no-op on a missing file.
     """
-    primary = root_dir / "kstrl.toml"
-    if primary.exists():
-        return primary
-    legacy = root_dir / "ralph.toml"
-    if legacy.exists():
-        if root_dir not in _warned_legacy_toml:
-            _warned_legacy_toml.add(root_dir)
-            warnings.warn(
-                f"{legacy} is deprecated; rename it: mv ralph.toml kstrl.toml",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return legacy
-    return primary
+    return root_dir / CONFIG_FILE_NAME
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
@@ -182,10 +164,10 @@ def _load_toml(path: Path) -> dict[str, Any]:
 
 
 def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
-    """Read a named section from a ralph.toml file.
+    """Read a named section from a kstrl.toml file.
 
     Shared by every config dataclass that has a corresponding
-    ``[section]`` in the canonical ralph.toml. Returns ``{}`` when the
+    ``[section]`` in the canonical kstrl.toml. Returns ``{}`` when the
     file or the section is absent; raises ``ValueError`` with a clear
     message when the file is malformed so every loader behaves
     consistently. Sub-section keys that are not dicts (e.g. someone
@@ -204,7 +186,7 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
 def _apply_toml_overrides(
     config: KstrlConfig, toml_path: Path, root_dir: Path,
 ) -> None:
-    """Mutate config in place from a ralph.toml file.
+    """Mutate config in place from a kstrl.toml file.
 
     Maps the documented section structure (agent, run, paths, git, ui) onto
     the flat KstrlConfig dataclass. Unknown keys are silently ignored.
@@ -260,7 +242,7 @@ def _apply_toml_overrides(
             # Only treat the TOML branch as an explicit override when it
             # is non-empty. `branch = ""` in the shipped example means
             # "no override, fall back to PRD branchName", whereas the env
-            # var `RALPH_BRANCH=""` (handled below) keeps its historical
+            # var `KSTRL_BRANCH=""` (handled below) keeps its historical
             # meaning of "explicit skip".
             if isinstance(branch, str) and branch:
                 config.kstrl_branch = branch
@@ -298,29 +280,29 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
         config.interactive = _parse_bool(os.environ.get("INTERACTIVE"))
     if "ALLOWED_PATHS" in os.environ:
         config.allowed_paths = _parse_paths(os.environ.get("ALLOWED_PATHS"))
-    if envcompat.contains("KSTRL_BRANCH"):
-        config.kstrl_branch = envcompat.require("KSTRL_BRANCH")
+    if "KSTRL_BRANCH" in os.environ:
+        config.kstrl_branch = os.environ["KSTRL_BRANCH"]
         config.kstrl_branch_explicit = True
-    if envcompat.contains("KSTRL_AUTO_CHECKOUT"):
-        config.auto_checkout = _parse_bool(envcompat.get("KSTRL_AUTO_CHECKOUT"))
+    if "KSTRL_AUTO_CHECKOUT" in os.environ:
+        config.auto_checkout = _parse_bool(os.environ.get("KSTRL_AUTO_CHECKOUT"))
     if "AGENT_CMD" in os.environ:
         config.agent_cmd = os.environ["AGENT_CMD"]
     if "MODEL" in os.environ:
         config.model = os.environ["MODEL"]
     if "MODEL_REASONING_EFFORT" in os.environ:
         config.model_reasoning_effort = os.environ["MODEL_REASONING_EFFORT"]
-    if envcompat.contains("KSTRL_AGENT_TYPE"):
-        config.agent_type = envcompat.require("KSTRL_AGENT_TYPE")
-    if envcompat.contains("KSTRL_AGENT_BUDGET_USD"):
+    if "KSTRL_AGENT_TYPE" in os.environ:
+        config.agent_type = os.environ["KSTRL_AGENT_TYPE"]
+    if "KSTRL_AGENT_BUDGET_USD" in os.environ:
         try:
-            budget_value = float(envcompat.require("KSTRL_AGENT_BUDGET_USD"))
+            budget_value = float(os.environ["KSTRL_AGENT_BUDGET_USD"])
         except ValueError:
             budget_value = 0.0
         if budget_value > 0:
             config.agent_budget_usd = budget_value
-    if envcompat.contains("KSTRL_UI"):
-        config.ui_mode = envcompat.require("KSTRL_UI")
+    if "KSTRL_UI" in os.environ:
+        config.ui_mode = os.environ["KSTRL_UI"]
     if "NO_COLOR" in os.environ:
         config.no_color = True
-    if envcompat.contains("KSTRL_ASCII"):
-        config.ascii_only = _parse_bool(envcompat.get("KSTRL_ASCII"))
+    if "KSTRL_ASCII" in os.environ:
+        config.ascii_only = _parse_bool(os.environ.get("KSTRL_ASCII"))

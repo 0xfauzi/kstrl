@@ -38,7 +38,7 @@ from tests.spine_utils import (
     component,
     factory_config,
     git,
-    init_ralph_repo,
+    init_kstrl_repo,
     make_manifest,
 )
 
@@ -116,7 +116,7 @@ def _run(
         PlainUI(no_color=True),
         root,
         # Outside the repo so the byte-identical checkout assertions
-        # cover everything except ralph's declared state dirs.
+        # cover everything except kstrl's declared state dirs.
         manifest_path=progress_path.parent / "manifest.json",
     )
 
@@ -151,9 +151,9 @@ class TestContractPassingTier:
         contract test runs in a temp worktree that REALLY contains the
         merged branches - tier 0 sees alpha.txt only, tier 1 sees
         alpha.txt (prior branch) plus beta.txt - and the run exits 0."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"))
+        init_kstrl_repo(root, ("alpha", "beta"))
         manifest = make_manifest(
             [component("alpha"), component("beta", ["alpha"])]
         )
@@ -209,9 +209,9 @@ class TestContractConflictedTier:
         max_retries=0 (wave-2: recorded loudly, nonzero exit), and the
         user's checkout is byte-identical afterward - the conflict
         happened ONLY in a temp worktree that no longer exists."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"))
+        init_kstrl_repo(root, ("alpha", "beta"))
         manifest = make_manifest([component("alpha"), component("beta")])
         before = _checkout_state(root)
         progress_path = tmp_path / "progress.jsonl"
@@ -256,9 +256,9 @@ class TestContractBreakerRerun:
         carries the contract failure output, its engineer re-runs and
         fixes the branch, and the second contract pass completes the
         run (R0.3: the promised breaker retry actually runs)."""
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"))
+        init_kstrl_repo(root, ("alpha", "beta"))
         manifest = make_manifest([component("alpha"), component("beta")])
         cap_dir = tmp_path / "prompts"
         cap_dir.mkdir()

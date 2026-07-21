@@ -111,7 +111,7 @@ ACCEPTED_BRANCH_NAMES = [
     "main",
     "master",
     "develop",
-    "kstrl/run",  # ralph run default
+    "kstrl/run",  # ks run default
     "kstrl/factory/auth-service",
     "kstrl/factory/comp-a",
     "kstrl/auth-feature",

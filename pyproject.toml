@@ -60,7 +60,6 @@ Issues = "https://github.com/0xfauzi/kstrl/issues"
 [project.scripts]
 ks = "kstrl.cli:main"
 kstrl = "kstrl.cli:main"
-ralph = "kstrl.cli:deprecated_ralph_main"
 
 [dependency-groups]
 dev = [
@@ -133,11 +132,10 @@ ignore = []
 [tool.mypy]
 python_version = "3.11"
 strict = true
-# `files` is consulted by `uv run mypy` (no args) and by the Ralph
+# `files` is consulted by `uv run mypy` (no args) and by the kstrl
 # factory's new smart-default typecheck command (verify._default_typecheck_command).
 # Listing kstrl here keeps CLAUDE.md's stated typecheck contract
 # (`uv run mypy kstrl/ --strict`) and `uv run mypy` invoked from the
 # factory's verify phase in lockstep -- no command-line override needed.
-# Legacy src/ralph (single-component loop + Textual TUI) was deleted in
-# the legacy-purge cleanup; kstrl is now the only Python package.
+# kstrl is the only Python package.
 files = ["kstrl"]

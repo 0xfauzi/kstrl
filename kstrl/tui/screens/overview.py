@@ -42,7 +42,7 @@ class CheckpointBanner(Static):
         self.display = True
         names = ", ".join(sorted(open_components))
         hint = (
-            "answer in the `ralph factory` terminal"
+            "answer in the `ks factory` terminal"
             if observe_only else "press c to answer"
         )
         self.update(f"◆ checkpoint pending: {names} - {hint}")

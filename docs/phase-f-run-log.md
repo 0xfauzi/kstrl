@@ -1,9 +1,7 @@
 # Phase F: Real-world Validation Run Log
 
-> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
-
 Spec: `examples/file-upload-spec.md`
-Sandbox: `/tmp/ralph-phase-f-sandbox/`
+Sandbox: `/tmp/kstrl-phase-f-sandbox/`
 Date: 2026-05-27
 Roadmap item: F2-F3 (run + capture)
 
@@ -20,9 +18,9 @@ Skipping the implementation pass is also recorded in the tracker as an explicit 
 ## What we ran
 
 ```bash
-uv run python -m ralph_py factory \
-  --spec /tmp/ralph-phase-f-sandbox/scripts/ralph/spec.md \
-  --root /tmp/ralph-phase-f-sandbox \
+uv run python -m kstrl factory \
+  --spec /tmp/kstrl-phase-f-sandbox/scripts/kstrl/spec.md \
+  --root /tmp/kstrl-phase-f-sandbox \
   --project-name file-upload \
   --yes \
   --no-prs --review-mode skip --security-mode skip --contract-check skip --no-verify \
@@ -30,7 +28,7 @@ uv run python -m ralph_py factory \
   --ui plain --no-color
 ```
 
-Captured stdout at `/tmp/ralph-phase-f-decompose.log` (403 lines).
+Captured stdout at `/tmp/kstrl-phase-f-decompose.log` (403 lines).
 
 ## What the architect found
 
@@ -97,8 +95,8 @@ This file is the deliverable artifact pending F4.
 The calibration suite from Phase D (`tests/test_calibration.py`) is ready. To capture a baseline:
 
 ```bash
-RALPH_RUN_CALIBRATION=1 \
-RALPH_CALIBRATION_MODEL=haiku \
+KSTRL_RUN_CALIBRATION=1 \
+KSTRL_CALIBRATION_MODEL=haiku \
 uv run pytest tests/test_calibration.py -v
 ```
 

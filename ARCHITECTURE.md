@@ -231,10 +231,6 @@ Everything lives under `.kstrl/` at the project root (gitignored):
 | `.kstrl/snapshots/` | Approved-fixture output snapshots |
 | `.kstrl/factory.lock` | Run-level flock: a second invocation on the same root refuses to start |
 
-A repo that still has a pre-rename `.ralph/` directory gets a one-time
-warning with the migration command (`mv .ralph .kstrl`); state is never
-auto-moved.
-
 ## The fixtures sandbox
 
 Approved fixtures (README: "Approved fixtures") are the independent

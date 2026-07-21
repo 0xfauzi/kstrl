@@ -313,7 +313,7 @@ def run_feature(
         ))
         decided_by = "operator" if response.answered else "auto"
         if not response.answered or response.choice != 0:
-            ui.info("Amend the understand file and re-run `ralph feature`.")
+            ui.info("Amend the understand file and re-run `ks feature`.")
             emit(CheckpointResolved(
                 component=component, kind="feature_gate",
                 decision="quit_to_amend", decided_by=decided_by,

@@ -48,10 +48,9 @@ denied writes), so the operator opts in per project.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
-
-from kstrl import envcompat
 
 # File-tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
@@ -85,9 +84,9 @@ class SandboxConfig:
         from kstrl.config import _parse_bool
 
         return cls(
-            enabled=_parse_bool(envcompat.get("KSTRL_SANDBOX_ENABLED")),
+            enabled=_parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED")),
             allow_network=_parse_bool(
-                envcompat.get("KSTRL_SANDBOX_ALLOW_NETWORK")
+                os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
             ),
         )
 
@@ -95,7 +94,7 @@ class SandboxConfig:
     def load(cls, root_dir: Path | None = None) -> SandboxConfig:
         """Load sandbox config with precedence: env > toml > defaults.
 
-        Reads the ``[sandbox]`` section from ``<root_dir>/ralph.toml``.
+        Reads the ``[sandbox]`` section from ``<root_dir>/kstrl.toml``.
         """
         from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 
@@ -108,11 +107,11 @@ class SandboxConfig:
             enabled = bool(section["enabled"])
         if "allow_network" in section:
             allow_network = bool(section["allow_network"])
-        if envcompat.contains("KSTRL_SANDBOX_ENABLED"):
-            enabled = _parse_bool(envcompat.get("KSTRL_SANDBOX_ENABLED"))
-        if envcompat.contains("KSTRL_SANDBOX_ALLOW_NETWORK"):
+        if "KSTRL_SANDBOX_ENABLED" in os.environ:
+            enabled = _parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED"))
+        if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
             allow_network = _parse_bool(
-                envcompat.get("KSTRL_SANDBOX_ALLOW_NETWORK")
+                os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
             )
         return cls(enabled=enabled, allow_network=allow_network)
 
@@ -122,7 +121,7 @@ def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:
 
     ``network_access`` is ALWAYS passed explicitly when the sandbox is
     enabled: the operator's global ``~/.codex/config.toml`` may carry
-    its own value, and the CLI ``-c`` override is the only way Ralph's
+    its own value, and the CLI ``-c`` override is the only way kstrl's
     per-project intent reliably wins (measured - see module docstring).
     """
     if config is None or not config.enabled:

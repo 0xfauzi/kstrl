@@ -1,4 +1,4 @@
-"""Init command for Ralph - initialize harness in a project."""
+"""Init command for kstrl - initialize harness in a project."""
 
 from __future__ import annotations
 
@@ -213,7 +213,7 @@ This file captures feature-specific understanding tied to one PRD.
 (New notes append below; keep older notes for history.)
 """
 
-DEFAULT_UNDERSTAND_PROMPT = """# Ralph Codebase Understanding Instructions (Read-Only)
+DEFAULT_UNDERSTAND_PROMPT = """# kstrl Codebase Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
 
@@ -293,7 +293,7 @@ If there are **no remaining unchecked topics** in the Next Topics checklist
 Otherwise end normally.
 """
 
-DEFAULT_FEATURE_UNDERSTAND_PROMPT = """# Ralph Feature Understanding Instructions (Read-Only)
+DEFAULT_FEATURE_UNDERSTAND_PROMPT = """# kstrl Feature Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
 
@@ -363,10 +363,10 @@ Otherwise end normally.
 """
 
 
-# Scaffolded ralph.toml (R2.1): the project's discoverable config
+# Scaffolded kstrl.toml (R2.1): the project's discoverable config
 # surface. Every key is commented out and shows its built-in default, so
 # scaffolding changes no effective value; uncommenting a line is the
-# explicit opt-in. Content mirrors ralph.toml.example trimmed to keys the
+# explicit opt-in. Content mirrors kstrl.toml.example trimmed to keys the
 # loaders actually read, plus the [timeout] section wired in R0.1.
 DEFAULT_KSTRL_TOML = """\
 # kstrl configuration (scaffolded by `ks init`).
@@ -488,7 +488,7 @@ DEFAULT_KSTRL_TOML = """\
 
 
 def run_init(directory: Path, ui: UI) -> int:
-    """Initialize Ralph harness in a project directory.
+    """Initialize kstrl harness in a project directory.
 
     Args:
         directory: Target project directory
@@ -575,13 +575,13 @@ def run_init(directory: Path, ui: UI) -> int:
     ui.section("Next steps")
     ui.info("1. Edit scripts/kstrl/prompt.md")
     ui.info("2. Add user stories to scripts/kstrl/prd.json")
-    ui.info("3. Run: ralph run [iterations]")
+    ui.info("3. Run: ks run [iterations]")
     ui.info("")
     ui.info("For codebase understanding mode:")
-    ui.info("  ralph understand [iterations]")
+    ui.info("  ks understand [iterations]")
     ui.info("")
     ui.info("For feature understanding mode:")
-    ui.info("  ralph feature [iterations] --prd scripts/kstrl/feature/<feature_name>/prd.json")
+    ui.info("  ks feature [iterations] --prd scripts/kstrl/feature/<feature_name>/prd.json")
 
     return 0
 

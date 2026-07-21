@@ -26,11 +26,11 @@ from kstrl.factory import FactoryResult
 from kstrl.knowledge import Fact, KnowledgeConfig, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.conftest import (
-    RALPH_ENV_PREFIXES,
+    KSTRL_ENV_PREFIXES,
     REPO_ROOT,
-    _clear_ralph_env,
+    _clear_kstrl_env,
     describe_snapshot_diff,
-    snapshot_ralph_dir,
+    snapshot_kstrl_dir,
 )
 
 _RUN_MARKER = "run-isolation-proof"
@@ -61,7 +61,7 @@ def _make_manifest_with_one_component() -> Manifest:
 
 
 class TestRedirect:
-    """The autouse isolate_ralph_state fixture redirects default writes."""
+    """The autouse isolate_kstrl_state fixture redirects default writes."""
 
     def test_cwd_is_redirected_to_tmp_path(self, tmp_path: Path) -> None:
         assert Path.cwd() == tmp_path
@@ -125,24 +125,24 @@ class TestRedirect:
         assert any(component_dir.rglob("*.md"))
 
     def test_ambient_config_env_is_cleared_for_every_test(self) -> None:
-        for prefix in RALPH_ENV_PREFIXES:
+        for prefix in KSTRL_ENV_PREFIXES:
             leaked = [var for var in os.environ if var.startswith(prefix)]
             assert leaked == [], f"ambient {prefix}* env leaked into test"
 
-    def test_clear_ralph_env_covers_every_documented_family(
+    def test_clear_kstrl_env_covers_every_documented_family(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        family_probes = [prefix + "PROBE" for prefix in RALPH_ENV_PREFIXES]
+        family_probes = [prefix + "PROBE" for prefix in KSTRL_ENV_PREFIXES]
         for var in family_probes:
             monkeypatch.setenv(var, "leaked")
-        monkeypatch.setenv("RALPH_BRANCH", "leaked")  # legacy exact name
+        monkeypatch.setenv("KSTRL_BRANCH", "leaked")  # legacy exact name
         monkeypatch.setenv("UNRELATED_PROBE", "kept")
 
         inner = pytest.MonkeyPatch()
         try:
-            _clear_ralph_env(inner)
-            for var in [*family_probes, "RALPH_BRANCH"]:
-                assert var not in os.environ, f"{var} survived _clear_ralph_env"
+            _clear_kstrl_env(inner)
+            for var in [*family_probes, "KSTRL_BRANCH"]:
+                assert var not in os.environ, f"{var} survived _clear_kstrl_env"
             assert os.environ["UNRELATED_PROBE"] == "kept"
         finally:
             inner.undo()
@@ -155,21 +155,21 @@ class TestGuardHelpers:
         self, tmp_path: Path
     ) -> None:
         missing = tmp_path / "nope" / ".kstrl"
-        assert snapshot_ralph_dir(missing) == snapshot_ralph_dir(missing) == {}
+        assert snapshot_kstrl_dir(missing) == snapshot_kstrl_dir(missing) == {}
 
     def test_detects_created_modified_and_deleted_entries(
         self, tmp_path: Path
     ) -> None:
-        ralph_dir = tmp_path / ".kstrl"
-        ralph_dir.mkdir()
-        (ralph_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
-        (ralph_dir / "experiments.tsv").write_text("header\n")
-        before = snapshot_ralph_dir(ralph_dir)
+        kstrl_dir = tmp_path / ".kstrl"
+        kstrl_dir.mkdir()
+        (kstrl_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
+        (kstrl_dir / "experiments.tsv").write_text("header\n")
+        before = snapshot_kstrl_dir(kstrl_dir)
 
-        (ralph_dir / "evolution.jsonl").write_text('{"run_id": "junk"}\n')
-        (ralph_dir / "experiments.tsv").unlink()
-        (ralph_dir / "proposals").mkdir()
-        after = snapshot_ralph_dir(ralph_dir)
+        (kstrl_dir / "evolution.jsonl").write_text('{"run_id": "junk"}\n')
+        (kstrl_dir / "experiments.tsv").unlink()
+        (kstrl_dir / "proposals").mkdir()
+        after = snapshot_kstrl_dir(kstrl_dir)
 
         assert before != after
         diff = describe_snapshot_diff(before, after)
@@ -178,13 +178,13 @@ class TestGuardHelpers:
         assert "created:  proposals" in diff
 
     def test_identical_content_compares_equal(self, tmp_path: Path) -> None:
-        ralph_dir = tmp_path / ".kstrl"
-        ralph_dir.mkdir()
-        (ralph_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
-        before = snapshot_ralph_dir(ralph_dir)
+        kstrl_dir = tmp_path / ".kstrl"
+        kstrl_dir.mkdir()
+        (kstrl_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
+        before = snapshot_kstrl_dir(kstrl_dir)
         # Rewrite the same bytes: mtime moves, content does not.
-        (ralph_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
-        assert snapshot_ralph_dir(ralph_dir) == before
+        (kstrl_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
+        assert snapshot_kstrl_dir(kstrl_dir) == before
 
 
 class TestGuardEndToEnd:
@@ -221,7 +221,7 @@ class TestGuardEndToEnd:
         )
         return repo
 
-    def test_guard_fails_the_run_when_a_test_mutates_ralph_dir(
+    def test_guard_fails_the_run_when_a_test_mutates_kstrl_dir(
         self, tmp_path: Path, guarded_repo: Path
     ) -> None:
         result = self._run_nested_pytest(
@@ -242,7 +242,7 @@ class TestGuardEndToEnd:
         assert "mutated the repository's real .kstrl/" in result.stdout
         assert "modified: evolution.jsonl" in result.stdout
 
-    def test_guard_passes_a_run_that_leaves_ralph_dir_alone(
+    def test_guard_passes_a_run_that_leaves_kstrl_dir_alone(
         self, tmp_path: Path, guarded_repo: Path
     ) -> None:
         result = self._run_nested_pytest(

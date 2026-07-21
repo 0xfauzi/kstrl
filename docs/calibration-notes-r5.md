@@ -26,7 +26,7 @@ their detection or FP cost; adding unmeasurable taxonomy would violate the
 "calibration over claims" principle.
 
 Harness-side (code, not prompt): each of the four prompt builders substitutes
-a fresh `RALPH-DATA-<32 hex>` token per build
+a fresh `KSTRL-DATA-<32 hex>` token per build
 (`decompose.generate_data_delimiter`, 128 random bits), so in-data text can
 never forge a section boundary. Unit-tested in
 `tests/test_prompt_injection_guard.py` (delimiters present, random per build,
@@ -74,12 +74,12 @@ The old prompts live on `origin/main`; the two injection fixtures only exist
 on this branch, so copy them into a baseline worktree:
 
 ```bash
-git worktree add /tmp/ralph-cal-base origin/main
+git worktree add /tmp/kstrl-cal-base origin/main
 cp tests/adversarial_fixtures/concerns/04_injection_empty_output.* \
-   /tmp/ralph-cal-base/tests/adversarial_fixtures/concerns/
+   /tmp/kstrl-cal-base/tests/adversarial_fixtures/concerns/
 cp tests/adversarial_fixtures/security/06_injection_empty_output.* \
-   /tmp/ralph-cal-base/tests/adversarial_fixtures/security/
-cd /tmp/ralph-cal-base
+   /tmp/kstrl-cal-base/tests/adversarial_fixtures/security/
+cd /tmp/kstrl-cal-base
 # -k filter: the copied fixtures break origin/main's fixture-count sanity
 # checks (they expect 5 security / 3 concern fixtures); run only the roles.
 KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
@@ -87,7 +87,7 @@ KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku \
   -k "security_role or reviewer_role or architect"
 ```
 
-Repeat 3x. When done: `git worktree remove /tmp/ralph-cal-base`.
+Repeat 3x. When done: `git worktree remove /tmp/kstrl-cal-base`.
 
 The before-runs measure two things at once: (a) the pre-change detection
 baseline on the original 11 fixtures, and (b) how often the OLD prompts fall

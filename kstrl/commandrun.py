@@ -68,7 +68,7 @@ def start_heartbeat(
                 elapsed_seconds=round(time.monotonic() - started, 1),
             ))
 
-    thread = threading.Thread(target=_beat, daemon=True, name="ralph-heartbeat")
+    thread = threading.Thread(target=_beat, daemon=True, name="kstrl-heartbeat")
     thread.start()
 
     def _stop() -> None:

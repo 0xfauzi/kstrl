@@ -3,7 +3,7 @@
 ## Register
 
 product - the design serves the task. kstrl's visual surfaces (the
-Textual dashboard, `ralph dash`, plain CLI output) are operator tools:
+Textual dashboard, `ks dash`, plain CLI output) are operator tools:
 the user is mid-task, watching an autonomous factory build software.
 
 ## Who uses it
@@ -42,4 +42,4 @@ novelty.
 3. Numbers are honest: lower-bound markers ship on every surface that
    shows spend (H4).
 4. The dashboard is a view; the files are the record. Nothing may be
-   shown that is not reconstructable from `.ralph/runs/<run_id>/`.
+   shown that is not reconstructable from `.kstrl/runs/<run_id>/`.

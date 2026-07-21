@@ -20,7 +20,7 @@ from kstrl.ui.plain import PlainUI
 
 # (method, args) covering all 14 protocol methods' render paths.
 _CALLS: list[tuple[str, tuple[str, ...]]] = [
-    ("title", ("Ralph",)),
+    ("title", ("kstrl",)),
     ("section", ("Startup",)),
     ("subsection", ("Git / Branch",)),
     ("hr", ()),

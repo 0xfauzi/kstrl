@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
@@ -85,10 +83,10 @@ class TestCliValidation:
         the verification phase so the test stays fast and doesn't depend
         on real git/agent state."""
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = project / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
@@ -106,8 +104,8 @@ class TestCliValidation:
                 "--no-verify",
             ],
             env={
-                "PROMPT_FILE": str(ralph_dir / "prompt.md"),
-                "PRD_FILE": str(ralph_dir / "prd.json"),
+                "PROMPT_FILE": str(kstrl_dir / "prompt.md"),
+                "PRD_FILE": str(kstrl_dir / "prd.json"),
             },
         )
         # Either runs to completion (exit 0) or fails on the
@@ -118,11 +116,11 @@ class TestCliValidation:
 
     def test_understand_uses_root_option(self, tmp_path: Path, monkeypatch) -> None:
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "understand_prompt.md").write_text("test prompt")
-        (ralph_dir / "codebase_map.md").write_text("# Map\n")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = project / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "understand_prompt.md").write_text("test prompt")
+        (kstrl_dir / "codebase_map.md").write_text("# Map\n")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
@@ -145,11 +143,11 @@ class TestCliValidation:
 
     def test_feature_uses_root_option(self, tmp_path: Path, monkeypatch) -> None:
         project = tmp_path / "project"
-        ralph_dir = project / "scripts" / "kstrl"
-        feature_dir = ralph_dir / "feature" / "demo"
+        kstrl_dir = project / "scripts" / "kstrl"
+        feature_dir = kstrl_dir / "feature" / "demo"
         feature_dir.mkdir(parents=True)
-        (ralph_dir / "feature_understand_prompt.md").write_text("test prompt")
-        (ralph_dir / "codebase_map.md").write_text("# Map\n")
+        (kstrl_dir / "feature_understand_prompt.md").write_text("test prompt")
+        (kstrl_dir / "codebase_map.md").write_text("# Map\n")
         (feature_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
@@ -218,19 +216,3 @@ class TestDecomposeBlockerOutput:
         assert "spec is too vague" in result.output
         assert str(artifact) in result.output
 
-
-class TestDeprecatedRalphShim:
-    def test_ralph_entry_point_warns_and_runs(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """The rename shim (`ralph` console script) warns on stderr and
-        still dispatches to the real CLI."""
-        from kstrl.cli import deprecated_ralph_main
-
-        monkeypatch.setattr(sys, "argv", ["ralph", "--help"])
-        with pytest.raises(SystemExit) as excinfo:
-            deprecated_ralph_main()
-        assert excinfo.value.code == 0
-        captured = capsys.readouterr()
-        assert "deprecated" in captured.err
-        assert "kstrl" in captured.out

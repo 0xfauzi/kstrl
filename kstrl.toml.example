@@ -41,7 +41,7 @@ scheduler_backstop_margin = 60.0   # extra slack before the scheduler declares a
 
 # No-progress circuit breaker (R7.5): halt the engineer loop loudly when N
 # consecutive iterations produce an unchanged diff hash AND an unchanged
-# test-failure signature (the community's most-repeated Ralph-loop fix).
+# test-failure signature (the community's most-repeated kstrl-loop fix).
 # The stall probe only runs on iterations whose diff hash already matched;
 # with no test_command the breaker is diff-hash only.
 [breaker]
@@ -53,7 +53,7 @@ test_timeout = 300.0               # seconds before the stall probe is killed
 # adapters (a custom agent command has no generic sandbox surface and is
 # refused loudly). Write scope is the agent's worktree by construction;
 # allow_network re-opens outbound network inside the sandbox.
-# Measured mappings (see ralph_py/sandbox.py): codex gets
+# Measured mappings (see kstrl/sandbox.py): codex gets
 # --sandbox workspace-write + an explicit network_access override;
 # claude gets --settings '{"sandbox": ...}' and, when network is denied,
 # runs without --dangerously-skip-permissions (the domain allowlist is a
@@ -166,9 +166,9 @@ auto_propose = true                # generate proposals after each factory run
 auto_apply_computational = false   # auto-apply computational proposals
 
 # Run-milestone notification hooks (R3.2). Shell commands fired at most
-# once per run, with RALPH_NOTIFY_EVENT (run_complete | first_failure |
-# merge_pending), RALPH_NOTIFY_RUN_ID, RALPH_NOTIFY_PROJECT,
-# RALPH_NOTIFY_COMPONENT and RALPH_NOTIFY_DETAIL set in their environment.
+# once per run, with KSTRL_NOTIFY_EVENT (run_complete | first_failure |
+# merge_pending), KSTRL_NOTIFY_RUN_ID, KSTRL_NOTIFY_PROJECT,
+# KSTRL_NOTIFY_COMPONENT and KSTRL_NOTIFY_DETAIL set in their environment.
 [notify]
 on_complete = ""                   # e.g. "printf '\\a'" for a terminal bell
 on_first_failure = ""              # e.g. a curl webhook one-liner
@@ -179,12 +179,12 @@ hook_timeout = 30.0                # seconds before a hook command is killed
 # (user stories as a checklist), files non-blocker spec issues into
 # Triage, carries the issue identifier in branch names, and adds a
 # "Fixes <ID>" trailer to PR bodies so Linear's GitHub integration
-# drives status transitions with zero API calls from ralph. The token
+# drives status transitions with zero API calls from kstrl. The token
 # is read from the env var named by token_env and never stored here.
 [linear]
 enabled = false
 team_id = ""                       # Linear team UUID (required when enabled)
-token_env = "RALPH_LINEAR_TOKEN"   # env var holding the API key / OAuth token
+token_env = "KSTRL_LINEAR_TOKEN"   # env var holding the API key / OAuth token
 auth_mode = "auto"                 # auto | api_key | oauth
 api_url = "https://api.linear.app/graphql"
 dry_run = false                    # log mutations instead of sending them

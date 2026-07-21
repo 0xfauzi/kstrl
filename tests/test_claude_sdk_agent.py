@@ -13,7 +13,7 @@ Covers the seams that do NOT need a subprocess:
   deny shape, non-guarded tools untouched);
 - ResultMessage -> contract-record emission using the real SDK types;
 - registration: get_agent dispatch, R7.1 family mapping + identity,
-  config plumb ([agent] budget_usd + RALPH_AGENT_BUDGET_USD), cli
+  config plumb ([agent] budget_usd + KSTRL_AGENT_BUDGET_USD), cli
   preflight.
 
 The kill semantics live in test_timeout_enforcement.py (R0.1 battery,
@@ -406,7 +406,7 @@ class TestRegistration:
         ) == "claude-sdk"
 
     def test_toml_budget_usd(self, tmp_path: Path) -> None:
-        toml = tmp_path / "ralph.toml"
+        toml = tmp_path / "kstrl.toml"
         toml.write_text(
             '[agent]\ntype = "claude-sdk"\nbudget_usd = 2.5\n'
         )
@@ -418,7 +418,7 @@ class TestRegistration:
     def test_toml_budget_rejects_bool_and_nonpositive(
         self, tmp_path: Path,
     ) -> None:
-        toml = tmp_path / "ralph.toml"
+        toml = tmp_path / "kstrl.toml"
         toml.write_text("[agent]\nbudget_usd = true\n")
         config = KstrlConfig()
         _apply_toml_overrides(config, toml, tmp_path)
@@ -430,7 +430,7 @@ class TestRegistration:
     def test_env_budget_overrides(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_AGENT_BUDGET_USD", "3.75")
+        monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", "3.75")
         config = KstrlConfig()
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd == 3.75
@@ -438,7 +438,7 @@ class TestRegistration:
     def test_env_budget_ignores_garbage(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_AGENT_BUDGET_USD", "lots")
+        monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", "lots")
         config = KstrlConfig()
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd is None

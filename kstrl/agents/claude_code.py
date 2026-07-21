@@ -1,4 +1,4 @@
-"""Claude Code CLI agent for Ralph."""
+"""Claude Code CLI agent for kstrl."""
 
 from __future__ import annotations
 
@@ -258,7 +258,7 @@ def _parse_stream_event(raw_line: str) -> Iterator[str]:
     """Parse a single stream-json event line into human-readable output.
 
     Extracts tool calls, tool results, and text content from the JSON
-    event stream so the ralph UI can display agent progress in real-time.
+    event stream so the kstrl UI can display agent progress in real-time.
     """
     try:
         evt = json.loads(raw_line)

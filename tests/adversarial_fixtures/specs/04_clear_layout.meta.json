@@ -9,7 +9,6 @@
       "pyproject.toml",
       "package.json",
       "kstrl/",
-      "src/ralph/",
       ".github/"
     ],
     "includes_test_root_prefix": "tests/",

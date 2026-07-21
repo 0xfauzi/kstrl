@@ -53,9 +53,9 @@ class TestBreakerConfig:
         assert config.test_timeout == 300.0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_BREAKER_ITERATIONS", "5")
-        monkeypatch.setenv("RALPH_BREAKER_TEST_CMD", "pytest -q")
-        monkeypatch.setenv("RALPH_BREAKER_TEST_TIMEOUT", "60")
+        monkeypatch.setenv("KSTRL_BREAKER_ITERATIONS", "5")
+        monkeypatch.setenv("KSTRL_BREAKER_TEST_CMD", "pytest -q")
+        monkeypatch.setenv("KSTRL_BREAKER_TEST_TIMEOUT", "60")
         config = BreakerConfig.from_env()
         assert config.no_progress_iterations == 5
         assert config.test_command == "pytest -q"
@@ -64,7 +64,7 @@ class TestBreakerConfig:
     def test_load_toml_and_env_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[breaker]\n"
             "no_progress_iterations = 7\n"
             'test_command = "toml-cmd"\n'
@@ -74,7 +74,7 @@ class TestBreakerConfig:
         assert config.no_progress_iterations == 7
         assert config.test_command == "toml-cmd"
         assert config.test_timeout == 120.0
-        monkeypatch.setenv("RALPH_BREAKER_ITERATIONS", "2")
+        monkeypatch.setenv("KSTRL_BREAKER_ITERATIONS", "2")
         config = BreakerConfig.load(tmp_path)
         assert config.no_progress_iterations == 2
         assert config.test_command == "toml-cmd"
@@ -194,13 +194,13 @@ class _ScriptedAgent:
 
 
 def _loop_config(root: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
     return KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=ralph_dir / "prompt.md",
-        prd_file=ralph_dir / "prd.json",
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
         sleep_seconds=0,
         kstrl_branch="",
         kstrl_branch_explicit=True,

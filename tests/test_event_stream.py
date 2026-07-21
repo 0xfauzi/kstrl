@@ -8,7 +8,7 @@ contracts of the dual-write:
    projection of the v2 stream (same events, same order, same data) -
    the load-bearing regression net for every progress.jsonl consumer.
 3. fold(events.jsonl) agrees with summarize_events(progress.jsonl) on
-   the shared fields, so ralph status can migrate in chunk 8 without
+   the shared fields, so ks status can migrate in chunk 8 without
    semantic drift.
 """
 
@@ -36,15 +36,15 @@ from kstrl.verify import VerifyConfig
 
 
 def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
-    (tmp_path / "ralph.toml").write_text("[knowledge]\nenabled = false\n")
+    (tmp_path / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
     for comp_id in component_ids:
-        feature_dir = ralph_dir / "feature" / comp_id
+        feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",

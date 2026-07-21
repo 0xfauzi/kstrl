@@ -31,7 +31,7 @@ from tests.spine_utils import (
     base_config,
     component,
     factory_config,
-    init_ralph_repo,
+    init_kstrl_repo,
     make_manifest,
 )
 
@@ -44,9 +44,9 @@ class TestRetryContextPropagation:
     def test_diff_scope_failure_details_reach_attempt_two_prompt(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        init_ralph_repo(root, (COMP,))
+        init_kstrl_repo(root, (COMP,))
         # PRD with an allowedPaths scope: only src/ may change.
         prd_path = root / "scripts" / "kstrl" / "feature" / COMP / "prd.json"
         prd_path.write_text(json.dumps({

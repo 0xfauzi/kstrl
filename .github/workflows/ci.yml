@@ -33,8 +33,8 @@ jobs:
         run: uv sync --frozen --all-extras --dev
 
       - name: pytest (fast tier)
-        # Calibration tests are gated behind RALPH_RUN_CALIBRATION=1 and
-        # codex live-contract tests behind RALPH_RUN_LIVE_CONTRACT=1;
+        # Calibration tests are gated behind KSTRL_RUN_CALIBRATION=1 and
+        # codex live-contract tests behind KSTRL_RUN_LIVE_CONTRACT=1;
         # both require real LLM access and stay skipped in CI by design,
         # so this job is network-free (R4.3).
         run: >

@@ -35,7 +35,7 @@ from tests.spine_utils import (
     component,
     factory_config,
     git,
-    init_ralph_repo,
+    init_kstrl_repo,
     logging_engineer,
     make_manifest,
     ran_components,
@@ -68,7 +68,7 @@ def _run_real(
 ) -> tuple[FactoryResult, list[str]]:
     """run_factory with the real logging engineer; returns the result and
     the component ids whose engineer subprocess actually ran."""
-    monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+    monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
     agent_log = tmp_path / "agent-calls.log"
     result = run_factory(
         manifest,
@@ -89,7 +89,7 @@ class TestSpinePrFailurePaths:
         run, both branches are REALLY pushed to the bare origin, both
         components complete."""
         root = tmp_path / "repo"
-        origin = init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        origin = init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         assert origin is not None
         manifest = _alpha_beta_manifest()
 
@@ -117,7 +117,7 @@ class TestSpinePrFailurePaths:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         # Break the push target AFTER the initial push so the
         # origin/main tracking ref exists but every push fails.
         git("remote", "set-url", "origin", str(tmp_path / "missing.git"),
@@ -143,7 +143,7 @@ class TestSpinePrFailurePaths:
     ) -> None:
         monkeypatch.setenv("GH_SPINE_CREATE", "fail")
         root = tmp_path / "repo"
-        origin = init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        origin = init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         assert origin is not None
         manifest = _alpha_beta_manifest()
 
@@ -172,7 +172,7 @@ class TestSpinePrFailurePaths:
         # (deliberate) merged-outcome rescue and complete the component.
         monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         manifest = _alpha_beta_manifest()
 
         result, ran = _run_real(root, tmp_path, monkeypatch, manifest)
@@ -194,7 +194,7 @@ class TestSpinePrFailurePaths:
     ) -> None:
         monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         manifest = _alpha_beta_manifest()
 
         result, ran = _run_real(root, tmp_path, monkeypatch, manifest)
@@ -222,7 +222,7 @@ class TestSpinePrFailurePaths:
         has since merged is re-polled to COMPLETED on the next run; its
         engineer does not re-run, and dependents then schedule."""
         root = tmp_path / "repo"
-        init_ralph_repo(root, ("alpha", "beta"), with_origin=True)
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         manifest = _alpha_beta_manifest()
         alpha = manifest.get_component("alpha")
         assert alpha is not None

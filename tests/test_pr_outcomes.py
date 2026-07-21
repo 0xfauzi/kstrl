@@ -64,27 +64,27 @@ def _prd_json() -> str:
 def _make_repo(
     tmp_path: Path, comp_ids: list[str], with_origin: bool = True,
 ) -> Path:
-    """Real git repo with committed ralph scaffolding and, optionally, a
+    """Real git repo with committed kstrl scaffolding and, optionally, a
     bare origin. The operator is parked on a side branch with an
     uncommitted file so H-1 violations (checkout mutation) are visible.
     """
     root = tmp_path / "repo"
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     for cid in comp_ids:
-        feature = ralph_dir / "feature" / cid
+        feature = kstrl_dir / "feature" / cid
         feature.mkdir(parents=True)
         (feature / "prd.json").write_text(_prd_json())
     (root / ".gitignore").write_text(
         ".kstrl/\nscripts/kstrl/manifest.json\n"
     )
     _git("init", "-b", "main", cwd=root)
-    _git("config", "user.email", "ralph-test@example.com", cwd=root)
-    _git("config", "user.name", "Ralph Test", cwd=root)
+    _git("config", "user.email", "kstrl-test@example.com", cwd=root)
+    _git("config", "user.name", "kstrl Test", cwd=root)
     _git("add", "-A", cwd=root)
     _git("commit", "-m", "init", cwd=root)
     if with_origin:

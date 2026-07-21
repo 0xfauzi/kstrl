@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl import envcompat
 from kstrl.prd import PRD
 from kstrl.verify import CheckResult, run_scrubbed
 
@@ -57,7 +56,7 @@ class FixtureResult:
 
 @dataclass
 class FixturesConfig:
-    """Configuration for the fixtures check (``[fixtures]`` in ralph.toml).
+    """Configuration for the fixtures check (``[fixtures]`` in kstrl.toml).
 
     ``enabled`` defaults to False (R7.2 user decision 4): fixtures run
     PRD-defined commands and import PRD-named modules, so the operator
@@ -75,14 +74,14 @@ class FixturesConfig:
         from kstrl.config import _parse_bool
 
         return cls(
-            enabled=_parse_bool(envcompat.get("KSTRL_FIXTURES_ENABLED")),
+            enabled=_parse_bool(os.environ.get("KSTRL_FIXTURES_ENABLED")),
             snapshot_on_success=_parse_bool(
-                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
+                os.environ.get("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
             ),
             snapshot_dir=Path(
-                envcompat.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".kstrl/snapshots")
+                os.environ.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".kstrl/snapshots")
             ),
-            timeout=float(envcompat.get("KSTRL_FIXTURES_TIMEOUT", "30")),
+            timeout=float(os.environ.get("KSTRL_FIXTURES_TIMEOUT", "30")),
         )
 
     @classmethod
@@ -108,16 +107,16 @@ class FixturesConfig:
             config.snapshot_dir = Path(str(section["snapshot_dir"]))
         if "timeout" in section:
             config.timeout = float(section["timeout"])
-        if envcompat.contains("KSTRL_FIXTURES_ENABLED"):
-            config.enabled = _parse_bool(envcompat.require("KSTRL_FIXTURES_ENABLED"))
-        if envcompat.contains("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS"):
+        if "KSTRL_FIXTURES_ENABLED" in os.environ:
+            config.enabled = _parse_bool(os.environ["KSTRL_FIXTURES_ENABLED"])
+        if "KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS" in os.environ:
             config.snapshot_on_success = _parse_bool(
-                envcompat.require("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS")
+                os.environ["KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS"]
             )
-        if envcompat.contains("KSTRL_FIXTURES_SNAPSHOT_DIR"):
-            config.snapshot_dir = Path(envcompat.require("KSTRL_FIXTURES_SNAPSHOT_DIR"))
-        if envcompat.contains("KSTRL_FIXTURES_TIMEOUT"):
-            config.timeout = float(envcompat.require("KSTRL_FIXTURES_TIMEOUT"))
+        if "KSTRL_FIXTURES_SNAPSHOT_DIR" in os.environ:
+            config.snapshot_dir = Path(os.environ["KSTRL_FIXTURES_SNAPSHOT_DIR"])
+        if "KSTRL_FIXTURES_TIMEOUT" in os.environ:
+            config.timeout = float(os.environ["KSTRL_FIXTURES_TIMEOUT"])
         if not config.snapshot_dir.is_absolute():
             config.snapshot_dir = root_dir / config.snapshot_dir
         return config
@@ -217,7 +216,7 @@ def run_cli_fixture(
 # agent code cannot shadow the runner's genuine verdict as long as the
 # runner completes (see the module docstring for the forgery equivalence
 # argument).
-_RESULT_MARKER = "RALPH-FIXTURE-RESULT-V1:"
+_RESULT_MARKER = "KSTRL-FIXTURE-RESULT-V1:"
 
 # Source of the subprocess that imports and calls the agent-written
 # function. Composed with the marker constant so the two cannot drift.

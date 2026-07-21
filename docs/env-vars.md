@@ -1,23 +1,23 @@
 # kstrl Environment Variables Reference
 
 > Rename note (2026-07-20): ``KSTRL_*`` is the primary namespace. The
-> legacy ``RALPH_*`` spelling of every variable below is honored for one
+> legacy ``KSTRL_*`` spelling of every variable below is honored for one
 > release with a DeprecationWarning (see ``kstrl/envcompat.py``). Bare
 > ``FACTORY_*`` names remain accepted for the factory family.
 
-Every config dataclass has a `from_env()` classmethod that reads env vars, and a `load(root_dir)` classmethod that overlays env on top of `ralph.toml` (env wins). This doc enumerates every variable the harness consults.
+Every config dataclass has a `from_env()` classmethod that reads env vars, and a `load(root_dir)` classmethod that overlays env on top of `kstrl.toml` (env wins). This doc enumerates every variable the harness consults.
 
-Precedence: **CLI flag > env var > `ralph.toml` > dataclass default**.
+Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 
-## Global / RalphConfig (`[agent]`, `[run]`, `[paths]`, `[git]`, `[ui]`)
+## Global / kstrlConfig (`[agent]`, `[run]`, `[paths]`, `[git]`, `[ui]`)
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
 | `MAX_ITERATIONS` | int | 10 | Per-component max agent iterations |
-| `PROMPT_FILE` | path | `scripts/ralph/prompt.md` | |
-| `PRD_FILE` | path | `scripts/ralph/prd.json` | |
-| `PROGRESS_FILE` | path | `scripts/ralph/progress.txt` | |
-| `CODEBASE_MAP_FILE` | path | `scripts/ralph/codebase_map.md` | |
+| `PROMPT_FILE` | path | `scripts/kstrl/prompt.md` | |
+| `PRD_FILE` | path | `scripts/kstrl/prd.json` | |
+| `PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` | |
+| `CODEBASE_MAP_FILE` | path | `scripts/kstrl/codebase_map.md` | |
 | `SLEEP_SECONDS` | float | 2.0 | Inter-iteration sleep |
 | `INTERACTIVE` | bool | false | Pause between iterations for human input |
 | `ALLOWED_PATHS` | comma-list | empty | Restrict agent writes to these prefixes |
@@ -62,7 +62,7 @@ All values are seconds; 0 or less disables that limit.
 | `KSTRL_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
 
-The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in ralph.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
+The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
 ## BreakerConfig (`[breaker]`)
 
@@ -102,7 +102,7 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_TIMEOUT_VERIFY` | float | 300 |
 | `KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE` | bool (`1`) | false |
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
-| `KSTRL_VERIFY_PROGRESS_FILE` | path | `scripts/ralph/progress.txt` |
+| `KSTRL_VERIFY_PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` |
 
 ## FixturesConfig (`[fixtures]`)
 
@@ -112,7 +112,7 @@ Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-su
 |---|---|---|
 | `KSTRL_FIXTURES_ENABLED` | bool | false |
 | `KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS` | bool | true |
-| `KSTRL_FIXTURES_SNAPSHOT_DIR` | path | `.ralph/snapshots` (relative = against the repo root) |
+| `KSTRL_FIXTURES_SNAPSHOT_DIR` | path | `.kstrl/snapshots` (relative = against the repo root) |
 | `KSTRL_FIXTURES_TIMEOUT` | float | 30 |
 
 ## ContractConfig (`[contract]`)
@@ -169,7 +169,7 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 | Env var | Type | Default |
 |---|---|---|
 | `KSTRL_EVOLUTION_ENABLED` | bool | true |
-| `KSTRL_EVOLUTION_JOURNAL_PATH` | path | `.ralph/evolution.jsonl` |
+| `KSTRL_EVOLUTION_JOURNAL_PATH` | path | `.kstrl/evolution.jsonl` |
 | `KSTRL_EVOLUTION_LOOKBACK_RUNS` | int | 10 |
 
 ## NotifyConfig (`[notify]`)

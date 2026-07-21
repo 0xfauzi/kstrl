@@ -438,8 +438,8 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# My Feature\nBuild a user management system.")
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
         ui = PlainUI(no_color=True)
@@ -475,8 +475,8 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
         ui = PlainUI(no_color=True)
@@ -500,8 +500,8 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
         ui = PlainUI(no_color=True)
@@ -526,8 +526,8 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
 
         call_count = 0
 
@@ -566,8 +566,8 @@ class TestDecomposeSpec:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Feature")
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
 
         agent = MockDecomposeAgent("always invalid")
         ui = PlainUI(no_color=True)

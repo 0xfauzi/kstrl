@@ -101,7 +101,7 @@ def build_cli_reference() -> str:
 
 @dataclasses.dataclass(frozen=True)
 class SectionSpec:
-    """One documented ralph.toml section.
+    """One documented kstrl.toml section.
 
     ``keys`` maps toml key -> dataclass field name. ``loader`` is the
     real load(root_dir) classmethod, ``defaults`` the raw default
@@ -132,10 +132,10 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
 
-    def ralph_loader(root: Path) -> Any:
+    def kstrl_loader(root: Path) -> Any:
         return KstrlConfig.load(root_dir=root)
 
-    ralph_defaults = KstrlConfig()
+    kstrl_defaults = KstrlConfig()
 
     def identity_keys(cfg_cls: Any, names: list[str]) -> dict[str, str]:
         field_names = {f.name for f in dataclasses.fields(cfg_cls)}
@@ -158,7 +158,7 @@ def _section_specs() -> list[SectionSpec]:
                 "reasoning_effort": "model_reasoning_effort",
                 "budget_usd": "agent_budget_usd",
             },
-            ralph_loader, ralph_defaults, probe_undocumented_fields=False,
+            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
             "run", "Loop behavior",
@@ -167,7 +167,7 @@ def _section_specs() -> list[SectionSpec]:
                 "sleep_seconds": "sleep_seconds",
                 "interactive": "interactive",
             },
-            ralph_loader, ralph_defaults, probe_undocumented_fields=False,
+            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
             "paths", "File locations",
@@ -178,17 +178,17 @@ def _section_specs() -> list[SectionSpec]:
                 "codebase_map": "codebase_map_file",
                 "allowed": "allowed_paths",
             },
-            ralph_loader, ralph_defaults, probe_undocumented_fields=False,
+            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
             "git", "Branch handling",
             {"branch": "kstrl_branch", "auto_checkout": "auto_checkout"},
-            ralph_loader, ralph_defaults, probe_undocumented_fields=False,
+            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
             "ui", "Output rendering",
             {"ascii": "ascii_only"},
-            ralph_loader, ralph_defaults, probe_undocumented_fields=False,
+            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
         ),
         SectionSpec(
             "timeout", "Timeout limits (seconds; 0 or less disables)",
@@ -464,7 +464,7 @@ def _toml_literal(value: Any) -> str:
 
 @contextmanager
 def _scrubbed_environ() -> Iterator[None]:
-    """Run with an empty-ish environment so a developer's RALPH_* / MODEL /
+    """Run with an empty-ish environment so a developer's KSTRL_* / MODEL /
     NO_COLOR etc. cannot leak into the probed loaders (env beats toml)."""
     saved = dict(os.environ)
     keep = {"PATH", "HOME", "TMPDIR", "SystemRoot"}
@@ -514,7 +514,7 @@ def _verify_sections(specs: list[SectionSpec]) -> None:
 
     with _scrubbed_environ(), tempfile.TemporaryDirectory() as tmp:
         # Baseline and probe load from the SAME root, differing only in
-        # whether ralph.toml exists: several configs resolve path fields
+        # whether kstrl.toml exists: several configs resolve path fields
         # against root_dir, so loads from two different roots would
         # spuriously differ on fields the toml never touched.
         probe_root = Path(tmp) / "probe"

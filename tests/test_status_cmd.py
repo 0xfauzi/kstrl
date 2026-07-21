@@ -1,4 +1,4 @@
-"""`ralph status`: manifest + ProgressLog component status view.
+"""`ks status`: manifest + ProgressLog component status view.
 
 R2.4 pinned the minimal manifest contract (per component id: status,
 retries, branch, timestamps). R3.2 joins the ProgressLog onto the same
@@ -122,7 +122,7 @@ class TestStatusCommand:
 
         assert exit_code == 1
         assert "No manifest found" in output
-        assert "ralph factory" in output
+        assert "ks factory" in output
 
     def test_corrupt_manifest_fails_cleanly(self, tmp_path: Path) -> None:
         manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"

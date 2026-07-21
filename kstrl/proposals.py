@@ -135,10 +135,10 @@ def append_to_agent_learnings(
     # End of the section = next level-2 header after it, else EOF.
     next_header = content.find("\n## ", idx + len(marker))
     insert_at = len(content) if next_header == -1 else next_header
-    application_marker = f"(applied from {proposal_id} by ralph evolve)"
+    application_marker = f"(applied from {proposal_id} by ks evolve)"
     if application_marker in content[idx:insert_at]:
         return True
-    entry = f"- {convention} (applied from {proposal_id} by ralph evolve)\n"
+    entry = f"- {convention} (applied from {proposal_id} by ks evolve)\n"
     head = content[:insert_at]
     if not head.endswith("\n"):
         head += "\n"

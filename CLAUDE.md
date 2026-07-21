@@ -3,8 +3,8 @@
 ## Project Overview
 
 - **Language**: Python (FastAPI / pytest / uv toolchain)
-- **Project**: kstrl (formerly Ralph) - an adversarial coding-agent harness
-- **Layout**: `kstrl/` (renamed from `ralph_py/`, 2026-07-20) is the canonical factory implementation. The legacy `src/ralph/` single-component loop was deleted; only compatibility guards still reference its name.
+- **Project**: kstrl - an adversarial coding-agent harness
+- **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
 
 ## Verification commands
 
@@ -13,7 +13,7 @@
 - **Typecheck**: `uv run mypy kstrl/ --strict`
 - **Lint**: `uv run ruff check kstrl/ tests/`
 
-Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so `uv run mypy` (no args) also checks `kstrl/`. The legacy `src/ralph/` package is intentionally not in mypy's scope -- it is the out-of-scope single-component loop, and the factory's smart-default typecheck command honors this configuration. If you actively maintain `src/ralph/`, run `uv run mypy src/ralph/ --strict` manually; CI does not gate it.
+Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so `uv run mypy` (no args) also checks `kstrl/`, keeping it in lockstep with the factory's smart-default typecheck command.
 
 ## Adversarial role taxonomy
 

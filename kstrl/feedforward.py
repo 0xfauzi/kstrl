@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-from kstrl import envcompat
 
 # Directories to always skip during tree walks
 _SKIP_DIRS = frozenset({
@@ -84,8 +83,8 @@ def _apply_env_overrides(config: FeedforwardConfig) -> None:
     existing value untouched (so toml values survive the overlay)."""
 
     for env_key, (field_name, caster) in _ENV_MAP.items():
-        if envcompat.contains(env_key):
-            raw = envcompat.require(env_key)
+        if env_key in os.environ:
+            raw = os.environ[env_key]
             if caster is bool:
                 setattr(config, field_name, raw.lower() in {"1", "true", "yes"})
             else:

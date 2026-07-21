@@ -1,6 +1,6 @@
 """No-progress circuit breaker for the engineer loop (R7.5).
 
-The most-repeated community fix for Ralph-loop stalls: an agent that
+The most-repeated community fix for kstrl-loop stalls: an agent that
 keeps burning iterations without changing the tree (or its test
 outcome) must be halted loudly instead of spending the whole iteration
 budget re-reading the same prompt.
@@ -23,12 +23,11 @@ RESETS the stall streak: the breaker fails open, never spuriously.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-
-from kstrl import envcompat
 
 # Distinct, greppable error prefix. loop.py builds its halt message with
 # it and the factory routes on the typed LoopResult/ComponentResult flag
@@ -68,14 +67,11 @@ class BreakerConfig:
         config = cls()
         return cls(
             no_progress_iterations=int(
-                envcompat.get("KSTRL_BREAKER_ITERATIONS",
-                    str(config.no_progress_iterations),
-                )
+                os.environ.get("KSTRL_BREAKER_ITERATIONS", str(config.no_progress_iterations))
             ),
-            test_command=envcompat.get("KSTRL_BREAKER_TEST_CMD") or None,
+            test_command=os.environ.get("KSTRL_BREAKER_TEST_CMD") or None,
             test_timeout=float(
-                envcompat.get("KSTRL_BREAKER_TEST_TIMEOUT", str(config.test_timeout),
-                )
+                os.environ.get("KSTRL_BREAKER_TEST_TIMEOUT", str(config.test_timeout))
             ),
         )
 
@@ -83,7 +79,7 @@ class BreakerConfig:
     def load(cls, root_dir: Path | None = None) -> BreakerConfig:
         """Load breaker config with precedence: env > toml > defaults.
 
-        Reads the ``[breaker]`` section from ``<root_dir>/ralph.toml``.
+        Reads the ``[breaker]`` section from ``<root_dir>/kstrl.toml``.
         """
         from kstrl.config import load_toml_section, resolve_config_file
 
@@ -99,12 +95,12 @@ class BreakerConfig:
             test_command = str(section["test_command"])
         if "test_timeout" in section:
             test_timeout = float(section["test_timeout"])
-        if envcompat.contains("KSTRL_BREAKER_ITERATIONS"):
-            no_progress_iterations = int(envcompat.require("KSTRL_BREAKER_ITERATIONS"))
-        if envcompat.get("KSTRL_BREAKER_TEST_CMD"):
-            test_command = envcompat.require("KSTRL_BREAKER_TEST_CMD")
-        if envcompat.contains("KSTRL_BREAKER_TEST_TIMEOUT"):
-            test_timeout = float(envcompat.require("KSTRL_BREAKER_TEST_TIMEOUT"))
+        if "KSTRL_BREAKER_ITERATIONS" in os.environ:
+            no_progress_iterations = int(os.environ["KSTRL_BREAKER_ITERATIONS"])
+        if os.environ.get("KSTRL_BREAKER_TEST_CMD"):
+            test_command = os.environ["KSTRL_BREAKER_TEST_CMD"]
+        if "KSTRL_BREAKER_TEST_TIMEOUT" in os.environ:
+            test_timeout = float(os.environ["KSTRL_BREAKER_TEST_TIMEOUT"])
         return cls(
             no_progress_iterations=no_progress_iterations,
             test_command=test_command,

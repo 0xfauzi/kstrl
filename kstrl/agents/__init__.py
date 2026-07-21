@@ -1,4 +1,4 @@
-"""Agent implementations for Ralph."""
+"""Agent implementations for kstrl."""
 
 from kstrl.agents.base import Agent
 from kstrl.agents.claude_code import ClaudeCodeAgent

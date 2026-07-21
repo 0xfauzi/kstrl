@@ -1,7 +1,5 @@
 # Remediation Roadmap: Full-System Review Fixes to A+
 
-> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
-
 Durable tracker for fixing every finding from the 2026-07-13 full-system review
 (report: https://claude.ai/code/artifact/0996ac84-8acf-4000-a526-72d4b0994832)
 and raising every review dimension to A+.
@@ -29,8 +27,8 @@ Process rules that bind this plan:
 
 ## User decisions required (blocking marked items only)
 
-1. **Install story** (R2.5): publish `ralph-cli` to PyPI under a new unclaimed
-   name (`ralph-factory`?) OR document clone-install as the only path. The
+1. **Install story** (R2.5): publish `kstrl-cli` to PyPI under a new unclaimed
+   name (`kstrl-factory`?) OR document clone-install as the only path. The
    current README command installs an unrelated project.
    **Decided 2026-07-20: the project renamed to kstrl (CLI `ks`); publish
    to PyPI as `kstrl`** (name verified unclaimed; user claims it with
@@ -44,7 +42,7 @@ Process rules that bind this plan:
 3. **Linear workspace admin approval** (R7.4): app-actor OAuth requires a
    workspace admin to approve the app identity. RESOLVED 2026-07-19: proceed
    without blocking on app-actor - interim auth is a personal API key in
-   `RALPH_LINEAR_TOKEN`, team Excetra (`540e2302-e91c-42a7-92d7-e2f274bbf298`);
+   `KSTRL_LINEAR_TOKEN`, team Excetra (`540e2302-e91c-42a7-92d7-e2f274bbf298`);
    the app-actor setup steps for the user are in docs/linear-integration.md
    and require no code change when adopted (`auth_mode` already speaks both).
 4. **PRD fixtures default** (R7.2): once wired and sandboxed, fixtures ship
@@ -89,7 +87,7 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   1/1). The SDK go/no-go (user decision 5) was then DECIDED GO 2026-07-20, so
   R7.5 closed `[x]`; the adapter implementation is tracked as R7.6.
 - **Two real factory runs** (knowledge + evolution A+ gates): knowledge
-  fact-utilization telemetry nonzero, and one `ralph evolve` proposal
+  fact-utilization telemetry nonzero, and one `ks evolve` proposal
   traceable to a real recorded signature.
 
 Execution order: R0 -> R1 -> R2 -> R4 -> R3 -> R5 -> R6 -> R7.
@@ -172,14 +170,14 @@ item here is one of those three.
     branch and allowed paths.
 
 - [x] R0.5 (M) **Instance and state safety** [H-7, H-8, H-15]
-  - Run-level flock on `.ralph/factory.lock`: a second invocation on the same
+  - Run-level flock on `.kstrl/factory.lock`: a second invocation on the same
     root refuses to start (override flag for intentional use).
-  - Worktrees keyed `.ralph/worktrees/<run_id>/<component_id>`; stale branch
+  - Worktrees keyed `.kstrl/worktrees/<run_id>/<component_id>`; stale branch
     from a prior run is deleted or refused with a clear error, never silently
     reused with old commits.
   - `single_pr=true` forces `max_parallel=1` with a printed notice.
   - Manifest save path = manifest load path (`--manifest /x.json` saves to
-    /x.json); `ralph run` uses its own `scripts/ralph/run-manifest.json` so it
+    /x.json); `ks run` uses its own `scripts/kstrl/run-manifest.json` so it
     cannot clobber a factory run's resumable state.
   - Verify: two-process concurrency test (real flock); custom-manifest
     round-trip test; single_pr parallel test.
@@ -248,8 +246,8 @@ reviewers' output as much as it distrusts the engineer's.
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.
   - `decompose._validate_decompose_output`: validate allowedPaths CONTENT
-    against the EXCLUDE list the prompt already promises (`.ralph/`,
-    `ralph_py/`, bare `scripts/ralph/`, root manifests, absolute paths, `..`);
+    against the EXCLUDE list the prompt already promises (`.kstrl/`,
+    `kstrl/`, bare `scripts/kstrl/`, root manifests, absolute paths, `..`);
     reject and retry-with-error like other validation failures.
   - `factory.py:554-558`: PRD load failure fails the diff-scope check closed
     (infra failure) instead of silently disabling scope.
@@ -276,13 +274,13 @@ reviewers' output as much as it distrusts the engineer's.
   - Verify: regression tests for the exact decay scenario (fail distill, then
     read), the evidence-field injection bypass, and supersede-by-fact-id.
   - Note (2026-07-13, session 1C): all sub-items landed in
-    `ralph_py/knowledge.py` + tests (PR #58). Closed to `[x]` by the
+    `kstrl/knowledge.py` + tests (PR #58). Closed to `[x]` by the
     follow-up PR that switched factory.py's inline second-precision run
     id to `knowledge.current_run_id()`, removing the last nonce-order
     edge; wiring proven by
     `test_factory_passes_microsecond_run_id_to_distill`.
 - [x] R1.7 (S) **Persist the architect's red-team output** [MED spec-issues-lost]
-  - Write `spec_issues` (all severities) to `scripts/ralph/spec-issues.json`
+  - Write `spec_issues` (all severities) to `scripts/kstrl/spec-issues.json`
     and a journal event; on SpecBlockerError, print the file path so the user
     iterates against a durable artifact, not scrollback.
   - Note (2026-07-18, session 3D): `decompose.persist_spec_issues` writes the
@@ -315,20 +313,20 @@ user. Every knob must be reachable, every documented command must exist, and
 every flag must do what it says or fail loudly.
 
 - [x] R2.1 (M) **Wire the six config loaders** [CRIT-7, D-precedence]
-  - CLI resolution order: explicit CLI flag > env > ralph.toml > dataclass
+  - CLI resolution order: explicit CLI flag > env > kstrl.toml > dataclass
     default. Click flags get `default=None` sentinels so "not passed" is
     distinguishable from "passed the default value".
-  - `ralph factory` and `ralph run` construct every phase config via `.load()`
+  - `ks factory` and `ks run` construct every phase config via `.load()`
     (Factory/Verify/Security/Contract/Feedforward/Evolution/Timeout); add
     `from_env` where missing (Feedforward/Evolution/Knowledge).
-  - `ralph init` scaffolds a commented `ralph.toml`.
+  - `ks init` scaffolds a commented `kstrl.toml`.
   - Failure mode: changed effective defaults for existing setups (e.g. a toml
-    `review_mode` now taking effect). Mitigation: `ralph config show` (R2.4)
+    `review_mode` now taking effect). Mitigation: `ks config show` (R2.4)
     prints the resolved config + source of each value; release note.
 - [x] R2.2 (S) **Expose the safety knobs** [CRIT-7]
   - `max_adversarial_calls` and `pause_before_pr_merge`: toml keys, env vars,
     CLI flags, documented. Budget exhaustion emits the R1.2 synthetic finding.
-- [x] R2.3 (M) **Make `ralph run` and factory flags honest** [CRIT-8, H-10, H-11]
+- [x] R2.3 (M) **Make `ks run` and factory flags honest** [CRIT-8, H-10, H-11]
   - Forward `max_iterations` (N), `interactive`, and `allowed_paths` through
     `_submit_args` into `_run_component`; delete the hardcoded 30.
   - `--no-verify` actually skips Phase 1 (explicit `skip` sentinel instead of
@@ -342,8 +340,8 @@ every flag must do what it says or fail loudly.
   - `run`/`understand`/`feature` preflight accepts whichever agent the config
     selects (claude/codex/custom), not codex-only.
   - `prd.json` existence + schema preflight BEFORE any agent spend.
-  - Add `ralph config show` (resolved config with per-value source) and
-    `ralph status` stub (full version in R3.2): both are README-promised.
+  - Add `ks config show` (resolved config with per-value source) and
+    `ks status` stub (full version in R3.2): both are README-promised.
 - [x] R2.5 (M) **Docs regeneration + packaging truth** [CRIT-9, D-*]
   - Generate the README CLI reference and config reference from click
     introspection + dataclass fields (script under `scripts/`), so drift is
@@ -356,7 +354,7 @@ every flag must do what it says or fail loudly.
   - Fix remaining doc drift: distiller is pre-PR (or move it post-merge and
     keep the doc: decide in R7.3 refactor; until then fix the doc), runbook
     worktree note aligned with keep-worktree-on-failure (R3.3), test count,
-    `[sensors]`/`[fixtures]` sections removed or implemented, `ralph evolve
+    `[sensors]`/`[fixtures]` sections removed or implemented, `ks evolve
     --apply` promise aligned with R6.3.
 - [x] R2.6 (S) **HITL semantics + subprocess env hygiene** [MED hitl-abort, MED env-leak, MED process-group]
   - E6 "Reject" marks the component FAILED immediately (no retry loop, no
@@ -367,9 +365,9 @@ every flag must do what it says or fail loudly.
   - All verification subprocesses use `start_new_session=True` + group kill on
     timeout so orphaned test servers die with their parent.
 
-Done when: `ralph config show` displays every knob with its source; a
+Done when: `ks config show` displays every knob with its source; a
 round-trip test proves toml -> resolved config for all nine sections; the
-README CLI table is generated and CI-checked; `ralph run 3` runs at most 3
+README CLI table is generated and CI-checked; `ks run 3` runs at most 3
 iterations (asserted by a fake-agent test).
 
 ---
@@ -383,10 +381,10 @@ mock-only coverage.
 
 - [x] R4.1 (S) **Suite isolation** [H-18, T-19]
   - Autouse conftest fixture routing evolution/experiments/knowledge paths to
-    tmp_path; a guard fixture fails the run if the repo's real `.ralph/`
-    mutates during tests; `clean_env` extended to FACTORY_*/RALPH_* families.
-  - Archive (do not delete) the polluted `.ralph/evolution.jsonl` +
-    `experiments.tsv` to `.ralph/archive/` and start clean journals (R6.4
+    tmp_path; a guard fixture fails the run if the repo's real `.kstrl/`
+    mutates during tests; `clean_env` extended to FACTORY_*/KSTRL_* families.
+  - Archive (do not delete) the polluted `.kstrl/evolution.jsonl` +
+    `experiments.tsv` to `.kstrl/archive/` and start clean journals (R6.4
     re-baselines).
 - [x] R4.2 (L) **Real-git spine tier** [T-1..T-7, T-14]
   - New marked tier (`-m spine`, in CI as a separate job): worktree lifecycle
@@ -416,7 +414,7 @@ mock-only coverage.
   - AST-walker tests call the real `_module_level_prompt_constants`.
   - Add the missing `test_no_silent_version_pin` (hash moved, version pinned ->
     fail) or correct the docstring: implement the test, it is cheap.
-  - Codex live-contract test becomes opt-in (`RALPH_RUN_LIVE_CONTRACT=1`), so
+  - Codex live-contract test becomes opt-in (`KSTRL_RUN_LIVE_CONTRACT=1`), so
     the default suite makes zero network calls.
 - [x] R4.4 (S) **Coverage measurement** [T-16]
   - pytest-cov in dev deps; CI reports coverage; ratchet gate (fail if coverage
@@ -426,7 +424,7 @@ mock-only coverage.
 Done when: the five behaviors the review named as unmocked-coverage-zero
 (worktree lifecycle, engineer loop plumbing, PR failure paths, contract
 execution, retry propagation) each have at least one real (unmocked at that
-boundary) test; default suite is network-free; repo `.ralph/` is untouched by
+boundary) test; default suite is network-free; repo `.kstrl/` is untouched by
 tests (enforced by the guard fixture).
 
 ---
@@ -457,15 +455,15 @@ spending, (c) what do I do when I come back to a partial failure.
     synthetic finding and gates scheduling. Enforcement granularity is
     the phase boundary; unreported calls make totals lower bounds.
 - [x] R3.2 (M) **Status + notification** [P-4, D-status]
-  - ProgressLog defaults on; `ralph status` renders manifest + log (per
+  - ProgressLog defaults on; `ks status` renders manifest + log (per
     component: phase, attempt, last event age, evidence paths).
   - Notification hook: configurable shell command (`[notify] on_complete /
-    on_first_failure` in ralph.toml) so desktop/webhook/email are one liner
+    on_first_failure` in kstrl.toml) so desktop/webhook/email are one liner
     configs. Fires on completion, first failure, and MERGE_PENDING.
 - [x] R3.3 (M) **Resume + partial-failure ergonomics** [P-5, LOW completed_at, LOW findings-accumulate]
   - Persist `run_id` in the manifest; set `completed_at`; per-component event
     history refs (journal offsets).
-  - `ralph retry <component-id>`: resets FAILED component + cascade-skipped
+  - `ks retry <component-id>`: resets FAILED component + cascade-skipped
     dependents to PENDING and re-enters factory with the same manifest.
   - `--keep-worktrees-on-failure` (and runbook updated to match).
   - Clear `comp.findings` per attempt; tag findings with attempt number so the
@@ -477,20 +475,20 @@ spending, (c) what do I do when I come back to a partial failure.
     `findings_superseded` events (attempt-tagged) while `component_result`
     carries only the final attempt's stream.
 - [x] R3.4 (S) **Repo hygiene** [LOW hygiene]
-  - `.gitignore` covers `.ralph/`; remove the 99MB stale worktree
+  - `.gitignore` covers `.kstrl/`; remove the 99MB stale worktree
     (`git worktree remove .claude/worktrees/tender-leakey` after confirming the
     branch has no unique commits: check first, it is a destructive step for the
     user to approve); commit or delete the untracked docs artifacts; track
-    `ralph.toml.example`, ignore live `ralph.toml`.
-  - Partial (landed in the R4.1 PR): `.gitignore` covers `.ralph/`;
-    polluted journals archived to `.ralph/archive/` with a README. The
+    `kstrl.toml.example`, ignore live `kstrl.toml`.
+  - Partial (landed in the R4.1 PR): `.gitignore` covers `.kstrl/`;
+    polluted journals archived to `.kstrl/archive/` with a README. The
     stale worktree `claude/tender-leakey` had 2 commits not on main
     (6b41584, 917bde6: the pre-purge TUI work); after user approval the
     worktree and branch were removed, with a local tag
     `archive/tui-overhaul` left at 6b41584 so the commits stay
-    recoverable. The `ralph.toml.example` tracking question was resolved
-    in the R2.5 PR: `ralph.toml.example` is tracked and the live
-    `ralph.toml` is gitignored. Still open: the remaining untracked docs
+    recoverable. The `kstrl.toml.example` tracking question was resolved
+    in the R2.5 PR: `kstrl.toml.example` is tracked and the live
+    `kstrl.toml` is gitignored. Still open: the remaining untracked docs
     artifacts (user decision 6).
   - CLOSED 2026-07-20 (user decision 6: delete the regenerables):
     `docs/end-to-end-flow.html` and `docs/phase-f-e2e-validation-v12.log`
@@ -500,20 +498,20 @@ spending, (c) what do I do when I come back to a partial failure.
     Claude Code sessions. `docs/user-actions.md` (the user's own
     working checklist, untracked on purpose per its own header) is
     deliberately NOT touched - the user deletes it when its list is
-    done. Verification note: the earlier "ralph.toml is gitignored"
-    claim is TRUE on main (`/ralph.toml` entry); it looked untracked
+    done. Verification note: the earlier "kstrl.toml is gitignored"
+    claim is TRUE on main (`/kstrl.toml` entry); it looked untracked
     only because the main checkout sat on the stale pre-entry
     `fix/r1-4-truncation` branch - resolved by checking main out there.
-  - Note (2026-07-19, gate re-run): the live `.ralph/evolution.jsonl` +
+  - Note (2026-07-19, gate re-run): the live `.kstrl/evolution.jsonl` +
     `experiments.tsv` had been re-polluted with synthetic test entries
     (projects "test"/"t", pre-v2 schema) written between the R4.1
     archive and the guard fixture landing; both were re-archived to
-    `.ralph/archive/` with a `-repolluted-20260713` suffix. The journals
+    `.kstrl/archive/` with a `-repolluted-20260713` suffix. The journals
     now start empty; the first real post-fix factory runs are the
     "User-run measurements" entry above.
 
 Done when: a deliberately failed 3-component run can be diagnosed and resumed
-using only `ralph status`, the failure summary, and `ralph retry`, without
+using only `ks status`, the failure summary, and `ks retry`, without
 hand-editing JSON; a run summary shows per-phase token/call counts.
 
 ---
@@ -527,9 +525,9 @@ third, all in one measured cycle.
 - [x] R5.1 (M) **Calibration tooling** [T-cal findings]
   (tooling + threshold gates + synonym matcher landed; v2 baseline CAPTURED
   2026-07-20 - `baseline-20260720-113835.json`, haiku, 3 runs. Green-at-
-  baseline confirmed by `python -m ralph_py.calibration compare` against the
+  baseline confirmed by `python -m kstrl.calibration compare` against the
   2026-05-27 reference: `PASS`, no role below floor. Closed by the capture.)
-  - Baseline diff tool: `python -m ralph_py.calibration compare <old> <new>`
+  - Baseline diff tool: `python -m kstrl.calibration compare <old> <new>`
     with codified per-role thresholds; N-run mode (default 3) reporting
     per-fixture consistency; per-category (per-CWE for security) rates in the
     report JSON.
@@ -556,7 +554,7 @@ third, all in one measured cycle.
     variants. Hard positives are recorded under role `security_hard` and
     MEASURED, not gated (a miss is the hardness signal); negatives feed a
     `false_positive_analysis` block (per-role `fp_rate` vs `FP_RATE_MAX`)
-    injected into the R5.1 v2 report test-side (ralph_py/calibration untouched,
+    injected into the R5.1 v2 report test-side (kstrl/calibration untouched,
     out of scope). Structural + FP-math tests are green with zero LLM calls.
     ACCEPTANCE (reframed 2026-07-20, see below): hard positives are genuinely
     subtle (each documents `why_hard`), MEASURED not gated, and protected from
@@ -667,7 +665,7 @@ three are done.
     clock stamped in `_end_attempt`); journal entries carry `schema_version`
     (v2) so future migrations are detectable.
 
-Done when: after two real factory runs post-fix, `ralph evolve` produces at
+Done when: after two real factory runs post-fix, `ks evolve` produces at
 least one proposal traceable to a real recorded signature, and
 `get_concern_hit_rate` returns nonzero when a run had review concerns (proved
 by an integration test with a synthetic-but-realistic journal).
@@ -727,7 +725,7 @@ by an integration test with a synthetic-but-realistic journal).
     strangler (pipeline object first, scheduler swap second) with the R4 spine
     tests as the net.
   - DONE (two PRs, strangler as planned): PR 1 extracts
-    `ralph_py/pipeline.py::ComponentPipeline` (typed phase results, single
+    `kstrl/pipeline.py::ComponentPipeline` (typed phase results, single
     transition dispatch, hooks-injected phase functions, late-binding fix,
     distiller pinned PRE-PR as a named step) with
     `tests/test_pipeline.py` covering every transition in isolation; PR 2
@@ -740,13 +738,13 @@ by an integration test with a synthetic-but-realistic journal).
     spec_issues as triage issues.
   - Branch names carry the Linear issue id; PR bodies carry "Fixes ENG-nnn":
     Linear's GitHub integration then drives status transitions with zero API
-    calls from ralph.
+    calls from kstrl.
   - Idempotency keys (`run_id`+`component_id`) so retries update rather than
     duplicate; rate-limit aware (shared 5k req/hr pool); Agents API
     (@-mention delegation) stays behind an adapter until GA.
   - Trigger direction (webhook on issue delegation -> factory run) is a
     follow-up once the sink is stable.
-  - DONE (design + rationale: docs/linear-integration.md). `ralph_py/linear.py`
+  - DONE (design + rationale: docs/linear-integration.md). `kstrl/linear.py`
     ships `LinearClient` (one HTTP entry point over stdlib urllib, defensive
     parsing, throttle, RATELIMITED-as-HTTP-400 handling, dry-run recording),
     the decompose sync hook, and `LinearSink` on the new `ProgressSink`
@@ -757,10 +755,10 @@ by an integration test with a synthetic-but-realistic journal).
     client-generated UUIDs from `<sync_key>:<component_id>` plus manifest
     persistence (`linearSyncKey`/`linearIssueId`); rate limits re-verified
     2026-07-19 (2.5k/hr API key, 5k/hr OAuth). Interim auth is a personal
-    API key in `RALPH_LINEAR_TOKEN` (user decision 2026-07-19); app-actor
+    API key in `KSTRL_LINEAR_TOKEN` (user decision 2026-07-19); app-actor
     OAuth setup instructions are in the doc, client already speaks both.
   - Re-land history: #91 merged into `refactor/r7-3-scheduler-reland` after
-    that branch had already reached main, so `ralph_py/linear.py` never landed.
+    that branch had already reached main, so `kstrl/linear.py` never landed.
     Re-landed onto R7.5-era main by cherry-picking the #91 squash (see PR
     "feat: R7.4 Linear integration re-land (#91 onto main)").
 - [x] R7.5 (M) **Platform hardening** [research topics 1-2]
@@ -774,13 +772,13 @@ by an integration test with a synthetic-but-realistic journal).
     work tracked as R7.6, not part of this item.)
   - No-progress circuit breaker: halt a component when N consecutive iterations
     produce an unchanged diff hash + test signature (the community's
-    single most-repeated Ralph-loop fix). DONE: `ralph_py/breaker.py`,
+    single most-repeated kstrl-loop fix). DONE: `kstrl/breaker.py`,
     `[breaker]` config, direct-FAIL routing + `circuit_breaker_tripped`
     event, `tests/test_breaker.py`.
   - OS-level sandboxing for agent subprocesses: pass Claude Code sandbox
     settings (network/write scoping) through the adapter; document the codex
     equivalent; worktree isolation stops being the only boundary.
-    DONE: `ralph_py/sandbox.py` (`[sandbox]` config, measured CLI
+    DONE: `kstrl/sandbox.py` (`[sandbox]` config, measured CLI
     mappings for claude 2.1.215 / codex 0.134.0), `tests/test_sandbox.py`.
   - Merge-conflict doctrine: on conflict, re-run the component against the
     fresh merged base instead of rebasing agent output. DONE:
@@ -805,7 +803,7 @@ by an integration test with a synthetic-but-realistic journal).
     fallback if the SDK regresses.
   - Why (measured, docs/sdk-spike.md): pre-hoc `PreToolUse` guardrails (a
     hook denied a real out-of-scope write during the spike - prevention where
-    Ralph today has detection), typed in-loop `max_budget_usd` enforcement
+    kstrl today has detection), typed in-loop `max_budget_usd` enforcement
     (overshoot bounded by one turn, not one phase), structured usage (kills
     the R3.1 meter's parse-drift risk for the dominant spend), typed errors +
     rate-limit visibility.
@@ -821,7 +819,7 @@ by an integration test with a synthetic-but-realistic journal).
     an in-process asyncio bridge can neither killpg (it would kill the
     harness) nor stop grandchild orphaning, i.e. it cannot pass the R0.1
     gate. The adapter therefore runs the SDK in a runner subprocess
-    (`ralph_py/agents/sdk_runner.py`) spawned through the R0.1-proven
+    (`kstrl/agents/sdk_runner.py`) spawned through the R0.1-proven
     DeadlineStreamer: the CLI + tool processes are grandchildren inside the
     runner's session and die with it on breach. Structured records cross
     back on a same-repo prefixed JSON-line contract.
@@ -840,7 +838,7 @@ by an integration test with a synthetic-but-realistic journal).
     of a traceback. Packaging: optional extra `sdk` (user decision -
     core runtime stays rich+click; the extra is in the dev group so tests
     and mypy always cover the adapter); `[agent] budget_usd` /
-    `RALPH_AGENT_BUDGET_USD` config landed; `_cli_family` maps claude-sdk
+    `KSTRL_AGENT_BUDGET_USD` config landed; `_cli_family` maps claude-sdk
     to the claude family so R7.1 rotation still assigns codex reviewers.
 
 Done when: cross-family review is the measured default; fixtures run sandboxed

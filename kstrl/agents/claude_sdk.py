@@ -1,4 +1,4 @@
-"""Claude Agent SDK adapter for Ralph (R7.6).
+"""Claude Agent SDK adapter for kstrl (R7.6).
 
 Drives the claude-code engineer path through the Claude Agent SDK for
 its measured structural wins (docs/sdk-spike.md): typed usage/cost data

@@ -2,7 +2,7 @@
 its planted bugs.
 
 This test suite is OPT-IN: it makes real LLM calls and is therefore
-gated behind ``RALPH_RUN_CALIBRATION=1``. Without that env var the
+gated behind ``KSTRL_RUN_CALIBRATION=1``. Without that env var the
 tests are skipped so default CI (and local `uv run pytest`) doesn't
 burn API tokens.
 
@@ -82,16 +82,16 @@ from kstrl.security import (
 
 CALIBRATION_ENABLED = "1" in (
     os.environ.get("KSTRL_RUN_CALIBRATION"),
-    os.environ.get("RALPH_RUN_CALIBRATION"),
+    os.environ.get("KSTRL_RUN_CALIBRATION"),
 )
 CALIBRATION_MODEL = (
     os.environ.get("KSTRL_CALIBRATION_MODEL")
-    or os.environ.get("RALPH_CALIBRATION_MODEL")
+    or os.environ.get("KSTRL_CALIBRATION_MODEL")
     or "haiku"
 )
 CALIBRATION_RUNS = int(
     os.environ.get("KSTRL_CALIBRATION_RUNS")
-    or os.environ.get("RALPH_CALIBRATION_RUNS")
+    or os.environ.get("KSTRL_CALIBRATION_RUNS")
     or str(calibration.DEFAULT_CALIBRATION_RUNS)
 )
 # R7.1: optional reviewer-family override so the user can capture
@@ -261,7 +261,7 @@ def _get_calibration_agent():
 def _get_reviewer_calibration_agent():
     """Agent for the reviewer and security roles: the base calibration
     agent unless the R7.1 reviewer-family override
-    (RALPH_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
+    (KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
     family for the same-family vs cross-family baseline comparison."""
     from kstrl.agents import get_agent
     return get_agent(
@@ -298,7 +298,7 @@ def _meets_severity(actual: str, threshold: str) -> bool:
 # synthetic inputs in tests/test_calibration_matchers.py without
 # requiring a real LLM call. The integration tests below feed the same
 # helpers with output produced by a live agent under
-# RALPH_RUN_CALIBRATION=1. Identical matcher means: a passing unit
+# KSTRL_RUN_CALIBRATION=1. Identical matcher means: a passing unit
 # test = the matcher works against the assumptions encoded in the
 # fixture meta; a passing integration test = the matcher AND the LLM
 # both held up.

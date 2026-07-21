@@ -10,14 +10,13 @@ import csv
 import io
 import json
 import logging
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-from kstrl import envcompat
 
 if TYPE_CHECKING:
     from kstrl.factory import FactoryResult
@@ -102,17 +101,17 @@ class EvolutionConfig:
 def _apply_env_overrides(config: EvolutionConfig, root_dir: Path) -> None:
     """Overlay env vars that are explicitly set; unset vars leave the
     existing value untouched (so toml values survive the overlay)."""
-    if envcompat.contains("KSTRL_EVOLUTION_ENABLED"):
-        config.enabled = envcompat.require("KSTRL_EVOLUTION_ENABLED").lower() in {
+    if "KSTRL_EVOLUTION_ENABLED" in os.environ:
+        config.enabled = os.environ["KSTRL_EVOLUTION_ENABLED"].lower() in {
             "1", "true", "yes",
         }
-    if envcompat.contains("KSTRL_EVOLUTION_JOURNAL_PATH"):
-        raw = envcompat.require("KSTRL_EVOLUTION_JOURNAL_PATH")
+    if "KSTRL_EVOLUTION_JOURNAL_PATH" in os.environ:
+        raw = os.environ["KSTRL_EVOLUTION_JOURNAL_PATH"]
         config.journal_path = (
             Path(raw) if Path(raw).is_absolute() else root_dir / raw
         )
-    if envcompat.contains("KSTRL_EVOLUTION_LOOKBACK_RUNS"):
-        config.lookback_runs = int(envcompat.require("KSTRL_EVOLUTION_LOOKBACK_RUNS"))
+    if "KSTRL_EVOLUTION_LOOKBACK_RUNS" in os.environ:
+        config.lookback_runs = int(os.environ["KSTRL_EVOLUTION_LOOKBACK_RUNS"])
 
 
 def _resolve_relative_paths(config: EvolutionConfig, root_dir: Path) -> None:
@@ -120,7 +119,7 @@ def _resolve_relative_paths(config: EvolutionConfig, root_dir: Path) -> None:
 
     The bare ``EvolutionConfig()`` constructor keeps its historical
     CWD-relative defaults; the load/from_env paths always hand back
-    absolute paths so ``ralph factory --root X`` run from elsewhere
+    absolute paths so ``ks factory --root X`` run from elsewhere
     cannot scatter ``.kstrl/`` state into the operator's CWD.
     """
     if not config.journal_path.is_absolute():
@@ -725,7 +724,7 @@ class EvolutionJournal:
 
         R6.2: IDs are monotonic across runs - pass
         ``next_proposal_number(output_dir)`` as ``starting_number`` so a
-        second `ralph evolve` continues numbering instead of restarting
+        second `ks evolve` continues numbering instead of restarting
         at PROP-001 and clobbering earlier files.
         """
         proposals: list[HarnessProposal] = []

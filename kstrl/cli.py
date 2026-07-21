@@ -1,4 +1,4 @@
-"""CLI entry point for Ralph."""
+"""CLI entry point for kstrl."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-from kstrl import envcompat
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
@@ -101,8 +99,8 @@ def _use_cli_value(ctx: click.Context, name: str) -> bool:
 
 
 # Accepted spellings for the agent type across the config surface.
-# ralph.toml documents "claude" | "codex" | "custom"; the --agent-type
-# flags and RALPH_AGENT_TYPE historically use "claude-code" | "codex" |
+# kstrl.toml documents "claude" | "codex" | "custom"; the --agent-type
+# flags and KSTRL_AGENT_TYPE historically use "claude-code" | "codex" |
 # "auto". Both families resolve to get_agent's vocabulary here.
 _AGENT_TYPE_ALIASES: dict[str, str] = {
     "": "auto",
@@ -141,13 +139,13 @@ def _agent_preflight(
             agent_type,
             f"Unknown agent type {agent_type!r} "
             "(expected: claude, claude-sdk, codex, custom, or auto)",
-            "Fix [agent].type in ralph.toml, RALPH_AGENT_TYPE, or --agent-type",
+            "Fix [agent].type in kstrl.toml, KSTRL_AGENT_TYPE, or --agent-type",
         )
     if canonical == "custom":
         return (
             agent_type,
             'Agent type "custom" is configured but no agent command is set',
-            "Set [agent].command in ralph.toml, AGENT_CMD, or --agent-cmd",
+            "Set [agent].command in kstrl.toml, AGENT_CMD, or --agent-cmd",
         )
     if canonical == "claude-code":
         if not ClaudeCodeAgent.is_available():
@@ -207,12 +205,12 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
 
     Without this, the agent burns full iterations against a prompt
     referencing a nonexistent PRD before Phase 1 reports "Failed to load
-    PRD". Error style mirrors ``ralph init``'s per-field messages.
+    PRD". Error style mirrors ``ks init``'s per-field messages.
     """
     if not prd_file.exists():
         ui_impl.err(f"PRD file not found: {prd_file}")
         ui_impl.info(
-            "Run `ralph init` to scaffold scripts/kstrl/prd.json, "
+            "Run `ks init` to scaffold scripts/kstrl/prd.json, "
             "or point --prd / PRD_FILE at an existing PRD."
         )
         sys.exit(1)
@@ -309,9 +307,9 @@ def _collect_toml_notes(
     baseline: Any,
     flag_overridden: set[str],
 ) -> None:
-    """Record which effective values ralph.toml moved off the CLI default.
+    """Record which effective values kstrl.toml moved off the CLI default.
 
-    Before R2.1 six ralph.toml sections were silently ignored by the
+    Before R2.1 six kstrl.toml sections were silently ignored by the
     factory command, so a value that now takes effect is a behavior
     change for existing setups; the collected NOTE lines make that
     visible at startup. Comparing the loaded config against an env-only
@@ -328,7 +326,7 @@ def _collect_toml_notes(
         if loaded_val != baseline_val:
             notes.append(
                 f"NOTE: [{section}] {f.name} = {loaded_val!r} from "
-                f"ralph.toml (built-in default: {baseline_val!r}; "
+                f"kstrl.toml (built-in default: {baseline_val!r}; "
                 f"this section was ignored before R2.1)"
             )
 
@@ -387,7 +385,7 @@ def cli(ctx: click.Context) -> None:
     if (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
     ):
         from kstrl.tui.home import run_home_shell
 
@@ -468,7 +466,7 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--force-lock",
     is_flag=True,
-    help="Proceed even if another ralph invocation holds "
+    help="Proceed even if another kstrl invocation holds "
          ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 def run(
@@ -513,7 +511,7 @@ def run(
     root_value = root if _use_cli_value(ctx, "root") else None
     root_dir = _resolve_root(root_value, prompt_for_root, prd_for_root)
 
-    # Build config from ralph.toml + environment defaults first.
+    # Build config from kstrl.toml + environment defaults first.
     config = KstrlConfig.load(root_dir)
 
     # Apply CLI overrides when explicitly provided.
@@ -586,8 +584,8 @@ def run(
     )
 
     # Build factory config for single-component mode (R2.1): tunables
-    # resolve through the loaders (ralph.toml overlaid with env); the
-    # structural fields below are forced because `ralph run` is by
+    # resolve through the loaders (kstrl.toml overlaid with env); the
+    # structural fields below are forced because `ks run` is by
     # definition a local, single-component, no-PR invocation.
     # R2.3: --no-verify sets the explicit skip sentinel; passing
     # verify_config=None meant "use defaults" in run_factory and Phase 1
@@ -605,13 +603,13 @@ def run(
     factory_cfg.feedforward_config = FeedforwardConfig.load(root_dir)
     factory_cfg.timeout_config = TimeoutConfig.load(root_dir)
     factory_cfg.force_lock = force_lock
-    # `ralph run` reviews in advisory mode unless the project's
-    # ralph.toml explicitly opts into a different review_mode (there is
+    # `ks run` reviews in advisory mode unless the project's
+    # kstrl.toml explicitly opts into a different review_mode (there is
     # no review_mode env var, so the toml section check is exhaustive).
     if "review_mode" not in load_toml_section(resolve_config_file(root_dir), "factory"):
         factory_cfg.review_mode = "advisory"
 
-    # R0.5 (H-15): `ralph run` persists to its own run-manifest.json so
+    # R0.5 (H-15): `ks run` persists to its own run-manifest.json so
     # it can never clobber a factory run's resumable manifest.json.
     stop = StopController()
     uninstall = install_signal_handlers(stop)
@@ -640,7 +638,7 @@ def run(
     help="Disable colors",
 )
 def init(directory: Path, ui: str, no_color: bool) -> None:
-    """Initialize Ralph in a project directory.
+    """Initialize kstrl in a project directory.
 
     DIRECTORY is the target project directory (default: current directory).
     """
@@ -817,7 +815,7 @@ def understand(
     # kstrl_branch_explicit=True when TOML provides a non-empty [git].branch.
     if (
         not _use_cli_value(ctx, "branch")
-        and not envcompat.contains("KSTRL_BRANCH")
+        and "KSTRL_BRANCH" not in os.environ
         and not config.kstrl_branch_explicit
     ):
         config.kstrl_branch = "kstrl/understanding"
@@ -857,7 +855,7 @@ def understand(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
         and config.ui_mode != "plain"
     )
     if use_tui:
@@ -1178,7 +1176,7 @@ def feature(
     codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
         ui_impl.err(f"codebase_map.md not found: {codebase_map}")
-        ui_impl.info("Run `ralph init` or `ralph understand` first.")
+        ui_impl.info("Run `ks init` or `ks understand` first.")
         sys.exit(1)
 
     if _use_cli_value(ctx, "understand_iterations"):
@@ -1295,7 +1293,7 @@ def feature(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
         and base_config.ui_mode != "plain"
     )
     if use_tui:
@@ -1444,7 +1442,7 @@ def decompose(
     )
     effective_type = (
         agent_type if _use_cli_value(ctx, "agent_type")
-        else envcompat.get("KSTRL_AGENT_TYPE", "auto")
+        else os.environ.get("KSTRL_AGENT_TYPE", "auto")
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -1491,7 +1489,7 @@ def decompose(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
         and _normalize_ui_mode(ui) != "plain"
     )
     if use_tui:
@@ -1686,16 +1684,16 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
-         "(default: 1800, or RALPH_TIMEOUT_AGENT_ITERATION / "
-         "[timeout].agent_iteration in ralph.toml)",
+         "(default: 1800, or KSTRL_TIMEOUT_AGENT_ITERATION / "
+         "[timeout].agent_iteration in kstrl.toml)",
 )
 @click.option(
     "--component-timeout",
     type=float,
     default=None,
     help="Timeout per component total in seconds; 0 disables "
-         "(default: 7200, or RALPH_TIMEOUT_COMPONENT / "
-         "[timeout].component_total in ralph.toml)",
+         "(default: 7200, or KSTRL_TIMEOUT_COMPONENT / "
+         "[timeout].component_total in kstrl.toml)",
 )
 @click.option(
     "--max-adversarial-calls",
@@ -1704,7 +1702,7 @@ def decompose(
     help="Hard cap on adversarial LLM calls (review + security + "
          "distill) per run; 0 = unbounded (default: 0, or "
          "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS / "
-         "[factory].max_adversarial_calls in ralph.toml)",
+         "[factory].max_adversarial_calls in kstrl.toml)",
 )
 @click.option(
     "--max-total-tokens",
@@ -1713,8 +1711,8 @@ def decompose(
     help="Run-level token budget across ALL phases (engineer + review "
          "+ security + distill); 0 = unbounded. On breach the current "
          "component fails with a synthetic budget finding and pending "
-         "components halt (default: 0, or RALPH_FACTORY_MAX_TOTAL_TOKENS "
-         "/ [factory].max_total_tokens in ralph.toml)",
+         "components halt (default: 0, or KSTRL_FACTORY_MAX_TOTAL_TOKENS "
+         "/ [factory].max_total_tokens in kstrl.toml)",
 )
 @click.option(
     "--pause-before-pr-merge/--no-pause-before-pr-merge",
@@ -1722,7 +1720,7 @@ def decompose(
     help="Pause for human approval before each component's PR "
          "push+merge (default: off, or "
          "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE / "
-         "[factory].pause_before_pr_merge in ralph.toml)",
+         "[factory].pause_before_pr_merge in kstrl.toml)",
 )
 @click.option(
     "--progress-log",
@@ -1742,13 +1740,13 @@ def decompose(
     is_flag=True,
     help="Keep a failed component's worktree for post-mortem instead of "
          "removing it at cleanup; the failure summary points at it "
-         "(default: off, or RALPH_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
-         "[factory].keep_worktrees_on_failure in ralph.toml)",
+         "(default: off, or KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+         "[factory].keep_worktrees_on_failure in kstrl.toml)",
 )
 @click.option(
     "--force-lock",
     is_flag=True,
-    help="Proceed even if another ralph invocation holds "
+    help="Proceed even if another kstrl invocation holds "
          ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
@@ -1869,7 +1867,7 @@ def factory(
     )
     effective_type = (
         agent_type if _use_cli_value(ctx, "agent_type")
-        else envcompat.get("KSTRL_AGENT_TYPE", "auto")
+        else os.environ.get("KSTRL_AGENT_TYPE", "auto")
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -1923,7 +1921,7 @@ def factory(
             sys.exit(1)
 
     # Build configs (R2.1). Resolution order for every phase config:
-    # explicit CLI flag > env > ralph.toml > dataclass default. The
+    # explicit CLI flag > env > kstrl.toml > dataclass default. The
     # loaders handle env-over-toml-over-default; flags use None
     # sentinels so "not passed" is distinguishable from "passed the
     # default value", and an explicitly-passed flag is applied on top.
@@ -2117,7 +2115,7 @@ def factory(
     ui_impl.kv("Max parallel", str(factory_config.max_parallel))
     ui_impl.kv("Create PRs", "yes" if factory_config.create_prs else "no")
 
-    # R2.1 behavior change: ralph.toml sections that used to be silently
+    # R2.1 behavior change: kstrl.toml sections that used to be silently
     # ignored now take effect. Surface every value a toml section moved
     # away from the CLI default so existing setups see the change.
     for note in toml_notes:
@@ -2178,7 +2176,7 @@ def factory(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
         and _normalize_ui_mode(ui) != "plain"
     )
     if use_tui:
@@ -2212,12 +2210,12 @@ def factory(
     sys.exit(result.exit_code)
 
 
-# Display structure for the KstrlConfig-backed ralph.toml sections:
+# Display structure for the KstrlConfig-backed kstrl.toml sections:
 # section -> [(toml_key, dataclass_field)]. Mirrors DEFAULT_KSTRL_TOML in
 # init_cmd.py plus the env/flag-only UI knobs (ui_mode, no_color).
 @cli.group(name="config")
 def config_group() -> None:
-    """Inspect Ralph configuration."""
+    """Inspect kstrl configuration."""
 
 
 @config_group.command(name="show")
@@ -2265,10 +2263,10 @@ def config_show(
     """Print the fully resolved config with the source of each value.
 
     Every value is tagged (flag), (env), (toml), or (default). Flags
-    mirror `ralph run`'s config-affecting options, so the output is what
+    mirror `ks run`'s config-affecting options, so the output is what
     a run invoked with the same flags would execute. Factory-phase
     sections (factory/verify/security/...) have no flags here; their
-    values resolve from env > ralph.toml > defaults.
+    values resolve from env > kstrl.toml > defaults.
 
     Source detection for env is behavioral: a value is tagged (env) when
     removing the environment changes it. An env var that sets a value
@@ -2293,7 +2291,7 @@ def config_show(
 
     toml_path = report.toml_path
     click.echo(f"# Resolved kstrl config for {root_dir}")
-    click.echo(f"# ralph.toml: {toml_path if report.toml_exists else '(absent)'}")
+    click.echo(f"# kstrl.toml: {toml_path if report.toml_exists else '(absent)'}")
     click.echo("")
 
     section = ""
@@ -2340,7 +2338,7 @@ def _render_status(
     layout, inferred for v1 logs), attempt, last-event age, usage
     totals, PR/checkpoint/heartbeat detail, and evidence paths.
     """
-    ui_impl.section("Ralph status")
+    ui_impl.section("ks status")
     ui_impl.kv("Project", manifest.project_name)
     ui_impl.kv("Manifest", str(manifest_file))
     ui_impl.kv("Base branch", manifest.base_branch)
@@ -2485,7 +2483,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     root_dir = root.resolve() if root else Path.cwd()
     if not (_sys.stdout.isatty() and _sys.stdin.isatty()):
         click.echo(
-            "ralph dash needs a terminal; use `ralph status` for "
+            "ks dash needs a terminal; use `ks status` for "
             "non-interactive output.",
             err=True,
         )
@@ -2498,7 +2496,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
         click.echo(
             f"No run found under {root_dir / '.kstrl' / 'runs'}"
             + (f" matching '{run_id}'" if run_id else "")
-            + ". Run `ralph factory` first, or check --root.",
+            + ". Run `ks factory` first, or check --root.",
             err=True,
         )
         _sys.exit(1)
@@ -2604,7 +2602,7 @@ def status(
     use_tui = tui if tui is not None else (
         sys.stdout.isatty()
         and sys.stdin.isatty()
-        and envcompat.get("KSTRL_NO_TUI") != "1"
+        and os.environ.get("KSTRL_NO_TUI") != "1"
         and _normalize_ui_mode(ui) != "plain"
         and not watch
     )
@@ -2634,7 +2632,7 @@ def status(
     if manifest_path is not None:
         candidates = [manifest_path]
     else:
-        # Factory runs persist to manifest.json; `ralph run` persists to
+        # Factory runs persist to manifest.json; `ks run` persists to
         # run-manifest.json (R0.5, H-15). Prefer the factory manifest.
         candidates = [
             root_dir / "scripts" / "kstrl" / "manifest.json",
@@ -2674,7 +2672,7 @@ def status(
             looked = ", ".join(str(p) for p in candidates)
             ui_impl.err(f"No manifest found (looked for: {looked})")
             ui_impl.info(
-                "Run `ralph factory` or `ralph run` first, or pass --manifest."
+                "Run `ks factory` or `ks run` first, or pass --manifest."
             )
             return 1
 
@@ -2696,7 +2694,7 @@ def status(
             and not watch
         ):
             ui_impl.info("")
-            ui_impl.info("Dashboard: ralph dash")
+            ui_impl.info("Dashboard: ks dash")
         return 0
 
     if not watch:
@@ -2737,12 +2735,12 @@ def status(
     help="Keep a failed component's worktree for post-mortem instead of "
          "removing it at cleanup (also via "
          "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
-         "[factory].keep_worktrees_on_failure in ralph.toml)",
+         "[factory].keep_worktrees_on_failure in kstrl.toml)",
 )
 @click.option(
     "--force-lock",
     is_flag=True,
-    help="Proceed even if another ralph invocation holds "
+    help="Proceed even if another kstrl invocation holds "
          ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
@@ -2778,8 +2776,8 @@ def retry(
     removes the failed attempt's kept worktree and branch (a retry
     starts fresh from the base branch; the failed attempt's findings
     stay in the evolution journal), then re-enters the factory with the
-    same manifest. Phase configs resolve env > ralph.toml > defaults,
-    exactly like `ralph factory` invoked without flags. The run-level
+    same manifest. Phase configs resolve env > kstrl.toml > defaults,
+    exactly like `ks factory` invoked without flags. The run-level
     factory lock applies as usual.
     """
     root_dir = root.resolve() if root else Path.cwd()
@@ -2792,7 +2790,7 @@ def retry(
     )
     if not manifest_file.exists():
         ui_impl.err(f"No manifest found at {manifest_file}")
-        ui_impl.info("Run `ralph factory` first, or pass --manifest.")
+        ui_impl.info("Run `ks factory` first, or pass --manifest.")
         sys.exit(1)
     try:
         manifest = Manifest.load(manifest_file)
@@ -2819,8 +2817,8 @@ def retry(
         if response.answered and response.choice != 0:
             sys.exit(0)
 
-    # Config assembly mirrors `ralph factory` with no flags: every phase
-    # config resolves env > ralph.toml > defaults (R2.1 control plane).
+    # Config assembly mirrors `ks factory` with no flags: every phase
+    # config resolves env > kstrl.toml > defaults (R2.1 control plane).
     factory_config, base_config = assemble_factory_configs(
         root_dir,
         single_pr=manifest.single_pr,
@@ -2895,7 +2893,7 @@ def evolve(
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
-    # R2.1: honor [evolution] in ralph.toml + env, anchored to --root.
+    # R2.1: honor [evolution] in kstrl.toml + env, anchored to --root.
     evo_config = EvolutionConfig.load(root_dir)
 
     if not evo_config.enabled:
@@ -2908,7 +2906,7 @@ def evolve(
         ui_impl.section("Experiment Trends")
         trends = journal.get_experiment_trends(last_n=10)
         if not trends:
-            ui_impl.info("No experiments recorded yet. Run `ralph factory` first.")
+            ui_impl.info("No experiments recorded yet. Run `ks factory` first.")
             sys.exit(0)
 
         for entry in trends:
@@ -2923,7 +2921,7 @@ def evolve(
     if apply_id:
         proposals_dir = root_dir / ".kstrl" / "proposals"
         if not proposals_dir.exists():
-            ui_impl.err("No proposals found. Run `ralph evolve` first.")
+            ui_impl.err("No proposals found. Run `ks evolve` first.")
             sys.exit(1)
         exit_code = _evolve_apply(
             apply_id, proposals_dir, root_dir, evo_config, ui_impl,
@@ -2957,7 +2955,7 @@ def evolve(
 
     proposals_dir = root_dir / ".kstrl" / "proposals"
     proposals = journal.propose_improvements(patterns)
-    # Idempotence across repeated `ralph evolve` runs: a proposal whose
+    # Idempotence across repeated `ks evolve` runs: a proposal whose
     # title already exists on disk is the same pattern re-detected, not
     # new signal - skip it rather than duplicating files.
     existing_titles = _existing_proposal_titles(proposals_dir)
@@ -2979,7 +2977,7 @@ def evolve(
                 f"  ({already} proposal(s) already on disk; not duplicated)"
             )
         ui_impl.info("")
-        ui_impl.info("Review proposals and apply with `ralph evolve --apply <ID>`")
+        ui_impl.info("Review proposals and apply with `ks evolve --apply <ID>`")
     elif already:
         ui_impl.info(
             f"All {already} proposal(s) for these patterns already exist "
@@ -3045,7 +3043,7 @@ def _evolve_apply(
         if not evo_config.auto_apply_computational:
             # PR A: the old bare click.confirm raised click.Abort on
             # non-TTY EOF and crashed the command. Piped input
-            # ("echo y | ralph evolve --apply ...") must keep working,
+            # ("echo y | ks evolve --apply ...") must keep working,
             # so this stays click.confirm - with EOF now meaning
             # "declined", never a crash.
             try:
@@ -3075,15 +3073,6 @@ def _evolve_apply(
 
 def main() -> None:
     """Main entry point."""
-    cli()
-
-
-def deprecated_ralph_main() -> None:
-    """Entry point for the deprecated `ralph` command (rename shim)."""
-    print(
-        "warning: the `ralph` command is deprecated; use `ks` (or `kstrl`).",
-        file=sys.stderr,
-    )
     cli()
 
 

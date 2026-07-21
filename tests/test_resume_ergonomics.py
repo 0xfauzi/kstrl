@@ -3,7 +3,7 @@
 Covers: run_id/completed_at persistence in the manifest, per-attempt
 findings hygiene (cleared per attempt, superseded findings retained in
 the evolution journal tagged ``attempt:<n>``), keep-worktrees-on-failure
-evidence, the failure summary, and the ``ralph retry`` command.
+evidence, the failure summary, and the ``ks retry`` command.
 """
 
 from __future__ import annotations
@@ -485,7 +485,7 @@ class TestKeepWorktreesOnFailure:
         assert "phase=engineer" in out
         assert "check=loop" in out
         assert comp.evidence_worktree in out
-        assert "ralph retry comp-a" in out
+        assert "ks retry comp-a" in out
 
     def test_failed_worktree_removed_without_flag(
         self, tmp_path: Path,
@@ -522,7 +522,7 @@ class TestKeepWorktreesOnFailure:
 
 
 # ---------------------------------------------------------------------------
-# ralph retry CLI
+# ks retry CLI
 # ---------------------------------------------------------------------------
 
 

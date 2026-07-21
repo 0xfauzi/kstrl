@@ -15,6 +15,7 @@ them; that is a false positive.
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import envcompat, git
+from kstrl import git
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -104,7 +105,7 @@ class SecurityResult:
     # security findings but DO NOT gate on it - it cannot be verified
     # at runtime. The trustworthy verification path is the planted-bug
     # calibration suite at tests/test_calibration.py (runs with
-    # RALPH_RUN_CALIBRATION=1) which catches reviewers that claim
+    # KSTRL_RUN_CALIBRATION=1) which catches reviewers that claim
     # exhaustive coverage but miss known bugs.
     exhaustively_searched: bool = False
     raw_output: str = ""
@@ -246,7 +247,7 @@ class SecurityConfig:
 
     The default mode is "skip": the security pass is an extra LLM call
     per component and is opt-in everywhere it is documented (CLI
-    --security-mode default, ralph.toml.example, README). Before R2.1
+    --security-mode default, kstrl.toml.example, README). Before R2.1
     the dataclass default was "advisory", but no product path consumed
     it - the CLI always passed an explicit mode and run_factory treats
     a missing config as skip - so aligning it with the documented
@@ -281,12 +282,12 @@ class SecurityConfig:
     @classmethod
     def from_env(cls) -> SecurityConfig:
         return cls(
-            mode=envcompat.get("KSTRL_SECURITY_MODE", SecurityMode.SKIP.value),
-            agent_cmd=envcompat.get("KSTRL_SECURITY_AGENT_CMD") or None,
-            agent_type=envcompat.get("KSTRL_SECURITY_AGENT_TYPE") or None,
-            model=envcompat.get("KSTRL_SECURITY_MODEL") or None,
-            timeout_seconds=float(envcompat.get("KSTRL_SECURITY_TIMEOUT", "600")),
-            fail_threshold=envcompat.get("KSTRL_SECURITY_FAIL_THRESHOLD", "high"),
+            mode=os.environ.get("KSTRL_SECURITY_MODE", SecurityMode.SKIP.value),
+            agent_cmd=os.environ.get("KSTRL_SECURITY_AGENT_CMD") or None,
+            agent_type=os.environ.get("KSTRL_SECURITY_AGENT_TYPE") or None,
+            model=os.environ.get("KSTRL_SECURITY_MODEL") or None,
+            timeout_seconds=float(os.environ.get("KSTRL_SECURITY_TIMEOUT", "600")),
+            fail_threshold=os.environ.get("KSTRL_SECURITY_FAIL_THRESHOLD", "high"),
         )
 
     @classmethod
@@ -310,18 +311,18 @@ class SecurityConfig:
         if "fail_threshold" in section:
             config.fail_threshold = str(section["fail_threshold"])
         # Env overrides
-        if envcompat.contains("KSTRL_SECURITY_MODE"):
-            config.mode = envcompat.require("KSTRL_SECURITY_MODE")
-        if envcompat.contains("KSTRL_SECURITY_AGENT_CMD"):
-            config.agent_cmd = envcompat.require("KSTRL_SECURITY_AGENT_CMD") or None
-        if envcompat.contains("KSTRL_SECURITY_AGENT_TYPE"):
-            config.agent_type = envcompat.require("KSTRL_SECURITY_AGENT_TYPE") or None
-        if envcompat.contains("KSTRL_SECURITY_MODEL"):
-            config.model = envcompat.require("KSTRL_SECURITY_MODEL") or None
-        if envcompat.contains("KSTRL_SECURITY_TIMEOUT"):
-            config.timeout_seconds = float(envcompat.require("KSTRL_SECURITY_TIMEOUT"))
-        if envcompat.contains("KSTRL_SECURITY_FAIL_THRESHOLD"):
-            config.fail_threshold = envcompat.require("KSTRL_SECURITY_FAIL_THRESHOLD")
+        if "KSTRL_SECURITY_MODE" in os.environ:
+            config.mode = os.environ["KSTRL_SECURITY_MODE"]
+        if "KSTRL_SECURITY_AGENT_CMD" in os.environ:
+            config.agent_cmd = os.environ["KSTRL_SECURITY_AGENT_CMD"] or None
+        if "KSTRL_SECURITY_AGENT_TYPE" in os.environ:
+            config.agent_type = os.environ["KSTRL_SECURITY_AGENT_TYPE"] or None
+        if "KSTRL_SECURITY_MODEL" in os.environ:
+            config.model = os.environ["KSTRL_SECURITY_MODEL"] or None
+        if "KSTRL_SECURITY_TIMEOUT" in os.environ:
+            config.timeout_seconds = float(os.environ["KSTRL_SECURITY_TIMEOUT"])
+        if "KSTRL_SECURITY_FAIL_THRESHOLD" in os.environ:
+            config.fail_threshold = os.environ["KSTRL_SECURITY_FAIL_THRESHOLD"]
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
         return config

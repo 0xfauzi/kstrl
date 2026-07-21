@@ -1,7 +1,5 @@
 # F5 Calibration Baseline — 2026-05-27
 
-> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
-
 First end-to-end calibration baseline against real LLM calls. Captures the
 detection rate of each adversarial role on the planted-bug fixtures shipped in
 Phase D.
@@ -9,7 +7,7 @@ Phase D.
 ## How to reproduce
 
 ```bash
-RALPH_RUN_CALIBRATION=1 RALPH_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
+KSTRL_RUN_CALIBRATION=1 KSTRL_CALIBRATION_MODEL=haiku uv run pytest tests/test_calibration.py -v
 ```
 
 Cost on 2026-05-27 run: ~$0.10-0.50 in Haiku calls, 374s wall-clock for 11
@@ -105,7 +103,7 @@ Result:
 | Architect (halting, spec-issue detection) | 2 | 3 | 67% |
 | Architect (non-halting, allowedPaths quality) | 1 | 1 | 100% |
 
-The halting-fixture rate held at 67% across v1.0.0/v1.1.0/v1.2.0. The non-halting fixture is new in v1.2.0 and Haiku passed on first run, producing `['src/slugify/', 'tests/test_slugify.py', 'scripts/ralph/feature/slugify-.../']` -- excludes harness internals, includes test root, names the feature subtree. This is the first calibrated evidence that the rule actually constrains the architect, not just the prompt-instruction layer.
+The halting-fixture rate held at 67% across v1.0.0/v1.1.0/v1.2.0. The non-halting fixture is new in v1.2.0 and Haiku passed on first run, producing `['src/slugify/', 'tests/test_slugify.py', 'scripts/kstrl/feature/slugify-.../']` -- excludes harness internals, includes test root, names the feature subtree. This is the first calibrated evidence that the rule actually constrains the architect, not just the prompt-instruction layer.
 
 Raw: `tests/adversarial_fixtures/_results/baseline-20260527-195157.json`.
 
@@ -120,7 +118,7 @@ The fixture-suite is also small. Three halting spec fixtures grade three distinc
 - **Single-run baseline**. LLMs vary; aggregate across multiple runs before
   trusting any single rate as stable. The architect miss on spec-01 may or may
   not be reproducible.
-- **Haiku-specific**. Running with `RALPH_CALIBRATION_MODEL=sonnet` (or
+- **Haiku-specific**. Running with `KSTRL_CALIBRATION_MODEL=sonnet` (or
   `opus`) will probably catch more issues and classify them more precisely,
   but is also more expensive.
 - **Fixture set is small** (5 + 3 + 3 = 11). Each role's rate has wide
@@ -132,7 +130,7 @@ The fixture-suite is also small. Three halting spec fixtures grade three distinc
 
 ## Recommended next steps
 
-1. Re-run with `RALPH_CALIBRATION_MODEL=sonnet` to see how the rates shift.
+1. Re-run with `KSTRL_CALIBRATION_MODEL=sonnet` to see how the rates shift.
 2. Expand the fixture library: more security categories (SSRF, deserialization,
    XSS), more reviewer concerns (copy_paste, error_handling), more vague specs.
 3. Add a small negative-control set (clean diffs/specs) and assert the roles

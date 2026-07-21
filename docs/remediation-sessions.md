@@ -1,7 +1,5 @@
 # Remediation Execution Plan: Copy/Paste Session Prompts
 
-> Rename note (2026-07-20): the project was renamed Ralph -> kstrl (package `kstrl`, CLI `ks`, config `kstrl.toml`, state `.kstrl/`, env `KSTRL_*`). Historical entries below keep the names that were current when they were written.
-
 Companion to `docs/remediation-roadmap.md` (the WHAT). This file is the HOW:
 one prompt per Claude Code session, grouped into waves you can run in
 parallel. Paste a prompt into a fresh session, review the PR it produces,
@@ -25,10 +23,10 @@ disjoint regions with trivial rebases). Run each parallel session in its own
 worktree:
 
 ```bash
-cd ~/Documents/code/ralph
+cd ~/Documents/code/kstrl
 git fetch origin
-git worktree add ../ralph-<id> -b <branch-from-prompt> origin/main
-cd ../ralph-<id>
+git worktree add ../kstrl-<id> -b <branch-from-prompt> origin/main
+cd ../kstrl-<id>
 uv sync          # each worktree needs its own venv
 claude           # then paste the session prompt
 ```
@@ -36,8 +34,8 @@ claude           # then paste the session prompt
 After the PR merges:
 
 ```bash
-cd ~/Documents/code/ralph
-git worktree remove ../ralph-<id>
+cd ~/Documents/code/kstrl
+git worktree remove ../kstrl-<id>
 ```
 
 **Merge protocol:** you are the gating reviewer for every PR (H1): use
@@ -70,8 +68,8 @@ another session's chat context.
    except, no mutable defaults.
 6. Before opening the PR, all three must be green and you must paste their
    final lines into the PR body:
-   `uv run pytest tests/ -q` / `uv run mypy ralph_py/ --strict` /
-   `uv run ruff check ralph_py/ tests/`
+   `uv run pytest tests/ -q` / `uv run mypy kstrl/ --strict` /
+   `uv run ruff check kstrl/ tests/`
 7. Rebase onto `origin/main` before pushing. Open the PR with `gh pr create`;
    do not merge it.
 8. PR body must contain: roadmap item IDs, a "Tested" list (behaviors proven
@@ -111,10 +109,10 @@ Branch: `fix/r0-1-timeouts`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R0.1 in docs/remediation-roadmap.md. You are implementing R0.1: agent timeouts are currently configured everywhere and enforced nowhere.
 
 Defects (verify line numbers against current code):
-- loop.py:154 calls agent.run(prompt, cwd) with no timeout; config.py:62-63 (agent_iteration_timeout, component_timeout) and the entire timeout.py module are parsed but never consumed; cli.py binds --agent-timeout/--component-timeout for `ralph factory` and never uses them.
+- loop.py:154 calls agent.run(prompt, cwd) with no timeout; config.py:62-63 (agent_iteration_timeout, component_timeout) and the entire timeout.py module are parsed but never consumed; cli.py binds --agent-timeout/--component-timeout for `ks factory` and never uses them.
 - agents/codex.py:44-98 ignores its timeout parameter entirely and proc.wait() is unbounded; agents/claude_code.py:90-98 only checks the clock when a stdout line arrives, so a silently hung CLI blocks forever; agents/custom.py has the same class of problem.
 
-Scope: ralph_py/agents/*.py, ralph_py/loop.py, ralph_py/timeout.py, ralph_py/config.py, ralph_py/factory.py (scheduler backstop only), ralph_py/cli.py (wire the two dead flags), tests.
+Scope: kstrl/agents/*.py, kstrl/loop.py, kstrl/timeout.py, kstrl/config.py, kstrl/factory.py (scheduler backstop only), kstrl/cli.py (wire the two dead flags), tests.
 
 Requirements:
 1. All agent subprocesses launch with start_new_session=True. Read stdout on a reader thread with a deadline so a hang with NO output is detected. On breach: killpg(SIGTERM), grace period, then SIGKILL. All three adapters honor the timeout parameter. Bound codex proc.wait().
@@ -134,13 +132,13 @@ Branch: `fix/r0-6-id-hygiene`
 ```text
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R0.6 in docs/remediation-roadmap.md. You are implementing R0.6: LLM-emitted component ids and branch names flow unvalidated into filesystem paths and git argv.
 
-Defects: decompose.py:384-390 and manifest.py:283-298 validate ids only as non-empty strings. An id like "../../repo" escapes .ralph/worktrees/ and reaches `git worktree remove --force` at the escaped path (factory.py builds worktree_path = root/.ralph/worktrees/<id>). Branch names reach `git push -u origin <branch>` and `git worktree add ... <branch>` with no leading-dash rejection and no `--` separators, so a crafted value becomes an argv option.
+Defects: decompose.py:384-390 and manifest.py:283-298 validate ids only as non-empty strings. An id like "../../repo" escapes .kstrl/worktrees/ and reaches `git worktree remove --force` at the escaped path (factory.py builds worktree_path = root/.kstrl/worktrees/<id>). Branch names reach `git push -u origin <branch>` and `git worktree add ... <branch>` with no leading-dash rejection and no `--` separators, so a crafted value becomes an argv option.
 
-Scope: ralph_py/manifest.py, ralph_py/decompose.py, ralph_py/git.py, ralph_py/pr.py, tests.
+Scope: kstrl/manifest.py, kstrl/decompose.py, kstrl/git.py, kstrl/pr.py, tests.
 
 Requirements:
 1. Component ids must match ^[a-z0-9][a-z0-9._-]{0,63}$ (no slashes, no dots-only segments). Enforce at manifest parse AND decompose validation, with actionable error messages (the decompose retry loop should be able to feed the error back).
-2. Branch names: reject leading '-', '..', whitespace, and ':'; allow the ralph/factory/ prefix pattern.
+2. Branch names: reject leading '-', '..', whitespace, and ':'; allow the kstrl/factory/ prefix pattern.
 3. Add `--` separators in git invocations where a ref or path follows options and could be attacker-shaped (survey git.py and pr.py call sites; change only where it is safe for the git subcommand in question).
 4. Do not silently sanitize: reject with an error. Silent rewriting hides architect drift.
 
@@ -162,7 +160,7 @@ Defects (knowledge.py):
 - test_verified confidence is accepted with zero cross-checking.
 - Same-second run dirs order by random nonce, so "latest" can be older.
 
-Scope: ralph_py/knowledge.py, tests/test_knowledge.py.
+Scope: kstrl/knowledge.py, tests/test_knowledge.py.
 
 Requirements:
 1. Retrieval becomes union-across-run-dirs with per-fact-id latest-wins (supersede by fact id, not by directory). Keep token budgeting semantics; re-check tier caps still hold with union reads.
@@ -182,21 +180,21 @@ Branch: `fix/r4-1-isolation`
 ```text
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then items R4.1 and R3.4 in docs/remediation-roadmap.md. You are implementing suite isolation and repo hygiene.
 
-Defects: the test suite writes to the repo's REAL .ralph/evolution.jsonl and .ralph/experiments.tsv: 837 of 910 journal entries are test pollution, corrupting the data the learning loop consumes. conftest's clean_env clears only legacy vars, not FACTORY_*/RALPH_* families. The repo also carries a ~99MB stale worktree at .claude/worktrees/tender-leakey and .gitignore does not cover .ralph/.
+Defects: the test suite writes to the repo's REAL .kstrl/evolution.jsonl and .kstrl/experiments.tsv: 837 of 910 journal entries are test pollution, corrupting the data the learning loop consumes. conftest's clean_env clears only legacy vars, not FACTORY_*/KSTRL_* families. The repo also carries a ~99MB stale worktree at .claude/worktrees/tender-leakey and .gitignore does not cover .kstrl/.
 
-Scope: tests/conftest.py, .gitignore, .ralph/ (archival move only), tests as needed. Do NOT touch ralph_py/ source in this session.
+Scope: tests/conftest.py, .gitignore, .kstrl/ (archival move only), tests as needed. Do NOT touch kstrl/ source in this session.
 
 Requirements:
 1. Autouse conftest fixture that redirects every evolution/experiments/knowledge write path to tmp_path for all tests (env vars and/or monkeypatched defaults; inspect how EvolutionConfig and KnowledgeConfig resolve paths and cover both).
-2. A guard fixture that snapshots the repo's .ralph/ state before the session and FAILS the run loudly if any test mutated it. This is the enforcement, not the redirect.
-3. Extend clean_env to the FACTORY_*, RALPH_TIMEOUT_*, RALPH_CONTRACT_*, RALPH_SECURITY_*, RALPH_VERIFY_*, RALPH_EVOLUTION_*, RALPH_KNOWLEDGE_* families so ambient dev-machine env cannot alter from_env tests.
-4. Archive (do not delete) the polluted journals: move .ralph/evolution.jsonl and .ralph/experiments.tsv to .ralph/archive/ with a README.md line explaining why.
-5. Add .ralph/ to .gitignore.
+2. A guard fixture that snapshots the repo's .kstrl/ state before the session and FAILS the run loudly if any test mutated it. This is the enforcement, not the redirect.
+3. Extend clean_env to the FACTORY_*, KSTRL_TIMEOUT_*, KSTRL_CONTRACT_*, KSTRL_SECURITY_*, KSTRL_VERIFY_*, KSTRL_EVOLUTION_*, KSTRL_KNOWLEDGE_* families so ambient dev-machine env cannot alter from_env tests.
+4. Archive (do not delete) the polluted journals: move .kstrl/evolution.jsonl and .kstrl/experiments.tsv to .kstrl/archive/ with a README.md line explaining why.
+5. Add .kstrl/ to .gitignore.
 6. Stale worktree: run `git log claude/tender-leakey --not main --oneline`. If it shows NO unique commits, remove the worktree (git worktree remove --force .claude/worktrees/tender-leakey) and delete the branch, and say so in the PR. If it shows unique commits, do NOT remove anything: list them in the PR body for the user to decide.
 
 Tests: a deliberate journal-writing test against defaults proves the redirect works; the guard fixture is exercised by a self-test.
 
-Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencing R4.1 + R3.4 (mark R3.4 [~] since gitignore/archive land here but ralph.toml tracking questions may remain), flip checkboxes accordingly.
+Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencing R4.1 + R3.4 (mark R3.4 [~] since gitignore/archive land here but kstrl.toml tracking questions may remain), flip checkboxes accordingly.
 ```
 
 ---
@@ -214,7 +212,7 @@ Defects:
 - pr.py:149-152 runs `git pull origin <base>` with cwd=root_dir on WHATEVER branch the user has checked out: it mutates the operator's checkout and leaves local base stale (H-1).
 - Every pr.py subprocess except the merge-wait loop lacks a timeout.
 
-Scope: ralph_py/pr.py, ralph_py/factory.py (PR block + worktree base refs), ralph_py/manifest.py (status enum), ralph_py/git.py (diff base refs), tests.
+Scope: kstrl/pr.py, kstrl/factory.py (PR block + worktree base refs), kstrl/manifest.py (status enum), kstrl/git.py (diff base refs), tests.
 
 Requirements:
 1. pr.py returns a typed PrOutcome dataclass (pushed, pr_url, merged, merge_pending, error) instead of lossy tuples. Explicit timeouts on every gh/git call in the module.
@@ -238,7 +236,7 @@ Defects:
 - factory.py:1055-1082: when contract fails, the breaker is reset to PENDING AFTER the scheduling loop has exited, so the promised retry never runs; the failure is not recorded in factory_result.failed, so the run exits 0 with broken integrated code.
 - Bisection blames the first component unconditionally when PRs were already squash-merged (merges no-op), and is order-dependent for interaction failures.
 
-Scope: ralph_py/contract.py, ralph_py/factory.py (contract block + scheduling loop re-entry), tests.
+Scope: kstrl/contract.py, kstrl/factory.py (contract block + scheduling loop re-entry), tests.
 
 Requirements:
 1. All tier merging happens in a detached temp WORKTREE (git worktree add --detach), never the user's checkout. Recovery path: git merge --abort, then remove the temp worktree; assert cleanup succeeded and fail loudly if not.
@@ -258,13 +256,13 @@ Branch: `fix/r0-4-provisioning`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R0.4 in docs/remediation-roadmap.md. You are implementing R0.4: the pair of defects that caused the recorded end-to-end validation failure (docs/phase-f-e2e-validation-v12.log: read it, it is short and is your acceptance scenario).
 
 Defects:
-- factory.py _run_component copies only the PRD into the worktree. scripts/ralph/prompt.md is gitignored, so fresh worktrees never contain it and the engineer silently falls back to the harness DEFAULT_PROMPT (log line 38).
-- The repo-root detection heuristic (factory.py:274-280) is inverted: it tests for .ralph/worktrees inside the worktree, which only exists if committed; CLAUDE.md/AGENTS.md propagation is a guaranteed no-op in real worktrees.
+- factory.py _run_component copies only the PRD into the worktree. scripts/kstrl/prompt.md is gitignored, so fresh worktrees never contain it and the engineer silently falls back to the harness DEFAULT_PROMPT (log line 38).
+- The repo-root detection heuristic (factory.py:274-280) is inverted: it tests for .kstrl/worktrees inside the worktree, which only exists if committed; CLAUDE.md/AGENTS.md propagation is a guaranteed no-op in real worktrees.
 - Root-relative paths (prd/prompt) resolve against the worker's inherited CWD (factory.py:254, 265-268), so --root from another directory silently no-ops the copies.
-- verify.check_diff_scope failure messages name neither the base branch nor the allowed paths; in the logged run the agent guessed `main` as base, ran `git checkout main -- ralph_py/decompose.py ...` reverting base-branch content, and failed again.
+- verify.check_diff_scope failure messages name neither the base branch nor the allowed paths; in the logged run the agent guessed `main` as base, ran `git checkout main -- kstrl/decompose.py ...` reverting base-branch content, and failed again.
 - loop.py:168-186: the completion-marker early return happens BEFORE guards.enforce_allowed_paths, so an agent that edits out-of-scope files and emits COMPLETE in the same iteration bypasses enforcement.
 
-Scope: ralph_py/factory.py (_run_component and _submit_args plumbing), ralph_py/verify.py (check_diff_scope message), ralph_py/context.py (pass-through only if needed), ralph_py/loop.py (guard ordering), tests.
+Scope: kstrl/factory.py (_run_component and _submit_args plumbing), kstrl/verify.py (check_diff_scope message), kstrl/context.py (pass-through only if needed), kstrl/loop.py (guard ordering), tests.
 
 Requirements:
 1. _run_component receives root_dir explicitly and resolves prd/prompt/CLAUDE.md/AGENTS.md sources against it; copies prompt.md and CLAUDE.md/AGENTS.md into the worktree alongside the PRD; delete the broken heuristic.
@@ -286,16 +284,16 @@ Branch: `fix/r0-5-instance-safety`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R0.5 in docs/remediation-roadmap.md. You are implementing R0.5.
 
 Defects:
-- _setup_worktree unconditionally force-removes an existing worktree at the component path under a per-component flock that only serializes the git commands: a second factory invocation destroys the first's IN-FLIGHT worktree (guaranteed collision for `ralph run`, whose component id is constant) (H-7). Stale branches from aborted runs are silently reused with their old commits via the fallback `git worktree add <path> <branch>`.
-- factory.py:424 hardcodes the manifest save path: `ralph run` clobbers an in-progress factory's resumable manifest, and `--manifest /custom.json` state saves to the wrong file (H-15).
+- _setup_worktree unconditionally force-removes an existing worktree at the component path under a per-component flock that only serializes the git commands: a second factory invocation destroys the first's IN-FLIGHT worktree (guaranteed collision for `ks run`, whose component id is constant) (H-7). Stale branches from aborted runs are silently reused with their old commits via the fallback `git worktree add <path> <branch>`.
+- factory.py:424 hardcodes the manifest save path: `ks run` clobbers an in-progress factory's resumable manifest, and `--manifest /custom.json` state saves to the wrong file (H-15).
 - single_pr mode with parallel worktrees hard-fails every same-tier component after the first (branch already checked out elsewhere); nothing forces max_parallel=1 (H-8).
 
-Scope: ralph_py/factory.py, ralph_py/cli.py (manifest path + single_pr guard), ralph_py/manifest.py (if path handling lives there), tests.
+Scope: kstrl/factory.py, kstrl/cli.py (manifest path + single_pr guard), kstrl/manifest.py (if path handling lives there), tests.
 
 Requirements:
-1. Run-level exclusion: flock on .ralph/factory.lock held for the whole run; a second invocation on the same root refuses to start with a clear message (add a --force-lock override flag). POSIX-only like the existing A4 lock; degrade with a warning on Windows.
-2. Worktrees keyed .ralph/worktrees/<run_id>/<component_id>; cleanup and crash-recovery updated for the new layout; stale branches from previous runs are deleted if fully merged, otherwise the run refuses with an explicit error naming the branch. Never silently reuse.
-3. Manifest save path == manifest load path. `ralph run` uses its own scripts/ralph/run-manifest.json.
+1. Run-level exclusion: flock on .kstrl/factory.lock held for the whole run; a second invocation on the same root refuses to start with a clear message (add a --force-lock override flag). POSIX-only like the existing A4 lock; degrade with a warning on Windows.
+2. Worktrees keyed .kstrl/worktrees/<run_id>/<component_id>; cleanup and crash-recovery updated for the new layout; stale branches from previous runs are deleted if fully merged, otherwise the run refuses with an explicit error naming the branch. Never silently reuse.
+3. Manifest save path == manifest load path. `ks run` uses its own scripts/kstrl/run-manifest.json.
 4. single_pr=true forces max_parallel=1 with a printed notice.
 
 Tests: two-process contention test (second invocation refused while first holds the lock); custom-manifest round-trip saves to the custom path; single_pr parallel request downgrades; stale-branch refusal.
@@ -319,7 +317,7 @@ Defects:
 - factory.py:732-739: a security infrastructure error in advisory mode produces a PR body with NO security section: "did not run" is invisible.
 - review.py:484 / security.py:436: raw_output truncated to 2000 chars, losing the forensic tail of malformed outputs.
 
-Scope: ralph_py/review.py, ralph_py/security.py (parity bits only), ralph_py/findings.py, ralph_py/factory.py (phase call sites + PR body), ralph_py/pr.py (security-did-not-run section), tests.
+Scope: kstrl/review.py, kstrl/security.py (parity bits only), kstrl/findings.py, kstrl/factory.py (phase call sites + PR body), kstrl/pr.py (security-did-not-run section), tests.
 
 Requirements:
 1. Criterion coverage: every PRD story id must receive a verdict or the result is infrastructure_error=True. Match by story id, not criterion text.
@@ -344,10 +342,10 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Defects:
 - git.get_diff_names (git.py:216) uses `git diff --name-only base...HEAD`; git rename detection means moving protected content into an allowed path shows ONLY the destination, so a rename-move defeats scope (empirically reproduced in the review: `git mv protected/gate.py allowed/gate.py` yields only allowed/gate.py) (H-5).
-- decompose._validate_decompose_output (decompose.py:414-434) validates allowedPaths entries only as non-empty strings. The DECOMPOSE_PROMPT promises the harness rejects entries like ".ralph/" or repo-root manifests: it does not, so the constrained model can reopen its own guardrail (H-4). Read the EXCLUDE list stated inside DECOMPOSE_PROMPT (do not modify the prompt) and enforce exactly that list in the validator.
+- decompose._validate_decompose_output (decompose.py:414-434) validates allowedPaths entries only as non-empty strings. The DECOMPOSE_PROMPT promises the harness rejects entries like ".kstrl/" or repo-root manifests: it does not, so the constrained model can reopen its own guardrail (H-4). Read the EXCLUDE list stated inside DECOMPOSE_PROMPT (do not modify the prompt) and enforce exactly that list in the validator.
 - factory.py:554-558: PRD load/parse failure is swallowed into allowed_paths=None, which silently DISABLES the scope check (check_diff_scope returns passed=True on falsy allowed_paths).
 
-Scope: ralph_py/git.py, ralph_py/verify.py, ralph_py/decompose.py (validator only), ralph_py/factory.py (the swallow site), tests.
+Scope: kstrl/git.py, kstrl/verify.py, kstrl/decompose.py (validator only), kstrl/factory.py (the swallow site), tests.
 
 Requirements:
 1. get_diff_names uses --name-status -M (and -C if cheap); rename/copy SOURCES count as changed paths for scope purposes. Update all callers.
@@ -371,10 +369,10 @@ Defects:
 - decompose.py:539-577: PRD schema validation happens AFTER the retry loop and AFTER files are written; a malformed story crashes decompose outside the retry loop, the LLM never gets to fix it, and partial prd.json files remain on disk.
 - Empty userStories, empty acceptanceCriteria, and passes:true all pass validation (vacuous components auto-pass review downstream).
 
-Scope: ralph_py/decompose.py, ralph_py/cli.py (print the artifact path on halt), tests.
+Scope: kstrl/decompose.py, kstrl/cli.py (print the artifact path on halt), tests.
 
 Requirements:
-1. Persist ALL spec_issues to scripts/ralph/spec-issues.json (structured: severity, kind, summary, location) plus a journal event; on SpecBlockerError the CLI prints the file path so the user iterates against a durable artifact.
+1. Persist ALL spec_issues to scripts/kstrl/spec-issues.json (structured: severity, kind, summary, location) plus a journal event; on SpecBlockerError the CLI prints the file path so the user iterates against a durable artifact.
 2. Move PRD schema validation inside the decompose retry loop so validation errors feed back to the LLM like other validation failures; write files only after everything validates; clean up partials on terminal failure.
 3. Reject empty userStories, empty acceptanceCriteria arrays, and passes:true at decompose validation with retryable messages.
 
@@ -397,7 +395,7 @@ Defects:
 - git.py:261-271 head-truncates review diffs at 50KB. A rogue engineer can pad the first 50KB with benign churn and land the malicious hunk after the cut; both reviewers see a truncation notice but hard mode has no policy: the unreviewed tail merges (H-16).
 - The security reviewer still sees the engineer's Self-Critique block: only Phase 2 strips it (review.py:391 vs security.py:377), so the E2 anti-anchoring rationale is unapplied where it matters most.
 
-Scope: ralph_py/git.py, ralph_py/review.py, ralph_py/security.py, ralph_py/factory.py (chunk orchestration + budget), tests.
+Scope: kstrl/git.py, kstrl/review.py, kstrl/security.py, kstrl/factory.py (chunk orchestration + budget), tests.
 
 Requirements:
 1. Hard mode: a diff exceeding the cap is never partially reviewed silently. Chunk the diff on file boundaries into <=cap segments and run one review pass per chunk (each pass counts against max_adversarial_calls); merge results (any chunk failure fails; findings concatenate). If the budget cannot cover the chunks, the phase fails as infrastructure rather than passing partially.
@@ -417,19 +415,19 @@ Branch: `fix/r2-1-control-plane`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then items R2.1 and R2.2 in docs/remediation-roadmap.md. You own cli.py for this wave; no other session touches it.
 
 Defects:
-- The CLI never calls VerifyConfig.load, SecurityConfig.load, ContractConfig.load, FactoryConfig.load, FeedforwardConfig.load, or EvolutionConfig.load (all exist, all tested, zero product call sites). `ralph factory` constructs phase configs directly from click flags (cli.py:1415-1456), so click defaults always win and six of nine ralph.toml sections are silently ignored (CRIT-7).
+- The CLI never calls VerifyConfig.load, SecurityConfig.load, ContractConfig.load, FactoryConfig.load, FeedforwardConfig.load, or EvolutionConfig.load (all exist, all tested, zero product call sites). `ks factory` constructs phase configs directly from click flags (cli.py:1415-1456), so click defaults always win and six of nine kstrl.toml sections are silently ignored (CRIT-7).
 - max_adversarial_calls and pause_before_pr_merge are unreachable: FactoryConfig.load reads only 7 keys (factory.py:91-105), no env var, no flag.
 - FeedforwardConfig/EvolutionConfig/KnowledgeConfig lack from_env.
-- ralph init does not scaffold ralph.toml, so a fresh project has no discoverable config surface.
+- ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
-Scope: ralph_py/cli.py, ralph_py/config.py, ralph_py/factory.py (FactoryConfig.load keys), ralph_py/verify.py, ralph_py/security.py, ralph_py/contract.py, ralph_py/feedforward.py, ralph_py/evolution.py, ralph_py/knowledge.py (loaders/from_env only), ralph_py/init_cmd.py (scaffold), tests.
+Scope: kstrl/cli.py, kstrl/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/init_cmd.py (scaffold), tests.
 
 Requirements:
-1. Resolution order everywhere: explicit CLI flag > env > ralph.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
-2. Both `ralph factory` and `ralph run` build every phase config via .load(root). Add from_env where missing so the documented env vars all function.
-3. FactoryConfig.load reads max_adversarial_calls and pause_before_pr_merge; add RALPH_FACTORY_MAX_ADVERSARIAL_CALLS / RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE env vars and --max-adversarial-calls / --pause-before-pr-merge flags.
-4. ralph init scaffolds a fully commented ralph.toml (content mirrors ralph.toml.example, trimmed to real keys).
-5. Behavior-change caution: existing setups where ralph.toml sections were silently ignored will now take effect. Add a NOTE line to the factory startup output when a toml section changed an effective value away from the CLI default, and document the change in the PR body prominently.
+1. Resolution order everywhere: explicit CLI flag > env > kstrl.toml > dataclass default. Give click options default=None sentinels so "not passed" is distinguishable from "passed the default value"; apply flag overrides onto the loaded config.
+2. Both `ks factory` and `ks run` build every phase config via .load(root). Add from_env where missing so the documented env vars all function.
+3. FactoryConfig.load reads max_adversarial_calls and pause_before_pr_merge; add KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS / KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE env vars and --max-adversarial-calls / --pause-before-pr-merge flags.
+4. ks init scaffolds a fully commented kstrl.toml (content mirrors kstrl.toml.example, trimmed to real keys).
+5. Behavior-change caution: existing setups where kstrl.toml sections were silently ignored will now take effect. Add a NOTE line to the factory startup output when a toml section changed an effective value away from the CLI default, and document the change in the PR body prominently.
 
 Tests: for each of the nine sections, a toml round-trip test proving the value reaches the resolved config through the real CLI construction path; precedence tests (flag beats env beats toml) for at least factory/verify/security; the two safety knobs reachable via all three surfaces.
 
@@ -440,7 +438,7 @@ Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencin
 Branch: `test/r4-2-spine-1`
 
 ```text
-Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R4.2 in docs/remediation-roadmap.md. You are adding the first half of the real-git spine tier. Tests only: do not modify ralph_py/ source (if a test exposes a product bug, write the failing test, mark it xfail with a comment naming the bug, and report it in the PR body).
+Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R4.2 in docs/remediation-roadmap.md. You are adding the first half of the real-git spine tier. Tests only: do not modify kstrl/ source (if a test exposes a product bug, write the failing test, mark it xfail with a comment naming the bug, and report it in the PR body).
 
 Context: the review found the five most load-bearing behaviors have mock-only coverage. This session covers: worktree lifecycle and PR failure paths.
 
@@ -459,7 +457,7 @@ Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencin
 
 # Wave 5 (after wave 4 merges)
 
-## Session 5A: `ralph run` honesty + feedforward wiring + prd_path contract
+## Session 5A: `ks run` honesty + feedforward wiring + prd_path contract
 Branch: `fix/r2-3-run-honesty`
 
 ```text
@@ -468,12 +466,12 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 PROMPT EXCEPTION: this session MAY edit init_cmd.DEFAULT_PROMPT (the engineer prompt template) because the prd_path fix requires it. H3 applies: bump DEFAULT_PROMPT_VERSION, update the (hash, version) snapshot in tests/test_prompt_versions.py in the same commit, and say so in the PR body. Touch no other prompt.
 
 Defects:
-- factory.py:328-344 hardcodes max_iterations=30 and interactive=False and never receives allowed_paths; _submit_args (factory.py:954-975) does not forward them. `ralph run 5` runs 30 iterations per attempt; -i and --allowed-paths are no-ops (CRIT-8).
+- factory.py:328-344 hardcodes max_iterations=30 and interactive=False and never receives allowed_paths; _submit_args (factory.py:954-975) does not forward them. `ks run 5` runs 30 iterations per attempt; -i and --allowed-paths are no-ops (CRIT-8).
 - --no-verify does not skip verification: factory.py:532 does `factory_config.verify_config or VerifyConfig()`, substituting defaults; on a non-Python repo this burns full retries against checks that cannot pass.
-- Feedforward never runs under `ralph factory`: cli builds FactoryConfig without feedforward_config, so ff_config_dict stays None (H-10).
-- The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/ralph/feature/<id>/prd.json while the default prompt points at scripts/ralph/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
+- Feedforward never runs under `ks factory`: cli builds FactoryConfig without feedforward_config, so ff_config_dict stays None (H-10).
+- The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/kstrl/feature/<id>/prd.json while the default prompt points at scripts/kstrl/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
 
-Scope: ralph_py/factory.py, ralph_py/cli.py, ralph_py/loop.py, ralph_py/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
+Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
 
 Requirements:
 1. Forward max_iterations, interactive, allowed_paths through _submit_args into _run_component; delete the hardcoded 30.
@@ -498,7 +496,7 @@ Defects:
 - Every verification/contract/fixtures subprocess inherits the harness's full environment, including ANTHROPIC_API_KEY etc.: agent-authored tests can read the harness's secrets.
 - Verification subprocess timeouts kill only the direct child: a test that backgrounds a server leaks it across iterations (no start_new_session/killpg in verify.py subprocess calls).
 
-Scope: ralph_py/factory.py (checkpoint block), ralph_py/verify.py, ralph_py/contract.py, ralph_py/fixtures.py (env plumbing only), tests.
+Scope: kstrl/factory.py (checkpoint block), kstrl/verify.py, kstrl/contract.py, kstrl/fixtures.py (env plumbing only), tests.
 
 Requirements:
 1. Checkpoint choices become: Approve / Reject (component -> FAILED immediately, no retry, dependents cascade-skip) / Retry (explicit, uses a retry). Non-interactive behavior unchanged (warn + proceed).
@@ -514,7 +512,7 @@ Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencin
 Branch: `test/r4-3-test-fixes`
 
 ```text
-Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then items R4.3 and R4.4 in docs/remediation-roadmap.md. Tests and CI only; do not modify ralph_py/ source.
+Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then items R4.3 and R4.4 in docs/remediation-roadmap.md. Tests and CI only; do not modify kstrl/ source.
 
 Defects (all verified in the review):
 - test_phase_c_coverage.py TestC1ParallelExecution disables worktrees and forces max_parallel=1 (tests nothing parallel); TestC6ConcurrentFactory uses separate roots + mocked _run_component (would pass with the flock deleted); TestC4ContractBreaker asserts only that contract ran, not that the breaker reset.
@@ -529,7 +527,7 @@ Requirements:
 1. C1 becomes a true 2-worker worktree test (real git, fake agent); C6 uses the SAME root and proves serialization (assert the second invocation blocks or is refused per wave-3 semantics); C4 asserts the breaker was reset AND re-ran; the verification-retry test counts attempts.
 2. AST-walker tests call the real _module_level_prompt_constants against synthetic modules.
 3. Implement test_no_silent_version_pin: hash moved while version pinned must fail.
-4. Codex live-contract tests gated behind RALPH_RUN_LIVE_CONTRACT=1; default suite is network-free (grep the suite for other network calls and gate any you find). Fix the caching test to count subprocess invocations.
+4. Codex live-contract tests gated behind KSTRL_RUN_LIVE_CONTRACT=1; default suite is network-free (grep the suite for other network calls and gate any you find). Fix the caching test to count subprocess invocations.
 5. pytest-cov in dev deps; CI uploads a coverage summary and enforces a ratchet: coverage must not drop below the recorded baseline. Record the MEASURED baseline number in the PR (run it, do not estimate) and store it where CI reads it.
 6. Register the spine marker split in CI: fast job runs -m "not spine", a second job runs -m spine.
 
@@ -548,16 +546,16 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Defects:
 - cli.py:281-284, 556-559, 858-861: run/understand/feature preflight checks ONLY CodexAgent.is_available() and exits "codex not found in PATH" even when Claude Code is installed and configured (decompose/factory at cli.py:1048, 1344 already do it right).
-- `ralph run` does not preflight prd.json: the agent burns full iterations against a prompt referencing a nonexistent PRD before Phase 1 reports "Failed to load PRD".
-- README promises `ralph config show` and `ralph status`; neither exists.
+- `ks run` does not preflight prd.json: the agent burns full iterations against a prompt referencing a nonexistent PRD before Phase 1 reports "Failed to load PRD".
+- README promises `ks config show` and `ks status`; neither exists.
 
-Scope: ralph_py/cli.py, tests.
+Scope: kstrl/cli.py, tests.
 
 Requirements:
 1. Preflight accepts whichever agent the resolved config selects (claude/codex/custom) and errors naming the agent it actually looked for, mirroring the factory implementation.
 2. run preflights prd.json existence + schema (reuse PRD.validate_schema) BEFORE any agent invocation, with the same friendly per-field errors init uses.
-3. `ralph config show`: print every resolved config section with the SOURCE of each value (flag/env/toml/default): this is the observability for the wave-4 control plane.
-4. `ralph status`: minimal version reading the manifest: per component id: status, retries, branch, timestamps if present. (The full ProgressLog-backed version is Session 7B; structure the command so 7B extends it.)
+3. `ks config show`: print every resolved config section with the SOURCE of each value (flag/env/toml/default): this is the observability for the wave-4 control plane.
+4. `ks status`: minimal version reading the manifest: per component id: status, retries, branch, timestamps if present. (The full ProgressLog-backed version is Session 7B; structure the command so 7B extends it.)
 
 Tests: preflight matrix (claude-only machine + type=claude passes; codex-only + type=codex passes; mismatch errors correctly); missing/invalid prd.json blocks before the agent runs (counting fake agent); config show output names sources correctly for a toml-set, env-set, and flag-set value; status renders a synthetic manifest.
 
@@ -574,7 +572,7 @@ Context: no token or dollar visibility exists anywhere; the call-count budget co
 
 MEASURE FIRST (the project rule is measure, do not assume): before writing the meter, empirically determine what usage data each agent CLI emits. Run the claude CLI in the stream-json mode the ClaudeCodeAgent uses and inspect the result event for usage fields; check what codex emits with the flags CodexAgent uses. Write your findings (actual field names, sample values) into the PR body. If codex exposes nothing, fall back to call counts + wall time for codex and say so.
 
-Scope: ralph_py/agents/*.py (usage extraction), ralph_py/loop.py, ralph_py/factory.py (aggregation), ralph_py/observability.py, ralph_py/evolution.py (experiments columns), tests.
+Scope: kstrl/agents/*.py (usage extraction), kstrl/loop.py, kstrl/factory.py (aggregation), kstrl/observability.py, kstrl/evolution.py (experiments columns), tests.
 
 Requirements:
 1. Agents surface a usage record per invocation (tokens in/out where available; else calls + duration). The Agent protocol change must stay backward-compatible for CustomAgent.
@@ -616,23 +614,23 @@ Branch: `fix/r2-5-docs`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R2.5 in docs/remediation-roadmap.md.
 
 Defects (docs vs reality):
-- README quick start step 1 (`uv tool install ralph-cli`) installs an UNRELATED PyPI package; step 3 (`ralph prd create`) does not exist; a third of the CLI table is fiction (TUI, prd group, config show/status existed only as of wave 6, --legacy). "362 tests" is stale. README documents [sensors]/[fixtures] toml sections that do not exist in code and omits [knowledge]/[factory]/[verify]/[security]/[contract].
+- README quick start step 1 (`uv tool install kstrl-cli`) installs an UNRELATED PyPI package; step 3 (`kstrl prd create`) does not exist; a third of the CLI table is fiction (TUI, prd group, config show/status existed only as of wave 6, --legacy). "362 tests" is stale. README documents [sensors]/[fixtures] toml sections that do not exist in code and omits [knowledge]/[factory]/[verify]/[security]/[contract].
 - pyproject.toml still depends on textual (dead since the TUI purge).
 - examples/uv-python predates the engineer contract: no Self-Critique block in its prompt.md, prd_prompt.txt forbids allowedPaths.
 - adversarial-design.md says the distiller runs "post-merge"; it runs pre-PR. runbook.md tells the operator to inspect a failed component's worktree, but cleanup deletes worktrees (align with the --keep-worktrees-on-failure flag landing in Session 7C: coordinate by documenting the flag as the recovery path).
 
-Scope: README.md, docs/*.md, ralph.toml.example, examples/uv-python/, pyproject.toml (dependency removal), scripts/ (new generator), .github/workflows/ci.yml (doc-drift check), tests as needed.
+Scope: README.md, docs/*.md, kstrl.toml.example, examples/uv-python/, pyproject.toml (dependency removal), scripts/ (new generator), .github/workflows/ci.yml (doc-drift check), tests as needed.
 
 Requirements:
 1. Write scripts/gen_docs.py: generates the README CLI reference from click introspection and the config reference from the dataclasses + loaders. Insert between markers in README so the rest is hand-written. CI check: regeneration produces no diff.
 2. Install story: unless the user has decided on publishing (check the roadmap "User decisions" section: if undecided), document clone-install (`uv tool install -e .` from a clone) as the ONLY path and remove the PyPI command.
 3. Remove textual from dependencies; verify nothing imports it.
 4. Refresh examples/uv-python to the current engineer contract (Self-Critique block, allowedPaths-aware prd_prompt, current progress format).
-5. Fix the drift list: distiller timing wording, runbook worktree guidance, test count (state the measured number), [sensors]/[fixtures] removed, missing sections added from ralph.toml.example.
+5. Fix the drift list: distiller timing wording, runbook worktree guidance, test count (state the measured number), [sensors]/[fixtures] removed, missing sections added from kstrl.toml.example.
 
 Tests: the CI doc-drift check itself; a test that scripts/gen_docs.py output matches the committed README sections.
 
-Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencing R2.5, flip the R2.5 checkbox (and R3.4 fully if the ralph.toml tracking note is resolved here).
+Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencing R2.5, flip the R2.5 checkbox (and R3.4 fully if the kstrl.toml tracking note is resolved here).
 ```
 
 ## Session 7B: Status + notifications
@@ -643,11 +641,11 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: the ProgressLog (observability.py) is a JSONL event bus (component_started/completed/failed/retrying, verification_result, review_result, contract_result) but is opt-in and unconsumed. There is no way to know a walk-away run's state without reading raw JSON, and no notification when it finishes or breaks.
 
-Scope: ralph_py/observability.py, ralph_py/cli.py (status command extension), ralph_py/factory.py (default-on wiring + hook firing), ralph_py/config.py or factory config ([notify] section), tests.
+Scope: kstrl/observability.py, kstrl/cli.py (status command extension), kstrl/factory.py (default-on wiring + hook firing), kstrl/config.py or factory config ([notify] section), tests.
 
 Requirements:
-1. ProgressLog defaults ON (path under .ralph/), configurable off.
-2. Extend `ralph status` (from Session 6A) to join manifest + ProgressLog: per component: phase, attempt, last-event age, cost totals (from Session 6B), evidence paths. A --watch flag polling on an interval is optional; add only if simple.
+1. ProgressLog defaults ON (path under .kstrl/), configurable off.
+2. Extend `ks status` (from Session 6A) to join manifest + ProgressLog: per component: phase, attempt, last-event age, cost totals (from Session 6B), evidence paths. A --watch flag polling on an interval is optional; add only if simple.
 3. [notify] config: on_complete and on_first_failure shell commands (documented examples: terminal bell, curl webhook). Fired exactly once each per run; also fire on MERGE_PENDING. Hook failures log a warning, never affect the run.
 4. Events gain the run_id so multiple runs' logs are distinguishable.
 
@@ -667,11 +665,11 @@ Defects/gaps:
 - A FAILED component can only be reset by hand-editing manifest.json; failed components' worktrees are deleted at cleanup so post-mortem evidence is gone.
 - comp.findings accumulates across retry attempts uncleared (factory.py:628, 731), inflating journal counts and attributing superseded findings to shipped code.
 
-Scope: ralph_py/manifest.py, ralph_py/factory.py, ralph_py/cli.py, ralph_py/findings.py (attempt tag), tests.
+Scope: kstrl/manifest.py, kstrl/factory.py, kstrl/cli.py, kstrl/findings.py (attempt tag), tests.
 
 Requirements:
 1. Persist run_id in the manifest; set completed_at on terminal states; store per-component last-attempt evidence pointers (worktree path if kept, journal offsets).
-2. `ralph retry <component-id>`: resets that FAILED component and its cascade-SKIPPED dependents to PENDING and re-enters the factory with the same manifest (respecting the wave-3 run lock).
+2. `ks retry <component-id>`: resets that FAILED component and its cascade-SKIPPED dependents to PENDING and re-enters the factory with the same manifest (respecting the wave-3 run lock).
 3. --keep-worktrees-on-failure flag (and toml key via the control plane); update the cleanup path; the failure summary lists per failed component: phase, check, and where the evidence lives.
 4. Clear comp.findings at the start of each attempt; tag every Finding with attempt:<n> so the journal distinguishes superseded findings from final ones.
 
@@ -692,11 +690,11 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Defects: calibration has no comparison tooling (H2 says "compare against baseline" but nothing diffs baseline JSONs, no threshold is codified); each fixture is a hard assert so the suite has been red-at-baseline in every recorded run (the architect misses are matcher artifacts: must_include_kind demands exact taxonomy labels the model paraphrases); single-trial single-model runs cannot support a "detection rate"; baselines do not record the model.
 
-Scope: ralph_py/ (new calibration module), tests/test_calibration.py, tests/test_calibration_matchers.py, tests/adversarial_fixtures/_results/ format, docs (usage section), tests.
+Scope: kstrl/ (new calibration module), tests/test_calibration.py, tests/test_calibration_matchers.py, tests/adversarial_fixtures/_results/ format, docs (usage section), tests.
 
 Requirements:
-1. `python -m ralph_py.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
-2. N-run mode: the runner supports RALPH_CALIBRATION_RUNS=N (default 3 for baselines), reporting per-fixture consistency (fraction of runs detected) alongside detection.
+1. `python -m kstrl.calibration compare <old.json> <new.json>`: per-role, per-category deltas with codified pass/fail thresholds (thresholds in one constants block, documented).
+2. N-run mode: the runner supports KSTRL_CALIBRATION_RUNS=N (default 3 for baselines), reporting per-fixture consistency (fraction of runs detected) alongside detection.
 3. Convert per-fixture hard asserts into threshold gates over the run set, so the suite is green at the current baseline and red on REGRESSION. The report JSON keeps per-fixture detail.
 4. Fix matcher brittleness: kind-matching accepts a documented synonym map (e.g. unstated_assumption ~ missing_detail) OR grades kind separately from detection so a paraphrased kind is a partial hit, not a miss. Update matcher unit tests.
 5. Baselines record the model id; add an always-run structural test that WARNS (not fails) when the configured calibration model differs from the newest baseline's model, citing H2-extended (re-calibrate on model change).
@@ -717,7 +715,7 @@ Defects (verify.py:224-254, both empirically reproduced in the review):
 - check_self_critique walks from the end of progress.txt to the LAST Self-Critique heading, never associating the block with the CURRENT iteration's entry: an iteration that omits the block passes if any earlier iteration had one. The docstring claims the opposite of what the code does.
 - The bullet-boundary break is dead code: `stripped.rstrip(":*").lower().endswith(("**","**:"))` can never be true because rstrip("*:") strips the trailing asterisks first: bullets from later sections (e.g. Interpretations in DEFAULT_PROMPT's format) inflate the count toward min_bullets.
 
-Scope: ralph_py/verify.py, tests/test_verify.py.
+Scope: kstrl/verify.py, tests/test_verify.py.
 
 Requirements:
 1. Associate the Self-Critique block with the current (latest) iteration entry: identify the latest iteration boundary in progress.txt first, then require the heading within it. Document the expected progress format assumption in the docstring honestly.
@@ -741,7 +739,7 @@ Requirements:
 1. Hard positives, at least 4: multi-hop authorization bug (permission check present but on the wrong object), second-order injection (sanitized at entry, unsafe at use), TOCTOU race, subtle timing oracle (early-return comparison). Each as a realistic multi-file diff with .meta.json.
 2. Negatives: at least 3 clean-but-nontrivial diffs per role (security, reviewer) whose meta marks must_not_flag categories; the runner computes FP rate and includes it in the report + thresholds (extend the 8A format).
 3. Context realism: fixtures gain a real PRD and realistic verification output; replace the all-PASS stub.
-4. You cannot validate hardness yourself (needs real LLM runs). End the PR with the exact RALPH_RUN_CALIBRATION commands; the ACCEPTANCE criterion the user checks: baseline model does NOT trivially catch all new positives on the first run (if it does, the fixtures are not hard and need another iteration): mark R5.2 [~] pending that empirical check.
+4. You cannot validate hardness yourself (needs real LLM runs). End the PR with the exact KSTRL_RUN_CALIBRATION commands; the ACCEPTANCE criterion the user checks: baseline model does NOT trivially catch all new positives on the first run (if it does, the fixtures are not hard and need another iteration): mark R5.2 [~] pending that empirical check.
    UPDATE (2026-07-20): this "must not catch all" bar was DROPPED. The capture caught all 4 hard positives 3/3, but investigation (docs/adversarial-design.md "Hard-positive hardness") showed the matcher is strict, the catches are genuine, and even a tell-free variant is caught 5/5 - haiku is just a competent reviewer, so `< 1.0` is ill-posed. R5.2 was reframed (measured-not-gated + detection-drop floors) and closed [x]. Do NOT reintroduce the "must be missable" bar for these categories.
 
 Tests: structural checks for every new fixture (loadable, meta schema, matchers resolve); FP-rate math on synthetic results.
@@ -766,7 +764,7 @@ Changes (batch them so one calibration cycle covers all):
 Process requirements (non-negotiable):
 - Every edited prompt: bump its *_PROMPT_VERSION (minor bump), update the (hash, version) snapshot in tests/test_prompt_versions.py: all in the same commit as the body change (H3).
 - The harness-side delimiter code changes come with unit tests (delimiters present in built prompts, random per run, referenced by the prompt text).
-- H2: you cannot run real-LLM calibration. Prepare docs/calibration-notes-r5.md with: what changed per prompt, the exact before/after commands (RALPH_RUN_CALIBRATION=1 with the 8A N-run mode), and empty tables for the user to paste deltas into. The PR body states in bold that the PR must not merge until the user has run calibration and recorded no regression.
+- H2: you cannot run real-LLM calibration. Prepare docs/calibration-notes-r5.md with: what changed per prompt, the exact before/after commands (KSTRL_RUN_CALIBRATION=1 with the 8A N-run mode), and empty tables for the user to paste deltas into. The PR body states in bold that the PR must not merge until the user has run calibration and recorded no regression.
 - Injection efficacy check: add planted injection strings to at least one 8B negative fixture (an in-diff instruction telling the reviewer to emit empty JSON) so calibration MEASURES injection resistance rather than asserting it.
 
 Finish per Shared rules: green checks (the snapshot test proves H3 compliance), rebase, PR with Tested/Assumed referencing R5.3, mark R5.3 [~] pending the user's calibration run.
@@ -787,9 +785,9 @@ Defects:
 - get_concern_hit_rate (evolution.py:651-690) scans entry["error"] for concern categories that never appear there: structurally zero forever, while the structured findings it needs are already in the same journal entries.
 - factory.py:1131 constructs EvolutionConfig() directly: [evolution] toml and env ignored, journal_path CWD-relative, writes wrapped in `except OSError: pass`.
 - Proposal IDs restart at PROP-001 every call and save_proposals clobbers prior files (evolution.py:475-480, 599-645).
-- `ralph evolve --apply` prints "not yet automated" while README and the command's own output promise application; auto_propose is never consulted; recorded durations are 0.0 and retry_rate semantics are undocumented.
+- `ks evolve --apply` prints "not yet automated" while README and the command's own output promise application; auto_propose is never consulted; recorded durations are 0.0 and retry_rate semantics are undocumented.
 
-Scope: ralph_py/evolution.py, ralph_py/factory.py (failure recording + config load), ralph_py/cli.py (evolve), docs (metric definitions), tests.
+Scope: kstrl/evolution.py, kstrl/factory.py (failure recording + config load), kstrl/cli.py (evolve), docs (metric definitions), tests.
 
 Requirements:
 1. Failure recording carries check_name plus the parser's structured signature (e.g. linter:E501, typecheck:arg-type, diff_scope:rename, review:<category>); pattern extraction consumes these.
@@ -816,7 +814,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: 2025-2026 research established self-preference bias and verifier homogenisation mechanistically: a same-family reviewer systematically misses the bug classes its family produces. The config already supports review_agent_cmd/review_model; nothing defaults to heterogeneity, warns about homogeneity, or records who reviewed whom.
 
-Scope: ralph_py/factory.py, ralph_py/config.py / factory config, ralph_py/findings.py, ralph_py/review.py, ralph_py/security.py, ralph_py/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
+Scope: kstrl/factory.py, kstrl/config.py / factory config, kstrl/findings.py, kstrl/review.py, kstrl/security.py, kstrl/pr.py, docs/adversarial-design.md (limitation #1 update), tests.
 
 Requirements:
 1. When the decided second family's CLI is available, review and security default to it (engineer keeps the primary); explicit config always wins. When unavailable, print a homogeneity warning naming the risk.
@@ -838,7 +836,7 @@ Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md,
 
 Context: fixtures.py (the independent behavioral oracle) is currently wired to NOTHING: run_mechanical_verification never calls check_fixtures, and PRD.validate_schema rejects the documented fixtures key. Two latent hazards block naive wiring: run_function_fixture imports and calls agent-written code IN the harness process (sys.path.insert + importlib) with the harness env (API keys); run_cli_fixture executes a PRD-supplied command with shell=True. The PRD is LLM-emitted: treat fixture definitions as untrusted.
 
-Scope: ralph_py/fixtures.py, ralph_py/verify.py, ralph_py/prd.py, ralph_py/factory.py (config plumbing), ralph_py/config.py (FixturesConfig loader via the control plane), docs, tests.
+Scope: kstrl/fixtures.py, kstrl/verify.py, kstrl/prd.py, kstrl/factory.py (config plumbing), kstrl/config.py (FixturesConfig loader via the control plane), docs, tests.
 
 Requirements:
 1. Function fixtures execute in a SUBPROCESS (sys.executable with an argv-passed spec, JSON over stdout), using the wave-5 scrubbed-env helper, cwd=worktree, timeout, start_new_session. The harness process never imports agent code.
@@ -882,12 +880,12 @@ Design constraints (from the 2026 platform research recorded in the roadmap):
 - PR linking comes free via Linear's GitHub integration: branch names carry the issue id, PR bodies carry "Fixes <ISSUE-ID>": status transitions then need zero API calls.
 - The Agents API (@-mention delegation) is Developer Preview: OUT of scope; leave a seam.
 
-Scope: new ralph_py/linear.py (client + sink), ralph_py/observability.py (sink interface), ralph_py/decompose.py (issue creation hook), ralph_py/factory.py (branch naming + PR body wiring), config ([linear] section via the control plane), docs, tests.
+Scope: new kstrl/linear.py (client + sink), kstrl/observability.py (sink interface), kstrl/decompose.py (issue creation hook), kstrl/factory.py (branch naming + PR body wiring), config ([linear] section via the control plane), docs, tests.
 
 Requirements:
 1. LinearSink implements the ProgressLog event interface; factory.py stays untouched except branch/PR-body naming. Sink failures log warnings and never affect the run.
 2. Decompose output creates one Linear project per manifest and one issue per component (stories as sub-issues or a checklist: pick one, document why); spec_issues from wave 3 filed as triage issues.
-3. Idempotency: every created object carries an external-id key of run_id+component_id; retries and resumed runs UPDATE rather than duplicate (test this: it interacts with ralph retry).
+3. Idempotency: every created object carries an external-id key of run_id+component_id; retries and resumed runs UPDATE rather than duplicate (test this: it interacts with ks retry).
 4. Branch names include the Linear issue id when the sink is active; PR bodies gain "Fixes <ID>".
 5. All Linear calls behind a client class with one HTTP entry point, defensive parsing, and a dry-run mode that logs mutations instead of sending (default in tests).
 6. No secrets in code or logs; token comes from the env var the user named.
@@ -904,10 +902,10 @@ Branch: `feat/r7-5-platform`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R7.5 in docs/remediation-roadmap.md. The SpecKit intake sub-item requires a DECOMPOSE_PROMPT change: that part follows the Session 8C process (H2/H3: version bump, snapshot, calibration commands for the user) and should be its own commit.
 
 Sub-items (separable commits; split into two PRs if the diff grows large):
-1. No-progress circuit breaker: halt a component when N consecutive iterations (default 3, configurable) produce an unchanged diff hash AND unchanged test-failure signature; the halt is a loud component failure with a distinct error, recorded in the journal. This is the most-repeated community fix for Ralph-loop stalls.
+1. No-progress circuit breaker: halt a component when N consecutive iterations (default 3, configurable) produce an unchanged diff hash AND unchanged test-failure signature; the halt is a loud component failure with a distinct error, recorded in the journal. This is the most-repeated community fix for kstrl-loop stalls.
 2. Sandboxing pass-through: agent adapters accept sandbox settings (Claude Code's network/write scoping flags) from config and pass them to the CLI; document the codex equivalent or its absence (verify empirically what each CLI supports and record findings in the PR: measure, do not assume).
 3. Merge-conflict doctrine: where the factory hits a merge conflict integrating a component, prefer re-running the component against the freshly merged base over rebasing agent output; implement where wave-2/wave-9 machinery makes it natural and document the doctrine in docs/adversarial-design.md.
-4. SpecKit intake: `ralph decompose` accepts a SpecKit artifact set (spec.md/plan.md/tasks.md) as input, concatenated with provenance headers; DECOMPOSE_PROMPT gains a directive to demand EARS-style acceptance criteria ("WHEN <condition> THE SYSTEM SHALL <behavior>") per component (H2/H3 process applies).
+4. SpecKit intake: `ks decompose` accepts a SpecKit artifact set (spec.md/plan.md/tasks.md) as input, concatenated with provenance headers; DECOMPOSE_PROMPT gains a directive to demand EARS-style acceptance criteria ("WHEN <condition> THE SYSTEM SHALL <behavior>") per component (H2/H3 process applies).
 5. Agent SDK spike: a WRITTEN comparison only (docs/sdk-spike.md): drive one component implementation through the Claude Agent SDK in a scratch script; compare against the CLI-subprocess path on: structured usage data, hook-based guardrails, budget enforcement, failure observability. End with a go/no-go recommendation for user decision 5. No production code changes from the spike.
 
 Tests: circuit breaker unit + integration (fake agent producing identical diffs trips it; progressing agent does not); sandbox flag pass-through per adapter; SpecKit intake parsing; EARS directive covered by the calibration commands left for the user.

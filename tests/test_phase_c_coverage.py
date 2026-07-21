@@ -144,9 +144,9 @@ class TestC1ParallelExecution:
     def test_two_components_run_concurrently_in_worktrees(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        spine_utils.init_ralph_repo(root, ("comp-a", "comp-b"))
+        spine_utils.init_kstrl_repo(root, ("comp-a", "comp-b"))
         sync = tmp_path / "sync"
         sync.mkdir()
 
@@ -384,9 +384,9 @@ class TestC6ConcurrentFactory:
     def test_second_invocation_on_same_root_is_refused_while_first_runs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_ENABLED", "0")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
-        spine_utils.init_ralph_repo(root, ("comp-a",))
+        spine_utils.init_kstrl_repo(root, ("comp-a",))
         started = tmp_path / "engineer.started"
         release = tmp_path / "engineer.release"
 

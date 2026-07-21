@@ -1,6 +1,6 @@
 # Codebase Map (Brownfield Notes)
 
-This file is meant to be built over time using the Ralph **codebase understanding** loop.
+This file is meant to be built over time using the kstrl **codebase understanding** loop.
 
 ## How to use this map
 

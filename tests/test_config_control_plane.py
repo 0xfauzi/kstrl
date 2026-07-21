@@ -1,14 +1,14 @@
 """R2.1/R2.2 config control plane tests.
 
 Every phase config must resolve through the real CLI construction path
-with precedence: explicit CLI flag > env var > ralph.toml > dataclass
-default. The tests here invoke the actual click commands (``ralph
-factory`` / ``ralph run`` / ``ralph evolve`` / ``ralph init``) with
+with precedence: explicit CLI flag > env var > kstrl.toml > dataclass
+default. The tests here invoke the actual click commands (``kstrl
+factory`` / ``ks run`` / ``ks evolve`` / ``ks init``) with
 ``run_factory`` (or ``EvolutionJournal``) replaced by a capturing fake,
 so the assertion target is the exact config object the orchestrator
 would receive - not a loader called in isolation.
 
-Nine config surfaces map to ralph.toml sections:
+Nine config surfaces map to kstrl.toml sections:
 KstrlConfig (agent/run/paths/git/ui), TimeoutConfig ([timeout]),
 KnowledgeConfig ([knowledge]), FactoryConfig ([factory]), VerifyConfig
 ([verify]), SecurityConfig ([security]), ContractConfig ([contract]),
@@ -110,7 +110,7 @@ def _invoke_factory(
 
 
 def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
-    # R2.4: `ralph run` preflights prd.json before run_factory, so the
+    # R2.4: `ks run` preflights prd.json before run_factory, so the
     # round-trip needs a schema-valid PRD in place.
     prd_path = tmp_path / "scripts" / "kstrl" / "prd.json"
     prd_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +132,7 @@ def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# TOML round-trips through the real `ralph factory` construction path
+# TOML round-trips through the real `ks factory` construction path
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +140,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_factory_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\n"
             "max_parallel = 7\n"
             "max_retries = 9\n"
@@ -160,7 +160,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_verify_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[verify]\n"
             "test_command = \"echo verify-toml\"\n"
             "mutation_threshold = 75.0\n"
@@ -177,7 +177,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_security_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[security]\n"
             "mode = \"hard\"\n"
             "fail_threshold = \"critical\"\n"
@@ -194,7 +194,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_contract_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[contract]\n"
             "mode = \"final\"\n"
             "test_command = \"echo contract-toml\"\n"
@@ -211,7 +211,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_contract_toml_skip_disables_phase(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[contract]\nmode = \"skip\"\n")
+        (tmp_path / "kstrl.toml").write_text("[contract]\nmode = \"skip\"\n")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].contract_config is None
@@ -219,7 +219,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_feedforward_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[feedforward]\n"
             "module_map = false\n"
             "max_context_tokens = 1234\n"
@@ -234,7 +234,7 @@ class TestFactoryCommandTomlRoundTrip:
     def test_timeout_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[timeout]\nagent_iteration = 42.0\ncomponent_total = 99.0\n"
         )
         result = _invoke_factory(tmp_path)
@@ -248,7 +248,7 @@ class TestFactoryCommandTomlRoundTrip:
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
         # KstrlConfig covers the [agent]/[run]/[paths]/[git]/[ui] sections.
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[agent]\nmodel = \"model-from-toml\"\n"
             "[run]\nsleep_seconds = 0.25\n"
         )
@@ -260,7 +260,7 @@ class TestFactoryCommandTomlRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# TOML round-trips through the real `ralph run` construction path
+# TOML round-trips through the real `ks run` construction path
 # ---------------------------------------------------------------------------
 
 
@@ -268,7 +268,7 @@ class TestRunCommandTomlRoundTrip:
     def test_verify_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[verify]\ntest_command = \"echo run-verify\"\n"
         )
         result = _invoke_run(tmp_path)
@@ -280,7 +280,7 @@ class TestRunCommandTomlRoundTrip:
     def test_security_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[security]\nmode = \"advisory\"\n")
+        (tmp_path / "kstrl.toml").write_text("[security]\nmode = \"advisory\"\n")
         result = _invoke_run(tmp_path)
         assert result.exit_code == 0, result.output
         sc = captured["factory_config"].security_config
@@ -290,7 +290,7 @@ class TestRunCommandTomlRoundTrip:
     def test_feedforward_section(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[feedforward]\nmax_context_tokens = 555\n"
         )
         result = _invoke_run(tmp_path)
@@ -302,7 +302,7 @@ class TestRunCommandTomlRoundTrip:
     def test_factory_tunables_honored(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\nmax_retries = 6\nmax_adversarial_calls = 2\n"
         )
         result = _invoke_run(tmp_path)
@@ -314,9 +314,9 @@ class TestRunCommandTomlRoundTrip:
     def test_single_component_structure_is_forced(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        # Structural fields cannot be overridden by toml: `ralph run` is
+        # Structural fields cannot be overridden by toml: `ks run` is
         # by definition a local single-component no-PR invocation.
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\n"
             "max_parallel = 8\n"
             "use_worktrees = true\n"
@@ -341,20 +341,20 @@ class TestRunCommandTomlRoundTrip:
     def test_review_mode_toml_optin_is_honored(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[factory]\nreview_mode = \"hard\"\n")
+        (tmp_path / "kstrl.toml").write_text("[factory]\nreview_mode = \"hard\"\n")
         result = _invoke_run(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].review_mode == "hard"
 
 
 # ---------------------------------------------------------------------------
-# `ralph evolve` builds EvolutionConfig via load (the [evolution] section)
+# `ks evolve` builds EvolutionConfig via load (the [evolution] section)
 # ---------------------------------------------------------------------------
 
 
 class TestEvolveCommandTomlRoundTrip:
     def test_enabled_false_in_toml_stops_evolve(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text("[evolution]\nenabled = false\n")
+        (tmp_path / "kstrl.toml").write_text("[evolution]\nenabled = false\n")
         runner = CliRunner()
         result = runner.invoke(
             cli_mod.cli,
@@ -366,7 +366,7 @@ class TestEvolveCommandTomlRoundTrip:
     def test_journal_path_reaches_journal(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[evolution]\njournal_path = \"custom/evo.jsonl\"\n"
         )
         box: dict[str, Any] = {}
@@ -400,7 +400,7 @@ class TestPrecedence:
         captured: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[factory]\nmax_parallel = 5\n")
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 5\n")
         monkeypatch.setenv("FACTORY_MAX_PARALLEL", "6")
         result = _invoke_factory(tmp_path, "--max-parallel", "7")
         assert result.exit_code == 0, result.output
@@ -420,10 +420,10 @@ class TestPrecedence:
         captured: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[verify]\ntest_command = \"echo from-toml\"\n"
         )
-        monkeypatch.setenv("RALPH_VERIFY_TEST_CMD", "echo from-env")
+        monkeypatch.setenv("KSTRL_VERIFY_TEST_CMD", "echo from-env")
         result = _invoke_factory(tmp_path, "--test-command", "echo from-flag")
         assert result.exit_code == 0, result.output
         assert (
@@ -437,7 +437,7 @@ class TestPrecedence:
             == "echo from-env"
         )
 
-        monkeypatch.delenv("RALPH_VERIFY_TEST_CMD")
+        monkeypatch.delenv("KSTRL_VERIFY_TEST_CMD")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert (
@@ -451,8 +451,8 @@ class TestPrecedence:
         captured: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[security]\nmode = \"advisory\"\n")
-        monkeypatch.setenv("RALPH_SECURITY_MODE", "skip")
+        (tmp_path / "kstrl.toml").write_text("[security]\nmode = \"advisory\"\n")
+        monkeypatch.setenv("KSTRL_SECURITY_MODE", "skip")
         result = _invoke_factory(tmp_path, "--security-mode", "hard")
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].security_config.mode == "hard"
@@ -460,7 +460,7 @@ class TestPrecedence:
         result = _invoke_factory(tmp_path)
         assert captured["factory_config"].security_config.mode == "skip"
 
-        monkeypatch.delenv("RALPH_SECURITY_MODE")
+        monkeypatch.delenv("KSTRL_SECURITY_MODE")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].security_config.mode == "advisory"
@@ -472,10 +472,10 @@ class TestPrecedence:
         # the dataclass default and skipped it on equality, so an env
         # var explicitly set to the default value could not override a
         # toml value.
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[verify]\nmutation_threshold = 75.0\n"
         )
-        monkeypatch.setenv("RALPH_MUTATION_THRESHOLD", "50")
+        monkeypatch.setenv("KSTRL_MUTATION_THRESHOLD", "50")
         config = VerifyConfig.load(tmp_path)
         assert config.mutation_threshold == 50.0
 
@@ -492,10 +492,10 @@ class TestSafetyKnobs:
         captured: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\nmax_adversarial_calls = 1\n"
         )
-        monkeypatch.setenv("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS", "2")
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "2")
         result = _invoke_factory(tmp_path, "--max-adversarial-calls", "3")
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_adversarial_calls == 3
@@ -503,7 +503,7 @@ class TestSafetyKnobs:
         result = _invoke_factory(tmp_path)
         assert captured["factory_config"].max_adversarial_calls == 2
 
-        monkeypatch.delenv("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS")
+        monkeypatch.delenv("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_adversarial_calls == 1
@@ -515,10 +515,10 @@ class TestSafetyKnobs:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """R3.1: the token budget is reachable via flag > env > toml."""
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\nmax_total_tokens = 100\n"
         )
-        monkeypatch.setenv("RALPH_FACTORY_MAX_TOTAL_TOKENS", "200")
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "200")
         result = _invoke_factory(tmp_path, "--max-total-tokens", "300")
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_total_tokens == 300
@@ -526,7 +526,7 @@ class TestSafetyKnobs:
         result = _invoke_factory(tmp_path)
         assert captured["factory_config"].max_total_tokens == 200
 
-        monkeypatch.delenv("RALPH_FACTORY_MAX_TOTAL_TOKENS")
+        monkeypatch.delenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].max_total_tokens == 100
@@ -537,11 +537,11 @@ class TestSafetyKnobs:
         captured: dict[str, Any],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[factory]\npause_before_pr_merge = true\n"
         )
         # env (explicitly false) beats toml (true)
-        monkeypatch.setenv("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE", "0")
+        monkeypatch.setenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", "0")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].pause_before_pr_merge is False
@@ -551,12 +551,12 @@ class TestSafetyKnobs:
         assert captured["factory_config"].pause_before_pr_merge is True
 
         # negated flag also wins
-        monkeypatch.setenv("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE", "1")
+        monkeypatch.setenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", "1")
         result = _invoke_factory(tmp_path, "--no-pause-before-pr-merge")
         assert captured["factory_config"].pause_before_pr_merge is False
 
         # toml alone
-        monkeypatch.delenv("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE")
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].pause_before_pr_merge is True
@@ -571,7 +571,7 @@ class TestTomlNotes:
     def test_note_emitted_for_toml_value(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[factory]\nmax_parallel = 9\n")
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 9\n")
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
         assert "NOTE: [factory] max_parallel = 9" in result.output
@@ -579,7 +579,7 @@ class TestTomlNotes:
     def test_no_note_when_flag_overrides(
         self, tmp_path: Path, captured: dict[str, Any]
     ) -> None:
-        (tmp_path / "ralph.toml").write_text("[factory]\nmax_parallel = 9\n")
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 9\n")
         result = _invoke_factory(tmp_path, "--max-parallel", "4")
         assert result.exit_code == 0, result.output
         assert "NOTE: [factory] max_parallel" not in result.output
@@ -601,8 +601,8 @@ class TestNewFromEnv:
     def test_feedforward_from_env(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_FEEDFORWARD_MAX_TOKENS", "123")
-        monkeypatch.setenv("RALPH_FEEDFORWARD_MODULE_MAP", "false")
+        monkeypatch.setenv("KSTRL_FEEDFORWARD_MAX_TOKENS", "123")
+        monkeypatch.setenv("KSTRL_FEEDFORWARD_MODULE_MAP", "false")
         config = FeedforwardConfig.from_env()
         assert config.max_context_tokens == 123
         assert config.module_map is False
@@ -610,8 +610,8 @@ class TestNewFromEnv:
     def test_evolution_from_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_EVOLUTION_LOOKBACK_RUNS", "3")
-        monkeypatch.setenv("RALPH_EVOLUTION_JOURNAL_PATH", "custom/j.jsonl")
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "3")
+        monkeypatch.setenv("KSTRL_EVOLUTION_JOURNAL_PATH", "custom/j.jsonl")
         config = EvolutionConfig.from_env(tmp_path)
         assert config.lookback_runs == 3
         assert config.journal_path == tmp_path / "custom/j.jsonl"
@@ -621,8 +621,8 @@ class TestNewFromEnv:
     def test_knowledge_from_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_MAX_CORE_TOKENS", "99")
-        monkeypatch.setenv("RALPH_KNOWLEDGE_DEPENDENCY_SCOPE", "transitive")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_MAX_CORE_TOKENS", "99")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE", "transitive")
         config = KnowledgeConfig.from_env(tmp_path)
         assert config.max_core_tokens == 99
         assert config.dependency_scope == "transitive"
@@ -631,15 +631,15 @@ class TestNewFromEnv:
     def test_knowledge_from_env_rejects_bad_scope(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_KNOWLEDGE_DEPENDENCY_SCOPE", "everything")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE", "everything")
         with pytest.raises(ValueError, match="DEPENDENCY_SCOPE"):
             KnowledgeConfig.from_env(tmp_path)
 
     def test_factory_from_env_reads_safety_knobs(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_FACTORY_MAX_ADVERSARIAL_CALLS", "4")
-        monkeypatch.setenv("RALPH_FACTORY_PAUSE_BEFORE_PR_MERGE", "true")
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "4")
+        monkeypatch.setenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", "true")
         config = FactoryConfig.from_env()
         assert config.max_adversarial_calls == 4
         assert config.pause_before_pr_merge is True
@@ -652,7 +652,7 @@ class TestNewFromEnv:
 
 class TestKnowledgeSectionRoundTrip:
     def test_toml_reaches_loaded_config(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[knowledge]\nmax_core_tokens = 777\ndistill_model = \"m\"\n"
         )
         config = KnowledgeConfig.load(tmp_path)
@@ -661,7 +661,7 @@ class TestKnowledgeSectionRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# ralph init scaffolds ralph.toml
+# ks init scaffolds kstrl.toml
 # ---------------------------------------------------------------------------
 
 
@@ -746,14 +746,14 @@ class TestInitScaffold:
         assert all(section == {} for section in data.values())
 
     def test_init_does_not_overwrite_existing(self, tmp_path: Path) -> None:
-        (tmp_path / "ralph.toml").write_text("[factory]\nmax_parallel = 2\n")
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 2\n")
         runner = CliRunner()
         result = runner.invoke(
             cli_mod.cli, ["init", str(tmp_path), "--ui", "plain"]
         )
         assert result.exit_code == 0, result.output
         assert (
-            (tmp_path / "ralph.toml").read_text()
+            (tmp_path / "kstrl.toml").read_text()
             == "[factory]\nmax_parallel = 2\n"
         )
 
@@ -777,7 +777,7 @@ class TestInitScaffold:
         from kstrl.security import SecurityConfig
         from kstrl.timeout import TimeoutConfig
 
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             _uncomment_scaffold(DEFAULT_KSTRL_TOML)
         )
         KstrlConfig.load(tmp_path)

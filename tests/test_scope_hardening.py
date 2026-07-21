@@ -193,7 +193,6 @@ class TestAllowedPathsContentValidation:
         ".kstrl/",
         ".github/",
         "kstrl/",
-        "src/ralph/",
         "scripts/kstrl/",
         "pyproject.toml",
         "package.json",
@@ -362,9 +361,9 @@ class TestDiffScopeFailsClosed:
 
 
 def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlConfig]:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
     manifest = Manifest(
         version="1",
         spec_file="spec.md",
@@ -389,8 +388,8 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlCon
         ),
     )
     base = KstrlConfig(
-        prompt_file=ralph_dir / "prompt.md",
-        prd_file=ralph_dir / "prd.json",
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
         sleep_seconds=0,
         agent_cmd="echo test",
         kstrl_branch="",

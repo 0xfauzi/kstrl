@@ -12,7 +12,7 @@ Covers:
 - LinearSink: event-to-comment mapping, double-fire dedupe, unmapped
   components, exception isolation; ProgressLog fan-out isolation.
 - Branch / PR-body formatting (identifier token, "Fixes <ID>").
-- Manifest persistence + `ralph retry` interaction: ids survive
+- Manifest persistence + `ks retry` interaction: ids survive
   save/load and reset_for_retry, so retries UPDATE rather than
   duplicate.
 
@@ -104,7 +104,7 @@ class TestLinearConfig:
     def test_toml_then_env_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[linear]\n"
             "enabled = true\n"
             f'team_id = "{TEAM_ID}"\n'
@@ -117,8 +117,8 @@ class TestLinearConfig:
         assert config.min_request_interval == 2.0
         assert config.auth_mode == "api_key"
 
-        monkeypatch.setenv("RALPH_LINEAR_MIN_INTERVAL", "0.25")
-        monkeypatch.setenv("RALPH_LINEAR_AUTH_MODE", "oauth")
+        monkeypatch.setenv("KSTRL_LINEAR_MIN_INTERVAL", "0.25")
+        monkeypatch.setenv("KSTRL_LINEAR_AUTH_MODE", "oauth")
         config = LinearConfig.load(tmp_path)
         assert config.min_request_interval == 0.25
         assert config.auth_mode == "oauth"
@@ -126,14 +126,14 @@ class TestLinearConfig:
     def test_env_typo_surfaces(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_AUTH_MODE", "bearrer")
+        monkeypatch.setenv("KSTRL_LINEAR_AUTH_MODE", "bearrer")
         with pytest.raises(ValueError, match="auth_mode"):
             LinearConfig.load(tmp_path)
 
     def test_token_env_indirection(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN_ENV", "MY_LINEAR_SECRET")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN_ENV", "MY_LINEAR_SECRET")
         config = LinearConfig.load(tmp_path)
         assert config.token_env == "MY_LINEAR_SECRET"
 
@@ -223,7 +223,7 @@ class TestLinearClient:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
-        monkeypatch.delenv("RALPH_LINEAR_TOKEN", raising=False)
+        monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="KSTRL_LINEAR_TOKEN"):
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
@@ -232,7 +232,7 @@ class TestLinearClient:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         secret = "lin_api_supersecretvalue"
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", secret)
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", secret)
         fake_transport(monkeypatch, [
             {"errors": [{"message": "boom", "extensions": {"code": "X"}}]},
         ])
@@ -242,13 +242,13 @@ class TestLinearClient:
         assert secret not in str(excinfo.value)
 
     def test_auth_header_modes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         assert LinearClient(dry_config())._auth_header() == "lin_api_abc"
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_oauth_xyz")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_oauth_xyz")
         assert (
             LinearClient(dry_config())._auth_header() == "Bearer lin_oauth_xyz"
         )
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         assert (
             LinearClient(dry_config(auth_mode="oauth"))._auth_header()
             == "Bearer lin_api_abc"
@@ -257,7 +257,7 @@ class TestLinearClient:
     def test_non_json_response_is_linear_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
 
         class Garbage(FakeResponse):
             def __init__(self) -> None:
@@ -276,7 +276,7 @@ class TestLinearClient:
     def test_malformed_success_payload_rejected(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         fake_transport(monkeypatch, [
             {"data": {"issueCreate": {"success": True, "issue": "not-a-dict"}}},
             # get_issue recovery probe for the duplicate-id path:
@@ -289,7 +289,7 @@ class TestLinearClient:
     def test_ratelimited_retries_once_then_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         sleeps: list[float] = []
         monkeypatch.setattr(
             "kstrl.linear.time.sleep", lambda s: sleeps.append(s)
@@ -309,7 +309,7 @@ class TestLinearClient:
     def test_ratelimited_then_success(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         monkeypatch.setattr("kstrl.linear.time.sleep", lambda s: None)
         limited = {
             "errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]
@@ -325,7 +325,7 @@ class TestLinearClient:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Double-fired create converges on the already-created issue."""
-        monkeypatch.setenv("RALPH_LINEAR_TOKEN", "lin_api_abc")
+        monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         client_id = deterministic_uuid("k:comp")
         fake_transport(monkeypatch, [
             http_error({"errors": [{
@@ -395,7 +395,7 @@ class TestSyncDecompose:
         description = client.recorded[1][1]["input"]["description"]
         assert "- [ ] US-001: first story" in description
         assert "- [ ] US-002: second story" in description
-        assert "ralph external key: run-1:comp-a" in description
+        assert "kstrl external key: run-1:comp-a" in description
 
     def test_spec_issues_filed_as_triage(self) -> None:
         issue = SpecIssue(
@@ -417,7 +417,7 @@ class TestSyncDecompose:
         assert "stateId" not in triage_input
         assert "projectId" not in triage_input
         assert "Severity: major" in triage_input["description"]
-        assert "ralph external key: run-1:spec:0" in triage_input["description"]
+        assert "kstrl external key: run-1:spec:0" in triage_input["description"]
 
     def test_double_fire_converges_on_identical_uuids(self) -> None:
         """Same sync_key twice -> byte-identical create ids (the remote
@@ -709,7 +709,7 @@ class TestManifestPersistenceAndRetry:
     def test_retry_reuses_issue_no_duplicate_creates(
         self, tmp_path: Path
     ) -> None:
-        """The `ralph retry` interaction: after a failure, reset, and
+        """The `ks retry` interaction: after a failure, reset, and
         reload, the sink comments on the ORIGINAL issue and nothing
         creates a second one."""
         manifest = self.make_mapped_manifest()
@@ -766,7 +766,7 @@ class TestBuildLinearSink:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
-        monkeypatch.delenv("RALPH_LINEAR_TOKEN", raising=False)
+        monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         manifest = make_manifest([component("comp-a")])
         manifest.components[0].linear_issue_id = "issue-uuid-a"
         warn = Warnings()

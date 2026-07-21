@@ -87,14 +87,14 @@ def _git(*args: str, cwd: Path) -> None:
 
 
 def _init_repo(root: Path) -> None:
-    """Real git repo with the ralph scaffolding committed to main."""
+    """Real git repo with the kstrl scaffolding committed to main."""
     _git("init", "-q", "-b", "main", cwd=root)
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True)
-    (ralph_dir / "prompt.md").write_text("test prompt\n")
-    feature_dir = ralph_dir / "feature" / "a"
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt\n")
+    feature_dir = kstrl_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
     (feature_dir / "prd.json").write_text(json.dumps({
         "branchName": "kstrl/factory/a",
@@ -477,16 +477,16 @@ class _RecordingAgent:
 
 
 def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
-    ralph_dir = tmp_path / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("test prompt")
-    (ralph_dir / "prd.json").write_text(
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt")
+    (kstrl_dir / "prd.json").write_text(
         '{"branchName": "test", "userStories": []}'
     )
     return KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=ralph_dir / "prompt.md",
-        prd_file=ralph_dir / "prd.json",
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
         sleep_seconds=0,
         kstrl_branch="",
         kstrl_branch_explicit=True,
@@ -566,10 +566,10 @@ class TestFactoryComponentTimeout:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        feature_dir = ralph_dir / "feature" / "a"
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        feature_dir = kstrl_dir / "feature" / "a"
         feature_dir.mkdir(parents=True)
         (feature_dir / "prd.json").write_text(json.dumps({
             "branchName": "test",
@@ -596,8 +596,8 @@ class TestFactoryComponentTimeout:
             ),
         )
         base = KstrlConfig(
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             agent_cmd=f"echo $$ > {pidfile}; exec sleep 300",
             kstrl_branch="", kstrl_branch_explicit=True,
@@ -834,11 +834,11 @@ class TestTimeoutConfigLoading:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "RALPH_TIMEOUT_AGENT_ITERATION", "RALPH_TIMEOUT_COMPONENT",
-            "RALPH_TIMEOUT_BACKSTOP_MARGIN",
+            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_BACKSTOP_MARGIN",
         ):
             monkeypatch.delenv(var, raising=False)
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[timeout]\n"
             "agent_iteration = 11\n"
             "component_total = 22\n"
@@ -854,10 +854,10 @@ class TestTimeoutConfigLoading:
     def test_env_beats_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[timeout]\nagent_iteration = 11\ncomponent_total = 22\n"
         )
-        monkeypatch.setenv("RALPH_TIMEOUT_AGENT_ITERATION", "33")
+        monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "33")
         config = TimeoutConfig.load(tmp_path)
         assert config.agent_iteration == 33.0
         assert config.component_total == 22.0
@@ -866,7 +866,7 @@ class TestTimeoutConfigLoading:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "RALPH_TIMEOUT_AGENT_ITERATION", "RALPH_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
         ):
             monkeypatch.delenv(var, raising=False)
         config = TimeoutConfig.load(tmp_path)
@@ -874,7 +874,7 @@ class TestTimeoutConfigLoading:
         assert config.component_total == 7200.0
         assert config.scheduler_backstop_margin == 60.0
 
-    def test_ralph_config_duplicate_fields_deleted(self) -> None:
+    def test_kstrl_config_duplicate_fields_deleted(self) -> None:
         """R0.1 requirement 4: the dead duplicate fields on KstrlConfig are
         gone; TimeoutConfig is the only source."""
         config = KstrlConfig()
@@ -884,7 +884,7 @@ class TestTimeoutConfigLoading:
 
 
 class TestCliTimeoutFlags:
-    """`ralph factory --agent-timeout/--component-timeout` reach the
+    """`ks factory --agent-timeout/--component-timeout` reach the
     resolved TimeoutConfig (previously bound and never used)."""
 
     def _write_manifest(self, tmp_path: Path) -> Path:
@@ -939,10 +939,10 @@ class TestCliTimeoutFlags:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "RALPH_TIMEOUT_AGENT_ITERATION", "RALPH_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
         ):
             monkeypatch.delenv(var, raising=False)
-        (tmp_path / "ralph.toml").write_text(
+        (tmp_path / "kstrl.toml").write_text(
             "[timeout]\nagent_iteration = 44\ncomponent_total = 55\n"
         )
         factory_config = self._invoke_factory(tmp_path, [])
@@ -953,8 +953,8 @@ class TestCliTimeoutFlags:
     def test_flag_beats_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("RALPH_TIMEOUT_AGENT_ITERATION", raising=False)
-        (tmp_path / "ralph.toml").write_text(
+        monkeypatch.delenv("KSTRL_TIMEOUT_AGENT_ITERATION", raising=False)
+        (tmp_path / "kstrl.toml").write_text(
             "[timeout]\nagent_iteration = 44\n"
         )
         factory_config = self._invoke_factory(

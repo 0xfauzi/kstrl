@@ -1,4 +1,4 @@
-"""Codex CLI agent for Ralph."""
+"""Codex CLI agent for kstrl."""
 
 from __future__ import annotations
 

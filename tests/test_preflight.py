@@ -3,7 +3,7 @@
 Two gates, both BEFORE any agent spend:
 - The agent preflight checks for whichever agent the resolved config
   selects (claude/codex/custom), not codex-only.
-- ``ralph run`` validates prd.json existence + schema before the factory
+- ``ks run`` validates prd.json existence + schema before the factory
   pipeline (and therefore the agent) ever starts.
 """
 
@@ -62,15 +62,15 @@ VALID_PRD = {
 
 
 def _scaffold(root: Path, prd: dict[str, Any] | str | None = VALID_PRD) -> Path:
-    ralph_dir = root / "scripts" / "kstrl"
-    ralph_dir.mkdir(parents=True, exist_ok=True)
-    (ralph_dir / "prompt.md").write_text("prompt")
-    (ralph_dir / "understand_prompt.md").write_text("prompt")
-    (ralph_dir / "codebase_map.md").write_text("# Map\n")
+    kstrl_dir = root / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("prompt")
+    (kstrl_dir / "understand_prompt.md").write_text("prompt")
+    (kstrl_dir / "codebase_map.md").write_text("# Map\n")
     if prd is not None:
         content = prd if isinstance(prd, str) else json.dumps(prd)
-        (ralph_dir / "prd.json").write_text(content)
-    return ralph_dir
+        (kstrl_dir / "prd.json").write_text(content)
+    return kstrl_dir
 
 
 class TestAgentPreflightResolver:
@@ -160,7 +160,7 @@ class TestAgentPreflightResolver:
 
 
 class TestUnderstandPreflightWiring:
-    """CLI-level matrix through `ralph understand` (run_loop stubbed)."""
+    """CLI-level matrix through `ks understand` (run_loop stubbed)."""
 
     def test_claude_only_toml_type_claude_passes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -168,7 +168,7 @@ class TestUnderstandPreflightWiring:
         _availability(monkeypatch, claude=True, codex=False)
         calls = _stub_run_loop(monkeypatch)
         _scaffold(tmp_path)
-        (tmp_path / "ralph.toml").write_text('[agent]\ntype = "claude"\n')
+        (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         result = CliRunner().invoke(
             cli, ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
@@ -184,7 +184,7 @@ class TestUnderstandPreflightWiring:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
         _scaffold(tmp_path)
-        monkeypatch.setenv("RALPH_AGENT_TYPE", "codex")
+        monkeypatch.setenv("KSTRL_AGENT_TYPE", "codex")
 
         result = CliRunner().invoke(
             cli, ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
@@ -199,7 +199,7 @@ class TestUnderstandPreflightWiring:
         _availability(monkeypatch, claude=True, codex=False)
         calls = _stub_run_loop(monkeypatch)
         _scaffold(tmp_path)
-        monkeypatch.setenv("RALPH_AGENT_TYPE", "codex")
+        monkeypatch.setenv("KSTRL_AGENT_TYPE", "codex")
 
         result = CliRunner().invoke(
             cli,
@@ -217,7 +217,7 @@ class TestUnderstandPreflightWiring:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
         _scaffold(tmp_path)
-        (tmp_path / "ralph.toml").write_text('[agent]\ntype = "claude"\n')
+        (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         result = CliRunner().invoke(
             cli,
@@ -236,13 +236,13 @@ class TestFeaturePreflightWiring:
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
-        ralph_dir = _scaffold(tmp_path)
-        (tmp_path / "ralph.toml").write_text('[agent]\ntype = "claude"\n')
+        kstrl_dir = _scaffold(tmp_path)
+        (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         result = CliRunner().invoke(
             cli,
             ["feature", "--root", str(tmp_path),
-             "--prd", str(ralph_dir / "prd.json"),
+             "--prd", str(kstrl_dir / "prd.json"),
              "--ui", "plain", "--no-color"],
         )
 
@@ -252,7 +252,7 @@ class TestFeaturePreflightWiring:
 
 
 class TestRunPrdPreflight:
-    """`ralph run` gates on prd.json BEFORE the factory/agent starts."""
+    """`ks run` gates on prd.json BEFORE the factory/agent starts."""
 
     def _stub_run_factory(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -374,7 +374,7 @@ class TestFactoryPreflightWiring:
         root = tmp_path / "proj"
         root.mkdir()
         _scaffold(root)
-        (root / "ralph.toml").write_text('[agent]\ntype = "claude"\n')
+        (root / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         manifest = Manifest(
             version="1", spec_file="spec.md", project_name="p",
@@ -424,7 +424,7 @@ class TestFactoryPreflightWiring:
         root = tmp_path / "proj"
         root.mkdir()
         _scaffold(root)
-        (root / "ralph.toml").write_text('[agent]\ntype = "clade"\n')
+        (root / "kstrl.toml").write_text('[agent]\ntype = "clade"\n')
 
         from kstrl.manifest import Component, Manifest
 

@@ -1,6 +1,6 @@
 """Tests for the per-config TOML loaders added in Phase B.
 
-Each section of ralph.toml ([factory], [verify], [contract], [feedforward],
+Each section of kstrl.toml ([factory], [verify], [contract], [feedforward],
 [evolution], [security]) now has an observable runtime effect via the
 corresponding ``Config.load(root_dir)`` classmethod.
 """
@@ -38,7 +38,7 @@ class TestFactoryConfigLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(monkeypatch, "FACTORY_MAX_PARALLEL", "FACTORY_MAX_RETRIES")
-        _write(tmp_path / "ralph.toml", """
+        _write(tmp_path / "kstrl.toml", """
 [factory]
 max_parallel = 8
 max_retries = 5
@@ -52,7 +52,7 @@ review_mode = "advisory"
     def test_env_overrides_toml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _write(tmp_path / "ralph.toml", "[factory]\nmax_parallel = 8\n")
+        _write(tmp_path / "kstrl.toml", "[factory]\nmax_parallel = 8\n")
         monkeypatch.setenv("FACTORY_MAX_PARALLEL", "99")
         config = FactoryConfig.load(tmp_path)
         assert config.max_parallel == 99
@@ -68,10 +68,10 @@ class TestVerifyConfigLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "RALPH_VERIFY_TEST_CMD", "RALPH_VERIFY_TYPECHECK_CMD",
-            "RALPH_VERIFY_REQUIRE_SELF_CRITIQUE",
+            monkeypatch, "KSTRL_VERIFY_TEST_CMD", "KSTRL_VERIFY_TYPECHECK_CMD",
+            "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE",
         )
-        _write(tmp_path / "ralph.toml", """
+        _write(tmp_path / "kstrl.toml", """
 [verify]
 test_command = "pytest -x"
 typecheck_command = "mypy ."
@@ -94,8 +94,8 @@ class TestContractConfigLoad:
     def test_reads_contract_section(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _clear_env(monkeypatch, "RALPH_CONTRACT_MODE", "RALPH_CONTRACT_TEST_CMD")
-        _write(tmp_path / "ralph.toml", """
+        _clear_env(monkeypatch, "KSTRL_CONTRACT_MODE", "KSTRL_CONTRACT_TEST_CMD")
+        _write(tmp_path / "kstrl.toml", """
 [contract]
 mode = "final"
 test_command = "pytest tests/"
@@ -105,7 +105,7 @@ test_command = "pytest tests/"
         assert config.test_command == "pytest tests/"
 
     def test_invalid_mode_raises(self, tmp_path: Path) -> None:
-        _write(tmp_path / "ralph.toml", '[contract]\nmode = "always"\n')
+        _write(tmp_path / "kstrl.toml", '[contract]\nmode = "always"\n')
         with pytest.raises(ValueError, match="Invalid ContractConfig.mode"):
             ContractConfig.load(tmp_path)
 
@@ -120,10 +120,10 @@ class TestFeedforwardConfigLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "RALPH_FEEDFORWARD_ENABLED",
-            "RALPH_FEEDFORWARD_MAX_TOKENS",
+            monkeypatch, "KSTRL_FEEDFORWARD_ENABLED",
+            "KSTRL_FEEDFORWARD_MAX_TOKENS",
         )
-        _write(tmp_path / "ralph.toml", """
+        _write(tmp_path / "kstrl.toml", """
 [feedforward]
 enabled = false
 module_map = false
@@ -137,8 +137,8 @@ max_context_tokens = 8000
     def test_env_overrides(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _write(tmp_path / "ralph.toml", "[feedforward]\nenabled = false\n")
-        monkeypatch.setenv("RALPH_FEEDFORWARD_ENABLED", "true")
+        _write(tmp_path / "kstrl.toml", "[feedforward]\nenabled = false\n")
+        monkeypatch.setenv("KSTRL_FEEDFORWARD_ENABLED", "true")
         config = FeedforwardConfig.load(tmp_path)
         assert config.enabled is True
 
@@ -153,11 +153,11 @@ class TestEvolutionConfigLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "RALPH_EVOLUTION_ENABLED",
-            "RALPH_EVOLUTION_JOURNAL_PATH",
-            "RALPH_EVOLUTION_LOOKBACK_RUNS",
+            monkeypatch, "KSTRL_EVOLUTION_ENABLED",
+            "KSTRL_EVOLUTION_JOURNAL_PATH",
+            "KSTRL_EVOLUTION_LOOKBACK_RUNS",
         )
-        _write(tmp_path / "ralph.toml", """
+        _write(tmp_path / "kstrl.toml", """
 [evolution]
 enabled = false
 lookback_runs = 25
@@ -169,8 +169,8 @@ lookback_runs = 25
     def test_resolves_journal_path(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _clear_env(monkeypatch, "RALPH_EVOLUTION_JOURNAL_PATH")
-        _write(tmp_path / "ralph.toml", """
+        _clear_env(monkeypatch, "KSTRL_EVOLUTION_JOURNAL_PATH")
+        _write(tmp_path / "kstrl.toml", """
 [evolution]
 journal_path = "custom/evolution.jsonl"
 """)
@@ -188,10 +188,10 @@ class TestSecurityConfigLoad:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "RALPH_SECURITY_MODE",
-            "RALPH_SECURITY_FAIL_THRESHOLD",
+            monkeypatch, "KSTRL_SECURITY_MODE",
+            "KSTRL_SECURITY_FAIL_THRESHOLD",
         )
-        _write(tmp_path / "ralph.toml", """
+        _write(tmp_path / "kstrl.toml", """
 [security]
 mode = "hard"
 fail_threshold = "critical"
@@ -201,19 +201,19 @@ fail_threshold = "critical"
         assert config.fail_threshold == "critical"
 
     def test_invalid_mode_in_toml_raises(self, tmp_path: Path) -> None:
-        _write(tmp_path / "ralph.toml", '[security]\nmode = "blocky"\n')
+        _write(tmp_path / "kstrl.toml", '[security]\nmode = "blocky"\n')
         with pytest.raises(ValueError, match="Invalid SecurityConfig.mode"):
             SecurityConfig.load(tmp_path)
 
     def test_invalid_threshold_in_toml_raises(self, tmp_path: Path) -> None:
-        _write(tmp_path / "ralph.toml", '[security]\nfail_threshold = "scary"\n')
+        _write(tmp_path / "kstrl.toml", '[security]\nfail_threshold = "scary"\n')
         with pytest.raises(ValueError, match="Invalid SecurityConfig.fail_threshold"):
             SecurityConfig.load(tmp_path)
 
     def test_invalid_threshold_in_env_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("RALPH_SECURITY_FAIL_THRESHOLD", "critcial")
+        monkeypatch.setenv("KSTRL_SECURITY_FAIL_THRESHOLD", "critcial")
         with pytest.raises(ValueError):
             SecurityConfig.load(tmp_path)
 
@@ -237,6 +237,6 @@ fail_threshold = "critical"
 def test_malformed_toml_raises_value_error(
     loader, tmp_path: Path,
 ) -> None:
-    _write(tmp_path / "ralph.toml", "this is = not = valid = [ toml\n")
+    _write(tmp_path / "kstrl.toml", "this is = not = valid = [ toml\n")
     with pytest.raises(ValueError, match="Invalid TOML"):
         loader(tmp_path)

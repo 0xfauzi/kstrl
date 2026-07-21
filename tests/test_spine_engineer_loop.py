@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from kstrl.factory import _run_component, _setup_worktree
-from tests.spine_utils import git, init_ralph_repo
+from tests.spine_utils import git, init_kstrl_repo
 
 pytestmark = pytest.mark.spine
 
@@ -40,7 +40,7 @@ class TestEngineerLoopPlumbing:
         self, tmp_path: Path,
     ) -> None:
         root = tmp_path / "repo"
-        init_ralph_repo(root, (COMP,))
+        init_kstrl_repo(root, (COMP,))
         worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
         # The gitignored inputs are NOT in the fresh worktree via git;
         # only _run_component's provisioning can put them there.

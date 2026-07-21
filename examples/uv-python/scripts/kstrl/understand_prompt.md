@@ -1,4 +1,4 @@
-# Ralph Codebase Understanding Instructions (Read-Only)
+# kstrl Codebase Understanding Instructions (Read-Only)
 
 ## Goal (one iteration)
 

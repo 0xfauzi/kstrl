@@ -40,17 +40,17 @@ class TestRunLoop:
     def test_completes_on_marker(self, tmp_path: Path) -> None:
         """Loop exits with code 0 when completion marker found."""
         # Setup
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
         config = KstrlConfig(
             max_iterations=5,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             kstrl_branch="",
             kstrl_branch_explicit=True,
@@ -68,17 +68,17 @@ class TestRunLoop:
 
     def test_max_iterations_without_completion(self, tmp_path: Path) -> None:
         """Loop exits with code 1 when max iterations reached."""
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
         config = KstrlConfig(
             max_iterations=3,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             kstrl_branch="",
             kstrl_branch_explicit=True,
@@ -101,8 +101,8 @@ class TestRunLoop:
 
         Pre-fix behavior was exit_code=1 / iterations=0; the factory
         validation run on 2026-05-27 surfaced that this blocked any
-        ``ralph factory --spec X`` invocation on a project that had
-        not been ``ralph init``'d, even though the harness ships its
+        ``ks factory --spec X`` invocation on a project that had
+        not been ``ks init``'d, even though the harness ships its
         own engineer prompt that should be used as the default.
         """
         from kstrl.init_cmd import DEFAULT_PROMPT
@@ -143,17 +143,17 @@ class TestRunLoop:
 
     def test_completion_marker_in_middle_of_output(self, tmp_path: Path) -> None:
         """Completion marker found even when not at end of output."""
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
         config = KstrlConfig(
             max_iterations=5,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             kstrl_branch="",
             kstrl_branch_explicit=True,
@@ -198,17 +198,17 @@ class TestRunLoop:
             check=True, capture_output=True,
         )
 
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("hi")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("hi")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "feature/should-not-checkout", "userStories": []}'
         )
 
         config = KstrlConfig(
             max_iterations=1,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             auto_checkout=False,
         )
@@ -227,17 +227,17 @@ class TestRunLoop:
 
     def test_inline_marker_does_not_trigger_completion(self, tmp_path: Path) -> None:
         """Inline marker should not end the loop."""
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("hello")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("hello")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
 
         config = KstrlConfig(
             max_iterations=1,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             kstrl_branch="",
             kstrl_branch_explicit=True,
@@ -305,10 +305,10 @@ class TestGuardsRunBeforeCompletion:
             ["git", "-C", str(tmp_path), "config", "user.name", "t"],
             check=True, capture_output=True,
         )
-        ralph_dir = tmp_path / "scripts" / "kstrl"
-        ralph_dir.mkdir(parents=True)
-        (ralph_dir / "prompt.md").write_text("test prompt")
-        (ralph_dir / "prd.json").write_text(
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
             '{"branchName": "test", "userStories": []}'
         )
         # Commit the scaffolding so the rogue file is the ONLY change.
@@ -322,8 +322,8 @@ class TestGuardsRunBeforeCompletion:
         )
         return KstrlConfig(
             max_iterations=3,
-            prompt_file=ralph_dir / "prompt.md",
-            prd_file=ralph_dir / "prd.json",
+            prompt_file=kstrl_dir / "prompt.md",
+            prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             kstrl_branch="",
             kstrl_branch_explicit=True,

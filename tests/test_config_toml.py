@@ -19,7 +19,7 @@ def _write_toml(path: Path, content: str) -> None:
 
 
 def test_from_toml_maps_agent_section(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -38,7 +38,7 @@ reasoning_effort = "high"
 
 
 def test_from_toml_maps_run_section(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -55,7 +55,7 @@ interactive = true
 
 
 def test_from_toml_maps_paths_section(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -76,7 +76,7 @@ allowed = ["src/", "tests/"]
 
 
 def test_from_toml_maps_git_section(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -92,7 +92,7 @@ auto_checkout = false
 
 
 def test_from_toml_maps_ui_section(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -105,7 +105,7 @@ ascii = true
 
 
 def test_from_toml_empty_file_uses_defaults(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(toml_path, "")
     config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.max_iterations == 10
@@ -120,14 +120,14 @@ def test_from_toml_missing_file_uses_defaults(tmp_path: Path) -> None:
 
 
 def test_from_toml_malformed_raises_clear_error(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(toml_path, "this is not = valid = toml = [\n")
     with pytest.raises(ValueError, match="Invalid TOML"):
         KstrlConfig.from_toml(toml_path, tmp_path)
 
 
 def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     abs_prompt = tmp_path / "elsewhere" / "p.md"
     _write_toml(
         toml_path,
@@ -141,7 +141,7 @@ prompt = "{abs_prompt}"
 
 
 def test_from_toml_ignores_unknown_keys(tmp_path: Path) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -165,7 +165,7 @@ foo = "bar"
 def test_load_env_overrides_toml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -189,7 +189,7 @@ def test_load_toml_wins_over_defaults_when_env_unset(
     # Clear env vars that might leak from the test environment
     for var in ("MAX_ITERATIONS", "MODEL", "SLEEP_SECONDS", "INTERACTIVE"):
         monkeypatch.delenv(var, raising=False)
-    toml_path = tmp_path / "ralph.toml"
+    toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
         """
@@ -207,7 +207,7 @@ def test_load_defaults_when_no_toml_and_no_env(
     for var in (
         "MAX_ITERATIONS", "MODEL", "SLEEP_SECONDS", "INTERACTIVE",
         "ALLOWED_PATHS", "AGENT_CMD", "MODEL_REASONING_EFFORT",
-        "RALPH_AGENT_TYPE", "RALPH_BRANCH", "RALPH_ASCII",
+        "KSTRL_AGENT_TYPE", "KSTRL_BRANCH", "KSTRL_ASCII",
     ):
         monkeypatch.delenv(var, raising=False)
     config = KstrlConfig.load(tmp_path)
@@ -219,13 +219,13 @@ def test_load_defaults_when_no_toml_and_no_env(
     assert config.kstrl_branch_explicit is False
 
 
-def test_load_auto_discovers_ralph_toml(
+def test_load_auto_discovers_kstrl_toml(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)
     _write_toml(
-        tmp_path / "ralph.toml",
+        tmp_path / "kstrl.toml",
         """
 [run]
 max_iterations = 7
@@ -247,7 +247,7 @@ def test_load_missing_toml_falls_back_silently(
 def test_load_env_branch_marks_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("RALPH_BRANCH", "")
+    monkeypatch.setenv("KSTRL_BRANCH", "")
     config = KstrlConfig.load(tmp_path)
     assert config.kstrl_branch == ""
     assert config.kstrl_branch_explicit is True
@@ -267,12 +267,12 @@ def test_load_toml_empty_branch_does_not_mark_explicit(
     """kstrl.toml.example documents `branch = ""` as 'empty = use PRD
     branchName'. An empty TOML branch must therefore NOT mark explicit,
     so loop._determine_branch falls through to PRD lookup instead of
-    skipping checkout. Env var RALPH_BRANCH="" retains its historical
+    skipping checkout. Env var KSTRL_BRANCH="" retains its historical
     explicit-skip meaning - that path is tested elsewhere."""
-    for var in ("RALPH_BRANCH",):
+    for var in ("KSTRL_BRANCH",):
         monkeypatch.delenv(var, raising=False)
     _write_toml(
-        tmp_path / "ralph.toml",
+        tmp_path / "kstrl.toml",
         """
 [git]
 branch = ""
@@ -286,10 +286,10 @@ branch = ""
 def test_load_toml_nonempty_branch_marks_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for var in ("RALPH_BRANCH",):
+    for var in ("KSTRL_BRANCH",):
         monkeypatch.delenv(var, raising=False)
     _write_toml(
-        tmp_path / "ralph.toml",
+        tmp_path / "kstrl.toml",
         """
 [git]
 branch = "feature/foo"
@@ -322,7 +322,7 @@ def test_from_env_does_not_read_toml(
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)
     _write_toml(
-        tmp_path / "ralph.toml",
+        tmp_path / "kstrl.toml",
         """
 [run]
 max_iterations = 999

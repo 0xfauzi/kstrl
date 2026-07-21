@@ -1,4 +1,4 @@
-"""Main agentic loop for Ralph."""
+"""Main agentic loop for kstrl."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def run_loop(
     """Run the main agentic loop.
 
     Args:
-        config: Ralph configuration
+        config: kstrl configuration
         ui: UI implementation for output
         agent: Agent to run
         cwd: Working directory (defaults to current)
@@ -98,7 +98,7 @@ def run_loop(
     ui.startup_art()
 
     # Display title
-    ui.title("Ralph")
+    ui.title("kstrl")
 
     # Display startup info
     ui.section("Startup")
@@ -131,8 +131,8 @@ def run_loop(
 
     # Resolve the prompt template. If the explicit prompt file does not
     # exist, fall back to the H3-protected DEFAULT_PROMPT from
-    # init_cmd.py. This makes ``ralph factory`` runnable on a project
-    # that has not been ``ralph init``'d -- the engineer prompt is part
+    # init_cmd.py. This makes ``ks factory`` runnable on a project
+    # that has not been ``ks init``'d -- the engineer prompt is part
     # of the harness contract and should not require user setup.
     #
     # The fallback is announced explicitly so the operator can tell
@@ -146,7 +146,7 @@ def run_loop(
         from kstrl.init_cmd import DEFAULT_PROMPT
         ui.warn(
             f"Prompt file not found at {config.prompt_file}; "
-            "falling back to harness DEFAULT_PROMPT (run `ralph init` "
+            "falling back to harness DEFAULT_PROMPT (run `ks init` "
             "to scaffold a customizable copy)."
         )
         raw_prompt = DEFAULT_PROMPT
@@ -189,7 +189,7 @@ def run_loop(
                 ui.err(f"Failed to checkout branch: {branch}")
                 return LoopResult(completed=False, iterations=0, exit_code=1)
         elif branch == "":
-            ui.info("Branch: RALPH_BRANCH is set but empty; skipping branch checkout")
+            ui.info("Branch: KSTRL_BRANCH is set but empty; skipping branch checkout")
         else:
             ui.info("Branch: no branch configured")
 
@@ -410,13 +410,13 @@ def _determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
     Returns:
         Tuple of (branch_name, source) where:
         - branch_name: Branch to checkout, "" to skip, None if not configured
-        - source: Source description (e.g. "from RALPH_BRANCH", "from PRD")
+        - source: Source description (e.g. "from KSTRL_BRANCH", "from PRD")
     """
     # If a branch is configured directly on the config, prefer it.
-    # `kstrl_branch_explicit` is used to indicate whether it came from RALPH_BRANCH/--branch.
+    # `kstrl_branch_explicit` is used to indicate whether it came from KSTRL_BRANCH/--branch.
     if config.kstrl_branch is not None:
         if config.kstrl_branch_explicit:
-            return config.kstrl_branch, "from RALPH_BRANCH"
+            return config.kstrl_branch, "from KSTRL_BRANCH"
         return config.kstrl_branch, "default"
 
     # Try to get from PRD

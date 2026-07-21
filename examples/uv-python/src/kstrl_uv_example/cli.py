@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import argparse
 
-from ralph_uv_example import greet
+from kstrl_uv_example import greet
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ralph-uv-example")
+    p = argparse.ArgumentParser(prog="kstrl-uv-example")
     p.add_argument("name", nargs="?", default="world", help="Name to greet")
     return p
 
