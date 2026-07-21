@@ -55,6 +55,14 @@ class InitWizardScreen(Screen[None]):
         Binding("escape", "back", "Back"),
     ]
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._scaffolding = False
+
+    @property
+    def navigation_blocked(self) -> bool:
+        return self._scaffolding
+
     def compose(self) -> ComposeResult:
         yield ContextBar(
             "init", "scaffold is non-destructive - existing files are kept",
@@ -184,8 +192,11 @@ class InitWizardScreen(Screen[None]):
         button_id = event.button.id or ""
         if button_id == "wizard-preview-btn":
             errors: list[str] = []
-            if not self._directory().exists():
-                errors.append(f"directory not found: {self._directory()}")
+            directory = self._directory()
+            if not directory.exists():
+                errors.append(f"directory not found: {directory}")
+            elif not directory.is_dir():
+                errors.append(f"not a directory: {directory}")
             self.query_one(FormErrors).show(errors)
             if errors:
                 return
@@ -197,41 +208,54 @@ class InitWizardScreen(Screen[None]):
             self._run_scaffold()
 
     def _run_scaffold(self) -> None:
+        if self._scaffolding:
+            return
+        self._scaffolding = True
         directory = self._directory()
         agent_type, model, reasoning = self._agent_values()
         toml_missing_before = not (directory / "kstrl.toml").exists()
 
         def _work() -> None:
             stream = io.StringIO()
-            code = run_init(directory, PlainUI(no_color=True, file=stream))
             note = ""
-            if any((agent_type, model, reasoning)):
-                if not toml_missing_before:
-                    note = (
-                        "agent settings NOT written: kstrl.toml already "
-                        "existed before this run"
-                    )
-                elif code != 0:
-                    note = "agent settings skipped: init did not succeed"
-                elif apply_agent_settings(
-                    directory / "kstrl.toml",
-                    agent_type=agent_type, model=model, reasoning=reasoning,
-                ):
-                    note = "agent settings written to kstrl.toml [agent]"
-                else:
-                    note = (
-                        "agent settings NOT written: the scaffolded "
-                        "[agent] lines were not found"
-                    )
+            try:
+                code = run_init(
+                    directory, PlainUI(no_color=True, file=stream),
+                )
+                if any((agent_type, model, reasoning)):
+                    if not toml_missing_before:
+                        note = (
+                            "agent settings NOT written: kstrl.toml already "
+                            "existed before this run"
+                        )
+                    elif code != 0:
+                        note = "agent settings skipped: init did not succeed"
+                    elif apply_agent_settings(
+                        directory / "kstrl.toml",
+                        agent_type=agent_type, model=model,
+                        reasoning=reasoning,
+                    ):
+                        note = "agent settings written to kstrl.toml [agent]"
+                    else:
+                        note = (
+                            "agent settings NOT written: the scaffolded "
+                            "[agent] lines were not found"
+                        )
+            except (OSError, ValueError) as exc:
+                code = 1
+                stream.write(f"init failed: {exc}\n")
             self.post_message(WizardDone(code, stream.getvalue(), note))
 
         self._show_stage("result")
         self.query_one("#wizard-log", Static).update(
             Text("scaffolding...", style=theme.MUTED),
         )
+        self.query_one("#wizard-run-btn", Button).disabled = True
         self.run_worker(_work, thread=True)
 
     def on_wizard_done(self, message: WizardDone) -> None:
+        self._scaffolding = False
+        self.query_one("#wizard-run-btn", Button).disabled = False
         self.query_one("#wizard-log", Static).update(
             Text(message.transcript or "(no output)"),
         )
@@ -248,6 +272,12 @@ class InitWizardScreen(Screen[None]):
         self.query_one("#wizard-outcome", Static).update(outcome)
 
     def action_back(self) -> None:
+        if self._scaffolding:
+            self.app.notify(
+                "init is still writing project files; wait for it to finish",
+                severity="warning",
+            )
+            return
         if getattr(self, "_stage", "form") == "preview":
             self._show_stage("form")
             return

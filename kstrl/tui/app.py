@@ -357,8 +357,12 @@ class KstrlTuiApp(App[int]):
         self._session_notified = True
         self._poll()  # final drain
         code = run.handle.exit_code
+        failure = ""
+        if run.handle.error_box:
+            exc = run.handle.error_box[0]
+            failure = f" - {type(exc).__name__}: {exc}"
         self.notify(
-            f"run finished (exit {code}) - escape returns home",
+            f"run finished (exit {code}){failure} - escape returns home",
             severity="information" if code == 0 else "error",
             timeout=10,
         )
@@ -423,6 +427,13 @@ class KstrlTuiApp(App[int]):
 
     def action_quit_or_detach(self) -> None:
         if self.mode is Mode.HOME:
+            if bool(getattr(self.screen, "navigation_blocked", False)):
+                self.notify(
+                    "this operation is still writing files; wait for it "
+                    "to finish",
+                    severity="warning",
+                )
+                return
             if self.session_in_flight():
                 run = self.run_context
                 session_handle = run.handle if run is not None else None

@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from kstrl.config import KstrlConfig
+from kstrl.events import EventBus
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
 
@@ -342,6 +343,23 @@ class TestGuardsRunBeforeCompletion:
         assert result.completed is False
         assert result.exit_code == 1
         assert result.iterations == 1
+
+    def test_active_run_state_does_not_trip_scope_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        config = self._git_repo(tmp_path)
+        run_id = "understand-20260721-test"
+        state_file = tmp_path / ".kstrl" / "runs" / run_id / "events.jsonl"
+        state_file.parent.mkdir(parents=True)
+        agent = _RogueWriterAgent(state_file)
+
+        result = run_loop(
+            config, PlainUI(no_color=True), agent, tmp_path,
+            bus=EventBus(run_id=run_id),
+        )
+
+        assert result.completed is True
+        assert result.exit_code == 0
 
     def test_out_of_scope_edit_plus_complete_is_reverted_interactive(
         self, tmp_path: Path,
