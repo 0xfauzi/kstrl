@@ -33,10 +33,11 @@ classifiers = [
 dependencies = [
     "rich>=15.0.0",
     "click>=8.4.2",
-    # TUI rewrite PR D: the dashboard engine. Pinned <6 (Textualize
-    # wind-down risk); 5.3.0 verified compatible with locked rich 14.3.3
-    # in the Stage 0 spike (spike/tui0/RESULTS.md).
-    "textual>=3.0,<6",
+    # TUI rewrite PR D: the dashboard engine. Pinned <9; 8.2.8 verified
+    # against locked rich 15.x during the Textual 8 migration (the 6.0.0
+    # Static.renderable -> content rename and 6-8 render changes were
+    # absorbed there). Bumped from the earlier <6 pin.
+    "textual>=8.2.8,<9",
 ]
 
 # R7.6: the claude-sdk agent adapter is opt-in because the SDK carries a

@@ -152,7 +152,7 @@ class TestHomeSummariesPilot:
             while True:
                 await pilot.pause(0.1)
                 stats = str(
-                    app.screen.query_one("#home-stats").renderable,
+                    app.screen.query_one("#home-stats").content,
                 )
                 if "last run" in stats:
                     break

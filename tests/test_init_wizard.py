@@ -115,7 +115,7 @@ class TestWizardScreen:
 
             screen.query_one("#wizard-preview-btn", Button).press()
             await self._pilot.pause(0.2)
-            plan = str(screen.query_one("#wizard-plan", Static).renderable)
+            plan = str(screen.query_one("#wizard-plan", Static).content)
             assert "will create" in plan
             assert "kstrl.toml" in plan
             assert "type=codex" in plan
@@ -124,7 +124,7 @@ class TestWizardScreen:
             while True:
                 await self._pilot.pause(0.1)
                 outcome = str(
-                    screen.query_one("#wizard-outcome", Static).renderable,
+                    screen.query_one("#wizard-outcome", Static).content,
                 )
                 if outcome:
                     break
@@ -147,7 +147,7 @@ class TestWizardScreen:
 
             screen.query_one("#wizard-preview-btn", Button).press()
             await self._pilot.pause(0.2)
-            plan = str(screen.query_one("#wizard-plan", Static).renderable)
+            plan = str(screen.query_one("#wizard-plan", Static).content)
             assert "exists - kept" in plan
             assert "will NOT be written" in plan
             screen.query_one("#wizard-run-btn", Button).press()
@@ -155,7 +155,7 @@ class TestWizardScreen:
             while True:
                 await self._pilot.pause(0.1)
                 outcome = str(
-                    screen.query_one("#wizard-outcome", Static).renderable,
+                    screen.query_one("#wizard-outcome", Static).content,
                 )
                 if outcome:
                     break
@@ -177,7 +177,7 @@ class TestWizardScreen:
             )
             screen.query_one("#wizard-preview-btn", Button).press()
             await self._pilot.pause(0.2)
-            errors = str(screen.query_one("#wizard-errors").renderable)
+            errors = str(screen.query_one("#wizard-errors").content)
             assert "not found" in errors
             assert screen.query_one("#wizard-form").display
         finally:
@@ -193,7 +193,7 @@ class TestWizardScreen:
             screen.query_one("#wizard-directory", Input).value = str(target)
             screen.query_one("#wizard-preview-btn", Button).press()
             await self._pilot.pause(0.2)
-            errors = str(screen.query_one("#wizard-errors").renderable)
+            errors = str(screen.query_one("#wizard-errors").content)
             assert "not a directory" in errors
             assert screen.query_one("#wizard-form").display
         finally:
@@ -232,10 +232,10 @@ class TestWizardScreen:
                     await self._pilot.pause(0.1)
                     assert time.monotonic() < deadline
             outcome = str(
-                screen.query_one("#wizard-outcome", Static).renderable,
+                screen.query_one("#wizard-outcome", Static).content,
             )
             transcript = str(
-                screen.query_one("#wizard-log", Static).renderable,
+                screen.query_one("#wizard-log", Static).content,
             )
             assert "exited 1" in outcome
             assert "disk unavailable" in transcript

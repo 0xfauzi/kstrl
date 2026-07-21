@@ -87,12 +87,12 @@ class TestDecomposeScreen:
             row_keys = {key.value for key in table.rows}
             assert row_keys == {"database", "api"}  # architect excluded
             strip = app.screen.query_one("#issues-strip")
-            assert "minor" in str(strip.renderable)
+            assert "minor" in str(strip.content)
             attempt = app.screen.query_one("#attempt-strip")
-            assert "attempt 2" in str(attempt.renderable)
+            assert "attempt 2" in str(attempt.content)
             summary = app.screen.query_one("#decompose-summary")
             assert summary.display
-            assert "2 component(s)" in str(summary.renderable)
+            assert "2 component(s)" in str(summary.content)
 
             # A replaced event stream may contain a smaller plan; rows
             # from the old fold must not survive the rebuild.
@@ -130,11 +130,11 @@ class TestDecomposeScreen:
             assert isinstance(app.screen, SpecTriageScreen)
             banner = app.screen.query_one("#triage-banner")
             assert banner.display
-            assert "halted" in str(banner.renderable)
+            assert "halted" in str(banner.content)
             # Blockers sort first; the detail pane carries the
             # suggestion for the highlighted row.
             detail = app.screen.query_one("#triage-detail")
-            text = str(detail.renderable)
+            text = str(detail.content)
             assert "[blocker]" in text
             assert "Resolve it" in text
 

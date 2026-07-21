@@ -150,8 +150,8 @@ class TestEvolveScreen:
             await pilot.pause()
             assert isinstance(app.screen, OptionsModal)
             question = app.screen.query_one("#options-question")
-            assert isinstance(question.renderable, Text)
-            assert "[/bold]" in question.renderable.plain
+            assert isinstance(question.content, Text)
+            assert "[/bold]" in question.content.plain
             await pilot.press("escape")
 
     async def test_apply_via_modal_mutates_and_stamps(
@@ -176,7 +176,7 @@ class TestEvolveScreen:
             ).read_text()
             assert "**Applied**:" in prop
             detail = str(
-                screen.query_one("#proposal-detail").renderable,
+                screen.query_one("#proposal-detail").content,
             )
             assert "✓ applied" in detail
 
@@ -219,6 +219,6 @@ class TestEvolveScreen:
             await pilot.pause(0.2)
             screen = await _open(app, pilot)
             detail = str(
-                screen.query_one("#proposal-detail").renderable,
+                screen.query_one("#proposal-detail").content,
             )
             assert "no proposals yet" in detail

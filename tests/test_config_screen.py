@@ -61,9 +61,9 @@ class TestConfigScreen:
             screen = cast(ConfigScreen, app.screen)
             table = screen.query_one("#config-table")
             assert table.row_count == len(report.rows)  # type: ignore[attr-defined]
-            title = str(screen.query_one("#config-title").renderable)
+            title = str(screen.query_one("#config-title").content)
             assert f"{len(report.rows)}/{len(report.rows)}" in title
-            hint = str(screen.query_one("#config-hint").renderable)
+            hint = str(screen.query_one("#config-hint").content)
             assert "kstrl.toml" in hint
 
     async def test_values_render_as_literal_text(
@@ -174,7 +174,7 @@ class TestConfigScreen:
             await pilot.pause(0.2)
             app.push_screen(ConfigScreen())
             await pilot.pause(0.2)
-            hint = str(app.screen.query_one("#config-hint").renderable)
+            hint = str(app.screen.query_one("#config-hint").content)
             assert "could not be resolved" in hint
 
     async def test_launcher_entry_opens_the_screen(
