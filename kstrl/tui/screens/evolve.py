@@ -16,6 +16,7 @@ the generator; this screen reads, triages, and applies.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 from rich.text import Text
@@ -40,7 +41,7 @@ _BAR_BLOCKS = "▁▂▃▄▅▆▇"
 
 def retry_bar(rate: float) -> str:
     """A one-cell bar for a 0..1 retry rate; empty stays empty."""
-    if rate <= 0:
+    if not math.isfinite(rate) or rate <= 0:
         return theme.EMPTY_CELL
     index = min(len(_BAR_BLOCKS) - 1, int(rate * len(_BAR_BLOCKS)))
     return _BAR_BLOCKS[index]
@@ -140,9 +141,11 @@ class EvolveScreen(Screen[None]):
             )
             table.add_row(
                 Text(proposal.display_id, style="bold"),
-                proposal.title,
-                proposal.type or Text(theme.EMPTY_CELL, style=theme.MUTED),
-                proposal.target or Text(theme.EMPTY_CELL, style=theme.MUTED),
+                Text(proposal.title),
+                Text(proposal.type) if proposal.type
+                else Text(theme.EMPTY_CELL, style=theme.MUTED),
+                Text(proposal.target) if proposal.target
+                else Text(theme.EMPTY_CELL, style=theme.MUTED),
                 applied,
                 key=proposal.path.name,
             )
@@ -163,7 +166,7 @@ class EvolveScreen(Screen[None]):
         for pattern in journal.get_cross_run_patterns():
             patterns_table.add_row(
                 Text(pattern.check_name, style="bold"),
-                pattern.error_signature,
+                Text(pattern.error_signature),
                 Text(str(pattern.frequency), justify="right"),
                 Text(str(len(pattern.affected_components)), justify="right"),
                 Text(pattern.category, style=theme.MUTED),
@@ -188,10 +191,12 @@ class EvolveScreen(Screen[None]):
             rate = float(row.get("retry_rate", "") or 0)
         except ValueError:
             rate = 0.0
+        if not math.isfinite(rate):
+            rate = 0.0
         # Unreported calls make token/cost totals lower bounds (R3.1).
         try:
             unreported = int(float(row.get("unreported_calls", "") or 0))
-        except ValueError:
+        except (OverflowError, ValueError):
             unreported = 0
         marker = "+" if unreported else ""
         tokens = str(row.get("total_tokens", "") or "")
@@ -237,6 +242,8 @@ class EvolveScreen(Screen[None]):
         self.reload()
 
     def action_apply_selected(self) -> None:
+        if self.query_one(TabbedContent).active != "tab-proposals":
+            return
         proposal = self._selected_proposal()
         if proposal is None:
             return

@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import cast
+
+from rich.text import Text
+from textual.coordinate import Coordinate
+from textual.widgets import TabbedContent
 
 from kstrl.tui import theme
 from kstrl.tui.app import KstrlTuiApp, Mode
@@ -82,6 +87,8 @@ class TestRetryBar:
         assert retry_bar(0) == theme.EMPTY_CELL
         assert retry_bar(0.5) in "▃▄▅"
         assert retry_bar(1.0) == "▇"
+        assert retry_bar(math.nan) == theme.EMPTY_CELL
+        assert retry_bar(math.inf) == theme.EMPTY_CELL
 
 
 class TestEvolveScreen:
@@ -105,6 +112,47 @@ class TestEvolveScreen:
             second = trends.get_row_at(1)  # type: ignore[attr-defined]
             second_cells = [str(cell) for cell in second]
             assert theme.EMPTY_CELL in second_cells  # empty tokens honest
+
+            # Non-finite data is invalid, but must degrade to an empty
+            # cell rather than crashing the whole screen.
+            cells = screen._trend_cells({
+                "retry_rate": "nan", "unreported_calls": "inf",
+            })
+            assert str(cells[3]) == theme.EMPTY_CELL
+
+    async def test_repository_text_is_literal_and_apply_is_tab_scoped(
+        self, tmp_path: Path,
+    ) -> None:
+        _seed(tmp_path)
+        proposal_path = tmp_path / ".kstrl" / "proposals" / "prop-001.md"
+        proposal_path.write_text(
+            proposal_path.read_text()
+            .replace("Always pin versions", "[/bold]")
+            .replace("Pin every dependency", "[/bold] every dependency"),
+        )
+        app = _home_app(tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause(0.2)
+            screen = await _open(app, pilot)
+            table = screen.query_one("#proposals-table")
+            title = table.get_cell_at(Coordinate(0, 1))  # type: ignore[attr-defined]
+            assert isinstance(title, Text)
+            assert title.plain == "[/bold]"
+
+            tabs = screen.query_one(TabbedContent)
+            tabs.active = "tab-patterns"
+            screen.action_apply_selected()
+            await pilot.pause()
+            assert isinstance(app.screen, EvolveScreen)
+
+            tabs.active = "tab-proposals"
+            screen.action_apply_selected()
+            await pilot.pause()
+            assert isinstance(app.screen, OptionsModal)
+            question = app.screen.query_one("#options-question")
+            assert isinstance(question.renderable, Text)
+            assert "[/bold]" in question.renderable.plain
+            await pilot.press("escape")
 
     async def test_apply_via_modal_mutates_and_stamps(
         self, tmp_path: Path,
