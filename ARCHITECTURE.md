@@ -207,6 +207,12 @@ dashboard crash all work by construction. Recording obeys the
 `.kstrl/progress.jsonl` keeps being written byte-compatibly by factory
 runs for existing consumers.
 
+The same event bus feeds the optional Linear mirror: a `LinearSink`
+subscribes to progress events and comments on component issues at
+failure and budget-halt moments, while status transitions ride branch
+names and PR trailers with zero API calls
+([docs/linear-integration.md](docs/linear-integration.md)).
+
 Token and cost figures are CLI self-reports: when any call goes
 unreported the meter renders a `+` marker and treats the total as a
 lower bound - an honest number is never turned into a false one.
