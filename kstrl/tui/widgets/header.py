@@ -31,9 +31,13 @@ def _format_elapsed(seconds: float) -> str:
 
 def render_header(state: RunState) -> Text:
     text = Text()
-    text.append(" ◍ ralph ", style=f"bold {theme.BACKGROUND} on {theme.ACCENT}")
+    text.append(" ◍ kstrl ", style=f"bold {theme.BACKGROUND} on {theme.ACCENT}")
     text.append("  ")
     text.append(state.project or "(no project)", style="bold")
+    if state.kind != "factory":
+        # Non-factory kinds name themselves; the board is otherwise
+        # identical, and a factory run stays visually unchanged.
+        text.append(f"  {state.kind}", style=f"bold {theme.STEEL}")
     text.append("  ")
     if state.finished:
         text.append("✓ finished", style=f"bold {theme.SUCCESS}")

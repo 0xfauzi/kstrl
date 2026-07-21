@@ -38,9 +38,15 @@ def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
     return False
 
 
-def check_violations(changed_files: set[str], allowed_paths: list[str]) -> list[str]:
+def check_violations(
+    changed_files: set[str],
+    allowed_paths: list[str],
+    ignored_paths: list[str] | None = None,
+) -> list[str]:
     """Check for files that violate ALLOWED_PATHS.
 
+    ``ignored_paths`` contains exact harness-owned files or directory
+    prefixes for this invocation, never a blanket state-directory bypass.
     Returns list of disallowed files.
     """
     if not allowed_paths:
@@ -48,6 +54,8 @@ def check_violations(changed_files: set[str], allowed_paths: list[str]) -> list[
 
     violations = []
     for file in sorted(changed_files):
+        if ignored_paths and path_is_allowed(file, ignored_paths):
+            continue
         if not path_is_allowed(file, allowed_paths):
             violations.append(file)
     return violations
@@ -58,12 +66,16 @@ def enforce_allowed_paths(
     ui: UI,
     cwd: Path | None = None,
     interaction: InteractionChannel | None = None,
+    ignored_paths: list[str] | None = None,
 ) -> tuple[bool, list[str]]:
     """Enforce ALLOWED_PATHS after an iteration.
 
     Returns (ok, violations) where:
     - ok is True if enforcement passed (no violations or resolved)
     - violations is list of disallowed files
+
+    ``ignored_paths`` is the caller's exact set of harness-owned outputs
+    for the active run.
 
     In non-interactive mode, returns (False, violations) if any violations.
     In interactive mode, prompts user for action.
@@ -78,7 +90,9 @@ def enforce_allowed_paths(
 
     # Get changed files
     changed = git.get_changed_files(cwd)
-    violations = check_violations(changed, config.allowed_paths)
+    violations = check_violations(
+        changed, config.allowed_paths, ignored_paths,
+    )
 
     if not violations:
         return True, []

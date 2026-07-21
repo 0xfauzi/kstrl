@@ -72,3 +72,34 @@ class TestCheckViolations:
         allowed = ["other/"]
         violations = check_violations(changed, allowed)
         assert violations == ["a.txt", "m.txt", "z.txt"]
+
+
+class TestStateDirExemption:
+    """Only the active run's declared state paths are bookkeeping."""
+
+    def test_active_run_state_is_ignored_but_arbitrary_state_is_not(self) -> None:
+        violations = check_violations(
+            {
+                ".kstrl/runs/understand-x/events.jsonl",
+                ".kstrl/runs/understand-x/components/understand/engineer.log",
+                ".kstrl/payload.py",
+                "src/app.py",
+            },
+            ["scripts/kstrl/codebase_map.md"],
+            [".kstrl/runs/understand-x/"],
+        )
+        assert violations == [".kstrl/payload.py", "src/app.py"]
+
+    def test_lookalike_paths_still_flagged(self) -> None:
+        violations = check_violations(
+            {
+                ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+                "sub/.kstrl/y",
+            },
+            ["scripts/"],
+            [".kstrl/runs/understand-x/"],
+        )
+        assert violations == [
+            ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+            "sub/.kstrl/y",
+        ]

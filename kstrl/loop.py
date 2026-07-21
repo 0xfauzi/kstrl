@@ -69,6 +69,7 @@ def run_loop(
     bus: EventBus | None = None,
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
+    guard_ignored_paths: list[str] | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -291,8 +292,12 @@ def run_loop(
         # When enforcement fails the iteration is treated as failed even
         # if the marker was seen.
         if config.allowed_paths and is_repo:
+            ignored_paths = list(guard_ignored_paths or ())
+            if bus is not None and bus.run_id:
+                ignored_paths.append(f".kstrl/runs/{bus.run_id}/")
             ok, _ = guards.enforce_allowed_paths(
                 config, ui, cwd, interaction=channel,
+                ignored_paths=ignored_paths,
             )
             if not ok:
                 return LoopResult(

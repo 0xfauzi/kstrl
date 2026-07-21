@@ -53,7 +53,7 @@ $EDITOR scripts/kstrl/prd.json     # define what to build (user stories + accept
 ks run 25                          # let the agent work for up to 25 iterations
 ```
 
-Factory runs on a terminal open a live dashboard automatically (`--no-tui` opts out); `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI.
+Every long-running command opens its live dashboard on a terminal automatically (`--no-tui` opts out), and bare `ks` opens a home shell with a run browser and command launcher; `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI (and opens the dashboard when you run it interactively).
 
 You need at least one AI coding agent CLI:
 
@@ -177,9 +177,17 @@ flowchart TD
     Bisect --> Schedule
 ```
 
-## The dashboard - watch the factory work
+## The TUI - the whole surface, not just the factory
 
-`ks factory` on a terminal runs an embedded [Textual](https://github.com/Textualize/textual) dashboard (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `KSTRL_NO_TUI=1`). The screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
+The long-running kstrl surface is available through a terminal UI. Bare `ks` opens the home shell: project identity, a browser over every recorded run of every kind (with folded outcome/token/cost summaries and honest `·` cells while they compute), and a command launcher - factory and decompose launch from forms right there, retry picks a failed component off the manifest, and config, evolve, and the init wizard open as full screens. Non-TTY invocations are byte-identical to before (`ks` prints help, exit 2); `KSTRL_NO_TUI=1` opts out everywhere.
+
+<img src="docs/img/tui-home.svg" alt="kstrl home shell: project masthead, run browser across kinds, command launcher" width="100%">
+
+Long-running commands are event-stream runs whatever door you enter through: `ks factory`, `ks run`, `ks retry`, `ks understand`, `ks feature`, and `ks decompose` all record to `.kstrl/runs/<kind>-<stamp>-<nonce>/` and open their embedded dashboard on a terminal (plain output remains the default for non-TTY use, `--ui plain`, `--no-tui`, or `KSTRL_NO_TUI=1`). `ks status` on a terminal opens the dashboard for the newest run of any kind; pipes and `--watch` keep the plain report. A decompose run gets its own screen - architect attempt strip, the component DAG forming live as the plan validates, spec-issue counts with `i` opening the triage view (blockers-first, with the architect's suggestions), and the streaming architect transcript:
+
+<img src="docs/img/tui-decompose.svg" alt="kstrl decompose screen: attempt strip, forming DAG with tiers, spec issues, architect transcript" width="100%">
+
+The factory screenshots below are real: captured from a live toy-project factory run driven by a scripted agent, mid-flight and after completion.
 
 The overview board shows every component's status, authoritative phase, attempt, last-event age, and spend - here with `auth-core` and `api-routes` running in parallel workers while `ui-shell` waits on its dependency:
 
@@ -193,9 +201,9 @@ With `pause_before_pr_merge` enabled, the E6 human checkpoint opens as a real in
 
 <img src="docs/img/tui-checkpoint.svg" alt="kstrl E6 checkpoint modal: diff, findings and spend before approving the PR" width="100%">
 
-Keys: `enter` component detail, `escape` back, `f` toggle transcript follow, `c` reopen a pending checkpoint, `q` quit. Quit semantics differ by mode: in `ks dash` (observe-only) `q` detaches immediately; embedded, `q` asks first - confirming group-kills in-flight agents, runs worktree cleanup, flushes the manifest, and exits 130, and a second `q` (or Ctrl-C) force-kills.
+Keys: `enter` component detail, `escape` back (toward home, when the shell is underneath), `f` toggle transcript follow, `c` reopen a pending checkpoint or prompt, `q` quit. Quit semantics differ by mode: in `ks dash` (observe-only) `q` detaches immediately; embedded or home-launched, `q` asks first, then requests a graceful stop and keeps the board up while the command winds down. A second `q` (or Ctrl-C) escalates the stop. A run launched from the home shell keeps its board up when it finishes so you can read the post-mortem; escape then returns home.
 
-The dashboard is a view, never the record. Every run appends typed schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl`, per-component engineer transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. `ks dash` and the embedded view tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. The legacy `.kstrl/progress.jsonl` keeps being written byte-compatibly for existing consumers.
+The TUI is a view, never the record. Every run - factory, decompose, feature, understand - appends typed schema-versioned events to `.kstrl/runs/<run_id>/events.jsonl` (run ids are kind-prefixed: `factory-…`, `decompose-…`), per-component transcripts and events to `components/<id>/engineer.{log,jsonl}`, and adversarial phase transcripts to `components/<id>/{review,security,distill}.log`. Non-factory commands project their work onto a pseudo-component (`architect`, the feature name, `understand`) so the same board, reducer, and replay machinery serve every kind. `ks dash` and the embedded views tail the same files - which is why attaching mid-run, replaying a finished run, and surviving a dashboard crash all work by construction. Recording obeys the same `[factory] progress_log_enabled` switch everywhere, and the legacy `.kstrl/progress.jsonl` keeps being written byte-compatibly (by factory runs, its only historical writer) for existing consumers.
 
 One honesty note carried through every surface: token and cost figures are CLI self-reports, so whenever any call went unreported the meter renders a `+` marker and treats the total as a lower bound - the dashboard never turns an honest number into a false one.
 
