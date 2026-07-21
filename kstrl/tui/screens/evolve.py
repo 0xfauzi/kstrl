@@ -17,6 +17,7 @@ the generator; this screen reads, triages, and applies.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from rich.text import Text
@@ -31,9 +32,10 @@ from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.proposals import Proposal, apply_proposal, list_proposals
 from kstrl.tui import theme
 from kstrl.tui.screens.options import OptionsModal
+from kstrl.tui.widgets.context_bar import ContextBar
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    pass
 
 TREND_ROWS = 14
 _BAR_BLOCKS = "▁▂▃▄▅▆▇"
@@ -47,11 +49,15 @@ def retry_bar(rate: float) -> str:
     return _BAR_BLOCKS[index]
 
 
-def _proposal_detail(proposal: Proposal) -> Text:
+def _proposal_detail(proposal: Proposal, root_dir: Path) -> Text:
     text = Text()
     text.append(f"{proposal.display_id} ", style=f"bold {theme.ACCENT}")
     text.append(proposal.title, style="bold")
-    text.append(f"\n{proposal.path}", style=theme.MUTED)
+    try:
+        shown_path = proposal.path.relative_to(root_dir)
+    except ValueError:
+        shown_path = proposal.path
+    text.append(f"\n{shown_path}", style=theme.MUTED)
     text.append("\ntype ", style=theme.MUTED)
     text.append(proposal.type or "?")
     text.append("  target ", style=theme.MUTED)
@@ -90,6 +96,7 @@ class EvolveScreen(Screen[None]):
         self._proposals: list[Proposal] = []
 
     def compose(self) -> ComposeResult:
+        yield ContextBar("evolve", "the harness improving itself")
         with TabbedContent(id="evolve-tabs"):
             with TabPane("proposals", id="tab-proposals"):
                 with Horizontal(id="proposals-split"):
@@ -128,6 +135,18 @@ class EvolveScreen(Screen[None]):
         root_dir = self._root_dir()
         self._load_proposals(root_dir)
         self._load_patterns_and_trends(root_dir)
+        pending = sum(1 for p in self._proposals if not p.applied)
+        right = Text()
+        if pending:
+            right.append(f"▲ {pending} pending", style=theme.WARNING)
+            right.append(
+                f" of {len(self._proposals)} proposal(s)", style=theme.MUTED,
+            )
+        else:
+            right.append(
+                f"{len(self._proposals)} proposal(s)", style=theme.MUTED,
+            )
+        self.query_one(ContextBar).set_right(right)
 
     def _load_proposals(self, root_dir: Path) -> None:
         self._proposals = list_proposals(root_dir / ".kstrl" / "proposals")
@@ -227,7 +246,7 @@ class EvolveScreen(Screen[None]):
     def _show_detail(self, index: int) -> None:
         if 0 <= index < len(self._proposals):
             self.query_one("#proposal-detail", Static).update(
-                _proposal_detail(self._proposals[index]),
+                _proposal_detail(self._proposals[index], self._root_dir()),
             )
 
     def on_data_table_row_highlighted(

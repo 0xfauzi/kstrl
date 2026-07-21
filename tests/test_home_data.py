@@ -10,6 +10,7 @@ from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.home_data import (
     HomeStats,
     SummaryCache,
+    fold_run,
     pending_proposal_count,
     summarize_run,
 )
@@ -77,12 +78,14 @@ class TestSummaryCache:
         refs = discover_runs(tmp_path)
         cache = SummaryCache()
         with patch(
-            "kstrl.tui.home_data.summarize_run",
-            wraps=summarize_run,
+            "kstrl.tui.home_data.fold_run",
+            wraps=fold_run,
         ) as spy:
             cache.refresh(refs)
             cache.refresh(refs)
         assert spy.call_count == 1
+        # The folded state is retained for the home preview board.
+        assert cache.state_for(refs[0].run_id) is not None
 
     def test_moved_mtime_recomputes(self, tmp_path: Path) -> None:
         import os
@@ -94,8 +97,8 @@ class TestSummaryCache:
         os.utime(refs[0].events_path, None)
         moved = discover_runs(tmp_path)
         with patch(
-            "kstrl.tui.home_data.summarize_run",
-            wraps=summarize_run,
+            "kstrl.tui.home_data.fold_run",
+            wraps=fold_run,
         ) as spy:
             cache.refresh(moved)
         assert spy.call_count == 1
@@ -113,8 +116,8 @@ class TestSummaryCache:
         moved = discover_runs(tmp_path)
         assert moved[0].mtime == unchanged_orchestrator_mtime
         with patch(
-            "kstrl.tui.home_data.summarize_run",
-            wraps=summarize_run,
+            "kstrl.tui.home_data.fold_run",
+            wraps=fold_run,
         ) as spy:
             cache.refresh(moved)
         assert spy.call_count == 1

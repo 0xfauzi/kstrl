@@ -116,6 +116,8 @@ class TestConfigScreen:
 
             class FakeHandle:
                 finished = False
+                # Read by the HOME session watcher once done() flips.
+                exit_code = 0
 
                 def done(self) -> bool:
                     return self.finished

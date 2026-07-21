@@ -23,6 +23,8 @@ from textual.widgets import DataTable, Footer, Static
 
 from kstrl.tui import theme
 from kstrl.tui.messages import StateChanged
+from kstrl.tui.widgets.context_bar import ContextBar
+from kstrl.tui.widgets.cost_meter import CostMeter
 from kstrl.tui.widgets.dag_table import ARCHITECT_ID, DagTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.transcript import TranscriptTail
@@ -135,7 +137,11 @@ class DecomposeScreen(Screen[None]):
         self._following = True
 
     def compose(self) -> ComposeResult:
-        yield RunHeader(id="decompose-header")
+        from textual.containers import Horizontal
+
+        with Horizontal(id="topbar"):
+            yield RunHeader(id="decompose-header")
+            yield CostMeter(id="cost-meter")
         yield Static(id="attempt-strip")
         yield Static("plan", id="dag-title")
         yield DagTable(id="dag-table")
@@ -162,6 +168,7 @@ class DecomposeScreen(Screen[None]):
         if not self.ready:
             return
         self.query_one(RunHeader).update_state(state)
+        self.query_one(CostMeter).update_state(state)
         self.query_one("#attempt-strip", Static).update(_attempt_strip(state))
         self.query_one(DagTable).update_state(state)
         self.query_one("#issues-strip", Static).update(_issue_strip(state))
@@ -205,6 +212,7 @@ class SpecTriageScreen(Screen[None]):
     COLUMNS = ("severity", "kind", "summary", "location")
 
     def compose(self) -> ComposeResult:
+        yield ContextBar("spec triage", "the architect's red-team findings")
         yield Static(id="triage-banner")
         yield Static("spec issues", id="triage-title")
         yield DataTable(id="triage-table")
