@@ -12,7 +12,6 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -35,9 +34,6 @@ from kstrl.tui.runs import RunRef, discover_runs
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import format_tokens
 from kstrl.tui.widgets.run_table import RunTable
-
-if TYPE_CHECKING:
-    pass
 
 HOME_POLL_INTERVAL = 2.0
 HOME_RUN_LIMIT = 15

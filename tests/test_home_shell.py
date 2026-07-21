@@ -10,6 +10,7 @@ from kstrl.cli import cli
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.decompose import DecomposeScreen
 from kstrl.tui.screens.home import HomeScreen
+from kstrl.tui.screens.launch import FactoryLaunchForm
 from kstrl.tui.screens.overview import OverviewScreen
 from tests.helpers.fake_run import (
     FakeRunSpec,
@@ -141,6 +142,41 @@ class TestHomeScreen:
                 c.command_id for c in HOME_COMMANDS
             ].index("dash")
             commands.highlighted = dash_index  # type: ignore[attr-defined]
+            await pilot.press("enter")
+            await pilot.pause(0.2)
+            assert isinstance(app.screen, OverviewScreen)
+
+    async def test_digit_hotkey_opens_matching_command(
+        self, tmp_path: Path,
+    ) -> None:
+        app = _home_app(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("1")
+            await pilot.pause(0.2)
+            assert isinstance(app.screen, FactoryLaunchForm)
+
+    async def test_preview_tracks_highlight_and_enter_opens_that_run(
+        self, tmp_path: Path,
+    ) -> None:
+        write_fake_run(
+            tmp_path, FakeRunSpec(components=1),
+            run_id="factory-20260718-100000.000000-old",
+        )
+        write_fake_decompose_run(tmp_path)
+        app = _home_app(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.3)
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            runs = screen.query_one("#home-runs")
+            runs.move_cursor(row=1)
+            await pilot.pause()
+
+            preview = screen.query_one("#home-preview")
+            assert screen._preview_run_id.endswith("old")
+            assert preview.row_count == 1  # type: ignore[attr-defined]
+            preview.focus()
             await pilot.press("enter")
             await pilot.pause(0.2)
             assert isinstance(app.screen, OverviewScreen)

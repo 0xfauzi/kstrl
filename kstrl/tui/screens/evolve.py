@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -33,9 +33,6 @@ from kstrl.proposals import Proposal, apply_proposal, list_proposals
 from kstrl.tui import theme
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.widgets.context_bar import ContextBar
-
-if TYPE_CHECKING:
-    pass
 
 TREND_ROWS = 14
 _BAR_BLOCKS = "▁▂▃▄▅▆▇"
@@ -126,10 +123,8 @@ class EvolveScreen(Screen[None]):
         self.reload()
 
     def _root_dir(self) -> Path:
-        from pathlib import Path as _Path
-
         root = getattr(self.app, "root_dir", None)
-        return root if root is not None else _Path.cwd()
+        return root if root is not None else Path.cwd()
 
     def reload(self) -> None:
         root_dir = self._root_dir()

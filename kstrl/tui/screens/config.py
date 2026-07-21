@@ -14,6 +14,7 @@ about LIVE diff updates starving input, which does not apply here.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -42,7 +43,23 @@ def display_value(raw: str, root: str) -> Text:
     and `ks config show` keep the full values)."""
     text = raw
     if root:
-        text = text.replace(f"{root}/", "").replace(root, ".")
+        # Values may be reprs of path lists, so operate on path tokens
+        # rather than blindly replacing every root-shaped substring.
+        # In particular, /work/repository is not inside /work/repo.
+        token_start = r"(^|[\s'\"\[,({:])"
+        escaped_root = re.escape(root.rstrip("/"))
+        if escaped_root:
+            text = re.sub(
+                rf"{token_start}{escaped_root}/",
+                lambda match: match.group(1),
+                text,
+            )
+            text = re.sub(
+                rf"{token_start}{escaped_root}"
+                r"(?=$|[\s'\"\],)}])",
+                lambda match: f"{match.group(1)}.",
+                text,
+            )
     if len(text) > MAX_VALUE_WIDTH:
         half = (MAX_VALUE_WIDTH - 1) // 2
         text = f"{text[:half]}…{text[-half:]}"
