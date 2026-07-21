@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.commandrun import open_command_run
+from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, EventBus, RunPaths
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
@@ -45,6 +46,19 @@ if TYPE_CHECKING:
 
 class LaunchError(Exception):
     """A launch failed validation before anything started."""
+
+
+def _preflight_agent(config: KstrlConfig) -> None:
+    """Apply the same agent validation and alias normalization as CLI runs."""
+    from kstrl.cli import _agent_preflight
+
+    canonical, error, hint = _agent_preflight(
+        config.agent_cmd, config.agent_type,
+    )
+    if error is not None:
+        detail = f"{error} - {hint}" if hint is not None else error
+        raise LaunchError(detail)
+    config.agent_type = canonical
 
 
 @dataclass
@@ -118,9 +132,18 @@ def start_run_session(
         lambda: log_handler.close(),
         lambda: _restore_root_handlers(root_logger, log_handler, previous),
     ]
+    def guarded_target() -> int:
+        try:
+            return target()
+        except BaseException:
+            logging.getLogger(__name__).exception(
+                "%s launch worker failed", kind,
+            )
+            raise
+
     try:
         handle = start_command_thread(
-            target, stop=stop, name=f"kstrl-{kind}",
+            guarded_target, stop=stop, name=f"kstrl-{kind}",
         )
     except BaseException:
         for cleanup in reversed(cleanups):
@@ -159,9 +182,13 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
     except (OSError, ValueError) as exc:
         raise LaunchError(f"failed to load {manifest_file}: {exc}") from exc
 
-    factory_config, base_config = assemble_factory_configs(
-        root_dir, single_pr=manifest.single_pr,
-    )
+    try:
+        factory_config, base_config = assemble_factory_configs(
+            root_dir, single_pr=manifest.single_pr,
+        )
+    except (OSError, ValueError) as exc:
+        raise LaunchError(f"failed to load configuration: {exc}") from exc
+    _preflight_agent(base_config)
     if spec.max_parallel is not None:
         factory_config.max_parallel = spec.max_parallel
     if spec.review_mode is not None:
@@ -194,8 +221,6 @@ def _prepare_decompose(
     spec: DecomposeLaunch, root_dir: Path,
 ) -> PreparedLaunch:
     from kstrl.agents import get_agent
-    from kstrl.config import KstrlConfig
-
     spec_path = (
         spec.spec_path if spec.spec_path.is_absolute()
         else root_dir / spec.spec_path
@@ -205,7 +230,11 @@ def _prepare_decompose(
     if not spec.project_name.strip():
         raise LaunchError("project name is required")
 
-    config = KstrlConfig.load(root_dir)
+    try:
+        config = KstrlConfig.load(root_dir)
+    except (OSError, ValueError) as exc:
+        raise LaunchError(f"failed to load configuration: {exc}") from exc
+    _preflight_agent(config)
     agent = get_agent(
         config.agent_cmd, config.model, config.model_reasoning_effort,
         config.agent_type,

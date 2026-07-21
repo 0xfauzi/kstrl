@@ -10,6 +10,7 @@ factory relaunches through the D6 session seam.
 from __future__ import annotations
 
 import io
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -157,20 +158,49 @@ class RetryScreen(Screen[None]):
         def _resolved(choice: int | None) -> None:
             if choice != 0:
                 return
-            # Narration lands in the retry log the new session tails.
+            # Reload at commit time. An external factory or editor can
+            # update the manifest while the confirmation modal is open;
+            # never save the stale object captured by the screen.
+            latest, latest_file = _load_manifest(self._root_dir())
+            if latest is None:
+                self.app.notify(
+                    f"retry failed: cannot load {latest_file}",
+                    severity="error",
+                )
+                self.reload()
+                return
+            try:
+                latest_preview = preview_retry(latest, comp.id)
+            except ValueError as exc:
+                self.app.notify(
+                    f"retry plan changed: {exc}", severity="warning",
+                )
+                self.reload()
+                return
+            if latest_preview != preview:
+                self.app.notify(
+                    "retry plan changed since the preview; review it again",
+                    severity="warning",
+                )
+                self.reload()
+                return
+            # Keep preparation narration off the alternate screen; the
+            # confirmation already presented the same retry plan.
             narration = io.StringIO()
             try:
                 prepare_retry(
-                    manifest, comp.id, self._manifest_file,
+                    latest, comp.id, latest_file,
                     self._root_dir(), PlainUI(no_color=True, file=narration),
                 )
-            except (ValueError, RetryError) as exc:
+            except (
+                OSError, ValueError, RetryError, subprocess.SubprocessError,
+            ) as exc:
                 self.app.notify(f"retry failed: {exc}", severity="error")
                 self.reload()
                 return
             launch = getattr(self.app, "launch", None)
             if launch is not None:
-                launch(FactoryLaunch(manifest_path=self._manifest_file))
+                launch(FactoryLaunch(manifest_path=latest_file))
 
         self.app.push_screen(
             OptionsModal(PromptRequest(
