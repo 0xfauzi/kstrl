@@ -168,7 +168,14 @@ today's subset). R8.6 needs R8.2 + R8.3. R8.7 needs R8.2 (L4) + R8.6
 
 ## R8.1 Policy envelope (M) - [#148](https://github.com/0xfauzi/kstrl/issues/148)
 
-Status: `[ ]`
+Status: `[~]` - PR1 landed the artifact checks (`kstrl/policy.py` +
+`check_policy_envelope`): `paths_deny`, size caps, `deps_allow_new`,
+`secret_patterns`, the non-overridable enforcement-machinery halt, the
+`deploy` flag (stored/hashed, enforced by R8.7), and the policy-envelope
+hash in the run manifest. Opt-in via `[policy] enabled` (default false),
+blocking when enabled. Remaining slice: **license gating** (`license_allow`
+/ `license_deny_partial`) needs dist-metadata resolution that `uv.lock`
+does not carry - deferred to a measured follow-up PR before this closes.
 
 **Why.** Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Today the rules are implicit and scattered (diff-scope,

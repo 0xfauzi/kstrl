@@ -429,6 +429,19 @@ DEFAULT_KSTRL_TOML = """\
 # self_critique_min_bullets = 3
 # progress_file_path = "scripts/kstrl/progress.txt"
 
+# Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
+# ARTIFACTS (git diff, uv.lock), never agent self-report. Opt-in; when
+# enabled a violation blocks the merge, and editing enforcement machinery
+# (.github/workflows, this file) is a non-overridable halt.
+[policy]
+# enabled = false
+# paths_deny = [".github/workflows/**", "kstrl.toml", ".kstrl/**", "**/*.pem", "**/.env*"]
+# max_files_changed = 40
+# max_lines_changed = 1500         # lockfiles excluded from the count
+# deps_allow_new = false           # block new uv.lock packages; L3+ may set true
+# secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"]
+# deploy = false                   # reserved for the R8.7 release gate
+
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
 # mode = "skip"                    # skip | advisory | hard (skip = default, opt in explicitly)

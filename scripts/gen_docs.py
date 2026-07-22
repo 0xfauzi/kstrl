@@ -127,6 +127,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
+    from kstrl.policy import PolicyConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
     from kstrl.timeout import TimeoutConfig
@@ -239,6 +240,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: FixturesConfig.load(root_dir=root),
             FixturesConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "policy", "Phase 1 policy envelope (R8.1; opt-in)",
+            identity_keys(PolicyConfig, [
+                f.name for f in dataclasses.fields(PolicyConfig)
+            ]),
+            lambda root: PolicyConfig.load(root_dir=root),
+            PolicyConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "security", "Phase 2.5 security review",
@@ -372,6 +381,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "save passing outputs for cross-run regression comparison",
     ("fixtures", "snapshot_dir"): "relative paths resolve against the repo root",
     ("fixtures", "timeout"): "seconds per fixture subprocess",
+    ("policy", "enabled"): "enforce the [policy] envelope in Phase 1 (opt-in)",
+    ("policy", "paths_deny"): "globs no change may touch (gitignore-style **)",
+    ("policy", "max_files_changed"): "max files in a change; negative disables",
+    ("policy", "max_lines_changed"):
+        "max added+removed lines (lockfiles excluded); negative disables",
+    ("policy", "deps_allow_new"): "allow new uv.lock packages (L3+ may enable)",
+    ("policy", "secret_patterns"): "regexes flagged in added diff lines",
+    ("policy", "deploy"): "reserved for the R8.7 release gate; stored + hashed",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
