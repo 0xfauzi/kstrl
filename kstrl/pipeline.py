@@ -53,6 +53,7 @@ from kstrl.interaction import (
 )
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyHooks
+from kstrl.policy import PolicyConfig
 from kstrl.prd import PRD
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.security import SecurityMode, SecurityResult
@@ -1274,6 +1275,12 @@ class ComponentPipeline:
             self.factory_config.fixtures_config
             or FixturesConfig.load(self.root_dir)
         )
+        # R8.1 policy envelope: opt-in ([policy].enabled). enabled=false
+        # (the default) makes run_mechanical_verification skip the check.
+        policy_cfg = (
+            self.factory_config.policy_config
+            or PolicyConfig.load(self.root_dir)
+        )
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -1282,6 +1289,7 @@ class ComponentPipeline:
             verify_config,
             allowed_paths_error=allowed_paths_error,
             fixtures_config=fixtures_cfg,
+            policy_config=policy_cfg,
             component_id=comp.id,
         )
         verify_duration = time.monotonic() - verify_start

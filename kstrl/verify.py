@@ -25,6 +25,7 @@ from kstrl.parsers import (
     parse_pytest_output,
     parse_ruff_output,
 )
+from kstrl.policy import PolicyConfig, PolicyConfigError, evaluate_policy
 from kstrl.prd import PRD
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -829,6 +830,59 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     )
 
 
+def check_policy_envelope(
+    cwd: Path, base_branch: str, config: PolicyConfig,
+) -> CheckResult:
+    """R8.1: enforce the declarative ``[policy]`` envelope from artifacts.
+
+    Reads the git diff and ``uv.lock`` only, never agent self-report.
+    Fails CLOSED on any infrastructure error (diff unreadable, malformed
+    policy) and on any envelope violation. Enforcement-machinery edits
+    are a non-overridable halt. Violation details are packed as
+    individual entries so ``VerificationResult.as_context()``'s
+    ``details[:10]`` slice carries them into the retry prompt.
+    """
+    start = time.monotonic()
+    try:
+        diff_text = git.get_diff_content(base_branch, cwd)
+    except git.GitDiffError as exc:
+        return CheckResult(
+            name="policy_envelope",
+            passed=False,
+            message=(
+                "policy envelope could not read the diff; failing closed "
+                "(infrastructure error, not a policy pass)"
+            ),
+            details=[
+                f"Error: {exc}",
+                "The change cannot be proven within policy; do not treat "
+                "this as permission to merge.",
+            ],
+            duration_seconds=time.monotonic() - start,
+        )
+
+    changed = git.get_diff_names(base_branch, cwd)
+    numstat = git.get_diff_numstat(base_branch, cwd)
+    try:
+        evaluation = evaluate_policy(changed, numstat, diff_text, config)
+    except PolicyConfigError as exc:
+        return CheckResult(
+            name="policy_envelope",
+            passed=False,
+            message="policy envelope is misconfigured; failing closed",
+            details=[f"Error: {exc}"],
+            duration_seconds=time.monotonic() - start,
+        )
+
+    return CheckResult(
+        name="policy_envelope",
+        passed=evaluation.ok,
+        message=evaluation.summary,
+        details=[] if evaluation.ok else evaluation.details,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
@@ -1076,6 +1130,7 @@ def run_mechanical_verification(
     config: VerifyConfig,
     allowed_paths_error: str | None = None,
     fixtures_config: FixturesConfig | None = None,
+    policy_config: PolicyConfig | None = None,
     component_id: str | None = None,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
@@ -1110,6 +1165,13 @@ def run_mechanical_verification(
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))
+
+    # R8.1 policy envelope: opt-in ([policy] enabled). When disabled the
+    # check is not appended, so existing runs are unchanged.
+    if policy_config is not None and policy_config.enabled:
+        checks.append(check_policy_envelope(
+            worktree_path, base_branch, policy_config,
+        ))
 
     if config.dead_code_cleanup:
         checks.append(check_dead_code(

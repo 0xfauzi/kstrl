@@ -667,7 +667,7 @@ class TestKnowledgeSectionRoundTrip:
 
 EXPECTED_SCAFFOLD_SECTIONS = {
     "agent", "run", "paths", "git", "ui",
-    "factory", "verify", "security", "contract",
+    "factory", "verify", "policy", "security", "contract",
     "feedforward", "knowledge", "evolution", "timeout",
 }
 
@@ -690,6 +690,10 @@ EXPECTED_SCAFFOLD_KEYS = {
         "dead_code_command", "mutation_testing", "mutation_threshold",
         "mutation_timeout", "subprocess_timeout", "require_self_critique",
         "self_critique_min_bullets", "progress_file_path",
+    },
+    "policy": {
+        "enabled", "paths_deny", "max_files_changed", "max_lines_changed",
+        "deps_allow_new", "secret_patterns", "deploy",
     },
     "security": {
         "mode", "fail_threshold", "timeout_seconds", "agent_cmd",

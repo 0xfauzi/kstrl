@@ -115,6 +115,18 @@ Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-su
 | `KSTRL_FIXTURES_SNAPSHOT_DIR` | path | `.kstrl/snapshots` (relative = against the repo root) |
 | `KSTRL_FIXTURES_TIMEOUT` | float | 30 |
 
+## PolicyConfig (`[policy]`)
+
+Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, `uv.lock`), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`) are toml-only. Set a numeric cap negative to disable it.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_POLICY_ENABLED` | bool (`1`) | false |
+| `KSTRL_POLICY_MAX_FILES` | int | 40 |
+| `KSTRL_POLICY_MAX_LINES` | int | 1500 |
+| `KSTRL_POLICY_DEPS_ALLOW_NEW` | bool (`1`) | false |
+| `KSTRL_POLICY_DEPLOY` | bool (`1`) | false (reserved for R8.7) |
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

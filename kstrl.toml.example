@@ -122,6 +122,21 @@ require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-
 self_critique_min_bullets = 3
 progress_file_path = "scripts/kstrl/progress.txt"
 
+# Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
+# ARTIFACTS (git diff, uv.lock), never on agent self-report. Opt-in: when
+# enabled, a violation fails Phase 1 and blocks the merge. Modifying
+# enforcement machinery (.github/workflows, this config file) is a
+# non-overridable halt whenever enabled. License gating arrives in a
+# follow-up. Set a numeric cap negative to disable it.
+[policy]
+enabled = false
+paths_deny = [".github/workflows/**", "kstrl.toml", "ralph.toml", ".kstrl/**", "**/*.pem", "**/.env*"]
+max_files_changed = 40
+max_lines_changed = 1500           # machine-generated lockfiles are excluded from the count
+deps_allow_new = false             # block new uv.lock packages; L3+ may set true
+secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"]
+deploy = false                     # reserved for the R8.7 release gate; stored + hashed, not yet enforced
+
 # Phase 1 approved fixtures (R7.2): PRD-defined input/output pairs run as an
 # oracle independent of agent-authored tests. Opt-in: fixtures execute
 # PRD-supplied commands (no shell) and import PRD-named modules (in a

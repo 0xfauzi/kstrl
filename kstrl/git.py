@@ -388,6 +388,65 @@ def get_diff_content(
     return result.stdout
 
 
+def _normalize_numstat_path(path: str) -> str:
+    """Resolve a ``git diff --numstat`` rename path to its destination.
+
+    Renames render as ``old => new`` or, when a common prefix/suffix
+    exists, ``pre{old => new}post``. Both collapse to the new path so the
+    policy size caps count one file per change, not two.
+    """
+    if "=>" not in path:
+        return path
+    if "{" in path and "}" in path:
+        pre, rest = path.split("{", 1)
+        mid, post = rest.split("}", 1)
+        _old, _sep, new = mid.partition("=>")
+        return (pre + new.strip() + post).replace("//", "/")
+    _old, _sep, new = path.partition("=>")
+    return new.strip()
+
+
+def get_diff_numstat(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> list[tuple[int | None, int | None, str]]:
+    """Per-file ``(added, removed, path)`` counts vs a base branch.
+
+    ``added``/``removed`` are None for binary files (git prints ``-``).
+    Rename paths are normalized to the destination. Base resolution
+    mirrors :func:`get_diff_names` (``origin/<base>`` when a remote
+    exists). Returns ``[]`` on git failure or timeout; the policy check
+    that consumes this first calls :func:`get_diff_content`, which RAISES
+    on a genuine git error, so a swallowed error here cannot mask one.
+    """
+    base_ref = resolve_base_ref(base_branch, cwd, timeout)
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--numstat", f"{base_ref}...HEAD", "--"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+    if result.returncode != 0:
+        return []
+    rows: list[tuple[int | None, int | None, str]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added_raw, removed_raw, path = parts
+        added = None if added_raw == "-" else int(added_raw)
+        removed = None if removed_raw == "-" else int(removed_raw)
+        rows.append((added, removed, _normalize_numstat_path(path)))
+    return rows
+
+
 # Shared budget for diff content injected into LLM prompts. Centralized
 # here so review / security / knowledge prompts truncate to the same
 # limit; if the LLM context window changes, edit one place.
