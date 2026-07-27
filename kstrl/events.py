@@ -435,6 +435,42 @@ class ArtifactWritten(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class AutonomyTransition(Event):
+    """R8.2: the autonomy level changed (promotion or demotion).
+
+    ``direction``: promote | demote. ``actor`` is the human who
+    acknowledged a promotion, or "system" for an automatic demotion;
+    ``trigger`` carries the DemotionTrigger label on demotions only.
+    Emitted for every transition so the level in force at any past moment
+    is reconstructable from the event stream alone.
+    """
+
+    type: ClassVar[str] = "autonomy_transition"
+    direction: str = ""
+    from_level: int = 0
+    to_level: int = 0
+    actor: str = ""
+    trigger: str = ""
+    reason: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
+class AutonomyLevelApplied(Event):
+    """R8.2: the flag bundle a run started under.
+
+    Recorded at run start so a run's permissions are auditable after the
+    fact even if the stored level later changes. ``overrides`` names any
+    config flag that contradicted the bundle (the bundle still won).
+    """
+
+    type: ClassVar[str] = "autonomy_level_applied"
+    level: int = 0
+    label: str = ""
+    flags: tuple[str, ...] = ()
+    overrides: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
 class Log(Event):
     """The escape hatch for imperative narration (the old UI protocol).
 

@@ -57,6 +57,13 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/licensing.py",
     "**/kstrl/guards.py",
     "**/kstrl/fixtures.py",
+    "**/kstrl/autonomy.py",
+    # R8.2 ladder state. Editing it IS editing the factory's own
+    # permissions, so it belongs to the enforcement surface: the CLI
+    # promotion path demands an interactive terminal, and this closes the
+    # obvious way around that (write the level straight to disk).
+    "**/.kstrl/autonomy.json",
+    ".kstrl/autonomy.json",
 )
 
 # Conservative default deny-list written by ``ks init``. Repo-owned: each

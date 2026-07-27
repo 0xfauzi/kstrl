@@ -146,6 +146,17 @@ license_unresolved = "block"       # block | advisory - what to do when no sourc
 license_use_network = true         # false = uv cache only (offline); part of the envelope hash
 deploy = false                     # reserved for the R8.7 release gate; stored + hashed, not yet enforced
 
+# Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
+# independent autonomy flags. The level derives a flag bundle at run start and
+# WINS over contradicting flags here (contradictions are logged, not honored).
+# Opt-in because L1 is STRICTER than the defaults - it forces the merge gate on.
+# Level lives in .kstrl/autonomy.json; change it with `ks autonomy promote`
+# (needs a human ack) or `ks autonomy demote`. Entry thresholds are UNMEASURED
+# placeholders - run `ks autonomy replay` before trusting them.
+[autonomy]
+enabled = false
+max_level = 4                      # hard local ceiling: refuse to run above this level
+
 # Phase 1 approved fixtures (R7.2): PRD-defined input/output pairs run as an
 # oracle independent of agent-authored tests. Opt-in: fixtures execute
 # PRD-supplied commands (no shell) and import PRD-named modules (in a

@@ -263,7 +263,79 @@ policy hash lands in the manifest; enforcement-machinery halt is tested;
 
 ## R8.2 Autonomy ladder (M) - [#149](https://github.com/0xfauzi/kstrl/issues/149)
 
-Status: `[ ]` - Depends on: R8.1 (R8.4 enriches triggers later)
+Status: `[x]` - Shipped in `kstrl/autonomy.py` + `kstrl/autonomy_replay.py`
++ `ks autonomy` (status/promote/demote/history/replay). Levels derive the
+flag bundle at run start (`run_factory`), promotion requires a recorded
+human ack, demotion is automatic with a cool-down, and every transition
+emits `autonomy_transition` / `autonomy_level_applied` events (the
+transition also lands in the evolution journal, which is the durable
+cross-run record; `events.jsonl` is per-run, so a CLI transition outside a
+run reaches the journal only). Opt-in via
+`[autonomy] enabled` (default false) because L1 is STRICTER than today's
+defaults - it forces the merge gate on. R8.4 will enrich the demotion
+triggers with health-metric breaches; the `HEALTH_BREACH` trigger already
+exists for it to fire.
+
+**Review corrections (PR #174).** Seven findings, five of them P1, all
+closed before merge. Four were substantive holes rather than polish:
+
+1. **L3 auto-merged without an envelope.** L3 is *Enveloped* auto-merge,
+   but the bundle dropped the merge gate even with `[policy] enabled=false`
+   - auto-merge inside nothing. `resolve_runtime_level` now clamps L3+ to
+   L2 without an enabled envelope, and the ladder clamps `deps_allow_new`
+   below L3 (the bundle can only ever WITHHOLD an envelope permission).
+2. **The ladder was inert.** No production call site touched
+   `record_decisive_run` / `record_merged_component` /
+   `record_policy_violation` / `demote`, so counters never moved,
+   promotion was unreachable without `--force`, and automatic demotion
+   never fired. Run outcomes now fold into state at run end, inside the
+   factory lock. A follow-on bug found while fixing it: infra-aborted runs
+   were counted as decisive, which would have let a string of broken runs
+   accrue promotion evidence - now excluded, matching the replay's
+   definition.
+3. **Promotion authority was a string.** `--actor human --ack x --force`
+   from an agent satisfied every check. Promotion now requires a
+   controlling TTY, and `.kstrl/autonomy.json` + `kstrl/autonomy.py` were
+   added to the R8.1 enforcement-machinery halt set to close the
+   write-the-file-directly path.
+4. **Transitions never reached the audit streams.** `AutonomyTransition`
+   had no production emitter and neither CLI command wrote the journal, so
+   the documented "every transition is recorded" claim was false.
+   `commit_transition` now performs state save + journal append + event
+   emit together.
+
+Plus: the replay never advanced its simulated level (so L3/L4 thresholds
+and post-promotion demotion were never exercised), malformed state fields
+raised instead of failing closed to L1, and `status` rendered the stored
+rather than the effective bundle.
+
+**Threshold replay captured 2026-07-27 (the R8 "no assumed thresholds"
+rule).** `ks autonomy replay` over `.kstrl/experiments.tsv`:
+
+```
+Runs recorded:        5
+  decisive:           2
+  infra-aborted:      3 (excluded)
+Components merged:    2
+Projects:             slugify
+
+Would-have-promoted:  0
+Would-have-demoted:   0
+Final level after replay: L1
+
+VERDICT: INSUFFICIENT DATA (2 decisive runs vs a MIN_DECISIVE_RUNS floor of 8)
+```
+
+Read honestly: **every threshold in the table below remains an unmeasured
+placeholder.** Three of the five recorded runs died on PR/push plumbing
+(`pr:` failures), which the replay excludes as infrastructure casualties -
+they say nothing about the factory's judgement. The remaining sample is
+one toy project over a single day, and predates the TUI stack, the rename,
+and every fix since. Nothing here calibrates the ladder; it establishes
+only that the ladder cannot promote past L1 on the evidence that exists,
+which is the safe failure. Generating real evidence (see "User-run
+measurements required") is the blocking prerequisite for L2+, not more
+code.
 
 **Why.** Autonomy today is a scatter of flags. The cATO shape: earned,
 bounded, revocable. Prior art converges (Claude Code permission modes,

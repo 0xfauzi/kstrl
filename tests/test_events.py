@@ -85,6 +85,15 @@ def _sample_events() -> list[ev.Event]:
         ev.ArtifactWritten(component="comp-a", label="prd",
                            path="scripts/kstrl/feature/comp-a/prd.json"),
         ev.Log(severity="warn", kind="kv", key="Root", text="/tmp/x"),
+        ev.AutonomyTransition(
+            direction="demote", from_level=3, to_level=2, actor="system",
+            trigger="policy_violation", reason="envelope breach",
+        ),
+        ev.AutonomyLevelApplied(
+            level=1, label="L1 Supervised",
+            flags=("merge gate: ON (human approves)",),
+            overrides=("[factory] pause_before_pr_merge=False contradicts L1",),
+        ),
     ]
 
 

@@ -117,6 +117,7 @@ class SectionSpec:
 
 
 def _section_specs() -> list[SectionSpec]:
+    from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
     from kstrl.contract import ContractConfig
@@ -248,6 +249,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: PolicyConfig.load(root_dir=root),
             PolicyConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "autonomy", "Autonomy ladder (R8.2; opt-in)",
+            identity_keys(AutonomyConfig, [
+                f.name for f in dataclasses.fields(AutonomyConfig)
+            ]),
+            lambda root: AutonomyConfig.load(root_dir=root),
+            AutonomyConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "security", "Phase 2.5 security review",
@@ -395,6 +404,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("policy", "license_unresolved"): "block | advisory when no source resolves a license",
     ("policy", "license_use_network"): "allow PyPI fallback; false = uv cache only",
     ("policy", "deploy"): "reserved for the R8.7 release gate; stored + hashed",
+    ("autonomy", "enabled"): "derive run permissions from the ladder level (opt-in)",
+    ("autonomy", "max_level"): "hard ceiling: never run above this level (1-4)",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
@@ -451,6 +462,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("policy", "license_unresolved"): "advisory",
+    ("autonomy", "max_level"): 2,
     ("contract", "mode"): "final",
     ("knowledge", "dependency_scope"): "transitive",
     ("linear", "auth_mode"): "oauth",

@@ -448,6 +448,14 @@ DEFAULT_KSTRL_TOML = """\
 # license_use_network = true       # false = uv cache only; part of the envelope hash
 # deploy = false                   # reserved for the R8.7 release gate
 
+# Autonomy ladder (R8.2): one ordered level (L1-L4) instead of scattered
+# autonomy flags. The level derives a flag bundle at run start and wins over
+# contradicting flags. Opt-in: L1 is stricter than the defaults (merge gate on).
+# `ks autonomy status` shows the level; promotion needs a human ack.
+[autonomy]
+# enabled = false
+# max_level = 4                    # hard ceiling: never run above this level
+
 # Phase 2.5 security review (independent adversarial pass focused on vulns).
 [security]
 # mode = "skip"                    # skip | advisory | hard (skip = default, opt in explicitly)
