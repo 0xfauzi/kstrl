@@ -55,7 +55,8 @@ COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 # while the halt message asserted the cap could "never trip". The
 # question this threshold asks is whether the ENGINEER's adapter reports
 # tokens, so only engineer calls are evidence about it.
-_UNENFORCEABLE_CALLS = 2
+UNENFORCEABLE_CALLS = 2
+_UNENFORCEABLE_CALLS = UNENFORCEABLE_CALLS  # back-compat alias
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,13 @@ class LoopBudget:
       ``max_parallel = N`` the overshoot scales with N.
     - Unreported spend. Every figure here is a CLI self-report; see
       :meth:`halt_reason` for how unknown usage is treated.
+    - Loops that COMPLETE. The completion return fires before this check
+      is evaluated, so an adapter that finishes on its first tokenless
+      call never halts itself - the ordinary success path for a custom
+      ``agent_cmd``. That bypass is closed in the PARENT by
+      ``ComponentPipeline.token_budget_unenforceable`` at the scheduling
+      gate, which stops the run handing out new work; this object cannot
+      see it, and pretending otherwise is how it went unnoticed.
     """
 
     # Copies of the parent's FactoryConfig.max_total_tokens and the run

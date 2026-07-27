@@ -57,6 +57,7 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyHooks
 from kstrl.policy import PolicyConfig
@@ -321,6 +322,10 @@ class ComponentPipeline:
         # accumulate: every attempt cost real tokens, so the meter never
         # forgets a failed attempt.
         self.usage_meter: dict[str, dict[str, UsageTotals]] = {}
+        # Components whose usage snapshot could not be retired
+        # before this attempt launched; disk salvage is refused
+        # for them (R8 review P2 on 22e99b4).
+        self._usage_salvage_unsafe: set[str] = set()
         self.run_usage = UsageTotals()
 
         # E4: adversarial-call counter shared across review / security /
@@ -384,6 +389,20 @@ class ComponentPipeline:
         never double count with the normal path."""
         self._record_usage(comp_id, "engineer", totals)
 
+    def mark_usage_salvage_safe(self, comp_id: str) -> None:
+        """The attempt's usage snapshot slot is provably clean."""
+        self._usage_salvage_unsafe.discard(comp_id)
+
+    def mark_usage_salvage_unsafe(self, comp_id: str) -> None:
+        """A stale snapshot may survive for this attempt, so disk
+        salvage must not run for it (R8 review: deletion IS the
+        attempt-scoping invariant; when it fails, what is on disk may
+        already have been counted by ``process_result``)."""
+        self._usage_salvage_unsafe.add(comp_id)
+
+    def usage_salvage_is_safe(self, comp_id: str) -> bool:
+        return comp_id not in self._usage_salvage_unsafe
+
     def engineer_usage_totals(self) -> UsageTotals:
         """Engineer-loop spend across every component and attempt.
 
@@ -419,6 +438,43 @@ class ComponentPipeline:
     def token_budget_exceeded(self) -> bool:
         cap = self.factory_config.max_total_tokens
         return cap > 0 and self.run_usage.total_tokens >= cap
+
+    def token_budget_unenforceable(self) -> str | None:
+        """Why the cap can no longer fire at all, or None.
+
+        The parent-side twin of :meth:`LoopBudget.halt_reason`'s
+        unenforceable branch, and it exists because the in-loop check has
+        a blind spot the loop cannot cover itself: a loop that emits
+        COMPLETE returns BEFORE evaluating its budget, so an adapter that
+        finishes on its first tokenless call never reaches the halt.
+        That is the ordinary success path for a custom ``agent_cmd``, not
+        an artificial case - each component completes, the engineer's
+        tokenless count climbs, and the cap never fires (review finding
+        on 22e99b4; the previous docstring's "the halt lands on the next
+        loop" was simply false when the next loop also completes).
+
+        Checked at the scheduling gate, so the run stops handing out NEW
+        work under a dead cap. Deliberately does not retroactively fail
+        components that already completed: their work is valid, and the
+        cap's job is to stop spending, not to destroy what was bought.
+        Bound: at most the component in flight when the determination
+        lands.
+        """
+        cap = self.factory_config.max_total_tokens
+        if cap <= 0:
+            return None
+        engineer = self.engineer_usage_totals()
+        if engineer.token_calls > 0:
+            return None
+        if engineer.tokenless_calls < UNENFORCEABLE_CALLS:
+            return None
+        return (
+            f"token budget unenforceable: the engineer has made "
+            f"{engineer.tokenless_calls} agent call(s) this run and none "
+            f"reported a token count, so max_total_tokens ({cap}) cannot "
+            "advance; refusing to schedule further components rather than "
+            "spending under a cap that cannot fire (R8)"
+        )
 
     # ------------------------------------------------------------------
     # Attempt lifecycle + evidence pointers (R3.3)

@@ -1016,7 +1016,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     return totals
 
 
-def _clear_partial_usage(path: Path) -> None:
+def _clear_partial_usage(path: Path) -> bool:
     """Retire the previous attempt's usage snapshot (R8 review, P2-c).
 
     The snapshot is keyed by run + component only, and a normal result
@@ -1028,13 +1028,27 @@ def _clear_partial_usage(path: Path) -> None:
     Called by the scheduler in the PARENT immediately before every
     submission, not by the worker, because the window that matters is
     exactly the one where the worker never starts (cancelled or killed
-    during pool startup). Best effort: a snapshot we failed to delete is
-    an accounting risk, never a reason to fail a component.
+    during pool startup).
+
+    Returns True when the slot is provably clean - deleted, or already
+    absent. Returns False when a snapshot may still be on disk, and the
+    caller must then refuse disk salvage for that attempt: deletion IS
+    the attempt-scoping invariant, so swallowing the error left the
+    previous attempt's totals addressable as the current one and
+    re-counted them (review finding on 22e99b4). A worker that cannot
+    delete the file generally cannot overwrite it either, so "we failed
+    to clear it" and "what is there is stale" travel together.
+
+    Never fails the component: an accounting risk is not a reason to
+    stop work, but it IS a reason to distrust the number.
     """
     try:
         path.unlink()
+    except FileNotFoundError:
+        return True          # nothing to retire; the slot is clean
     except OSError:
-        return
+        return False
+    return True
 
 
 def _run_component(
@@ -1582,6 +1596,8 @@ def _salvage_aborted_usage(
         return
     usage_paths = pipeline.usage_paths
     if usage_paths is None:
+        return
+    if not pipeline.usage_salvage_is_safe(comp_id):
         return
     totals = _read_partial_usage(usage_paths.engineer_usage(comp_id))
     if totals is not None:
@@ -2443,6 +2459,19 @@ def _run_factory_locked(
                         pipeline.fail_for_budget(comp, "scheduling")
                         transitioned_without_launch += 1
                         continue
+                    # R8 review: a loop that emits COMPLETE returns before
+                    # its own budget check, so an adapter that finishes on
+                    # its first tokenless call never halts itself - the
+                    # ordinary success path for a custom agent_cmd. This
+                    # gate is what stops the run handing out NEW work
+                    # under a cap that can no longer fire.
+                    unenforceable = pipeline.token_budget_unenforceable()
+                    if unenforceable is not None:
+                        pipeline.fail_for_budget(
+                            comp, "scheduling", reason=unenforceable,
+                        )
+                        transitioned_without_launch += 1
+                        continue
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     bus.emit(ComponentStarted(component=comp.id))
@@ -2466,7 +2495,24 @@ def _run_factory_locked(
                     # the worker exists - so an attempt cancelled during
                     # pool startup cannot salvage its predecessor's
                     # tokens on top of the ones already on the meter.
-                    _clear_partial_usage(usage_paths.engineer_usage(comp.id))
+                    if _clear_partial_usage(
+                        usage_paths.engineer_usage(comp.id)
+                    ):
+                        pipeline.mark_usage_salvage_safe(comp.id)
+                    else:
+                        # A snapshot we could not delete may still hold
+                        # the PREVIOUS attempt's totals, which
+                        # process_result already counted. Refuse disk
+                        # salvage for this attempt rather than risk
+                        # counting them twice - losing an aborted
+                        # attempt's spend understates a total; salvaging
+                        # a stale one corrupts it.
+                        pipeline.mark_usage_salvage_unsafe(comp.id)
+                        ui.warn(
+                            f"  Could not retire the previous usage "
+                            f"snapshot for {comp.id}; disk salvage is "
+                            f"disabled for this attempt"
+                        )
                     if isinstance(executor, _InlineExecutor):
                         # In-process worker: no fd redirection (it would
                         # hijack the parent terminal), and each transcript

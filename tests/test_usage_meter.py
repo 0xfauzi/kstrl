@@ -2125,3 +2125,132 @@ class TestUnenforceableHaltIsEngineerScoped:
         assert engineer.calls == 3          # 2 + 1, review excluded
         assert engineer.token_calls == 1
         assert engineer.total_tokens == 50
+
+
+class TestCompletionBoundaryBypass:
+    """A loop that emits COMPLETE returns before its own budget check.
+
+    Review regression on 22e99b4: that is the ORDINARY success path for a
+    custom `agent_cmd` - each component finishes on its first tokenless
+    call, the in-loop halt is never reached, and the engineer's tokenless
+    count climbs across components while the cap never fires. The
+    docstring's old claim that "the halt lands on the next loop" was
+    false when the next loop also completes.
+
+    The parent-side gate is what closes it: the run stops handing out NEW
+    work once the cap provably cannot advance.
+    """
+
+    @staticmethod
+    def _pipeline_with_engineer_usage(
+        tmp_path: Path, calls: int, token_calls: int, cap: int,
+    ) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        pipeline.usage_meter = {
+            "comp-a": {
+                "engineer": UsageTotals(
+                    calls=calls, known_calls=0, token_calls=token_calls,
+                    total_tokens=0,
+                ),
+            },
+        }
+        pipeline.factory_config = _factory_config(
+            tmp_path, max_total_tokens=cap,
+        )
+        return pipeline
+
+    def test_completed_tokenless_components_trip_the_parent_gate(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline_with_engineer_usage(
+            tmp_path, calls=2, token_calls=0, cap=500_000,
+        )
+        reason = ComponentPipeline.token_budget_unenforceable(pipeline)
+        assert reason is not None
+        assert "cannot advance" in reason
+        assert "refusing to schedule further components" in reason
+
+    def test_one_completed_tokenless_component_is_not_enough(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline_with_engineer_usage(
+            tmp_path, calls=1, token_calls=0, cap=500_000,
+        )
+        assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
+
+    def test_a_reporting_engineer_never_trips_the_gate(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline_with_engineer_usage(
+            tmp_path, calls=9, token_calls=9, cap=500_000,
+        )
+        assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
+
+    def test_gate_is_inert_without_a_cap(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline_with_engineer_usage(
+            tmp_path, calls=5, token_calls=0, cap=0,
+        )
+        assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
+
+
+class TestFailedSnapshotDeletionInvalidates:
+    """Deletion IS the attempt-scoping invariant.
+
+    Review regression on 22e99b4: `_clear_partial_usage` swallowed every
+    OSError, so a snapshot that could not be deleted stayed addressable
+    as the current attempt and was salvaged again on top of the totals
+    `process_result` had already recorded.
+    """
+
+    def test_missing_file_is_the_clean_case(self, tmp_path: Path) -> None:
+        assert _clear_partial_usage(tmp_path / "nope.json") is True
+
+    def test_successful_delete_reports_clean(self, tmp_path: Path) -> None:
+        target = tmp_path / "usage.json"
+        target.write_text("{}")
+        assert _clear_partial_usage(target) is True
+        assert not target.exists()
+
+    def test_failed_delete_reports_unsafe(self, tmp_path: Path) -> None:
+        target = tmp_path / "usage.json"
+        target.write_text("{}")
+        with patch.object(
+            Path, "unlink", side_effect=PermissionError("read-only"),
+        ):
+            assert _clear_partial_usage(target) is False
+        assert target.exists()      # still there, hence unsafe
+
+    def test_unsafe_attempt_refuses_disk_salvage(self, tmp_path: Path) -> None:
+        """The point of the flag: a stale 700 must not be recounted."""
+        from concurrent.futures import Future
+
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        pipeline.usage_meter = {}
+        pipeline.run_usage = UsageTotals()
+        pipeline._usage_salvage_unsafe = set()
+        pipeline.usage_paths = RunPaths.for_run(tmp_path, "run-1")
+        recorded: list[UsageTotals] = []
+        pipeline.record_engineer_usage = lambda _c, totals: recorded.append(totals)
+
+        snapshot = pipeline.usage_paths.engineer_usage("comp-a")
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        _write_partial_usage(
+            snapshot,
+            UsageTotals(calls=1, known_calls=1, token_calls=1, total_tokens=700),
+        )
+
+        pending: Future[Any] = Future()      # never completes
+        ComponentPipeline.mark_usage_salvage_unsafe(pipeline, "comp-a")
+        _salvage_aborted_usage(pending, "comp-a", pipeline)
+        assert recorded == [], "a stale snapshot must not be salvaged"
+
+        # And the safe path still salvages, so the guard is not a blanket off.
+        ComponentPipeline.mark_usage_salvage_safe(pipeline, "comp-a")
+        _salvage_aborted_usage(pending, "comp-a", pipeline)
+        assert [t.total_tokens for t in recorded] == [700]

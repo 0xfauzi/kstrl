@@ -101,6 +101,13 @@ where that would make the cap undeliverable. The loop halts with a
    every attempt or component, while another role's timed-out call never
    counts (it is no evidence about the engineer's adapter).
 
+A loop that emits the completion marker returns before its own budget check,
+so a component that finishes on a single tokenless call cannot halt itself. The
+scheduling gate catches that case instead: once the engineer has made two
+tokenless calls with no token report, the run refuses to start further
+components. Spend is therefore bounded by the component already in flight, not
+by zero.
+
 Reported *cost* is not token evidence: a result carrying `total_cost_usd` with
 no `usage` dict is "known" to the meter but can never move a token total, so
 the rule counts token-bearing calls (`token_calls`), not reporting calls.
