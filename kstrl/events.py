@@ -858,5 +858,17 @@ class RunPaths:
     def engineer_log(self, component_id: str) -> Path:
         return self.component_dir(component_id) / "engineer.log"
 
+    def engineer_usage(self, component_id: str) -> Path:
+        """Latest engineer-loop usage snapshot (R8).
+
+        Deliberately NOT an event: the worker rewrites this file at every
+        iteration boundary, and the reducer sums ``component_usage``
+        events, so streaming cumulative snapshots would double count in
+        every rollup. It exists so a worker killed by a shutdown does
+        not take its spend with it - the parent reads it only for
+        futures that never delivered a result.
+        """
+        return self.component_dir(component_id) / "engineer_usage.json"
+
     def phase_log(self, component_id: str, phase: str) -> Path:
         return self.component_dir(component_id) / f"{phase}.log"

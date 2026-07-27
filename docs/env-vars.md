@@ -64,6 +64,44 @@ All values are seconds; 0 or less disables that limit.
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
+### What `max_total_tokens` guarantees (R8)
+
+It is a **stop-before-the-next-unit-of-work** limit, not a hard cap. It is
+evaluated in two places:
+
+- **Between engineer iterations** (`kstrl/loop.py`, `LoopBudget.halt_reason`).
+  The worker is launched with the cap plus the run's spend as of that moment,
+  so the loop refuses to start another iteration once the total reaches the
+  cap. This is the only check that fires while the spend is being incurred.
+- **At phase boundaries** in the parent (`pipeline.process_result`, the review
+  / security / distill gates, and the scheduling gate). These stop the next
+  phase or the next component.
+
+Either route halts the component loudly and identically: a
+`budget_exceeded` event, a typed `infrastructure_error` finding, and exactly
+one `budget_overrun` inbox item.
+
+What is **not** bounded:
+
+| Gap | Why |
+|---|---|
+| The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens |
+| Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the cap |
+| Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late |
+
+Unknown usage is deliberately **not** silently treated as zero in the one case
+where that would make the cap undeliverable: if the cap is on and no call in
+the whole run has reported a single token after two agent calls (a custom
+`agent_cmd` never reports usage), the loop halts with a
+`token budget unenforceable` reason rather than run under a ceiling that can
+provably never trip. One silent call is treated as an incident - the claude
+adapter records no counts for a timed-out or unparseable result - so a single
+bad iteration does not end a capped run.
+
+`KSTRL_AGENT_BUDGET_USD` is the only genuine in-turn ceiling, and only the
+`claude-sdk` adapter enforces it; `claude-code`, `codex`, and custom commands
+ignore it.
+
 ## BreakerConfig (`[breaker]`)
 
 No-progress circuit breaker (R7.5): the engineer loop halts loudly when N

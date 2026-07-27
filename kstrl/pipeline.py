@@ -367,6 +367,16 @@ class ComponentPipeline:
             component=comp_id, phase=phase, **totals.to_dict(),
         ))
 
+    def record_engineer_usage(
+        self, comp_id: str, totals: UsageTotals,
+    ) -> None:
+        """Record engineer spend that never came back through
+        process_result (R8 abort path). The worker was killed, so its
+        records reach the meter here or not at all; the caller
+        guarantees the matching future produced no result, so this can
+        never double count with the normal path."""
+        self._record_usage(comp_id, "engineer", totals)
+
     def usage_totals_for(self, comp_id: str) -> UsageTotals:
         """One component's spend across all phases (PR A: shown at the
         E6 checkpoint so the human sees what the attempt cost)."""
@@ -695,13 +705,22 @@ class ComponentPipeline:
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
 
-    def fail_for_budget(self, comp: Component, phase: str) -> Transition:
+    def fail_for_budget(
+        self, comp: Component, phase: str, reason: str = "",
+    ) -> Transition:
         """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
         R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
         typed Finding in the stream, a progress-log event, and a FAILED
         component - never a silent degrade. Retrying cannot un-spend
-        tokens, so this fails directly instead of burning retries."""
-        error = (
+        tokens, so this fails directly instead of burning retries.
+
+        ``reason`` (R8) overrides the derived message when the breach
+        was detected somewhere the parent's own totals do not describe -
+        specifically the engineer loop's in-loop halt on unreportable
+        usage, where ``run_usage.total_tokens >= cap`` is false and
+        stating it would put a false number in the audit trail. Every
+        other side effect is identical wherever the breach is caught."""
+        error = reason or (
             f"token budget exceeded: {self.run_usage.total_tokens} total "
             f"tokens recorded >= max_total_tokens "
             f"({self.factory_config.max_total_tokens}); halting instead of "
@@ -1163,9 +1182,22 @@ class ComponentPipeline:
         # R3.1 budget checkpoint: the engineer loop just reported the
         # dominant spend; halt before starting adversarial phases (or a
         # retry) when the run-level cap is blown.
-        if self.token_budget_exceeded():
+        #
+        # R8: the loop can also halt ITSELF between iterations, which is
+        # the only enforcement that happens while the spend is being
+        # incurred. Both routes land here, so the audit trail (typed
+        # finding, BudgetExceeded event, single budget_overrun inbox
+        # item, no duplicate halted_run) is identical either way. The
+        # worker's reason is used only when the parent's own totals do
+        # not show a breach - the unreportable-usage case, where the
+        # derived "N >= cap" sentence would be false.
+        if comp_result.budget_exceeded or self.token_budget_exceeded():
+            reason = (
+                "" if self.token_budget_exceeded()
+                else (comp_result.error or "")
+            )
             return PipelineOutcome(
-                transition=self.fail_for_budget(comp, "engineer"),
+                transition=self.fail_for_budget(comp, "engineer", reason),
             )
 
         if not comp_result.success:

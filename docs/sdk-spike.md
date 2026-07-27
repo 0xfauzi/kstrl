@@ -58,10 +58,13 @@ produce. This is prevention where the current design has detection.
 
 ### 3. Budget enforcement
 
-CLI subprocess today: `max_total_tokens` (R3.1) is enforced at PHASE
-boundaries from CLI self-reports; an in-flight engineer loop can
-overshoot by a whole phase, and unreported calls make totals lower
-bounds.
+CLI subprocess today: `max_total_tokens` is enforced at PHASE
+boundaries (R3.1) AND between engineer iterations (R8), both from CLI
+self-reports. The in-loop check narrowed the worst case from "a whole
+phase" - one component's entire engineer loop - to "the iteration
+already in flight"; a single call still cannot be interrupted,
+concurrent workers each see only the run total as of their own launch,
+and unreported calls still make totals lower bounds.
 
 SDK, measured: `max_budget_usd=0.00001` halted the run in-loop with a
 typed result - `subtype="error_max_budget_usd"`, `is_error=true`,

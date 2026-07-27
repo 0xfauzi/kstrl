@@ -19,7 +19,9 @@ from __future__ import annotations
 import io
 import json
 import logging
+import time
 from collections.abc import Iterator
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -31,15 +33,22 @@ from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.config import KstrlConfig
+from kstrl.events import RunPaths
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     _format_usage_rollup,
+    _read_partial_usage,
+    _run_component,
+    _salvage_aborted_usage,
+    _write_partial_usage,
     run_factory,
 )
-from kstrl.loop import COMPLETION_MARKER, run_loop
+from kstrl.inbox import Inbox, InboxConfig
+from kstrl.loop import COMPLETION_MARKER, LoopBudget, run_loop
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import ProgressLog
+from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
@@ -878,6 +887,581 @@ class TestTokenBudgetHalt:
             )
 
         assert "comp-a" in result.completed
+
+
+# ---------------------------------------------------------------------------
+# R8: max_total_tokens enforced DURING the engineer loop
+#
+# The R3.1 checks above are post-hoc detectors at parent-process phase
+# boundaries: they stop the NEXT phase, never the iteration already
+# running. These cover the in-loop half - the loop refusing to start
+# another iteration - and the fact that both routes land in the same
+# audit state.
+# ---------------------------------------------------------------------------
+
+
+class SequenceUsageAgent:
+    """Fake agent appending one caller-supplied record per run.
+
+    Unlike FakeUsageAgent's single fixed record, the sequence lets a
+    test mix reporting and non-reporting iterations (the claude adapter
+    records source="timeout"/"parse-error" with no token counts).
+    """
+
+    def __init__(
+        self, records: list[UsageRecord], outputs: list[str] | None = None,
+    ) -> None:
+        self._records = records
+        self._outputs = outputs or ["working..."]
+        self._usage_records: list[UsageRecord] = []
+
+    @property
+    def name(self) -> str:
+        return "sequence-usage"
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+    ) -> Iterator[str]:
+        index = min(len(self._usage_records), len(self._records) - 1)
+        self._usage_records.append(self._records[index])
+        yield from self._outputs
+
+    @property
+    def final_message(self) -> str | None:
+        return None
+
+    @property
+    def usage_records(self) -> list[UsageRecord]:
+        return list(self._usage_records)
+
+
+_REPORTED = UsageRecord(total_tokens=300, source="codex-text")
+_UNREPORTED = UsageRecord(duration_seconds=5.0, source="unavailable")
+
+
+class TestInLoopTokenBudget:
+    def test_halt_happens_between_iterations_not_at_max_iterations(
+        self, tmp_path: Path,
+    ) -> None:
+        """The loop must stop ITSELF: 300 tokens/iteration against a 500
+        cap means iteration 3 never starts, even though max_iterations
+        is 10 and no phase boundary has been reached."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500),
+        )
+        assert result.completed is False
+        assert result.iterations == 2
+        assert len(agent.usage_records) == 2  # the agent really stopped
+        assert "token budget exceeded" in result.budget_halt_reason
+        assert "600" in result.budget_halt_reason
+        assert result.usage.total_tokens == 600
+
+    def test_spend_from_earlier_components_counts(self, tmp_path: Path) -> None:
+        """The cap is run-level: a worker launched with 450 tokens
+        already on the run's meter has 50 left, not 500."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(
+                max_total_tokens=500, prior_total_tokens=450,
+                prior_known_calls=1,
+            ),
+        )
+        assert result.iterations == 1
+        assert len(agent.usage_records) == 1
+        assert "750" in result.budget_halt_reason
+
+    def test_zero_cap_is_unbounded(self, tmp_path: Path) -> None:
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=0),
+        )
+        assert result.iterations == 3
+        assert result.budget_halt_reason == ""
+
+    def test_no_budget_argument_keeps_pre_r8_behaviour(
+        self, tmp_path: Path,
+    ) -> None:
+        """`ks run` / `ks feature` pass no budget; nothing changes."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+        )
+        assert result.iterations == 3
+        assert result.budget_halt_reason == ""
+
+    def test_completion_in_the_breaching_iteration_still_completes(
+        self, tmp_path: Path,
+    ) -> None:
+        """Ordering: an iteration that finished the work is a success.
+        The overrun is then caught by the phase-boundary check, which is
+        exactly the pre-R8 path - the loop does not retro-fail work that
+        is already done."""
+        agent = FakeUsageAgent(
+            outputs=[[COMPLETION_MARKER]], record=_REPORTED,
+        )
+        result = run_loop(
+            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=100),
+        )
+        assert result.completed is True
+        assert result.budget_halt_reason == ""
+
+    def test_wholly_unreported_usage_halts_as_unenforceable(
+        self, tmp_path: Path,
+    ) -> None:
+        """Unknown usage is NOT treated as zero when nothing at all has
+        reported: a cap that provably cannot trip is the defect being
+        fixed, so the loop halts loudly instead of running to
+        max_iterations under a dead ceiling."""
+        agent = SequenceUsageAgent([_UNREPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500),
+        )
+        assert result.completed is False
+        assert result.iterations == 2  # _UNENFORCEABLE_CALLS
+        assert "unenforceable" in result.budget_halt_reason
+        assert result.usage.total_tokens == 0
+        assert result.usage.unreported_calls == 2
+
+    def test_one_silent_call_is_an_incident_not_a_dead_cap(
+        self, tmp_path: Path,
+    ) -> None:
+        """A single non-reporting call (a timed-out or unparseable
+        iteration on an adapter that normally reports) must not kill the
+        run: iteration 2 reports, the cap is demonstrably alive, and the
+        loop continues until the arithmetic trips it."""
+        agent = SequenceUsageAgent([_UNREPORTED, _REPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500),
+        )
+        assert result.iterations == 3  # 0 + 300 + 300 >= 500
+        assert "token budget exceeded" in result.budget_halt_reason
+        assert result.usage.unreported_calls == 1
+
+    def test_unreported_usage_is_free_when_the_cap_is_off(
+        self, tmp_path: Path,
+    ) -> None:
+        """The unenforceable halt is a property of an ENABLED cap. With
+        no cap there is nothing to enforce and a non-reporting adapter
+        (CustomAgent) runs exactly as before."""
+        agent = SequenceUsageAgent([_UNREPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=0),
+        )
+        assert result.iterations == 3
+        assert result.budget_halt_reason == ""
+
+    def test_mixed_reporting_counts_unknown_as_zero_and_keeps_going(
+        self, tmp_path: Path,
+    ) -> None:
+        """One unreported iteration among reporting ones does not halt:
+        the total stays a documented lower bound that still grows toward
+        the cap. Here 300 (reported) + unknown + 300 trips at iteration
+        3, one iteration later than the true spend would have."""
+        agent = SequenceUsageAgent([_REPORTED, _UNREPORTED, _REPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500),
+        )
+        assert result.iterations == 3
+        assert "token budget exceeded" in result.budget_halt_reason
+        assert result.usage.calls == 3
+        assert result.usage.unreported_calls == 1
+        assert result.usage.total_tokens == 600
+
+    def test_prior_reported_calls_disarm_the_unenforceable_halt(
+        self, tmp_path: Path,
+    ) -> None:
+        """An earlier phase reported usage, so the cap CAN trip; this
+        loop's unreported iteration is a lower-bound gap, not proof of a
+        dead cap."""
+        agent = SequenceUsageAgent([_UNREPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(
+                max_total_tokens=500, prior_total_tokens=100,
+                prior_known_calls=1,
+            ),
+        )
+        assert result.iterations == 3
+        assert result.budget_halt_reason == ""
+
+    def test_iteration_usage_callback_sees_cumulative_totals(
+        self, tmp_path: Path,
+    ) -> None:
+        seen: list[int] = []
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            on_iteration_usage=lambda totals: seen.append(totals.total_tokens),
+        )
+        assert seen == [300, 600, 900]
+
+    def test_iteration_usage_callback_failure_never_breaks_the_loop(
+        self, tmp_path: Path,
+    ) -> None:
+        def explode(totals: UsageTotals) -> None:
+            raise OSError("disk full")
+
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+        result = run_loop(
+            _loop_config(tmp_path, 2), PlainUI(no_color=True), agent, tmp_path,
+            on_iteration_usage=explode,
+        )
+        assert result.iterations == 2
+
+
+class TestWorkerPropagatesInLoopHalt:
+    def _worker_args(self, root: Path, **overrides: Any) -> dict[str, Any]:
+        args: dict[str, Any] = dict(
+            component_id="comp-a",
+            prd_path_str="scripts/kstrl/feature/comp-a/prd.json",
+            worktree_path_str=str(root),
+            root_dir_str=str(root),
+            prompt_file_str="scripts/kstrl/prompt.md",
+            agent_cmd="echo hi",
+            model=None, reasoning=None, agent_type=None,
+            sleep_seconds=0.0,
+            max_iterations=10,
+            events_dir_str=None,
+            run_id="run-b",
+            redirect_output=False,  # NEVER dup2 inside the test process
+        )
+        args.update(overrides)
+        return args
+
+    def test_worker_reports_budget_exceeded_and_stops_early(
+        self, tmp_path: Path,
+    ) -> None:
+        root = _setup_project(tmp_path, ["comp-a"])
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+
+        with patch("kstrl.agents.get_agent", return_value=agent):
+            result = _run_component(**self._worker_args(
+                root, token_budget=LoopBudget(max_total_tokens=500),
+            ))
+
+        assert result.success is False
+        assert result.budget_exceeded is True
+        assert result.iterations == 2  # not the configured 10
+        assert "token budget exceeded" in (result.error or "")
+        assert result.usage is not None
+        assert result.usage.total_tokens == 600
+
+    def test_worker_without_a_budget_runs_to_max_iterations(
+        self, tmp_path: Path,
+    ) -> None:
+        root = _setup_project(tmp_path, ["comp-a"])
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+
+        with patch("kstrl.agents.get_agent", return_value=agent):
+            result = _run_component(**self._worker_args(
+                root, max_iterations=3,
+            ))
+
+        assert result.budget_exceeded is False
+        assert result.iterations == 3
+
+    def test_worker_persists_usage_at_every_iteration_boundary(
+        self, tmp_path: Path,
+    ) -> None:
+        """The durable snapshot the abort path reads back."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        events_dir = root / ".kstrl" / "runs" / "run-b"
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+
+        with patch("kstrl.agents.get_agent", return_value=agent):
+            _run_component(**self._worker_args(
+                root, max_iterations=2, events_dir_str=str(events_dir),
+            ))
+
+        snapshot = _read_partial_usage(
+            RunPaths(root=events_dir).engineer_usage("comp-a")
+        )
+        assert snapshot is not None
+        assert snapshot.total_tokens == 600
+        assert snapshot.calls == 2
+
+
+class TestSchedulerHandsDownTheBudget:
+    def test_worker_is_told_the_cap_and_what_the_run_already_spent(
+        self, tmp_path: Path,
+    ) -> None:
+        """The cap is run-level, so the second worker must launch with
+        the first component's spend already on its meter - otherwise the
+        in-loop check degrades to a per-component budget. Also pins the
+        positional contract between _submit_args and _run_component: the
+        budget is the last element of the submit tuple, which is how the
+        process-pool path passes it."""
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([
+            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
+        ])
+        config = _factory_config(root, max_total_tokens=100_000)
+        budgets: list[Any] = []
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            budgets.append(args[-1])
+            return ComponentResult(
+                str(args[0]), success=True, iterations=1,
+                usage=_engineer_usage(700),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert len(budgets) == 2
+        assert all(isinstance(b, LoopBudget) for b in budgets)
+        assert budgets[0] == LoopBudget(
+            max_total_tokens=100_000, prior_total_tokens=0,
+            prior_known_calls=0,
+        )
+        assert budgets[1] == LoopBudget(
+            max_total_tokens=100_000, prior_total_tokens=700,
+            prior_known_calls=1,
+        )
+
+    def test_no_cap_still_hands_down_a_disabled_budget(
+        self, tmp_path: Path,
+    ) -> None:
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        budgets: list[Any] = []
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            budgets.append(args[-1])
+            return ComponentResult(str(args[0]), success=True, iterations=1)
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, _factory_config(root), _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert [b.enabled for b in budgets] == [False]
+
+
+class TestInLoopHaltAuditState:
+    def test_same_audit_state_as_a_phase_boundary_breach(
+        self, tmp_path: Path,
+    ) -> None:
+        """An in-loop halt must be indistinguishable, downstream, from
+        the R3.1 phase-boundary halt: BudgetExceeded event, one typed
+        infrastructure_error finding, exactly one budget_overrun inbox
+        item, and no duplicate halted_run.
+
+        The cap here is huge and the reported spend tiny, so ONLY the
+        typed flag can route this - the parent's own totals show no
+        breach (the unreportable-usage case).
+        """
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_total_tokens=1_000_000)
+        reason = (
+            "token budget unenforceable: none of the 1 agent call(s) in "
+            "this run reported any token usage, so max_total_tokens "
+            "(1000000) can never trip on this adapter; halting rather "
+            "than spending under a cap that cannot fire (R8)"
+        )
+        halted = ComponentResult(
+            "comp-a", success=False, iterations=1, error=reason,
+            usage=_engineer_usage(10), budget_exceeded=True,
+        )
+
+        with patch(
+            "kstrl.factory._run_component", return_value=halted,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            result = run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert "comp-a" in result.failed
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert comp_a.status == ComponentStatus.FAILED.value
+        assert comp_a.failed_phase == "engineer"
+        assert comp_a.failed_check == "token_budget"
+        # The recorded error is the loop's reason, not a derived
+        # "10 >= 1000000" sentence that would be false.
+        assert comp_a.error == reason
+        budget_findings = [
+            f for f in comp_a.findings
+            if f.is_infrastructure_error and "token budget" in f.explanation
+        ]
+        assert len(budget_findings) == 1
+        assert budget_findings[0].phase == "engineer"
+
+        events = ProgressLog(root / "progress.jsonl").read_events()
+        breaches = [e for e in events if e["event"] == "budget_exceeded"]
+        assert len(breaches) == 1
+        assert breaches[0]["data"]["max_total_tokens"] == 1_000_000
+
+        kinds = [str(i.kind) for i in Inbox(root, InboxConfig()).open_items()]
+        assert kinds == ["budget_overrun"]
+
+        # The spend that got us here is still on the meter.
+        entries = _read_journal(root)
+        comp_entry = next(e for e in entries if e["component_id"] == "comp-a")
+        assert comp_entry["usage"]["engineer"]["total_tokens"] == 10
+
+    def test_no_retry_is_burned_on_an_in_loop_halt(
+        self, tmp_path: Path,
+    ) -> None:
+        """Retrying cannot un-spend tokens; the component fails outright
+        even with retries available."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_total_tokens=1_000_000, max_retries=3)
+        calls: list[str] = []
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            calls.append(str(args[0]))
+            return ComponentResult(
+                "comp-a", success=False, iterations=1,
+                error="token budget unenforceable (R8)",
+                usage=_engineer_usage(10), budget_exceeded=True,
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert calls == ["comp-a"]
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert comp_a.retries == 0
+
+
+class TestAbortedWorkerUsage:
+    def test_snapshot_roundtrips(self, tmp_path: Path) -> None:
+        totals = _engineer_usage(1234, cost=0.5)
+        path = tmp_path / "engineer_usage.json"
+        _write_partial_usage(path, totals)
+        back = _read_partial_usage(path)
+        assert back is not None
+        assert back.to_dict() == totals.to_dict()
+
+    def test_unusable_snapshots_read_as_none(self, tmp_path: Path) -> None:
+        assert _read_partial_usage(tmp_path / "missing.json") is None
+        torn = tmp_path / "torn.json"
+        torn.write_text('{"calls": 2, "total_tok')
+        assert _read_partial_usage(torn) is None
+        listy = tmp_path / "list.json"
+        listy.write_text("[1, 2]")
+        assert _read_partial_usage(listy) is None
+        empty = tmp_path / "empty.json"
+        empty.write_text('{"calls": 0, "total_tokens": 0}')
+        assert _read_partial_usage(empty) is None  # nothing ran
+
+    def test_unwritable_snapshot_path_is_swallowed(self, tmp_path: Path) -> None:
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a directory")
+        _write_partial_usage(blocker / "sub" / "usage.json", _engineer_usage(1))
+
+    def test_killed_worker_spend_recovered_from_the_snapshot(
+        self, tmp_path: Path,
+    ) -> None:
+        run_paths = RunPaths(root=tmp_path)
+        _write_partial_usage(
+            run_paths.engineer_usage("comp-a"), _engineer_usage(700),
+        )
+        pipeline = MagicMock()
+        pipeline.run_paths = run_paths
+        future: Future[ComponentResult] = Future()  # never completes
+
+        _salvage_aborted_usage(future, "comp-a", pipeline)
+
+        pipeline.record_engineer_usage.assert_called_once()
+        comp_id, totals = pipeline.record_engineer_usage.call_args[0]
+        assert comp_id == "comp-a"
+        assert totals.total_tokens == 700
+
+    def test_a_delivered_result_wins_over_the_snapshot(
+        self, tmp_path: Path,
+    ) -> None:
+        """No double counting: a future that DID deliver is
+        authoritative and the (staler) snapshot is ignored."""
+        run_paths = RunPaths(root=tmp_path)
+        _write_partial_usage(
+            run_paths.engineer_usage("comp-a"), _engineer_usage(700),
+        )
+        pipeline = MagicMock()
+        pipeline.run_paths = run_paths
+        future: Future[ComponentResult] = Future()
+        future.set_result(ComponentResult(
+            "comp-a", success=False, usage=_engineer_usage(900),
+        ))
+
+        _salvage_aborted_usage(future, "comp-a", pipeline)
+
+        pipeline.record_engineer_usage.assert_called_once()
+        assert pipeline.record_engineer_usage.call_args[0][1].total_tokens == 900
+
+    def test_crashed_worker_records_nothing(self, tmp_path: Path) -> None:
+        pipeline = MagicMock()
+        pipeline.run_paths = RunPaths(root=tmp_path)
+        future: Future[ComponentResult] = Future()
+        future.set_exception(RuntimeError("worker died"))
+
+        _salvage_aborted_usage(future, "comp-a", pipeline)
+
+        pipeline.record_engineer_usage.assert_not_called()
+
+    def test_stop_mid_run_keeps_the_aborted_component_spend(
+        self, tmp_path: Path,
+    ) -> None:
+        """End to end: the shutdown path used to drop the worker's
+        usage on the floor. Now it lands on the meter."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        stop = StopController()
+
+        def slow_component(comp_id: str, *a: Any, **k: Any) -> ComponentResult:
+            stop.request("mid-run test stop")
+            time.sleep(0.2)
+            return ComponentResult(
+                comp_id, success=True, iterations=1,
+                usage=_engineer_usage(4242),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=slow_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            result = run_factory(
+                manifest, _factory_config(root), _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+            )
+
+        assert result.exit_code == 130
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert comp_a.failed_phase == "aborted"
+        events = ProgressLog(root / "progress.jsonl").read_events()
+        usage_events = [
+            e for e in events
+            if e["event"] == "component_usage" and e["data"]["phase"] == "engineer"
+        ]
+        assert len(usage_events) == 1
+        assert usage_events[0]["data"]["total_tokens"] == 4242
 
 
 # ---------------------------------------------------------------------------

@@ -40,10 +40,13 @@ def get_agent(
             command has no generic sandbox surface, so the setting is
             ignored there and callers that enable it with a custom
             command must warn.
-        max_budget_usd: In-loop USD budget ceiling (R7.6). Only the
+        max_budget_usd: Per-turn USD budget ceiling (R7.6). Only the
             claude-sdk adapter has an enforcement surface for it; the
-            subprocess adapters ignore it (phase-boundary token budgets
-            from R3.1 still apply to them).
+            subprocess adapters ignore it. Their ceiling is the
+            run-level ``[factory] max_total_tokens``, enforced between
+            engineer iterations (R8) and at phase boundaries (R3.1) -
+            adapter-agnostic, but coarser: it cannot interrupt a call
+            already in flight.
     """
     if agent_cmd:
         return CustomAgent(agent_cmd)

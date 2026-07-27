@@ -361,7 +361,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "review_mode"): "hard | advisory | skip (Phase 2)",
     ("factory", "merge_timeout"): "seconds to wait for PR merge confirmation",
     ("factory", "max_adversarial_calls"): "cap on review+security+distill LLM calls; 0 = unbounded",
-    ("factory", "max_total_tokens"): "run-level token budget; 0 = unbounded",
+    ("factory", "max_total_tokens"):
+        "run-level token budget; 0 = unbounded. Halts before the next engineer "
+        "iteration or phase, never mid-call (docs/env-vars.md)",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
     ("factory", "progress_log_enabled"):
         "JSONL event log at .kstrl/progress.jsonl (R3.2)",

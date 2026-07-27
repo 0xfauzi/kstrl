@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,7 +28,105 @@ if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
     from kstrl.ui.base import UI
 
+logger = logging.getLogger(__name__)
+
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
+
+# How many agent calls must report NOTHING before an enabled token cap
+# is declared unenforceable (see LoopBudget.halt_reason). A judgment
+# call, not a measurement: one silent call is an incident (the claude
+# adapter records source="timeout" / "parse-error" with no counts), two
+# in a row with nothing reported anywhere in the run is a property of
+# the adapter. The cost of the extra call is one iteration of overshoot
+# on an adapter that reports nothing; the cost of setting it to 1 is
+# killing a capped run over a single timed-out first iteration.
+_UNENFORCEABLE_CALLS = 2
+
+
+@dataclass(frozen=True)
+class LoopBudget:
+    """Run-level token ceiling pushed DOWN into the engineer loop (R8).
+
+    ``[factory] max_total_tokens`` was, until R8, consulted only at
+    parent-process phase boundaries (pipeline.process_result, the review
+    / security / distill gates, the scheduling gate). Those checks can
+    stop the NEXT phase; they can never stop the iteration already
+    running, so a single component could spend for ``max_iterations x
+    agent_iteration`` seconds before the cap was consulted once.
+
+    This object is the loop-side half. It is evaluated BETWEEN
+    iterations, which is the tightest bound available without a
+    streaming token feed from the adapter.
+
+    WHAT IT GUARANTEES: the engineer loop starts no NEW iteration once
+    the run's reported spend has reached the cap. Overshoot is bounded
+    by the work already in flight - roughly one iteration per running
+    worker - not by zero.
+
+    WHAT STAYS UNBOUNDED:
+    - A single runaway iteration. Nothing here interrupts an agent call
+      mid-flight; only ``[timeout] agent_iteration`` bounds that, and it
+      bounds wall clock, not tokens.
+    - Concurrent siblings. ``prior_total_tokens`` is the run total as of
+      THIS worker's launch; spend by workers running in parallel is
+      invisible until they report back to the parent. With
+      ``max_parallel = N`` the overshoot scales with N.
+    - Unreported spend. Every figure here is a CLI self-report; see
+      :meth:`halt_reason` for how unknown usage is treated.
+    """
+
+    # Copies of the parent's FactoryConfig.max_total_tokens and the run
+    # usage accumulated before this worker launched. Plain ints so the
+    # whole object pickles cleanly to a pool worker.
+    max_total_tokens: int = 0
+    prior_total_tokens: int = 0
+    prior_known_calls: int = 0
+
+    @property
+    def enabled(self) -> bool:
+        return self.max_total_tokens > 0
+
+    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
+        """Why this loop must stop now, or None to keep iterating.
+
+        Two conditions, both computed from CLI self-reported usage:
+
+        1. OVERRUN - the run total (spend before this worker launched
+           plus what this loop has reported) has reached the cap.
+        2. UNENFORCEABLE - the loop has made ``_UNENFORCEABLE_CALLS``
+           agent calls and NOTHING in the run has reported a single
+           token: not the phases before it, not this loop. The cap then
+           provably cannot trip on this adapter (a CustomAgent command
+           never reports usage), so continuing means spending under a
+           ceiling that can never fire - the exact defect this check
+           exists to remove. Halting loudly beats a decorative cap.
+
+        An iteration that reports nothing WHILE other calls do report
+        counts as zero tokens: the running total stays a lower bound
+        (see ``UsageTotals.unreported_calls``) that still grows toward
+        the cap, so the halt arrives late rather than never. Charging
+        unknown iterations a guessed amount would invent numbers the CLI
+        never gave us.
+        """
+        if not self.enabled:
+            return None
+        total = self.prior_total_tokens + loop_usage.total_tokens
+        if total >= self.max_total_tokens:
+            return (
+                f"token budget exceeded: {total} total tokens recorded >= "
+                f"max_total_tokens ({self.max_total_tokens}); halting the "
+                "engineer loop instead of starting another iteration (R8)"
+            )
+        known_calls = self.prior_known_calls + loop_usage.known_calls
+        if loop_usage.calls >= _UNENFORCEABLE_CALLS and known_calls == 0:
+            return (
+                "token budget unenforceable: none of the "
+                f"{loop_usage.calls} agent call(s) in this run reported any "
+                f"token usage, so max_total_tokens ({self.max_total_tokens}) "
+                "can never trip on this adapter; halting rather than "
+                "spending under a cap that cannot fire (R8)"
+            )
+        return None
 
 
 @dataclass
@@ -55,6 +154,11 @@ class LoopResult:
     # signature). Typed so the factory can route it distinctly instead
     # of string-matching the error.
     no_progress: bool = False
+    # R8: non-empty when the run-level token budget halted the loop
+    # between iterations. The string is the human-readable reason (see
+    # LoopBudget.halt_reason) and becomes the component's error, so the
+    # audit trail records WHICH budget condition fired.
+    budget_halt_reason: str = ""
 
 
 def run_loop(
@@ -70,6 +174,8 @@ def run_loop(
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
     guard_ignored_paths: list[str] | None = None,
+    budget: LoopBudget | None = None,
+    on_iteration_usage: Callable[[UsageTotals], None] | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -84,6 +190,14 @@ def run_loop(
             across iterations). Defaults to TimeoutConfig.from_env().
         breaker_config: No-progress circuit breaker limits (R7.5).
             Defaults to BreakerConfig.from_env().
+        budget: Run-level token ceiling (R8), checked between
+            iterations. None (the default, and every non-factory
+            caller) means no in-loop token limit.
+        on_iteration_usage: Called with this loop's usage-so-far at
+            every iteration boundary. The factory uses it to persist a
+            durable copy, so a worker killed by a shutdown does not
+            take its spend to the grave. Accounting only: an exception
+            here is logged, never raised into the loop.
 
     Returns:
         LoopResult with completion status and exit code
@@ -279,6 +393,17 @@ def run_loop(
                     timed_out=iteration_timed_out,
                 ))
 
+        # One usage snapshot per iteration, taken before any early
+        # return below so a timed-out or guard-failing iteration is
+        # accounted for too. Published first (durability), then used for
+        # the budget decision.
+        loop_usage = collect_usage(agent)
+        if on_iteration_usage is not None:
+            try:
+                on_iteration_usage(loop_usage)
+            except Exception as exc:  # noqa: BLE001 - accounting never gates
+                logger.warning("Failed to publish iteration usage: %s", exc)
+
         if iteration_timed_out:
             timed_out_iterations += 1
             ui.warn(
@@ -323,6 +448,28 @@ def run_loop(
                 timed_out_iterations=timed_out_iterations,
                 usage=collect_usage(agent),
             )
+
+        # R8 run-level token budget: the ONLY in-loop enforcement point
+        # for [factory] max_total_tokens. Checked here - after the
+        # completion return, before the breaker's stall probe - so a
+        # blown budget never pays for another agent call or another
+        # breaker test command. This bounds overshoot to the work
+        # already in flight (about one iteration per running worker); it
+        # cannot interrupt a call mid-flight. See LoopBudget.
+        if budget is not None:
+            halt_reason = budget.halt_reason(loop_usage)
+            if halt_reason is not None:
+                ui.err(halt_reason)
+                return LoopResult(
+                    completed=False,
+                    iterations=iteration,
+                    exit_code=1,
+                    duration_seconds=time.monotonic() - loop_start,
+                    iteration_durations=iteration_durations,
+                    timed_out_iterations=timed_out_iterations,
+                    usage=loop_usage,
+                    budget_halt_reason=halt_reason,
+                )
 
         # R7.5 no-progress circuit breaker: the iteration finished
         # without completing AND without changing the tree or the test
