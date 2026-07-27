@@ -3310,6 +3310,228 @@ def autonomy_replay_cmd(
     sys.exit(0 if report.sufficient_data else 2)
 
 
+@cli.group(name="inbox")
+def inbox_group() -> None:
+    """Triage what is waiting on a human (R8.3).
+
+    One surface for policy exceptions, halted runs, unconfirmed merges,
+    budget overruns, and autonomy demotions - the things that used to be
+    discoverable only if you already knew where to look.
+    """
+
+
+_inbox_root_option = click.option(
+    "--root", type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+_inbox_ui_option = click.option(
+    "--ui", type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto", help="UI mode",
+)
+_inbox_no_color_option = click.option(
+    "--no-color", is_flag=True, help="Disable colors",
+)
+
+
+def _inbox_for(root: Path | None) -> tuple[Path, Any]:
+    from kstrl.inbox import Inbox, InboxConfig
+
+    root_dir = (root or Path.cwd()).resolve()
+    return root_dir, Inbox(root_dir, InboxConfig.load(root_dir))
+
+
+def _actor() -> str:
+    """Who is deciding. Best-effort identity for the audit trail."""
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "operator"
+
+
+@inbox_group.command(name="ls")
+@click.option("--all", "show_all", is_flag=True, help="Include decided items")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_ls(
+    show_all: bool, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """List items awaiting a decision."""
+    from kstrl.inbox import summarize
+
+    _root_dir, box = _inbox_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    items = box.items() if show_all else box.open_items()
+    if not items:
+        ui_impl.ok("Inbox clear: nothing is waiting on you.")
+        sys.exit(0)
+    ui_impl.section("Inbox")
+    for item in items:
+        marker = {"high": "!", "normal": " ", "low": "."}.get(str(item.priority), " ")
+        repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
+        state = "" if item.is_open else f" [{item.status}]"
+        ui_impl.info(
+            f"  {marker} {item.id[:8]}  {str(item.kind):<18}"
+            f"{item.title}{repeat}{state}"
+        )
+    ui_impl.info("")
+    ui_impl.kv("summary", summarize(box.items()))
+    if box.over_cap():
+        ui_impl.warn(
+            f"  Open items have reached the cap ({box.config.open_item_cap}); "
+            "queue intake pauses here (R8.6)."
+        )
+    sys.exit(0)
+
+
+@inbox_group.command(name="show")
+@click.argument("item_id")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_show(
+    item_id: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Show one item in full, including its evidence."""
+    import json as _json
+
+    _root_dir, box = _inbox_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = box.get(item_id)
+    if item is None:
+        ui_impl.err(f"No inbox item matching {item_id!r}")
+        sys.exit(1)
+    ui_impl.section(item.title)
+    ui_impl.kv("id", item.id)
+    ui_impl.kv("kind", str(item.kind))
+    ui_impl.kv("priority", str(item.priority))
+    ui_impl.kv("status", str(item.status))
+    ui_impl.kv("created", item.created_at)
+    if item.component:
+        ui_impl.kv("component", item.component)
+    if item.run_id:
+        ui_impl.kv("run", item.run_id)
+    if item.occurrences > 1:
+        ui_impl.kv("occurrences", str(item.occurrences))
+    if item.decided_by:
+        ui_impl.kv("decided by", f"{item.decided_by} at {item.decided_at}")
+    if item.decision_comment:
+        ui_impl.kv("comment", item.decision_comment)
+    if item.detail:
+        ui_impl.subsection("Detail")
+        for line in item.detail.splitlines():
+            ui_impl.info(f"  {line}")
+    if item.evidence:
+        ui_impl.subsection("Evidence")
+        for line in _json.dumps(item.evidence, indent=2).splitlines():
+            ui_impl.info(f"  {line}")
+    sys.exit(0)
+
+
+def _decide_and_report(
+    action: str, item_id: str, root: Path | None, ui: str, no_color: bool,
+    comment: str = "", hours: float | None = None,
+) -> None:
+    from kstrl.inbox import InboxError
+
+    _root_dir, box = _inbox_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        if action == "approve":
+            item = box.approve(item_id, actor=_actor(), comment=comment)
+        elif action == "reject":
+            item = box.reject(item_id, actor=_actor(), comment=comment)
+        elif action == "snooze":
+            item = box.snooze(item_id, actor=_actor(), hours=hours)
+        else:
+            item = box.resolve(item_id, actor=_actor(), comment=comment)
+    except InboxError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    ui_impl.ok(f"{action}d {item.id[:8]}: {item.title}")
+    sys.exit(0)
+
+
+@inbox_group.command(name="approve")
+@click.argument("item_id")
+@click.option("--comment", default="", help="Why (recorded in the audit trail)")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_approve(
+    item_id: str, comment: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Accept the exception and close the item."""
+    _decide_and_report("approve", item_id, root, ui, no_color, comment=comment)
+
+
+@inbox_group.command(name="reject")
+@click.argument("item_id")
+@click.option("--comment", required=True, help="Why it was rejected")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_reject(
+    item_id: str, comment: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Refuse the exception, recording why."""
+    _decide_and_report("reject", item_id, root, ui, no_color, comment=comment)
+
+
+@inbox_group.command(name="snooze")
+@click.argument("item_id")
+@click.option("--hours", type=float, help="TTL (default: [inbox] snooze_hours)")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_snooze(
+    item_id: str, hours: float | None, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Defer an item; it returns when the TTL lapses."""
+    _decide_and_report("snooze", item_id, root, ui, no_color, hours=hours)
+
+
+@inbox_group.command(name="retry")
+@click.argument("item_id")
+@_inbox_root_option
+@_inbox_ui_option
+@_inbox_no_color_option
+def inbox_retry(
+    item_id: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Requeue the item's component and close the item.
+
+    A real round-trip, not a status change: the component is reset to
+    PENDING in the manifest (with its dependents un-skipped), so the next
+    `ks factory` run picks it up.
+    """
+    from kstrl.manifest import Manifest
+
+    root_dir, box = _inbox_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = box.get(item_id)
+    if item is None:
+        ui_impl.err(f"No inbox item matching {item_id!r}")
+        sys.exit(1)
+    if not item.component:
+        ui_impl.err(f"{item.id[:8]} has no component to requeue")
+        sys.exit(1)
+    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    if not manifest_path.exists():
+        ui_impl.err(f"No manifest at {manifest_path}")
+        sys.exit(1)
+    manifest = Manifest.load(manifest_path)
+    try:
+        reset = manifest.reset_for_retry(item.component)
+    except (ValueError, KeyError) as exc:
+        ui_impl.err(f"Could not requeue {item.component}: {exc}")
+        sys.exit(1)
+    manifest.save(manifest_path)
+    box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
+    ui_impl.ok(
+        f"Requeued {item.component} (reset: {', '.join(reset) or item.component}); "
+        "run `ks factory` to pick it up."
+    )
+    sys.exit(0)
+
+
 def main() -> None:
     """Main entry point."""
     cli()

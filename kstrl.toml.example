@@ -146,6 +146,17 @@ license_unresolved = "block"       # block | advisory - what to do when no sourc
 license_use_network = true         # false = uv cache only (offline); part of the envelope hash
 deploy = false                     # reserved for the R8.7 release gate; stored + hashed, not yet enforced
 
+# Exception inbox (R8.3): one surface for everything awaiting a human -
+# policy exceptions, halted runs, unconfirmed merges, budget overruns, autonomy
+# demotions. On by default: recording an exception changes no behaviour, and
+# what you lose by having it off is the record of a decision you already made.
+# Triage with `ks inbox ls|show|approve|reject|snooze|retry`.
+[inbox]
+enabled = true
+open_item_cap = 50                 # open items after which queue intake pauses (R8.6); 0 = unbounded
+snooze_hours = 24.0                # default snooze TTL; a snoozed item RETURNS
+notify_action_required = true      # notify on action-required items and demotions only
+
 # Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
 # independent autonomy flags. The level derives a flag bundle at run start and
 # WINS over contradicting flags here (contradictions are logged, not honored).

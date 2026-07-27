@@ -144,6 +144,28 @@ Promotion requires evidence **and** a recorded human ack (`ks autonomy promote -
 | `KSTRL_AUTONOMY_ENABLED` | bool (`1`) | false |
 | `KSTRL_AUTONOMY_MAX_LEVEL` | int (1-4) | 4 |
 
+## InboxConfig (`[inbox]`)
+
+Exception inbox (R8.3): one surface for everything awaiting a human - policy exceptions (R8.1), halted runs, unconfirmed merges, budget overruns, and autonomy demotions (R8.2). On by default, because recording an exception changes no behaviour and an inbox that is off silently loses the record of decisions you still had to make.
+
+Items are append-only in `.kstrl/inbox.jsonl` and actioned with `ks inbox approve|reject|snooze|retry`. Notifications are one-way (kstrl runs no inbound HTTP surface); only action-required kinds and demotions notify, so success stays silent.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_INBOX_ENABLED` | bool (`1`) | true |
+| `KSTRL_INBOX_OPEN_CAP` | int (0 = unbounded) | 50 |
+| `KSTRL_INBOX_SNOOZE_HOURS` | float | 24.0 |
+| `KSTRL_INBOX_NOTIFY` | bool (`1`) | true |
+
+Push notifications reuse the existing `[notify]` hook rather than adding a service. An ntfy.sh example (self-hostable, priority tiers, no inbound surface on your side):
+
+```toml
+[notify]
+on_first_failure = "curl -fsS -H 'Priority: high' -d \"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\" https://ntfy.sh/your-topic"
+```
+
+Then triage with `ks inbox ls`. Notifications never carry an action link: decisions happen locally, which is what keeps kstrl free of an inbound HTTP endpoint.
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

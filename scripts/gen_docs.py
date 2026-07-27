@@ -125,6 +125,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import FeedforwardConfig
     from kstrl.fixtures import FixturesConfig
+    from kstrl.inbox import InboxConfig
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
@@ -257,6 +258,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: AutonomyConfig.load(root_dir=root),
             AutonomyConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "inbox", "Exception inbox (R8.3)",
+            identity_keys(InboxConfig, [
+                f.name for f in dataclasses.fields(InboxConfig)
+            ]),
+            lambda root: InboxConfig.load(root_dir=root),
+            InboxConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "security", "Phase 2.5 security review",
@@ -406,6 +415,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("policy", "deploy"): "reserved for the R8.7 release gate; stored + hashed",
     ("autonomy", "enabled"): "derive run permissions from the ladder level (opt-in)",
     ("autonomy", "max_level"): "hard ceiling: never run above this level (1-4)",
+    ("inbox", "enabled"): "record exceptions awaiting a human decision",
+    ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
+    ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
+    ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",

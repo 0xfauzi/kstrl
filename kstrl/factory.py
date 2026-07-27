@@ -62,6 +62,7 @@ from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
+from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
     KnowledgeConfig,
@@ -1565,6 +1566,27 @@ def _record_autonomy_outcome(
         )
         return
     commit_transition(state, record, root_dir, bus=bus, run_id=run_id)
+    # R8.2 promised this and R8.3 delivers it: a demotion is exactly the
+    # boundary condition an over-the-loop operator must see, and the
+    # triggering evidence is perishable - it belongs on the item.
+    try:
+        inbox_config = InboxConfig.load(root_dir)
+        if inbox_config.enabled:
+            Inbox(root_dir, inbox_config).add(
+                ItemKind.DEMOTION_NOTICE,
+                f"Autonomy demoted L{record.from_level} -> L{record.to_level}",
+                detail=record.reason,
+                run_id=run_id,
+                dedupe_key=f"demotion:{run_id}:{record.to_level}",
+                evidence={
+                    "trigger": record.trigger,
+                    "from_level": record.from_level,
+                    "to_level": record.to_level,
+                    **record.evidence,
+                },
+            )
+    except (OSError, ValueError) as exc:
+        ui.warn(f"Inbox write failed (non-fatal): {exc}")
     ui.warn(
         f"Autonomy DEMOTED L{before} -> L{state.level} "
         f"({state.autonomy_level.label}) on policy violation; cool-down "

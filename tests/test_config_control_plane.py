@@ -667,7 +667,7 @@ class TestKnowledgeSectionRoundTrip:
 
 EXPECTED_SCAFFOLD_SECTIONS = {
     "agent", "run", "paths", "git", "ui",
-    "factory", "verify", "policy", "autonomy", "security", "contract",
+    "factory", "verify", "policy", "autonomy", "inbox", "security", "contract",
     "feedforward", "knowledge", "evolution", "timeout",
 }
 
@@ -698,6 +698,9 @@ EXPECTED_SCAFFOLD_KEYS = {
         "license_use_network", "deploy",
     },
     "autonomy": {"enabled", "max_level"},
+    "inbox": {
+        "enabled", "open_item_cap", "snooze_hours", "notify_action_required",
+    },
     "security": {
         "mode", "fail_threshold", "timeout_seconds", "agent_cmd",
         "agent_type", "model",

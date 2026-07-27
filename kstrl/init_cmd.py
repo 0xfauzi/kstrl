@@ -448,6 +448,14 @@ DEFAULT_KSTRL_TOML = """\
 # license_use_network = true       # false = uv cache only; part of the envelope hash
 # deploy = false                   # reserved for the R8.7 release gate
 
+# Exception inbox (R8.3): one surface for everything awaiting a human.
+# On by default; triage with `ks inbox ls`.
+[inbox]
+# enabled = true
+# open_item_cap = 50               # open items after which queue intake pauses
+# snooze_hours = 24.0              # default snooze TTL
+# notify_action_required = true    # notify only on action-required items
+
 # Autonomy ladder (R8.2): one ordered level (L1-L4) instead of scattered
 # autonomy flags. The level derives a flag bundle at run start and wins over
 # contradicting flags. Opt-in: L1 is stricter than the defaults (merge gate on).

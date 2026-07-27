@@ -42,8 +42,14 @@ from kstrl import events as ev
 from kstrl import git
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.context import IterationContext, IterationRecord
-from kstrl.findings import Finding, finding_model, tag_finding_with_attempt
+from kstrl.findings import (
+    POLICY_CATEGORY_PREFIX,
+    Finding,
+    finding_model,
+    tag_finding_with_attempt,
+)
 from kstrl.fixtures import FixturesConfig
+from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -281,6 +287,9 @@ class ComponentPipeline:
             interaction if interaction is not None else UiInteractionChannel(ui)
         )
         self.notify = notify
+        # R8.3: lazily built so a disabled inbox costs nothing and a
+        # broken one can never fail a run (see _inbox_add).
+        self._inbox: Inbox | None = None
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config
@@ -666,6 +675,14 @@ class ComponentPipeline:
         self.factory_result.skipped.extend(skipped)
         self.bus.emit(ev.ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            f"{comp.id} halted in {phase}",
+            detail=error,
+            component=comp.id,
+            dedupe_key=f"halted:{comp.id}:{phase}:{check}",
+            evidence={"phase": phase, "check": check, "error": error},
+        )
         self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
@@ -691,6 +708,21 @@ class ComponentPipeline:
             total_tokens=self.run_usage.total_tokens,
             max_total_tokens=self.factory_config.max_total_tokens,
         ))
+        # Raised BEFORE delegating to fail(): a blown budget is its own
+        # exception kind, and the generic halted_run item fail() adds
+        # would bury why the run stopped.
+        self._inbox_add(
+            ItemKind.BUDGET_OVERRUN,
+            f"{comp.id} exceeded the token budget",
+            detail=error,
+            component=comp.id,
+            dedupe_key=f"budget:{comp.id}",
+            evidence={
+                "phase": phase,
+                "total_tokens": self.run_usage.total_tokens,
+                "max_total_tokens": self.factory_config.max_total_tokens,
+            },
+        )
         return self.fail(
             comp, error, phase=phase, check="token_budget",
             signatures=["token_budget:exceeded"],
@@ -719,6 +751,41 @@ class ComponentPipeline:
         self.manifest.save(self.manifest_path)
         return Transition.COMPLETED
 
+    def _inbox_add(
+        self,
+        kind: ItemKind,
+        title: str,
+        *,
+        detail: str = "",
+        component: str = "",
+        dedupe_key: str = "",
+        evidence: dict[str, Any] | None = None,
+    ) -> None:
+        """Record an exception for a human (R8.3). Never fatal.
+
+        Every terminal halt routes through here, so the inbox reflects
+        what actually happened rather than what someone remembered to
+        report. Bookkeeping must not be able to fail a run, so a broken
+        inbox degrades to a warning - but it warns, because a silently
+        empty inbox reads exactly like a clean run.
+        """
+        try:
+            if self._inbox is None:
+                config = InboxConfig.load(self.root_dir)
+                if not config.enabled:
+                    return
+                self._inbox = Inbox(self.root_dir, config)
+            self._inbox.add(
+                kind, title,
+                detail=detail,
+                component=component,
+                run_id=self.run_id,
+                dedupe_key=dedupe_key,
+                evidence=evidence or {},
+            )
+        except (OSError, ValueError) as exc:
+            self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
+
     def _park_merge_pending(
         self, comp: Component, error: str,
     ) -> Transition:
@@ -737,6 +804,14 @@ class ComponentPipeline:
             component=comp.id, pr_url=comp.pr_url, error=comp.error,
         ))
         self.notify.fire_merge_pending(comp.id, comp.error)
+        self._inbox_add(
+            ItemKind.MERGE_GATE,
+            f"{comp.id} merge unconfirmed",
+            detail=comp.error,
+            component=comp.id,
+            dedupe_key=f"merge:{comp.id}",
+            evidence={"pr_url": comp.pr_url},
+        )
         self._end_attempt(comp)
         self.ui.warn(
             f"  MERGE PENDING: {comp.id}: {comp.error}; "
@@ -820,6 +895,14 @@ class ComponentPipeline:
         self.factory_result.skipped.extend(skipped)
         self.bus.emit(ev.ComponentFailed(component=comp.id, error=comp.error))
         self.notify.fire_first_failure(comp.id, comp.error)
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            f"{comp.id} halted in the PR flow",
+            detail=comp.error,
+            component=comp.id,
+            dedupe_key=f"halted:{comp.id}:pr",
+            evidence={"phase": "pr", "pr_url": comp.pr_url},
+        )
         self.ui.err(f"  Failed: {comp.id}: {comp.error[:120]}")
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
@@ -1304,6 +1387,28 @@ class ComponentPipeline:
         ]
         if check_findings:
             self._add_findings(comp, check_findings)
+            # R8.3: an envelope breach is the archetypal exception - a
+            # machine decision a human may want to approve once, or
+            # convert into a widened policy. Advisories stay out: they
+            # are recorded, not blocking, and the inbox is for decisions.
+            for finding in check_findings:
+                if (
+                    finding.category.startswith(POLICY_CATEGORY_PREFIX)
+                    and finding.severity != "advisory"
+                ):
+                    self._inbox_add(
+                        ItemKind.POLICY_EXCEPTION,
+                        f"{comp.id}: {finding.category}",
+                        detail=finding.explanation,
+                        component=comp.id,
+                        dedupe_key=f"policy:{comp.id}:{finding.category}",
+                        evidence={
+                            "category": finding.category,
+                            "severity": finding.severity,
+                            "location": finding.location,
+                            "suggestion": finding.suggestion,
+                        },
+                    )
         self.bus.emit(ev.VerificationResultEvent(
             component=comp.id, passed=verification.passed,
             checks=tuple(c.name for c in verification.checks),

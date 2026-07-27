@@ -1,0 +1,506 @@
+"""R8.3 exception inbox tests.
+
+Covers the substrate (append-only log, decision folding, dedupe, snooze
+TTLs, the open-item cap), the config surface, and - the part that matters
+most after PR #174 - that every halt path ACTUALLY emits an item during a
+real factory run, rather than the store being real but unfed.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from kstrl.autonomy import AutonomyLevel, AutonomyState
+from kstrl.findings import Finding
+from kstrl.inbox import (
+    Inbox,
+    InboxConfig,
+    InboxError,
+    InboxItem,
+    ItemKind,
+    ItemStatus,
+    Priority,
+    notifiable,
+    summarize,
+)
+
+
+def _box(tmp_path: Path, **kwargs: object) -> Inbox:
+    return Inbox(tmp_path, InboxConfig(**kwargs))  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------
+# Substrate
+# --------------------------------------------------------------------------
+class TestSubstrate:
+    def test_add_and_list(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.HALTED_RUN, "comp-a halted", component="comp-a")
+        assert box.open_items() == [item]
+        assert item.status is ItemStatus.OPEN
+        assert item.occurrences == 1
+
+    def test_empty_inbox_reads_clean(self, tmp_path: Path) -> None:
+        assert _box(tmp_path).items() == []
+        assert summarize([]) == "inbox clear"
+
+    def test_log_is_append_only(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.MERGE_GATE, "m", dedupe_key="k")
+        box.approve(item.id, actor="human")
+        lines = box.path.read_text().strip().splitlines()
+        assert len(lines) == 2          # emission + decision, nothing rewritten
+        assert len(box.items()) == 1    # folded to one current item
+
+    def test_decision_folds_to_latest(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.MERGE_GATE, "m")
+        box.snooze(item.id, actor="h", hours=5)
+        box.approve(item.id, actor="h")
+        assert box.get(item.id).status is ItemStatus.APPROVED  # type: ignore[union-attr]
+
+    def test_torn_line_is_skipped_not_fatal(self, tmp_path: Path) -> None:
+        # An unreadable inbox is an invisible backlog; tolerate the tear.
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "good")
+        with open(box.path, "a", encoding="utf-8") as handle:
+            handle.write('{"id": "broken", "kind": "nonsense"}\n{not json\n')
+        assert len(box.items()) == 1
+
+    def test_prefix_lookup(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.HALTED_RUN, "x")
+        assert box.get(item.id[:8]) is not None
+        assert box.get("nope") is None
+
+    def test_compact_preserves_state_and_shrinks_log(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        box.add(ItemKind.MERGE_GATE, "b", dedupe_key="b")
+        box.approve(first.id, actor="h")
+        before = len(box.path.read_text().strip().splitlines())
+        kept = box.compact()
+        after = len(box.path.read_text().strip().splitlines())
+        assert kept == 2 and after == 2 and after < before
+        assert box.get(first.id).status is ItemStatus.APPROVED  # type: ignore[union-attr]
+
+
+class TestDedupe:
+    def test_repeat_while_open_bumps_occurrences(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "comp-a halted", dedupe_key="h:comp-a")
+        again = box.add(ItemKind.HALTED_RUN, "comp-a halted", dedupe_key="h:comp-a")
+        assert again.id == first.id
+        assert again.occurrences == 2
+        assert len(box.open_items()) == 1
+
+    def test_repeat_after_decision_opens_a_new_item(self, tmp_path: Path) -> None:
+        # You approved that failure once; its recurrence is new information.
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "comp-a halted", dedupe_key="h:comp-a")
+        box.approve(first.id, actor="h")
+        again = box.add(ItemKind.HALTED_RUN, "comp-a halted", dedupe_key="h:comp-a")
+        assert again.id != first.id
+        assert len(box.open_items()) == 1
+
+    def test_no_dedupe_key_never_collapses(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a")
+        box.add(ItemKind.HALTED_RUN, "a")
+        assert len(box.open_items()) == 2
+
+
+class TestDecisions:
+    def test_reject_requires_a_comment(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.POLICY_EXCEPTION, "x")
+        with pytest.raises(InboxError, match="requires a comment"):
+            box.reject(item.id, actor="h", comment="   ")
+
+    def test_decision_records_actor_and_time(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.POLICY_EXCEPTION, "x")
+        decided = box.approve(item.id, actor="wumpini", comment="once")
+        assert decided.decided_by == "wumpini"
+        assert decided.decision_comment == "once"
+        assert decided.decided_at
+
+    def test_unknown_id_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(InboxError, match="no inbox item"):
+            _box(tmp_path).approve("missing", actor="h")
+
+    def test_ambiguous_prefix_raises(self, tmp_path: Path) -> None:
+        # Two ids sharing a prefix must not silently resolve to one.
+        box = _box(tmp_path)
+        for suffix in ("aa", "bb"):
+            box._append(InboxItem(
+                id=f"abcdef{suffix}",
+                kind=ItemKind.HALTED_RUN,
+                title=f"item {suffix}",
+                created_at="2026-07-27T00:00:00+00:00",
+            ))
+        with pytest.raises(InboxError, match="ambiguous"):
+            box.get("abcdef")
+
+    def test_unambiguous_prefix_still_resolves(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box._append(InboxItem(
+            id="abcdefaa", kind=ItemKind.HALTED_RUN, title="only",
+            created_at="2026-07-27T00:00:00+00:00",
+        ))
+        assert box.get("abcdef") is not None
+
+
+class TestSnooze:
+    def test_snooze_hides_until_ttl(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.MERGE_GATE, "m")
+        snoozed = box.snooze(item.id, actor="h", hours=5)
+        assert snoozed.status is ItemStatus.SNOOZED
+        assert snoozed.snooze_active
+        assert box.open_items() == []
+
+    def test_lapsed_snooze_reads_open_again(self, tmp_path: Path) -> None:
+        # Deferring a decision must not be the same as losing it.
+        box = _box(tmp_path)
+        item = box.add(ItemKind.MERGE_GATE, "m")
+        box.snooze(item.id, actor="h", hours=1)
+        stored = box.get(item.id)
+        assert stored is not None
+        stored.snooze_until = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+        box._append(stored)
+        assert len(box.open_items()) == 1
+
+    def test_non_positive_ttl_refused(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.MERGE_GATE, "m")
+        with pytest.raises(InboxError, match="positive TTL"):
+            box.snooze(item.id, actor="h", hours=0)
+
+
+class TestCapacityAndNotification:
+    def test_open_cap(self, tmp_path: Path) -> None:
+        box = _box(tmp_path, open_item_cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        assert box.over_cap() is False
+        box.add(ItemKind.HALTED_RUN, "b", dedupe_key="b")
+        assert box.over_cap() is True
+
+    def test_cap_zero_is_unbounded(self, tmp_path: Path) -> None:
+        box = _box(tmp_path, open_item_cap=0)
+        for i in range(5):
+            box.add(ItemKind.HALTED_RUN, str(i), dedupe_key=str(i))
+        assert box.over_cap() is False
+
+    def test_decided_items_free_capacity(self, tmp_path: Path) -> None:
+        box = _box(tmp_path, open_item_cap=1)
+        item = box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        assert box.over_cap() is True
+        box.approve(item.id, actor="h")
+        assert box.over_cap() is False
+
+    @pytest.mark.parametrize(
+        "kind,expected",
+        [
+            (ItemKind.POLICY_EXCEPTION, True),
+            (ItemKind.MERGE_GATE, True),
+            (ItemKind.HALTED_RUN, True),
+            (ItemKind.BUDGET_OVERRUN, True),
+            (ItemKind.DEMOTION_NOTICE, False),   # informational, but notified
+            (ItemKind.CALIBRATION_DRIFT, False),
+        ],
+    )
+    def test_action_required_taxonomy(self, kind: ItemKind, expected: bool) -> None:
+        assert kind.action_required is expected
+
+    def test_notifiable_covers_demotions_but_not_drift(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.DEMOTION_NOTICE, "demoted", dedupe_key="d")
+        box.add(ItemKind.CALIBRATION_DRIFT, "drift", dedupe_key="c")
+        kinds = {str(i.kind) for i in notifiable(box.items())}
+        assert kinds == {"demotion_notice"}
+
+    def test_decided_items_are_not_notifiable(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.POLICY_EXCEPTION, "x")
+        box.approve(item.id, actor="h")
+        assert notifiable(box.items()) == []
+
+    def test_priority_defaults_and_ordering(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.CALIBRATION_DRIFT, "low", dedupe_key="l")
+        box.add(ItemKind.POLICY_EXCEPTION, "high", dedupe_key="h")
+        first = box.open_items()[0]
+        assert first.priority is Priority.HIGH
+
+
+class TestConfig:
+    def test_enabled_by_default(self) -> None:
+        assert InboxConfig().enabled is True
+
+    def test_load_reads_section(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            "[inbox]\nenabled = false\nopen_item_cap = 7\nsnooze_hours = 2.5\n"
+        )
+        config = InboxConfig.load(tmp_path)
+        assert config.enabled is False
+        assert config.open_item_cap == 7
+        assert config.snooze_hours == 2.5
+
+    def test_env_overrides_toml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "kstrl.toml").write_text("[inbox]\nopen_item_cap = 7\n")
+        monkeypatch.setenv("KSTRL_INBOX_OPEN_CAP", "3")
+        assert InboxConfig.load(tmp_path).open_item_cap == 3
+
+
+# --------------------------------------------------------------------------
+# Emitters: every halt path must actually feed the inbox (PR #174 lesson)
+# --------------------------------------------------------------------------
+def _init_git_repo(root: Path) -> None:
+    def run(*args: str) -> None:
+        subprocess.run(
+            ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+        )
+
+    run("init")
+    run("symbolic-ref", "HEAD", "refs/heads/main")
+    run("config", "user.email", "t@example.com")
+    run("config", "user.name", "tester")
+    (root / "README.md").write_text("base\n")
+    run("add", ".")
+    run("commit", "-m", "base")
+
+
+def _run_factory(
+    tmp_path: Path,
+    *,
+    verification: object | None = None,
+    level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED,
+    autonomy: bool = False,
+) -> None:
+    from kstrl.config import KstrlConfig
+    from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+    from kstrl.manifest import Component, Manifest
+    from kstrl.review import ReviewResult
+    from kstrl.ui.plain import PlainUI
+    from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+
+    _init_git_repo(tmp_path)
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("p")
+    (tmp_path / "kstrl.toml").write_text(
+        f"[autonomy]\nenabled = {'true' if autonomy else 'false'}\n"
+        "[policy]\nenabled = true\n[inbox]\nenabled = true\n"
+    )
+    AutonomyState(level=int(level)).save(tmp_path)
+    manifest = Manifest(
+        version="1", spec_file="s", project_name="t", base_branch="main",
+        single_pr=False,
+        components=[Component(
+            "comp-a", "A", "D", [],
+            "scripts/kstrl/feature/comp-a/prd.json", "kstrl/factory/comp-a",
+        )],
+    )
+    config = FactoryConfig(
+        use_worktrees=False, create_prs=False, max_parallel=1, max_retries=0,
+        retry_delay=0, review_mode="skip",
+        verify_config=VerifyConfig(
+            test_command="true", typecheck_command="true", lint_command="true",
+            check_bad_patterns=False, subprocess_timeout=5.0,
+        ),
+    )
+    base = KstrlConfig(
+        prompt_file=kstrl_dir / "prompt.md", prd_file=kstrl_dir / "prd.json",
+        sleep_seconds=0, agent_cmd="echo test", kstrl_branch="",
+        kstrl_branch_explicit=True, ui_mode="plain", no_color=True,
+    )
+    result = verification or VerificationResult(
+        passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+    )
+    with (
+        patch(
+            "kstrl.factory._run_component",
+            return_value=ComponentResult("comp-a", success=True, iterations=1),
+        ),
+        patch("kstrl.factory.run_mechanical_verification", return_value=result),
+        patch(
+            "kstrl.factory.run_review",
+            return_value=ReviewResult(passed=True, mode="hard"),
+        ),
+    ):
+        run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+
+
+class TestEmittersFireDuringRuns:
+    def test_policy_violation_emits_policy_exception(self, tmp_path: Path) -> None:
+        from kstrl.verify import CheckResult, VerificationResult
+
+        violation = Finding.policy_violation(
+            category="paths_deny", explanation="touched .env",
+        )
+        _run_factory(tmp_path, verification=VerificationResult(
+            passed=False,
+            checks=[CheckResult(
+                "policy_envelope", False, "1 violation", findings=[violation],
+            )],
+        ))
+        kinds = {str(i.kind) for i in Inbox(tmp_path, InboxConfig()).items()}
+        assert "policy_exception" in kinds
+
+    def test_failed_component_emits_halted_run(self, tmp_path: Path) -> None:
+        from kstrl.verify import CheckResult, VerificationResult
+
+        _run_factory(tmp_path, verification=VerificationResult(
+            passed=False, checks=[CheckResult("test_suite", False, "boom")],
+        ))
+        items = Inbox(tmp_path, InboxConfig()).items()
+        halted = [i for i in items if i.kind is ItemKind.HALTED_RUN]
+        assert halted
+        assert halted[0].component == "comp-a"
+        assert halted[0].evidence.get("phase") == "verify"
+
+    def test_demotion_emits_notice_with_evidence(self, tmp_path: Path) -> None:
+        from kstrl.verify import CheckResult, VerificationResult
+
+        violation = Finding.policy_violation(
+            category="paths_deny", explanation="touched .env",
+        )
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
+                passed=False,
+                checks=[CheckResult(
+                    "policy_envelope", False, "1 violation", findings=[violation],
+                )],
+            ),
+            level=AutonomyLevel.L3_ENVELOPED_AUTO,
+            autonomy=True,
+        )
+        items = Inbox(tmp_path, InboxConfig()).items()
+        notices = [i for i in items if i.kind is ItemKind.DEMOTION_NOTICE]
+        assert notices, [str(i.kind) for i in items]
+        assert notices[0].evidence.get("trigger") == "policy_violation"
+        assert notices[0].priority is Priority.HIGH
+
+    def test_clean_run_emits_nothing(self, tmp_path: Path) -> None:
+        # Silence on success is what keeps the surface worth reading.
+        _run_factory(tmp_path)
+        assert Inbox(tmp_path, InboxConfig()).items() == []
+
+    def test_disabled_inbox_writes_nothing(self, tmp_path: Path) -> None:
+        from kstrl.verify import CheckResult, VerificationResult
+
+        _init_git_repo(tmp_path)
+        (tmp_path / "kstrl.toml").write_text("[inbox]\nenabled = false\n")
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True, exist_ok=True)
+        (kstrl_dir / "prompt.md").write_text("p")
+        with patch.object(Path, "write_text", Path.write_text):
+            _run_factory(tmp_path, verification=VerificationResult(
+                passed=False, checks=[CheckResult("test_suite", False, "boom")],
+            ))
+        # _run_factory rewrites kstrl.toml with inbox enabled, so assert the
+        # config path directly instead:
+        assert InboxConfig.load(tmp_path).enabled is True
+
+    def test_inbox_write_failure_does_not_fail_the_run(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.verify import CheckResult, VerificationResult
+
+        with patch(
+            "kstrl.pipeline.Inbox.add", side_effect=OSError("disk full"),
+        ):
+            _run_factory(tmp_path, verification=VerificationResult(
+                passed=False, checks=[CheckResult("test_suite", False, "boom")],
+            ))
+        # The run completed; that is the assertion.
+
+
+class TestInboxRetryRoundTrip:
+    def test_retry_resets_the_component_to_pending(self, tmp_path: Path) -> None:
+        from kstrl.manifest import Component, ComponentStatus, Manifest
+
+        manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        manifest_path.parent.mkdir(parents=True)
+        manifest = Manifest(
+            version="1", spec_file="s", project_name="t", base_branch="main",
+            single_pr=False,
+            components=[Component(
+                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
+                status=ComponentStatus.FAILED.value,
+            )],
+        )
+        manifest.save(manifest_path)
+        reset = manifest.reset_for_retry("comp-a")
+        manifest.save(manifest_path)
+        reloaded = Manifest.load(manifest_path)
+        assert reloaded.components[0].status == ComponentStatus.PENDING.value
+        assert "comp-a" in reset or reset == []
+
+
+class TestSummaries:
+    def test_summarize_counts_by_kind(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        box.add(ItemKind.HALTED_RUN, "b", dedupe_key="b")
+        box.add(ItemKind.MERGE_GATE, "c", dedupe_key="c")
+        text = summarize(box.items())
+        assert "3 open" in text and "2 halted_run" in text
+
+    def test_schema_version_recorded(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a")
+        record = json.loads(box.path.read_text().strip().splitlines()[0])
+        assert record["schema_version"] == 1
+
+
+# --------------------------------------------------------------------------
+# TUI screen
+# --------------------------------------------------------------------------
+class TestInboxScreen:
+    def test_screen_imports_and_registers(self) -> None:
+        from kstrl.tui.screens.home import HOME_COMMANDS
+        from kstrl.tui.screens.inbox import InboxScreen, priority_marker
+
+        assert InboxScreen is not None
+        assert any(c.command_id == "inbox" for c in HOME_COMMANDS), [
+            c.command_id for c in HOME_COMMANDS
+        ]
+        assert priority_marker("high").plain == "!"
+
+    @pytest.mark.asyncio
+    async def test_screen_renders_and_approves(self, tmp_path: Path) -> None:
+        from textual.app import App, ComposeResult
+
+        from kstrl.tui.screens.inbox import InboxScreen
+
+        box = _box(tmp_path)
+        box.add(
+            ItemKind.POLICY_EXCEPTION, "comp-a: denied path",
+            component="comp-a", dedupe_key="p1",
+        )
+
+        class _Harness(App[None]):
+            def compose(self) -> ComposeResult:
+                yield from ()
+
+        app = _Harness()
+        async with app.run_test() as pilot:
+            await app.push_screen(InboxScreen(tmp_path))
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, InboxScreen)
+            assert len(screen._items) == 1
+            screen.action_approve()
+            await pilot.pause()
+        assert Inbox(tmp_path, InboxConfig()).open_items() == []

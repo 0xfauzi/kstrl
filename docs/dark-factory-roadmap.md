@@ -377,7 +377,36 @@ exists and its output over historical `experiments.tsv` is captured here.
 
 ## R8.3 Exception inbox (L) - [#150](https://github.com/0xfauzi/kstrl/issues/150)
 
-Status: `[ ]` - Depends on: R8.1/R8.2 item types (can land with today's subset)
+Status: `[x]` - Shipped in `kstrl/inbox.py` + `ks inbox` +
+`kstrl/tui/screens/inbox.py`. Append-only `.kstrl/inbox.jsonl` folded on
+read; item kinds policy_exception / merge_gate / halted_run /
+budget_overrun / demotion_notice / calibration_drift; dedupe by key,
+snooze with a TTL that RETURNS the item, and an open-item cap that R8.6
+will consult before admitting queue work.
+
+**Emitters are wired, not declared.** Every existing halt path feeds it:
+component FAILED and PR-flow failure (halted_run), MERGE_PENDING
+(merge_gate), token-budget halt (budget_overrun), R8.1 policy findings
+(policy_exception, advisories excluded), and R8.2 demotions
+(demotion_notice, carrying the triggering evidence - the item R8.2
+promised). Verified end-to-end: a run with a planted policy violation
+produces a policy_exception, a halted_run, AND a demotion_notice while
+the ladder drops L3 -> L2.
+
+Closes three IOUs left by earlier items: R8.1's "violations route to the
+inbox", R8.2's "every demotion emits an inbox item", and the surface R8.6
+needs for `stop_at_pr`.
+
+Notification stays one-way, as specified: `notifiable()` selects
+action-required kinds plus demotions, so successes are silent; kstrl runs
+no inbound HTTP surface, and items are actioned in `ks inbox` or the TUI
+screen. An ntfy.sh example is documented in `docs/env-vars.md` under the
+existing `[notify]` hook.
+
+Not built: `approve-and-amend-policy` (widening the R8.1 envelope from a
+repeated approval) and the daily digest. Both are learning-loop
+refinements that want real inbox traffic to design against, and neither
+is load-bearing for R8.6.
 
 **Why.** Over-the-loop operation needs one surface for everything awaiting a
 human decision. Today: SpecBlocker exit codes, FAILED components,
