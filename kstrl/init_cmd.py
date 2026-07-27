@@ -440,6 +440,8 @@ DEFAULT_KSTRL_TOML = """\
 # max_lines_changed = 1500         # lockfiles excluded from the count
 # deps_allow_new = false           # block new uv.lock packages; L3+ may set true
 # secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----"]
+# license_allow = ["MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0"]
+# license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause"]
 # deploy = false                   # reserved for the R8.7 release gate
 
 # Phase 2.5 security review (independent adversarial pass focused on vulns).

@@ -337,6 +337,8 @@ max_files_changed = 40                                                          
 max_lines_changed = 1500                                                                                                                                      # max added+removed lines (lockfiles excluded); negative disables
 deps_allow_new = false                                                                                                                                        # allow new uv.lock packages (L3+ may enable)
 secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "sk-[a-zA-Z0-9]{20,}", "ghp_[a-zA-Z0-9]{36}", "xox[bpoas]-[a-zA-Z0-9-]+"]  # regexes flagged in added diff lines
+license_allow = ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD"]                           # allowed SPDX ids for new deps (empty disables)
+license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL"]                                                                              # substrings that deny a dep license (copyleft)
 deploy = false                                                                                                                                                # reserved for the R8.7 release gate; stored + hashed
 
 # Phase 2.5 security review

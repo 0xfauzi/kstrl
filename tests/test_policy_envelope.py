@@ -1,10 +1,10 @@
 """R8.1 policy envelope tests.
 
-Covers a planted violation in every PR1 category (paths_deny, size caps,
-deps_allow_new, secrets, enforcement-machinery halt), the config
-load/env/hash surface, the manifest policy_hash round-trip, and a
-real-git end-to-end through ``check_policy_envelope``. License gating is
-a follow-up and is not exercised here.
+Covers a planted violation in every category (paths_deny, size caps,
+deps_allow_new, secrets, enforcement-machinery halt, license gating), the
+config load/env/hash surface, the manifest policy_hash round-trip,
+license resolution (uv cache + PyPI, both injected), and a real-git
+end-to-end through ``check_policy_envelope``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git
+from kstrl import git, licensing
 from kstrl.git import _normalize_numstat_path
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.policy import (
@@ -25,8 +25,10 @@ from kstrl.policy import (
     PolicyConfigError,
     _glob_to_regex,
     _match_glob,
+    classify_license,
     evaluate_policy,
     parse_added_lines,
+    parse_new_dependencies,
 )
 from kstrl.verify import check_policy_envelope, run_mechanical_verification
 
@@ -455,3 +457,221 @@ class TestEndToEndRealGit:
         res = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
         assert not res.passed
         assert any("HALT" in d for d in res.details)
+
+
+# --------------------------------------------------------------------------
+# License classification (pure)
+# --------------------------------------------------------------------------
+_ALLOW = ["MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC"]
+_DENY = ["GPL", "AGPL", "SSPL", "Commons-Clause"]
+
+
+class TestClassifyLicense:
+    @pytest.mark.parametrize(
+        "license_str,expected",
+        [
+            ("MIT", "allowed"),
+            ("mit", "allowed"),                             # case-insensitive
+            ("Apache-2.0 OR BSD-3-Clause", "allowed"),      # compound, all allowed
+            ("GPL-3.0-only", "denied"),
+            ("AGPL-3.0-or-later", "denied"),
+            ("LGPL-3.0-only", "denied"),                    # 'GPL' substring wins
+            ("GPL-2.0 WITH Classpath-exception-2.0", "denied"),
+            ("MPL-2.0", "unknown"),                         # neither allowed nor denied
+            ("Apache-2.0 OR Proprietary", "unknown"),       # one atom not allowed
+            (None, "unknown"),                              # unresolved
+            ("", "unknown"),
+        ],
+    )
+    def test_classify(self, license_str: str | None, expected: str) -> None:
+        assert classify_license(license_str, _ALLOW, _DENY) == expected
+
+
+class TestParseNewDependencies:
+    def test_pairs_name_and_version(self) -> None:
+        diff = (
+            "diff --git a/uv.lock b/uv.lock\n--- a/uv.lock\n+++ b/uv.lock\n"
+            '+[[package]]\n+name = "requests"\n+version = "2.32.0"\n'
+            '+[[package]]\n+name = "anyio"\n+version = "4.14.2"\n'
+            '+    { name = "inline-ref" },\n'
+        )
+        assert parse_new_dependencies(parse_added_lines(diff)) == [
+            ("requests", "2.32.0"),
+            ("anyio", "4.14.2"),
+        ]
+
+    def test_version_bump_only_is_not_new(self) -> None:
+        # Only a version line added (name line is unchanged context).
+        diff = "--- a/uv.lock\n+++ b/uv.lock\n+version = \"9.9.9\"\n"
+        assert parse_new_dependencies(parse_added_lines(diff)) == []
+
+
+# --------------------------------------------------------------------------
+# License resolution (kstrl.licensing) - uv cache + PyPI, both injectable
+# --------------------------------------------------------------------------
+class TestLicenseResolution:
+    def test_metadata_text_expression_wins(self) -> None:
+        text = (
+            "Name: foo\nVersion: 1.0\n"
+            "License-Expression: Apache-2.0 OR BSD-3-Clause\n"
+            "Classifier: License :: OSI Approved :: MIT License\n\nbody"
+        )
+        assert licensing.license_from_metadata_text(text) == "Apache-2.0 OR BSD-3-Clause"
+
+    def test_metadata_text_classifier_mapping(self) -> None:
+        text = "Classifier: License :: OSI Approved :: BSD License\n\n"
+        assert licensing.license_from_metadata_text(text) == "BSD-3-Clause"
+
+    def test_metadata_text_dual_classifiers_join_or(self) -> None:
+        text = (
+            "Classifier: License :: OSI Approved :: Apache Software License\n"
+            "Classifier: License :: OSI Approved :: BSD License\n\n"
+        )
+        assert licensing.license_from_metadata_text(text) == "Apache-2.0 OR BSD-3-Clause"
+
+    def test_metadata_text_short_license_field(self) -> None:
+        assert licensing.license_from_metadata_text("License: MPL-2.0\n\n") == "MPL-2.0"
+
+    def test_metadata_text_multiline_license_field_ignored(self) -> None:
+        text = "License: Copyright...\n full license text across\n many lines\n\n"
+        assert licensing.license_from_metadata_text(text) is None
+
+    def test_resolve_from_uv_cache(self, tmp_path: Path) -> None:
+        d = tmp_path / "cache" / "archive-v0" / "h" / "foo-1.2.3.dist-info"
+        d.mkdir(parents=True)
+        (d / "METADATA").write_text(
+            "Name: foo\nVersion: 1.2.3\nLicense-Expression: MIT\n\nbody"
+        )
+        cache = tmp_path / "cache"
+        assert licensing.resolve_from_uv_cache("foo", "1.2.3", cache) == "MIT"
+        assert licensing.resolve_from_uv_cache("foo", "9.9.9", cache) is None
+        assert licensing.resolve_from_uv_cache("foo", "1.2.3", None) is None
+
+    def test_uv_cache_name_variant(self, tmp_path: Path) -> None:
+        # uv.lock name "my-pkg" but dist-info dir uses "my_pkg".
+        d = tmp_path / "c" / "my_pkg-1.0.dist-info"
+        d.mkdir(parents=True)
+        (d / "METADATA").write_text("License-Expression: Apache-2.0\n\n")
+        assert licensing.resolve_from_uv_cache("my-pkg", "1.0", tmp_path / "c") == "Apache-2.0"
+
+    def test_resolve_from_pypi(self) -> None:
+        import json
+
+        payload = json.dumps({"info": {"license_expression": "BSD-3-Clause"}}).encode()
+        got = licensing.resolve_from_pypi("x", "1", http_get=lambda url, to: payload)
+        assert got == "BSD-3-Clause"
+
+    def test_pypi_network_error_returns_none(self) -> None:
+        def boom(url: str, timeout: float) -> bytes:
+            raise OSError("no network")
+
+        assert licensing.resolve_from_pypi("x", "1", http_get=boom) is None
+
+    def test_resolve_license_prefers_cache(self, tmp_path: Path) -> None:
+        d = tmp_path / "cache" / "foo-1.0.dist-info"
+        d.mkdir(parents=True)
+        (d / "METADATA").write_text("License-Expression: MIT\n\n")
+
+        def unexpected(url: str, timeout: float) -> bytes:  # pragma: no cover
+            raise AssertionError("PyPI must not be called on a cache hit")
+
+        got = licensing.resolve_license(
+            "foo", "1.0", uv_cache=tmp_path / "cache", http_get=unexpected,
+        )
+        assert got == "MIT"
+
+    def test_resolve_license_offline_miss_is_none(self, tmp_path: Path) -> None:
+        got = licensing.resolve_license(
+            "foo", "1.0", uv_cache=tmp_path, use_pypi=False,
+        )
+        assert got is None
+
+
+# --------------------------------------------------------------------------
+# License gate wired through check_policy_envelope
+# --------------------------------------------------------------------------
+def _uvlock_add_diff(name: str, version: str) -> str:
+    return (
+        "diff --git a/uv.lock b/uv.lock\n--- a/uv.lock\n+++ b/uv.lock\n"
+        f'+[[package]]\n+name = "{name}"\n+version = "{version}"\n'
+    )
+
+
+class TestCheckPolicyEnvelopeLicense:
+    def _run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        resolved: str | None,
+        config: PolicyConfig,
+    ) -> object:
+        monkeypatch.setattr(
+            git, "get_diff_content", lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
+        )
+        monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
+        monkeypatch.setattr(git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")])
+        monkeypatch.setattr(licensing, "uv_cache_dir", lambda: None)
+        monkeypatch.setattr(licensing, "resolve_license", lambda *a, **k: resolved)
+        return check_policy_envelope(tmp_path, "main", config)
+
+    def _cfg(self) -> PolicyConfig:
+        # deps_allow_new=True isolates the license outcome from the
+        # new-dependency block.
+        return PolicyConfig(enabled=True, deps_allow_new=True)
+
+    def test_allowed_license_passes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._run(monkeypatch, tmp_path, "MIT", self._cfg())
+        assert res.passed  # type: ignore[attr-defined]
+
+    def test_denied_license_blocks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._run(monkeypatch, tmp_path, "GPL-3.0-only", self._cfg())
+        assert not res.passed  # type: ignore[attr-defined]
+        assert any("denied license" in d for d in res.details)  # type: ignore[attr-defined]
+
+    def test_unknown_resolved_license_blocks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._run(monkeypatch, tmp_path, "MPL-2.0", self._cfg())
+        assert not res.passed  # type: ignore[attr-defined]
+        assert any("not in license_allow" in d for d in res.details)  # type: ignore[attr-defined]
+
+    def test_unresolved_license_is_advisory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._run(monkeypatch, tmp_path, None, self._cfg())
+        assert res.passed  # type: ignore[attr-defined]
+        assert any("unresolved" in d for d in res.details)  # type: ignore[attr-defined]
+
+    def test_empty_allowlist_disables_gate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cfg = PolicyConfig(enabled=True, deps_allow_new=True, license_allow=[])
+        # Even a GPL dep passes when the license gate is unconfigured.
+        res = self._run(monkeypatch, tmp_path, "GPL-3.0-only", cfg)
+        assert res.passed  # type: ignore[attr-defined]
+
+
+class TestPolicyConfigLicenseFields:
+    def test_defaults_present(self) -> None:
+        cfg = PolicyConfig()
+        assert "MIT" in cfg.license_allow
+        assert "GPL" in cfg.license_deny_partial
+
+    def test_load_reads_license_lists(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            "[policy]\n"
+            'license_allow = ["MIT", "MPL-2.0"]\n'
+            'license_deny_partial = ["AGPL"]\n'
+        )
+        cfg = PolicyConfig.load(tmp_path)
+        assert cfg.license_allow == ["MIT", "MPL-2.0"]
+        assert cfg.license_deny_partial == ["AGPL"]
+
+    def test_envelope_hash_covers_license(self) -> None:
+        base = PolicyConfig().envelope_hash()
+        assert base != PolicyConfig(license_allow=["MIT"]).envelope_hash()
+        assert base != PolicyConfig(license_deny_partial=["GPL"]).envelope_hash()

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import git, licensing
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
@@ -25,7 +25,12 @@ from kstrl.parsers import (
     parse_pytest_output,
     parse_ruff_output,
 )
-from kstrl.policy import PolicyConfig, PolicyConfigError, evaluate_policy
+from kstrl.policy import (
+    PolicyConfig,
+    PolicyConfigError,
+    classify_license,
+    evaluate_policy,
+)
 from kstrl.prd import PRD
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -874,13 +879,78 @@ def check_policy_envelope(
             duration_seconds=time.monotonic() - start,
         )
 
+    # License gate (R8.1): resolve each newly-added uv.lock dependency's
+    # license and classify it. Denied or resolved-but-not-allowlisted
+    # licenses block; an unresolvable license is advisory (non-blocking) -
+    # a merge must not be held hostage to a cache/network miss. Runs only
+    # when the gate is configured (license_allow non-empty).
+    license_block, license_advisories = _check_licenses(
+        evaluation.new_dependencies, config,
+    )
+
+    blocking = ([] if evaluation.ok else list(evaluation.details)) + license_block
+    passed = not blocking
+    if passed:
+        message = evaluation.summary
+        if license_advisories:
+            message += f"; {len(license_advisories)} license advisory(ies)"
+        return CheckResult(
+            name="policy_envelope",
+            passed=True,
+            message=message,
+            details=license_advisories,
+            duration_seconds=time.monotonic() - start,
+        )
+    message = f"{len(blocking)} policy violation(s)"
+    if evaluation.machinery_hit:
+        message += " including enforcement-machinery halt"
     return CheckResult(
         name="policy_envelope",
-        passed=evaluation.ok,
-        message=evaluation.summary,
-        details=[] if evaluation.ok else evaluation.details,
+        passed=False,
+        message=message,
+        details=blocking + license_advisories,
         duration_seconds=time.monotonic() - start,
     )
+
+
+def _check_licenses(
+    new_dependencies: list[tuple[str, str]], config: PolicyConfig,
+) -> tuple[list[str], list[str]]:
+    """Resolve + classify licenses of new deps -> (blocking, advisories).
+
+    Blocking: denied licenses, and resolved licenses not in the allowlist.
+    Advisory: dependencies whose license could not be resolved from the uv
+    cache or PyPI. No-op when the gate is unconfigured or no deps are new.
+    """
+    if not config.license_allow or not new_dependencies:
+        return [], []
+    use_pypi = os.environ.get("KSTRL_POLICY_LICENSE_NET", "1") != "0"
+    uv_cache = licensing.uv_cache_dir()
+    blocking: list[str] = []
+    advisories: list[str] = []
+    for name, version in new_dependencies:
+        resolved = licensing.resolve_license(
+            name, version, uv_cache=uv_cache, use_pypi=use_pypi,
+        )
+        if resolved is None:
+            advisories.append(
+                f"license unresolved for {name} {version} "
+                "(advisory; uv cache + PyPI both missed)"
+            )
+            continue
+        verdict = classify_license(
+            resolved, config.license_allow, config.license_deny_partial,
+        )
+        if verdict == "denied":
+            blocking.append(
+                f"denied license '{resolved}' for dependency {name} {version}"
+            )
+        elif verdict == "unknown":
+            blocking.append(
+                f"license '{resolved}' for {name} {version} is not in "
+                "license_allow (add it there to permit)"
+            )
+    return blocking, advisories
 
 
 def check_mutation_score(

@@ -117,7 +117,7 @@ Phase 1 approved-fixtures oracle (R7.2). Off by default: fixtures execute PRD-su
 
 ## PolicyConfig (`[policy]`)
 
-Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, `uv.lock`), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`) are toml-only. Set a numeric cap negative to disable it.
+Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifacts (git diff, `uv.lock`), never agent self-report. Opt-in; when enabled a violation blocks the merge. List fields (`paths_deny`, `secret_patterns`, `license_allow`, `license_deny_partial`) are toml-only. Set a numeric cap negative to disable it. The license gate resolves a new dependency's SPDX license from uv's cache and then PyPI; `KSTRL_POLICY_LICENSE_NET=0` forces offline-only (uv cache), and an unresolvable license is advisory (non-blocking).
 
 | Env var | Type | Default |
 |---|---|---|
@@ -125,6 +125,7 @@ Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on artifac
 | `KSTRL_POLICY_MAX_FILES` | int | 40 |
 | `KSTRL_POLICY_MAX_LINES` | int | 1500 |
 | `KSTRL_POLICY_DEPS_ALLOW_NEW` | bool (`1`) | false |
+| `KSTRL_POLICY_LICENSE_NET` | bool (`0` disables) | on (uv cache + PyPI) |
 | `KSTRL_POLICY_DEPLOY` | bool (`1`) | false (reserved for R8.7) |
 
 ## ContractConfig (`[contract]`)

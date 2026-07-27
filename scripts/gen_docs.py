@@ -388,6 +388,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "max added+removed lines (lockfiles excluded); negative disables",
     ("policy", "deps_allow_new"): "allow new uv.lock packages (L3+ may enable)",
     ("policy", "secret_patterns"): "regexes flagged in added diff lines",
+    ("policy", "license_allow"): "allowed SPDX ids for new deps (empty disables)",
+    ("policy", "license_deny_partial"): "substrings that deny a dep license (copyleft)",
     ("policy", "deploy"): "reserved for the R8.7 release gate; stored + hashed",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",

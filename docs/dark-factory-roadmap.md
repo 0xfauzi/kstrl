@@ -168,14 +168,27 @@ today's subset). R8.6 needs R8.2 + R8.3. R8.7 needs R8.2 (L4) + R8.6
 
 ## R8.1 Policy envelope (M) - [#148](https://github.com/0xfauzi/kstrl/issues/148)
 
-Status: `[~]` - PR1 landed the artifact checks (`kstrl/policy.py` +
-`check_policy_envelope`): `paths_deny`, size caps, `deps_allow_new`,
-`secret_patterns`, the non-overridable enforcement-machinery halt, the
-`deploy` flag (stored/hashed, enforced by R8.7), and the policy-envelope
-hash in the run manifest. Opt-in via `[policy] enabled` (default false),
-blocking when enabled. Remaining slice: **license gating** (`license_allow`
-/ `license_deny_partial`) needs dist-metadata resolution that `uv.lock`
-does not carry - deferred to a measured follow-up PR before this closes.
+Status: `[x]` - Shipped in `kstrl/policy.py` + `kstrl/licensing.py` +
+`check_policy_envelope`: `paths_deny`, size caps (lockfiles excluded),
+`deps_allow_new`, `secret_patterns`, the non-overridable
+enforcement-machinery halt, **license gating** (`license_allow` /
+`license_deny_partial`), the `deploy` flag (stored/hashed, enforced by
+R8.7), and the policy-envelope hash in the run manifest. Opt-in via
+`[policy] enabled` (default false), blocking when enabled.
+
+**Measured correction to the license verdict (H4).** The plan assumed
+`pip-licenses` / installed dist metadata. Measured against this repo's
+uv toolchain that is FALSE: uv's installed venv materializes no
+`METADATA` file (empty `licenses/` dir; `importlib.metadata` and `uv pip
+show` both return nothing), so pip-licenses would resolve nothing.
+`kstrl/licensing.py` instead reads the license from **uv's cache**
+(`<cache>/**/<name>-<version>.dist-info/METADATA`, offline) and falls
+back to the **PyPI JSON API** (`license_expression` / classifiers /
+`license`; `KSTRL_POLICY_LICENSE_NET=0` forces offline). A license that
+resolves to a `deny_partial` substring or is not in `license_allow`
+blocks; an unresolvable license is advisory (a merge is not held hostage
+to a cache/network miss). Classification (deny-wins, compound-SPDX atom
+tokenizing) is pure in `kstrl.policy`.
 
 **Why.** Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Today the rules are implicit and scattered (diff-scope,

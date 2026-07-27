@@ -12,13 +12,13 @@ runs are unchanged. When a repo opts in, a violation fails Phase 1 and
 blocks the merge. The autonomy ladder (R8.2) will later modulate
 severity per level; today "enabled" means "blocking".
 
-This module is pure logic. All git I/O lives in ``kstrl.verify`` (which
-wraps :func:`evaluate_policy` into a ``CheckResult``); keeping the
-detection functions free of subprocesses makes every category unit
-testable without a repository. License gating (``license_allow`` /
-``license_deny_partial``) is intentionally deferred to a follow-up: it
-needs dist-metadata resolution that ``uv.lock`` does not carry, measured
-separately.
+This module is pure logic. All git and license-resolution I/O lives in
+``kstrl.verify`` / ``kstrl.licensing`` (which wrap :func:`evaluate_policy`
+and :func:`classify_license` into a ``CheckResult``); keeping the
+detection functions free of subprocesses and network makes every
+category unit testable without a repository. License resolution itself
+(uv cache, then PyPI) lives in :mod:`kstrl.licensing`; this module only
+classifies an already-resolved SPDX string against the allow/deny lists.
 """
 
 from __future__ import annotations
@@ -64,6 +64,22 @@ DEFAULT_SECRET_PATTERNS: tuple[str, ...] = (
     r"xox[bpoas]-[a-zA-Z0-9-]+",
 )
 
+# Conservative permissive-license allowlist (exact SPDX ids). A new
+# dependency whose license is not covered here (and not caught by the
+# deny-list) blocks until the operator explicitly adds it - the
+# "explicit allowlist" posture the roadmap specifies.
+DEFAULT_LICENSE_ALLOW: tuple[str, ...] = (
+    "MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0",
+    "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD",
+)
+
+# Substrings that deny a license outright (copyleft / source-available).
+# "GPL" also matches "LGPL"/"AGPL" by design: deny wins, and the operator
+# narrows it if a weak-copyleft dep is acceptable.
+DEFAULT_LICENSE_DENY_PARTIAL: tuple[str, ...] = (
+    "GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL",
+)
+
 # Basenames of machine-generated lockfiles, excluded from the size caps:
 # a one-line dependency bump can rewrite hundreds of lockfile lines, so
 # counting them would make ``max_lines_changed`` meaningless. Lockfiles
@@ -75,6 +91,10 @@ LOCKFILE_BASENAMES: frozenset[str] = frozenset({
 })
 
 _UVLOCK_NAME_RE = re.compile(r'^name = "([^"]+)"')
+_UVLOCK_VERSION_RE = re.compile(r'^version = "([^"]+)"')
+
+# SPDX expression operators dropped when tokenizing into license atoms.
+_SPDX_OPERATORS = frozenset({"or", "and", "with"})
 
 
 class PolicyConfigError(ValueError):
@@ -166,22 +186,67 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     return added
 
 
-def _new_dependencies(added_lines: Sequence[tuple[str, str]]) -> list[str]:
-    """Top-level package names newly added to ``uv.lock``.
+def parse_new_dependencies(
+    added_lines: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """``(name, version)`` for packages newly added to ``uv.lock``.
 
-    Each ``[[package]]`` stanza owns a column-0 ``name = "..."`` line; a
-    version bump of an existing package touches only its ``version``
-    line, so an ADDED ``name = "..."`` line reliably marks a genuinely
-    new dependency. Inline dependency refs (``{ name = "x" }``) are
-    indented and never match the column-0 anchor.
+    A new ``[[package]]`` stanza adds a column-0 ``name = "..."`` line
+    immediately followed by ``version = "..."``; a version bump of an
+    existing package adds only the ``version`` line (its name line is
+    unchanged context), so pairing an added name with the next added
+    version isolates genuinely new packages. Inline dependency refs
+    (``{ name = "x" }``) are indented and never match the column-0 anchor.
     """
-    names: list[str] = []
+    deps: list[tuple[str, str]] = []
+    pending: str | None = None
     for path, line in added_lines:
-        if _basename(path) == "uv.lock":
-            match = _UVLOCK_NAME_RE.match(line)
-            if match:
-                names.append(match.group(1))
-    return names
+        if _basename(path) != "uv.lock":
+            continue
+        name_match = _UVLOCK_NAME_RE.match(line)
+        if name_match:
+            pending = name_match.group(1)
+            continue
+        version_match = _UVLOCK_VERSION_RE.match(line)
+        if version_match and pending is not None:
+            deps.append((pending, version_match.group(1)))
+            pending = None
+    return deps
+
+
+def _spdx_atoms(expr: str) -> list[str]:
+    """Split an SPDX expression into license atoms, dropping operators.
+
+    ``"Apache-2.0 OR BSD-3-Clause"`` -> ``["Apache-2.0", "BSD-3-Clause"]``.
+    """
+    tokens = re.split(r"[()\s]+", expr.strip())
+    return [t for t in tokens if t and t.lower() not in _SPDX_OPERATORS]
+
+
+def classify_license(
+    license_str: str | None,
+    allow: Sequence[str],
+    deny_partial: Sequence[str],
+) -> str:
+    """Classify a resolved license as ``allowed`` / ``denied`` / ``unknown``.
+
+    Deny wins: a ``deny_partial`` substring anywhere in the string (case-
+    insensitive) denies it - this is what catches copyleft even inside a
+    compound or ``WITH``-exception expression. Otherwise every atom of the
+    (possibly compound) expression must be in ``allow`` to be allowed;
+    anything else - including an unresolved (None) license - is unknown.
+    """
+    if not license_str:
+        return "unknown"
+    low = license_str.lower()
+    for deny in deny_partial:
+        if deny.lower() in low:
+            return "denied"
+    atoms = _spdx_atoms(license_str)
+    allow_low = {a.lower() for a in allow}
+    if atoms and all(a.lower() in allow_low for a in atoms):
+        return "allowed"
+    return "unknown"
 
 
 def _scan_secrets(
@@ -223,6 +288,9 @@ class PolicyEvaluation:
     summary: str
     details: list[str] = field(default_factory=list)
     machinery_hit: bool = False
+    # (name, version) of packages newly added to uv.lock, so the verifier
+    # can resolve their licenses without re-parsing the diff.
+    new_dependencies: list[tuple[str, str]] = field(default_factory=list)
 
 
 def evaluate_policy(
@@ -284,17 +352,19 @@ def evaluate_policy(
             f"{config.max_lines_changed} (lockfiles excluded)"
         )
 
-    # 4. New dependencies (uv.lock), when disallowed.
+    # 4. New dependencies (uv.lock). Detected regardless of deps_allow_new
+    # so the verifier can license-check them; only blocked here when
+    # deps_allow_new is false.
     added_lines = parse_added_lines(diff_text)
-    if not config.deps_allow_new:
-        new_deps = sorted(set(_new_dependencies(added_lines)))
-        if new_deps:
-            shown = ", ".join(new_deps[:20])
-            if len(new_deps) > 20:
-                shown += f", ... (+{len(new_deps) - 20} more)"
-            details.append(
-                f"New dependencies added while deps_allow_new=false: {shown}"
-            )
+    new_dependencies = parse_new_dependencies(added_lines)
+    if not config.deps_allow_new and new_dependencies:
+        names = sorted({name for name, _v in new_dependencies})
+        shown = ", ".join(names[:20])
+        if len(names) > 20:
+            shown += f", ... (+{len(names) - 20} more)"
+        details.append(
+            f"New dependencies added while deps_allow_new=false: {shown}"
+        )
 
     # 5. Secret patterns over added lines (raises on a bad regex).
     secret_hits = _scan_secrets(added_lines, config.secret_patterns)
@@ -315,6 +385,7 @@ def evaluate_policy(
             summary += " including enforcement-machinery halt"
     return PolicyEvaluation(
         ok=ok, summary=summary, details=details, machinery_hit=machinery_hit,
+        new_dependencies=new_dependencies,
     )
 
 
@@ -337,6 +408,17 @@ class PolicyConfig:
     deps_allow_new: bool = False
     secret_patterns: list[str] = field(
         default_factory=lambda: list(DEFAULT_SECRET_PATTERNS)
+    )
+    # License gate: a newly-added uv.lock dependency whose resolved SPDX
+    # license matches a deny_partial substring is blocked; one whose every
+    # atom is in license_allow passes; anything else is unknown (blocked,
+    # add it to license_allow to permit). An unresolvable license is
+    # advisory, not blocking. Empty license_allow disables the gate.
+    license_allow: list[str] = field(
+        default_factory=lambda: list(DEFAULT_LICENSE_ALLOW)
+    )
+    license_deny_partial: list[str] = field(
+        default_factory=lambda: list(DEFAULT_LICENSE_DENY_PARTIAL)
     )
     # Reserved for the R8.7 release gate: stored and hashed into the run
     # manifest's policy envelope, not yet enforced (Phase 1 has no deploy
@@ -364,6 +446,8 @@ class PolicyConfig:
                 "KSTRL_POLICY_DEPS_ALLOW_NEW", defaults.deps_allow_new
             ),
             secret_patterns=list(defaults.secret_patterns),
+            license_allow=list(defaults.license_allow),
+            license_deny_partial=list(defaults.license_deny_partial),
             deploy=_env_bool("KSTRL_POLICY_DEPLOY", defaults.deploy),
         )
 
@@ -409,6 +493,16 @@ class PolicyConfig:
             if isinstance(section.get("secret_patterns"), list)
             else list(defaults.secret_patterns)
         )
+        license_allow = (
+            [str(s) for s in section["license_allow"]]
+            if isinstance(section.get("license_allow"), list)
+            else list(defaults.license_allow)
+        )
+        license_deny_partial = (
+            [str(s) for s in section["license_deny_partial"]]
+            if isinstance(section.get("license_deny_partial"), list)
+            else list(defaults.license_deny_partial)
+        )
         deploy = (
             bool(section["deploy"]) if "deploy" in section else defaults.deploy
         )
@@ -432,6 +526,8 @@ class PolicyConfig:
             max_lines_changed=max_lines_changed,
             deps_allow_new=deps_allow_new,
             secret_patterns=secret_patterns,
+            license_allow=license_allow,
+            license_deny_partial=license_deny_partial,
             deploy=deploy,
         )
 
