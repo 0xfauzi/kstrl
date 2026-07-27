@@ -384,6 +384,30 @@ class ComponentPipeline:
         never double count with the normal path."""
         self._record_usage(comp_id, "engineer", totals)
 
+    def engineer_usage_totals(self) -> UsageTotals:
+        """Engineer-loop spend across every component and attempt.
+
+        Feeds the loop-side budget's tokenless-call threshold (R8). That
+        threshold asks "does the ENGINEER's adapter report tokens?", so
+        it must not be answered with run-wide totals: a timed-out
+        architect or reviewer call is tokenless too, and counting those
+        let two unrelated timeouts condemn an engineer adapter that had
+        been reporting perfectly well - while the halt message asserted
+        the cap "can never trip on this adapter". Engineer-scoped, the
+        counter still survives the case it exists for
+        (``max_iterations = 1`` and retries, where a per-loop counter
+        resets before it can conclude anything).
+
+        The OVERRUN half stays run-wide: that one asks what the RUN has
+        spent against the cap, which is every phase's business.
+        """
+        totals = UsageTotals()
+        for phases in self.usage_meter.values():
+            engineer = phases.get("engineer")
+            if engineer is not None:
+                totals.merge(engineer)
+        return totals
+
     def usage_totals_for(self, comp_id: str) -> UsageTotals:
         """One component's spend across all phases (PR A: shown at the
         E6 checkpoint so the human sees what the attempt cost)."""

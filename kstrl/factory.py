@@ -2324,6 +2324,7 @@ def _run_factory_locked(
 
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
+        engineer_usage = pipeline.engineer_usage_totals()
         knowledge_prefix = ""
         if knowledge_config.enabled:
             try:
@@ -2372,15 +2373,19 @@ def _run_factory_locked(
             # between iterations. With max_parallel > 1 a worker cannot
             # see a concurrent sibling's spend, only what the parent had
             # recorded when this worker started.
-            # prior_calls/prior_token_calls carry the run-wide tokenless
+            # prior_calls/prior_token_calls carry the ENGINEER's tokenless
             # call count down so the unenforceable rule does not reset on
-            # every attempt and component (review finding P1-a).
+            # every attempt and component (review finding P1-a), while
+            # staying blind to other roles' timeouts - those say nothing
+            # about whether the engineer's adapter reports tokens.
+            # prior_total_tokens stays run-wide: the overrun check asks
+            # what the RUN has spent against the cap.
             LoopBudget(
                 max_total_tokens=factory_config.max_total_tokens,
                 prior_total_tokens=pipeline.run_usage.total_tokens,
                 prior_known_calls=pipeline.run_usage.known_calls,
-                prior_calls=pipeline.run_usage.calls,
-                prior_token_calls=pipeline.run_usage.token_calls,
+                prior_calls=engineer_usage.calls,
+                prior_token_calls=engineer_usage.token_calls,
             ),
         )
 

@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1297,17 +1297,22 @@ class TestInLoopTokenBudget:
     def test_a_tokenless_call_after_an_earlier_one_halts_immediately(
         self, tmp_path: Path,
     ) -> None:
-        """The deliberate cost of counting the threshold run-wide.
+        """The deliberate cost of counting the threshold across attempts.
 
-        Once a run has accumulated one tokenless call ANYWHERE - a
-        timed-out reviewer call, a previous component's last iteration -
-        the engineer's first tokenless iteration reaches the threshold
-        and halts, where an isolated loop would have given it a second
-        chance. Accepted on purpose: two independent tokenless calls in
-        one run is adapter behavior rather than an incident, and the
+        Once the ENGINEER has accumulated one tokenless call earlier in
+        the run - a previous component's last iteration, or a retry that
+        died after one call - its next tokenless iteration reaches the
+        threshold and halts, where an isolated loop would have given it a
+        second chance. Accepted on purpose: two tokenless engineer calls
+        in one run is adapter behavior rather than an incident, and the
         failure is loud, recorded and recoverable (raise or clear
-        max_total_tokens), whereas the alternative is a per-loop
-        counter that never fires at all (P1-a).
+        max_total_tokens), whereas the alternative is a per-loop counter
+        that never fires at all (P1-a).
+
+        Scoped to engineer calls, so another role's timeout cannot get
+        here: `prior_calls`/`prior_token_calls` come from
+        `pipeline.engineer_usage_totals()`, not run-wide totals. See
+        TestUnenforceableHaltIsEngineerScoped.
         """
         agent = SequenceUsageAgent([_UNREPORTED, _REPORTED])
         result = run_loop(
@@ -1319,7 +1324,7 @@ class TestInLoopTokenBudget:
         )
         assert result.iterations == 1
         assert "unenforceable" in result.budget_halt_reason
-        assert "2 call(s) in this run" in result.budget_halt_reason
+        assert "2 tokenless call(s) this run" in result.budget_halt_reason
 
     def test_iteration_usage_callback_sees_cumulative_totals(
         self, tmp_path: Path,
@@ -2032,3 +2037,91 @@ class TestMaxTotalTokensConfig:
         assert FactoryConfig.load(tmp_path).max_total_tokens == 111
         monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "222")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 222
+
+
+class TestUnenforceableHaltIsEngineerScoped:
+    """The tokenless threshold asks whether the ENGINEER's adapter
+    reports tokens, so only engineer calls may answer it.
+
+    Review regression: the counter was first sourced from
+    `pipeline.run_usage`, which aggregates every role. Two unrelated
+    timeouts (say an architect call plus the engineer's first iteration)
+    then halted a run whose engineer adapter had been reporting fine -
+    and the message asserted the cap could "never trip on this adapter"
+    while the run sat at half the ceiling with four reporting calls
+    behind it.
+    """
+
+    def test_other_roles_timeouts_do_not_condemn_a_healthy_engineer(
+        self,
+    ) -> None:
+        # 4 engineer calls, all reported; the run also had an architect
+        # timeout, which is NOT engineer evidence and must not count.
+        budget = LoopBudget(
+            max_total_tokens=500_000, prior_total_tokens=250_000,
+            prior_known_calls=5, prior_calls=4, prior_token_calls=4,
+        )
+        assert budget.halt_reason(
+            UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
+        ) is None
+
+    def test_silent_engineer_across_attempts_still_halts(self) -> None:
+        # P1-a must stay fixed: one tokenless engineer call already
+        # recorded, this loop's first is the second.
+        budget = LoopBudget(
+            max_total_tokens=500_000, prior_total_tokens=0,
+            prior_known_calls=0, prior_calls=1, prior_token_calls=0,
+        )
+        reason = budget.halt_reason(
+            UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
+        )
+        assert reason is not None
+        assert "unenforceable" in reason
+
+    def test_halt_message_does_not_claim_the_adapter_never_reports(
+        self,
+    ) -> None:
+        # The message must not assert something false about an adapter
+        # that demonstrably reported; it states what is actually true -
+        # prior spend is frozen, so the cap cannot advance from here.
+        budget = LoopBudget(
+            max_total_tokens=500_000, prior_total_tokens=250_000,
+            prior_known_calls=4, prior_calls=2, prior_token_calls=0,
+        )
+        reason = budget.halt_reason(
+            UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
+        )
+        assert reason is not None
+        assert "never trip on this adapter" not in reason
+        assert "cannot advance from this loop" in reason
+        assert "frozen at 250000" in reason
+
+    def test_pipeline_engineer_totals_exclude_other_phases(self) -> None:
+        """The source of prior_calls: engineer phase only.
+
+        Exercises the real ``engineer_usage_totals`` fold over the
+        usage_meter shape ``{comp_id: {phase: UsageTotals}}`` without
+        standing up a whole pipeline.
+        """
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        pipeline.usage_meter = {
+            "comp-a": {
+                "review": UsageTotals(
+                    calls=3, known_calls=3, token_calls=3, total_tokens=900,
+                ),
+                "engineer": UsageTotals(
+                    calls=2, known_calls=0, token_calls=0, total_tokens=0,
+                ),
+            },
+            "comp-b": {
+                "engineer": UsageTotals(
+                    calls=1, known_calls=1, token_calls=1, total_tokens=50,
+                ),
+            },
+        }
+        engineer = ComponentPipeline.engineer_usage_totals(pipeline)
+        assert engineer.calls == 3          # 2 + 1, review excluded
+        assert engineer.token_calls == 1
+        assert engineer.total_tokens == 50

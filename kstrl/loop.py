@@ -42,11 +42,19 @@ COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 # an adapter that reports no tokens; the cost of setting it to 1 is
 # killing a capped run over a single timed-out first iteration.
 #
-# Counted RUN-WIDE (prior_calls/prior_token_calls carry the parent's
-# figures down), because a per-loop counter resets on every attempt and
-# every component: with max_iterations = 1, or a retry that dies after
-# one call, no single loop ever reached the threshold and the rule was
-# decorative. Review finding P1-a reproduced exactly that.
+# Counted across the RUN'S ENGINEER LOOPS (prior_calls/prior_token_calls
+# carry the parent's engineer-only figures down), because a per-loop
+# counter resets on every attempt and every component: with
+# max_iterations = 1, or a retry that dies after one call, no single loop
+# ever reached the threshold and the rule was decorative (review finding
+# P1-a).
+#
+# Engineer-scoped, NOT run-wide across roles: a timed-out architect or
+# reviewer call is tokenless too, and counting those let two unrelated
+# timeouts condemn an engineer adapter that had been reporting fine -
+# while the halt message asserted the cap could "never trip". The
+# question this threshold asks is whether the ENGINEER's adapter reports
+# tokens, so only engineer calls are evidence about it.
 _UNENFORCEABLE_CALLS = 2
 
 
@@ -92,11 +100,13 @@ class LoopBudget:
     #: prior total is a real figure or an artefact of a silent adapter -
     #: and NOT part of any decision; see :meth:`halt_reason`.
     prior_known_calls: int = 0
-    #: Agent calls the run had made before this worker launched, and how
-    #: many of them reported a TOKEN figure. Their difference is the
-    #: run's tokenless-call count, which is what the unenforceable rule
-    #: counts (R8 review P1-a: a per-loop counter resets on every
+    #: ENGINEER-loop calls the run had made before this worker launched,
+    #: and how many reported a TOKEN figure. Their difference is the
+    #: engineer's tokenless-call count, which is what the unenforceable
+    #: rule counts (R8 review P1-a: a per-loop counter resets on every
     #: attempt/component, so short loops never reached the threshold).
+    #: Engineer-scoped on purpose - another role's timeout is not
+    #: evidence about the engineer's adapter.
     prior_calls: int = 0
     prior_token_calls: int = 0
 
@@ -139,11 +149,12 @@ class LoopBudget:
                ``known_calls`` reported perfect coverage for a cap that
                could never advance (review finding P1-b).
 
-           (b) CALL THRESHOLD, counted RUN-WIDE: the run has now seen
-               ``_UNENFORCEABLE_CALLS`` tokenless calls in total
-               (``prior_calls - prior_token_calls`` plus this loop's
-               own). This is the "have we seen enough to conclude?"
-               half, and it must not reset per attempt or per component
+           (b) CALL THRESHOLD, counted across the run's ENGINEER loops:
+               the engineer has now made ``_UNENFORCEABLE_CALLS``
+               tokenless calls in total (``prior_calls -
+               prior_token_calls`` plus this loop's own). This is the
+               "have we seen enough to conclude?" half, and it must not
+               reset per attempt or per component
                - with ``max_iterations = 1``, or a retry that dies after
                one call, a per-loop counter never reached 2 and the rule
                was decorative (review finding P1-a).
@@ -154,12 +165,11 @@ class LoopBudget:
                and would make a single unparseable result fatal in an
                otherwise healthy run.
 
-        CONSEQUENCE, stated plainly: in a run where every prior call
-        reported tokens, a lone unparseable engineer call still does not
-        halt - the run-wide tokenless count is 1. But once a run has
-        accumulated one tokenless call ANYWHERE (including in a
-        different role's adapter), the engineer's first tokenless
-        iteration does trip the halt. That is the deliberate trade: two
+        CONSEQUENCE, stated plainly: in a run whose engineer calls have
+        all reported tokens, a lone unparseable engineer call does not
+        halt - the tokenless count is 1. A second tokenless ENGINEER
+        call does. Other roles' timeouts never contribute. That is the
+        deliberate trade: two
         independent tokenless calls in one run is adapter behavior, not
         an incident, and the failure is loud, recorded, and recoverable
         (raise or clear ``max_total_tokens``), whereas the alternative
@@ -195,11 +205,13 @@ class LoopBudget:
         ):
             return (
                 f"token budget unenforceable: none of this loop's "
-                f"{loop_usage.calls} agent call(s) reported a token count "
-                f"and {run_tokenless} call(s) in this run have now reported "
-                f"none, so max_total_tokens ({self.max_total_tokens}) can "
-                "never trip on this adapter; halting rather than spending "
-                "under a cap that cannot fire (R8)"
+                f"{loop_usage.calls} agent call(s) reported a token count, "
+                f"and the engineer has now made {run_tokenless} tokenless "
+                f"call(s) this run. Spend before this worker launched is "
+                f"frozen at {self.prior_total_tokens}, so max_total_tokens "
+                f"({self.max_total_tokens}) cannot advance from this loop; "
+                "halting rather than spending under a cap that cannot fire "
+                "(R8)"
             )
         return None
 

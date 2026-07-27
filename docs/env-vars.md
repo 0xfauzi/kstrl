@@ -96,8 +96,10 @@ where that would make the cap undeliverable. The loop halts with a
 1. **this engineer loop** has reported no token count on any of its calls, so
    the run total cannot grow while it runs (the spend recorded before this
    worker launched is frozen at launch); **and**
-2. the **run** has now seen two calls that reported no token count - counted
-   run-wide, so the threshold does not reset on every attempt or component.
+2. the **engineer** has now made two calls that reported no token count -
+   counted across the run's engineer loops, so the threshold does not reset on
+   every attempt or component, while another role's timed-out call never
+   counts (it is no evidence about the engineer's adapter).
 
 Reported *cost* is not token evidence: a result carrying `total_cost_usd` with
 no `usage` dict is "known" to the meter but can never move a token total, so
