@@ -3108,18 +3108,29 @@ _autonomy_no_color_option = click.option(
 @_autonomy_no_color_option
 def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     """Show the current level, its flag bundle, and what promotion needs."""
-    from kstrl.autonomy import AutonomyConfig, AutonomyState, effective_level
+    from kstrl.autonomy import (
+        AutonomyConfig,
+        AutonomyState,
+        flag_bundle_for,
+        resolve_runtime_level,
+    )
+    from kstrl.policy import PolicyConfig
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
     config = AutonomyConfig.load(root_dir)
     state = AutonomyState.load(root_dir)
-    level = effective_level(state, config)
+    policy_enabled = PolicyConfig.load(root_dir).enabled
+    level, clamps = resolve_runtime_level(
+        state, config, policy_enabled=policy_enabled,
+    )
 
     ui_impl.section("Autonomy")
     ui_impl.kv("level", f"L{state.level} - {state.autonomy_level.label}")
     if int(level) != state.level:
-        ui_impl.kv("in force", f"L{int(level)} (clamped by max_level)")
+        ui_impl.kv("in force", f"L{int(level)}")
+        for note in clamps:
+            ui_impl.warn(f"  {note}")
     ui_impl.kv(
         "enabled", "yes" if config.enabled else "no ([autonomy] enabled=false)",
     )
@@ -3128,7 +3139,11 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
         ui_impl.kv("promoted by", state.last_promoted_by)
 
     ui_impl.subsection("Flag bundle")
-    for line in state.flag_bundle().describe():
+    # The bundle for the level that would actually be ENFORCED: showing
+    # the stored level's permissions when max_level (or a disabled policy
+    # envelope) clamps the run would advertise deploy/auto-merge the run
+    # will never grant.
+    for line in flag_bundle_for(level).describe():
         ui_impl.info(f"  {line}")
 
     ui_impl.subsection("Evidence at this level")
@@ -3169,17 +3184,30 @@ def autonomy_promote(
     actor: str, ack: str, force: bool, root: Path | None, ui: str, no_color: bool,
 ) -> None:
     """Raise the autonomy level by one. Requires a human ack."""
-    from kstrl.autonomy import AutonomyError, AutonomyState
+    from kstrl.autonomy import (
+        AutonomyError,
+        AutonomyState,
+        commit_transition,
+        promotion_authority_error,
+    )
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
+    # --actor/--ack are strings any caller can supply, so they cannot by
+    # themselves distinguish a human from an unattended agent. Require an
+    # out-of-band signal the agent's subprocess does not have: a
+    # controlling terminal. Checked BEFORE the state is even loaded.
+    authority_error = promotion_authority_error(force=force)
+    if authority_error is not None:
+        ui_impl.err(f"Promotion refused: {authority_error}")
+        sys.exit(1)
     state = AutonomyState.load(root_dir)
     try:
         record = state.promote(actor=actor, ack=ack, force=force)
     except AutonomyError as exc:
         ui_impl.err(f"Promotion refused: {exc}")
         sys.exit(1)
-    state.save(root_dir)
+    commit_transition(state, record, root_dir)
     ui_impl.ok(
         f"Promoted L{record.from_level} -> L{record.to_level} "
         f"({state.autonomy_level.label}) by {actor}"
@@ -3207,7 +3235,7 @@ def autonomy_demote(
     reason: str, trigger: str, root: Path | None, ui: str, no_color: bool,
 ) -> None:
     """Drop the autonomy level by one and start the cool-down."""
-    from kstrl.autonomy import AutonomyState, DemotionTrigger
+    from kstrl.autonomy import AutonomyState, DemotionTrigger, commit_transition
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -3219,7 +3247,7 @@ def autonomy_demote(
     if record is None:
         ui_impl.info("Already at L1 Supervised; nothing to revoke.")
         sys.exit(0)
-    state.save(root_dir)
+    commit_transition(state, record, root_dir)
     ui_impl.warn(
         f"Demoted L{record.from_level} -> L{record.to_level} "
         f"({state.autonomy_level.label}); cool-down "

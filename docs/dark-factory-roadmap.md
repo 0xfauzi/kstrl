@@ -267,11 +267,47 @@ Status: `[x]` - Shipped in `kstrl/autonomy.py` + `kstrl/autonomy_replay.py`
 + `ks autonomy` (status/promote/demote/history/replay). Levels derive the
 flag bundle at run start (`run_factory`), promotion requires a recorded
 human ack, demotion is automatic with a cool-down, and every transition
-emits `autonomy_transition` / `autonomy_level_applied` events. Opt-in via
+emits `autonomy_transition` / `autonomy_level_applied` events (the
+transition also lands in the evolution journal, which is the durable
+cross-run record; `events.jsonl` is per-run, so a CLI transition outside a
+run reaches the journal only). Opt-in via
 `[autonomy] enabled` (default false) because L1 is STRICTER than today's
 defaults - it forces the merge gate on. R8.4 will enrich the demotion
 triggers with health-metric breaches; the `HEALTH_BREACH` trigger already
 exists for it to fire.
+
+**Review corrections (PR #174).** Seven findings, five of them P1, all
+closed before merge. Four were substantive holes rather than polish:
+
+1. **L3 auto-merged without an envelope.** L3 is *Enveloped* auto-merge,
+   but the bundle dropped the merge gate even with `[policy] enabled=false`
+   - auto-merge inside nothing. `resolve_runtime_level` now clamps L3+ to
+   L2 without an enabled envelope, and the ladder clamps `deps_allow_new`
+   below L3 (the bundle can only ever WITHHOLD an envelope permission).
+2. **The ladder was inert.** No production call site touched
+   `record_decisive_run` / `record_merged_component` /
+   `record_policy_violation` / `demote`, so counters never moved,
+   promotion was unreachable without `--force`, and automatic demotion
+   never fired. Run outcomes now fold into state at run end, inside the
+   factory lock. A follow-on bug found while fixing it: infra-aborted runs
+   were counted as decisive, which would have let a string of broken runs
+   accrue promotion evidence - now excluded, matching the replay's
+   definition.
+3. **Promotion authority was a string.** `--actor human --ack x --force`
+   from an agent satisfied every check. Promotion now requires a
+   controlling TTY, and `.kstrl/autonomy.json` + `kstrl/autonomy.py` were
+   added to the R8.1 enforcement-machinery halt set to close the
+   write-the-file-directly path.
+4. **Transitions never reached the audit streams.** `AutonomyTransition`
+   had no production emitter and neither CLI command wrote the journal, so
+   the documented "every transition is recorded" claim was false.
+   `commit_transition` now performs state save + journal append + event
+   emit together.
+
+Plus: the replay never advanced its simulated level (so L3/L4 thresholds
+and post-promotion demotion were never exercised), malformed state fields
+raised instead of failing closed to L1, and `status` rendered the stored
+rather than the effective bundle.
 
 **Threshold replay captured 2026-07-27 (the R8 "no assumed thresholds"
 rule).** `ks autonomy replay` over `.kstrl/experiments.tsv`:

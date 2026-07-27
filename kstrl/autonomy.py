@@ -14,9 +14,13 @@ monitored**, and **revocable** with automatic reversion to human-gated mode.
 
 Three invariants carry the trust:
 
-1. **Agents cannot promote themselves.** Promotion requires evidence AND a
-   recorded human ack naming an actor. There is no code path that raises a
-   level without one.
+1. **Agents cannot promote themselves.** Promotion requires evidence, a
+   named actor, an ack, AND an interactive terminal - a signal an
+   unattended agent subprocess does not have (``--actor``/``--ack`` are
+   just strings any caller could pass, so they prove nothing alone). The
+   boundary is real but not absolute: an agent with shell access could
+   still write ``.kstrl/autonomy.json`` directly, which is why that file
+   and this module are in the R8.1 enforcement-machinery halt set.
 2. **Fast down, slow up.** Demotion is automatic and immediate on a trigger;
    re-promotion is locked for a cool-down period afterwards.
 3. **The flag bundle is derived, never stored.** It is computed from the
@@ -39,12 +43,17 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
+import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from kstrl.events import EventBus
 
 STATE_FILENAME = ".kstrl/autonomy.json"
 STATE_SCHEMA_VERSION = 1
@@ -122,6 +131,57 @@ class AutonomyError(RuntimeError):
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def _warn_rejected_state(path: Path, reason: str) -> None:
+    warnings.warn(
+        f"autonomy: rejected ladder state {path} ({reason}); "
+        "failing closed to L1 Supervised",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _require_int(data: dict[str, Any], key: str, default: int) -> int:
+    """Read an int field strictly: a wrong TYPE is a rejection, not a coerce.
+
+    ``bool`` is excluded explicitly - it is an int subclass in Python, and
+    silently reading ``true`` as ``1`` would launder a malformed record
+    into a plausible-looking counter.
+    """
+    if key not in data:
+        return default
+    value = data[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{key} must be an integer, got {type(value).__name__}")
+    return value
+
+
+def _parse_history(raw: Any) -> list[Transition]:
+    """Parse the transition history, rejecting any malformed entry."""
+    if not isinstance(raw, list):
+        raise ValueError("history must be an array")
+    history: list[Transition] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("history entries must be objects")
+        evidence = item.get("evidence", {}) or {}
+        if not isinstance(evidence, dict):
+            raise ValueError("history evidence must be an object")
+        for text_key in ("at", "direction", "actor", "reason", "trigger"):
+            if text_key in item and not isinstance(item[text_key], str):
+                raise ValueError(f"history {text_key} must be a string")
+        history.append(Transition(
+            at=str(item.get("at", "")),
+            from_level=_require_int(item, "from_level", 1),
+            to_level=_require_int(item, "to_level", 1),
+            direction=str(item.get("direction", "")),
+            actor=str(item.get("actor", "")),
+            reason=str(item.get("reason", "")),
+            trigger=str(item.get("trigger", "")),
+            evidence=evidence,
+        ))
+    return history
 
 
 @dataclass(frozen=True)
@@ -250,50 +310,60 @@ class AutonomyState:
 
     @classmethod
     def load(cls, root_dir: Path) -> AutonomyState:
-        """Read state, defaulting to a fresh L1 state when absent.
+        """Read state, failing CLOSED to L1 on anything unrecognizable.
 
-        A corrupt or unreadable file falls back to L1 rather than raising:
-        the safe direction for unknown autonomy is the least autonomy.
+        Every field is validated, not just the level: a syntactically
+        valid file carrying ``"components_merged_at_level": "not-an-int"``
+        must not crash `ks autonomy status` or an enabled factory run.
+        Any malformed field, history entry, or out-of-range level
+        discards the whole file and returns a fresh L1 state, because the
+        safe direction for unknown autonomy is the LEAST autonomy - never
+        a partially-trusted level assembled from a damaged record.
+
+        The rejection is warned about rather than silent (mirroring
+        ``knowledge.read_facts``): losing an earned level deserves a note.
         """
         path = cls.path_for(root_dir)
         if not path.exists():
             return cls()
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            _warn_rejected_state(path, f"unreadable: {exc}")
             return cls()
         if not isinstance(data, dict):
+            _warn_rejected_state(path, "top-level value is not an object")
             return cls()
-        raw_level = data.get("level", int(AutonomyLevel.L1_SUPERVISED))
         try:
-            level = int(AutonomyLevel(int(raw_level)))
-        except (ValueError, TypeError):
-            level = int(AutonomyLevel.L1_SUPERVISED)
-        history = [
-            Transition(
-                at=str(h.get("at", "")),
-                from_level=int(h.get("from_level", 1)),
-                to_level=int(h.get("to_level", 1)),
-                direction=str(h.get("direction", "")),
-                actor=str(h.get("actor", "")),
-                reason=str(h.get("reason", "")),
-                trigger=str(h.get("trigger", "")),
-                evidence=h.get("evidence", {}) or {},
+            level = int(AutonomyLevel(_require_int(data, "level", 1)))
+            history = _parse_history(data.get("history", []))
+            since = data.get("since", "")
+            if not isinstance(since, str):
+                raise ValueError("since must be a string")
+            promoted_by = data.get("last_promoted_by", "")
+            if not isinstance(promoted_by, str):
+                raise ValueError("last_promoted_by must be a string")
+            state = cls(
+                level=level,
+                since=since or _utc_now_iso(),
+                components_merged_at_level=_require_int(
+                    data, "components_merged_at_level", 0,
+                ),
+                clean_merges_at_level=_require_int(data, "clean_merges_at_level", 0),
+                policy_violations_at_level=_require_int(
+                    data, "policy_violations_at_level", 0,
+                ),
+                decisive_runs_at_level=_require_int(data, "decisive_runs_at_level", 0),
+                cooldown_runs_remaining=_require_int(
+                    data, "cooldown_runs_remaining", 0,
+                ),
+                last_promoted_by=promoted_by,
+                history=history,
             )
-            for h in data.get("history", [])
-            if isinstance(h, dict)
-        ]
-        return cls(
-            level=level,
-            since=str(data.get("since", "")) or _utc_now_iso(),
-            components_merged_at_level=int(data.get("components_merged_at_level", 0)),
-            clean_merges_at_level=int(data.get("clean_merges_at_level", 0)),
-            policy_violations_at_level=int(data.get("policy_violations_at_level", 0)),
-            decisive_runs_at_level=int(data.get("decisive_runs_at_level", 0)),
-            cooldown_runs_remaining=int(data.get("cooldown_runs_remaining", 0)),
-            last_promoted_by=str(data.get("last_promoted_by", "")),
-            history=history,
-        )
+        except (ValueError, TypeError) as exc:
+            _warn_rejected_state(path, str(exc))
+            return cls()
+        return state
 
     def save(self, root_dir: Path) -> None:
         """Atomic write (mkstemp + os.replace), mirroring manifest.py."""
@@ -570,6 +640,134 @@ def effective_level(state: AutonomyState, config: AutonomyConfig) -> AutonomyLev
     intact when an operator temporarily lowers the ceiling.
     """
     return AutonomyLevel(min(state.level, config.max_level))
+
+
+def envelope_ceiling(policy_enabled: bool) -> AutonomyLevel:
+    """The highest level defensible given the R8.1 envelope's state.
+
+    L3 is *Enveloped* auto-merge: the envelope is the boundary that makes
+    unattended merging defensible at all. With ``[policy] enabled=false``
+    there is no boundary, so "auto-merge inside the envelope" would mean
+    auto-merge inside nothing. L2 (human gates the merge) is then the
+    ceiling regardless of the level the ladder has awarded.
+    """
+    return (
+        AutonomyLevel.L4_DEPLOY if policy_enabled else AutonomyLevel.L2_GATED_MERGE
+    )
+
+
+def resolve_runtime_level(
+    state: AutonomyState, config: AutonomyConfig, *, policy_enabled: bool,
+) -> tuple[AutonomyLevel, list[str]]:
+    """The level a run may actually use, plus why it was clamped.
+
+    Two independent ceilings apply, and the LOWEST wins: the operator's
+    ``max_level`` and the envelope ceiling above. Returned rather than
+    raised so the run can proceed at the safe level while saying loudly
+    what it withheld.
+    """
+    notes: list[str] = []
+    level = state.autonomy_level
+    if int(level) > config.max_level:
+        level = AutonomyLevel(config.max_level)
+        notes.append(
+            f"clamped to L{config.max_level} by [autonomy] max_level "
+            f"(earned level L{state.level} retained)"
+        )
+    ceiling = envelope_ceiling(policy_enabled)
+    if int(level) > int(ceiling):
+        notes.append(
+            f"clamped to {ceiling.label}: L3+ requires the R8.1 policy "
+            "envelope, but [policy] enabled=false - there is no envelope "
+            "to auto-merge inside"
+        )
+        level = ceiling
+    return level, notes
+
+
+def promotion_authority_error(*, force: bool) -> str | None:
+    """Why this process may not authorize a promotion, or None if it may.
+
+    ``--actor``/``--ack`` are strings any caller can supply, so on their
+    own they prove nothing about who is asking: an unattended agent can
+    pass ``--actor human``. The out-of-band signal is a controlling TTY -
+    an interactive terminal the agent's subprocess does not have. This is
+    a real boundary, not a complete one: an agent with shell access could
+    still edit ``.kstrl/autonomy.json`` directly, which is why that file
+    is in the R8.1 enforcement-machinery halt set. Stated plainly rather
+    than overclaimed.
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        detail = "forced promotions bypass evidence and " if force else ""
+        return (
+            f"promotion requires an interactive terminal ({detail}a "
+            "caller-supplied --actor string does not establish human "
+            "acknowledgement). Run this from a terminal; an unattended "
+            "process cannot promote."
+        )
+    return None
+
+
+def commit_transition(
+    state: AutonomyState,
+    record: Transition,
+    root_dir: Path,
+    *,
+    bus: EventBus | None = None,
+    run_id: str = "",
+) -> None:
+    """Persist a transition to state AND both audit streams, together.
+
+    One function so the three writes cannot drift apart: before this, the
+    CLI saved ``autonomy.json`` and nothing reached the journal, which made
+    the documented "every transition is recorded" claim false. The state
+    save happens first (it is the load-bearing one); audit-append failures
+    are warned about, never fatal - losing the log must not strand the
+    ladder in an unsaved state.
+
+    ``bus`` is present only inside a factory run; CLI transitions have no
+    run stream, so the evolution journal is their durable record.
+    """
+    state.save(root_dir)
+
+    from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
+
+    entry = {
+        "schema_version": JOURNAL_SCHEMA_VERSION,
+        "timestamp": record.at,
+        "run_id": run_id,
+        "event_type": "autonomy_transition",
+        "direction": record.direction,
+        "from_level": record.from_level,
+        "to_level": record.to_level,
+        "actor": record.actor,
+        "trigger": record.trigger,
+        "reason": record.reason,
+        "evidence": record.evidence,
+    }
+    try:
+        journal_path = EvolutionConfig.load(root_dir).journal_path
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(journal_path, "a") as handle:
+            handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+    except OSError as exc:
+        warnings.warn(
+            f"autonomy: journal append failed (non-fatal): {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if bus is not None:
+        from kstrl.events import AutonomyTransition
+
+        bus.emit(AutonomyTransition(
+            direction=record.direction,
+            from_level=record.from_level,
+            to_level=record.to_level,
+            actor=record.actor,
+            trigger=record.trigger,
+            reason=record.reason,
+        ))
 
 
 def manual_override_notes(

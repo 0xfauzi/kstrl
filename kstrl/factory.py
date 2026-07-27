@@ -21,10 +21,13 @@ from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.autonomy import (
     AutonomyConfig,
+    AutonomyLevel,
     AutonomyState,
-    effective_level,
+    DemotionTrigger,
+    commit_transition,
     flag_bundle_for,
     manual_override_notes,
+    resolve_runtime_level,
 )
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -56,6 +59,7 @@ from kstrl.events import (
     ContractResult as ContractResultEvent,
 )
 from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
+from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
 from kstrl.interaction import InteractionChannel
@@ -1469,6 +1473,105 @@ def _format_usage_rollup(
     return lines
 
 
+def _record_autonomy_outcome(
+    *,
+    root_dir: Path,
+    manifest: Manifest,
+    factory_result: FactoryResult,
+    bus: EventBus,
+    run_id: str,
+    ui: UI,
+) -> None:
+    """Fold one run's terminal outcome into the persisted ladder state.
+
+    Evidence accrues only from what the run actually demonstrated:
+
+    - **Decisive run**: at least one component reached a terminal verdict
+      that was actually ABOUT the factory's judgement. A run that produced
+      nothing, or whose components died on infrastructure (git diff
+      failure, timeout kill, agent crash), says nothing about whether the
+      factory can be trusted with more autonomy - counting those would let
+      a string of broken runs burn down a cool-down and accrue promotion
+      evidence. This mirrors the replay tool's decisive-run definition;
+      the two must agree or the replay predicts nothing.
+    - **Merged components**: the completed set. A component the human had
+      to edit is not a clean merge - that signal arrives with R8.3's
+      inbox, so for now every completion counts as clean and the
+      clean-streak threshold stays deliberately unmeasured.
+    - **Policy violations**: any component carrying an R8.1 policy finding.
+      These both block promotion AND fire an immediate demotion, because a
+      breach of the envelope is the clearest evidence that the current
+      level is not warranted.
+
+    Automatic demotion happens here rather than mid-run: demoting while
+    components are still executing would change the flag bundle underneath
+    them, and the run's own PRs were already gated by the level in force
+    when it started.
+    """
+    state = AutonomyState.load(root_dir)
+    before = state.level
+
+    by_id = {comp.id: comp for comp in manifest.components}
+
+    def _infra_casualty(comp_id: str) -> bool:
+        comp = by_id.get(comp_id)
+        if comp is None:
+            return False
+        return any(f.is_infrastructure_error for f in comp.findings)
+
+    judged_failures = [
+        comp_id for comp_id in factory_result.failed if not _infra_casualty(comp_id)
+    ]
+    decisive = bool(factory_result.completed or judged_failures)
+    if decisive:
+        state.record_decisive_run()
+    for _comp_id in factory_result.completed:
+        state.record_merged_component()
+
+    violations = [
+        comp.id
+        for comp in manifest.components
+        if any(
+            finding.category.startswith(POLICY_CATEGORY_PREFIX)
+            and finding.severity != "advisory"
+            for finding in comp.findings
+        )
+    ]
+    if violations:
+        state.record_policy_violation(len(violations))
+
+    if not violations:
+        state.save(root_dir)
+        if decisive:
+            ui.kv(
+                "Autonomy evidence",
+                f"L{state.level}: {state.decisive_runs_at_level} decisive run(s), "
+                f"{state.components_merged_at_level} merged",
+            )
+        return
+
+    record = state.demote(
+        DemotionTrigger.POLICY_VIOLATION,
+        f"policy violation in {', '.join(sorted(violations))}",
+        evidence={"components": sorted(violations), "run_id": run_id},
+    )
+    if record is None:
+        # Already at the floor: nothing to revoke, but the violation is
+        # still counted so it blocks the next promotion.
+        state.save(root_dir)
+        ui.warn(
+            f"Autonomy: policy violation recorded ({len(violations)} "
+            "component(s)); already at L1, nothing to revoke"
+        )
+        return
+    commit_transition(state, record, root_dir, bus=bus, run_id=run_id)
+    ui.warn(
+        f"Autonomy DEMOTED L{before} -> L{state.level} "
+        f"({state.autonomy_level.label}) on policy violation; cool-down "
+        f"{state.cooldown_runs_remaining} decisive run(s)"
+    )
+
+
 def run_factory(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -1724,19 +1827,26 @@ def _run_factory_locked(
     # a self-contained audit record of what merge guardrails were in force
     # for this run. Computed from the same source the Phase 1 check reads.
     policy_config = factory_config.policy_config or PolicyConfig.load(root_dir)
-    manifest.policy_hash = policy_config.envelope_hash()
-    manifest.save(manifest_path)
 
     # R8.2: derive this run's permissions from the autonomy level. The
     # bundle is computed at run start and WINS over contradicting config,
     # so a hand-edited flag cannot grant autonomy the ladder never
     # awarded; contradictions are recorded rather than silently dropped.
     # Opt-in: when [autonomy] is disabled the config's own flags stand.
+    #
+    # Ordering matters: the level is resolved BEFORE the policy hash is
+    # taken, because the bundle can clamp the envelope (deps_allow_new),
+    # and the manifest must record the envelope actually enforced.
     autonomy_config = AutonomyConfig.load(root_dir)
-    if autonomy_config.enabled:
+    autonomy_active = autonomy_config.enabled
+    autonomy_level: AutonomyLevel | None = None
+    if autonomy_active:
         autonomy_state = AutonomyState.load(root_dir)
-        level = effective_level(autonomy_state, autonomy_config)
-        bundle = flag_bundle_for(level)
+        autonomy_level, clamps = resolve_runtime_level(
+            autonomy_state, autonomy_config,
+            policy_enabled=policy_config.enabled,
+        )
+        bundle = flag_bundle_for(autonomy_level)
         overrides = manual_override_notes(
             bundle,
             configured_pause_before_pr_merge=factory_config.pause_before_pr_merge,
@@ -1744,15 +1854,31 @@ def _run_factory_locked(
         )
         factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge
         factory_config.review_mode = bundle.review_mode
+        # The ladder can only ever WITHHOLD a permission the envelope
+        # grants, never add one: below L3, new dependencies are refused
+        # even if [policy] deps_allow_new is true.
+        if not bundle.deps_allow_new_permitted and policy_config.deps_allow_new:
+            policy_config = replace(policy_config, deps_allow_new=False)
+            overrides.append(
+                f"[policy] deps_allow_new=true withheld at "
+                f"{bundle.level.label} (ladder clamps to false)"
+            )
         bus.emit(AutonomyLevelApplied(
-            level=int(level),
-            label=level.label,
+            level=int(autonomy_level),
+            label=autonomy_level.label,
             flags=tuple(bundle.describe()),
-            overrides=tuple(overrides),
+            overrides=tuple(clamps + overrides),
         ))
-        ui.kv("Autonomy", f"L{int(level)} - {level.label}")
+        ui.kv("Autonomy", f"L{int(autonomy_level)} - {autonomy_level.label}")
+        for note in clamps:
+            ui.warn(f"  {note}")
         for note in overrides:
             ui.warn(f"  Manual override ignored: {note}")
+        # The pipeline must see the clamped envelope, not the raw config.
+        factory_config.policy_config = policy_config
+
+    manifest.policy_hash = policy_config.envelope_hash()
+    manifest.save(manifest_path)
 
     # Load knowledge config once for the entire factory run, BEFORE the
     # pipeline is constructed. Binding it at construction removes the
@@ -2529,6 +2655,24 @@ def _run_factory_locked(
     # the manifest sees the terminal state.
     manifest.completed_at = _iso_now()
     manifest.save(manifest_path)
+
+    # R8.2: fold this run's outcome into the ladder. Without this the
+    # counters never move, promotion is unreachable except by --force,
+    # and the promised automatic demotion never fires - the state machine
+    # would be real but inert. Runs INSIDE the factory lock, before it is
+    # released, so two runs cannot interleave read-modify-write.
+    if autonomy_active:
+        try:
+            _record_autonomy_outcome(
+                root_dir=root_dir,
+                manifest=manifest,
+                factory_result=factory_result,
+                bus=bus,
+                run_id=run_id,
+                ui=ui,
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail a run on bookkeeping
+            ui.warn(f"Autonomy state update failed (non-fatal): {exc}")
 
     # R3.2: run-end notification. Fires on every run that reached the
     # summary, whatever the outcome; early refusals (invalid DAG, held

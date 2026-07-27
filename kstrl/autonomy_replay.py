@@ -220,11 +220,26 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
                     f"L{record.from_level} -> L{record.to_level} "
                     f"({record.trigger})"
                 )
-        if not state.promotion_blockers():
-            target = min(state.level + 1, int(AutonomyLevel.L4_DEPLOY))
+        if (
+            state.autonomy_level is not AutonomyLevel.L4_DEPLOY
+            and not state.promotion_blockers()
+        ):
+            # Advance the SIMULATED level, not just the report. Recording
+            # eligibility without moving would pin the replay at L1
+            # forever: it would re-report the same L2 opportunity on every
+            # subsequent run and never exercise the L3/L4 thresholds, the
+            # cool-down, or any post-promotion demotion. The ack is a
+            # real-world requirement, not a replay one - here we ask "what
+            # would the criteria have allowed?", so the simulation grants
+            # it and says so.
+            record = state.promote(
+                actor="replay",
+                ack=f"simulated: criteria met at {run.run_id}",
+            )
             report.would_promote.append(
-                f"{run.timestamp} {run.run_id}: eligible for L{target} "
-                "(human ack still required)"
+                f"{run.timestamp} {run.run_id}: L{record.from_level} -> "
+                f"L{record.to_level} (eligible; human ack still required "
+                "in reality)"
             )
     report.final_level = state.level
     return report
