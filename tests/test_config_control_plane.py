@@ -693,8 +693,9 @@ EXPECTED_SCAFFOLD_KEYS = {
     },
     "policy": {
         "enabled", "paths_deny", "max_files_changed", "max_lines_changed",
-        "deps_allow_new", "secret_patterns", "license_allow",
-        "license_deny_partial", "deploy",
+        "deps_allow_new", "secret_patterns", "enforcement_paths_extra",
+        "license_allow", "license_deny_partial", "license_unresolved",
+        "license_use_network", "deploy",
     },
     "security": {
         "mode", "fail_threshold", "timeout_seconds", "agent_cmd",

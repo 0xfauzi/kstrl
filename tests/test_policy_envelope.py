@@ -639,12 +639,17 @@ class TestCheckPolicyEnvelopeLicense:
         assert not res.passed  # type: ignore[attr-defined]
         assert any("not in license_allow" in d for d in res.details)  # type: ignore[attr-defined]
 
-    def test_unresolved_license_is_advisory(
+    def test_unresolved_license_blocks_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # PR #173 review: an unprovable license is not demonstrably inside
+        # the envelope, so the explicit-allowlist posture blocks it. Opting
+        # into advisory is covered in TestLicenseUnresolvedPosture.
         res = self._run(monkeypatch, tmp_path, None, self._cfg())
-        assert res.passed  # type: ignore[attr-defined]
-        assert any("unresolved" in d for d in res.details)  # type: ignore[attr-defined]
+        assert not res.passed  # type: ignore[attr-defined]
+        assert any(
+            "could not be resolved" in d for d in res.details  # type: ignore[attr-defined]
+        )
 
     def test_empty_allowlist_disables_gate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -675,3 +680,315 @@ class TestPolicyConfigLicenseFields:
         base = PolicyConfig().envelope_hash()
         assert base != PolicyConfig(license_allow=["MIT"]).envelope_hash()
         assert base != PolicyConfig(license_deny_partial=["GPL"]).envelope_hash()
+
+
+# --------------------------------------------------------------------------
+# Review regressions (PR #173)
+# --------------------------------------------------------------------------
+# 1. The non-overridable halt must cover verifier code, not just CI+config.
+VERIFIER_CODE_PATHS = [
+    "kstrl/verify.py",
+    "kstrl/policy.py",
+    "kstrl/licensing.py",
+    "kstrl/guards.py",
+    "kstrl/fixtures.py",
+]
+
+
+class TestEnforcementMachineryCoversVerifierCode:
+    @pytest.mark.parametrize("path", VERIFIER_CODE_PATHS)
+    def test_verifier_code_halts_with_empty_paths_deny(self, path: str) -> None:
+        # The exact reviewer repro: paths_deny emptied must not permit an
+        # agent to rewrite the code that enforces the envelope.
+        ev = evaluate_policy(
+            [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+        )
+        assert not ev.ok, f"{path} did not block"
+        assert ev.machinery_hit
+        assert ev.violations[0].category == "enforcement_machinery"
+        assert ev.violations[0].severity == "critical"
+
+    @pytest.mark.parametrize("path", VERIFIER_CODE_PATHS)
+    def test_nested_checkout_also_halts(self, path: str) -> None:
+        nested = f"vendor/pkg/{path}"
+        ev = evaluate_policy(
+            [nested], [(1, 0, nested)], "", PolicyConfig(paths_deny=[]),
+        )
+        assert not ev.ok and ev.machinery_hit
+
+    def test_ci_and_config_still_halt(self) -> None:
+        for path in (".github/workflows/ci.yml", "kstrl.toml", "ralph.toml"):
+            ev = evaluate_policy(
+                [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+            )
+            assert not ev.ok and ev.machinery_hit, path
+
+    def test_enforcement_paths_extra_is_additive(self) -> None:
+        cfg = PolicyConfig(paths_deny=[], enforcement_paths_extra=["ci/**"])
+        ev = evaluate_policy(["ci/gate.sh"], [(1, 0, "ci/gate.sh")], "", cfg)
+        assert not ev.ok and ev.machinery_hit
+
+    def test_extras_cannot_shrink_hardcoded_set(self) -> None:
+        # Supplying extras must not displace the built-in protections.
+        cfg = PolicyConfig(paths_deny=[], enforcement_paths_extra=["ci/**"])
+        ev = evaluate_policy(
+            ["kstrl/verify.py"], [(1, 0, "kstrl/verify.py")], "", cfg,
+        )
+        assert not ev.ok and ev.machinery_hit
+
+    def test_ordinary_source_file_does_not_halt(self) -> None:
+        # Guard against over-broad matching: normal code is unaffected.
+        for path in ("kstrl/pipeline.py", "src/app/verify.py", "verify.py"):
+            ev = evaluate_policy(
+                [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+            )
+            assert ev.ok, f"{path} should not halt"
+
+
+# 2. Metadata reads must fail closed, not evaluate as 0 files / 0 lines.
+class TestGitMetadataFailsClosed:
+    def test_get_diff_names_strict_raises_on_nonzero_exit(
+        self, tmp_path: Path,
+    ) -> None:
+        with pytest.raises(git.GitDiffError):
+            # tmp_path is not a git repo -> nonzero exit.
+            git.get_diff_names("main", tmp_path, strict=True)
+
+    def test_get_diff_numstat_strict_raises_on_nonzero_exit(
+        self, tmp_path: Path,
+    ) -> None:
+        with pytest.raises(git.GitDiffError):
+            git.get_diff_numstat("main", tmp_path, strict=True)
+
+    def test_lenient_default_preserved_for_existing_callers(
+        self, tmp_path: Path,
+    ) -> None:
+        # check_diff_scope and friends rely on the [] contract.
+        assert git.get_diff_names("main", tmp_path) == []
+        assert git.get_diff_numstat("main", tmp_path) == []
+
+    @pytest.mark.parametrize("helper", ["get_diff_names", "get_diff_numstat"])
+    def test_strict_raises_on_timeout(
+        self, helper: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        def _timeout(*a: object, **k: object) -> object:
+            raise subprocess.TimeoutExpired(cmd="git", timeout=1.0)
+
+        monkeypatch.setattr(git, "resolve_base_ref", lambda *a, **k: "main")
+        monkeypatch.setattr(git.subprocess, "run", _timeout)
+        with pytest.raises(git.GitDiffError):
+            getattr(git, helper)("main", tmp_path, strict=True)
+
+    def test_policy_check_fails_closed_when_names_read_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Reviewer repro: a kstrl.toml diff passed as "0 files, 0 lines"
+        # when the metadata helpers returned empty.
+        def _boom(*a: object, **k: object) -> list[str]:
+            raise git.GitDiffError("simulated nonzero exit")
+
+        monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "")
+        monkeypatch.setattr(git, "get_diff_names", _boom)
+        res = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
+        assert not res.passed
+        assert "infrastructure error" in res.message
+        assert any(f.is_infrastructure_error for f in res.findings)
+
+    def test_policy_check_fails_closed_when_numstat_read_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _boom(*a: object, **k: object) -> list[object]:
+            raise git.GitDiffError("simulated timeout")
+
+        monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "")
+        monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["a.py"])
+        monkeypatch.setattr(git, "get_diff_numstat", _boom)
+        res = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
+        assert not res.passed
+        assert "infrastructure error" in res.message
+
+
+# 3. License posture: unresolved blocks by default; toggles are hashed.
+class TestLicenseUnresolvedPosture:
+    def _run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        config: PolicyConfig,
+    ) -> object:
+        monkeypatch.setattr(
+            git, "get_diff_content",
+            lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
+        )
+        monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
+        monkeypatch.setattr(
+            git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")],
+        )
+        monkeypatch.setattr(licensing, "uv_cache_dir", lambda: None)
+        monkeypatch.setattr(licensing, "resolve_license", lambda *a, **k: None)
+        return check_policy_envelope(tmp_path, "main", config)
+
+    def test_unresolved_blocks_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cfg = PolicyConfig(enabled=True, deps_allow_new=True)
+        assert cfg.license_unresolved == "block"
+        res = self._run(monkeypatch, tmp_path, cfg)
+        assert not res.passed  # type: ignore[attr-defined]
+        assert any(
+            "could not be resolved" in d for d in res.details  # type: ignore[attr-defined]
+        )
+
+    def test_unresolved_advisory_when_opted_in(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cfg = PolicyConfig(
+            enabled=True, deps_allow_new=True, license_unresolved="advisory",
+        )
+        res = self._run(monkeypatch, tmp_path, cfg)
+        assert res.passed  # type: ignore[attr-defined]
+        assert any("advisory" in d for d in res.details)  # type: ignore[attr-defined]
+
+    def test_offline_mode_names_the_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cfg = PolicyConfig(
+            enabled=True, deps_allow_new=True, license_use_network=False,
+        )
+        res = self._run(monkeypatch, tmp_path, cfg)
+        assert not res.passed  # type: ignore[attr-defined]
+        assert any(
+            "network resolution disabled" in d
+            for d in res.details  # type: ignore[attr-defined]
+        )
+
+    def test_network_toggle_changes_envelope_hash(self) -> None:
+        # A run that skipped the network must not claim an unchanged hash.
+        assert (
+            PolicyConfig().envelope_hash()
+            != PolicyConfig(license_use_network=False).envelope_hash()
+        )
+
+    def test_unresolved_posture_changes_envelope_hash(self) -> None:
+        assert (
+            PolicyConfig().envelope_hash()
+            != PolicyConfig(license_unresolved="advisory").envelope_hash()
+        )
+
+    def test_invalid_unresolved_value_rejected(self) -> None:
+        with pytest.raises(PolicyConfigError):
+            PolicyConfig(license_unresolved="maybe")
+
+    def test_env_toggles_land_in_config_and_hash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KSTRL_POLICY_LICENSE_NET", "0")
+        monkeypatch.setenv("KSTRL_POLICY_LICENSE_UNRESOLVED", "advisory")
+        cfg = PolicyConfig.load(tmp_path)
+        assert cfg.license_use_network is False
+        assert cfg.license_unresolved == "advisory"
+        assert cfg.envelope_hash() != PolicyConfig().envelope_hash()
+
+    def test_config_disables_network_resolution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # license_use_network=False must reach resolve_license as use_pypi.
+        seen: dict[str, object] = {}
+
+        def _spy(name: str, version: str, **kwargs: object) -> str | None:
+            seen.update(kwargs)
+            return "MIT"
+
+        monkeypatch.setattr(
+            git, "get_diff_content",
+            lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
+        )
+        monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
+        monkeypatch.setattr(
+            git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")],
+        )
+        monkeypatch.setattr(licensing, "uv_cache_dir", lambda: None)
+        monkeypatch.setattr(licensing, "resolve_license", _spy)
+        check_policy_envelope(
+            tmp_path, "main",
+            PolicyConfig(
+                enabled=True, deps_allow_new=True, license_use_network=False,
+            ),
+        )
+        assert seen["use_pypi"] is False
+
+
+# 4. Typed Findings for policy violations (#148 acceptance criterion).
+class TestPolicyFindings:
+    def _res(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        names: list[str],
+        config: PolicyConfig,
+    ) -> object:
+        monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "")
+        monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: names)
+        monkeypatch.setattr(
+            git, "get_diff_numstat",
+            lambda *a, **k: [(1, 0, n) for n in names],
+        )
+        return check_policy_envelope(tmp_path, "main", config)
+
+    def test_machinery_halt_emits_critical_finding(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._res(
+            monkeypatch, tmp_path, ["kstrl/verify.py"],
+            PolicyConfig(enabled=True),
+        )
+        findings = res.findings  # type: ignore[attr-defined]
+        assert findings
+        f = findings[0]
+        assert f.phase == "policy"
+        assert f.category == "policy_enforcement_machinery"
+        assert f.severity == "critical"
+        assert "policy" in f.tags
+
+    def test_paths_deny_emits_high_finding(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._res(
+            monkeypatch, tmp_path, ["a/b.pem"], PolicyConfig(enabled=True),
+        )
+        findings = res.findings  # type: ignore[attr-defined]
+        assert [f.category for f in findings] == ["policy_paths_deny"]
+        assert findings[0].severity == "high"
+        assert findings[0].suggestion
+
+    def test_clean_change_emits_no_findings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        res = self._res(
+            monkeypatch, tmp_path, ["src/ok.py"], PolicyConfig(enabled=True),
+        )
+        assert res.passed  # type: ignore[attr-defined]
+        assert res.findings == []  # type: ignore[attr-defined]
+
+    def test_findings_are_not_infrastructure_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A real violation must not masquerade as "the check broke".
+        res = self._res(
+            monkeypatch, tmp_path, ["a/b.pem"], PolicyConfig(enabled=True),
+        )
+        assert not any(
+            f.is_infrastructure_error for f in res.findings  # type: ignore[attr-defined]
+        )
+
+    def test_blocking_details_precede_advisories(self) -> None:
+        # as_context() slices details[:10]; advisories must not crowd out
+        # the blocking reason the retry prompt needs.
+        from kstrl.policy import PolicyViolation
+
+        blocking = PolicyViolation(category="paths_deny", explanation="BLOCK")
+        advisory = PolicyViolation(
+            category="license_unresolved", explanation="ADVISORY",
+            severity="advisory",
+        )
+        assert blocking.blocking and not advisory.blocking

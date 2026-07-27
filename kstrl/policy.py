@@ -31,16 +31,32 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-# Enforcement-machinery paths: the levers an agent could pull to weaken
-# the envelope itself - the CI that runs the checks and the config file
-# that defines them. Modifying any of these is a non-overridable hard
-# fail whenever the envelope is enabled, independent of ``paths_deny``
-# and of the autonomy level (R8.2). Hardcoded on purpose: a repo cannot
-# opt out of protecting its own guardrails.
+# Enforcement-machinery paths: every lever an agent could pull to weaken
+# the envelope itself. Issue #148 names three surfaces and all three are
+# covered here: the policy FILE that defines the rules, the CI WORKFLOWS
+# that run the gates, and the VERIFIER CODE that implements them -
+# rewriting `check_policy_envelope` defeats the envelope just as
+# thoroughly as deleting the config.
+#
+# Modifying any of these is a non-overridable hard fail whenever the
+# envelope is enabled, independent of ``paths_deny`` and of the autonomy
+# level (R8.2). Hardcoded on purpose: a repo can ADD to this set via
+# ``enforcement_paths_extra`` but can never remove from it, so an agent
+# editing `kstrl.toml` cannot widen its own permissions.
 ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
+    # CI that runs the gates
     ".github/workflows/**",
+    # the policy file itself (both spellings)
     "kstrl.toml",
     "ralph.toml",
+    # verifier code: the Phase 1 mechanical enforcement surface. The
+    # leading `**/` matches zero or more directories, so these cover both
+    # `kstrl/verify.py` at the repo root and a nested/vendored checkout.
+    "**/kstrl/verify.py",
+    "**/kstrl/policy.py",
+    "**/kstrl/licensing.py",
+    "**/kstrl/guards.py",
+    "**/kstrl/fixtures.py",
 )
 
 # Conservative default deny-list written by ``ks init``. Repo-owned: each
@@ -276,6 +292,29 @@ def _scan_secrets(
 
 
 @dataclass(frozen=True)
+class PolicyViolation:
+    """One envelope rule that fired, in structured form.
+
+    Kept separate from the rendered ``details`` string so the verifier can
+    build typed ``Finding``s (issue #148) without re-parsing prose.
+    ``category`` is the rule name (``paths_deny``, ``license_denied``);
+    ``severity`` is ``critical`` for the enforcement-machinery halt,
+    ``high`` for other blocking violations, ``advisory`` for notices that
+    do not block.
+    """
+
+    category: str
+    explanation: str
+    location: str = ""
+    severity: str = "high"
+    suggestion: str = ""
+
+    @property
+    def blocking(self) -> bool:
+        return self.severity != "advisory"
+
+
+@dataclass(frozen=True)
 class PolicyEvaluation:
     """Outcome of evaluating a change against the envelope.
 
@@ -291,6 +330,8 @@ class PolicyEvaluation:
     # (name, version) of packages newly added to uv.lock, so the verifier
     # can resolve their licenses without re-parsing the diff.
     new_dependencies: list[tuple[str, str]] = field(default_factory=list)
+    # Structured form of ``details`` for typed Finding construction.
+    violations: list[PolicyViolation] = field(default_factory=list)
 
 
 def evaluate_policy(
@@ -304,22 +345,35 @@ def evaluate_policy(
     ``changed_files`` is the rename-aware path list; ``numstat`` is
     ``(added, removed, path)`` per file (None counts = binary); and
     ``diff_text`` is the unified diff used for secret and new-dependency
-    detection. Returns every violation found; the verifier renders them
-    into the ``CheckResult`` details.
+    detection. Returns every violation found, both as structured
+    :class:`PolicyViolation`s (for typed Findings) and as rendered
+    ``details`` strings (for the retry prompt).
     """
-    details: list[str] = []
+    violations: list[PolicyViolation] = []
 
     # 1. Enforcement-machinery halt (non-overridable, reported first).
-    machinery = [
-        f for f in changed_files
-        if _match_glob(f, ENFORCEMENT_MACHINERY_PATHS)
-    ]
+    # The configurable extras can only ADD to the hardcoded set.
+    machinery_patterns = (
+        list(ENFORCEMENT_MACHINERY_PATHS) + list(config.enforcement_paths_extra)
+    )
+    machinery = [f for f in changed_files if _match_glob(f, machinery_patterns)]
     machinery_hit = bool(machinery)
     if machinery_hit:
-        details.append(
-            "HALT: enforcement-machinery paths modified (non-overridable, "
-            "blocks at every autonomy level): " + ", ".join(sorted(machinery))
-        )
+        violations.append(PolicyViolation(
+            category="enforcement_machinery",
+            severity="critical",
+            location=", ".join(sorted(machinery)[:5]),
+            explanation=(
+                "HALT: enforcement-machinery paths modified (non-overridable, "
+                "blocks at every autonomy level): "
+                + ", ".join(sorted(machinery))
+            ),
+            suggestion=(
+                "Revert these paths. Changes to the policy file, CI "
+                "workflows, or verifier code must be made by a human, "
+                "never inside an automated run."
+            ),
+        ))
 
     # 2. Denied paths (configurable; machinery paths already reported).
     machinery_set = set(machinery)
@@ -331,7 +385,12 @@ def evaluate_policy(
         if pattern:
             deny_hits.append(f"{path} (deny '{pattern}')")
     if deny_hits:
-        details.append("Denied paths modified: " + "; ".join(sorted(deny_hits)))
+        violations.append(PolicyViolation(
+            category="paths_deny",
+            location=", ".join(sorted(p.split(" (")[0] for p in deny_hits)[:5]),
+            explanation="Denied paths modified: " + "; ".join(sorted(deny_hits)),
+            suggestion="Revert these paths or widen [policy] paths_deny.",
+        ))
 
     # 3. Size caps (lockfiles excluded from the count).
     counted = [
@@ -342,15 +401,23 @@ def evaluate_policy(
     n_files = len(counted)
     n_lines = sum((added or 0) + (removed or 0) for (added, removed, _p) in counted)
     if config.max_files_changed >= 0 and n_files > config.max_files_changed:
-        details.append(
-            f"Too many files changed: {n_files} > max_files_changed "
-            f"{config.max_files_changed} (lockfiles excluded)"
-        )
+        violations.append(PolicyViolation(
+            category="max_files_changed",
+            explanation=(
+                f"Too many files changed: {n_files} > max_files_changed "
+                f"{config.max_files_changed} (lockfiles excluded)"
+            ),
+            suggestion="Split the change into smaller components.",
+        ))
     if config.max_lines_changed >= 0 and n_lines > config.max_lines_changed:
-        details.append(
-            f"Too many lines changed: {n_lines} > max_lines_changed "
-            f"{config.max_lines_changed} (lockfiles excluded)"
-        )
+        violations.append(PolicyViolation(
+            category="max_lines_changed",
+            explanation=(
+                f"Too many lines changed: {n_lines} > max_lines_changed "
+                f"{config.max_lines_changed} (lockfiles excluded)"
+            ),
+            suggestion="Split the change into smaller components.",
+        ))
 
     # 4. New dependencies (uv.lock). Detected regardless of deps_allow_new
     # so the verifier can license-check them; only blocked here when
@@ -362,18 +429,35 @@ def evaluate_policy(
         shown = ", ".join(names[:20])
         if len(names) > 20:
             shown += f", ... (+{len(names) - 20} more)"
-        details.append(
-            f"New dependencies added while deps_allow_new=false: {shown}"
-        )
+        violations.append(PolicyViolation(
+            category="deps_allow_new",
+            location="uv.lock",
+            explanation=(
+                f"New dependencies added while deps_allow_new=false: {shown}"
+            ),
+            suggestion=(
+                "Drop the dependency, or set [policy] deps_allow_new = true."
+            ),
+        ))
 
     # 5. Secret patterns over added lines (raises on a bad regex).
     secret_hits = _scan_secrets(added_lines, config.secret_patterns)
     if secret_hits:
-        details.append(
-            "Possible secrets in added lines: " + ", ".join(sorted(secret_hits))
-        )
+        violations.append(PolicyViolation(
+            category="secret_pattern",
+            location=", ".join(sorted(secret_hits)[:5]),
+            explanation=(
+                "Possible secrets in added lines: "
+                + ", ".join(sorted(secret_hits))
+            ),
+            suggestion=(
+                "Remove the credential and rotate it; load secrets from the "
+                "environment instead."
+            ),
+        ))
 
-    ok = not details
+    details = [v.explanation for v in violations]
+    ok = not any(v.blocking for v in violations)
     if ok:
         summary = (
             f"policy envelope satisfied ({n_files} files, {n_lines} lines, "
@@ -385,7 +469,7 @@ def evaluate_policy(
             summary += " including enforcement-machinery halt"
     return PolicyEvaluation(
         ok=ok, summary=summary, details=details, machinery_hit=machinery_hit,
-        new_dependencies=new_dependencies,
+        new_dependencies=new_dependencies, violations=violations,
     )
 
 
@@ -409,28 +493,51 @@ class PolicyConfig:
     secret_patterns: list[str] = field(
         default_factory=lambda: list(DEFAULT_SECRET_PATTERNS)
     )
+    # ADDITIVE ONLY: extra paths joined to ENFORCEMENT_MACHINERY_PATHS for
+    # the non-overridable halt. A repo protects its own verifier/CI code
+    # here; nothing in config can shrink the hardcoded set.
+    enforcement_paths_extra: list[str] = field(default_factory=list)
     # License gate: a newly-added uv.lock dependency whose resolved SPDX
     # license matches a deny_partial substring is blocked; one whose every
     # atom is in license_allow passes; anything else is unknown (blocked,
-    # add it to license_allow to permit). An unresolvable license is
-    # advisory, not blocking. Empty license_allow disables the gate.
+    # add it to license_allow to permit). Empty license_allow disables the
+    # gate entirely.
     license_allow: list[str] = field(
         default_factory=lambda: list(DEFAULT_LICENSE_ALLOW)
     )
     license_deny_partial: list[str] = field(
         default_factory=lambda: list(DEFAULT_LICENSE_DENY_PARTIAL)
     )
+    # What to do when a license cannot be resolved from any source:
+    # "block" (default, fail-closed - an unprovable dependency is not
+    # inside the envelope, consistent with the rest of this check) or
+    # "advisory" (record it and pass, for operators who accept the risk of
+    # offline/cache-miss resolution).
+    license_unresolved: str = "block"
+    # Whether license resolution may fall back to the PyPI JSON API.
+    # A real config field, not a bare env read, so it is covered by
+    # envelope_hash: a run that silently skipped the network must not
+    # claim the same policy hash as one that consulted it.
+    license_use_network: bool = True
     # Reserved for the R8.7 release gate: stored and hashed into the run
     # manifest's policy envelope, not yet enforced (Phase 1 has no deploy
     # step). L3+ may set true.
     deploy: bool = False
 
+    def __post_init__(self) -> None:
+        if self.license_unresolved not in ("block", "advisory"):
+            raise PolicyConfigError(
+                f"invalid license_unresolved {self.license_unresolved!r}; "
+                "expected 'block' or 'advisory'"
+            )
+
     @classmethod
     def from_env(cls) -> PolicyConfig:
         """Load from environment only (defaults + env overlay).
 
-        List fields (``paths_deny``, ``secret_patterns``) are toml-only
-        and keep their defaults here.
+        List fields (``paths_deny``, ``secret_patterns``, the license
+        lists, ``enforcement_paths_extra``) are toml-only and keep their
+        defaults here.
         """
         defaults = cls()
         return cls(
@@ -446,8 +553,15 @@ class PolicyConfig:
                 "KSTRL_POLICY_DEPS_ALLOW_NEW", defaults.deps_allow_new
             ),
             secret_patterns=list(defaults.secret_patterns),
+            enforcement_paths_extra=list(defaults.enforcement_paths_extra),
             license_allow=list(defaults.license_allow),
             license_deny_partial=list(defaults.license_deny_partial),
+            license_unresolved=os.environ.get(
+                "KSTRL_POLICY_LICENSE_UNRESOLVED", defaults.license_unresolved,
+            ),
+            license_use_network=_env_bool(
+                "KSTRL_POLICY_LICENSE_NET", defaults.license_use_network
+            ),
             deploy=_env_bool("KSTRL_POLICY_DEPLOY", defaults.deploy),
         )
 
@@ -503,6 +617,21 @@ class PolicyConfig:
             if isinstance(section.get("license_deny_partial"), list)
             else list(defaults.license_deny_partial)
         )
+        enforcement_paths_extra = (
+            [str(s) for s in section["enforcement_paths_extra"]]
+            if isinstance(section.get("enforcement_paths_extra"), list)
+            else list(defaults.enforcement_paths_extra)
+        )
+        license_unresolved = (
+            str(section["license_unresolved"])
+            if "license_unresolved" in section
+            else defaults.license_unresolved
+        )
+        license_use_network = (
+            bool(section["license_use_network"])
+            if "license_use_network" in section
+            else defaults.license_use_network
+        )
         deploy = (
             bool(section["deploy"]) if "deploy" in section else defaults.deploy
         )
@@ -516,6 +645,10 @@ class PolicyConfig:
             max_lines_changed = int(os.environ["KSTRL_POLICY_MAX_LINES"])
         if "KSTRL_POLICY_DEPS_ALLOW_NEW" in os.environ:
             deps_allow_new = os.environ["KSTRL_POLICY_DEPS_ALLOW_NEW"] == "1"
+        if "KSTRL_POLICY_LICENSE_UNRESOLVED" in os.environ:
+            license_unresolved = os.environ["KSTRL_POLICY_LICENSE_UNRESOLVED"]
+        if "KSTRL_POLICY_LICENSE_NET" in os.environ:
+            license_use_network = os.environ["KSTRL_POLICY_LICENSE_NET"] == "1"
         if "KSTRL_POLICY_DEPLOY" in os.environ:
             deploy = os.environ["KSTRL_POLICY_DEPLOY"] == "1"
 
@@ -526,8 +659,11 @@ class PolicyConfig:
             max_lines_changed=max_lines_changed,
             deps_allow_new=deps_allow_new,
             secret_patterns=secret_patterns,
+            enforcement_paths_extra=enforcement_paths_extra,
             license_allow=license_allow,
             license_deny_partial=license_deny_partial,
+            license_unresolved=license_unresolved,
+            license_use_network=license_use_network,
             deploy=deploy,
         )
 
@@ -536,7 +672,11 @@ class PolicyConfig:
 
         Hashes the effective config (post env/toml resolution), so the
         audit record captures what was ENFORCED, not merely what the file
-        on disk said.
+        on disk said. Every knob that can change a verdict is a field on
+        this dataclass - including ``license_use_network`` and
+        ``license_unresolved`` - so two runs with the same hash enforced
+        the same rules (an env-only toggle would otherwise let a weaker
+        run claim an unchanged envelope).
         """
         payload = {f.name: getattr(self, f.name) for f in fields(self)}
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))

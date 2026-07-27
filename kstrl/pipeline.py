@@ -1294,6 +1294,16 @@ class ComponentPipeline:
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
+        # R8.1: mechanical checks that produce typed findings (today the
+        # policy envelope) get them into the component's finding stream, so
+        # a machine-made gate decision reaches the audit trail - PR body,
+        # journal, evolution - and not just the retry context. Recorded for
+        # passing checks too: a non-blocking advisory is still evidence.
+        check_findings = [
+            finding for check in verification.checks for finding in check.findings
+        ]
+        if check_findings:
+            self._add_findings(comp, check_findings)
         self.bus.emit(ev.VerificationResultEvent(
             component=comp.id, passed=verification.passed,
             checks=tuple(c.name for c in verification.checks),
