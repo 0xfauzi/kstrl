@@ -213,11 +213,15 @@ auto_apply_computational = false   # auto-apply computational proposals
 
 # Run-milestone notification hooks (R3.2). Shell commands fired at most
 # once per run, with KSTRL_NOTIFY_EVENT (run_complete | first_failure |
-# merge_pending), KSTRL_NOTIFY_RUN_ID, KSTRL_NOTIFY_PROJECT,
+# merge_pending | inbox_<kind>), KSTRL_NOTIFY_RUN_ID, KSTRL_NOTIFY_PROJECT,
 # KSTRL_NOTIFY_COMPONENT and KSTRL_NOTIFY_DETAIL set in their environment.
+# on_inbox_item is a separate command on purpose: an R8.3 inbox item is
+# usually raised for the same event that already fired on_first_failure,
+# so sharing one command would notify twice for one thing.
 [notify]
 on_complete = ""                   # e.g. "printf '\\a'" for a terminal bell
 on_first_failure = ""              # e.g. a curl webhook one-liner
+on_inbox_item = ""                 # per R8.3 inbox item kind; opt-in
 hook_timeout = 30.0                # seconds before a hook command is killed
 
 # Linear integration (R7.4). Off by default. When enabled, decompose

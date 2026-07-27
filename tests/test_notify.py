@@ -59,6 +59,8 @@ class TestNotifyConfig:
         config = NotifyConfig()
         assert config.on_complete == ""
         assert config.on_first_failure == ""
+        # R8.3: opt-in, so an inbox item is silent unless asked for.
+        assert config.on_inbox_item == ""
         assert config.hook_timeout == 30.0
 
     def test_load_reads_notify_section(self, tmp_path: Path) -> None:
@@ -66,11 +68,13 @@ class TestNotifyConfig:
             "[notify]\n"
             "on_complete = \"printf 'a'\"\n"
             'on_first_failure = "curl example.com"\n'
+            'on_inbox_item = "curl example.com/inbox"\n'
             "hook_timeout = 5.0\n"
         )
         config = NotifyConfig.load(tmp_path)
         assert config.on_complete == "printf 'a'"
         assert config.on_first_failure == "curl example.com"
+        assert config.on_inbox_item == "curl example.com/inbox"
         assert config.hook_timeout == 5.0
 
     def test_env_overrides_toml(
@@ -78,12 +82,15 @@ class TestNotifyConfig:
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(
             '[notify]\non_complete = "from-toml"\n'
+            'on_inbox_item = "inbox-toml"\n'
         )
         monkeypatch.setenv("KSTRL_NOTIFY_ON_COMPLETE", "from-env")
         monkeypatch.setenv("KSTRL_NOTIFY_ON_FIRST_FAILURE", "fail-env")
+        monkeypatch.setenv("KSTRL_NOTIFY_ON_INBOX_ITEM", "inbox-env")
         config = NotifyConfig.load(tmp_path)
         assert config.on_complete == "from-env"
         assert config.on_first_failure == "fail-env"
+        assert config.on_inbox_item == "inbox-env"
 
     def test_missing_section_is_defaults(self, tmp_path: Path) -> None:
         config = NotifyConfig.load(tmp_path)
@@ -317,9 +324,69 @@ class TestFactoryFiresHooks:
             )
 
         # Two independent components both failed; the hook fired once.
+        # The R8.3 inbox items raised by those same failures must not
+        # add a second firing: on_inbox_item is a separate, opt-in key.
         assert len(result.failed) == 2
         assert _lines(fail_count) == ["first_failure a"]
         assert _lines(complete_count) == ["run_complete "]
+
+    def test_inbox_hook_is_silent_until_opted_in(
+        self, tmp_path: Path,
+    ) -> None:
+        """R8.3 + review #5: a failing run raises inbox items, but with
+        on_inbox_item unset (the default) nothing extra is pushed."""
+        from kstrl.inbox import Inbox, InboxConfig
+
+        root = _setup_plain_project(tmp_path)
+        inbox_count = tmp_path / "inbox-count.txt"
+        config = _plain_factory_config(notify_config=NotifyConfig(
+            on_first_failure=_count_cmd(tmp_path / "fail-count.txt"),
+        ))
+
+        def fake_run(
+            component_id: str, *args: object, **kwargs: object,
+        ) -> ComponentResult:
+            return ComponentResult(component_id, success=False, error="boom")
+
+        with patch("kstrl.factory._run_component", side_effect=fake_run):
+            run_factory(
+                _two_component_manifest(), config, _plain_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        # Items were genuinely raised, so the silence is a decision and
+        # not an empty code path.
+        assert len(Inbox(root, InboxConfig()).open_items()) == 2
+        assert _lines(inbox_count) == []
+
+    def test_opted_in_inbox_hook_fires_without_doubling_the_failure_hook(
+        self, tmp_path: Path,
+    ) -> None:
+        """Opting in adds an inbox push; it does not fire the failure
+        hook a second time for the same event."""
+        root = _setup_plain_project(tmp_path)
+        fail_count = tmp_path / "fail-count.txt"
+        inbox_count = tmp_path / "inbox-count.txt"
+        config = _plain_factory_config(notify_config=NotifyConfig(
+            on_first_failure=_count_cmd(fail_count),
+            on_inbox_item=_count_cmd(inbox_count),
+        ))
+
+        def fake_run(
+            component_id: str, *args: object, **kwargs: object,
+        ) -> ComponentResult:
+            return ComponentResult(component_id, success=False, error="boom")
+
+        with patch("kstrl.factory._run_component", side_effect=fake_run):
+            run_factory(
+                _two_component_manifest(), config, _plain_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert _lines(fail_count) == ["first_failure a"]
+        # One line per item KIND, not per item: both components raised a
+        # halted_run, and once means once.
+        assert _lines(inbox_count) == ["inbox_halted_run a"]
 
     def test_clean_run_fires_only_complete(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)

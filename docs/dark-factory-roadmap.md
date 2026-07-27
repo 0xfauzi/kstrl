@@ -384,14 +384,21 @@ budget_overrun / demotion_notice / calibration_drift; dedupe by key,
 snooze with a TTL that RETURNS the item, and an open-item cap that R8.6
 will consult before admitting queue work.
 
-**Emitters are wired, not declared.** Every existing halt path feeds it:
-component FAILED and PR-flow failure (halted_run), MERGE_PENDING
-(merge_gate), token-budget halt (budget_overrun), R8.1 policy findings
+**Emitters are wired, not declared.** The halt paths that feed it:
+component FAILED and PR-flow failure (halted_run), MERGE_PENDING and the
+pre-merge checkpoint that no interactive UI can answer (merge_gate),
+token-budget halt (budget_overrun), R8.1 policy findings
 (policy_exception, advisories excluded), and R8.2 demotions
 (demotion_notice, carrying the triggering evidence - the item R8.2
 promised). Verified end-to-end: a run with a planted policy violation
 produces a policy_exception, a halted_run, AND a demotion_notice while
 the ladder drops L3 -> L2.
+
+`pause_before_pr_merge` on an unattended run no longer proceeds. It
+returns `CheckpointDecision.PARKED`: the merge is withheld, the
+component fails at `phase=pr / check=merge_gate`, and the decision goes
+to the inbox. Proceeding defeated the gate in exactly the unattended
+case R8.2's L1/L2 forces it on for.
 
 Closes three IOUs left by earlier items: R8.1's "violations route to the
 inbox", R8.2's "every demotion emits an inbox item", and the surface R8.6
@@ -400,13 +407,21 @@ needs for `stop_at_pr`.
 Notification stays one-way, as specified: `notifiable()` selects
 action-required kinds plus demotions, so successes are silent; kstrl runs
 no inbound HTTP surface, and items are actioned in `ks inbox` or the TUI
-screen. An ntfy.sh example is documented in `docs/env-vars.md` under the
-existing `[notify]` hook.
+screen. The push itself is a dedicated `[notify].on_inbox_item` command,
+empty by default: a failing component already fires `on_first_failure`
+and raises an item for the same event, so sharing one command would page
+twice for one thing. An ntfy.sh example is in `docs/env-vars.md`.
 
-Not built: `approve-and-amend-policy` (widening the R8.1 envelope from a
-repeated approval) and the daily digest. Both are learning-loop
-refinements that want real inbox traffic to design against, and neither
-is load-bearing for R8.6.
+Not built, and NOT claimed as done:
+
+- `approve-and-amend-policy` (widening the R8.1 envelope from a repeated
+  approval) and the daily digest. Both are learning-loop refinements that
+  want real inbox traffic to design against, and neither is load-bearing
+  for R8.6.
+- Inbox emission from `SpecBlockerError` exits and from terminal contract
+  failures. Review of PR #175 established that the original "every halt
+  path feeds it" claim was too broad: those two paths still bypass the
+  inbox.
 
 **Why.** Over-the-loop operation needs one surface for everything awaiting a
 human decision. Today: SpecBlocker exit codes, FAILED components,

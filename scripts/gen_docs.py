@@ -453,6 +453,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "shell hook fired once when the run finishes; empty = disabled",
     ("notify", "on_first_failure"):
         "shell hook fired once on the first component failure",
+    ("notify", "on_inbox_item"):
+        "shell hook fired per R8.3 inbox item kind; empty = disabled",
     ("notify", "hook_timeout"): "seconds before a hook command is killed",
     ("linear", "enabled"): "mirror runs into Linear (project/issues/status via GitHub linking)",
     ("linear", "team_id"): "Linear team UUID (required when enabled)",

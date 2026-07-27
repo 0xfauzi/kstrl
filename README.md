@@ -416,6 +416,7 @@ auto_apply_computational = false             # auto-apply computational proposal
 [notify]
 on_complete = ""       # shell hook fired once when the run finishes; empty = disabled
 on_first_failure = ""  # shell hook fired once on the first component failure
+on_inbox_item = ""     # shell hook fired per R8.3 inbox item kind; empty = disabled
 hook_timeout = 30.0    # seconds before a hook command is killed
 
 # Linear integration (R7.4; default off)

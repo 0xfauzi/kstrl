@@ -359,15 +359,25 @@ class Inbox:
                 records.append(record)
         return records
 
-    def items(self) -> list[InboxItem]:
-        """Every item, latest state per id, newest-first by priority/age."""
+    def _folded(self) -> list[InboxItem]:
+        """Latest state per id, in the order the ids first appeared.
+
+        Log order is a total order; ``created_at`` is not (it is rounded
+        to the second, so two items raised in the same second tie). Any
+        "which generation is newer?" question has to be answered here,
+        not from the timestamp.
+        """
         folded: dict[str, InboxItem] = {}
         for record in self._read_lines():
             item = InboxItem.from_dict(record)
             if item is None:
                 continue
             folded[item.id] = item     # later lines supersede earlier ones
-        return sorted(folded.values(), key=lambda i: i.sort_key())
+        return list(folded.values())
+
+    def items(self) -> list[InboxItem]:
+        """Every item, latest state per id, newest-first by priority/age."""
+        return sorted(self._folded(), key=lambda i: i.sort_key())
 
     def open_items(self) -> list[InboxItem]:
         return [item for item in self.items() if item.is_open]
@@ -389,12 +399,28 @@ class Inbox:
         return None
 
     def find_by_dedupe_key(self, key: str) -> InboxItem | None:
+        """The generation of ``key`` that a repeat should collapse onto.
+
+        An OPEN generation always wins; otherwise the NEWEST decided one.
+        Returning the oldest match (which ``items()`` yields first, being
+        sorted ascending by age) meant a second repeat after a decision
+        re-found the decided original and opened yet another item, so a
+        recurring failure fanned out into one item per occurrence -
+        exactly the noise dedupe exists to prevent.
+
+        "Newest" is by log position, not ``created_at``: timestamps are
+        second-resolution and two generations of the same key can share
+        one, which would put the tie-break back where the bug was.
+        """
         if not key:
             return None
-        for item in self.items():
-            if item.dedupe_key == key:
+        matches = [item for item in self._folded() if item.dedupe_key == key]
+        if not matches:
+            return None
+        for item in matches:
+            if item.status is ItemStatus.OPEN:
                 return item
-        return None
+        return matches[-1]
 
     # -- writing -----------------------------------------------------------
     def _append(self, item: InboxItem) -> None:

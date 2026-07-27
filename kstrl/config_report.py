@@ -171,7 +171,8 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
             f.name for f in dataclass_fields(TimeoutConfig)
         ]),
         ("notify", NotifyConfig.load, [
-            "on_complete", "on_first_failure", "hook_timeout",
+            "on_complete", "on_first_failure", "on_inbox_item",
+            "hook_timeout",
         ]),
         ("linear", LinearConfig.load, [
             "enabled", "team_id", "token_env", "auth_mode", "api_url",

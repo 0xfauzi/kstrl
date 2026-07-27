@@ -279,12 +279,31 @@ def _init_git_repo(root: Path) -> None:
     run("commit", "-m", "base")
 
 
+def _usage(total: int) -> object:
+    from kstrl.agents.base import UsageRecord, UsageTotals
+
+    totals = UsageTotals()
+    totals.add_record(UsageRecord(
+        input_tokens=total // 3,
+        output_tokens=total - total // 3,
+        total_tokens=total,
+        duration_seconds=1.0,
+        source="claude-stream-json",
+    ))
+    return totals
+
+
 def _run_factory(
     tmp_path: Path,
     *,
     verification: object | None = None,
     level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED,
     autonomy: bool = False,
+    inbox_enabled: bool = True,
+    max_total_tokens: int = 0,
+    engineer_tokens: int = 0,
+    create_prs: bool = False,
+    pause_before_pr_merge: bool = False,
 ) -> None:
     from kstrl.config import KstrlConfig
     from kstrl.factory import ComponentResult, FactoryConfig, run_factory
@@ -299,7 +318,8 @@ def _run_factory(
     (kstrl_dir / "prompt.md").write_text("p")
     (tmp_path / "kstrl.toml").write_text(
         f"[autonomy]\nenabled = {'true' if autonomy else 'false'}\n"
-        "[policy]\nenabled = true\n[inbox]\nenabled = true\n"
+        "[policy]\nenabled = true\n"
+        f"[inbox]\nenabled = {'true' if inbox_enabled else 'false'}\n"
     )
     AutonomyState(level=int(level)).save(tmp_path)
     manifest = Manifest(
@@ -311,8 +331,10 @@ def _run_factory(
         )],
     )
     config = FactoryConfig(
-        use_worktrees=False, create_prs=False, max_parallel=1, max_retries=0,
-        retry_delay=0, review_mode="skip",
+        use_worktrees=False, create_prs=create_prs, max_parallel=1,
+        max_retries=0, retry_delay=0, review_mode="skip",
+        max_total_tokens=max_total_tokens,
+        pause_before_pr_merge=pause_before_pr_merge,
         verify_config=VerifyConfig(
             test_command="true", typecheck_command="true", lint_command="true",
             check_bad_patterns=False, subprocess_timeout=5.0,
@@ -326,16 +348,20 @@ def _run_factory(
     result = verification or VerificationResult(
         passed=True, checks=[CheckResult("diff_scope", True, "ok")],
     )
+    component_result = ComponentResult(
+        "comp-a", success=True, iterations=1,
+        usage=_usage(engineer_tokens) if engineer_tokens else None,
+    )
     with (
         patch(
-            "kstrl.factory._run_component",
-            return_value=ComponentResult("comp-a", success=True, iterations=1),
+            "kstrl.factory._run_component", return_value=component_result,
         ),
         patch("kstrl.factory.run_mechanical_verification", return_value=result),
         patch(
             "kstrl.factory.run_review",
             return_value=ReviewResult(passed=True, mode="hard"),
         ),
+        patch("kstrl.pr.is_gh_available", return_value=False),
     ):
         run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
 
@@ -399,18 +425,14 @@ class TestEmittersFireDuringRuns:
     def test_disabled_inbox_writes_nothing(self, tmp_path: Path) -> None:
         from kstrl.verify import CheckResult, VerificationResult
 
-        _init_git_repo(tmp_path)
-        (tmp_path / "kstrl.toml").write_text("[inbox]\nenabled = false\n")
-        kstrl_dir = tmp_path / "scripts" / "kstrl"
-        kstrl_dir.mkdir(parents=True, exist_ok=True)
-        (kstrl_dir / "prompt.md").write_text("p")
-        with patch.object(Path, "write_text", Path.write_text):
-            _run_factory(tmp_path, verification=VerificationResult(
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
                 passed=False, checks=[CheckResult("test_suite", False, "boom")],
-            ))
-        # _run_factory rewrites kstrl.toml with inbox enabled, so assert the
-        # config path directly instead:
-        assert InboxConfig.load(tmp_path).enabled is True
+            ),
+            inbox_enabled=False,
+        )
+        assert Inbox(tmp_path, InboxConfig()).items() == []
 
     def test_inbox_write_failure_does_not_fail_the_run(
         self, tmp_path: Path,
@@ -504,3 +526,131 @@ class TestInboxScreen:
             screen.action_approve()
             await pilot.pause()
         assert Inbox(tmp_path, InboxConfig()).open_items() == []
+
+
+# --------------------------------------------------------------------------
+# Review regressions (PR #175)
+# --------------------------------------------------------------------------
+class TestDedupeAcrossGenerations:
+    """A repeat must collapse onto the OPEN generation, not fan out."""
+
+    def test_two_repeats_after_a_decision_share_one_item(
+        self, tmp_path: Path,
+    ) -> None:
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        box.approve(first.id, actor="h")
+        second = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        third = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        assert second.id == third.id != first.id
+        open_items = box.open_items()
+        assert len(open_items) == 1
+        assert open_items[0].occurrences == 2
+
+    def test_many_repeats_stay_one_open_item(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        box.approve(first.id, actor="h")
+        for _ in range(5):
+            box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        assert len(box.open_items()) == 1
+        assert box.open_items()[0].occurrences == 5
+
+    def test_open_generation_wins_over_older_decided(
+        self, tmp_path: Path,
+    ) -> None:
+        """The exact regression: two generations of one key exist, and
+        the lookup must return the OPEN one even though the decided one
+        sorts first (items() is ascending by age)."""
+        box = _box(tmp_path)
+        decided = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        box.approve(decided.id, actor="h")
+        reopened = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        assert reopened.id != decided.id
+        found = box.find_by_dedupe_key("k")
+        assert found is not None
+        assert found.id == reopened.id
+
+    def test_all_decided_falls_back_to_the_newest(
+        self, tmp_path: Path,
+    ) -> None:
+        box = _box(tmp_path)
+        first = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        box.approve(first.id, actor="h")
+        second = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
+        box.reject(second.id, actor="h", comment="no")
+        found = box.find_by_dedupe_key("k")
+        assert found is not None
+        # Not the oldest: a decision on the stale generation must not be
+        # what a fresh occurrence collapses onto.
+        assert found.id == second.id
+
+
+class TestBudgetEmitsOneItem:
+    def test_budget_halt_does_not_also_emit_halted_run(
+        self, tmp_path: Path,
+    ) -> None:
+        """One event must not consume two cap slots or bury its reason.
+
+        Drives the REAL halt: the engineer's recorded spend trips
+        max_total_tokens, so fail_for_budget raises budget_overrun and
+        the generic halted_run fail() would otherwise add is suppressed.
+        """
+        _run_factory(tmp_path, max_total_tokens=100, engineer_tokens=500)
+        kinds = [str(i.kind) for i in _box(tmp_path).open_items()]
+        assert kinds == ["budget_overrun"]
+
+
+class TestNotifyWiring:
+    def test_inbox_hook_is_silent_without_its_own_command(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review #5: the knob had no consumer. It has one now, but it
+        must NOT borrow on_first_failure - a failing component already
+        fires that hook and raises an item for the same event."""
+        from kstrl.observability import NotifyConfig, NotifyHooks
+
+        marker = tmp_path / "fired.txt"
+        cmd = f"echo \"$KSTRL_NOTIFY_EVENT\" >> '{marker}'"
+        hooks = NotifyHooks(NotifyConfig(on_first_failure=cmd))
+        hooks.fire_inbox_item("policy_exception", "denied path", "comp-a")
+        assert not marker.exists()
+
+    def test_action_required_item_fires_its_own_command(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.observability import NotifyConfig, NotifyHooks
+
+        marker = tmp_path / "fired.txt"
+        cmd = f"echo \"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\" >> '{marker}'"
+        hooks = NotifyHooks(NotifyConfig(on_inbox_item=cmd))
+        hooks.fire_inbox_item("policy_exception", "denied path", "comp-a")
+        hooks.fire_inbox_item("policy_exception", "denied again", "comp-b")
+        # Once per condition, as with every other hook.
+        assert marker.read_text().splitlines() == [
+            "inbox_policy_exception comp-a",
+        ]
+
+    def test_notifiable_excludes_low_priority_kinds(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.CALIBRATION_DRIFT, "drift", dedupe_key="d")
+        assert notifiable(box.items()) == []
+
+
+class TestMergeGateIsTheHumanGate:
+    """The gate is the pre-merge checkpoint, not the post-merge timeout."""
+
+    def test_parked_decision_exists(self) -> None:
+        from kstrl.pipeline import CheckpointDecision
+
+        assert CheckpointDecision.PARKED.value == "parked"
+
+    def test_non_interactive_gate_parks_and_emits(self, tmp_path: Path) -> None:
+        # pause_before_pr_merge with no interactive UI must NOT merge:
+        # it parks the component and files exactly one merge_gate item.
+        _run_factory(
+            tmp_path, create_prs=True, pause_before_pr_merge=True,
+        )
+        items = _box(tmp_path).open_items()
+        assert [str(i.kind) for i in items] == ["merge_gate"]
+        assert items[0].component == "comp-a"

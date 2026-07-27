@@ -49,7 +49,7 @@ from kstrl.findings import (
     tag_finding_with_attempt,
 )
 from kstrl.fixtures import FixturesConfig
-from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.inbox import Inbox, InboxConfig, InboxError, ItemKind, notifiable
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -173,6 +173,9 @@ class CheckpointDecision(Enum):
 
     NOT_PROMPTED = "not_prompted"
     APPROVED = "approved"
+    # R8.3: no interactive UI was available to answer the gate, so the
+    # component is parked for the inbox rather than merged unreviewed.
+    PARKED = "parked"
     REJECTED = "rejected"
     RETRY = "retry"
 
@@ -290,6 +293,8 @@ class ComponentPipeline:
         # R8.3: lazily built so a disabled inbox costs nothing and a
         # broken one can never fail a run (see _inbox_add).
         self._inbox: Inbox | None = None
+        self._inbox_disabled = False
+        self._inbox_typed: set[str] = set()
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config
@@ -675,14 +680,17 @@ class ComponentPipeline:
         self.factory_result.skipped.extend(skipped)
         self.bus.emit(ev.ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
-        self._inbox_add(
-            ItemKind.HALTED_RUN,
-            f"{comp.id} halted in {phase}",
-            detail=error,
-            component=comp.id,
-            dedupe_key=f"halted:{comp.id}:{phase}:{check}",
-            evidence={"phase": phase, "check": check, "error": error},
-        )
+        if comp.id in self._inbox_typed:
+            self._inbox_typed.discard(comp.id)
+        else:
+            self._inbox_add(
+                ItemKind.HALTED_RUN,
+                f"{comp.id} halted in {phase}",
+                detail=error,
+                component=comp.id,
+                dedupe_key=f"halted:{comp.id}:{phase}:{check}",
+                evidence={"phase": phase, "check": check, "error": error},
+            )
         self.ui.err(f"  Failed: {comp.id}: {error[:80]}")
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
@@ -723,6 +731,7 @@ class ComponentPipeline:
                 "max_total_tokens": self.factory_config.max_total_tokens,
             },
         )
+        self._inbox_suppress_generic(comp.id)
         return self.fail(
             comp, error, phase=phase, check="token_budget",
             signatures=["token_budget:exceeded"],
@@ -751,6 +760,30 @@ class ComponentPipeline:
         self.manifest.save(self.manifest_path)
         return Transition.COMPLETED
 
+    def _inbox_resolve(self, dedupe_key: str, reason: str) -> None:
+        """Close an open item whose question the world has answered."""
+        try:
+            if self._inbox is None:
+                config = InboxConfig.load(self.root_dir)
+                if not config.enabled:
+                    return
+                self._inbox = Inbox(self.root_dir, config)
+            existing = self._inbox.find_by_dedupe_key(dedupe_key)
+            if existing is not None and existing.is_open:
+                self._inbox.resolve(existing.id, comment=reason)
+        except (OSError, ValueError, InboxError) as exc:
+            self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
+
+    def _inbox_suppress_generic(self, comp_id: str) -> None:
+        """Mark that a typed item already covers this component's halt.
+
+        fail() emits a generic halted_run for every terminal failure; a
+        budget halt (or a parked merge gate) has already raised a more
+        specific item, and two items for one event burn two cap slots and
+        bury the reason.
+        """
+        self._inbox_typed.add(comp_id)
+
     def _inbox_add(
         self,
         kind: ItemKind,
@@ -773,9 +806,12 @@ class ComponentPipeline:
             if self._inbox is None:
                 config = InboxConfig.load(self.root_dir)
                 if not config.enabled:
+                    self._inbox_disabled = True
                     return
                 self._inbox = Inbox(self.root_dir, config)
-            self._inbox.add(
+            if self._inbox_disabled:
+                return
+            item = self._inbox.add(
                 kind, title,
                 detail=detail,
                 component=component,
@@ -783,6 +819,13 @@ class ComponentPipeline:
                 dedupe_key=dedupe_key,
                 evidence=evidence or {},
             )
+            # One-way push: only items that actually want a human reach
+            # the hook, and only when the operator asked for it. Without
+            # this the [inbox] notify knob was a documented no-op.
+            if self._inbox.config.notify_action_required and notifiable([item]):
+                self.notify.fire_inbox_item(
+                    str(item.kind), item.title, component_id=component,
+                )
         except (OSError, ValueError) as exc:
             self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
@@ -955,6 +998,17 @@ class ComponentPipeline:
             f"  A worker process for '{comp_id}' may be leaked; "
             f"its worktree is left in place"
         )
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            f"{comp_id} abandoned by the scheduler backstop",
+            detail=(
+                f"no result after {backstop_seconds}s; the worker may still "
+                "be alive, so its worktree was left in place"
+            ),
+            component=comp_id,
+            dedupe_key=f"halted:{comp_id}:backstop",
+            evidence={"backstop_seconds": backstop_seconds},
+        )
         self.manifest.save(self.manifest_path)
 
     def repoll_merge_pending(self) -> None:
@@ -1015,10 +1069,30 @@ class ComponentPipeline:
                     self.ui.ok(
                         f"  PR #{pr_number} merged; '{comp.id}' completed"
                     )
+                    # The gate that parked this component is answered by
+                    # reality; leaving it open would hold a cap slot
+                    # forever and ask a human to decide something already
+                    # decided.
+                    self._inbox_resolve(
+                        f"merge:{comp.id}", f"PR #{pr_number} merged",
+                    )
                 elif merge_state == "closed":
                     comp.status = ComponentStatus.FAILED.value
                     comp.error = f"PR #{pr_number} closed without merge"
                     comp.completed_at = _iso_now()
+                    # Not a merge decision any more - it is a halt.
+                    self._inbox_resolve(
+                        f"merge:{comp.id}",
+                        f"PR #{pr_number} closed without merging",
+                    )
+                    self._inbox_add(
+                        ItemKind.HALTED_RUN,
+                        f"{comp.id}: PR closed without merging",
+                        detail=comp.error,
+                        component=comp.id,
+                        dedupe_key=f"halted:{comp.id}:pr-closed",
+                        evidence={"pr_number": pr_number},
+                    )
                     comp.failed_phase = "pr"
                     comp.failed_check = "pr_closed"
                     self.component_failure_signatures[comp.id] = [
@@ -1207,6 +1281,25 @@ class ComponentPipeline:
                     transition=self.fail(
                         comp, "Rejected at HITL checkpoint",
                         phase="pr", check="hitl_reject",
+                    ),
+                    verify=verify, diff=diff, review=review,
+                    security=security, distill=distill,
+                    checkpoint=checkpoint,
+                )
+            if checkpoint == CheckpointDecision.PARKED:
+                # R8.3: the gate could not be answered, so the merge does
+                # NOT happen. Terminal for this run and routed to the
+                # inbox (the item was raised in _phase_checkpoint); the
+                # typed marker stops fail() adding a generic halted_run
+                # on top of it.
+                self._inbox_suppress_generic(comp.id)
+                return PipelineOutcome(
+                    transition=self.fail(
+                        comp,
+                        "Parked awaiting merge approval "
+                        "(pause_before_pr_merge, no interactive UI); "
+                        "approve with `ks inbox retry <id>`",
+                        phase="pr", check="merge_gate",
                     ),
                     verify=verify, diff=diff, review=review,
                     security=security, distill=distill,
@@ -2206,9 +2299,11 @@ class ComponentPipeline:
         loop would re-run the full agent+review cycle and ask the
         human again, once per remaining retry. A human who wants
         a re-run says so explicitly via Retry, which consumes a
-        retry like any other failure. Skip the prompt when no UI
-        is interactive - automation should fail loudly rather
-        than block indefinitely."""
+        retry like any other failure. When no UI is interactive
+        the prompt is skipped but the gate is NOT: R8.3 returns
+        PARKED, which withholds the merge and files a merge_gate
+        inbox item - automation fails loudly rather than blocking
+        indefinitely OR merging something nobody approved."""
         if not self.factory_config.pause_before_pr_merge:
             return CheckpointDecision.NOT_PROMPTED
         question = f"Approve PR creation and merge for {comp.id}?"
@@ -2241,15 +2336,39 @@ class ComponentPipeline:
             ),
         )
         if not self.interaction.can_prompt():
+            # R8.3: the merge gate is the whole point of
+            # pause_before_pr_merge, and proceeding here silently merged
+            # without the approval that was asked for - in exactly the
+            # unattended case R8.2's L1/L2 forces the gate ON for. Park
+            # the component instead and route the decision to the inbox;
+            # `ks inbox retry` requeues it once a human has looked.
             self.ui.warn(
                 f"  pause_before_pr_merge requested but UI is "
-                f"non-interactive; proceeding without prompt for {comp.id}"
+                f"non-interactive; parking {comp.id} for approval "
+                f"(see `ks inbox ls`)"
             )
             self.bus.emit(ev.CheckpointResolved(
                 component=comp.id, kind="pr_merge",
-                decision="not_prompted", decided_by="auto",
+                decision="parked", decided_by="inbox",
             ))
-            return CheckpointDecision.NOT_PROMPTED
+            self._inbox_add(
+                ItemKind.MERGE_GATE,
+                f"{comp.id} awaiting merge approval",
+                detail=(
+                    "pause_before_pr_merge is on but no interactive UI was "
+                    "available, so the merge was NOT performed. Review the "
+                    "component, then `ks inbox retry <id>` to requeue it."
+                ),
+                component=comp.id,
+                dedupe_key=f"merge-gate:{comp.id}",
+                evidence={
+                    "branch": comp.branch_name,
+                    "review_findings": len([
+                        f for f in comp.findings if f.phase == "review"
+                    ]),
+                },
+            )
+            return CheckpointDecision.PARKED
         self.ui.section(f"Human checkpoint: {comp.id}")
         self.ui.info(comp.review_findings or "(no review findings)")
         response = self.interaction.request(request)
