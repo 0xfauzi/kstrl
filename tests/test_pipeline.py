@@ -27,6 +27,7 @@ from kstrl.factory import (
     FactoryResult,
 )
 from kstrl.fixtures import FixturesConfig
+from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
@@ -830,6 +831,15 @@ class TestMergePendingRepoll:
         comp.pr_url = "https://x/pull/7"
         return pipeline, manifest, result
 
+    def _seed_merge_gate(self, tmp_path: Path) -> Inbox:
+        """The merge_gate item the park itself would have raised."""
+        box = Inbox(tmp_path, InboxConfig())
+        box.add(
+            ItemKind.MERGE_GATE, "comp-a merge unconfirmed",
+            component="comp-a", dedupe_key="merge:comp-a",
+        )
+        return box
+
     def test_repoll_merged_completes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -841,11 +851,15 @@ class TestMergePendingRepoll:
             "kstrl.git.fetch_base_branch", lambda *a, **k: None,
         )
         pipeline, manifest, result = self._parked(tmp_path)
+        box = self._seed_merge_gate(tmp_path)
         pipeline.repoll_merge_pending()
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert comp.status == ComponentStatus.COMPLETED.value
         assert result.completed == ["comp-a"]
+        # R8.3: reality answered the gate, so the item must not survive
+        # to hold a cap slot and ask for a decision already made.
+        assert box.open_items() == []
 
     def test_repoll_closed_fails_and_cascade_skips(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -855,6 +869,7 @@ class TestMergePendingRepoll:
             "kstrl.pr.wait_for_merge", lambda *a, **k: "closed",
         )
         pipeline, manifest, result = self._parked(tmp_path)
+        box = self._seed_merge_gate(tmp_path)
         pipeline.repoll_merge_pending()
         comp = manifest.get_component("comp-a")
         dep = manifest.get_component("comp-b")
@@ -864,6 +879,9 @@ class TestMergePendingRepoll:
         assert dep.status == ComponentStatus.SKIPPED.value
         assert result.failed == ["comp-a"]
         assert result.skipped == ["comp-b"]
+        # R8.3: it stopped being a merge decision and became a halt, so
+        # the merge_gate item is resolved and a halted_run replaces it.
+        assert [str(i.kind) for i in box.open_items()] == ["halted_run"]
 
     def test_repoll_unconfirmed_stays_parked(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

@@ -146,6 +146,17 @@ license_unresolved = "block"       # block | advisory - what to do when no sourc
 license_use_network = true         # false = uv cache only (offline); part of the envelope hash
 deploy = false                     # reserved for the R8.7 release gate; stored + hashed, not yet enforced
 
+# Exception inbox (R8.3): one surface for everything awaiting a human -
+# policy exceptions, halted runs, unconfirmed merges, budget overruns, autonomy
+# demotions. On by default: recording an exception changes no behaviour, and
+# what you lose by having it off is the record of a decision you already made.
+# Triage with `ks inbox ls|show|approve|reject|snooze|retry`.
+[inbox]
+enabled = true
+open_item_cap = 50                 # open items after which queue intake pauses (R8.6); 0 = unbounded
+snooze_hours = 24.0                # default snooze TTL; a snoozed item RETURNS
+notify_action_required = true      # notify on action-required items and demotions only
+
 # Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
 # independent autonomy flags. The level derives a flag bundle at run start and
 # WINS over contradicting flags here (contradictions are logged, not honored).
@@ -202,11 +213,15 @@ auto_apply_computational = false   # auto-apply computational proposals
 
 # Run-milestone notification hooks (R3.2). Shell commands fired at most
 # once per run, with KSTRL_NOTIFY_EVENT (run_complete | first_failure |
-# merge_pending), KSTRL_NOTIFY_RUN_ID, KSTRL_NOTIFY_PROJECT,
+# merge_pending | inbox_<kind>), KSTRL_NOTIFY_RUN_ID, KSTRL_NOTIFY_PROJECT,
 # KSTRL_NOTIFY_COMPONENT and KSTRL_NOTIFY_DETAIL set in their environment.
+# on_inbox_item is a separate command on purpose: an R8.3 inbox item is
+# usually raised for the same event that already fired on_first_failure,
+# so sharing one command would notify twice for one thing.
 [notify]
 on_complete = ""                   # e.g. "printf '\\a'" for a terminal bell
 on_first_failure = ""              # e.g. a curl webhook one-liner
+on_inbox_item = ""                 # per R8.3 inbox item kind; opt-in
 hook_timeout = 30.0                # seconds before a hook command is killed
 
 # Linear integration (R7.4). Off by default. When enabled, decompose

@@ -144,6 +144,32 @@ Promotion requires evidence **and** a recorded human ack (`ks autonomy promote -
 | `KSTRL_AUTONOMY_ENABLED` | bool (`1`) | false |
 | `KSTRL_AUTONOMY_MAX_LEVEL` | int (1-4) | 4 |
 
+## InboxConfig (`[inbox]`)
+
+Exception inbox (R8.3): one surface for everything awaiting a human - policy exceptions (R8.1), halted runs, unconfirmed merges, budget overruns, and autonomy demotions (R8.2). On by default, because recording an exception changes no behaviour and an inbox that is off silently loses the record of decisions you still had to make.
+
+Items are append-only in `.kstrl/inbox.jsonl` and actioned with `ks inbox approve|reject|snooze|retry`. Notifications are one-way (kstrl runs no inbound HTTP surface); only action-required kinds and demotions notify, so success stays silent.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_INBOX_ENABLED` | bool (`1`) | true |
+| `KSTRL_INBOX_OPEN_CAP` | int (0 = unbounded) | 50 |
+| `KSTRL_INBOX_SNOOZE_HOURS` | float | 24.0 |
+| `KSTRL_INBOX_NOTIFY` | bool (`1`) | true |
+
+`KSTRL_INBOX_NOTIFY` gates whether an item is *offered* to the notifier at all; the push itself only happens if `[notify].on_inbox_item` is set. Both are required, so the default is silent.
+
+Push notifications reuse the existing `[notify]` machinery rather than adding a service, but get their own command. An ntfy.sh example (self-hostable, priority tiers, no inbound surface on your side):
+
+```toml
+[notify]
+on_inbox_item = "curl -fsS -H 'Priority: high' -d \"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\" https://ntfy.sh/your-topic"
+```
+
+`KSTRL_NOTIFY_EVENT` arrives as `inbox_<kind>` (for example `inbox_merge_gate`), so one command can route by kind. It is a separate key from `on_first_failure` on purpose: a failing component fires the failure hook and raises an inbox item for the same event, and one event must not page twice.
+
+Then triage with `ks inbox ls`. Notifications never carry an action link: decisions happen locally, which is what keeps kstrl free of an inbound HTTP endpoint.
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |
@@ -203,13 +229,16 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 
 ## NotifyConfig (`[notify]`)
 
-Run-milestone shell hooks (R3.2), each fired at most once per run. The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
+Run-milestone shell hooks (R3.2), each condition fired at most once per run. The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending` | `inbox_<kind>`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
 
 | Env var | Type | Default |
 |---|---|---|
 | `KSTRL_NOTIFY_ON_COMPLETE` | str | unset (hook disabled) |
 | `KSTRL_NOTIFY_ON_FIRST_FAILURE` | str | unset (hook disabled) |
+| `KSTRL_NOTIFY_ON_INBOX_ITEM` | str | unset (hook disabled) |
 | `KSTRL_NOTIFY_HOOK_TIMEOUT` | float | 30 |
+
+`on_inbox_item` (R8.3) fires once per inbox item *kind* raised during a run, and is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
 
 ## LinearConfig (`[linear]`)
 

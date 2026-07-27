@@ -183,11 +183,16 @@ class TestE4BudgetCap:
 
 
 class TestE6HitlCheckpoint:
-    def test_non_interactive_ui_warns_and_proceeds(self, tmp_path: Path) -> None:
+    def test_non_interactive_ui_parks_for_approval(self, tmp_path: Path) -> None:
         """When pause_before_pr_merge=True but the UI can't prompt
-        (PlainUI in tests), the factory must log a warning and proceed
-        rather than block indefinitely."""
+        (PlainUI in tests), the factory must NOT merge unapproved. R8.3:
+        it parks the component (fails it at phase=pr/check=merge_gate)
+        and routes the decision to the inbox as a merge_gate item, so a
+        human can approve it later with `ks inbox retry`. Proceeding
+        would defeat the gate in exactly the unattended case R8.2's
+        L1/L2 forces the gate on for."""
         from kstrl.factory import ComponentResult
+        from kstrl.inbox import Inbox, InboxConfig, ItemKind
         scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)
         (scaffold / "prompt.md").write_text("p")
@@ -238,10 +243,18 @@ class TestE6HitlCheckpoint:
             result = run_factory(
                 manifest, config, base, PlainUI(no_color=True), tmp_path,
             )
-        # PlainUI returns False for can_prompt() so HITL skips and the
-        # component completes (no gh available so no PR is actually
-        # created, but the path executed cleanly).
-        assert "comp-a" in result.completed
+        # PlainUI returns False for can_prompt(), so the gate cannot be
+        # answered: the component is parked, not merged.
+        assert "comp-a" not in result.completed
+        assert "comp-a" in result.failed
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        assert comp.failed_phase == "pr"
+        assert comp.failed_check == "merge_gate"
+        # ...and the decision is queued for a human, exactly once.
+        items = Inbox(tmp_path, InboxConfig()).open_items()
+        assert [i.kind for i in items] == [ItemKind.MERGE_GATE]
+        assert items[0].component == "comp-a"
 
 
 # ---------------------------------------------------------------------------

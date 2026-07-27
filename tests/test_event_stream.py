@@ -315,8 +315,10 @@ class TestSemanticEvents:
         assert comp.phase == "done"
 
     def test_checkpoint_events_auto_resolution(self, tmp_path: Path) -> None:
-        """pause_before_pr_merge on a non-TTY: requested then resolved
-        with decided_by=auto, and the run proceeds (NO_GH path)."""
+        """pause_before_pr_merge on a non-TTY: requested, then resolved
+        as parked with decided_by=inbox (R8.3). The gate is not answered
+        by proceeding - the merge is withheld and the decision is handed
+        to the inbox for a human."""
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(
@@ -340,8 +342,8 @@ class TestSemanticEvents:
         assert len(requested) == 1
         assert requested[0].kind == "pr_merge"
         assert len(resolved) == 1
-        assert resolved[0].decision == "not_prompted"
-        assert resolved[0].decided_by == "auto"
+        assert resolved[0].decision == "parked"
+        assert resolved[0].decided_by == "inbox"
 
 
 class TestPhaseTranscripts:

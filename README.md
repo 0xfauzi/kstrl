@@ -221,6 +221,12 @@ ks decompose                    Decompose a spec into components and generate PR
 ks evolve                       Analyze factory runs and propose harness improvements.
 ks factory                      Run the software factory - decompose and execute a spec.
 ks feature                      Run feature understanding, then implementation.
+ks inbox approve ITEM_ID        Accept the exception and close the item.
+ks inbox ls                     List items awaiting a decision.
+ks inbox reject ITEM_ID         Refuse the exception, recording why.
+ks inbox retry ITEM_ID          Requeue the item's component and close the item.
+ks inbox show ITEM_ID           Show one item in full, including its evidence.
+ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
@@ -354,6 +360,13 @@ deploy = false                                                                  
 enabled = false  # derive run permissions from the ladder level (opt-in)
 max_level = 4    # hard ceiling: never run above this level (1-4)
 
+# Exception inbox (R8.3)
+[inbox]
+enabled = true                 # record exceptions awaiting a human decision
+open_item_cap = 50             # open items after which queue intake pauses; 0 = unbounded
+snooze_hours = 24.0            # default snooze TTL in hours; snoozed items return
+notify_action_required = true  # notify on action-required items and demotions only
+
 # Phase 2.5 security review
 [security]
 mode = "skip"            # skip | advisory | hard
@@ -403,6 +416,7 @@ auto_apply_computational = false             # auto-apply computational proposal
 [notify]
 on_complete = ""       # shell hook fired once when the run finishes; empty = disabled
 on_first_failure = ""  # shell hook fired once on the first component failure
+on_inbox_item = ""     # shell hook fired per R8.3 inbox item kind; empty = disabled
 hook_timeout = 30.0    # seconds before a hook command is killed
 
 # Linear integration (R7.4; default off)

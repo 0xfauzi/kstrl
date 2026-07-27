@@ -442,13 +442,20 @@ class NotifyConfig:
         on_first_failure = "curl -fsS -X POST -d \\"$KSTRL_NOTIFY_EVENT $KSTRL_NOTIFY_COMPONENT\\" https://example.com/hook"
 
     The commands run via the shell with these context variables set:
-    ``KSTRL_NOTIFY_EVENT`` (run_complete | first_failure | merge_pending),
-    ``KSTRL_NOTIFY_RUN_ID``, ``KSTRL_NOTIFY_PROJECT``,
+    ``KSTRL_NOTIFY_EVENT`` (run_complete | first_failure | merge_pending
+    | inbox_<kind>), ``KSTRL_NOTIFY_RUN_ID``, ``KSTRL_NOTIFY_PROJECT``,
     ``KSTRL_NOTIFY_COMPONENT`` and ``KSTRL_NOTIFY_DETAIL``.
+
+    ``on_inbox_item`` is deliberately its OWN command rather than a reuse
+    of ``on_first_failure``: an R8.3 inbox item is usually raised for the
+    same event that already fired a failure hook, so sharing the command
+    would notify twice for one thing. Empty by default - an operator who
+    wants per-item pushes opts in.
     """
 
     on_complete: str = ""
     on_first_failure: str = ""
+    on_inbox_item: str = ""
     hook_timeout: float = 30.0
 
     @classmethod
@@ -471,6 +478,8 @@ class NotifyConfig:
             config.on_complete = section["on_complete"]
         if isinstance(section.get("on_first_failure"), str):
             config.on_first_failure = section["on_first_failure"]
+        if isinstance(section.get("on_inbox_item"), str):
+            config.on_inbox_item = section["on_inbox_item"]
         if "hook_timeout" in section:
             config.hook_timeout = float(section["hook_timeout"])
         _apply_notify_env(config)
@@ -482,6 +491,8 @@ def _apply_notify_env(config: NotifyConfig) -> None:
         config.on_complete = os.environ["KSTRL_NOTIFY_ON_COMPLETE"]
     if "KSTRL_NOTIFY_ON_FIRST_FAILURE" in os.environ:
         config.on_first_failure = os.environ["KSTRL_NOTIFY_ON_FIRST_FAILURE"]
+    if "KSTRL_NOTIFY_ON_INBOX_ITEM" in os.environ:
+        config.on_inbox_item = os.environ["KSTRL_NOTIFY_ON_INBOX_ITEM"]
     if "KSTRL_NOTIFY_HOOK_TIMEOUT" in os.environ:
         config.hook_timeout = float(os.environ["KSTRL_NOTIFY_HOOK_TIMEOUT"])
 
@@ -489,13 +500,17 @@ def _apply_notify_env(config: NotifyConfig) -> None:
 class NotifyHooks:
     """Fires user-configured shell commands on factory-run milestones.
 
-    Three conditions, each fired at most once per run (R3.2):
+    Each condition fires at most once per run (R3.2):
 
     - run completion -> ``on_complete``
     - first component failure -> ``on_first_failure``
     - first MERGE_PENDING park -> ``on_first_failure`` (the attention
       channel: the run is blocked on a human confirming a merge). The
       hook can tell the conditions apart via ``KSTRL_NOTIFY_EVENT``.
+    - first R8.3 inbox item of each kind -> ``on_inbox_item``, which is
+      empty by default. Kept off ``on_first_failure`` on purpose: the
+      item and the failure usually describe the same event, and one
+      event must not page twice.
 
     Hooks are observability, never control flow: a hook that fails to
     launch, exits nonzero, or times out produces a warning and nothing
@@ -528,6 +543,22 @@ class NotifyHooks:
         self._fire(
             "first_failure", self._config.on_first_failure,
             component_id=component_id, detail=error,
+        )
+
+    def fire_inbox_item(self, kind: str, title: str, component_id: str = "") -> None:
+        """R8.3: an exception needs a human. Opt-in via its OWN
+        ``on_inbox_item`` command, empty by default.
+
+        It must not share ``on_first_failure``: a failing component
+        already fires that hook, and the inbox item it raises describes
+        the same event, so reusing the command would notify twice for
+        one thing. One-way as ever - the hook pushes, it never calls
+        back into the harness. Only action-required kinds and demotions
+        reach here, so success stays silent.
+        """
+        self._fire(
+            f"inbox_{kind}", self._config.on_inbox_item,
+            component_id=component_id, detail=title,
         )
 
     def fire_merge_pending(self, component_id: str, detail: str = "") -> None:

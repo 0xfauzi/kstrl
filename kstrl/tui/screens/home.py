@@ -54,6 +54,7 @@ HOME_COMMANDS: list[HomeCommand] = [
     HomeCommand("retry", "retry", "rerun a failed component"),
     HomeCommand("dash", "dashboard", "open the newest run"),
     HomeCommand("config", "config", "resolved values + sources"),
+    HomeCommand("inbox", "inbox", "decisions awaiting you"),
     HomeCommand("evolve", "evolve", "proposals and trends"),
     HomeCommand("init", "init", "scaffold a project"),
     HomeCommand("feature", "feature", "via CLI: ks feature --tui"),
@@ -355,6 +356,10 @@ class HomeScreen(Screen[None]):
             from kstrl.tui.screens.config import ConfigScreen
 
             self.app.push_screen(ConfigScreen())
+        elif command_id == "inbox":
+            from kstrl.tui.screens.inbox import InboxScreen
+
+            self.app.push_screen(InboxScreen())
         elif command_id == "evolve":
             from kstrl.tui.screens.evolve import EvolveScreen
 
