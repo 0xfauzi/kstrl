@@ -57,6 +57,7 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyHooks
 from kstrl.policy import PolicyConfig
@@ -262,6 +263,7 @@ class ComponentPipeline:
         bus: ev.EventBus,
         journal_path: Path | None,
         run_paths: ev.RunPaths | None = None,
+        usage_paths: ev.RunPaths | None = None,
         interaction: InteractionChannel | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
@@ -284,6 +286,12 @@ class ComponentPipeline:
         self.bus = bus
         self.journal_path = journal_path
         self.run_paths = run_paths
+        # R8: where engineer-loop usage snapshots live. Deliberately
+        # SEPARATE from run_paths, which is None when progress logging
+        # is off: accounting must survive the observability opt-out
+        # (review finding P2-d). None only for callers that never run
+        # the abort-salvage path (tests, embedded pipelines).
+        self.usage_paths = usage_paths
         # PR A: the interaction seam. Defaults to today's terminal
         # behavior; embedded mode (PR F) injects a QueueInteractionChannel.
         self.interaction: InteractionChannel = (
@@ -314,6 +322,10 @@ class ComponentPipeline:
         # accumulate: every attempt cost real tokens, so the meter never
         # forgets a failed attempt.
         self.usage_meter: dict[str, dict[str, UsageTotals]] = {}
+        # Components whose usage snapshot could not be retired
+        # before this attempt launched; disk salvage is refused
+        # for them (R8 review P2 on 22e99b4).
+        self._usage_salvage_unsafe: set[str] = set()
         self.run_usage = UsageTotals()
 
         # E4: adversarial-call counter shared across review / security /
@@ -367,6 +379,54 @@ class ComponentPipeline:
             component=comp_id, phase=phase, **totals.to_dict(),
         ))
 
+    def record_engineer_usage(
+        self, comp_id: str, totals: UsageTotals,
+    ) -> None:
+        """Record engineer spend that never came back through
+        process_result (R8 abort path). The worker was killed, so its
+        records reach the meter here or not at all; the caller
+        guarantees the matching future produced no result, so this can
+        never double count with the normal path."""
+        self._record_usage(comp_id, "engineer", totals)
+
+    def mark_usage_salvage_safe(self, comp_id: str) -> None:
+        """The attempt's usage snapshot slot is provably clean."""
+        self._usage_salvage_unsafe.discard(comp_id)
+
+    def mark_usage_salvage_unsafe(self, comp_id: str) -> None:
+        """A stale snapshot may survive for this attempt, so disk
+        salvage must not run for it (R8 review: deletion IS the
+        attempt-scoping invariant; when it fails, what is on disk may
+        already have been counted by ``process_result``)."""
+        self._usage_salvage_unsafe.add(comp_id)
+
+    def usage_salvage_is_safe(self, comp_id: str) -> bool:
+        return comp_id not in self._usage_salvage_unsafe
+
+    def engineer_usage_totals(self) -> UsageTotals:
+        """Engineer-loop spend across every component and attempt.
+
+        Feeds the loop-side budget's tokenless-call threshold (R8). That
+        threshold asks "does the ENGINEER's adapter report tokens?", so
+        it must not be answered with run-wide totals: a timed-out
+        architect or reviewer call is tokenless too, and counting those
+        let two unrelated timeouts condemn an engineer adapter that had
+        been reporting perfectly well - while the halt message asserted
+        the cap "can never trip on this adapter". Engineer-scoped, the
+        counter still survives the case it exists for
+        (``max_iterations = 1`` and retries, where a per-loop counter
+        resets before it can conclude anything).
+
+        The OVERRUN half stays run-wide: that one asks what the RUN has
+        spent against the cap, which is every phase's business.
+        """
+        totals = UsageTotals()
+        for phases in self.usage_meter.values():
+            engineer = phases.get("engineer")
+            if engineer is not None:
+                totals.merge(engineer)
+        return totals
+
     def usage_totals_for(self, comp_id: str) -> UsageTotals:
         """One component's spend across all phases (PR A: shown at the
         E6 checkpoint so the human sees what the attempt cost)."""
@@ -378,6 +438,43 @@ class ComponentPipeline:
     def token_budget_exceeded(self) -> bool:
         cap = self.factory_config.max_total_tokens
         return cap > 0 and self.run_usage.total_tokens >= cap
+
+    def token_budget_unenforceable(self) -> str | None:
+        """Why the cap can no longer fire at all, or None.
+
+        The parent-side twin of :meth:`LoopBudget.halt_reason`'s
+        unenforceable branch, and it exists because the in-loop check has
+        a blind spot the loop cannot cover itself: a loop that emits
+        COMPLETE returns BEFORE evaluating its budget, so an adapter that
+        finishes on its first tokenless call never reaches the halt.
+        That is the ordinary success path for a custom ``agent_cmd``, not
+        an artificial case - each component completes, the engineer's
+        tokenless count climbs, and the cap never fires (review finding
+        on 22e99b4; the previous docstring's "the halt lands on the next
+        loop" was simply false when the next loop also completes).
+
+        Checked at the scheduling gate, so the run stops handing out NEW
+        work under a dead cap. Deliberately does not retroactively fail
+        components that already completed: their work is valid, and the
+        cap's job is to stop spending, not to destroy what was bought.
+        Bound: at most the component in flight when the determination
+        lands.
+        """
+        cap = self.factory_config.max_total_tokens
+        if cap <= 0:
+            return None
+        engineer = self.engineer_usage_totals()
+        if engineer.token_calls > 0:
+            return None
+        if engineer.tokenless_calls < UNENFORCEABLE_CALLS:
+            return None
+        return (
+            f"token budget unenforceable: the engineer has made "
+            f"{engineer.tokenless_calls} agent call(s) this run and none "
+            f"reported a token count, so max_total_tokens ({cap}) cannot "
+            "advance; refusing to schedule further components rather than "
+            "spending under a cap that cannot fire (R8)"
+        )
 
     # ------------------------------------------------------------------
     # Attempt lifecycle + evidence pointers (R3.3)
@@ -695,13 +792,22 @@ class ComponentPipeline:
         self.manifest.save(self.manifest_path)
         return Transition.FAILED
 
-    def fail_for_budget(self, comp: Component, phase: str) -> Transition:
+    def fail_for_budget(
+        self, comp: Component, phase: str, reason: str = "",
+    ) -> Transition:
         """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
         R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
         typed Finding in the stream, a progress-log event, and a FAILED
         component - never a silent degrade. Retrying cannot un-spend
-        tokens, so this fails directly instead of burning retries."""
-        error = (
+        tokens, so this fails directly instead of burning retries.
+
+        ``reason`` (R8) overrides the derived message when the breach
+        was detected somewhere the parent's own totals do not describe -
+        specifically the engineer loop's in-loop halt on unreportable
+        usage, where ``run_usage.total_tokens >= cap`` is false and
+        stating it would put a false number in the audit trail. Every
+        other side effect is identical wherever the breach is caught."""
+        error = reason or (
             f"token budget exceeded: {self.run_usage.total_tokens} total "
             f"tokens recorded >= max_total_tokens "
             f"({self.factory_config.max_total_tokens}); halting instead of "
@@ -1163,9 +1269,22 @@ class ComponentPipeline:
         # R3.1 budget checkpoint: the engineer loop just reported the
         # dominant spend; halt before starting adversarial phases (or a
         # retry) when the run-level cap is blown.
-        if self.token_budget_exceeded():
+        #
+        # R8: the loop can also halt ITSELF between iterations, which is
+        # the only enforcement that happens while the spend is being
+        # incurred. Both routes land here, so the audit trail (typed
+        # finding, BudgetExceeded event, single budget_overrun inbox
+        # item, no duplicate halted_run) is identical either way. The
+        # worker's reason is used only when the parent's own totals do
+        # not show a breach - the unreportable-usage case, where the
+        # derived "N >= cap" sentence would be false.
+        if comp_result.budget_exceeded or self.token_budget_exceeded():
+            reason = (
+                "" if self.token_budget_exceeded()
+                else (comp_result.error or "")
+            )
             return PipelineOutcome(
-                transition=self.fail_for_budget(comp, "engineer"),
+                transition=self.fail_for_budget(comp, "engineer", reason),
             )
 
         if not comp_result.success:

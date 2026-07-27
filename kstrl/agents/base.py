@@ -53,10 +53,25 @@ class UsageTotals:
     wall time, so every token/cost total is a LOWER BOUND whenever
     ``unreported_calls > 0`` (H4: totals are only as honest as their
     coverage, and the rollup renders that gap explicitly).
+
+    ``token_calls`` is the STRICTER coverage signal: invocations that
+    reported an actual token figure. It is deliberately separate from
+    ``known_calls`` because a record carrying only ``cost_usd`` (the
+    claude adapter emits ``total_cost_usd`` even when the ``usage`` dict
+    is missing or drifted) is "known" for cost purposes yet contributes
+    nothing to ``total_tokens``. Anything reasoning about a TOKEN
+    ceiling - see ``kstrl.loop.LoopBudget`` - must read ``token_calls``,
+    not ``known_calls``; a review of R8 found the cost-only case makes a
+    token cap silently unenforceable while ``known_calls`` says coverage
+    is perfect.
     """
 
     calls: int = 0
     known_calls: int = 0
+    #: Invocations that reported at least one TOKEN figure. Always
+    #: <= known_calls. Serialized (to_dict) so the on-disk audit trail
+    #: keeps the distinction; absent in payloads written before R8.
+    token_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -70,6 +85,17 @@ class UsageTotals:
         """Invocations that reported no token/cost data at all."""
         return self.calls - self.known_calls
 
+    @property
+    def tokenless_calls(self) -> int:
+        """Invocations that reported no TOKEN figure.
+
+        Superset of ``unreported_calls``: a cost-only record is counted
+        here but not there. This is the number a token ceiling has to
+        reason about, because these calls can never move
+        ``total_tokens``.
+        """
+        return self.calls - self.token_calls
+
     def add_record(self, record: object) -> None:
         """Fold one usage record into the totals.
 
@@ -80,6 +106,10 @@ class UsageTotals:
         """
         self.calls += 1
         known = False
+        # Tracked separately from ``known``: a cost-only record is known
+        # but tokenless, and a token cap must not mistake it for
+        # coverage (R8 review, P1-b).
+        token_known = False
         token_fields = (
             "input_tokens",
             "output_tokens",
@@ -95,10 +125,12 @@ class UsageTotals:
                 part_sum += value
                 parts_seen = True
                 known = True
+                token_known = True
         total = _as_int(getattr(record, "total_tokens", None))
         if total is not None:
             self.total_tokens += total
             known = True
+            token_known = True
         elif parts_seen:
             self.total_tokens += part_sum
         cost = _as_float(getattr(record, "cost_usd", None))
@@ -110,11 +142,14 @@ class UsageTotals:
             self.duration_seconds += duration
         if known:
             self.known_calls += 1
+        if token_known:
+            self.token_calls += 1
 
     def merge(self, other: UsageTotals) -> None:
         """Fold another totals object into this one."""
         self.calls += other.calls
         self.known_calls += other.known_calls
+        self.token_calls += other.token_calls
         self.input_tokens += other.input_tokens
         self.output_tokens += other.output_tokens
         self.cache_read_tokens += other.cache_read_tokens
@@ -128,6 +163,7 @@ class UsageTotals:
         return {
             "calls": self.calls,
             "known_calls": self.known_calls,
+            "token_calls": self.token_calls,
             "unreported_calls": self.unreported_calls,
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,

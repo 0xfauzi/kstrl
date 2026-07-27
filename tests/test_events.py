@@ -300,7 +300,13 @@ class TestV1CompatGoldenParity:
             component="comp-a", passed=False, mode="hard", fail_count=2,
             advisory_count=1, duration_seconds=60.0))
 
-        usage = {"calls": 3, "known_calls": 2, "unreported_calls": 1,
+        # Mirrors UsageTotals.to_dict() verbatim, which is the documented
+        # contract of ProgressLog.component_usage. R8 added token_calls
+        # (calls that reported a TOKEN figure, as opposed to cost alone),
+        # so both sides of the parity carry it. Every reader of this
+        # payload looks keys up defensively, so older files simply lack it.
+        usage = {"calls": 3, "known_calls": 2, "token_calls": 1,
+                 "unreported_calls": 1,
                  "input_tokens": 100, "output_tokens": 50,
                  "cache_read_tokens": 10, "cache_creation_tokens": 5,
                  "total_tokens": 165, "cost_usd": 0.123456,

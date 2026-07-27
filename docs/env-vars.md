@@ -64,6 +64,76 @@ All values are seconds; 0 or less disables that limit.
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
+### What `max_total_tokens` guarantees (R8)
+
+It is a **stop-before-the-next-unit-of-work** limit, not a hard cap. It is
+evaluated in two places:
+
+- **Between engineer iterations** (`kstrl/loop.py`, `LoopBudget.halt_reason`).
+  The worker is launched with the cap plus the run's spend as of that moment,
+  so the loop refuses to start another iteration once the total reaches the
+  cap. This is the only check that fires while the spend is being incurred.
+- **At phase boundaries** in the parent (`pipeline.process_result`, the review
+  / security / distill gates, and the scheduling gate). These stop the next
+  phase or the next component.
+
+Either route halts the component loudly and identically: a
+`budget_exceeded` event, a typed `infrastructure_error` finding, and exactly
+one `budget_overrun` inbox item.
+
+What is **not** bounded:
+
+| Gap | Why |
+|---|---|
+| The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens |
+| Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the cap |
+| Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
+
+Unknown usage is deliberately **not** silently treated as zero in the one case
+where that would make the cap undeliverable. The loop halts with a
+`token budget unenforceable` reason when **both** hold:
+
+1. **this engineer loop** has reported no token count on any of its calls, so
+   the run total cannot grow while it runs (the spend recorded before this
+   worker launched is frozen at launch); **and**
+2. the **engineer** has now made two calls that reported no token count -
+   counted across the run's engineer loops, so the threshold does not reset on
+   every attempt or component, while another role's timed-out call never
+   counts (it is no evidence about the engineer's adapter).
+
+A loop that emits the completion marker returns before its own budget check,
+so a component that finishes on a single tokenless call cannot halt itself. The
+scheduling gate catches that case instead: once the engineer has made two
+tokenless calls with no token report, the run refuses to start further
+components. Spend is therefore bounded by the component already in flight, not
+by zero.
+
+Reported *cost* is not token evidence: a result carrying `total_cost_usd` with
+no `usage` dict is "known" to the meter but can never move a token total, so
+the rule counts token-bearing calls (`token_calls`), not reporting calls.
+
+The threshold counts only the calls that reported **no tokens**, so a lone
+unparseable result in an otherwise-reporting run is still treated as an
+incident, not a dead adapter. The flip side, on purpose: once a run has
+accumulated one tokenless call anywhere, the engineer's first tokenless
+iteration reaches the threshold and halts. Two independent tokenless calls in
+one run is adapter behavior (a custom `agent_cmd` never reports usage), and a
+loud, recoverable halt beats spending under a ceiling that cannot fire.
+
+`KSTRL_AGENT_BUDGET_USD` is the only genuine in-turn ceiling, and only the
+`claude-sdk` adapter enforces it; `claude-code`, `codex`, and custom commands
+ignore it.
+
+### Usage accounting vs progress logging
+
+`FACTORY_PROGRESS_LOG_ENABLED=0` (or `[factory] progress_log_enabled = false`)
+turns off `progress.jsonl` and the run's `events.jsonl`. It does **not** turn
+off usage accounting: every run still allocates
+`.kstrl/runs/<run_id>/components/<id>/engineer_usage.json`, a small snapshot
+the engineer loop rewrites at each iteration boundary so a worker killed by a
+shutdown does not take its spend to the grave. An observability opt-out may
+drop the narration; it must never drop the meter.
+
 ## BreakerConfig (`[breaker]`)
 
 No-progress circuit breaker (R7.5): the engineer loop halts loudly when N

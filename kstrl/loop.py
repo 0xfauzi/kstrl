@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,7 +28,200 @@ if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
     from kstrl.ui.base import UI
 
+logger = logging.getLogger(__name__)
+
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
+
+# How many TOKENLESS agent calls the RUN must accumulate before an
+# enabled token cap is declared unenforceable (see
+# LoopBudget.halt_reason). A judgment call, not a measurement: one
+# tokenless call is an incident (the claude adapter records
+# source="timeout" / "parse-error" with no counts, and a cost-only
+# result event is tokenless too), two in one run is a property of the
+# adapter. The cost of the extra call is one iteration of overshoot on
+# an adapter that reports no tokens; the cost of setting it to 1 is
+# killing a capped run over a single timed-out first iteration.
+#
+# Counted across the RUN'S ENGINEER LOOPS (prior_calls/prior_token_calls
+# carry the parent's engineer-only figures down), because a per-loop
+# counter resets on every attempt and every component: with
+# max_iterations = 1, or a retry that dies after one call, no single loop
+# ever reached the threshold and the rule was decorative (review finding
+# P1-a).
+#
+# Engineer-scoped, NOT run-wide across roles: a timed-out architect or
+# reviewer call is tokenless too, and counting those let two unrelated
+# timeouts condemn an engineer adapter that had been reporting fine -
+# while the halt message asserted the cap could "never trip". The
+# question this threshold asks is whether the ENGINEER's adapter reports
+# tokens, so only engineer calls are evidence about it.
+UNENFORCEABLE_CALLS = 2
+_UNENFORCEABLE_CALLS = UNENFORCEABLE_CALLS  # back-compat alias
+
+
+@dataclass(frozen=True)
+class LoopBudget:
+    """Run-level token ceiling pushed DOWN into the engineer loop (R8).
+
+    ``[factory] max_total_tokens`` was, until R8, consulted only at
+    parent-process phase boundaries (pipeline.process_result, the review
+    / security / distill gates, the scheduling gate). Those checks can
+    stop the NEXT phase; they can never stop the iteration already
+    running, so a single component could spend for ``max_iterations x
+    agent_iteration`` seconds before the cap was consulted once.
+
+    This object is the loop-side half. It is evaluated BETWEEN
+    iterations, which is the tightest bound available without a
+    streaming token feed from the adapter.
+
+    WHAT IT GUARANTEES: the engineer loop starts no NEW iteration once
+    the run's reported spend has reached the cap. Overshoot is bounded
+    by the work already in flight - roughly one iteration per running
+    worker - not by zero.
+
+    WHAT STAYS UNBOUNDED:
+    - A single runaway iteration. Nothing here interrupts an agent call
+      mid-flight; only ``[timeout] agent_iteration`` bounds that, and it
+      bounds wall clock, not tokens.
+    - Concurrent siblings. ``prior_total_tokens`` is the run total as of
+      THIS worker's launch; spend by workers running in parallel is
+      invisible until they report back to the parent. With
+      ``max_parallel = N`` the overshoot scales with N.
+    - Unreported spend. Every figure here is a CLI self-report; see
+      :meth:`halt_reason` for how unknown usage is treated.
+    - Loops that COMPLETE. The completion return fires before this check
+      is evaluated, so an adapter that finishes on its first tokenless
+      call never halts itself - the ordinary success path for a custom
+      ``agent_cmd``. That bypass is closed in the PARENT by
+      ``ComponentPipeline.token_budget_unenforceable`` at the scheduling
+      gate, which stops the run handing out new work; this object cannot
+      see it, and pretending otherwise is how it went unnoticed.
+    """
+
+    # Copies of the parent's FactoryConfig.max_total_tokens and the run
+    # usage accumulated before this worker launched. Plain ints so the
+    # whole object pickles cleanly to a pool worker.
+    max_total_tokens: int = 0
+    prior_total_tokens: int = 0
+    #: Reporting calls (token OR cost) the run had made before this
+    #: worker launched. Provenance only - it says whether the run's
+    #: prior total is a real figure or an artefact of a silent adapter -
+    #: and NOT part of any decision; see :meth:`halt_reason`.
+    prior_known_calls: int = 0
+    #: ENGINEER-loop calls the run had made before this worker launched,
+    #: and how many reported a TOKEN figure. Their difference is the
+    #: engineer's tokenless-call count, which is what the unenforceable
+    #: rule counts (R8 review P1-a: a per-loop counter resets on every
+    #: attempt/component, so short loops never reached the threshold).
+    #: Engineer-scoped on purpose - another role's timeout is not
+    #: evidence about the engineer's adapter.
+    prior_calls: int = 0
+    prior_token_calls: int = 0
+
+    @property
+    def enabled(self) -> bool:
+        return self.max_total_tokens > 0
+
+    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
+        """Why this loop must stop now, or None to keep iterating.
+
+        Two conditions, both computed from CLI self-reported usage:
+
+        1. OVERRUN - the run total (spend before this worker launched
+           plus what this loop has reported) has reached the cap.
+        2. UNENFORCEABLE - the cap provably cannot trip. Two facts have
+           to hold together, and they are deliberately measured over
+           different scopes:
+
+           (a) TOKEN EVIDENCE, judged on THIS loop: not one of this
+               loop's calls reported a token figure
+               (``loop_usage.token_calls == 0``). That is what makes the
+               cap dead rather than merely slow, because
+               ``prior_total_tokens`` is frozen at this worker's launch:
+               if this loop never reports tokens, the run total stays
+               fixed below the ceiling forever no matter how long the
+               engineer runs.
+
+               Judged on the loop ALONE, never on the run. Summing the
+               run's reported calls in looked stricter but was weaker: a
+               reporting architect (or a previous component) suppressed
+               the halt for a silent engineer and handed back the
+               decorative cap in exactly the configuration where it is
+               easiest to hit - ``[agent] command`` sets a custom
+               engineer command while the adversarial roles keep a
+               reporting adapter.
+
+               Reads ``token_calls``, not ``known_calls``: a record
+               carrying only ``cost_usd`` sets ``known_calls`` while
+               contributing nothing to ``total_tokens``, so
+               ``known_calls`` reported perfect coverage for a cap that
+               could never advance (review finding P1-b).
+
+           (b) CALL THRESHOLD, counted across the run's ENGINEER loops:
+               the engineer has now made ``_UNENFORCEABLE_CALLS``
+               tokenless calls in total (``prior_calls -
+               prior_token_calls`` plus this loop's own). This is the
+               "have we seen enough to conclude?" half, and it must not
+               reset per attempt or per component
+               - with ``max_iterations = 1``, or a retry that dies after
+               one call, a per-loop counter never reached 2 and the rule
+               was decorative (review finding P1-a).
+
+               Tokenless calls, not all calls: a call that DID report
+               tokens is evidence the adapter works, so counting it
+               toward "this adapter never reports" would be backwards
+               and would make a single unparseable result fatal in an
+               otherwise healthy run.
+
+        CONSEQUENCE, stated plainly: in a run whose engineer calls have
+        all reported tokens, a lone unparseable engineer call does not
+        halt - the tokenless count is 1. A second tokenless ENGINEER
+        call does. Other roles' timeouts never contribute. That is the
+        deliberate trade: two
+        independent tokenless calls in one run is adapter behavior, not
+        an incident, and the failure is loud, recorded, and recoverable
+        (raise or clear ``max_total_tokens``), whereas the alternative
+        is unbounded spend under a ceiling that cannot fire.
+
+        A loop that has made no calls at all can never halt here: with
+        ``loop_usage.calls == 0`` there is no token evidence either way,
+        so a worker launched into a run with a high ``prior_calls`` must
+        still get to run its engineer.
+
+        An iteration that reports nothing WHILE other calls in the same
+        loop do report counts as zero tokens: the running total stays a
+        lower bound (see ``UsageTotals.unreported_calls``) that still
+        grows toward the cap, so the halt arrives late rather than
+        never. Charging unknown iterations a guessed amount would invent
+        numbers the CLI never gave us.
+        """
+        if not self.enabled:
+            return None
+        total = self.prior_total_tokens + loop_usage.total_tokens
+        if total >= self.max_total_tokens:
+            return (
+                f"token budget exceeded: {total} total tokens recorded >= "
+                f"max_total_tokens ({self.max_total_tokens}); halting the "
+                "engineer loop instead of starting another iteration (R8)"
+            )
+        prior_tokenless = max(0, self.prior_calls - self.prior_token_calls)
+        run_tokenless = prior_tokenless + loop_usage.tokenless_calls
+        if (
+            loop_usage.calls > 0
+            and loop_usage.token_calls == 0
+            and run_tokenless >= _UNENFORCEABLE_CALLS
+        ):
+            return (
+                f"token budget unenforceable: none of this loop's "
+                f"{loop_usage.calls} agent call(s) reported a token count, "
+                f"and the engineer has now made {run_tokenless} tokenless "
+                f"call(s) this run. Spend before this worker launched is "
+                f"frozen at {self.prior_total_tokens}, so max_total_tokens "
+                f"({self.max_total_tokens}) cannot advance from this loop; "
+                "halting rather than spending under a cap that cannot fire "
+                "(R8)"
+            )
+        return None
 
 
 @dataclass
@@ -55,6 +249,11 @@ class LoopResult:
     # signature). Typed so the factory can route it distinctly instead
     # of string-matching the error.
     no_progress: bool = False
+    # R8: non-empty when the run-level token budget halted the loop
+    # between iterations. The string is the human-readable reason (see
+    # LoopBudget.halt_reason) and becomes the component's error, so the
+    # audit trail records WHICH budget condition fired.
+    budget_halt_reason: str = ""
 
 
 def run_loop(
@@ -70,6 +269,8 @@ def run_loop(
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
     guard_ignored_paths: list[str] | None = None,
+    budget: LoopBudget | None = None,
+    on_iteration_usage: Callable[[UsageTotals], None] | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -84,6 +285,14 @@ def run_loop(
             across iterations). Defaults to TimeoutConfig.from_env().
         breaker_config: No-progress circuit breaker limits (R7.5).
             Defaults to BreakerConfig.from_env().
+        budget: Run-level token ceiling (R8), checked between
+            iterations. None (the default, and every non-factory
+            caller) means no in-loop token limit.
+        on_iteration_usage: Called with this loop's usage-so-far at
+            every iteration boundary. The factory uses it to persist a
+            durable copy, so a worker killed by a shutdown does not
+            take its spend to the grave. Accounting only: an exception
+            here is logged, never raised into the loop.
 
     Returns:
         LoopResult with completion status and exit code
@@ -279,6 +488,17 @@ def run_loop(
                     timed_out=iteration_timed_out,
                 ))
 
+        # One usage snapshot per iteration, taken before any early
+        # return below so a timed-out or guard-failing iteration is
+        # accounted for too. Published first (durability), then used for
+        # the budget decision.
+        loop_usage = collect_usage(agent)
+        if on_iteration_usage is not None:
+            try:
+                on_iteration_usage(loop_usage)
+            except Exception as exc:  # noqa: BLE001 - accounting never gates
+                logger.warning("Failed to publish iteration usage: %s", exc)
+
         if iteration_timed_out:
             timed_out_iterations += 1
             ui.warn(
@@ -323,6 +543,28 @@ def run_loop(
                 timed_out_iterations=timed_out_iterations,
                 usage=collect_usage(agent),
             )
+
+        # R8 run-level token budget: the ONLY in-loop enforcement point
+        # for [factory] max_total_tokens. Checked here - after the
+        # completion return, before the breaker's stall probe - so a
+        # blown budget never pays for another agent call or another
+        # breaker test command. This bounds overshoot to the work
+        # already in flight (about one iteration per running worker); it
+        # cannot interrupt a call mid-flight. See LoopBudget.
+        if budget is not None:
+            halt_reason = budget.halt_reason(loop_usage)
+            if halt_reason is not None:
+                ui.err(halt_reason)
+                return LoopResult(
+                    completed=False,
+                    iterations=iteration,
+                    exit_code=1,
+                    duration_seconds=time.monotonic() - loop_start,
+                    iteration_durations=iteration_durations,
+                    timed_out_iterations=timed_out_iterations,
+                    usage=loop_usage,
+                    budget_halt_reason=halt_reason,
+                )
 
         # R7.5 no-progress circuit breaker: the iteration finished
         # without completing AND without changing the tree or the test

@@ -101,9 +101,31 @@ create_prs = true                  # call `gh` to push + merge per component
 review_mode = "hard"               # hard | advisory | skip
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation (R0.2)
 max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
-max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1)
+max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1/R8)
+# What max_total_tokens actually guarantees (read this before trusting it):
+#   Checked BETWEEN engineer iterations and at every phase boundary. Once the
+#   run's reported spend reaches the cap, no NEW iteration and no new phase
+#   starts, and the component halts loudly (budget_overrun inbox item).
+#   It is NOT a hard cap. What stays unbounded:
+#     - the iteration already in flight: nothing interrupts a single agent call
+#       mid-run, so overshoot is up to one iteration (bounded in wall clock by
+#       [timeout] agent_iteration, not in tokens);
+#     - concurrent workers: each one sees the run total as of ITS launch, so
+#       with max_parallel = N the overshoot scales with N;
+#     - unreported spend: every figure is a CLI self-report, so totals are
+#       lower bounds whenever unreported_calls > 0. When THIS engineer loop
+#       reports no token count at all AND the run has now seen two calls that
+#       reported none (a custom agent_cmd never does), the cap provably cannot
+#       trip and the loop halts on THAT rather than pretending to enforce.
+#       Reported cost is not token evidence - a result with a cost but no
+#       usage dict cannot move a token total.
+#   [agent] budget_usd is the only genuine per-turn ceiling, and only the
+#   claude-sdk adapter enforces it.
 pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2)
+# Disabling progress_log_enabled drops progress.jsonl AND events.jsonl. It does
+# NOT drop usage accounting: engineer_usage.json is still written per component
+# under .kstrl/runs/<run_id>/ so a killed worker's spend still reaches the meter.
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # Phase 1 mechanical verification.

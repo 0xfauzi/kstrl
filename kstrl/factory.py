@@ -9,6 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -72,6 +73,7 @@ from kstrl.knowledge import (
     measure_fact_utilization,
 )
 from kstrl.linear import LinearConfig, build_linear_sink
+from kstrl.loop import LoopBudget
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import (
     NotifyConfig,
@@ -504,6 +506,11 @@ class ComponentResult:
     # prompt against the same state is the exact spend the breaker
     # exists to stop) with a distinct journal event.
     no_progress: bool = False
+    # R8: the engineer loop halted ITSELF on the run-level token budget
+    # (between iterations). Routed to pipeline.fail_for_budget so the
+    # audit trail is identical to a breach caught at a phase boundary;
+    # ``error`` carries which budget condition fired.
+    budget_exceeded: bool = False
 
 
 @dataclass
@@ -933,6 +940,117 @@ def _preflight_component_branches(
     return errors
 
 
+def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
+    """Publish the engineer loop's usage-so-far, atomically (R8).
+
+    The worker owns its UsageRecords in memory; the abort path
+    (``_abort_inflight``) SIGKILLs the process, so without this file the
+    spend of a killed worker is simply lost. mkstemp + os.replace is the
+    repo's atomic-write convention (manifest.py:381) and is what makes
+    the file safe to read from a process that may be killing the writer:
+    a reader sees the previous complete snapshot or the new one, never a
+    torn one.
+
+    Accounting only - every failure is swallowed. A worker must not die
+    because its usage file could not be written.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(path.parent), suffix=".tmp", prefix=".usage-",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(totals.to_dict(), fh)
+            os.replace(tmp_path, str(path))
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except (OSError, TypeError, ValueError):
+        return
+
+
+def _read_partial_usage(path: Path) -> UsageTotals | None:
+    """Rehydrate a killed worker's last usage snapshot (R8).
+
+    Returns None when the file is absent, unreadable, or not a usage
+    dict - the abort path then records nothing rather than guessing.
+    ``unreported_calls`` and ``tokenless_calls`` are derived properties
+    and are deliberately not read back.
+
+    Backward compatible on read: ``token_calls`` (added in R8 after the
+    review) is optional and defaults to 0 when the payload predates it.
+    That under-reports token coverage rather than inventing it, and the
+    file is rewritten at the next iteration boundary anyway - it is a
+    per-run, per-attempt scratch file, never a long-lived record.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    totals = UsageTotals()
+    int_fields = (
+        "calls", "known_calls", "token_calls", "input_tokens",
+        "output_tokens", "cache_read_tokens", "cache_creation_tokens",
+        "total_tokens",
+    )
+    for name in int_fields:
+        value = data.get(name)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            setattr(totals, name, value)
+    for name in ("cost_usd", "duration_seconds"):
+        value = data.get(name)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and value >= 0
+        ):
+            setattr(totals, name, float(value))
+    if totals.calls == 0:
+        return None
+    return totals
+
+
+def _clear_partial_usage(path: Path) -> bool:
+    """Retire the previous attempt's usage snapshot (R8 review, P2-c).
+
+    The snapshot is keyed by run + component only, and a normal result
+    leaves the file on disk, so without this the NEXT attempt inherits
+    it: a retry cancelled before its own first iteration boundary got
+    salvaged with the previous attempt's tokens, which
+    ``process_result`` had already recorded - a clean double count.
+
+    Called by the scheduler in the PARENT immediately before every
+    submission, not by the worker, because the window that matters is
+    exactly the one where the worker never starts (cancelled or killed
+    during pool startup).
+
+    Returns True when the slot is provably clean - deleted, or already
+    absent. Returns False when a snapshot may still be on disk, and the
+    caller must then refuse disk salvage for that attempt: deletion IS
+    the attempt-scoping invariant, so swallowing the error left the
+    previous attempt's totals addressable as the current one and
+    re-counted them (review finding on 22e99b4). A worker that cannot
+    delete the file generally cannot overwrite it either, so "we failed
+    to clear it" and "what is there is stale" travel together.
+
+    Never fails the component: an accounting risk is not a reason to
+    stop work, but it IS a reason to distrust the number.
+    """
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return True          # nothing to retire; the slot is clean
+    except OSError:
+        return False
+    return True
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -963,7 +1081,9 @@ def _run_component(
     sandbox_allow_network: bool = False,
     agent_budget_usd: float | None = None,
     events_dir_str: str | None = None,
+    usage_dir_str: str | None = None,
     run_id: str = "",
+    token_budget: LoopBudget | None = None,
     redirect_output: bool = True,
     live_line: Callable[[str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
@@ -982,6 +1102,19 @@ def _run_component(
     the parent's UI so sequential runs keep live engineer output.
     Without ``events_dir_str`` the legacy PlainUI-on-stderr behavior is
     preserved for direct callers.
+
+    R8: ``usage_dir_str`` is where the per-iteration usage snapshot is
+    published so a killed worker's spend is recoverable. It is a
+    SEPARATE argument from ``events_dir_str`` on purpose - the factory
+    always sets it, including when progress logging is off, because
+    accounting must not be switchable off by an observability setting
+    (review finding P2-d). Direct callers that leave it None simply do
+    not publish snapshots.
+
+    R8: ``token_budget`` carries the run-level ``max_total_tokens`` plus
+    the spend recorded before this worker launched, so the engineer loop
+    can halt itself BETWEEN iterations instead of waiting for the
+    parent's next phase boundary. None disables the in-loop check.
     """
     from kstrl.agents import get_agent
     from kstrl.loop import run_loop
@@ -1166,6 +1299,20 @@ def _run_component(
         )
         stop_heartbeat = _start_heartbeat(worker_bus)
 
+    # R8: durable per-iteration usage snapshot. The parent reads it only
+    # when a worker was killed before it could return a ComponentResult
+    # (PR B abort path), so it can never double count with result.usage.
+    # Keyed off usage_dir_str, NOT events_dir_str: the accounting file
+    # is written even when progress logging is disabled (P2-d).
+    on_iteration_usage: Callable[[UsageTotals], None] | None = None
+    if usage_dir_str is not None:
+        usage_path = RunPaths(root=Path(usage_dir_str)).engineer_usage(
+            component_id,
+        )
+        on_iteration_usage = functools.partial(
+            _write_partial_usage, usage_path,
+        )
+
     try:
         result = run_loop(
             config, ui, agent, worktree_path,
@@ -1173,11 +1320,19 @@ def _run_component(
             breaker_config=breaker_config,
             bus=worker_bus,
             stop_check=stop_check,
+            budget=token_budget,
+            on_iteration_usage=on_iteration_usage,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
         if result.completed:
             error = None
+        elif result.budget_halt_reason:
+            # First in the chain: the budget halt is the reason the loop
+            # stopped short, and its message carries the numbers the
+            # pipeline needs when its own totals do not yet show a
+            # breach (unreported-usage case).
+            error = result.budget_halt_reason
         elif result.no_progress:
             error = (
                 "no-progress circuit breaker tripped: "
@@ -1205,6 +1360,7 @@ def _run_component(
             context_json=previous_context_json,
             usage=result.usage,
             no_progress=result.no_progress,
+            budget_exceeded=bool(result.budget_halt_reason),
         )
     except Exception as exc:
         return ComponentResult(
@@ -1385,10 +1541,67 @@ def _abort_inflight(
         if killed:
             ui.warn(f"  Terminated {killed} in-flight agent process group(s)")
     for future, comp_id in list(running_futures.items()):
+        _salvage_aborted_usage(future, comp_id, pipeline)
         pipeline.fail_aborted(comp_id, stop.reason)
         running_futures.pop(future, None)
     ui.warn(f"  Aborted in-flight work: {stop.reason}")
     executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _salvage_aborted_usage(
+    future: Future[ComponentResult],
+    comp_id: str,
+    pipeline: ComponentPipeline,
+) -> None:
+    """Record what an aborted worker spent before it was stopped (R8).
+
+    Organic failures carry usage back on the ComponentResult
+    (``pipeline.process_result`` records it before the success branch -
+    "failed attempts cost real tokens too"). The abort path used to lose
+    it: the worker is killed and its future is cancelled without anyone
+    reading a result, so the tokens vanished from the meter and the run
+    under-reported its own spend.
+
+    Two recovery routes, deliberately exclusive so nothing is counted
+    twice:
+    - The future already carries a result (inline executor, or a pool
+      worker that finished as the stop landed): that result is
+      authoritative. ``result()`` cannot block here - the future is
+      done.
+    - Otherwise the worker was killed mid-loop: fall back to the
+      iteration-boundary snapshot it wrote to disk. That file is
+      rewritten atomically, so reading it while the writer is being
+      killed yields a complete (if slightly stale) snapshot. Spend
+      inside the interrupted iteration is NOT recoverable - it was never
+      reported to anyone before the kill.
+
+    The snapshot is attempt-scoped by the scheduler, which deletes it
+    immediately before every submission (``_clear_partial_usage``). That
+    is what makes this route safe: without it a completed attempt left
+    its file behind and a later attempt aborted before its own first
+    iteration boundary salvaged the PREVIOUS attempt's tokens on top of
+    the ones ``process_result`` had already recorded (review finding
+    P2-c, reproduced as a clean 2x double count).
+
+    Reads ``pipeline.usage_paths``, not ``run_paths``: accounting
+    storage exists even when progress logging is off (P2-d).
+    """
+    if future.done() and not future.cancelled():
+        try:
+            result = future.result(timeout=0)
+        except Exception:  # noqa: BLE001 - a crashed worker reported nothing
+            return
+        if result is not None and result.usage is not None:
+            pipeline.record_engineer_usage(comp_id, result.usage)
+        return
+    usage_paths = pipeline.usage_paths
+    if usage_paths is None:
+        return
+    if not pipeline.usage_salvage_is_safe(comp_id):
+        return
+    totals = _read_partial_usage(usage_paths.engineer_usage(comp_id))
+    if totals is not None:
+        pipeline.record_engineer_usage(comp_id, totals)
 
 
 def _next_backstop_wait(
@@ -1703,6 +1916,17 @@ def _run_factory_locked(
     journal_path: Path | None = None
     run_paths: RunPaths | None = None
     run_file_sinks: list[EventSink] = []
+    # R8 (review finding P2-d): accounting storage is allocated for
+    # EVERY run, including progress_log_enabled = false. It used to be
+    # `run_paths`, which is gated on progress logging, so turning the
+    # observability opt-out on also deleted the only place a worker
+    # could publish its spend - a killed worker then recorded nothing
+    # and the run silently under-reported. Money is not observability:
+    # an opt-out may drop the narration, never the meter. This is the
+    # same directory as `run_paths` when progress logging is on; when it
+    # is off the run writes exactly one small JSON file per component
+    # attempt under .kstrl/runs/<run_id>/ and no events at all.
+    usage_paths = RunPaths.for_run(root_dir, run_id)
     if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
     else:
@@ -1934,6 +2158,7 @@ def _run_factory_locked(
         bus=bus,
         journal_path=journal_path,
         run_paths=run_paths,
+        usage_paths=usage_paths,
         interaction=interaction,
         notify=notify,
         review_selection=review_selection,
@@ -2115,6 +2340,7 @@ def _run_factory_locked(
 
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
+        engineer_usage = pipeline.engineer_usage_totals()
         knowledge_prefix = ""
         if knowledge_config.enabled:
             try:
@@ -2154,7 +2380,29 @@ def _run_factory_locked(
             # Chunk 6: worker event channel (None when progress logging
             # is disabled - transcripts and events off together).
             str(run_paths.root) if run_paths is not None else None,
+            # R8: accounting channel. Always set, precisely because the
+            # line above may be None (review finding P2-d).
+            str(usage_paths.root),
             run_id,
+            # R8: run-level token ceiling + the spend recorded so far,
+            # snapshotted AT LAUNCH so the engineer loop can halt itself
+            # between iterations. With max_parallel > 1 a worker cannot
+            # see a concurrent sibling's spend, only what the parent had
+            # recorded when this worker started.
+            # prior_calls/prior_token_calls carry the ENGINEER's tokenless
+            # call count down so the unenforceable rule does not reset on
+            # every attempt and component (review finding P1-a), while
+            # staying blind to other roles' timeouts - those say nothing
+            # about whether the engineer's adapter reports tokens.
+            # prior_total_tokens stays run-wide: the overrun check asks
+            # what the RUN has spent against the cap.
+            LoopBudget(
+                max_total_tokens=factory_config.max_total_tokens,
+                prior_total_tokens=pipeline.run_usage.total_tokens,
+                prior_known_calls=pipeline.run_usage.known_calls,
+                prior_calls=engineer_usage.calls,
+                prior_token_calls=engineer_usage.token_calls,
+            ),
         )
 
     def _run_scheduling_pass() -> None:
@@ -2211,6 +2459,19 @@ def _run_factory_locked(
                         pipeline.fail_for_budget(comp, "scheduling")
                         transitioned_without_launch += 1
                         continue
+                    # R8 review: a loop that emits COMPLETE returns before
+                    # its own budget check, so an adapter that finishes on
+                    # its first tokenless call never halts itself - the
+                    # ordinary success path for a custom agent_cmd. This
+                    # gate is what stops the run handing out NEW work
+                    # under a cap that can no longer fire.
+                    unenforceable = pipeline.token_budget_unenforceable()
+                    if unenforceable is not None:
+                        pipeline.fail_for_budget(
+                            comp, "scheduling", reason=unenforceable,
+                        )
+                        transitioned_without_launch += 1
+                        continue
                     pipeline.begin_attempt(comp)
                     manifest.save(manifest_path)
                     bus.emit(ComponentStarted(component=comp.id))
@@ -2229,6 +2490,29 @@ def _run_factory_locked(
                         attempt=comp.retries + 1,
                     ))
                     args = _submit_args(comp, wt_path)
+                    # R8 (P2-c): the usage snapshot is attempt-scoped by
+                    # deletion, and the deletion happens HERE - before
+                    # the worker exists - so an attempt cancelled during
+                    # pool startup cannot salvage its predecessor's
+                    # tokens on top of the ones already on the meter.
+                    if _clear_partial_usage(
+                        usage_paths.engineer_usage(comp.id)
+                    ):
+                        pipeline.mark_usage_salvage_safe(comp.id)
+                    else:
+                        # A snapshot we could not delete may still hold
+                        # the PREVIOUS attempt's totals, which
+                        # process_result already counted. Refuse disk
+                        # salvage for this attempt rather than risk
+                        # counting them twice - losing an aborted
+                        # attempt's spend understates a total; salvaging
+                        # a stale one corrupts it.
+                        pipeline.mark_usage_salvage_unsafe(comp.id)
+                        ui.warn(
+                            f"  Could not retire the previous usage "
+                            f"snapshot for {comp.id}; disk salvage is "
+                            f"disabled for this attempt"
+                        )
                     if isinstance(executor, _InlineExecutor):
                         # In-process worker: no fd redirection (it would
                         # hijack the parent terminal), and each transcript
@@ -2238,7 +2522,7 @@ def _run_factory_locked(
                         # TIME, so tests patching it still intercept.
                         # mypy cannot prove the unknown-length *args
                         # tuple stops before the kwargs; _submit_args
-                        # ends at run_id by construction.
+                        # ends at token_budget by construction.
                         task = functools.partial(
                             _run_component, *args,
                             redirect_output=False,  # type: ignore[misc]
