@@ -1076,22 +1076,53 @@ class TestInLoopTokenBudget:
         assert result.usage.unreported_calls == 1
         assert result.usage.total_tokens == 600
 
-    def test_prior_reported_calls_disarm_the_unenforceable_halt(
+    def test_prior_reported_calls_do_not_disarm_the_unenforceable_halt(
         self, tmp_path: Path,
     ) -> None:
-        """An earlier phase reported usage, so the cap CAN trip; this
-        loop's unreported iteration is a lower-bound gap, not proof of a
-        dead cap."""
+        """A silent ENGINEER is a dead cap even when earlier phases
+        reported.
+
+        Review regression: the halt used to be judged on the whole run
+        (`prior_known_calls + loop known_calls`), so a reporting
+        architect suppressed it and a silent engineer then spent
+        unbounded under a nominal cap. `prior_total_tokens` is frozen at
+        launch, so once this loop reports nothing the total can never
+        grow toward the ceiling - the cap is exactly as dead as in the
+        all-silent case. That configuration is easy to reach: `[agent]
+        command` sets a custom engineer command while the adversarial
+        roles keep a reporting adapter.
+        """
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
             budget=LoopBudget(
                 max_total_tokens=500, prior_total_tokens=100,
                 prior_known_calls=1,
             ),
         )
-        assert result.iterations == 3
+        assert result.iterations == 2      # halts at _UNENFORCEABLE_CALLS
+        assert "unenforceable" in result.budget_halt_reason
+        assert not result.completed
+
+    def test_one_silent_call_alongside_prior_reporting_keeps_going(
+        self, tmp_path: Path,
+    ) -> None:
+        """A single unparseable result is an incident, not a dead cap.
+
+        The threshold is what separates "this adapter never reports"
+        from "one call came back unreadable"; a lone silent iteration
+        must not kill a capped run.
+        """
+        agent = SequenceUsageAgent([_UNREPORTED, _REPORTED, _REPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(
+                max_total_tokens=500_000, prior_total_tokens=100,
+                prior_known_calls=1,
+            ),
+        )
         assert result.budget_halt_reason == ""
+        assert result.iterations == 3
 
     def test_iteration_usage_callback_sees_cumulative_totals(
         self, tmp_path: Path,
@@ -1272,8 +1303,8 @@ class TestInLoopHaltAuditState:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, max_total_tokens=1_000_000)
         reason = (
-            "token budget unenforceable: none of the 1 agent call(s) in "
-            "this run reported any token usage, so max_total_tokens "
+            "token budget unenforceable: none of this loop's 1 agent "
+            "call(s) reported any token usage, so max_total_tokens "
             "(1000000) can never trip on this adapter; halting rather "
             "than spending under a cap that cannot fire (R8)"
         )

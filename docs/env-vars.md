@@ -87,11 +87,11 @@ What is **not** bounded:
 |---|---|
 | The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens |
 | Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the cap |
-| Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late |
+| Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
 
 Unknown usage is deliberately **not** silently treated as zero in the one case
-where that would make the cap undeliverable: if the cap is on and no call in
-the whole run has reported a single token after two agent calls (a custom
+where that would make the cap undeliverable: if the cap is on and **this
+engineer loop** has reported no tokens at all after two agent calls (a custom
 `agent_cmd` never reports usage), the loop halts with a
 `token budget unenforceable` reason rather than run under a ceiling that can
 provably never trip. One silent call is treated as an incident - the claude

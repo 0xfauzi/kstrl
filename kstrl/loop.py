@@ -80,6 +80,10 @@ class LoopBudget:
     # whole object pickles cleanly to a pool worker.
     max_total_tokens: int = 0
     prior_total_tokens: int = 0
+    #: Reporting calls the run had made before this worker launched.
+    #: Recorded for provenance (it says whether the run's prior total is
+    #: a real figure or an artefact of a silent adapter) and NOT used to
+    #: decide the unenforceable halt - see :meth:`halt_reason`.
     prior_known_calls: int = 0
 
     @property
@@ -93,13 +97,23 @@ class LoopBudget:
 
         1. OVERRUN - the run total (spend before this worker launched
            plus what this loop has reported) has reached the cap.
-        2. UNENFORCEABLE - the loop has made ``_UNENFORCEABLE_CALLS``
-           agent calls and NOTHING in the run has reported a single
-           token: not the phases before it, not this loop. The cap then
-           provably cannot trip on this adapter (a CustomAgent command
-           never reports usage), so continuing means spending under a
-           ceiling that can never fire - the exact defect this check
+        2. UNENFORCEABLE - THIS loop has made ``_UNENFORCEABLE_CALLS``
+           agent calls and reported no tokens at all. The cap then
+           provably cannot trip, because the only term that can still
+           grow is this loop's own spend: ``prior_total_tokens`` is
+           frozen at launch, so a silent engineer leaves the total
+           fixed below the ceiling forever. Continuing means spending
+           under a cap that can never fire - the exact defect this check
            exists to remove. Halting loudly beats a decorative cap.
+
+           Deliberately judged on this loop ALONE, not on the run.
+           Summing in ``prior_known_calls`` looked stricter but was
+           weaker: a reporting architect (or a previous component) made
+           ``known_calls`` nonzero, which suppressed the halt for a
+           silent engineer and handed back the decorative cap in exactly
+           the configuration where it is easiest to hit - ``[agent]
+           command`` sets a custom engineer command while the
+           adversarial roles keep a reporting adapter.
 
         An iteration that reports nothing WHILE other calls do report
         counts as zero tokens: the running total stays a lower bound
@@ -117,14 +131,13 @@ class LoopBudget:
                 f"max_total_tokens ({self.max_total_tokens}); halting the "
                 "engineer loop instead of starting another iteration (R8)"
             )
-        known_calls = self.prior_known_calls + loop_usage.known_calls
-        if loop_usage.calls >= _UNENFORCEABLE_CALLS and known_calls == 0:
+        if loop_usage.calls >= _UNENFORCEABLE_CALLS and loop_usage.known_calls == 0:
             return (
-                "token budget unenforceable: none of the "
-                f"{loop_usage.calls} agent call(s) in this run reported any "
-                f"token usage, so max_total_tokens ({self.max_total_tokens}) "
-                "can never trip on this adapter; halting rather than "
-                "spending under a cap that cannot fire (R8)"
+                f"token budget unenforceable: none of this loop's "
+                f"{loop_usage.calls} agent call(s) reported any token usage, "
+                f"so max_total_tokens ({self.max_total_tokens}) can never "
+                "trip on this adapter; halting rather than spending under a "
+                "cap that cannot fire (R8)"
             )
         return None
 
