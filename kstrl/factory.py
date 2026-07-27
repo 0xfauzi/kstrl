@@ -67,6 +67,7 @@ from kstrl.observability import (
     ProgressLog,
 )
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
+from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.review import (
     ReviewMode,
@@ -174,6 +175,10 @@ class FactoryConfig:
     # Default-off ([fixtures].enabled = false, roadmap user decision 4):
     # fixtures execute PRD-defined commands, so the operator opts in.
     fixtures_config: FixturesConfig | None = None
+    # R8.1: declarative merge-policy envelope for Phase 1. None means
+    # run_factory loads PolicyConfig.load(root_dir) - toml [policy] section
+    # + env. Opt-in ([policy].enabled = false): existing runs unchanged.
+    policy_config: PolicyConfig | None = None
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -1707,6 +1712,11 @@ def _run_factory_locked(
     # manifest alone (and later, from Linear).
     manifest.run_id = run_id
     manifest.completed_at = ""
+    # R8.1: record the resolved policy envelope's hash so the manifest is
+    # a self-contained audit record of what merge guardrails were in force
+    # for this run. Computed from the same source the Phase 1 check reads.
+    policy_config = factory_config.policy_config or PolicyConfig.load(root_dir)
+    manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)
 
     # Load knowledge config once for the entire factory run, BEFORE the

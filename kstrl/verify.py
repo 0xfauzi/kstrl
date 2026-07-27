@@ -12,10 +12,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git
+from kstrl import git, licensing
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
+from kstrl.findings import Finding
 from kstrl.guards import path_is_allowed
 from kstrl.parsers import (
     ParsedOutput,
@@ -24,6 +25,13 @@ from kstrl.parsers import (
     parse_mypy_output,
     parse_pytest_output,
     parse_ruff_output,
+)
+from kstrl.policy import (
+    PolicyConfig,
+    PolicyConfigError,
+    PolicyViolation,
+    classify_license,
+    evaluate_policy,
 )
 from kstrl.prd import PRD
 
@@ -168,6 +176,11 @@ class CheckResult:
     details: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
     parsed: ParsedOutput | None = None
+    # R8.1: typed findings this mechanical check produced, lifted into the
+    # component's finding stream by the pipeline so a machine-made gate
+    # decision lands in the audit trail (PR body, journal) and not only in
+    # the retry context. Empty for checks that emit prose only.
+    findings: list[Finding] = field(default_factory=list)
 
 
 @dataclass
@@ -829,6 +842,184 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     )
 
 
+def check_policy_envelope(
+    cwd: Path, base_branch: str, config: PolicyConfig,
+) -> CheckResult:
+    """R8.1: enforce the declarative ``[policy]`` envelope from artifacts.
+
+    Reads the git diff and ``uv.lock`` only, never agent self-report.
+    Fails CLOSED on any infrastructure error (diff unreadable, malformed
+    policy) and on any envelope violation. Enforcement-machinery edits
+    are a non-overridable halt. Violation details are packed as
+    individual entries so ``VerificationResult.as_context()``'s
+    ``details[:10]`` slice carries them into the retry prompt.
+    """
+    start = time.monotonic()
+    # All three reads are strict: each is a SEPARATE git subprocess, so a
+    # successful content read proves nothing about the two that follow.
+    # A lenient read returns [] on timeout/nonzero exit, which the
+    # evaluator cannot distinguish from "nothing changed" - the change
+    # would then satisfy every path and size rule vacuously.
+    try:
+        diff_text = git.get_diff_content(base_branch, cwd)
+        changed = git.get_diff_names(base_branch, cwd, strict=True)
+        numstat = git.get_diff_numstat(base_branch, cwd, strict=True)
+    except git.GitDiffError as exc:
+        return CheckResult(
+            name="policy_envelope",
+            passed=False,
+            message=(
+                "policy envelope could not read the diff; failing closed "
+                "(infrastructure error, not a policy pass)"
+            ),
+            details=[
+                f"Error: {exc}",
+                "The change cannot be proven within policy; do not treat "
+                "this as permission to merge.",
+            ],
+            findings=[Finding.infrastructure_error(
+                "policy", f"policy envelope could not read the diff: {exc}",
+            )],
+            duration_seconds=time.monotonic() - start,
+        )
+
+    try:
+        evaluation = evaluate_policy(changed, numstat, diff_text, config)
+    except PolicyConfigError as exc:
+        return CheckResult(
+            name="policy_envelope",
+            passed=False,
+            message="policy envelope is misconfigured; failing closed",
+            details=[f"Error: {exc}"],
+            findings=[Finding.infrastructure_error(
+                "policy", f"policy envelope is misconfigured: {exc}",
+            )],
+            duration_seconds=time.monotonic() - start,
+        )
+
+    # License gate (R8.1): resolve each newly-added uv.lock dependency's
+    # license and classify it. Runs only when configured (license_allow
+    # non-empty).
+    violations = list(evaluation.violations) + _check_licenses(
+        evaluation.new_dependencies, config,
+    )
+    blocking = [v for v in violations if v.blocking]
+    advisories = [v for v in violations if not v.blocking]
+
+    findings = [
+        Finding.policy_violation(
+            category=v.category,
+            explanation=v.explanation,
+            location=v.location,
+            severity=v.severity,
+            suggestion=v.suggestion,
+        )
+        for v in violations
+    ]
+    # Blocking violations first: as_context() slices details[:10] into the
+    # retry prompt, and advisories must never crowd out a real failure.
+    details = [v.explanation for v in blocking] + [
+        v.explanation for v in advisories
+    ]
+
+    if not blocking:
+        message = evaluation.summary
+        if advisories:
+            message += f"; {len(advisories)} advisory(ies)"
+        return CheckResult(
+            name="policy_envelope",
+            passed=True,
+            message=message,
+            details=details,
+            findings=findings,
+            duration_seconds=time.monotonic() - start,
+        )
+    message = f"{len(blocking)} policy violation(s)"
+    if evaluation.machinery_hit:
+        message += " including enforcement-machinery halt"
+    return CheckResult(
+        name="policy_envelope",
+        passed=False,
+        message=message,
+        details=details,
+        findings=findings,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
+def _check_licenses(
+    new_dependencies: list[tuple[str, str]], config: PolicyConfig,
+) -> list[PolicyViolation]:
+    """Resolve + classify the licenses of newly-added dependencies.
+
+    Denied (copyleft) and resolved-but-not-allowlisted licenses are
+    blocking. A license that no source could resolve is governed by
+    ``license_unresolved``: "block" (default, fail-closed - an unprovable
+    dependency is not demonstrably inside the envelope) or "advisory".
+    No-op when the gate is unconfigured or nothing new was added.
+    """
+    if not config.license_allow or not new_dependencies:
+        return []
+    uv_cache = licensing.uv_cache_dir()
+    violations: list[PolicyViolation] = []
+    for name, version in new_dependencies:
+        resolved = licensing.resolve_license(
+            name, version,
+            uv_cache=uv_cache,
+            use_pypi=config.license_use_network,
+        )
+        if resolved is None:
+            advisory = config.license_unresolved == "advisory"
+            source = (
+                "uv cache + PyPI both missed"
+                if config.license_use_network
+                else "uv cache missed; network resolution disabled"
+            )
+            violations.append(PolicyViolation(
+                category="license_unresolved",
+                location=f"{name} {version}",
+                severity="advisory" if advisory else "high",
+                explanation=(
+                    f"license could not be resolved for {name} {version} "
+                    f"({source})"
+                    + ("; recorded as advisory" if advisory else "")
+                ),
+                suggestion=(
+                    "Warm the uv cache (`uv sync`) or allow network "
+                    "resolution; set [policy] license_unresolved = "
+                    '"advisory" to accept unprovable licenses.'
+                ),
+            ))
+            continue
+        verdict = classify_license(
+            resolved, config.license_allow, config.license_deny_partial,
+        )
+        if verdict == "denied":
+            violations.append(PolicyViolation(
+                category="license_denied",
+                location=f"{name} {version}",
+                explanation=(
+                    f"denied license '{resolved}' for dependency "
+                    f"{name} {version}"
+                ),
+                suggestion="Drop the dependency or find a permissive alternative.",
+            ))
+        elif verdict == "unknown":
+            violations.append(PolicyViolation(
+                category="license_not_allowed",
+                location=f"{name} {version}",
+                explanation=(
+                    f"license '{resolved}' for {name} {version} is not in "
+                    "license_allow"
+                ),
+                suggestion=(
+                    f"Add '{resolved}' to [policy] license_allow if it is "
+                    "acceptable for this repo."
+                ),
+            ))
+    return violations
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
@@ -1076,6 +1267,7 @@ def run_mechanical_verification(
     config: VerifyConfig,
     allowed_paths_error: str | None = None,
     fixtures_config: FixturesConfig | None = None,
+    policy_config: PolicyConfig | None = None,
     component_id: str | None = None,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
@@ -1110,6 +1302,13 @@ def run_mechanical_verification(
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))
+
+    # R8.1 policy envelope: opt-in ([policy] enabled). When disabled the
+    # check is not appended, so existing runs are unchanged.
+    if policy_config is not None and policy_config.enabled:
+        checks.append(check_policy_envelope(
+            worktree_path, base_branch, policy_config,
+        ))
 
     if config.dead_code_cleanup:
         checks.append(check_dead_code(

@@ -53,6 +53,7 @@ from kstrl.interaction import (
 )
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyHooks
+from kstrl.policy import PolicyConfig
 from kstrl.prd import PRD
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.security import SecurityMode, SecurityResult
@@ -1274,6 +1275,12 @@ class ComponentPipeline:
             self.factory_config.fixtures_config
             or FixturesConfig.load(self.root_dir)
         )
+        # R8.1 policy envelope: opt-in ([policy].enabled). enabled=false
+        # (the default) makes run_mechanical_verification skip the check.
+        policy_cfg = (
+            self.factory_config.policy_config
+            or PolicyConfig.load(self.root_dir)
+        )
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -1282,10 +1289,21 @@ class ComponentPipeline:
             verify_config,
             allowed_paths_error=allowed_paths_error,
             fixtures_config=fixtures_cfg,
+            policy_config=policy_cfg,
             component_id=comp.id,
         )
         verify_duration = time.monotonic() - verify_start
         comp.verification_passed = verification.passed
+        # R8.1: mechanical checks that produce typed findings (today the
+        # policy envelope) get them into the component's finding stream, so
+        # a machine-made gate decision reaches the audit trail - PR body,
+        # journal, evolution - and not just the retry context. Recorded for
+        # passing checks too: a non-blocking advisory is still evidence.
+        check_findings = [
+            finding for check in verification.checks for finding in check.findings
+        ]
+        if check_findings:
+            self._add_findings(comp, check_findings)
         self.bus.emit(ev.VerificationResultEvent(
             component=comp.id, passed=verification.passed,
             checks=tuple(c.name for c in verification.checks),

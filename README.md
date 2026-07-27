@@ -329,6 +329,21 @@ snapshot_on_success = true         # save passing outputs for cross-run regressi
 snapshot_dir = ".kstrl/snapshots"  # relative paths resolve against the repo root
 timeout = 30.0                     # seconds per fixture subprocess
 
+# Phase 1 policy envelope (R8.1; opt-in)
+[policy]
+enabled = false                                                                                                                                               # enforce the [policy] envelope in Phase 1 (opt-in)
+paths_deny = [".github/workflows/**", "kstrl.toml", "ralph.toml", ".kstrl/**", "**/*.pem", "**/.env*"]                                                        # globs no change may touch (gitignore-style **)
+max_files_changed = 40                                                                                                                                        # max files in a change; negative disables
+max_lines_changed = 1500                                                                                                                                      # max added+removed lines (lockfiles excluded); negative disables
+deps_allow_new = false                                                                                                                                        # allow new uv.lock packages (L3+ may enable)
+secret_patterns = ["AKIA[0-9A-Z]{16}", "-----BEGIN (?:RSA |EC )?PRIVATE KEY-----", "sk-[a-zA-Z0-9]{20,}", "ghp_[a-zA-Z0-9]{36}", "xox[bpoas]-[a-zA-Z0-9-]+"]  # regexes flagged in added diff lines
+enforcement_paths_extra = []                                                                                                                                  # extra halt paths; additive - cannot shrink the built-in set
+license_allow = ["MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD"]                           # allowed SPDX ids for new deps (empty disables)
+license_deny_partial = ["GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL"]                                                                              # substrings that deny a dep license (copyleft)
+license_unresolved = "block"                                                                                                                                  # block | advisory when no source resolves a license
+license_use_network = true                                                                                                                                    # allow PyPI fallback; false = uv cache only
+deploy = false                                                                                                                                                # reserved for the R8.7 release gate; stored + hashed
+
 # Phase 2.5 security review
 [security]
 mode = "skip"            # skip | advisory | hard

@@ -209,6 +209,10 @@ class Manifest:
     # per-run rewrite of run_id above.
     linear_project_id: str = ""
     linear_sync_key: str = ""
+    # R8.1: SHA-256 of the resolved policy envelope enforced for this run
+    # (PolicyConfig.envelope_hash). "" when policy is unset. The audit
+    # record of what merge guardrails were in force.
+    policy_hash: str = ""
 
     @classmethod
     def from_prd(
@@ -320,6 +324,7 @@ class Manifest:
             completed_at=data.get("completedAt", ""),
             linear_project_id=data.get("linearProjectId", ""),
             linear_sync_key=data.get("linearSyncKey", ""),
+            policy_hash=data.get("policyHash", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -334,6 +339,7 @@ class Manifest:
             "completedAt": self.completed_at,
             "linearProjectId": self.linear_project_id,
             "linearSyncKey": self.linear_sync_key,
+            "policyHash": self.policy_hash,
             "components": [
                 {
                     "id": c.id,
@@ -426,6 +432,8 @@ class Manifest:
             errors.append("runId must be a string")
         if "completedAt" in data and not isinstance(data["completedAt"], str):
             errors.append("completedAt must be a string")
+        if "policyHash" in data and not isinstance(data["policyHash"], str):
+            errors.append("policyHash must be a string")
 
         components = data.get("components")
         if not isinstance(components, list):

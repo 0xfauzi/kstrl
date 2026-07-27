@@ -168,7 +168,54 @@ today's subset). R8.6 needs R8.2 + R8.3. R8.7 needs R8.2 (L4) + R8.6
 
 ## R8.1 Policy envelope (M) - [#148](https://github.com/0xfauzi/kstrl/issues/148)
 
-Status: `[ ]`
+Status: `[x]` - Shipped in `kstrl/policy.py` + `kstrl/licensing.py` +
+`check_policy_envelope`: `paths_deny`, size caps (lockfiles excluded),
+`deps_allow_new`, `secret_patterns`, the non-overridable
+enforcement-machinery halt, **license gating** (`license_allow` /
+`license_deny_partial`), the `deploy` flag (stored/hashed, enforced by
+R8.7), and the policy-envelope hash in the run manifest. Opt-in via
+`[policy] enabled` (default false), blocking when enabled.
+
+**Review corrections (PR #173).** Four gaps were caught in review and
+closed before merge, recorded here because each was a real enforcement
+bypass rather than a style note:
+
+1. The non-overridable halt covered CI and the config file but NOT
+   verifier code, so `evaluate_policy(["kstrl/verify.py"], ...,
+   paths_deny=[])` passed - an agent could rewrite the checker instead of
+   the rules. `ENFORCEMENT_MACHINERY_PATHS` now covers the Phase 1
+   enforcement surface (`verify.py`, `policy.py`, `licensing.py`,
+   `guards.py`, `fixtures.py`) at any depth, plus an ADDITIVE
+   `enforcement_paths_extra` that config can never shrink.
+2. The changed-file and numstat reads were fail-OPEN: both helpers return
+   `[]` on timeout/nonzero exit, so a `kstrl.toml` diff evaluated as
+   "0 files, 0 lines" and passed every path and size rule. A successful
+   earlier content read proves nothing about those later, separate
+   subprocesses. Both helpers gained `strict=True` (raises `GitDiffError`)
+   and the policy check uses it, failing closed.
+3. An unresolved license passed as advisory, weakening the explicit-
+   allowlist posture, and `KSTRL_POLICY_LICENSE_NET` changed verdicts
+   without changing `policy_hash`. Unresolved now BLOCKS by default
+   (`license_unresolved = "block" | "advisory"`), and the network toggle
+   is a hashed config field (`license_use_network`).
+4. Violations now emit typed `Finding`s (`Finding.policy_violation`,
+   carried on `CheckResult.findings` and lifted into the component's
+   finding stream), as #148 requires, so a machine-made gate decision
+   reaches the PR body and journal. Inbox ROUTING still lands with R8.3.
+
+**Measured correction to the license verdict (H4).** The plan assumed
+`pip-licenses` / installed dist metadata. Measured against this repo's
+uv toolchain that is FALSE: uv's installed venv materializes no
+`METADATA` file (empty `licenses/` dir; `importlib.metadata` and `uv pip
+show` both return nothing), so pip-licenses would resolve nothing.
+`kstrl/licensing.py` instead reads the license from **uv's cache**
+(`<cache>/**/<name>-<version>.dist-info/METADATA`, offline) and falls
+back to the **PyPI JSON API** (`license_expression` / classifiers /
+`license`; `KSTRL_POLICY_LICENSE_NET=0` forces offline). A license that
+resolves to a `deny_partial` substring or is not in `license_allow`
+blocks; an unresolvable license is advisory (a merge is not held hostage
+to a cache/network miss). Classification (deny-wins, compound-SPDX atom
+tokenizing) is pure in `kstrl.policy`.
 
 **Why.** Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Today the rules are implicit and scattered (diff-scope,

@@ -280,6 +280,7 @@ def get_diff_names(
     base_branch: str,
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
+    strict: bool = False,
 ) -> list[str]:
     """Get list of changed file names compared to a base branch.
 
@@ -293,6 +294,13 @@ def get_diff_names(
     confined to `allowed/` and defeated the diff-scope guard
     (R1.5 / H-5). For scope purposes the source changed too: content
     left it.
+
+    ``strict=True`` raises :class:`GitDiffError` on timeout or nonzero
+    exit instead of returning ``[]`` (R8.1). The lenient default is
+    fail-OPEN - an empty list is indistinguishable from "no files
+    changed" - which silently turns a policy check into a vacuous pass.
+    Enforcement callers must pass ``strict=True``; the pre-existing
+    callers keep the lenient contract they were written against.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
@@ -308,8 +316,18 @@ def get_diff_names(
         )
         if result.returncode == 0:
             return _parse_name_status_z(result.stdout)
-    except subprocess.TimeoutExpired:
-        pass
+    except subprocess.TimeoutExpired as exc:
+        if strict:
+            raise GitDiffError(
+                f"git diff --name-status against {base_ref} timed out "
+                f"after {timeout}s"
+            ) from exc
+        return []
+    if strict:
+        raise GitDiffError(
+            f"git diff --name-status against {base_ref} exited "
+            f"{result.returncode}: {result.stderr.strip()[:500]}"
+        )
     return []
 
 
@@ -386,6 +404,81 @@ def get_diff_content(
             f"{result.returncode}: {result.stderr.strip()[:500]}"
         )
     return result.stdout
+
+
+def _normalize_numstat_path(path: str) -> str:
+    """Resolve a ``git diff --numstat`` rename path to its destination.
+
+    Renames render as ``old => new`` or, when a common prefix/suffix
+    exists, ``pre{old => new}post``. Both collapse to the new path so the
+    policy size caps count one file per change, not two.
+    """
+    if "=>" not in path:
+        return path
+    if "{" in path and "}" in path:
+        pre, rest = path.split("{", 1)
+        mid, post = rest.split("}", 1)
+        _old, _sep, new = mid.partition("=>")
+        return (pre + new.strip() + post).replace("//", "/")
+    _old, _sep, new = path.partition("=>")
+    return new.strip()
+
+
+def get_diff_numstat(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    strict: bool = False,
+) -> list[tuple[int | None, int | None, str]]:
+    """Per-file ``(added, removed, path)`` counts vs a base branch.
+
+    ``added``/``removed`` are None for binary files (git prints ``-``).
+    Rename paths are normalized to the destination. Base resolution
+    mirrors :func:`get_diff_names` (``origin/<base>`` when a remote
+    exists).
+
+    ``strict=True`` raises :class:`GitDiffError` on timeout or nonzero
+    exit instead of returning ``[]``. This is load-bearing for the R8.1
+    policy check: an empty list reads as "zero files, zero lines", which
+    silently satisfies every size cap. A successful earlier
+    :func:`get_diff_content` does NOT prove this later, separate
+    subprocess succeeded, so enforcement callers must ask for strict.
+    """
+    base_ref = resolve_base_ref(base_branch, cwd, timeout)
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--numstat", f"{base_ref}...HEAD", "--"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if strict:
+            raise GitDiffError(
+                f"git diff --numstat against {base_ref} timed out "
+                f"after {timeout}s"
+            ) from exc
+        return []
+    if result.returncode != 0:
+        if strict:
+            raise GitDiffError(
+                f"git diff --numstat against {base_ref} exited "
+                f"{result.returncode}: {result.stderr.strip()[:500]}"
+            )
+        return []
+    rows: list[tuple[int | None, int | None, str]] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added_raw, removed_raw, path = parts
+        added = None if added_raw == "-" else int(added_raw)
+        removed = None if removed_raw == "-" else int(removed_raw)
+        rows.append((added, removed, _normalize_numstat_path(path)))
+    return rows
 
 
 # Shared budget for diff content injected into LLM prompts. Centralized

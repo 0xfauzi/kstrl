@@ -24,6 +24,9 @@ from typing import Any
 
 _INFRASTRUCTURE_CATEGORY = "infrastructure_error"
 _PHASE_SKIPPED_CATEGORY = "phase_skipped"
+# R8.1: policy-envelope violations. Mechanical (no LLM), so these carry
+# no model tag - the "reviewer" is the envelope itself.
+POLICY_CATEGORY_PREFIX = "policy_"
 
 # R3.3: every finding the factory records is tagged with the attempt
 # that produced it, so the journal can distinguish superseded findings
@@ -122,6 +125,37 @@ class Finding:
             location="",
             explanation=explanation,
             tags=("infrastructure",),
+        )
+
+    @classmethod
+    def policy_violation(
+        cls,
+        category: str,
+        explanation: str,
+        location: str = "",
+        severity: str = "high",
+        suggestion: str = "",
+    ) -> Finding:
+        """Build a Finding for an R8.1 policy-envelope violation.
+
+        ``category`` is the envelope rule that fired (``paths_deny``,
+        ``max_files_changed``, ``license_denied``, ...) and is stored
+        prefixed (``policy_paths_deny``) so policy findings are greppable
+        as a family and cannot collide with a reviewer concern of the
+        same name. Severity is ``critical`` for the non-overridable
+        enforcement-machinery halt, ``high`` for other blocking
+        violations, ``advisory`` for non-blocking notices.
+
+        Mechanical, so no model tag: the envelope, not an LLM, decided.
+        """
+        return cls(
+            phase="policy",
+            category=f"{POLICY_CATEGORY_PREFIX}{category}",
+            severity=severity,
+            location=location,
+            explanation=explanation,
+            suggestion=suggestion,
+            tags=("policy", f"policy:{category}"),
         )
 
     @classmethod
