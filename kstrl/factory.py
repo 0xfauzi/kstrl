@@ -19,6 +19,13 @@ from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import kill_active_process_groups
+from kstrl.autonomy import (
+    AutonomyConfig,
+    AutonomyState,
+    effective_level,
+    flag_bundle_for,
+    manual_override_notes,
+)
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import KstrlConfig
@@ -32,6 +39,7 @@ from kstrl.contract import (
 )
 from kstrl.events import (
     AdversarialAgentSelected,
+    AutonomyLevelApplied,
     ComponentFailed,
     ComponentStarted,
     EventBus,
@@ -1718,6 +1726,33 @@ def _run_factory_locked(
     policy_config = factory_config.policy_config or PolicyConfig.load(root_dir)
     manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)
+
+    # R8.2: derive this run's permissions from the autonomy level. The
+    # bundle is computed at run start and WINS over contradicting config,
+    # so a hand-edited flag cannot grant autonomy the ladder never
+    # awarded; contradictions are recorded rather than silently dropped.
+    # Opt-in: when [autonomy] is disabled the config's own flags stand.
+    autonomy_config = AutonomyConfig.load(root_dir)
+    if autonomy_config.enabled:
+        autonomy_state = AutonomyState.load(root_dir)
+        level = effective_level(autonomy_state, autonomy_config)
+        bundle = flag_bundle_for(level)
+        overrides = manual_override_notes(
+            bundle,
+            configured_pause_before_pr_merge=factory_config.pause_before_pr_merge,
+            configured_review_mode=factory_config.review_mode,
+        )
+        factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge
+        factory_config.review_mode = bundle.review_mode
+        bus.emit(AutonomyLevelApplied(
+            level=int(level),
+            label=level.label,
+            flags=tuple(bundle.describe()),
+            overrides=tuple(overrides),
+        ))
+        ui.kv("Autonomy", f"L{int(level)} - {level.label}")
+        for note in overrides:
+            ui.warn(f"  Manual override ignored: {note}")
 
     # Load knowledge config once for the entire factory run, BEFORE the
     # pipeline is constructed. Binding it at construction removes the

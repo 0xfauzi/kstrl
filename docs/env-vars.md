@@ -133,6 +133,17 @@ The license gate resolves a new dependency's SPDX license from uv's cache, then 
 | `KSTRL_POLICY_LICENSE_UNRESOLVED` | `block` \| `advisory` | `block` |
 | `KSTRL_POLICY_DEPLOY` | bool (`1`) | false (reserved for R8.7) |
 
+## AutonomyConfig (`[autonomy]`)
+
+Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of independent autonomy flags. The level lives in `.kstrl/autonomy.json` (not in config) and derives a flag bundle at run start; a config flag that contradicts the bundle is logged as a manual override and the bundle wins. Opt-in, because L1 is *stricter* than the harness defaults - it forces the merge gate on.
+
+Promotion requires evidence **and** a recorded human ack (`ks autonomy promote --actor <you> --ack <why>`); demotion is automatic and immediate, followed by a cool-down before re-promotion. Every entry threshold is an **unmeasured placeholder** until `ks autonomy replay` is run against real history and the result recorded in `docs/dark-factory-roadmap.md`.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_AUTONOMY_ENABLED` | bool (`1`) | false |
+| `KSTRL_AUTONOMY_MAX_LEVEL` | int (1-4) | 4 |
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

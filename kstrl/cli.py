@@ -3071,6 +3071,217 @@ def _evolve_apply(
     return 1 if failures else 0
 
 
+@cli.group(name="autonomy")
+def autonomy_group() -> None:
+    """Inspect and change the autonomy ladder (R8.2).
+
+    Autonomy is earned, bounded, and revocable: promotion needs evidence
+    AND your explicit acknowledgement, demotion is automatic, and every
+    transition is recorded.
+    """
+
+
+def _autonomy_ui(ui: str, no_color: bool) -> UI:
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    return _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+
+
+_autonomy_root_option = click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+_autonomy_ui_option = click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+_autonomy_no_color_option = click.option(
+    "--no-color", is_flag=True, help="Disable colors",
+)
+
+
+@autonomy_group.command(name="status")
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
+    """Show the current level, its flag bundle, and what promotion needs."""
+    from kstrl.autonomy import AutonomyConfig, AutonomyState, effective_level
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    config = AutonomyConfig.load(root_dir)
+    state = AutonomyState.load(root_dir)
+    level = effective_level(state, config)
+
+    ui_impl.section("Autonomy")
+    ui_impl.kv("level", f"L{state.level} - {state.autonomy_level.label}")
+    if int(level) != state.level:
+        ui_impl.kv("in force", f"L{int(level)} (clamped by max_level)")
+    ui_impl.kv(
+        "enabled", "yes" if config.enabled else "no ([autonomy] enabled=false)",
+    )
+    ui_impl.kv("since", state.since or "-")
+    if state.last_promoted_by:
+        ui_impl.kv("promoted by", state.last_promoted_by)
+
+    ui_impl.subsection("Flag bundle")
+    for line in state.flag_bundle().describe():
+        ui_impl.info(f"  {line}")
+
+    ui_impl.subsection("Evidence at this level")
+    ui_impl.kv("decisive runs", str(state.decisive_runs_at_level))
+    ui_impl.kv("components merged", str(state.components_merged_at_level))
+    ui_impl.kv("clean merge streak", str(state.clean_merges_at_level))
+    ui_impl.kv("policy violations", str(state.policy_violations_at_level))
+    if state.cooldown_runs_remaining:
+        ui_impl.kv(
+            "cool-down", f"{state.cooldown_runs_remaining} run(s) remaining",
+        )
+
+    blockers = state.promotion_blockers()
+    ui_impl.subsection("Promotion")
+    if blockers:
+        ui_impl.warn("  Not eligible:")
+        for blocker in blockers:
+            ui_impl.info(f"    - {blocker}")
+    else:
+        ui_impl.ok("  Criteria met; `ks autonomy promote --actor <you> --ack <why>`")
+    ui_impl.info(
+        "  Thresholds are UNMEASURED placeholders; run `ks autonomy replay`."
+    )
+    sys.exit(0)
+
+
+@autonomy_group.command(name="promote")
+@click.option("--actor", required=True, help="Who is acknowledging (a human)")
+@click.option("--ack", required=True, help="Why the evidence justifies promotion")
+@click.option(
+    "--force", is_flag=True,
+    help="Override unmet criteria (recorded as such in the audit trail)",
+)
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def autonomy_promote(
+    actor: str, ack: str, force: bool, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Raise the autonomy level by one. Requires a human ack."""
+    from kstrl.autonomy import AutonomyError, AutonomyState
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    state = AutonomyState.load(root_dir)
+    try:
+        record = state.promote(actor=actor, ack=ack, force=force)
+    except AutonomyError as exc:
+        ui_impl.err(f"Promotion refused: {exc}")
+        sys.exit(1)
+    state.save(root_dir)
+    ui_impl.ok(
+        f"Promoted L{record.from_level} -> L{record.to_level} "
+        f"({state.autonomy_level.label}) by {actor}"
+    )
+    if force:
+        ui_impl.warn("  Recorded as a forced promotion over unmet criteria.")
+    sys.exit(0)
+
+
+@autonomy_group.command(name="demote")
+@click.option("--reason", required=True, help="Why the level is being revoked")
+@click.option(
+    "--trigger",
+    type=click.Choice([
+        "policy_violation", "calibration_regression", "health_breach",
+        "human_rejected_auto_merge", "manual",
+    ]),
+    default="manual",
+    help="Which trigger fired",
+)
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def autonomy_demote(
+    reason: str, trigger: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Drop the autonomy level by one and start the cool-down."""
+    from kstrl.autonomy import AutonomyState, DemotionTrigger
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    state = AutonomyState.load(root_dir)
+    chosen = next(
+        (t for t in DemotionTrigger if t.label == trigger), DemotionTrigger.MANUAL,
+    )
+    record = state.demote(chosen, reason, actor="operator")
+    if record is None:
+        ui_impl.info("Already at L1 Supervised; nothing to revoke.")
+        sys.exit(0)
+    state.save(root_dir)
+    ui_impl.warn(
+        f"Demoted L{record.from_level} -> L{record.to_level} "
+        f"({state.autonomy_level.label}); cool-down "
+        f"{state.cooldown_runs_remaining} decisive run(s)"
+    )
+    sys.exit(0)
+
+
+@autonomy_group.command(name="history")
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def autonomy_history(root: Path | None, ui: str, no_color: bool) -> None:
+    """Show every recorded level transition."""
+    from kstrl.autonomy import AutonomyState
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    state = AutonomyState.load(root_dir)
+    if not state.history:
+        ui_impl.info("No transitions recorded; still at the starting level.")
+        sys.exit(0)
+    ui_impl.section("Autonomy history")
+    for record in state.history:
+        detail = f" [{record.trigger}]" if record.trigger else ""
+        ui_impl.info(
+            f"  {record.at}  L{record.from_level} -> L{record.to_level}  "
+            f"{record.direction}{detail}  by {record.actor}"
+        )
+        if record.reason:
+            ui_impl.info(f"      {record.reason}")
+    sys.exit(0)
+
+
+@autonomy_group.command(name="replay")
+@_autonomy_root_option
+@click.option(
+    "--experiments",
+    type=click.Path(path_type=Path),
+    help="Path to experiments.tsv (default: <root>/.kstrl/experiments.tsv)",
+)
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def autonomy_replay_cmd(
+    root: Path | None, experiments: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Replay the ladder's thresholds over recorded run history.
+
+    Reports what WOULD have fired and whether the sample is large enough
+    to calibrate anything. Never mutates ladder state. Exit code 2 means
+    "insufficient data", so a script cannot mistake it for a green run.
+    """
+    from kstrl.autonomy_replay import replay_file
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    report = replay_file(experiments, root_dir)
+    for line in report.render().splitlines():
+        ui_impl.info(line)
+    sys.exit(0 if report.sufficient_data else 2)
+
+
 def main() -> None:
     """Main entry point."""
     cli()

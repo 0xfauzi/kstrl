@@ -263,7 +263,43 @@ policy hash lands in the manifest; enforcement-machinery halt is tested;
 
 ## R8.2 Autonomy ladder (M) - [#149](https://github.com/0xfauzi/kstrl/issues/149)
 
-Status: `[ ]` - Depends on: R8.1 (R8.4 enriches triggers later)
+Status: `[x]` - Shipped in `kstrl/autonomy.py` + `kstrl/autonomy_replay.py`
++ `ks autonomy` (status/promote/demote/history/replay). Levels derive the
+flag bundle at run start (`run_factory`), promotion requires a recorded
+human ack, demotion is automatic with a cool-down, and every transition
+emits `autonomy_transition` / `autonomy_level_applied` events. Opt-in via
+`[autonomy] enabled` (default false) because L1 is STRICTER than today's
+defaults - it forces the merge gate on. R8.4 will enrich the demotion
+triggers with health-metric breaches; the `HEALTH_BREACH` trigger already
+exists for it to fire.
+
+**Threshold replay captured 2026-07-27 (the R8 "no assumed thresholds"
+rule).** `ks autonomy replay` over `.kstrl/experiments.tsv`:
+
+```
+Runs recorded:        5
+  decisive:           2
+  infra-aborted:      3 (excluded)
+Components merged:    2
+Projects:             slugify
+
+Would-have-promoted:  0
+Would-have-demoted:   0
+Final level after replay: L1
+
+VERDICT: INSUFFICIENT DATA (2 decisive runs vs a MIN_DECISIVE_RUNS floor of 8)
+```
+
+Read honestly: **every threshold in the table below remains an unmeasured
+placeholder.** Three of the five recorded runs died on PR/push plumbing
+(`pr:` failures), which the replay excludes as infrastructure casualties -
+they say nothing about the factory's judgement. The remaining sample is
+one toy project over a single day, and predates the TUI stack, the rename,
+and every fix since. Nothing here calibrates the ladder; it establishes
+only that the ladder cannot promote past L1 on the evidence that exists,
+which is the safe failure. Generating real evidence (see "User-run
+measurements required") is the blocking prerequisite for L2+, not more
+code.
 
 **Why.** Autonomy today is a scatter of flags. The cATO shape: earned,
 bounded, revocable. Prior art converges (Claude Code permission modes,
