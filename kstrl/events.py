@@ -190,12 +190,18 @@ class ReviewResultEvent(Event):
 class ComponentUsage(Event):
     """R3.1 cost meter capture: mirror of ``UsageTotals.to_dict()`` plus
     the phase. Token/cost figures are CLI self-reports - lower bounds
-    whenever ``unreported_calls`` > 0."""
+    whenever ``unreported_calls`` > 0.
+
+    R8: ``token_calls`` is the narrower coverage figure - calls that
+    reported an actual token count, as opposed to cost alone. Payloads
+    written before R8 omit it and decode to 0; the decoder reads only
+    keys it knows, so old and new readers interoperate both ways."""
 
     type: ClassVar[str] = "component_usage"
     phase: str = ""
     calls: int = 0
     known_calls: int = 0
+    token_calls: int = 0
     unreported_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -710,6 +716,7 @@ class V1CompatSink:
             log.component_usage(comp, event.phase, {
                 "calls": event.calls,
                 "known_calls": event.known_calls,
+                "token_calls": event.token_calls,
                 "unreported_calls": event.unreported_calls,
                 "input_tokens": event.input_tokens,
                 "output_tokens": event.output_tokens,

@@ -90,17 +90,40 @@ What is **not** bounded:
 | Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
 
 Unknown usage is deliberately **not** silently treated as zero in the one case
-where that would make the cap undeliverable: if the cap is on and **this
-engineer loop** has reported no tokens at all after two agent calls (a custom
-`agent_cmd` never reports usage), the loop halts with a
-`token budget unenforceable` reason rather than run under a ceiling that can
-provably never trip. One silent call is treated as an incident - the claude
-adapter records no counts for a timed-out or unparseable result - so a single
-bad iteration does not end a capped run.
+where that would make the cap undeliverable. The loop halts with a
+`token budget unenforceable` reason when **both** hold:
+
+1. **this engineer loop** has reported no token count on any of its calls, so
+   the run total cannot grow while it runs (the spend recorded before this
+   worker launched is frozen at launch); **and**
+2. the **run** has now seen two calls that reported no token count - counted
+   run-wide, so the threshold does not reset on every attempt or component.
+
+Reported *cost* is not token evidence: a result carrying `total_cost_usd` with
+no `usage` dict is "known" to the meter but can never move a token total, so
+the rule counts token-bearing calls (`token_calls`), not reporting calls.
+
+The threshold counts only the calls that reported **no tokens**, so a lone
+unparseable result in an otherwise-reporting run is still treated as an
+incident, not a dead adapter. The flip side, on purpose: once a run has
+accumulated one tokenless call anywhere, the engineer's first tokenless
+iteration reaches the threshold and halts. Two independent tokenless calls in
+one run is adapter behavior (a custom `agent_cmd` never reports usage), and a
+loud, recoverable halt beats spending under a ceiling that cannot fire.
 
 `KSTRL_AGENT_BUDGET_USD` is the only genuine in-turn ceiling, and only the
 `claude-sdk` adapter enforces it; `claude-code`, `codex`, and custom commands
 ignore it.
+
+### Usage accounting vs progress logging
+
+`FACTORY_PROGRESS_LOG_ENABLED=0` (or `[factory] progress_log_enabled = false`)
+turns off `progress.jsonl` and the run's `events.jsonl`. It does **not** turn
+off usage accounting: every run still allocates
+`.kstrl/runs/<run_id>/components/<id>/engineer_usage.json`, a small snapshot
+the engineer loop rewrites at each iteration boundary so a worker killed by a
+shutdown does not take its spend to the grave. An observability opt-out may
+drop the narration; it must never drop the meter.
 
 ## BreakerConfig (`[breaker]`)
 

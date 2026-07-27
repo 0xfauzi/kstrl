@@ -32,14 +32,21 @@ logger = logging.getLogger(__name__)
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
-# How many agent calls must report NOTHING before an enabled token cap
-# is declared unenforceable (see LoopBudget.halt_reason). A judgment
-# call, not a measurement: one silent call is an incident (the claude
-# adapter records source="timeout" / "parse-error" with no counts), two
-# in a row with nothing reported anywhere in the run is a property of
-# the adapter. The cost of the extra call is one iteration of overshoot
-# on an adapter that reports nothing; the cost of setting it to 1 is
+# How many TOKENLESS agent calls the RUN must accumulate before an
+# enabled token cap is declared unenforceable (see
+# LoopBudget.halt_reason). A judgment call, not a measurement: one
+# tokenless call is an incident (the claude adapter records
+# source="timeout" / "parse-error" with no counts, and a cost-only
+# result event is tokenless too), two in one run is a property of the
+# adapter. The cost of the extra call is one iteration of overshoot on
+# an adapter that reports no tokens; the cost of setting it to 1 is
 # killing a capped run over a single timed-out first iteration.
+#
+# Counted RUN-WIDE (prior_calls/prior_token_calls carry the parent's
+# figures down), because a per-loop counter resets on every attempt and
+# every component: with max_iterations = 1, or a retry that dies after
+# one call, no single loop ever reached the threshold and the rule was
+# decorative. Review finding P1-a reproduced exactly that.
 _UNENFORCEABLE_CALLS = 2
 
 
@@ -80,11 +87,18 @@ class LoopBudget:
     # whole object pickles cleanly to a pool worker.
     max_total_tokens: int = 0
     prior_total_tokens: int = 0
-    #: Reporting calls the run had made before this worker launched.
-    #: Recorded for provenance (it says whether the run's prior total is
-    #: a real figure or an artefact of a silent adapter) and NOT used to
-    #: decide the unenforceable halt - see :meth:`halt_reason`.
+    #: Reporting calls (token OR cost) the run had made before this
+    #: worker launched. Provenance only - it says whether the run's
+    #: prior total is a real figure or an artefact of a silent adapter -
+    #: and NOT part of any decision; see :meth:`halt_reason`.
     prior_known_calls: int = 0
+    #: Agent calls the run had made before this worker launched, and how
+    #: many of them reported a TOKEN figure. Their difference is the
+    #: run's tokenless-call count, which is what the unenforceable rule
+    #: counts (R8 review P1-a: a per-loop counter resets on every
+    #: attempt/component, so short loops never reached the threshold).
+    prior_calls: int = 0
+    prior_token_calls: int = 0
 
     @property
     def enabled(self) -> bool:
@@ -97,30 +111,71 @@ class LoopBudget:
 
         1. OVERRUN - the run total (spend before this worker launched
            plus what this loop has reported) has reached the cap.
-        2. UNENFORCEABLE - THIS loop has made ``_UNENFORCEABLE_CALLS``
-           agent calls and reported no tokens at all. The cap then
-           provably cannot trip, because the only term that can still
-           grow is this loop's own spend: ``prior_total_tokens`` is
-           frozen at launch, so a silent engineer leaves the total
-           fixed below the ceiling forever. Continuing means spending
-           under a cap that can never fire - the exact defect this check
-           exists to remove. Halting loudly beats a decorative cap.
+        2. UNENFORCEABLE - the cap provably cannot trip. Two facts have
+           to hold together, and they are deliberately measured over
+           different scopes:
 
-           Deliberately judged on this loop ALONE, not on the run.
-           Summing in ``prior_known_calls`` looked stricter but was
-           weaker: a reporting architect (or a previous component) made
-           ``known_calls`` nonzero, which suppressed the halt for a
-           silent engineer and handed back the decorative cap in exactly
-           the configuration where it is easiest to hit - ``[agent]
-           command`` sets a custom engineer command while the
-           adversarial roles keep a reporting adapter.
+           (a) TOKEN EVIDENCE, judged on THIS loop: not one of this
+               loop's calls reported a token figure
+               (``loop_usage.token_calls == 0``). That is what makes the
+               cap dead rather than merely slow, because
+               ``prior_total_tokens`` is frozen at this worker's launch:
+               if this loop never reports tokens, the run total stays
+               fixed below the ceiling forever no matter how long the
+               engineer runs.
 
-        An iteration that reports nothing WHILE other calls do report
-        counts as zero tokens: the running total stays a lower bound
-        (see ``UsageTotals.unreported_calls``) that still grows toward
-        the cap, so the halt arrives late rather than never. Charging
-        unknown iterations a guessed amount would invent numbers the CLI
-        never gave us.
+               Judged on the loop ALONE, never on the run. Summing the
+               run's reported calls in looked stricter but was weaker: a
+               reporting architect (or a previous component) suppressed
+               the halt for a silent engineer and handed back the
+               decorative cap in exactly the configuration where it is
+               easiest to hit - ``[agent] command`` sets a custom
+               engineer command while the adversarial roles keep a
+               reporting adapter.
+
+               Reads ``token_calls``, not ``known_calls``: a record
+               carrying only ``cost_usd`` sets ``known_calls`` while
+               contributing nothing to ``total_tokens``, so
+               ``known_calls`` reported perfect coverage for a cap that
+               could never advance (review finding P1-b).
+
+           (b) CALL THRESHOLD, counted RUN-WIDE: the run has now seen
+               ``_UNENFORCEABLE_CALLS`` tokenless calls in total
+               (``prior_calls - prior_token_calls`` plus this loop's
+               own). This is the "have we seen enough to conclude?"
+               half, and it must not reset per attempt or per component
+               - with ``max_iterations = 1``, or a retry that dies after
+               one call, a per-loop counter never reached 2 and the rule
+               was decorative (review finding P1-a).
+
+               Tokenless calls, not all calls: a call that DID report
+               tokens is evidence the adapter works, so counting it
+               toward "this adapter never reports" would be backwards
+               and would make a single unparseable result fatal in an
+               otherwise healthy run.
+
+        CONSEQUENCE, stated plainly: in a run where every prior call
+        reported tokens, a lone unparseable engineer call still does not
+        halt - the run-wide tokenless count is 1. But once a run has
+        accumulated one tokenless call ANYWHERE (including in a
+        different role's adapter), the engineer's first tokenless
+        iteration does trip the halt. That is the deliberate trade: two
+        independent tokenless calls in one run is adapter behavior, not
+        an incident, and the failure is loud, recorded, and recoverable
+        (raise or clear ``max_total_tokens``), whereas the alternative
+        is unbounded spend under a ceiling that cannot fire.
+
+        A loop that has made no calls at all can never halt here: with
+        ``loop_usage.calls == 0`` there is no token evidence either way,
+        so a worker launched into a run with a high ``prior_calls`` must
+        still get to run its engineer.
+
+        An iteration that reports nothing WHILE other calls in the same
+        loop do report counts as zero tokens: the running total stays a
+        lower bound (see ``UsageTotals.unreported_calls``) that still
+        grows toward the cap, so the halt arrives late rather than
+        never. Charging unknown iterations a guessed amount would invent
+        numbers the CLI never gave us.
         """
         if not self.enabled:
             return None
@@ -131,13 +186,20 @@ class LoopBudget:
                 f"max_total_tokens ({self.max_total_tokens}); halting the "
                 "engineer loop instead of starting another iteration (R8)"
             )
-        if loop_usage.calls >= _UNENFORCEABLE_CALLS and loop_usage.known_calls == 0:
+        prior_tokenless = max(0, self.prior_calls - self.prior_token_calls)
+        run_tokenless = prior_tokenless + loop_usage.tokenless_calls
+        if (
+            loop_usage.calls > 0
+            and loop_usage.token_calls == 0
+            and run_tokenless >= _UNENFORCEABLE_CALLS
+        ):
             return (
                 f"token budget unenforceable: none of this loop's "
-                f"{loop_usage.calls} agent call(s) reported any token usage, "
-                f"so max_total_tokens ({self.max_total_tokens}) can never "
-                "trip on this adapter; halting rather than spending under a "
-                "cap that cannot fire (R8)"
+                f"{loop_usage.calls} agent call(s) reported a token count "
+                f"and {run_tokenless} call(s) in this run have now reported "
+                f"none, so max_total_tokens ({self.max_total_tokens}) can "
+                "never trip on this adapter; halting rather than spending "
+                "under a cap that cannot fire (R8)"
             )
         return None
 

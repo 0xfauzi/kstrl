@@ -20,7 +20,7 @@ import io
 import json
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ from kstrl.events import RunPaths
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
+    _clear_partial_usage,
     _format_usage_rollup,
     _read_partial_usage,
     _run_component,
@@ -130,6 +131,60 @@ class TestUsageTotalsMath:
         a.merge(b)
         assert a.calls == 2
         assert a.total_tokens == (9 + 42 + 17418 + 10371) + 1000
+        assert a.known_calls == 2
+        assert a.token_calls == 2
+
+    def test_cost_only_record_is_known_but_tokenless(self) -> None:
+        """Review regression (P1-b): ``known_calls`` is not token evidence.
+
+        ``add_record`` sets ``known`` for a COST figure alone, and the
+        claude adapter reports ``total_cost_usd`` even when the ``usage``
+        dict is absent or drifted. Two such records therefore look like
+        perfect coverage (calls == known_calls) while ``total_tokens``
+        stays 0 forever - so anything gating on a TOKEN ceiling has to
+        read ``token_calls``, which counts only calls that reported an
+        actual token figure.
+
+        Built with the real ``add_record``, not a hand-assembled totals
+        object: the defect lives in that method's ``known`` flag.
+        """
+        totals = UsageTotals()
+        totals.add_record(UsageRecord(
+            cost_usd=0.0227028, duration_seconds=1.8,
+            source="claude-stream-json",
+        ))
+        totals.add_record(UsageRecord(
+            cost_usd=0.0104, duration_seconds=2.1,
+            source="claude-stream-json",
+        ))
+        assert totals.calls == 2
+        assert totals.known_calls == 2      # unchanged semantics
+        assert totals.unreported_calls == 0  # unchanged semantics
+        assert totals.token_calls == 0       # the honest token coverage
+        assert totals.tokenless_calls == 2
+        assert totals.total_tokens == 0
+        assert totals.cost_usd == pytest.approx(0.0331028)
+
+    def test_token_calls_counts_only_token_bearing_records(self) -> None:
+        totals = UsageTotals()
+        totals.add_record(_claude_record())                        # parts
+        totals.add_record(UsageRecord(total_tokens=10))            # total
+        totals.add_record(UsageRecord(cost_usd=0.5))               # cost
+        totals.add_record(UsageRecord(duration_seconds=1.0))       # silence
+        assert totals.calls == 4
+        assert totals.known_calls == 3
+        assert totals.token_calls == 2
+        assert totals.tokenless_calls == 2
+        assert totals.unreported_calls == 1
+
+    def test_token_calls_round_trips_through_to_dict(self) -> None:
+        """Serialized so the audit trail keeps the distinction; readers
+        of older payloads see the key missing and decode it as 0."""
+        totals = UsageTotals()
+        totals.add_record(_claude_record())
+        totals.add_record(UsageRecord(cost_usd=0.5))
+        assert totals.to_dict()["token_calls"] == 1
+        assert totals.to_dict()["known_calls"] == 2
 
     def test_malformed_records_never_raise(self) -> None:
         totals = UsageTotals()
@@ -571,6 +626,19 @@ def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
     return totals
 
 
+def _engineer_usage_events(root: Path) -> list[int]:
+    """Every engineer-phase usage total the run recorded, in order.
+
+    A list (not a sum) on purpose: a double count and a correct total
+    are the same number of tokens but a different number of events.
+    """
+    events = ProgressLog(root / "progress.jsonl").read_events()
+    return [
+        int(e["data"]["total_tokens"]) for e in events
+        if e["event"] == "component_usage" and e["data"]["phase"] == "engineer"
+    ]
+
+
 def _read_journal(tmp_path: Path) -> list[dict[str, Any]]:
     journal_path = tmp_path / ".kstrl" / "evolution.jsonl"
     entries = []
@@ -937,6 +1005,27 @@ class SequenceUsageAgent:
 
 _REPORTED = UsageRecord(total_tokens=300, source="codex-text")
 _UNREPORTED = UsageRecord(duration_seconds=5.0, source="unavailable")
+# Reports a cost but no tokens: "known" to the meter, invisible to a
+# token ceiling (review finding P1-b).
+_COST_ONLY = UsageRecord(
+    cost_usd=0.0227028, duration_seconds=1.8, source="claude-stream-json",
+)
+
+
+def _budget_for(run_total: UsageTotals, cap: int) -> LoopBudget:
+    """Exactly the LoopBudget ``_submit_args`` hands a worker.
+
+    Threading the run totals through this helper is what makes the
+    run-wide half of the unenforceable rule testable: the priors are the
+    only channel by which one loop's tokenless calls reach the next.
+    """
+    return LoopBudget(
+        max_total_tokens=cap,
+        prior_total_tokens=run_total.total_tokens,
+        prior_known_calls=run_total.known_calls,
+        prior_calls=run_total.calls,
+        prior_token_calls=run_total.token_calls,
+    )
 
 
 class TestInLoopTokenBudget:
@@ -966,7 +1055,7 @@ class TestInLoopTokenBudget:
             _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
             budget=LoopBudget(
                 max_total_tokens=500, prior_total_tokens=450,
-                prior_known_calls=1,
+                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
             ),
         )
         assert result.iterations == 1
@@ -1091,13 +1180,20 @@ class TestInLoopTokenBudget:
         all-silent case. That configuration is easy to reach: `[agent]
         command` sets a custom engineer command while the adversarial
         roles keep a reporting adapter.
+
+        Still true after the run-wide threshold landed (P1-a): the
+        TOKEN-EVIDENCE half of the rule is still judged on this loop
+        alone, so the reporting prior below (one call, one token call)
+        cannot suppress anything - it only keeps the run's tokenless
+        count at 0, which is why the halt lands on this loop's OWN
+        second tokenless call.
         """
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
             _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
             budget=LoopBudget(
                 max_total_tokens=500, prior_total_tokens=100,
-                prior_known_calls=1,
+                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
             ),
         )
         assert result.iterations == 2      # halts at _UNENFORCEABLE_CALLS
@@ -1112,17 +1208,118 @@ class TestInLoopTokenBudget:
         The threshold is what separates "this adapter never reports"
         from "one call came back unreadable"; a lone silent iteration
         must not kill a capped run.
+
+        This is the case the run-wide threshold (P1-a) had to preserve:
+        the prior call reported tokens, so the run's tokenless count is
+        1 after this loop's silent first iteration - below the
+        threshold - and the loop keeps going. Counting ALL prior calls
+        instead of only the tokenless ones would have halted here, which
+        is why the counter is tokenless-scoped.
         """
         agent = SequenceUsageAgent([_UNREPORTED, _REPORTED, _REPORTED])
         result = run_loop(
             _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
             budget=LoopBudget(
                 max_total_tokens=500_000, prior_total_tokens=100,
-                prior_known_calls=1,
+                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
             ),
         )
         assert result.budget_halt_reason == ""
         assert result.iterations == 3
+
+    def test_cost_only_reporting_is_not_token_evidence(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P1-b): an adapter that reports cost but no
+        tokens moved ``known_calls`` and so looked fully instrumented,
+        while ``total_tokens`` stayed 0 and the cap could never trip.
+        The loop ran to max_iterations under a dead ceiling. It now
+        halts at the threshold like any other tokenless adapter.
+        """
+        agent = SequenceUsageAgent([_COST_ONLY])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500),
+        )
+        assert result.iterations == 2      # not the configured 10
+        assert "unenforceable" in result.budget_halt_reason
+        assert result.usage.known_calls == 2   # the misleading signal
+        assert result.usage.token_calls == 0   # the honest one
+        assert result.usage.total_tokens == 0
+
+    def test_unenforceable_threshold_does_not_reset_per_loop(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P1-a): the threshold is run-wide.
+
+        Reproduced by the reviewer: with ``max_iterations = 1`` (or a
+        retry that dies after one call) no single loop ever reached
+        ``_UNENFORCEABLE_CALLS``, so three sequential one-iteration
+        loops reached calls=3 / token_calls=0 / total_tokens=0 with
+        every ``budget_halt_reason`` empty. The cap was decorative
+        whenever work was split into short loops.
+
+        The priors are threaded exactly as ``_submit_args`` threads
+        them, so this pins the whole channel, not just the arithmetic.
+        """
+        run_total = UsageTotals()
+        reasons: list[str] = []
+        for _ in range(3):
+            agent = SequenceUsageAgent([_UNREPORTED])
+            result = run_loop(
+                _loop_config(tmp_path, 1), PlainUI(no_color=True), agent,
+                tmp_path, budget=_budget_for(run_total, 500),
+            )
+            run_total.merge(result.usage)
+            reasons.append(result.budget_halt_reason)
+
+        assert reasons[0] == ""                    # one is an incident
+        assert "unenforceable" in reasons[1]       # two is the adapter
+        assert "unenforceable" in reasons[2]
+        assert run_total.calls == 3
+        assert run_total.token_calls == 0
+
+    def test_a_high_prior_call_count_cannot_halt_a_loop_that_has_not_run(
+        self,
+    ) -> None:
+        """The run-wide threshold must not pre-empt the engineer.
+
+        A worker launched into a run that already has tokenless calls on
+        its meter has made no calls of its own yet, so there is no
+        token evidence either way and nothing to conclude. Halting here
+        would fail a component that never got to run.
+        """
+        budget = LoopBudget(
+            max_total_tokens=500, prior_calls=20, prior_token_calls=0,
+        )
+        assert budget.halt_reason(UsageTotals()) is None
+
+    def test_a_tokenless_call_after_an_earlier_one_halts_immediately(
+        self, tmp_path: Path,
+    ) -> None:
+        """The deliberate cost of counting the threshold run-wide.
+
+        Once a run has accumulated one tokenless call ANYWHERE - a
+        timed-out reviewer call, a previous component's last iteration -
+        the engineer's first tokenless iteration reaches the threshold
+        and halts, where an isolated loop would have given it a second
+        chance. Accepted on purpose: two independent tokenless calls in
+        one run is adapter behavior rather than an incident, and the
+        failure is loud, recorded and recoverable (raise or clear
+        max_total_tokens), whereas the alternative is a per-loop
+        counter that never fires at all (P1-a).
+        """
+        agent = SequenceUsageAgent([_UNREPORTED, _REPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(
+                max_total_tokens=500_000, prior_total_tokens=900,
+                prior_known_calls=2, prior_calls=3, prior_token_calls=2,
+            ),
+        )
+        assert result.iterations == 1
+        assert "unenforceable" in result.budget_halt_reason
+        assert "2 call(s) in this run" in result.budget_halt_reason
 
     def test_iteration_usage_callback_sees_cumulative_totals(
         self, tmp_path: Path,
@@ -1203,22 +1400,58 @@ class TestWorkerPropagatesInLoopHalt:
     def test_worker_persists_usage_at_every_iteration_boundary(
         self, tmp_path: Path,
     ) -> None:
-        """The durable snapshot the abort path reads back."""
+        """The durable snapshot the abort path reads back.
+
+        Keyed off ``usage_dir_str``, not ``events_dir_str``: review
+        finding P2-d showed the snapshot dying with the observability
+        opt-out, so the accounting channel is now its own argument.
+        """
         root = _setup_project(tmp_path, ["comp-a"])
-        events_dir = root / ".kstrl" / "runs" / "run-b"
+        usage_dir = root / ".kstrl" / "runs" / "run-b"
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
 
         with patch("kstrl.agents.get_agent", return_value=agent):
             _run_component(**self._worker_args(
-                root, max_iterations=2, events_dir_str=str(events_dir),
+                root, max_iterations=2,
+                events_dir_str=str(usage_dir), usage_dir_str=str(usage_dir),
             ))
 
         snapshot = _read_partial_usage(
-            RunPaths(root=events_dir).engineer_usage("comp-a")
+            RunPaths(root=usage_dir).engineer_usage("comp-a")
         )
         assert snapshot is not None
         assert snapshot.total_tokens == 600
         assert snapshot.calls == 2
+
+    def test_worker_persists_usage_without_an_events_dir(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P2-d), worker half.
+
+        ``progress_log_enabled = false`` makes the parent pass
+        ``events_dir_str=None``. That used to skip installing
+        ``on_iteration_usage`` entirely, so a killed worker recorded
+        nothing in a fully supported configuration: an observability
+        opt-out silently disabled the meter. The accounting channel is
+        now independent of the event channel.
+        """
+        root = _setup_project(tmp_path, ["comp-a"])
+        usage_dir = root / ".kstrl" / "accounting-only"
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
+
+        with patch("kstrl.agents.get_agent", return_value=agent):
+            _run_component(**self._worker_args(
+                root, max_iterations=2,
+                events_dir_str=None, usage_dir_str=str(usage_dir),
+            ))
+
+        snapshot = _read_partial_usage(
+            RunPaths(root=usage_dir).engineer_usage("comp-a")
+        )
+        assert snapshot is not None
+        assert snapshot.total_tokens == 600
+        # No events were written: the opt-out is still honored.
+        assert not (usage_dir / "events.jsonl").exists()
 
 
 class TestSchedulerHandsDownTheBudget:
@@ -1257,12 +1490,46 @@ class TestSchedulerHandsDownTheBudget:
         assert all(isinstance(b, LoopBudget) for b in budgets)
         assert budgets[0] == LoopBudget(
             max_total_tokens=100_000, prior_total_tokens=0,
-            prior_known_calls=0,
+            prior_known_calls=0, prior_calls=0, prior_token_calls=0,
         )
+        # prior_calls / prior_token_calls are the channel that stops the
+        # unenforceable threshold resetting per component (P1-a).
         assert budgets[1] == LoopBudget(
             max_total_tokens=100_000, prior_total_tokens=700,
-            prior_known_calls=1,
+            prior_known_calls=1, prior_calls=1, prior_token_calls=1,
         )
+
+    def test_tokenless_prior_calls_reach_the_next_worker(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P1-a), scheduler half: a component whose
+        engineer reported nothing must leave that fact on the NEXT
+        worker's budget, or the run-wide threshold cannot exist."""
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([
+            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
+        ])
+        config = _factory_config(root, max_total_tokens=100_000)
+        budgets: list[Any] = []
+        silent = UsageTotals()
+        silent.add_record(_UNREPORTED)
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            budgets.append(args[-1])
+            return ComponentResult(
+                str(args[0]), success=True, iterations=1, usage=silent,
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert budgets[1].prior_calls == 1
+        assert budgets[1].prior_token_calls == 0
 
     def test_no_cap_still_hands_down_a_disabled_budget(
         self, tmp_path: Path,
@@ -1382,6 +1649,62 @@ class TestInLoopHaltAuditState:
         assert comp_a.retries == 0
 
 
+def _pending_executor(
+    sync_calls: int, on_pending: Callable[[tuple[Any, ...]], None],
+) -> type:
+    """Executor stand-in whose LATER submissions never resolve.
+
+    Why this exists (review finding P2-e): ``_factory_config`` sets
+    ``use_worktrees=False``, which forces ``max_parallel=1``, which
+    selects ``_InlineExecutor`` - and that executor runs the worker
+    synchronously inside ``submit()``. By the time a stop is observed
+    the future is therefore already done, and ``_salvage_aborted_usage``
+    takes the already-delivered route. Every test of the DISK route has
+    to inject a genuinely pending future at the executor seam, or it
+    passes with the snapshot write/read entirely broken.
+
+    ``on_pending`` receives the submit arguments, which is how a test
+    learns the run-scoped usage directory the worker would have been
+    told to write to (the run id is minted inside ``run_factory``).
+    """
+    state = {"n": 0}
+
+    class _PendingExecutor:
+        def submit(
+            self, fn: Callable[..., ComponentResult], /, *args: Any,
+        ) -> Future[ComponentResult]:
+            state["n"] += 1
+            future: Future[ComponentResult] = Future()
+            # Inline mode binds the args into a functools.partial; pool
+            # mode passes them through. Accept both.
+            submit_args = args or tuple(getattr(fn, "args", ()))
+            if state["n"] > sync_calls:
+                on_pending(submit_args)
+                return future  # never resolves: the worker was killed
+            try:
+                future.set_result(fn(*args))
+            except Exception as exc:  # noqa: BLE001 - mirrors the real one
+                future.set_exception(exc)
+            return future
+
+        def shutdown(
+            self, wait: bool = True, cancel_futures: bool = False,
+        ) -> None:
+            """Nothing to shut down."""
+
+    return _PendingExecutor
+
+
+def _usage_dir_from_args(args: tuple[Any, ...]) -> Path:
+    """The accounting directory ``_submit_args`` hands the worker.
+
+    Pins the positional contract from the other end: the submit tuple
+    ends with (events_dir, usage_dir, run_id, token_budget).
+    """
+    assert isinstance(args[-1], LoopBudget)
+    return Path(str(args[-3]))
+
+
 class TestAbortedWorkerUsage:
     def test_snapshot_roundtrips(self, tmp_path: Path) -> None:
         totals = _engineer_usage(1234, cost=0.5)
@@ -1408,15 +1731,25 @@ class TestAbortedWorkerUsage:
         blocker.write_text("not a directory")
         _write_partial_usage(blocker / "sub" / "usage.json", _engineer_usage(1))
 
+    def test_clearing_a_snapshot_is_idempotent(self, tmp_path: Path) -> None:
+        """The scheduler clears before every submission, including the
+        first, when there is nothing to clear."""
+        path = tmp_path / "engineer_usage.json"
+        _clear_partial_usage(path)              # absent: no error
+        _write_partial_usage(path, _engineer_usage(700))
+        _clear_partial_usage(path)
+        assert _read_partial_usage(path) is None
+        _clear_partial_usage(tmp_path)          # a directory: swallowed
+
     def test_killed_worker_spend_recovered_from_the_snapshot(
         self, tmp_path: Path,
     ) -> None:
-        run_paths = RunPaths(root=tmp_path)
+        usage_paths = RunPaths(root=tmp_path)
         _write_partial_usage(
-            run_paths.engineer_usage("comp-a"), _engineer_usage(700),
+            usage_paths.engineer_usage("comp-a"), _engineer_usage(700),
         )
         pipeline = MagicMock()
-        pipeline.run_paths = run_paths
+        pipeline.usage_paths = usage_paths
         future: Future[ComponentResult] = Future()  # never completes
 
         _salvage_aborted_usage(future, "comp-a", pipeline)
@@ -1431,12 +1764,12 @@ class TestAbortedWorkerUsage:
     ) -> None:
         """No double counting: a future that DID deliver is
         authoritative and the (staler) snapshot is ignored."""
-        run_paths = RunPaths(root=tmp_path)
+        usage_paths = RunPaths(root=tmp_path)
         _write_partial_usage(
-            run_paths.engineer_usage("comp-a"), _engineer_usage(700),
+            usage_paths.engineer_usage("comp-a"), _engineer_usage(700),
         )
         pipeline = MagicMock()
-        pipeline.run_paths = run_paths
+        pipeline.usage_paths = usage_paths
         future: Future[ComponentResult] = Future()
         future.set_result(ComponentResult(
             "comp-a", success=False, usage=_engineer_usage(900),
@@ -1449,7 +1782,7 @@ class TestAbortedWorkerUsage:
 
     def test_crashed_worker_records_nothing(self, tmp_path: Path) -> None:
         pipeline = MagicMock()
-        pipeline.run_paths = RunPaths(root=tmp_path)
+        pipeline.usage_paths = RunPaths(root=tmp_path)
         future: Future[ComponentResult] = Future()
         future.set_exception(RuntimeError("worker died"))
 
@@ -1461,7 +1794,17 @@ class TestAbortedWorkerUsage:
         self, tmp_path: Path,
     ) -> None:
         """End to end: the shutdown path used to drop the worker's
-        usage on the floor. Now it lands on the meter."""
+        usage on the floor. Now it lands on the meter.
+
+        SCOPE (review finding P2-e): this covers the ALREADY-DELIVERED
+        route only. ``_factory_config`` sets use_worktrees=False, which
+        forces max_parallel=1 and the synchronous ``_InlineExecutor``,
+        so the future is done before the stop is observed and the disk
+        snapshot is never read. It passed with snapshot write/read
+        entirely broken. The disk route is covered by the pending-future
+        tests below; both routes need their own test because they are
+        mutually exclusive branches of ``_salvage_aborted_usage``.
+        """
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         stop = StopController()
@@ -1486,13 +1829,147 @@ class TestAbortedWorkerUsage:
         comp_a = manifest.get_component("comp-a")
         assert comp_a is not None
         assert comp_a.failed_phase == "aborted"
-        events = ProgressLog(root / "progress.jsonl").read_events()
-        usage_events = [
-            e for e in events
-            if e["event"] == "component_usage" and e["data"]["phase"] == "engineer"
+        assert _engineer_usage_events(root) == [4242]
+
+    def test_pending_worker_spend_is_salvaged_from_disk_end_to_end(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P2-e): the disk route, exercised for real.
+
+        The future is still PENDING when the stop lands - the worker was
+        killed mid-loop - so the only surviving record of its spend is
+        the snapshot it published at its last iteration boundary. Break
+        ``_write_partial_usage`` or ``_read_partial_usage`` and this
+        test fails; the pre-existing abort test does not.
+        """
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        stop = StopController()
+
+        def worker_published_then_died(args: tuple[Any, ...]) -> None:
+            _write_partial_usage(
+                RunPaths(root=_usage_dir_from_args(args))
+                .engineer_usage("comp-a"),
+                _engineer_usage(700),
+            )
+            stop.request("mid-run test stop")
+
+        with patch(
+            "kstrl.factory._InlineExecutor",
+            _pending_executor(0, worker_published_then_died),
+        ), patch(
+            "kstrl.factory._run_component",
+            side_effect=AssertionError("the worker never returned"),
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            result = run_factory(
+                manifest, _factory_config(root), _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+            )
+
+        assert result.exit_code == 130
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert comp_a.failed_phase == "aborted"
+        assert _engineer_usage_events(root) == [700]
+
+    def test_a_stale_snapshot_from_a_finished_attempt_is_not_recounted(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P2-c): the snapshot is attempt-scoped.
+
+        The file is keyed by run + component only, and a normal result
+        leaves it on disk. Attempt 1 here completes with 700 tokens
+        (recorded by ``process_result``) and leaves its snapshot behind;
+        attempt 2 is cancelled before its own first iteration boundary,
+        so it has no spend of its own. Before the fix, salvage read the
+        stale file and the run reported 1400 for 700 tokens of work.
+
+        The scheduler now clears the snapshot immediately before every
+        submission - in the PARENT, so the window where the worker never
+        starts is covered too.
+        """
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_retries=1)
+        stop = StopController()
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            # Attempt 1: a real worker publishing its boundary snapshot,
+            # then failing organically with the same spend on the result.
+            _write_partial_usage(
+                RunPaths(root=_usage_dir_from_args(args))
+                .engineer_usage("comp-a"),
+                _engineer_usage(700),
+            )
+            return ComponentResult(
+                "comp-a", success=False, iterations=1, error="tests failed",
+                usage=_engineer_usage(700),
+            )
+
+        with patch(
+            "kstrl.factory._InlineExecutor",
+            # Attempt 1 runs; attempt 2's future hangs and is aborted.
+            _pending_executor(1, lambda args: stop.request("mid-run stop")),
+        ), patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+            )
+
+        assert _engineer_usage_events(root) == [700]
+
+    def test_pending_worker_spend_survives_progress_log_disabled(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review regression (P2-d): accounting is not observability.
+
+        With ``progress_log_enabled = false`` the parent had no
+        ``run_paths``, so it passed the worker no place to publish
+        usage and then had no place to read one back: a killed worker
+        recorded nothing at all, in a supported configuration. The
+        accounting directory is now allocated for every run.
+
+        Asserted through the end-of-run usage rollup because the opt-out
+        means there is no progress log to read - and the rollup is what
+        a human actually sees.
+        """
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, progress_log_enabled=False)
+        stop = StopController()
+        out = io.StringIO()
+
+        def worker_published_then_died(args: tuple[Any, ...]) -> None:
+            usage_dir = _usage_dir_from_args(args)
+            _write_partial_usage(
+                RunPaths(root=usage_dir).engineer_usage("comp-a"),
+                _engineer_usage(700),
+            )
+            stop.request("mid-run test stop")
+
+        with patch(
+            "kstrl.factory._InlineExecutor",
+            _pending_executor(0, worker_published_then_died),
+        ), patch(
+            "kstrl.factory._run_component",
+            side_effect=AssertionError("the worker never returned"),
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True, file=out), root, stop=stop,
+            )
+
+        rollup = [
+            line for line in out.getvalue().splitlines()
+            if "comp-a" in line and "engineer" in line
         ]
-        assert len(usage_events) == 1
-        assert usage_events[0]["data"]["total_tokens"] == 4242
+        assert rollup, "the aborted worker's spend never reached the meter"
+        assert "700" in rollup[0]
+        # The opt-out is still honored: no progress log, no event stream.
+        assert not (root / "progress.jsonl").exists()
+        assert not list((root / ".kstrl" / "runs").glob("*/events.jsonl"))
 
 
 # ---------------------------------------------------------------------------

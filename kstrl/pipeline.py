@@ -262,6 +262,7 @@ class ComponentPipeline:
         bus: ev.EventBus,
         journal_path: Path | None,
         run_paths: ev.RunPaths | None = None,
+        usage_paths: ev.RunPaths | None = None,
         interaction: InteractionChannel | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
@@ -284,6 +285,12 @@ class ComponentPipeline:
         self.bus = bus
         self.journal_path = journal_path
         self.run_paths = run_paths
+        # R8: where engineer-loop usage snapshots live. Deliberately
+        # SEPARATE from run_paths, which is None when progress logging
+        # is off: accounting must survive the observability opt-out
+        # (review finding P2-d). None only for callers that never run
+        # the abort-salvage path (tests, embedded pipelines).
+        self.usage_paths = usage_paths
         # PR A: the interaction seam. Defaults to today's terminal
         # behavior; embedded mode (PR F) injects a QueueInteractionChannel.
         self.interaction: InteractionChannel = (

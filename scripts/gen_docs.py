@@ -366,7 +366,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "iteration or phase, never mid-call (docs/env-vars.md)",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
     ("factory", "progress_log_enabled"):
-        "JSONL event log at .kstrl/progress.jsonl (R3.2)",
+        "JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is "
+        "written either way (docs/env-vars.md)",
     ("factory", "keep_worktrees_on_failure"):
         "keep failed components' worktrees for post-mortem (R3.3)",
     ("breaker", "no_progress_iterations"):

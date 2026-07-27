@@ -302,7 +302,7 @@ merge_timeout = 300.0              # seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
 max_total_tokens = 0               # run-level token budget; 0 = unbounded. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
-progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2)
+progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is written either way (docs/env-vars.md)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
