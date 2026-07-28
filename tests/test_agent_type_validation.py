@@ -145,17 +145,30 @@ class TestFamilyResolverMatchesTheAdapter:
     def test_family_agrees_with_the_constructed_adapter(
         self, agent_type: str | None,
     ) -> None:
+        """Both sides must read the SAME environment.
+
+        `auto`/None auto-detect, so `get_agent` consults
+        `ClaudeCodeAgent.is_available()` for real. Passing a hardcoded
+        `claude_available=True` made this pass on a machine with the
+        claude CLI installed and fail in CI without it - an
+        environment-dependent test, which is its own defect. The flag is
+        taken from the same source the adapter uses.
+        """
         from kstrl.factory import _cli_family
 
-        assert _cli_family(None, agent_type, True) == self._expected_family(
-            agent_type
-        )
+        claude_available = ClaudeCodeAgent.is_available()
+        assert _cli_family(
+            None, agent_type, claude_available,
+        ) == self._expected_family(agent_type)
 
     def test_claude_alias_is_the_claude_family(self) -> None:
         # The regression in one line: this returned "codex".
         from kstrl.factory import _cli_family
 
+        # An explicit type never auto-detects, so the availability flag
+        # is irrelevant here - assert under both to prove it.
         assert _cli_family(None, "claude", True) == "claude-code"
+        assert _cli_family(None, "claude", False) == "claude-code"
 
     def test_unset_type_still_autodetects(self) -> None:
         """None means auto-detect, not unknown.
@@ -186,7 +199,7 @@ class TestFamilyResolverMatchesTheAdapter:
         reviewer when both CLIs are installed."""
         from kstrl.factory import _cli_family
 
-        engineer_family = _cli_family(None, "claude", True)
+        engineer_family = _cli_family(None, "claude", ClaudeCodeAgent.is_available())
         assert engineer_family == "claude-code"
         # The rotation's job is to choose the OTHER family; with the old
         # behavior engineer_family was "codex" and it chose claude-code -
