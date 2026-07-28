@@ -380,19 +380,20 @@ exists and its output over historical `experiments.tsv` is captured here.
 Status: `[x]` - Shipped in `kstrl/inbox.py` + `ks inbox` +
 `kstrl/tui/screens/inbox.py`. Append-only `.kstrl/inbox.jsonl` folded on
 read; item kinds policy_exception / merge_gate / halted_run /
-budget_overrun / demotion_notice / calibration_drift; dedupe by key,
-snooze with a TTL that RETURNS the item, and an open-item cap that R8.6
-will consult before admitting queue work.
+budget_overrun / demotion_notice / calibration_drift / test_adequacy;
+dedupe by key, snooze with a TTL that RETURNS the item, and an open-item
+cap that R8.6 will consult before admitting queue work.
 
 **Emitters are wired, not declared.** The halt paths that feed it:
 component FAILED and PR-flow failure (halted_run), MERGE_PENDING and the
 pre-merge checkpoint that no interactive UI can answer (merge_gate),
 token-budget halt (budget_overrun), R8.1 policy findings
-(policy_exception, advisories excluded), and R8.2 demotions
-(demotion_notice, carrying the triggering evidence - the item R8.2
-promised). Verified end-to-end: a run with a planted policy violation
-produces a policy_exception, a halted_run, AND a demotion_notice while
-the ladder drops L3 -> L2.
+(policy_exception, advisories excluded), R8.5 blocking test-adequacy
+findings (test_adequacy, advisories excluded for the same reason), and
+R8.2 demotions (demotion_notice, carrying the triggering evidence - the
+item R8.2 promised). Verified end-to-end: a run with a planted policy
+violation produces a policy_exception, a halted_run, AND a
+demotion_notice while the ladder drops L3 -> L2.
 
 `pause_before_pr_merge` on an unattended run no longer proceeds. It
 returns `CheckpointDecision.PARKED`: the merge is withheld, the
@@ -491,7 +492,64 @@ duckdb extra is wired for the query subcommand only.
 
 ## R8.5 Test-suite adequacy gate (L) - [#152](https://github.com/0xfauzi/kstrl/issues/152)
 
-Status: `[ ]` - Depends on: R8.2 for level-gated behavior (lands advisory-first)
+Status: `[~]` - **Layer 0 only.** Shipped in `kstrl/adequacy.py` +
+`check_test_adequacy`: test-diff discipline (deleted tests - including a
+deleted test FILE - added skip/xfail in any of its spellings, net
+assertion loss) and oracle-signal linting (a new test file needs one
+falsifiable assertion; tests that assert nothing are reported). Opt-in
+via `[adequacy] enabled`, ADVISORY first; with the R8.2 ladder on, Layer
+0 blocks from L1 up per the level table.
+
+Two scoping rules decide whether the gate is usable rather than merely
+strict:
+
+- **The whole-file oracle floor applies to ADDED test files only** (git
+  status `A`). A modified file carries tests written under a different
+  standard, and failing a one-line edit over a legacy file's weak oracles
+  is how a gate gets switched off. Modified files still get every
+  diff-discipline check, plus the assertionless check on the test defs
+  the diff added.
+- **A truthiness call is not an oracle.** `assert bool(x)`,
+  `assert compute()` and `assert a is not None or a == 3` are all WEAK; a
+  call is strong only when its arguments state an expectation
+  (`all(x > 0 for x in xs)`). `unittest` / `mock` assertion methods are
+  classified too - `assertEqual` / `assert_called_once_with` strong,
+  `assertTrue` / `assert_called` weak - so a `TestCase` file is not read
+  as asserting nothing.
+
+Findings are typed (`adequacy_*`) and land in the component's finding
+stream (PR body, journal, evolution). **Blocking** findings additionally
+raise an R8.3 inbox item (kind `test_adequacy`, deduped by category plus
+location, so a recurring finding collapses onto one item); advisory ones
+deliberately do not, because the inbox is a queue of decisions and an
+advisory asks for none.
+
+Layer 0 needs no test execution, no coverage run, no mutation tooling and
+no historical data, which is why it went first: it is the only layer whose
+thresholds are not waiting on evidence that does not exist yet.
+
+**Not built, and not claimed:**
+
+- **Layer 1** (patch coverage floor, `diff-cover --fail-under`) - adds a
+  dependency and wants a measured floor rather than the roadmap's ~85%
+  placeholder.
+- **Layer 2** (diff-scoped mutation) - `check_mutation_score` already
+  exists and is file-scoped to changed files, but the R8.5 requirements
+  on top of it (max 1 mutant per line, hard wall-clock cap, sampling
+  recorded in the audit trail, surviving mutants fed back as remediation
+  targets) are unbuilt. Its >= 70% gate is explicitly "thresholds set
+  from the empirical distribution", and that distribution needs real
+  runs.
+- **Layer 3** (fixtures oracle required at high autonomy) - `[fixtures]`
+  exists and is opt-in; promoting it to mandatory at L3+ is a small
+  level-gate that belongs with the same pass as Layer 1/2.
+- **Cross-family review defaulting on at L3+** and the calibration
+  family-delta - user-run measurements (overlaps remediation R7.1).
+
+The distinction that matters for sequencing: Layer 0 degrades to nothing
+without data because it needs none. Layers 1-2 need an empirical
+distribution to set a threshold anyone should trust, and shipping them
+against invented numbers is the failure this cycle keeps trying to avoid.
 
 **Why.** The lights-out precondition in every tradition is an evaluator-grade
 test suite, and the evidence says agent-written tests cannot be assumed

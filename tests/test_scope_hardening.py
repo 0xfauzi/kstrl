@@ -421,6 +421,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths_error: str | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
+            adequacy_config: object | None = None,
+            autonomy_level: int = 0,
             component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths
@@ -457,6 +459,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths_error: str | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
+            adequacy_config: object | None = None,
+            autonomy_level: int = 0,
             component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths_error"] = allowed_paths_error
@@ -504,6 +508,8 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths_error: str | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
+            adequacy_config: object | None = None,
+            autonomy_level: int = 0,
             component_id: str | None = None,
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths

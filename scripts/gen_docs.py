@@ -117,6 +117,7 @@ class SectionSpec:
 
 
 def _section_specs() -> list[SectionSpec]:
+    from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
@@ -266,6 +267,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: InboxConfig.load(root_dir=root),
             InboxConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "adequacy", "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
+            identity_keys(AdequacyConfig, [
+                f.name for f in dataclasses.fields(AdequacyConfig)
+            ]),
+            lambda root: AdequacyConfig.load(root_dir=root),
+            AdequacyConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "security", "Phase 2.5 security review",
@@ -422,6 +431,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
     ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
+    ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
+    ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
+    ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",
+    ("adequacy", "flag_assertionless_tests"): "report tests that assert nothing at all",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
@@ -480,6 +493,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("policy", "license_unresolved"): "advisory",
+    ("adequacy", "layer0"): "block",
     ("autonomy", "max_level"): 2,
     ("contract", "mode"): "final",
     ("knowledge", "dependency_scope"): "transitive",

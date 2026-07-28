@@ -27,6 +27,9 @@ _PHASE_SKIPPED_CATEGORY = "phase_skipped"
 # R8.1: policy-envelope violations. Mechanical (no LLM), so these carry
 # no model tag - the "reviewer" is the envelope itself.
 POLICY_CATEGORY_PREFIX = "policy_"
+# R8.5: test-suite adequacy findings. Mechanical like the policy family,
+# so no model tag - the gate, not an LLM, decided.
+ADEQUACY_CATEGORY_PREFIX = "adequacy_"
 
 # R3.3: every finding the factory records is tagged with the attempt
 # that produced it, so the journal can distinguish superseded findings
@@ -156,6 +159,32 @@ class Finding:
             explanation=explanation,
             suggestion=suggestion,
             tags=("policy", f"policy:{category}"),
+        )
+
+    @classmethod
+    def adequacy_finding(
+        cls,
+        category: str,
+        explanation: str,
+        location: str = "",
+        severity: str = "advisory",
+        suggestion: str = "",
+    ) -> Finding:
+        """Build a Finding for an R8.5 test-adequacy concern.
+
+        Severity defaults to ``advisory`` because the gate lands
+        advisory-first: these layers are judged against thresholds that
+        have not been measured yet, and a gate that blocks on an invented
+        number teaches people to switch gates off.
+        """
+        return cls(
+            phase="adequacy",
+            category=f"{ADEQUACY_CATEGORY_PREFIX}{category}",
+            severity=severity,
+            location=location,
+            explanation=explanation,
+            suggestion=suggestion,
+            tags=("adequacy", f"adequacy:{category}"),
         )
 
     @classmethod

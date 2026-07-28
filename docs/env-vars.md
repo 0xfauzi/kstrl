@@ -240,6 +240,25 @@ on_inbox_item = "curl -fsS -H 'Priority: high' -d \"$KSTRL_NOTIFY_EVENT $KSTRL_N
 
 Then triage with `ks inbox ls`. Notifications never carry an action link: decisions happen locally, which is what keeps kstrl free of an inbound HTTP endpoint.
 
+## AdequacyConfig (`[adequacy]`)
+
+Test-suite adequacy gate (R8.5), **Layer 0 only** so far. Reads the diff and the changed test files - no test execution, no coverage run, no mutation tooling, no historical data. It catches two things: a diff that WEAKENS the suite (deleted tests, up to and including a deleted test FILE; added `skip`/`xfail`, whether as a decorator, a `pytest.skip()` in a body, a module-level `pytestmark`, or `marks=` inside `pytest.param`; more assertion lines removed than added) and new tests that assert nothing falsifiable.
+
+"Falsifiable" is a deliberately low bar: a comparison against an expected value, or an asserted exception. Shape-only checks like `assert result is not None` are counted as weak because they pass for a plausible-looking wrong answer, which is the agent-written-test failure mode the layer exists for. So is truthiness however it is spelled - `assert bool(x)`, `assert compute()` and `assert a is not None or a == 3` are all weak - while a call whose arguments state an expectation (`assert all(x > 0 for x in xs)`) is strong. `unittest` and `mock` assertion methods count as assertions: `assertEqual` / `assert_called_once_with` strong, `assertTrue` / `assert_called` weak, so a `TestCase` file is not misread as asserting nothing. It does **not** judge whether an expected value is correct - nothing static can; that is the fixtures oracle's job.
+
+`require_strong_oracle` is a rule about **new** test files (git status `A`). Editing a file whose tests predate the gate never trips it; what the diff adds to that file still does, and every diff-discipline check applies to every changed test file.
+
+**Measured false-positive profile** (kstrl's own suite, ~60 test files, at the head of PR #178): **one** file is flagged - `tests/test_tui_snapshots.py`, whose only oracle is `assert snap_compare(...)`. A custom assertion helper that returns a bool is indistinguishable, statically, from `assert flag_set(0)`, so it reads as weak. The same applies to value-constraining predicates like `assert s.startswith("x")` and `assert re.match(...)`, though neither occurs as a file's sole oracle in this repo. Since one strong test carries the whole file and the floor applies only to NEWLY ADDED files, the rate is low - but it is a real class, and a repo whose tests lean on custom assertion helpers should expect it before switching `layer0` to `block`.
+
+Opt-in and **advisory first**: findings are recorded without failing, so turning it up later starts from evidence rather than a guess. With `[autonomy]` enabled, Layer 0 blocks from L1 up - autonomy may tighten this gate, never loosen it. Findings reach the component's finding stream (PR body, journal, evolution) either way. A **blocking** finding additionally opens an R8.3 inbox item (kind `test_adequacy`, deduped by category and location so a repeat collapses onto one item); an advisory finding does not, because the inbox is a queue of decisions and an advisory asks for none.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_ADEQUACY_ENABLED` | bool (`1`) | false |
+| `KSTRL_ADEQUACY_LAYER0` | `advisory` \| `block` | `advisory` |
+
+Layers 1 (patch coverage), 2 (diff-scoped mutation) and 3 (fixtures required at L3+) are not built; see `docs/dark-factory-roadmap.md` for why they wait on measured thresholds.
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

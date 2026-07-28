@@ -40,9 +40,12 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
 from kstrl import git
+from kstrl.adequacy import AdequacyConfig
 from kstrl.agents.base import UsageTotals, collect_usage
+from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.findings import (
+    ADEQUACY_CATEGORY_PREFIX,
     POLICY_CATEGORY_PREFIX,
     Finding,
     finding_model,
@@ -1576,6 +1579,11 @@ class ComponentPipeline:
             self.factory_config.policy_config
             or PolicyConfig.load(self.root_dir)
         )
+        adequacy_cfg = AdequacyConfig.load(self.root_dir)
+        autonomy_cfg = AutonomyConfig.load(self.root_dir)
+        level = (
+            AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
+        )
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -1585,6 +1593,8 @@ class ComponentPipeline:
             allowed_paths_error=allowed_paths_error,
             fixtures_config=fixtures_cfg,
             policy_config=policy_cfg,
+            adequacy_config=adequacy_cfg,
+            autonomy_level=level,
             component_id=comp.id,
         )
         verify_duration = time.monotonic() - verify_start
@@ -1614,6 +1624,34 @@ class ComponentPipeline:
                         detail=finding.explanation,
                         component=comp.id,
                         dedupe_key=f"policy:{comp.id}:{finding.category}",
+                        evidence={
+                            "category": finding.category,
+                            "severity": finding.severity,
+                            "location": finding.location,
+                            "suggestion": finding.suggestion,
+                        },
+                    )
+                # R8.5: same rule, same reason. A BLOCKING adequacy
+                # finding stopped the change and needs a human to decide
+                # whether the suite may weaken here; an ADVISORY one is
+                # recorded in the finding stream and stops there, because
+                # the inbox is a queue of decisions, not of notes. The
+                # dedupe key is category + location so the same file
+                # failing the same way across retries collapses onto one
+                # item instead of fanning out.
+                elif (
+                    finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
+                    and finding.severity != "advisory"
+                ):
+                    self._inbox_add(
+                        ItemKind.TEST_ADEQUACY,
+                        f"{comp.id}: {finding.category}",
+                        detail=finding.explanation,
+                        component=comp.id,
+                        dedupe_key=(
+                            f"adequacy:{comp.id}:{finding.category}:"
+                            f"{finding.location}"
+                        ),
                         evidence={
                             "category": finding.category,
                             "severity": finding.severity,

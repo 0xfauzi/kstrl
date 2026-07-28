@@ -61,6 +61,7 @@ class ItemKind(StrEnum):
     BUDGET_OVERRUN = "budget_overrun"          # a cap was hit
     DEMOTION_NOTICE = "demotion_notice"        # R8.2 autonomy revoked
     CALIBRATION_DRIFT = "calibration_drift"    # detection rate moved
+    TEST_ADEQUACY = "test_adequacy"            # R8.5 Layer 0 blocked a change
 
     @property
     def action_required(self) -> bool:
@@ -76,6 +77,10 @@ class ItemKind(StrEnum):
             ItemKind.MERGE_GATE,
             ItemKind.HALTED_RUN,
             ItemKind.BUDGET_OVERRUN,
+            # A BLOCKING adequacy finding stopped a change: someone has to
+            # decide whether the suite really may get weaker here. The
+            # advisory ones never reach the inbox at all (see pipeline).
+            ItemKind.TEST_ADEQUACY,
         }
 
 
@@ -105,6 +110,7 @@ DEFAULT_PRIORITY: dict[ItemKind, Priority] = {
     ItemKind.BUDGET_OVERRUN: Priority.HIGH,
     ItemKind.DEMOTION_NOTICE: Priority.HIGH,
     ItemKind.CALIBRATION_DRIFT: Priority.LOW,
+    ItemKind.TEST_ADEQUACY: Priority.NORMAL,
 }
 
 _PRIORITY_ORDER = {Priority.HIGH: 0, Priority.NORMAL: 1, Priority.LOW: 2}
