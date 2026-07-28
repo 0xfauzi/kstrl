@@ -16,6 +16,12 @@ from kstrl import git, licensing
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
+from kstrl.adequacy import (
+    AdequacyConfig,
+    evaluate_layer0,
+    is_test_path,
+    layer0_blocks,
+)
 from kstrl.findings import Finding
 from kstrl.guards import path_is_allowed
 from kstrl.parsers import (
@@ -1020,6 +1026,91 @@ def _check_licenses(
     return violations
 
 
+def check_test_adequacy(
+    cwd: Path,
+    base_branch: str,
+    config: AdequacyConfig,
+    autonomy_level: int = 0,
+) -> CheckResult:
+    """R8.5 Layer 0: did this change weaken the suite, and do its new
+    tests assert anything falsifiable?
+
+    Reads the diff and the changed test files only - no test execution,
+    no coverage, no mutation tooling, no historical data. Fails CLOSED on
+    an unreadable diff, like every other artifact-reading check here.
+
+    Advisory unless the level (or an explicit opt-in) says otherwise:
+    findings are recorded either way, so switching the gate on later
+    starts from evidence rather than a guess.
+    """
+    start = time.monotonic()
+    try:
+        diff_text = git.get_diff_content(base_branch, cwd)
+        changed = git.get_diff_names(base_branch, cwd, strict=True)
+    except git.GitDiffError as exc:
+        return CheckResult(
+            name="test_adequacy",
+            passed=False,
+            message=(
+                "test adequacy could not read the diff; failing closed "
+                "(infrastructure error, not an adequacy pass)"
+            ),
+            details=[f"Error: {exc}"],
+            findings=[Finding.infrastructure_error(
+                "adequacy", f"adequacy could not read the diff: {exc}",
+            )],
+            duration_seconds=time.monotonic() - start,
+        )
+
+    sources: dict[str, str] = {}
+    for rel in changed:
+        if not is_test_path(rel) or not rel.endswith(".py"):
+            continue
+        full = cwd / rel
+        if not full.exists():
+            continue          # deleted; the diff analysis covers it
+        try:
+            sources[rel] = full.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+    adequacy_findings = evaluate_layer0(diff_text, sources, config)
+    blocking = layer0_blocks(config, autonomy_level)
+    severity = "high" if blocking else "advisory"
+    findings = [
+        Finding.adequacy_finding(
+            category=str(f.kind),
+            explanation=f.render(),
+            location=f.path,
+            severity=severity,
+        )
+        for f in adequacy_findings
+    ]
+
+    if not adequacy_findings:
+        return CheckResult(
+            name="test_adequacy",
+            passed=True,
+            message=(
+                f"test adequacy: {len(sources)} changed test file(s), "
+                "no weakening signals"
+            ),
+            duration_seconds=time.monotonic() - start,
+        )
+    details = [f.render() for f in adequacy_findings]
+    mode = "blocking" if blocking else "advisory"
+    return CheckResult(
+        name="test_adequacy",
+        passed=not blocking,
+        message=(
+            f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]"
+        ),
+        details=details,
+        findings=findings,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
@@ -1268,6 +1359,8 @@ def run_mechanical_verification(
     allowed_paths_error: str | None = None,
     fixtures_config: FixturesConfig | None = None,
     policy_config: PolicyConfig | None = None,
+    adequacy_config: AdequacyConfig | None = None,
+    autonomy_level: int = 0,
     component_id: str | None = None,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
@@ -1308,6 +1401,14 @@ def run_mechanical_verification(
     if policy_config is not None and policy_config.enabled:
         checks.append(check_policy_envelope(
             worktree_path, base_branch, policy_config,
+        ))
+
+    # R8.5 Layer 0: opt-in ([adequacy] enabled), advisory unless the
+    # level or config says block. Runs before the expensive layers so a
+    # suite-weakening diff is reported even when mutation is off.
+    if adequacy_config is not None and adequacy_config.enabled:
+        checks.append(check_test_adequacy(
+            worktree_path, base_branch, adequacy_config, autonomy_level,
         ))
 
     if config.dead_code_cleanup:

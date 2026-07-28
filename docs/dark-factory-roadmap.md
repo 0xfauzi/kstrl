@@ -491,7 +491,41 @@ duckdb extra is wired for the query subcommand only.
 
 ## R8.5 Test-suite adequacy gate (L) - [#152](https://github.com/0xfauzi/kstrl/issues/152)
 
-Status: `[ ]` - Depends on: R8.2 for level-gated behavior (lands advisory-first)
+Status: `[~]` - **Layer 0 only.** Shipped in `kstrl/adequacy.py` +
+`check_test_adequacy`: test-diff discipline (deleted tests, added
+skip/xfail, net assertion loss) and oracle-signal linting (each new test
+file needs one falsifiable assertion; tests that assert nothing are
+reported). Opt-in via `[adequacy] enabled`, ADVISORY first; with the R8.2
+ladder on, Layer 0 blocks from L1 up per the level table. Findings are
+typed (`adequacy_*`) and reach the R8.3 inbox through the existing
+`CheckResult.findings` lift.
+
+Layer 0 needs no test execution, no coverage run, no mutation tooling and
+no historical data, which is why it went first: it is the only layer whose
+thresholds are not waiting on evidence that does not exist yet.
+
+**Not built, and not claimed:**
+
+- **Layer 1** (patch coverage floor, `diff-cover --fail-under`) - adds a
+  dependency and wants a measured floor rather than the roadmap's ~85%
+  placeholder.
+- **Layer 2** (diff-scoped mutation) - `check_mutation_score` already
+  exists and is file-scoped to changed files, but the R8.5 requirements
+  on top of it (max 1 mutant per line, hard wall-clock cap, sampling
+  recorded in the audit trail, surviving mutants fed back as remediation
+  targets) are unbuilt. Its >= 70% gate is explicitly "thresholds set
+  from the empirical distribution", and that distribution needs real
+  runs.
+- **Layer 3** (fixtures oracle required at high autonomy) - `[fixtures]`
+  exists and is opt-in; promoting it to mandatory at L3+ is a small
+  level-gate that belongs with the same pass as Layer 1/2.
+- **Cross-family review defaulting on at L3+** and the calibration
+  family-delta - user-run measurements (overlaps remediation R7.1).
+
+The distinction that matters for sequencing: Layer 0 degrades to nothing
+without data because it needs none. Layers 1-2 need an empirical
+distribution to set a threshold anyone should trust, and shipping them
+against invented numbers is the failure this cycle keeps trying to avoid.
 
 **Why.** The lights-out precondition in every tradition is an evaluator-grade
 test suite, and the evidence says agent-written tests cannot be assumed

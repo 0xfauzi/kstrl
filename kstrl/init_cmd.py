@@ -456,6 +456,14 @@ DEFAULT_KSTRL_TOML = """\
 # snooze_hours = 24.0              # default snooze TTL
 # notify_action_required = true    # notify only on action-required items
 
+# Test-suite adequacy gate (R8.5) Layer 0: flags a diff that weakens the
+# suite and new tests with no falsifiable assertion. Opt-in, advisory first.
+[adequacy]
+# enabled = false
+# layer0 = "advisory"              # advisory | block
+# require_strong_oracle = true
+# flag_assertionless_tests = true
+
 # Autonomy ladder (R8.2): one ordered level (L1-L4) instead of scattered
 # autonomy flags. The level derives a flag bundle at run start and wins over
 # contradicting flags. Opt-in: L1 is stricter than the defaults (merge gate on).

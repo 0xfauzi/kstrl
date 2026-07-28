@@ -367,6 +367,13 @@ open_item_cap = 50             # open items after which queue intake pauses; 0 =
 snooze_hours = 24.0            # default snooze TTL in hours; snoozed items return
 notify_action_required = true  # notify on action-required items and demotions only
 
+# Test-suite adequacy gate (R8.5; opt-in, advisory first)
+[adequacy]
+enabled = false                  # run the Layer 0 test-adequacy checks (opt-in)
+layer0 = "advisory"              # advisory | block; the ladder can raise it, never lower
+require_strong_oracle = true     # each new test file needs one falsifiable assertion
+flag_assertionless_tests = true  # report tests that assert nothing at all
+
 # Phase 2.5 security review
 [security]
 mode = "skip"            # skip | advisory | hard

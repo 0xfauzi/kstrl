@@ -179,6 +179,19 @@ open_item_cap = 50                 # open items after which queue intake pauses 
 snooze_hours = 24.0                # default snooze TTL; a snoozed item RETURNS
 notify_action_required = true      # notify on action-required items and demotions only
 
+# Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
+# files - no test execution, no coverage, no mutation tooling. Catches the
+# suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)
+# and new tests that assert nothing falsifiable. Opt-in and ADVISORY first:
+# findings are recorded without failing, so switching it to blocking later
+# starts from evidence instead of a guess. With [autonomy] on, Layer 0 blocks
+# from L1 up per the roadmap's level table.
+[adequacy]
+enabled = false
+layer0 = "advisory"                # advisory | block
+require_strong_oracle = true       # each new test file needs one falsifiable assertion
+flag_assertionless_tests = true    # report tests that assert nothing
+
 # Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
 # independent autonomy flags. The level derives a flag bundle at run start and
 # WINS over contradicting flags here (contradictions are logged, not honored).

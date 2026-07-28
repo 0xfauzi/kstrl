@@ -240,6 +240,21 @@ on_inbox_item = "curl -fsS -H 'Priority: high' -d \"$KSTRL_NOTIFY_EVENT $KSTRL_N
 
 Then triage with `ks inbox ls`. Notifications never carry an action link: decisions happen locally, which is what keeps kstrl free of an inbound HTTP endpoint.
 
+## AdequacyConfig (`[adequacy]`)
+
+Test-suite adequacy gate (R8.5), **Layer 0 only** so far. Reads the diff and the changed test files - no test execution, no coverage run, no mutation tooling, no historical data. It catches two things: a diff that WEAKENS the suite (deleted tests, added `skip`/`xfail`, more assertion lines removed than added) and new tests that assert nothing falsifiable.
+
+"Falsifiable" is a deliberately low bar: a comparison against an expected value, or an asserted exception. Shape-only checks like `assert result is not None` are counted as weak because they pass for a plausible-looking wrong answer, which is the agent-written-test failure mode the layer exists for. It does **not** judge whether an expected value is correct - nothing static can; that is the fixtures oracle's job.
+
+Opt-in and **advisory first**: findings are recorded without failing, so turning it up later starts from evidence rather than a guess. With `[autonomy]` enabled, Layer 0 blocks from L1 up - autonomy may tighten this gate, never loosen it.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_ADEQUACY_ENABLED` | bool (`1`) | false |
+| `KSTRL_ADEQUACY_LAYER0` | `advisory` \| `block` | `advisory` |
+
+Layers 1 (patch coverage), 2 (diff-scoped mutation) and 3 (fixtures required at L3+) are not built; see `docs/dark-factory-roadmap.md` for why they wait on measured thresholds.
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |
