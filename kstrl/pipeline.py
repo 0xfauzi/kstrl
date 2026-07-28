@@ -544,6 +544,31 @@ class ComponentPipeline:
             "under a cap that cannot fire (R8)"
         )
 
+    def unenforceable_ceilings(self) -> list[str]:
+        """Configured ceilings that can no longer fire, by config key.
+
+        The identity half of :meth:`budget_unenforceable`. An
+        unenforceable halt crosses no numeric threshold, so
+        :meth:`breached_ceiling` correctly returns None for it - and
+        every audit surface downstream then rendered the empty string as
+        "token budget", naming a knob that may not even be configured
+        (review finding on #180: a cost-only run on a costless adapter
+        reported "run token budget exceeded (200/0)"). The ceiling that
+        FAILED still has a name even when nothing was breached.
+        """
+        dead: list[str] = []
+        if (
+            self.factory_config.max_total_tokens > 0
+            and self.token_budget_unenforceable() is not None
+        ):
+            dead.append("max_total_tokens")
+        if (
+            self.factory_config.max_cost_usd > 0
+            and self.cost_budget_unenforceable() is not None
+        ):
+            dead.append("max_cost_usd")
+        return dead
+
     def budget_unenforceable(self) -> str | None:
         """Why NO configured ceiling can fire any more, or None.
 
@@ -887,7 +912,11 @@ class ComponentPipeline:
         return Transition.FAILED
 
     def fail_for_budget(
-        self, comp: Component, phase: str, reason: str = "",
+        self,
+        comp: Component,
+        phase: str,
+        reason: str = "",
+        ceiling: str | None = None,
     ) -> Transition:
         """R3.1/R8: halt LOUDLY on a blown run-level ceiling. Mirrors the
         R1.2/R1.4 synthetic-finding pattern (chunk_budget_insufficient):
@@ -908,7 +937,11 @@ class ComponentPipeline:
         :meth:`LoopBudget.halt_reason`, which names its own ceiling.
         Every other side effect is identical wherever the breach is
         caught."""
-        ceiling = self.breached_ceiling()
+        # An explicit identity wins: the UNENFORCEABLE paths cross no
+        # numeric threshold, so breached_ceiling() is None for them and
+        # deriving from it alone mislabels the halt.
+        if ceiling is None:
+            ceiling = self.breached_ceiling()
         if reason:
             error = reason
         elif ceiling == "max_cost_usd":
@@ -1409,7 +1442,11 @@ class ComponentPipeline:
                 else (comp_result.error or "")
             )
             return PipelineOutcome(
-                transition=self.fail_for_budget(comp, "engineer", reason),
+                transition=self.fail_for_budget(
+                    comp, "engineer", reason,
+                    ceiling=", ".join(self.unenforceable_ceilings())
+                    or self.breached_ceiling(),
+                ),
             )
 
         if not comp_result.success:

@@ -105,6 +105,39 @@ if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
 
+class BudgetConfigError(ValueError):
+    """A budget ceiling was configured with a value that cannot bound
+    anything.
+
+    Raised rather than coerced because these are SAFETY limits and every
+    bad value fails in a different silent direction: ``nan`` makes
+    ``max_cost_usd > 0`` false, so the ceiling disables itself while
+    reading as configured; a negative value disables it the same way;
+    ``inf`` produces a ceiling that is enabled and can never be reached.
+    All three are indistinguishable from "off" at the moment they
+    matter, which is the failure mode a budget cap must never have.
+    """
+
+
+def _validate_cost_ceiling(value: float, source: str) -> float:
+    """A cost ceiling must be finite and non-negative. 0 means unbounded."""
+    import math
+
+    if not math.isfinite(value):
+        raise BudgetConfigError(
+            f"{source} must be a finite number, got {value!r}; use 0 to "
+            "disable the ceiling. A non-finite ceiling silently stops "
+            "bounding anything."
+        )
+    if value < 0:
+        raise BudgetConfigError(
+            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
+            "ceiling rather than a negative value, which disables it "
+            "without saying so."
+        )
+    return value
+
+
 @dataclass
 class FactoryConfig:
     """Configuration for factory orchestration."""
@@ -231,9 +264,9 @@ class FactoryConfig:
             max_total_tokens=int(
                 os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
             ),
-            max_cost_usd=float(
+            max_cost_usd=_validate_cost_ceiling(float(
                 os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")
-            ),
+            ), "KSTRL_FACTORY_MAX_COST_USD"),
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
@@ -280,7 +313,9 @@ class FactoryConfig:
         if "max_total_tokens" in section:
             config.max_total_tokens = int(section["max_total_tokens"])
         if "max_cost_usd" in section:
-            config.max_cost_usd = float(section["max_cost_usd"])
+            config.max_cost_usd = _validate_cost_ceiling(
+                float(section["max_cost_usd"]), "[factory] max_cost_usd",
+            )
         if "pause_before_pr_merge" in section:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         if "progress_log_enabled" in section:
@@ -307,9 +342,9 @@ class FactoryConfig:
                 os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]
             )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = float(
+            config.max_cost_usd = _validate_cost_ceiling(float(
                 os.environ["KSTRL_FACTORY_MAX_COST_USD"]
-            )
+            ), "KSTRL_FACTORY_MAX_COST_USD")
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
                 os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
@@ -1904,6 +1939,13 @@ def run_factory(
     (R0.5, H-7); a contending invocation is refused with exit code 2
     unless it passes ``--force-lock``.
     """
+    # The ceilings are validated at every CONFIG path, but a FactoryConfig
+    # can also be constructed programmatically (tests, embedders, the SDK
+    # path), which bypasses those. Re-check at the boundary: a safety
+    # limit that only holds when you came in through the front door is
+    # not a safety limit.
+    _validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
+
     try:
         run_lock = _acquire_run_lock(
             root_dir, ui, force=factory_config.force_lock,
@@ -2548,6 +2590,13 @@ def _run_factory_locked(
                     if unenforceable is not None:
                         pipeline.fail_for_budget(
                             comp, "scheduling", reason=unenforceable,
+                            # Nothing was BREACHED here, so the derived
+                            # identity is empty and every audit surface
+                            # would fall back to naming the token
+                            # ceiling - possibly one not even configured.
+                            ceiling=", ".join(
+                                pipeline.unenforceable_ceilings()
+                            ),
                         )
                         transitioned_without_launch += 1
                         continue

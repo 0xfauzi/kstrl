@@ -2805,3 +2805,160 @@ class TestFailedSnapshotDeletionInvalidates:
         ComponentPipeline.mark_usage_salvage_safe(pipeline, "comp-a")
         _salvage_aborted_usage(pending, "comp-a", pipeline)
         assert [t.total_tokens for t in recorded] == [700]
+
+
+class TestCostCeilingConfigValidation:
+    """A ceiling that cannot bound anything must be refused, not stored.
+
+    Review regression on #180: every input path used a bare `float()`, so
+    `nan`, `inf` and negatives were accepted. Each then failed in a
+    DIFFERENT silent direction - `nan > 0` is False so the ceiling
+    disabled itself while reading as configured; a negative did the same;
+    `inf` produced a ceiling that is enabled and unreachable. All three
+    are indistinguishable from "off" at the moment they matter, which is
+    the one property a safety limit must not have.
+    """
+
+    @pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "-3.0"])
+    def test_toml_rejects_unbounding_values(
+        self, tmp_path: Path, bad: str,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            f"[factory]\nmax_cost_usd = {bad}\n"
+        )
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.load(tmp_path)
+
+    @pytest.mark.parametrize("bad", ["nan", "inf", "-3.0"])
+    def test_env_rejects_unbounding_values(
+        self, monkeypatch: pytest.MonkeyPatch, bad: str,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", bad)
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.from_env()
+
+    def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 0.0
+
+    def test_ordinary_value_survives(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5.0\n")
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 5.0
+
+    def test_run_factory_rechecks_a_programmatic_config(
+        self, tmp_path: Path,
+    ) -> None:
+        """A limit that only holds via the front door is not a limit.
+
+        FactoryConfig can be built directly (tests, embedders, the SDK
+        path), bypassing every config-path validator.
+        """
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.manifest import Component, Manifest
+        from kstrl.ui.plain import PlainUI
+
+        config = FactoryConfig(max_cost_usd=float("nan"))
+        manifest = Manifest(
+            version="1", spec_file="s", project_name="t", base_branch="main",
+            single_pr=False,
+            components=[Component(
+                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
+            )],
+        )
+        base = KstrlConfig(ui_mode="plain", no_color=True)
+        with pytest.raises(BudgetConfigError):
+            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+
+
+class TestUnenforceableHaltNamesItsCeiling:
+    """An unenforceable halt crosses no threshold, but the ceiling that
+    FAILED still has a name.
+
+    Review regression on #180: `breached_ceiling()` correctly returned
+    None for these halts, so `ceiling=""` flowed downstream and the audit
+    surfaces rendered it as the token ceiling - reported as
+    "run token budget exceeded (200/0)" for a cost-only run whose token
+    ceiling was not even configured.
+    """
+
+    @staticmethod
+    def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+
+        class _FC:
+            max_total_tokens = max_tokens
+            max_cost_usd = max_cost
+
+        pipeline.factory_config = _FC()
+        pipeline.usage_meter = {"comp-a": {"engineer": usage}}
+        pipeline.run_usage = usage
+        return pipeline
+
+    def test_cost_only_run_names_the_cost_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            0, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
+                        total_tokens=200, cost_usd=0.0),
+        )
+        assert ComponentPipeline.breached_ceiling(pipeline) is None
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_cost_usd",
+        ]
+
+    def test_token_only_run_names_the_token_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 0.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=0, cost_calls=2,
+                        total_tokens=0, cost_usd=0.5),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_total_tokens",
+        ]
+
+    def test_both_dead_names_both(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_total_tokens", "max_cost_usd",
+        ]
+
+    def test_a_live_ceiling_is_never_named(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
+                        total_tokens=10, cost_usd=0.1),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == []
+
+    def test_an_unconfigured_ceiling_is_never_named(self) -> None:
+        """The exact defect: a disabled token ceiling must not be blamed."""
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            0, 5.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        named = ComponentPipeline.unenforceable_ceilings(pipeline)
+        assert "max_total_tokens" not in named
+        assert named == ["max_cost_usd"]
