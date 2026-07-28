@@ -388,6 +388,9 @@ DEFAULT_KSTRL_TOML = """\
 [paths]
 # prompt = "scripts/kstrl/prompt.md"
 # prd = "scripts/kstrl/prd.json"
+# Setting `progress` forces ONE path on every factory component; left
+# unset, each component's engineer writes beside its own PRD, which is
+# inside that component's allowedPaths.
 # progress = "scripts/kstrl/progress.txt"
 # codebase_map = "scripts/kstrl/codebase_map.md"
 # allowed = []                     # e.g. ["scripts/kstrl/", "src/"]
@@ -427,7 +430,7 @@ DEFAULT_KSTRL_TOML = """\
 # subprocess_timeout = 300.0
 # require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse
 # self_critique_min_bullets = 3
-# progress_file_path = "scripts/kstrl/progress.txt"
+# progress_file_path = ""          # empty = the log beside the component's PRD
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
 # ARTIFACTS (git diff, uv.lock), never agent self-report. Opt-in; when

@@ -32,6 +32,54 @@ def _resolve_path(value: str, root_dir: Path) -> Path:
     return root_dir / p
 
 
+def relative_to_root(path: Path, root_dir: Path) -> str:
+    """Render ``path`` relative to ``root_dir`` for use inside a
+    per-component worktree. Falls back to the absolute path string when
+    relativization fails (e.g. a path on a different mount)."""
+    if not path.is_absolute():
+        return str(path)
+    try:
+        return path.relative_to(root_dir).as_posix()
+    except ValueError:
+        try:
+            return path.resolve().relative_to(root_dir.resolve()).as_posix()
+        except ValueError:
+            return str(path)
+
+
+# A FACTORY component's progress log lives NEXT TO that component's PRD.
+# DECOMPOSE_PROMPT rule 12 tells the architect that a component's
+# allowedPaths include exactly `scripts/kstrl/feature/<component-id>/`
+# "(the agent updates progress.txt and PRD passes there)", so a progress
+# path derived from prdPath is inside the component's write scope BY
+# CONSTRUCTION. Pointing the engineer at the repo-root
+# scripts/kstrl/progress.txt instead put it one level ABOVE that
+# subtree: the engineer wrote the file the harness told it to write,
+# Phase 1 `diff_scope` reported "files outside allowed scope", and the
+# component was failed and retried from base. Measured cost of one such
+# retry on a real paid run: $12.93.
+COMPONENT_PROGRESS_FILENAME = "progress.txt"
+
+
+def component_progress_path(
+    prd_path: str | Path,
+    configured: str | Path | None = None,
+) -> Path:
+    """Progress-log path for the component whose PRD is at ``prd_path``.
+
+    ``configured`` is an explicitly set progress path ([paths] progress
+    or PROGRESS_FILE) and wins verbatim for every component - explicit
+    configuration is never silently rewritten. With nothing configured
+    the log is a SIBLING of the PRD, which reproduces the historical
+    ``scripts/kstrl/progress.txt`` for the single-component layout (PRD
+    at ``scripts/kstrl/prd.json``) and lands inside the component's own
+    feature subtree for a decomposed one.
+    """
+    if configured is not None:
+        return Path(configured)
+    return Path(prd_path).parent / COMPONENT_PROGRESS_FILENAME
+
+
 @dataclass
 class KstrlConfig:
     """Configuration for the kstrl agentic loop."""
@@ -40,6 +88,13 @@ class KstrlConfig:
     prompt_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prompt.md"))
     prd_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prd.json"))
     progress_file: Path = field(default_factory=lambda: Path("scripts/kstrl/progress.txt"))
+    # Was the progress path explicitly configured ([paths] progress or
+    # PROGRESS_FILE)? Only an explicit setting is forced on every factory
+    # component; otherwise each component derives its own next to its PRD
+    # (see component_progress_path). Mirrors kstrl_branch_explicit rather
+    # than comparing the value against the default - an explicit setting
+    # that happens to equal the default is still explicit.
+    progress_file_explicit: bool = False
     codebase_map_file: Path = field(
         default_factory=lambda: Path("scripts/kstrl/codebase_map.md")
     )
@@ -127,6 +182,23 @@ class KstrlConfig:
             _apply_toml_overrides(config, toml_path, root_dir)
         _apply_env_overrides(config, root_dir)
         return config
+
+    def component_progress_file(
+        self, prd_path: str | Path, root_dir: Path,
+    ) -> str:
+        """Worktree-relative progress path for one factory component.
+
+        The single place the factory decides where a component's
+        engineer writes its progress log: an explicit configuration wins
+        for every component, otherwise the path is derived from the
+        component's own PRD so it sits inside the component's
+        allowedPaths (see ``component_progress_path``).
+        """
+        configured = (
+            relative_to_root(self.progress_file, root_dir)
+            if self.progress_file_explicit else None
+        )
+        return component_progress_path(prd_path, configured).as_posix()
 
     def validate(self) -> list[str]:
         """Validate configuration, returning list of errors."""
@@ -229,6 +301,7 @@ def _apply_toml_overrides(
             config.prd_file = _resolve_path(paths["prd"], root_dir)
         if isinstance(paths.get("progress"), str) and paths["progress"]:
             config.progress_file = _resolve_path(paths["progress"], root_dir)
+            config.progress_file_explicit = True
         if isinstance(paths.get("codebase_map"), str) and paths["codebase_map"]:
             config.codebase_map_file = _resolve_path(paths["codebase_map"], root_dir)
         allowed = paths.get("allowed")
@@ -270,6 +343,7 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
         config.prd_file = _resolve_path(os.environ["PRD_FILE"], root_dir)
     if "PROGRESS_FILE" in os.environ:
         config.progress_file = _resolve_path(os.environ["PROGRESS_FILE"], root_dir)
+        config.progress_file_explicit = True
     if "CODEBASE_MAP_FILE" in os.environ:
         config.codebase_map_file = _resolve_path(
             os.environ["CODEBASE_MAP_FILE"], root_dir

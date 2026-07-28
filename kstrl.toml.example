@@ -17,7 +17,13 @@ interactive = false
 [paths]
 prompt = "scripts/kstrl/prompt.md"
 prd = "scripts/kstrl/prd.json"
-progress = "scripts/kstrl/progress.txt"
+# Left unset on purpose. Unset, each factory component's engineer writes
+# progress.txt beside its own PRD (scripts/kstrl/feature/<id>/), which is
+# inside the component's allowedPaths; `ks run` still uses
+# scripts/kstrl/progress.txt. Setting this key FORCES one path on every
+# component, and a path outside the component subtree fails Phase 1
+# diff_scope.
+# progress = "scripts/kstrl/progress.txt"
 codebase_map = "scripts/kstrl/codebase_map.md"
 allowed = []                       # e.g., ["scripts/kstrl/", "src/"]
 
@@ -157,7 +163,7 @@ mutation_timeout = 600.0
 subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
-progress_file_path = "scripts/kstrl/progress.txt"
+progress_file_path = ""            # empty = the progress log beside the component's PRD
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
 # ARTIFACTS (git diff, uv.lock), never on agent self-report. Opt-in: when

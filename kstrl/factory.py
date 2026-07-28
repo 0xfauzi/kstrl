@@ -32,7 +32,7 @@ from kstrl.autonomy import (
 )
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
-from kstrl.config import KstrlConfig
+from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -1198,7 +1198,7 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
-    progress_file_str: str = "scripts/kstrl/progress.txt",
+    progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
@@ -1246,6 +1246,11 @@ def _run_component(
     the spend recorded before this worker launched, so the engineer loop
     can halt itself BETWEEN iterations instead of waiting for the
     parent's next phase boundary. None disables the in-loop check.
+
+    ``progress_file_str`` is None unless the operator explicitly
+    configured a progress path; None means "derive it next to this
+    component's PRD", which is what keeps the file inside the
+    component's allowedPaths (see config.component_progress_path).
     """
     from kstrl.agents import (
     get_agent,
@@ -1380,7 +1385,9 @@ def _run_component(
         max_iterations=max_iterations,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
-        progress_file=worktree_path / progress_file_str,
+        progress_file=worktree_path / component_progress_path(
+            prd_path_str, progress_file_str,
+        ),
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
@@ -2432,18 +2439,13 @@ def _run_factory_locked(
         """Render `path` relative to root_dir for use inside per-component
         worktrees. Falls back to the absolute path string when relativization
         fails (e.g. a path on a different mount)."""
-        if not path.is_absolute():
-            return str(path)
-        try:
-            return path.relative_to(root_dir).as_posix()
-        except ValueError:
-            try:
-                return path.resolve().relative_to(root_dir.resolve()).as_posix()
-            except ValueError:
-                return str(path)
+        return relative_to_root(path, root_dir)
 
     prompt_file_rel = _path_relative_to_root(base_config.prompt_file)
-    progress_file_rel = _path_relative_to_root(base_config.progress_file)
+    # The progress path is deliberately NOT hoisted out of the per-component
+    # loop: unless it was explicitly configured, each component derives its
+    # own next to its PRD so the engineer writes inside its allowedPaths
+    # (base_config.component_progress_file, called from _submit_args).
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
     def _launch_component(comp: Component) -> Path | None:
@@ -2502,7 +2504,9 @@ def _run_factory_locked(
             comp.scaffold or None,
             comp.dependencies or None,
             knowledge_prefix,
-            progress_file_rel,
+            # Per-component, not run-wide: KstrlConfig.component_progress_file
+            # keeps the engineer's progress log inside allowedPaths.
+            base_config.component_progress_file(comp.prd_path, root_dir),
             codebase_map_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,

@@ -2639,8 +2639,16 @@ class ComponentPipeline:
             )
             if prefix:
                 progress_text = ""
+                # Resolved exactly the way the engineer's worker
+                # resolved it, so the metric reads the file this
+                # component actually wrote. The hardcoded
+                # scripts/kstrl/progress.txt this replaced was a second
+                # copy of the out-of-scope default and read nothing for
+                # every decomposed component.
                 progress_path = (
-                    wt_path / "scripts" / "kstrl" / "progress.txt"
+                    wt_path / self.base_config.component_progress_file(
+                        comp.prd_path, self.root_dir,
+                    )
                 )
                 try:
                     progress_text = progress_path.read_text(encoding="utf-8")

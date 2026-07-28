@@ -346,7 +346,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("run", "interactive"): "human-in-the-loop mode for the legacy loop",
     ("paths", "prompt"): "engineer prompt file",
     ("paths", "prd"): "PRD file",
-    ("paths", "progress"): "progress log the agent appends to",
+    ("paths", "progress"):
+        "progress log the agent appends to; set = forced on every "
+        "factory component, unset = each writes beside its own PRD",
     ("paths", "codebase_map"): "brownfield codebase notes",
     ("paths", "allowed"): 'diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted',
     ("git", "branch"): "branch override; empty = use PRD branchName",
@@ -409,7 +411,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "require_self_critique"):
         "fail Phase 1 if the ## Self-Critique block is missing/sparse",
     ("verify", "self_critique_min_bullets"): "minimum substantive bullets in the block",
-    ("verify", "progress_file_path"): "progress file the self-critique check reads",
+    ("verify", "progress_file_path"):
+        "progress file the self-critique check reads; "
+        "empty = the log beside the component's PRD",
     ("fixtures", "enabled"):
         "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
     ("fixtures", "snapshot_on_success"):

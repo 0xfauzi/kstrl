@@ -22,6 +22,7 @@ from kstrl.adequacy import (
     is_test_path,
     layer0_blocks,
 )
+from kstrl.config import component_progress_path
 from kstrl.findings import Finding
 from kstrl.guards import path_is_allowed
 from kstrl.parsers import (
@@ -228,7 +229,15 @@ class VerifyConfig:
     # iteration's progress.txt entry omits the block.
     require_self_critique: bool = False
     self_critique_min_bullets: int = 3
-    progress_file_path: str = "scripts/kstrl/progress.txt"
+    # Where check_self_critique looks for the engineer's progress log.
+    # None (the default) derives it from the component's PRD
+    # (config.component_progress_path), which is where the engineer was
+    # actually told to write and the only location inside the
+    # component's allowedPaths. An explicit value wins for every
+    # component. It is None-defaulted rather than carrying a separate
+    # "was it set?" flag because every scalar field of this dataclass is
+    # a documented kstrl.toml key (scripts/gen_docs.py probes for that).
+    progress_file_path: str | None = None
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -253,9 +262,7 @@ class VerifyConfig:
             self_critique_min_bullets=int(
                 os.environ.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
             ),
-            progress_file_path=os.environ.get(
-                "KSTRL_VERIFY_PROGRESS_FILE", "scripts/kstrl/progress.txt",
-            ),
+            progress_file_path=os.environ.get("KSTRL_VERIFY_PROGRESS_FILE"),
         )
 
     @classmethod
@@ -295,7 +302,7 @@ class VerifyConfig:
                 section["self_critique_min_bullets"]
             )
         if "progress_file_path" in section:
-            config.progress_file_path = str(section["progress_file_path"])
+            config.progress_file_path = str(section["progress_file_path"]) or None
         # Env overrides. Each var is applied only when it is explicitly
         # set in the environment: the previous compare-against-default
         # heuristic silently dropped an env value that happened to equal
@@ -1439,7 +1446,17 @@ def run_mechanical_verification(
         ))
 
     if config.require_self_critique:
-        progress_path = worktree_path / config.progress_file_path
+        # Read the log the engineer was actually pointed at: a factory
+        # component writes NEXT TO its PRD (the only location inside its
+        # allowedPaths), so resolving a repo-root default here would
+        # check a file that was never written and fail the component for
+        # the harness's own path confusion. An explicit config wins.
+        # prd_path is worktree-absolute at the factory call site, so the
+        # derived sibling is too; the join is a no-op for an absolute
+        # path and still anchors a relative one.
+        progress_path = worktree_path / component_progress_path(
+            prd_path, config.progress_file_path,
+        )
         checks.append(check_self_critique(
             progress_path, config.self_critique_min_bullets,
         ))
