@@ -31,6 +31,14 @@ different standard, and failing a one-line edit for a legacy file's weak
 oracles is how a gate gets switched off. What a diff adds to a modified
 file is still fair game, and is checked.
 
+Known limit, measured rather than assumed: a custom assertion helper
+that returns a bool (``assert snap_compare(...)``) is statically
+indistinguishable from ``assert flag_set(0)``, so it classifies WEAK.
+Across kstrl's own ~60 test files exactly one trips this. One strong
+test carries a file and the floor applies only to newly added files, so
+the rate stays low - but a repo built on custom assertion helpers should
+expect it before setting ``layer0 = "block"``.
+
 What it deliberately does NOT do: judge whether an assertion's expected
 value is CORRECT. Nothing static can - that is what the fixtures oracle
 (Layer 3) and spec-derived criteria are for. This layer only
