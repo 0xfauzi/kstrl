@@ -84,6 +84,7 @@ from kstrl.observability import (
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
+from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
     run_chunked_review,
@@ -1006,6 +1007,31 @@ def _prune_stale_worktrees(
         )
 
 
+def _component_scope(
+    comp: Component, root_dir: Path, base_config: KstrlConfig,
+) -> list[str] | None:
+    """The scope the in-loop guard enforces for one component.
+
+    The component's architect-emitted ``allowedPaths``, falling back to
+    the run-wide ``--allowed-paths`` flag when the PRD carries none
+    (legacy PRDs predate the field).
+
+    Fails OPEN, unlike Phase 1's ``check_diff_scope``, and the asymmetry
+    is deliberate. This guard is an early, cheap tripwire; Phase 1 is the
+    gate. A PRD that cannot be read here returns None, the loop runs
+    unguarded, and Phase 1 still fails CLOSED on the same unreadable PRD
+    (R1.5) - so nothing merges unverified. Failing closed here instead
+    would convert an unreadable PRD into an immediate component failure
+    before the engineer has done anything, which is a worse trade for a
+    tripwire whose only job is to save iterations.
+    """
+    try:
+        prd = PRD.load(root_dir / comp.prd_path)
+    except (FileNotFoundError, ValueError):
+        return base_config.allowed_paths or None
+    return prd.allowed_paths or base_config.allowed_paths or None
+
+
 def _preflight_component_branches(
     manifest: Manifest, root_dir: Path, ui: UI,
 ) -> list[str]:
@@ -1473,6 +1499,23 @@ def _run_component(
             # pipeline needs when its own totals do not yet show a
             # breach (unreported-usage case).
             error = result.budget_halt_reason
+        elif result.guard_violations:
+            # R8 review: name the files. The guard used to fail the
+            # iteration and fall through to "Did not complete", so the
+            # retry agent was told only that something went wrong - and
+            # the cheapest strategy for an agent with no diagnosis is to
+            # redo the same edit. Mirrors check_diff_scope's wording so
+            # the two scope failures read identically wherever they are
+            # caught.
+            shown = list(result.guard_violations[:15])
+            more = len(result.guard_violations) - len(shown)
+            listed = ", ".join(shown) + (f" ... and {more} more" if more else "")
+            error = (
+                f"{len(result.guard_violations)} file(s) outside the "
+                f"component's allowed scope, caught in-loop after "
+                f"iteration {result.iterations}: {listed}. Revert only "
+                "your own out-of-scope edits; do not widen allowedPaths."
+            )
         elif result.no_progress:
             error = (
                 "no-progress circuit breaker tripped: "
@@ -2515,7 +2558,23 @@ def _run_factory_locked(
             # hardcoded 30 non-interactive iterations with no path guard.
             base_config.max_iterations,
             base_config.interactive,
-            base_config.allowed_paths or None,
+            # R8 review: the COMPONENT's allowedPaths, not the run-wide
+            # --allowed-paths flag. That flag is empty in every ordinary
+            # factory run, so `if config.allowed_paths` in the loop was
+            # False and guards.enforce_allowed_paths never ran: the
+            # in-loop guard existed and was inert. A scope violation was
+            # therefore only caught at Phase 1, AFTER the whole engineer
+            # loop had been paid for - measured at $12.93 for one such
+            # component, versus ~$2.50 for the single iteration it takes
+            # to catch it here.
+            #
+            # Read from root_dir, NOT the worktree: Phase 1 deliberately
+            # re-reads the PRD from the worktree (fail-closed on load
+            # error), but an in-loop guard sourced from a file the agent
+            # may edit would let the agent widen its own scope mid-run.
+            # The pre-run PRD is the honest input for enforcement; the
+            # worktree copy remains the input for verification.
+            _component_scope(comp, root_dir, base_config),
             # R7.5: no-progress circuit breaker limits.
             breaker_cfg.no_progress_iterations,
             breaker_cfg.test_command,

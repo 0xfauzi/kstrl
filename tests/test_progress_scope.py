@@ -492,3 +492,149 @@ class TestFactUtilizationReadsTheComponentLog:
         )
 
         assert seen == ["component log: fact-alpha referenced\n"]
+
+
+class TestInLoopGuardSeesTheComponentScope:
+    """The in-loop ALLOWED_PATHS guard must enforce the COMPONENT's scope.
+
+    Production finding: `_run_component` was handed
+    `base_config.allowed_paths` - the run-wide `--allowed-paths` flag,
+    empty in every ordinary factory run. `if config.allowed_paths` in
+    run_loop was therefore False and `guards.enforce_allowed_paths`
+    never executed. The guard existed and was inert, so a scope
+    violation surfaced only at Phase 1, after the whole engineer loop
+    had been paid for: measured at $12.93 for one component, against
+    ~$2.50 for the single iteration it takes to catch it in-loop.
+    """
+
+    @staticmethod
+    def _component(prd_rel: str) -> Any:
+        from kstrl.manifest import Component
+
+        return Component(
+            "comp-a", "A", "D", [], prd_rel, "kstrl/comp-a",
+        )
+
+    def test_the_prd_scope_is_what_reaches_the_worker(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import _component_scope
+
+        prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
+        prd = tmp_path / prd_rel
+        prd.parent.mkdir(parents=True)
+        prd.write_text(json.dumps({
+            "branchName": "kstrl/comp-a",
+            "allowedPaths": ["src/", "tests/"],
+            "userStories": [],
+        }))
+        scope = _component_scope(
+            self._component(prd_rel), tmp_path, KstrlConfig(),
+        )
+        assert scope == ["src/", "tests/"]
+
+    def test_an_empty_run_wide_flag_no_longer_disables_the_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        """The exact production condition: no --allowed-paths flag."""
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import _component_scope
+
+        prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
+        prd = tmp_path / prd_rel
+        prd.parent.mkdir(parents=True)
+        prd.write_text(json.dumps({
+            "branchName": "kstrl/comp-a",
+            "allowedPaths": ["hmac_signer/", "tests/"],
+            "userStories": [],
+        }))
+        base = KstrlConfig()
+        assert not base.allowed_paths, "precondition: run-wide flag unset"
+        scope = _component_scope(self._component(prd_rel), tmp_path, base)
+        assert scope, "guard would be inert with a falsy scope"
+
+    def test_a_legacy_prd_falls_back_to_the_run_wide_flag(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import _component_scope
+
+        prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
+        prd = tmp_path / prd_rel
+        prd.parent.mkdir(parents=True)
+        prd.write_text(json.dumps({
+            "branchName": "kstrl/comp-a", "userStories": [],
+        }))
+        base = KstrlConfig(allowed_paths=["fallback/"])
+        scope = _component_scope(self._component(prd_rel), tmp_path, base)
+        assert scope == ["fallback/"]
+
+    def test_an_unreadable_prd_fails_open_here_and_closed_at_phase_1(
+        self, tmp_path: Path,
+    ) -> None:
+        """Asymmetry by design: the tripwire yields, the gate does not.
+
+        Failing closed in-loop would fail a component before the
+        engineer had done anything. Phase 1 still fails CLOSED on the
+        same unreadable PRD (R1.5), so nothing merges unverified.
+        """
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import _component_scope
+        from kstrl.verify import check_diff_scope
+
+        comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
+        assert _component_scope(comp, tmp_path, KstrlConfig()) is None
+
+        gate = check_diff_scope(
+            tmp_path, "main", None,
+            allowed_paths_error="PRD not found: missing",
+        )
+        assert not gate.passed
+
+    def test_the_guard_reports_which_files_it_rejected(self) -> None:
+        """A halt the retry agent cannot diagnose is one it will repeat.
+
+        The guard discarded its violations (`ok, _ =`) and the factory
+        rendered the halt as "Did not complete".
+        """
+        from kstrl.loop import LoopResult
+
+        result = LoopResult(
+            completed=False, iterations=1, exit_code=1,
+            guard_violations=("uv.lock", "scripts/kstrl/progress.txt"),
+        )
+        assert result.guard_violations == (
+            "uv.lock", "scripts/kstrl/progress.txt",
+        )
+
+
+class TestProgressWriterAndReaderAgree:
+    """Setting only one of the two progress settings must not point the
+    writer and the reader at different files."""
+
+    @pytest.mark.parametrize(
+        ("writer", "reader", "expected"),
+        [
+            ("a/p.txt", None, ("a/p.txt", "a/p.txt")),
+            (None, "b/p.txt", ("b/p.txt", "b/p.txt")),
+            ("a/p.txt", "a/p.txt", ("a/p.txt", "a/p.txt")),
+            (None, None, (None, None)),
+        ],
+    )
+    def test_one_setting_propagates_to_the_other(
+        self, writer: str | None, reader: str | None,
+        expected: tuple[str | None, str | None],
+    ) -> None:
+        from kstrl.config import reconcile_progress_paths
+
+        assert reconcile_progress_paths(writer, reader) == expected
+
+    def test_two_explicit_paths_are_left_alone(self) -> None:
+        """An operator who named two paths meant two paths; the caller
+        warns rather than silently overriding one."""
+        from kstrl.config import reconcile_progress_paths
+
+        assert reconcile_progress_paths("a/p.txt", "b/p.txt") == (
+            "a/p.txt", "b/p.txt",
+        )

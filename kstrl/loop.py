@@ -398,6 +398,12 @@ class LoopResult:
     # breach and a dead ceiling coexisted - or from the prose above.
     budget_halt_condition: str = ""
     budget_halt_ceilings: tuple[str, ...] = ()
+    # R8 review: files the in-loop ALLOWED_PATHS guard rejected. Carried
+    # because the guard used to discard them (``ok, _ =``) and the
+    # factory then reported the halt as "Did not complete" - the retry
+    # agent was told nothing about what it had touched, so its cheapest
+    # strategy was to repeat the edit.
+    guard_violations: tuple[str, ...] = ()
 
 
 def run_loop(
@@ -659,7 +665,7 @@ def run_loop(
             ignored_paths = list(guard_ignored_paths or ())
             if bus is not None and bus.run_id:
                 ignored_paths.append(f".kstrl/runs/{bus.run_id}/")
-            ok, _ = guards.enforce_allowed_paths(
+            ok, violations = guards.enforce_allowed_paths(
                 config, ui, cwd, interaction=channel,
                 ignored_paths=ignored_paths,
             )
@@ -672,6 +678,7 @@ def run_loop(
                     iteration_durations=iteration_durations,
                     timed_out_iterations=timed_out_iterations,
                     usage=collect_usage(agent),
+                    guard_violations=tuple(violations),
                 )
 
         # Check for completion

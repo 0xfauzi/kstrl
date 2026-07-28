@@ -61,6 +61,34 @@ def relative_to_root(path: Path, root_dir: Path) -> str:
 COMPONENT_PROGRESS_FILENAME = "progress.txt"
 
 
+def reconcile_progress_paths(
+    writer_explicit: str | Path | None,
+    reader_explicit: str | Path | None,
+) -> tuple[str | None, str | None]:
+    """Keep the progress log's WRITER and READER pointing at one file.
+
+    ``[paths] progress`` (or ``PROGRESS_FILE``) configures where the
+    engineer WRITES its progress log; ``[verify] progress_file_path``
+    (or ``KSTRL_VERIFY_PROGRESS_FILE``) configures where the
+    self-critique check READS it. Both default to the same derivation,
+    so they agree until exactly one of them is set - and then the
+    reader silently inspects a file the engineer never wrote, which
+    fails the self-critique gate for a reason the operator cannot see.
+
+    Setting one propagates it to the other. Setting BOTH is left alone,
+    including when they differ: an operator who named two paths meant
+    two paths, and the caller warns rather than overriding. Returns
+    ``(writer, reader)`` as strings, or None where nothing is set.
+    """
+    writer = str(writer_explicit) if writer_explicit is not None else None
+    reader = str(reader_explicit) if reader_explicit is not None else None
+    if writer is not None and reader is None:
+        return writer, writer
+    if reader is not None and writer is None:
+        return reader, reader
+    return writer, reader
+
+
 def component_progress_path(
     prd_path: str | Path,
     configured: str | Path | None = None,
