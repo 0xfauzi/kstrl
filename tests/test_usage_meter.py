@@ -3222,14 +3222,25 @@ class TestBudgetConfigErrorReachesTheOperator:
     @pytest.mark.parametrize(
         ("command", "toml_value"),
         [
-            (["factory", "--manifest", "m.json"], "nan"),
-            (["factory", "--manifest", "m.json"], "-3.0"),
+            # --agent-cmd keeps this independent of what is on PATH.
+            # Without it the run aborts on agent detection BEFORE the
+            # ceiling is read, so the test passed on a developer machine
+            # with `claude` installed and failed in CI without it -
+            # measuring the environment, not the fix.
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
+             "nan"),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
+             "-3.0"),
             (["config", "show"], "nan"),
         ],
     )
     def test_no_entry_point_leaks_a_traceback(
         self, command: list[str], toml_value: str,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        # Proven against the harsher of the two environments: no agent
+        # discoverable at all.
+        monkeypatch.setenv("PATH", "")
         from click.testing import CliRunner
 
         from kstrl.cli import cli
@@ -3250,10 +3261,13 @@ class TestBudgetConfigErrorReachesTheOperator:
         assert "error:" in _strip_ansi(result.output)
         assert "max_cost_usd" in result.output
 
-    def test_the_flag_override_is_checked_before_any_work_starts(self) -> None:
+    def test_the_flag_override_is_checked_before_any_work_starts(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """`--max-cost-usd` bypasses every config-path validator, so the
         check has to hold at the run boundary too - and has to stop the
         run before it launches anything."""
+        monkeypatch.setenv("PATH", "")
         from click.testing import CliRunner
 
         from kstrl.cli import cli
@@ -3265,7 +3279,8 @@ class TestBudgetConfigErrorReachesTheOperator:
             (root / "m.json").write_text(json.dumps(self._manifest()))
             result = runner.invoke(
                 cli,
-                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf"],
+                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf",
+                 "--agent-cmd", "true"],
                 catch_exceptions=True,
             )
 
