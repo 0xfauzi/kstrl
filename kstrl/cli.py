@@ -46,7 +46,13 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+from kstrl.factory import (
+    BudgetConfigError,
+    FactoryConfig,
+    run_factory,
+    validate_cost_ceiling,
+    validate_token_ceiling,
+)
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
@@ -1921,6 +1927,23 @@ def factory(
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
+    # R8 review (#180): budget preflight, deliberately next to the agent
+    # preflight above. The full config is not built until AFTER the
+    # decompose call below, so an unbounding ceiling used to be caught
+    # only once the architect had already spent - the operator paid for
+    # a call under the very ceiling that was supposed to bound it.
+    #
+    # Both sources are checked, because they fail independently: the
+    # file/env value (validated inside load) and the two flags, which
+    # reach run_factory without passing any config loader. The flags are
+    # validated but NOT applied here - applying them early would change
+    # what _collect_toml_notes reports as overridden further down.
+    factory_config = FactoryConfig.load(root_dir)
+    if max_cost_usd is not None:
+        validate_cost_ceiling(max_cost_usd, "--max-cost-usd")
+    if max_total_tokens is not None:
+        validate_token_ceiling(max_total_tokens, "--max-total-tokens")
+
     # Get or create manifest
     if manifest_path:
         try:
@@ -1969,7 +1992,7 @@ def factory(
 
     toml_notes: list[str] = []
 
-    factory_config = FactoryConfig.load(root_dir)
+    # factory_config was loaded in the budget preflight above.
     _collect_toml_notes(
         toml_notes, "factory", factory_config, FactoryConfig.from_env(),
         flag_overridden={

@@ -119,8 +119,13 @@ class BudgetConfigError(ValueError):
     """
 
 
-def _validate_cost_ceiling(value: float, source: str) -> float:
-    """A cost ceiling must be finite and non-negative. 0 means unbounded."""
+def validate_cost_ceiling(value: float, source: str) -> float:
+    """A cost ceiling must be finite and non-negative. 0 means unbounded.
+
+    Public because the CLI has to reject a bad ``--max-cost-usd`` in
+    preflight, before the architect spends a call - the flag reaches
+    ``run_factory`` without passing any config loader.
+    """
     import math
 
     if not math.isfinite(value):
@@ -129,6 +134,24 @@ def _validate_cost_ceiling(value: float, source: str) -> float:
             "disable the ceiling. A non-finite ceiling silently stops "
             "bounding anything."
         )
+    if value < 0:
+        raise BudgetConfigError(
+            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
+            "ceiling rather than a negative value, which disables it "
+            "without saying so."
+        )
+    return value
+
+
+def validate_token_ceiling(value: int, source: str) -> int:
+    """A token ceiling must be non-negative. 0 means unbounded.
+
+    The same defect as :func:`validate_cost_ceiling`, in the knob that
+    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
+    false, so the ceiling disabled itself while still reading as
+    configured - measured, not assumed. Only the finiteness check is
+    absent, because this one is an int.
+    """
     if value < 0:
         raise BudgetConfigError(
             f"{source} must be >= 0, got {value!r}; use 0 to disable the "
@@ -261,10 +284,10 @@ class FactoryConfig:
             max_adversarial_calls=int(
                 os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
             ),
-            max_total_tokens=int(
+            max_total_tokens=validate_token_ceiling(int(
                 os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
-            ),
-            max_cost_usd=_validate_cost_ceiling(float(
+            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"),
+            max_cost_usd=validate_cost_ceiling(float(
                 os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")
             ), "KSTRL_FACTORY_MAX_COST_USD"),
             pause_before_pr_merge=_parse_bool(
@@ -311,9 +334,12 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = int(section["max_total_tokens"])
+            config.max_total_tokens = validate_token_ceiling(
+                int(section["max_total_tokens"]),
+                "[factory] max_total_tokens",
+            )
         if "max_cost_usd" in section:
-            config.max_cost_usd = _validate_cost_ceiling(
+            config.max_cost_usd = validate_cost_ceiling(
                 float(section["max_cost_usd"]), "[factory] max_cost_usd",
             )
         if "pause_before_pr_merge" in section:
@@ -338,11 +364,11 @@ class FactoryConfig:
                 os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"]
             )
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = int(
+            config.max_total_tokens = validate_token_ceiling(int(
                 os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]
-            )
+            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS")
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = _validate_cost_ceiling(float(
+            config.max_cost_usd = validate_cost_ceiling(float(
                 os.environ["KSTRL_FACTORY_MAX_COST_USD"]
             ), "KSTRL_FACTORY_MAX_COST_USD")
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
@@ -1950,7 +1976,8 @@ def run_factory(
     # path), which bypasses those. Re-check at the boundary: a safety
     # limit that only holds when you came in through the front door is
     # not a safety limit.
-    _validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
+    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
+    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
 
     try:
         run_lock = _acquire_run_lock(

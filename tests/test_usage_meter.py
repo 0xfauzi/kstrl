@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import stat
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
@@ -3286,7 +3287,9 @@ class TestBudgetConfigErrorReachesTheOperator:
 
         output = _strip_ansi(result.output)
         assert result.exit_code == 1
-        assert "error: max_cost_usd must be a finite number" in output
+        # The preflight names the FLAG, not the generic knob: the
+        # operator has to know which of the three sources to fix.
+        assert "error: --max-cost-usd must be a finite number" in output
         assert "Starting:" not in output
 
 
@@ -3294,3 +3297,159 @@ def _strip_ansi(text: str) -> str:
     import re
 
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+class TestCeilingsAreCheckedBeforeAnythingSpends:
+    """An invalid ceiling must cost nothing to discover.
+
+    Review follow-up on #180: `ks factory --spec` built its config only
+    AFTER decomposition, so a rejected ceiling surfaced once the
+    architect had already spent a call - the operator paid for a call
+    under the very ceiling that was supposed to bound it. Measured, not
+    assumed: the fake agent below records its own invocation, and these
+    tests fail if it ever runs.
+    """
+
+    @staticmethod
+    def _fake_agent(root: Path) -> tuple[Path, Path]:
+        """An agent that records being called. Its output is irrelevant;
+        the marker file is the whole assertion."""
+        marker = root / "AGENT_WAS_INVOKED"
+        script = root / "fake-agent.sh"
+        script.write_text(f"#!/bin/sh\ntouch '{marker}'\necho '{{}}'\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        return script, marker
+
+    @pytest.mark.parametrize(
+        ("toml_value", "extra_args", "expected"),
+        [
+            ("nan", [], "[factory] max_cost_usd must be a finite number"),
+            ("-3.0", [], "[factory] max_cost_usd must be >= 0"),
+            ("0", ["--max-cost-usd", "inf"],
+             "--max-cost-usd must be a finite number"),
+            ("0", ["--max-total-tokens", "-5"],
+             "--max-total-tokens must be >= 0"),
+        ],
+    )
+    def test_the_spec_path_rejects_before_decomposition(
+        self, toml_value: str, extra_args: list[str], expected: str,
+    ) -> None:
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            script, marker = self._fake_agent(root)
+            (root / "kstrl.toml").write_text(
+                f"[factory]\nmax_cost_usd = {toml_value}\n"
+            )
+            (root / "s.md").write_text("# spec\nbuild a thing\n")
+            result = runner.invoke(
+                cli,
+                ["factory", "--spec", "s.md", "--project-name", "p",
+                 "--agent-cmd", str(script)] + extra_args,
+                catch_exceptions=True,
+            )
+            spent = marker.exists()
+
+        assert not spent, "an agent call happened before the ceiling was checked"
+        assert result.exit_code == 1
+        assert expected in _strip_ansi(result.output)
+
+    def test_a_valid_ceiling_does_not_block_the_spec_path(self) -> None:
+        """The preflight must reject bad values without rejecting good
+        ones - otherwise it would read as 'fixed' while breaking every
+        ordinary run."""
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            script, marker = self._fake_agent(root)
+            (root / "kstrl.toml").write_text(
+                "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
+            )
+            (root / "s.md").write_text("# spec\nbuild a thing\n")
+            result = runner.invoke(
+                cli,
+                ["factory", "--spec", "s.md", "--project-name", "p",
+                 "--agent-cmd", str(script)],
+                catch_exceptions=True,
+            )
+            reached_agent = marker.exists()
+            output = _strip_ansi(result.output)
+
+        # The run proceeds to the architect (and then fails on the fake
+        # agent's empty output, which is fine - what matters is that the
+        # ceiling did not stop it).
+        assert reached_agent
+        assert "must be a finite number" not in output
+        assert "must be >= 0" not in output
+
+
+class TestTokenCeilingRejectsUnboundingValues:
+    """The sibling knob had the identical defect.
+
+    `max_total_tokens = -5` made `max_total_tokens > 0` false, so the
+    ceiling disabled itself while still reading as configured - the
+    exact failure mode flagged for max_cost_usd, in the knob that
+    predates it.
+    """
+
+    def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = -5\n"
+        )
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.load(tmp_path)
+
+    def test_negative_env_value_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "-5")
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.from_env()
+
+    def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = 0\n"
+        )
+        assert FactoryConfig.load(tmp_path).max_total_tokens == 0
+
+    def test_ordinary_value_survives(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = 500\n"
+        )
+        assert FactoryConfig.load(tmp_path).max_total_tokens == 500
+
+    def test_run_factory_rechecks_a_programmatic_config(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.manifest import Component, Manifest
+        from kstrl.ui.plain import PlainUI
+
+        config = FactoryConfig(max_total_tokens=-5)
+        manifest = Manifest(
+            version="1", spec_file="s", project_name="t", base_branch="main",
+            single_pr=False,
+            components=[Component(
+                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
+            )],
+        )
+        base = KstrlConfig(ui_mode="plain", no_color=True)
+        with pytest.raises(BudgetConfigError):
+            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
