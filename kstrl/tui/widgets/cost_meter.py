@@ -31,6 +31,14 @@ def format_tokens(tokens: int) -> str:
     return str(tokens)
 
 
+def _pressure_style(pct: int) -> str:
+    return (
+        f"bold {theme.ERROR}" if pct >= 90
+        else f"bold {theme.WARNING}" if pct >= 70
+        else theme.MUTED
+    )
+
+
 def render_cost_meter(state: RunState) -> Text:
     text = Text()
     marker = "+" if state.unreported_calls else ""
@@ -40,17 +48,21 @@ def render_cost_meter(state: RunState) -> Text:
     text.append(" tok", style=theme.MUTED)
     text.append(" · ", style=theme.MUTED)
     text.append(f"${state.cost_usd:.2f}{marker}", style="bold")
+    # Both ceilings can be configured, and they measure different things
+    # (total_tokens counts cache reads at par), so each gets its own
+    # pressure reading rather than one anonymous "% of cap".
     if state.max_total_tokens:
         pct = min(
             100, int(100 * state.total_tokens / state.max_total_tokens),
         )
-        style = (
-            f"bold {theme.ERROR}" if pct >= 90
-            else f"bold {theme.WARNING}" if pct >= 70
-            else theme.MUTED
-        )
         text.append(" · ", style=theme.MUTED)
-        text.append(f"{pct}% of cap", style=style)
+        text.append(f"{pct}% of token cap", style=_pressure_style(pct))
+    if state.max_cost_usd:
+        cost_pct = min(100, int(100 * state.cost_usd / state.max_cost_usd))
+        text.append(" · ", style=theme.MUTED)
+        text.append(
+            f"{cost_pct}% of cost cap", style=_pressure_style(cost_pct),
+        )
     if state.unreported_calls:
         text.append("  + lower bound", style=f"italic {theme.MUTED}")
     if state.run_id:

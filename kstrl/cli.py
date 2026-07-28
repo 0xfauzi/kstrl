@@ -46,7 +46,13 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import (
+    BudgetConfigError,
+    FactoryConfig,
+    run_factory,
+    validate_cost_ceiling,
+    validate_token_ceiling,
+)
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
@@ -368,7 +374,32 @@ def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-@click.group(invoke_without_command=True)
+class _KstrlGroup(click.Group):
+    """The CLI group, with one guarantee: a rejected budget ceiling is
+    reported, never raised.
+
+    ``BudgetConfigError`` is thrown deep inside config loading, which
+    happens in `factory`, `run`, `retry`, the config report and the
+    launch path - and, after a ``--max-cost-usd`` override, inside
+    ``run_factory`` itself. Catching it per command meant every one of
+    those sites had to remember; `factory` did not, and exited 1 with an
+    empty stdout and a raw traceback (review finding on #180). Catching
+    it HERE means no entry point can leak one, including entry points
+    added later.
+
+    Exit code 1 with an ``error:`` line, matching what `config show`
+    already did for the same defect - one class of failure, one contract.
+    """
+
+    def invoke(self, ctx: click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except BudgetConfigError as exc:
+            click.echo(f"error: {exc}", err=True)
+            sys.exit(1)
+
+
+@click.group(cls=_KstrlGroup, invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx: click.Context) -> None:
@@ -1705,10 +1736,24 @@ def decompose(
     type=int,
     default=None,
     help="Run-level token budget across ALL phases (engineer + review "
-         "+ security + distill); 0 = unbounded. On breach the current "
-         "component fails with a synthetic budget finding and pending "
-         "components halt (default: 0, or KSTRL_FACTORY_MAX_TOTAL_TOKENS "
+         "+ security + distill); 0 = unbounded. Counts CACHE READS at "
+         "par, so it is a poor proxy for spend - prefer --max-cost-usd. "
+         "On breach the current component fails with a synthetic budget "
+         "finding and pending components halt (default: 0, or "
+         "KSTRL_FACTORY_MAX_TOTAL_TOKENS "
          "/ [factory].max_total_tokens in kstrl.toml)",
+)
+@click.option(
+    "--max-cost-usd",
+    type=float,
+    default=None,
+    help="Run-level USD budget across ALL phases; 0 = unbounded. "
+         "Checked between engineer iterations and at phase boundaries, "
+         "so it is NOT a hard cap: the iteration already in flight is "
+         "unbounded. Distinct from [agent] budget_usd, which is "
+         "adapter-internal (claude-sdk only). Default: 0, or "
+         "KSTRL_FACTORY_MAX_COST_USD / [factory].max_cost_usd in "
+         "kstrl.toml",
 )
 @click.option(
     "--pause-before-pr-merge/--no-pause-before-pr-merge",
@@ -1825,6 +1870,7 @@ def factory(
     component_timeout: float | None,
     max_adversarial_calls: int | None,
     max_total_tokens: int | None,
+    max_cost_usd: float | None,
     pause_before_pr_merge: bool | None,
     progress_log: Path | None,
     no_worktrees: bool,
@@ -1881,6 +1927,23 @@ def factory(
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
+    # R8 review (#180): budget preflight, deliberately next to the agent
+    # preflight above. The full config is not built until AFTER the
+    # decompose call below, so an unbounding ceiling used to be caught
+    # only once the architect had already spent - the operator paid for
+    # a call under the very ceiling that was supposed to bound it.
+    #
+    # Both sources are checked, because they fail independently: the
+    # file/env value (validated inside load) and the two flags, which
+    # reach run_factory without passing any config loader. The flags are
+    # validated but NOT applied here - applying them early would change
+    # what _collect_toml_notes reports as overridden further down.
+    factory_config = FactoryConfig.load(root_dir)
+    if max_cost_usd is not None:
+        validate_cost_ceiling(max_cost_usd, "--max-cost-usd")
+    if max_total_tokens is not None:
+        validate_token_ceiling(max_total_tokens, "--max-total-tokens")
+
     # Get or create manifest
     if manifest_path:
         try:
@@ -1929,7 +1992,7 @@ def factory(
 
     toml_notes: list[str] = []
 
-    factory_config = FactoryConfig.load(root_dir)
+    # factory_config was loaded in the budget preflight above.
     _collect_toml_notes(
         toml_notes, "factory", factory_config, FactoryConfig.from_env(),
         flag_overridden={
@@ -1941,6 +2004,7 @@ def factory(
                 ("review_mode", review_mode is not None),
                 ("max_adversarial_calls", max_adversarial_calls is not None),
                 ("max_total_tokens", max_total_tokens is not None),
+                ("max_cost_usd", max_cost_usd is not None),
                 ("pause_before_pr_merge", pause_before_pr_merge is not None),
                 ("use_worktrees", no_worktrees),
                 ("keep_worktrees_on_failure", keep_worktrees_on_failure),
@@ -1963,6 +2027,8 @@ def factory(
         factory_config.max_adversarial_calls = max_adversarial_calls
     if max_total_tokens is not None:
         factory_config.max_total_tokens = max_total_tokens
+    if max_cost_usd is not None:
+        factory_config.max_cost_usd = max_cost_usd
     if pause_before_pr_merge is not None:
         factory_config.pause_before_pr_merge = pause_before_pr_merge
     if no_worktrees:
@@ -2355,14 +2421,16 @@ def _render_status(
             )
         if state.usage_calls:
             note = "+" if state.unreported_calls else ""
+            caps = []
+            if state.max_total_tokens:
+                caps.append(f"{state.max_total_tokens} token cap")
+            if state.max_cost_usd:
+                caps.append(f"${state.max_cost_usd} cost cap")
             ui_impl.kv(
                 "Run usage",
                 f"{state.total_tokens}{note} tokens, "
                 f"${state.cost_usd:.4f}{note}"
-                + (
-                    f" of {state.max_total_tokens} token cap"
-                    if state.max_total_tokens else ""
-                ),
+                + (f" of {', '.join(caps)}" if caps else ""),
             )
 
     counts: dict[str, int] = {}

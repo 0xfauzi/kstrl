@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import stat
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
@@ -185,6 +186,52 @@ class TestUsageTotalsMath:
         totals.add_record(UsageRecord(cost_usd=0.5))
         assert totals.to_dict()["token_calls"] == 1
         assert totals.to_dict()["known_calls"] == 2
+
+    def test_cost_calls_counts_only_cost_bearing_records(self) -> None:
+        """The mirror of ``token_calls``, and independent of it: a cost
+        ceiling has to know whether a COST was reported, which
+        ``known_calls`` cannot answer either."""
+        totals = UsageTotals()
+        totals.add_record(_claude_record())                        # both
+        totals.add_record(UsageRecord(total_tokens=10))            # tokens
+        totals.add_record(UsageRecord(cost_usd=0.5))               # cost
+        totals.add_record(UsageRecord(duration_seconds=1.0))       # silence
+        assert totals.calls == 4
+        assert totals.known_calls == 3
+        assert totals.token_calls == 2
+        assert totals.cost_calls == 2
+        assert totals.costless_calls == 2
+        assert totals.tokenless_calls == 2
+
+    def test_token_only_record_is_known_but_costless(self) -> None:
+        """The converse of the P1-b case, and just as real: codex
+        reports a token total and never a cost, so ``known_calls`` says
+        perfect coverage for a COST ceiling that can never advance."""
+        totals = UsageTotals()
+        totals.add_record(UsageRecord(total_tokens=14511, source="codex-text"))
+        totals.add_record(UsageRecord(total_tokens=9000, source="codex-text"))
+        assert totals.known_calls == 2       # the misleading signal
+        assert totals.cost_calls == 0        # the honest one
+        assert totals.costless_calls == 2
+        assert totals.cost_usd == 0.0
+
+    def test_a_reported_cost_of_zero_still_counts_as_coverage(self) -> None:
+        """0.0 is a REPORT, not silence: the adapter told us this call
+        cost nothing. Treating it as no-coverage would condemn a working
+        adapter."""
+        totals = UsageTotals()
+        totals.add_record(UsageRecord(cost_usd=0.0, source="claude-stream-json"))
+        assert totals.cost_calls == 1
+        assert totals.costless_calls == 0
+
+    def test_cost_calls_round_trips_through_to_dict_and_merge(self) -> None:
+        a = UsageTotals()
+        a.add_record(_claude_record())
+        b = UsageTotals()
+        b.add_record(UsageRecord(total_tokens=1000))
+        a.merge(b)
+        assert a.cost_calls == 1
+        assert a.to_dict()["cost_calls"] == 1
 
     def test_malformed_records_never_raise(self) -> None:
         totals = UsageTotals()
@@ -1010,14 +1057,24 @@ _UNREPORTED = UsageRecord(duration_seconds=5.0, source="unavailable")
 _COST_ONLY = UsageRecord(
     cost_usd=0.0227028, duration_seconds=1.8, source="claude-stream-json",
 )
+# Both axes, as the claude adapter reports on a healthy call.
+_BOTH = UsageRecord(
+    total_tokens=300, cost_usd=0.03, duration_seconds=1.8,
+    source="claude-stream-json",
+)
 
 
-def _budget_for(run_total: UsageTotals, cap: int) -> LoopBudget:
+def _budget_for(
+    run_total: UsageTotals, cap: int, cost_cap: float = 0.0,
+) -> LoopBudget:
     """Exactly the LoopBudget ``_submit_args`` hands a worker.
 
     Threading the run totals through this helper is what makes the
     run-wide half of the unenforceable rule testable: the priors are the
-    only channel by which one loop's tokenless calls reach the next.
+    only channel by which one loop's non-reporting calls reach the next.
+
+    ``cost_cap`` was added with the cost ceiling; the cost priors are
+    threaded from the same totals, exactly as ``_submit_args`` does.
     """
     return LoopBudget(
         max_total_tokens=cap,
@@ -1025,6 +1082,9 @@ def _budget_for(run_total: UsageTotals, cap: int) -> LoopBudget:
         prior_known_calls=run_total.known_calls,
         prior_calls=run_total.calls,
         prior_token_calls=run_total.token_calls,
+        max_cost_usd=cost_cap,
+        prior_cost_usd=run_total.cost_usd,
+        prior_cost_calls=run_total.cost_calls,
     )
 
 
@@ -2039,6 +2099,35 @@ class TestMaxTotalTokensConfig:
         assert FactoryConfig.load(tmp_path).max_total_tokens == 222
 
 
+class TestMaxCostUsdConfig:
+    def test_default_unbounded(self) -> None:
+        """0.0 = unbounded, deliberately the same convention as
+        max_total_tokens rather than a sentinel like -1."""
+        assert FactoryConfig().max_cost_usd == 0.0
+
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", "12.50")
+        assert FactoryConfig.from_env().max_cost_usd == 12.50
+
+    def test_load_toml_and_env_precedence(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_cost_usd = 1.5\n"
+        )
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 1.5
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", "2.5")
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 2.5
+
+    def test_both_ceilings_coexist(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = 500000\nmax_cost_usd = 5.0\n"
+        )
+        config = FactoryConfig.load(tmp_path)
+        assert config.max_total_tokens == 500_000
+        assert config.max_cost_usd == 5.0
+
+
 class TestUnenforceableHaltIsEngineerScoped:
     """The tokenless threshold asks whether the ENGINEER's adapter
     reports tokens, so only engineer calls may answer it.
@@ -2197,6 +2286,469 @@ class TestCompletionBoundaryBypass:
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
 
+# ---------------------------------------------------------------------------
+# R8: [factory] max_cost_usd, the cost-denominated run ceiling
+#
+# WHY, measured rather than assumed. A real factory run halted on
+# max_total_tokens = 500000 at 1,864,081 total tokens. Its own journal:
+#
+#     input_tokens           52
+#     output_tokens          20,855
+#     cache_read_tokens      1,781,669   <- 95.6%
+#     cache_creation_tokens  61,505
+#     total_tokens           1,864,081
+#     cost_usd               1.216512
+#
+# UsageTotals.total_tokens counts cache reads at par with input tokens
+# and cache reads cost roughly an order of magnitude less, so the
+# operator who set a 500k "budget" expecting a spend ceiling was halted
+# at $1.22. The token cap measures something real but nearly
+# uncorrelated with money; these tests cover the ceiling that is not.
+#
+# The cost ceiling is NOT a hard cap and these tests do not pretend it
+# is: the same run overshot its entire cap by 3.7x inside ONE engineer
+# call of 376s, and nothing here would have interrupted it.
+# ---------------------------------------------------------------------------
+
+
+class TestInLoopCostBudget:
+    def test_cost_overrun_halts_between_iterations(
+        self, tmp_path: Path,
+    ) -> None:
+        """$0.03/iteration against a $0.05 ceiling means iteration 3
+        never starts, even though max_iterations is 10."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_cost_usd=0.05),
+        )
+        assert result.completed is False
+        assert result.iterations == 2
+        assert len(agent.usage_records) == 2  # the agent really stopped
+        assert "cost budget exceeded" in result.budget_halt_reason
+        assert "max_cost_usd" in result.budget_halt_reason
+        assert result.usage.cost_usd == pytest.approx(0.06)
+
+    def test_prior_cost_from_earlier_components_counts(
+        self, tmp_path: Path,
+    ) -> None:
+        """The ceiling is run-level: a worker launched with $0.045
+        already on the run's meter has half a cent left, not $0.05."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(
+                max_cost_usd=0.05, prior_cost_usd=0.045,
+                prior_known_calls=1, prior_calls=1, prior_cost_calls=1,
+            ),
+        )
+        assert result.iterations == 1
+        assert "cost budget exceeded" in result.budget_halt_reason
+
+    def test_zero_cost_cap_is_inert(self, tmp_path: Path) -> None:
+        """0.0 = unbounded, matching the max_total_tokens convention."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_cost_usd=0.0),
+        )
+        assert result.iterations == 3
+        assert result.budget_halt_reason == ""
+
+    def test_token_ceiling_wins_when_it_is_the_tighter_one(
+        self, tmp_path: Path,
+    ) -> None:
+        """Both set: whichever is reached first halts, and the message
+        names THAT one. 300 tok + $0.03 per iteration against a 500-token
+        / $100 pair trips the token ceiling at iteration 2."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500, max_cost_usd=100.0),
+        )
+        assert result.iterations == 2
+        assert "token budget exceeded" in result.budget_halt_reason
+        assert "cost budget exceeded" not in result.budget_halt_reason
+
+    def test_cost_ceiling_wins_when_it_is_the_tighter_one(
+        self, tmp_path: Path,
+    ) -> None:
+        """The mirror, and the case the measured run is about: a token
+        ceiling set high enough to be useless while the money runs out."""
+        agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=1_000_000, max_cost_usd=0.05),
+        )
+        assert result.iterations == 2
+        assert "cost budget exceeded" in result.budget_halt_reason
+        assert "token budget exceeded" not in result.budget_halt_reason
+
+    def test_cost_only_adapter_enforces_cost_while_the_token_cap_is_dead(
+        self, tmp_path: Path,
+    ) -> None:
+        """The inconsistency this change resolves.
+
+        An adapter reporting ``total_cost_usd`` with no ``usage`` dict
+        (real: review finding P1-b on PR #176 established that
+        ``known_calls`` increments on cost alone) makes the TOKEN ceiling
+        provably dead - it can never advance. The old rule halted on
+        that. But the COST ceiling is perfectly enforceable on the same
+        adapter, so halting throws away a working ceiling.
+
+        Here the loop keeps going past the point where the token cap is
+        dead (iteration 2) and halts on the ceiling that actually works.
+        """
+        agent = SequenceUsageAgent([_COST_ONLY])  # $0.0227028 per call
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500, max_cost_usd=0.05),
+        )
+        assert result.iterations == 3           # 3 x 0.0227028 >= 0.05
+        assert "cost budget exceeded" in result.budget_halt_reason
+        assert "unenforceable" not in result.budget_halt_reason
+        assert result.usage.token_calls == 0    # token cap was dead
+        assert result.usage.cost_calls == 3     # cost cap was not
+
+    def test_token_only_adapter_enforces_tokens_while_the_cost_cap_is_dead(
+        self, tmp_path: Path,
+    ) -> None:
+        """The converse, and just as real: codex reports a token total
+        and no cost at all."""
+        agent = SequenceUsageAgent([_REPORTED])  # 300 tokens, no cost
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=1000, max_cost_usd=100.0),
+        )
+        assert result.iterations == 4           # 4 x 300 >= 1000
+        assert "token budget exceeded" in result.budget_halt_reason
+        assert "unenforceable" not in result.budget_halt_reason
+        assert result.usage.cost_calls == 0     # cost cap was dead throughout
+
+    def test_unenforceable_only_when_every_configured_ceiling_is_dead(
+        self, tmp_path: Path,
+    ) -> None:
+        """A wholly silent adapter kills both ceilings, and only then
+        does the loop halt as unenforceable - naming both."""
+        agent = SequenceUsageAgent([_UNREPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_total_tokens=500, max_cost_usd=0.05),
+        )
+        assert result.iterations == 2           # UNENFORCEABLE_CALLS
+        assert "token budget unenforceable" in result.budget_halt_reason
+        assert "cost budget unenforceable" in result.budget_halt_reason
+        assert "max_total_tokens (500)" in result.budget_halt_reason
+        assert "max_cost_usd ($0.05)" in result.budget_halt_reason
+
+    def test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter(
+        self, tmp_path: Path,
+    ) -> None:
+        """With ONLY max_cost_usd configured, a codex-style adapter that
+        never reports a cost leaves it unable to fire. Before the cost
+        ceiling existed this configuration had no protection at all."""
+        agent = SequenceUsageAgent([_REPORTED])
+        result = run_loop(
+            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_cost_usd=100.0),
+        )
+        assert result.iterations == 2
+        assert "cost budget unenforceable" in result.budget_halt_reason
+        assert "token budget" not in result.budget_halt_reason
+        assert "2 costless call(s) this run" in result.budget_halt_reason
+
+    def test_one_costless_call_is_an_incident_not_a_dead_ceiling(
+        self, tmp_path: Path,
+    ) -> None:
+        """Symmetric with the token rule: a lone unparseable result must
+        not kill a capped run."""
+        agent = SequenceUsageAgent([_UNREPORTED, _BOTH, _BOTH])
+        result = run_loop(
+            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            budget=LoopBudget(max_cost_usd=100.0),
+        )
+        assert result.budget_halt_reason == ""
+        assert result.iterations == 3
+
+    def test_costless_threshold_does_not_reset_per_loop(
+        self, tmp_path: Path,
+    ) -> None:
+        """The cost mirror of P1-a: the threshold is run-wide, threaded
+        through the same priors ``_submit_args`` threads."""
+        run_total = UsageTotals()
+        reasons: list[str] = []
+        for _ in range(3):
+            agent = SequenceUsageAgent([_REPORTED])  # tokens, never a cost
+            result = run_loop(
+                _loop_config(tmp_path, 1), PlainUI(no_color=True), agent,
+                tmp_path, budget=_budget_for(run_total, 0, cost_cap=100.0),
+            )
+            run_total.merge(result.usage)
+            reasons.append(result.budget_halt_reason)
+
+        assert reasons[0] == ""                      # one is an incident
+        assert "cost budget unenforceable" in reasons[1]
+        assert "cost budget unenforceable" in reasons[2]
+        assert run_total.calls == 3
+        assert run_total.cost_calls == 0
+
+    def test_a_loop_that_has_not_run_cannot_halt_on_cost(self) -> None:
+        """No calls means no evidence either way; a worker launched into
+        a run with costless priors must still get to run its engineer."""
+        budget = LoopBudget(
+            max_cost_usd=100.0, prior_calls=20, prior_cost_calls=0,
+        )
+        assert budget.halt_reason(UsageTotals()) is None
+
+    def test_no_ceiling_configured_is_always_none(self) -> None:
+        budget = LoopBudget(prior_calls=20, prior_cost_calls=0)
+        assert budget.halt_reason(
+            UsageTotals(calls=5, known_calls=0),
+        ) is None
+
+
+class TestCostCeilingParentGates:
+    """The parent-side twins: the scheduling gate and the phase gates.
+
+    Built on the real ``ComponentPipeline`` methods over a hand-built
+    usage_meter, the same shape ``TestCompletionBoundaryBypass`` uses -
+    no whole pipeline needed to pin the arithmetic and the naming.
+    """
+
+    @staticmethod
+    def _pipeline(
+        tmp_path: Path,
+        *,
+        calls: int = 0,
+        token_calls: int = 0,
+        cost_calls: int = 0,
+        total_tokens: int = 0,
+        cost_usd: float = 0.0,
+        max_total_tokens: int = 0,
+        max_cost_usd: float = 0.0,
+    ) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        engineer = UsageTotals(
+            calls=calls, known_calls=max(token_calls, cost_calls),
+            token_calls=token_calls, cost_calls=cost_calls,
+            total_tokens=total_tokens, cost_usd=cost_usd,
+        )
+        pipeline.usage_meter = {"comp-a": {"engineer": engineer}}
+        pipeline.run_usage = UsageTotals()
+        pipeline.run_usage.merge(engineer)
+        pipeline.factory_config = _factory_config(
+            tmp_path, max_total_tokens=max_total_tokens,
+            max_cost_usd=max_cost_usd,
+        )
+        return pipeline
+
+    def test_cost_overrun_is_detected_and_named(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=1, cost_calls=1, cost_usd=0.25, max_cost_usd=0.10,
+        )
+        assert ComponentPipeline.cost_budget_exceeded(p) is True
+        assert ComponentPipeline.token_budget_exceeded(p) is False
+        assert ComponentPipeline.breached_ceiling(p) == "max_cost_usd"
+        assert ComponentPipeline.budget_exceeded(p) is True
+
+    def test_token_overrun_still_named_max_total_tokens(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=1, token_calls=1, total_tokens=900,
+            max_total_tokens=500,
+        )
+        assert ComponentPipeline.breached_ceiling(p) == "max_total_tokens"
+
+    def test_zero_cost_ceiling_never_trips(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=1, cost_calls=1, cost_usd=99.0, max_cost_usd=0.0,
+        )
+        assert ComponentPipeline.cost_budget_exceeded(p) is False
+        assert ComponentPipeline.breached_ceiling(p) is None
+
+    def test_a_live_cost_ceiling_keeps_a_dead_token_one_from_halting(
+        self, tmp_path: Path,
+    ) -> None:
+        """The scheduling gate must not stop a run whose cost ceiling can
+        still fire, even though its token ceiling provably cannot."""
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=2, token_calls=0, cost_calls=2, cost_usd=0.01,
+            max_total_tokens=500_000, max_cost_usd=100.0,
+        )
+        assert ComponentPipeline.token_budget_unenforceable(p) is not None
+        assert ComponentPipeline.cost_budget_unenforceable(p) is None
+        assert ComponentPipeline.budget_unenforceable(p) is None
+
+    def test_a_live_token_ceiling_keeps_a_dead_cost_one_from_halting(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=2, token_calls=2, cost_calls=0, total_tokens=100,
+            max_total_tokens=500_000, max_cost_usd=100.0,
+        )
+        assert ComponentPipeline.cost_budget_unenforceable(p) is not None
+        assert ComponentPipeline.token_budget_unenforceable(p) is None
+        assert ComponentPipeline.budget_unenforceable(p) is None
+
+    def test_both_dead_halts_and_names_both(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=2, token_calls=0, cost_calls=0,
+            max_total_tokens=500_000, max_cost_usd=100.0,
+        )
+        reason = ComponentPipeline.budget_unenforceable(p)
+        assert reason is not None
+        assert "max_total_tokens" in reason
+        assert "max_cost_usd" in reason
+        assert "refusing to schedule further components" in reason
+
+    def test_a_lone_cost_ceiling_can_be_the_only_dead_one(
+        self, tmp_path: Path,
+    ) -> None:
+        """Only max_cost_usd configured: it is the only ceiling that has
+        to be alive, so its death halts the gate on its own."""
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(
+            tmp_path, calls=2, token_calls=2, cost_calls=0, total_tokens=100,
+            max_cost_usd=100.0,
+        )
+        reason = ComponentPipeline.budget_unenforceable(p)
+        assert reason is not None
+        assert "cost budget unenforceable" in reason
+
+    def test_gate_is_inert_with_no_ceiling_configured(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        p = self._pipeline(tmp_path, calls=9, token_calls=0, cost_calls=0)
+        assert ComponentPipeline.budget_unenforceable(p) is None
+
+
+class TestCostCeilingEndToEnd:
+    def test_cost_halt_names_the_ceiling_everywhere_it_is_recorded(
+        self, tmp_path: Path,
+    ) -> None:
+        """One run, every audit surface: the component error, the typed
+        finding, and the budget_exceeded event all name max_cost_usd.
+        The token ceiling is off, so nothing may claim it tripped."""
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
+        config = _factory_config(root, max_cost_usd=0.10)
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            return ComponentResult(
+                str(args[0]), success=True, iterations=1,
+                usage=_engineer_usage(600, cost=0.25),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            result = run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert "comp-a" in result.failed
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert comp_a.status == ComponentStatus.FAILED.value
+        assert "max_cost_usd" in (comp_a.error or "")
+        assert "max_total_tokens" not in (comp_a.error or "")
+        budget_findings = [
+            f for f in comp_a.findings
+            if f.is_infrastructure_error and "cost budget" in f.explanation
+        ]
+        assert len(budget_findings) == 1
+        assert budget_findings[0].phase == "engineer"
+
+        # comp-b never launches: the scheduling gate fails it loudly too.
+        assert "comp-b" in result.failed
+
+        events = ProgressLog(root / "progress.jsonl").read_events()
+        breaches = [e for e in events if e["event"] == "budget_exceeded"]
+        assert len(breaches) == 2
+        assert breaches[0]["data"]["ceiling"] == "max_cost_usd"
+        assert breaches[0]["data"]["max_cost_usd"] == 0.10
+        assert breaches[0]["data"]["cost_usd"] >= 0.10
+
+    def test_token_halt_audit_trail_is_unchanged(self, tmp_path: Path) -> None:
+        """The token ceiling keeps working exactly as before, and its
+        event now carries ceiling="max_total_tokens" alongside the
+        pre-existing fields older readers look up."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_total_tokens=500)
+        success = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_engineer_usage(600),
+        )
+
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        events = ProgressLog(root / "progress.jsonl").read_events()
+        breach = next(e for e in events if e["event"] == "budget_exceeded")
+        assert breach["data"]["ceiling"] == "max_total_tokens"
+        assert breach["data"]["max_total_tokens"] == 500
+        assert breach["data"]["total_tokens"] >= 500
+
+    def test_scheduler_hands_the_cost_ceiling_and_priors_down(
+        self, tmp_path: Path,
+    ) -> None:
+        """``_submit_args`` must snapshot the cost priors per launch, or
+        the in-loop cost check degrades to a per-component budget."""
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([
+            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
+        ])
+        config = _factory_config(root, max_cost_usd=100.0)
+        budgets: list[Any] = []
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            budgets.append(args[-1])
+            return ComponentResult(
+                str(args[0]), success=True, iterations=1,
+                usage=_engineer_usage(700, cost=0.5),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+
+        assert len(budgets) == 2
+        assert budgets[0].max_cost_usd == 100.0
+        assert budgets[0].prior_cost_usd == 0.0
+        assert budgets[0].prior_cost_calls == 0
+        assert budgets[1].max_cost_usd == 100.0
+        assert budgets[1].prior_cost_usd == pytest.approx(0.5)
+        assert budgets[1].prior_cost_calls == 1
+
+
 class TestFailedSnapshotDeletionInvalidates:
     """Deletion IS the attempt-scoping invariant.
 
@@ -2254,3 +2806,650 @@ class TestFailedSnapshotDeletionInvalidates:
         ComponentPipeline.mark_usage_salvage_safe(pipeline, "comp-a")
         _salvage_aborted_usage(pending, "comp-a", pipeline)
         assert [t.total_tokens for t in recorded] == [700]
+
+
+class TestCostCeilingConfigValidation:
+    """A ceiling that cannot bound anything must be refused, not stored.
+
+    Review regression on #180: every input path used a bare `float()`, so
+    `nan`, `inf` and negatives were accepted. Each then failed in a
+    DIFFERENT silent direction - `nan > 0` is False so the ceiling
+    disabled itself while reading as configured; a negative did the same;
+    `inf` produced a ceiling that is enabled and unreachable. All three
+    are indistinguishable from "off" at the moment they matter, which is
+    the one property a safety limit must not have.
+    """
+
+    @pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "-3.0"])
+    def test_toml_rejects_unbounding_values(
+        self, tmp_path: Path, bad: str,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            f"[factory]\nmax_cost_usd = {bad}\n"
+        )
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.load(tmp_path)
+
+    @pytest.mark.parametrize("bad", ["nan", "inf", "-3.0"])
+    def test_env_rejects_unbounding_values(
+        self, monkeypatch: pytest.MonkeyPatch, bad: str,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", bad)
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.from_env()
+
+    def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 0.0
+
+    def test_ordinary_value_survives(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5.0\n")
+        assert FactoryConfig.load(tmp_path).max_cost_usd == 5.0
+
+    def test_run_factory_rechecks_a_programmatic_config(
+        self, tmp_path: Path,
+    ) -> None:
+        """A limit that only holds via the front door is not a limit.
+
+        FactoryConfig can be built directly (tests, embedders, the SDK
+        path), bypassing every config-path validator.
+        """
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.manifest import Component, Manifest
+        from kstrl.ui.plain import PlainUI
+
+        config = FactoryConfig(max_cost_usd=float("nan"))
+        manifest = Manifest(
+            version="1", spec_file="s", project_name="t", base_branch="main",
+            single_pr=False,
+            components=[Component(
+                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
+            )],
+        )
+        base = KstrlConfig(ui_mode="plain", no_color=True)
+        with pytest.raises(BudgetConfigError):
+            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+
+
+class TestUnenforceableHaltNamesItsCeiling:
+    """An unenforceable halt crosses no threshold, but the ceiling that
+    FAILED still has a name.
+
+    Review regression on #180: `breached_ceiling()` correctly returned
+    None for these halts, so `ceiling=""` flowed downstream and the audit
+    surfaces rendered it as the token ceiling - reported as
+    "run token budget exceeded (200/0)" for a cost-only run whose token
+    ceiling was not even configured.
+    """
+
+    @staticmethod
+    def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+
+        class _FC:
+            max_total_tokens = max_tokens
+            max_cost_usd = max_cost
+
+        pipeline.factory_config = _FC()
+        pipeline.usage_meter = {"comp-a": {"engineer": usage}}
+        pipeline.run_usage = usage
+        return pipeline
+
+    def test_cost_only_run_names_the_cost_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            0, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
+                        total_tokens=200, cost_usd=0.0),
+        )
+        assert ComponentPipeline.breached_ceiling(pipeline) is None
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_cost_usd",
+        ]
+
+    def test_token_only_run_names_the_token_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 0.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=0, cost_calls=2,
+                        total_tokens=0, cost_usd=0.5),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_total_tokens",
+        ]
+
+    def test_both_dead_names_both(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_total_tokens", "max_cost_usd",
+        ]
+
+    def test_a_live_ceiling_is_never_named(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
+                        total_tokens=10, cost_usd=0.1),
+        )
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == []
+
+    def test_an_unconfigured_ceiling_is_never_named(self) -> None:
+        """The exact defect: a disabled token ceiling must not be blamed."""
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            0, 5.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        named = ComponentPipeline.unenforceable_ceilings(pipeline)
+        assert "max_total_tokens" not in named
+        assert named == ["max_cost_usd"]
+
+
+class TestBudgetHaltIdentityPrecedence:
+    """A numeric breach outranks a dead ceiling.
+
+    Review follow-up on #180: the two facts can coexist - a run whose
+    token cap trips while its cost cap never received a figure - and the
+    call sites each joined the dead list FIRST. The halt was then
+    attributed to `max_cost_usd` and rendered as
+    `cost budget exceeded: $0 >= $100`: a sentence that is false, and
+    arithmetically impossible, for a run that blew its token cap at
+    600/500.
+    """
+
+    @staticmethod
+    def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+
+        class _FC:
+            max_total_tokens = max_tokens
+            max_cost_usd = max_cost
+
+        pipeline.factory_config = _FC()
+        pipeline.usage_meter = {"comp-a": {"engineer": usage}}
+        pipeline.run_usage = usage
+        return pipeline
+
+    def test_breach_wins_over_a_coexisting_dead_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            500, 100.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
+                        total_tokens=600, cost_usd=0.0),
+        )
+        assert ComponentPipeline.breached_ceiling(pipeline) == "max_total_tokens"
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_cost_usd",
+        ]
+        assert ComponentPipeline.budget_halt_identity(pipeline) == (
+            "breached", ("max_total_tokens",),
+        )
+
+    def test_dead_ceilings_only_when_nothing_breached(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            500, 100.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        assert ComponentPipeline.budget_halt_identity(pipeline) == (
+            "unenforceable", ("max_total_tokens", "max_cost_usd"),
+        )
+
+    def test_no_halt_yields_no_identity(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
+                        total_tokens=10, cost_usd=0.1),
+        )
+        assert ComponentPipeline.budget_halt_identity(pipeline) == ("", ())
+
+
+class TestLoopHaltCarriesItsOwnIdentity:
+    """The loop halts against priors the parent cannot see, so it reports
+    WHICH ceiling structurally instead of leaving the parent to guess."""
+
+    def test_token_overrun(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(
+            max_total_tokens=500, max_cost_usd=100.0,
+        ).halt_verdict(UsageTotals(
+            calls=2, known_calls=2, token_calls=2, total_tokens=600,
+        ))
+        assert verdict is not None
+        assert verdict.condition == "breached"
+        assert verdict.ceilings == ("max_total_tokens",)
+
+    def test_cost_overrun(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(UsageTotals(
+            calls=2, known_calls=2, cost_calls=2, cost_usd=2.0,
+        ))
+        assert verdict is not None
+        assert verdict.condition == "breached"
+        assert verdict.ceilings == ("max_cost_usd",)
+
+    def test_unenforceable_names_every_dead_ceiling(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(
+            max_total_tokens=500, max_cost_usd=100.0, prior_calls=2,
+        ).halt_verdict(UsageTotals(calls=2, known_calls=0))
+        assert verdict is not None
+        assert verdict.condition == "unenforceable"
+        assert verdict.ceilings == ("max_total_tokens", "max_cost_usd")
+
+    def test_halt_reason_still_returns_the_prose(self) -> None:
+        """Existing callers read the sentence; it must not change shape."""
+        from kstrl.loop import LoopBudget
+
+        budget = LoopBudget(max_total_tokens=500)
+        usage = UsageTotals(
+            calls=2, known_calls=2, token_calls=2, total_tokens=600,
+        )
+        reason = budget.halt_reason(usage)
+        verdict = budget.halt_verdict(usage)
+        assert verdict is not None
+        assert reason == verdict.reason
+        assert reason is not None and reason.startswith("token budget exceeded")
+
+    def test_no_halt_returns_none_from_both(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        budget = LoopBudget(max_total_tokens=500)
+        usage = UsageTotals(
+            calls=1, known_calls=1, token_calls=1, total_tokens=10,
+        )
+        assert budget.halt_verdict(usage) is None
+        assert budget.halt_reason(usage) is None
+
+
+class TestBudgetHaltRendersHonestly:
+    """Every surface reads one payload the same way, and an unenforceable
+    halt never claims a threshold was crossed."""
+
+    @staticmethod
+    def _render(event: Any) -> tuple[str, str]:
+        from kstrl.linear import LinearSink
+        from kstrl.reducer import ComponentState, RunState, apply
+
+        state = RunState(run_id="r")
+        state.components["comp-a"] = ComponentState(component_id="comp-a")
+        apply(state, event)
+        sink = cast(Any, LinearSink.__new__(LinearSink))
+        sink._run_id = "r"
+        body = LinearSink._comment_body(
+            sink, "budget_exceeded", event.to_dict()["data"],
+        )
+        return state.components["comp-a"].error, str(body)
+
+    def test_breach_states_the_true_comparison(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=600, max_total_tokens=500,
+            cost_usd=0.0, max_cost_usd=100.0, ceiling="max_total_tokens",
+            condition="breached", ceilings=("max_total_tokens",),
+        ))
+        assert reducer == "token budget exceeded: 600 >= 500"
+        assert "600/500" in linear
+        assert "cost" not in reducer
+
+    def test_unenforceable_claims_no_threshold(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=0, max_total_tokens=500,
+            cost_usd=0.0, max_cost_usd=100.0,
+            ceiling="max_total_tokens, max_cost_usd",
+            condition="unenforceable",
+            ceilings=("max_total_tokens", "max_cost_usd"),
+        ))
+        for surface in (reducer, linear):
+            # The defect: both rendered "token budget exceeded: 0 >= 500"
+            # for a halt where no total ever moved.
+            assert "exceeded" not in surface
+            assert "0 >= 500" not in surface
+            assert "unenforceable" in surface
+            # A multi-ceiling halt names BOTH; no single-value field
+            # could express this, which is why it silently collapsed.
+            assert "max_total_tokens" in surface
+            assert "max_cost_usd" in surface
+
+    def test_a_disabled_ceiling_is_never_blamed(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=200, max_total_tokens=0,
+            cost_usd=0.0, max_cost_usd=5.0, ceiling="max_cost_usd",
+            condition="unenforceable", ceilings=("max_cost_usd",),
+        ))
+        for surface in (reducer, linear):
+            assert "max_total_tokens" not in surface
+            assert "max_cost_usd" in surface
+
+    def test_legacy_payloads_still_decode(self) -> None:
+        """events.jsonl is append-only: payloads written before this
+        change carry only `ceiling` and must keep their old reading."""
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=5, max_total_tokens=10,
+            cost_usd=9.0, max_cost_usd=8.0, ceiling="max_cost_usd",
+        ))
+        assert reducer == "cost budget exceeded: $9.000000 >= $8.0"
+        assert "cost budget exceeded" in linear
+
+    def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
+        import kstrl.events as ev
+
+        event = ev.BudgetExceeded(
+            component="comp-a", condition="unenforceable",
+            ceilings=("max_total_tokens", "max_cost_usd"),
+        )
+        back = ev.event_from_dict(event.to_dict())
+        assert isinstance(back, ev.BudgetExceeded)
+        assert back.ceilings == ("max_total_tokens", "max_cost_usd")
+        assert back.condition == "unenforceable"
+
+    @pytest.mark.parametrize(
+        ("condition", "ceilings", "legacy", "expected"),
+        [
+            ("breached", ("max_total_tokens",), "", "token"),
+            ("breached", ("max_cost_usd",), "", "cost"),
+            ("unenforceable", ("max_cost_usd",), "", "unenforceable"),
+            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "",
+             "unenforceable"),
+            ("", (), "max_cost_usd", "cost"),
+            ("", (), "", "token"),
+        ],
+    )
+    def test_one_classifier_for_every_surface(
+        self, condition: str, ceilings: tuple[str, ...], legacy: str,
+        expected: str,
+    ) -> None:
+        from kstrl.events import budget_halt_kind
+
+        assert budget_halt_kind(condition, ceilings, legacy) == expected
+
+
+class TestBudgetConfigErrorReachesTheOperator:
+    """A rejected ceiling is reported, never raised.
+
+    Review follow-up on #180: validation landed at the library boundary,
+    but `ks factory` exited 1 with empty output and an uncaught
+    BudgetConfigError - a traceback where a config error belongs.
+    """
+
+    @staticmethod
+    def _manifest() -> dict[str, Any]:
+        return {
+            "version": "1", "specFile": "s.md", "projectName": "p",
+            "baseBranch": "main", "singlePr": False,
+            "components": [{
+                "id": "comp-a", "title": "A", "description": "D",
+                "dependencies": [], "prdPath": "prd.json",
+                "branchName": "kstrl/comp-a",
+            }],
+        }
+
+    @pytest.mark.parametrize(
+        ("command", "toml_value"),
+        [
+            # --agent-cmd keeps this independent of what is on PATH.
+            # Without it the run aborts on agent detection BEFORE the
+            # ceiling is read, so the test passed on a developer machine
+            # with `claude` installed and failed in CI without it -
+            # measuring the environment, not the fix.
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
+             "nan"),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
+             "-3.0"),
+            (["config", "show"], "nan"),
+        ],
+    )
+    def test_no_entry_point_leaks_a_traceback(
+        self, command: list[str], toml_value: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Proven against the harsher of the two environments: no agent
+        # discoverable at all.
+        monkeypatch.setenv("PATH", "")
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+        from kstrl.factory import BudgetConfigError
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            (root / "kstrl.toml").write_text(
+                f"[factory]\nmax_cost_usd = {toml_value}\n"
+            )
+            (root / "m.json").write_text(json.dumps(self._manifest()))
+            (root / "s.md").write_text("# spec\n")
+            result = runner.invoke(cli, command, catch_exceptions=True)
+
+        assert not isinstance(result.exception, BudgetConfigError)
+        assert result.exit_code == 1
+        assert "error:" in _strip_ansi(result.output)
+        assert "max_cost_usd" in result.output
+
+    def test_the_flag_override_is_checked_before_any_work_starts(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--max-cost-usd` bypasses every config-path validator, so the
+        check has to hold at the run boundary too - and has to stop the
+        run before it launches anything."""
+        monkeypatch.setenv("PATH", "")
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            (root / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+            (root / "m.json").write_text(json.dumps(self._manifest()))
+            result = runner.invoke(
+                cli,
+                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf",
+                 "--agent-cmd", "true"],
+                catch_exceptions=True,
+            )
+
+        output = _strip_ansi(result.output)
+        assert result.exit_code == 1
+        # The preflight names the FLAG, not the generic knob: the
+        # operator has to know which of the three sources to fix.
+        assert "error: --max-cost-usd must be a finite number" in output
+        assert "Starting:" not in output
+
+
+def _strip_ansi(text: str) -> str:
+    import re
+
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+class TestCeilingsAreCheckedBeforeAnythingSpends:
+    """An invalid ceiling must cost nothing to discover.
+
+    Review follow-up on #180: `ks factory --spec` built its config only
+    AFTER decomposition, so a rejected ceiling surfaced once the
+    architect had already spent a call - the operator paid for a call
+    under the very ceiling that was supposed to bound it. Measured, not
+    assumed: the fake agent below records its own invocation, and these
+    tests fail if it ever runs.
+    """
+
+    @staticmethod
+    def _fake_agent(root: Path) -> tuple[Path, Path]:
+        """An agent that records being called. Its output is irrelevant;
+        the marker file is the whole assertion."""
+        marker = root / "AGENT_WAS_INVOKED"
+        script = root / "fake-agent.sh"
+        script.write_text(f"#!/bin/sh\ntouch '{marker}'\necho '{{}}'\n")
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        return script, marker
+
+    @pytest.mark.parametrize(
+        ("toml_value", "extra_args", "expected"),
+        [
+            ("nan", [], "[factory] max_cost_usd must be a finite number"),
+            ("-3.0", [], "[factory] max_cost_usd must be >= 0"),
+            ("0", ["--max-cost-usd", "inf"],
+             "--max-cost-usd must be a finite number"),
+            ("0", ["--max-total-tokens", "-5"],
+             "--max-total-tokens must be >= 0"),
+        ],
+    )
+    def test_the_spec_path_rejects_before_decomposition(
+        self, toml_value: str, extra_args: list[str], expected: str,
+    ) -> None:
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            script, marker = self._fake_agent(root)
+            (root / "kstrl.toml").write_text(
+                f"[factory]\nmax_cost_usd = {toml_value}\n"
+            )
+            (root / "s.md").write_text("# spec\nbuild a thing\n")
+            result = runner.invoke(
+                cli,
+                ["factory", "--spec", "s.md", "--project-name", "p",
+                 "--agent-cmd", str(script)] + extra_args,
+                catch_exceptions=True,
+            )
+            spent = marker.exists()
+
+        assert not spent, "an agent call happened before the ceiling was checked"
+        assert result.exit_code == 1
+        assert expected in _strip_ansi(result.output)
+
+    def test_a_valid_ceiling_does_not_block_the_spec_path(self) -> None:
+        """The preflight must reject bad values without rejecting good
+        ones - otherwise it would read as 'fixed' while breaking every
+        ordinary run."""
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            script, marker = self._fake_agent(root)
+            (root / "kstrl.toml").write_text(
+                "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
+            )
+            (root / "s.md").write_text("# spec\nbuild a thing\n")
+            result = runner.invoke(
+                cli,
+                ["factory", "--spec", "s.md", "--project-name", "p",
+                 "--agent-cmd", str(script)],
+                catch_exceptions=True,
+            )
+            reached_agent = marker.exists()
+            output = _strip_ansi(result.output)
+
+        # The run proceeds to the architect (and then fails on the fake
+        # agent's empty output, which is fine - what matters is that the
+        # ceiling did not stop it).
+        assert reached_agent
+        assert "must be a finite number" not in output
+        assert "must be >= 0" not in output
+
+
+class TestTokenCeilingRejectsUnboundingValues:
+    """The sibling knob had the identical defect.
+
+    `max_total_tokens = -5` made `max_total_tokens > 0` false, so the
+    ceiling disabled itself while still reading as configured - the
+    exact failure mode flagged for max_cost_usd, in the knob that
+    predates it.
+    """
+
+    def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = -5\n"
+        )
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.load(tmp_path)
+
+    def test_negative_env_value_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from kstrl.factory import BudgetConfigError, FactoryConfig
+
+        monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "-5")
+        with pytest.raises(BudgetConfigError):
+            FactoryConfig.from_env()
+
+    def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = 0\n"
+        )
+        assert FactoryConfig.load(tmp_path).max_total_tokens == 0
+
+    def test_ordinary_value_survives(self, tmp_path: Path) -> None:
+        from kstrl.factory import FactoryConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_total_tokens = 500\n"
+        )
+        assert FactoryConfig.load(tmp_path).max_total_tokens == 500
+
+    def test_run_factory_rechecks_a_programmatic_config(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.config import KstrlConfig
+        from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
+        from kstrl.manifest import Component, Manifest
+        from kstrl.ui.plain import PlainUI
+
+        config = FactoryConfig(max_total_tokens=-5)
+        manifest = Manifest(
+            version="1", spec_file="s", project_name="t", base_branch="main",
+            single_pr=False,
+            components=[Component(
+                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
+            )],
+        )
+        base = KstrlConfig(ui_mode="plain", no_color=True)
+        with pytest.raises(BudgetConfigError):
+            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)

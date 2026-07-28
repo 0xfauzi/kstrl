@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+from kstrl.events import budget_halt_kind
 
 if TYPE_CHECKING:
     from kstrl.decompose import SpecIssue
@@ -816,6 +817,32 @@ class LinearSink:
             error = str(data.get("error", ""))[:2000]
             return f"ks run `{self._run_id}`: component failed.\n\n{error}"
         if event_type == "budget_exceeded":
+            # R8: name the ceiling that tripped, through the shared
+            # classifier so this surface reads the payload exactly as
+            # the reducer does. Payloads written before the cost ceiling
+            # landed carry no "ceiling" key, and the token wording is
+            # then the only honest reading.
+            ceilings = data.get("ceilings") or ()
+            kind = budget_halt_kind(
+                str(data.get("condition", "")), ceilings,
+                str(data.get("ceiling", "")),
+            )
+            if kind == "unenforceable":
+                # Nothing was exceeded here; reporting a ratio would
+                # point the operator at numbers that never moved.
+                named = ", ".join(ceilings) or data.get("ceiling") or "budget"
+                return (
+                    f"ks run `{self._run_id}`: run budget ceiling "
+                    f"unenforceable ({named}) - no configured ceiling can "
+                    "still fire; component failed without further "
+                    "adversarial calls."
+                )
+            if kind == "cost":
+                return (
+                    f"ks run `{self._run_id}`: run cost budget exceeded "
+                    f"(${data.get('cost_usd')}/${data.get('max_cost_usd')}); "
+                    "component failed without further adversarial calls."
+                )
             return (
                 f"ks run `{self._run_id}`: run token budget exceeded "
                 f"({data.get('total_tokens')}/{data.get('max_total_tokens')}); "

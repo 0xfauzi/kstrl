@@ -102,25 +102,40 @@ review_mode = "hard"               # hard | advisory | skip
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation (R0.2)
 max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+security+distill calls per run
 max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1/R8)
-# What max_total_tokens actually guarantees (read this before trusting it):
+max_cost_usd = 0.0                 # run-level USD budget; 0 = unbounded (R8)
+# Prefer max_cost_usd if what you mean is "do not spend more than $X".
+#   MEASURED, not hypothetical: a real run halted on max_total_tokens = 500000
+#   at 1,864,081 total tokens - 1,781,669 of them (95.6%) CACHE READS - having
+#   spent $1.22. total_tokens counts cache reads at par with input tokens, and
+#   cache reads cost roughly an order of magnitude less, so a token cap
+#   measures something real but nearly uncorrelated with money.
+#
+# What EITHER ceiling actually guarantees (read this before trusting them):
 #   Checked BETWEEN engineer iterations and at every phase boundary. Once the
-#   run's reported spend reaches the cap, no NEW iteration and no new phase
-#   starts, and the component halts loudly (budget_overrun inbox item).
-#   It is NOT a hard cap. What stays unbounded:
+#   run's reported spend reaches a configured ceiling, no NEW iteration and no
+#   new phase starts, and the component halts loudly (budget_overrun inbox
+#   item). Both may be set; whichever is reached first halts.
+#   NEITHER is a hard cap - max_cost_usd has exactly the same limits as
+#   max_total_tokens. What stays unbounded:
 #     - the iteration already in flight: nothing interrupts a single agent call
 #       mid-run, so overshoot is up to one iteration (bounded in wall clock by
-#       [timeout] agent_iteration, not in tokens);
+#       [timeout] agent_iteration, not in tokens and not in dollars). Measured:
+#       the run above overshot its entire 500k cap by 3.7x inside ONE engineer
+#       call of 376s;
 #     - concurrent workers: each one sees the run total as of ITS launch, so
 #       with max_parallel = N the overshoot scales with N;
 #     - unreported spend: every figure is a CLI self-report, so totals are
 #       lower bounds whenever unreported_calls > 0. When THIS engineer loop
-#       reports no token count at all AND the run has now seen two calls that
-#       reported none (a custom agent_cmd never does), the cap provably cannot
-#       trip and the loop halts on THAT rather than pretending to enforce.
-#       Reported cost is not token evidence - a result with a cost but no
-#       usage dict cannot move a token total.
-#   [agent] budget_usd is the only genuine per-turn ceiling, and only the
-#   claude-sdk adapter enforces it.
+#       reports nothing a ceiling needs AND the run has now seen two such calls
+#       (a custom agent_cmd never reports), that ceiling provably cannot trip.
+#       The loop halts on THAT rather than pretending to enforce - but only
+#       when EVERY configured ceiling is dead, because the two axes have
+#       separate coverage: codex reports tokens and no cost, claude can report
+#       a cost with no usage dict. A cost-reporting adapter still enforces
+#       max_cost_usd even though its token ceiling is beyond saving.
+#   [agent] budget_usd is a different knob: adapter-internal, claude-sdk only,
+#   and it bounds a single turn rather than the run. It is the only genuine
+#   per-turn ceiling.
 pause_before_pr_merge = false      # opt-in HITL checkpoint before each PR push+merge
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2)
 # Disabling progress_log_enabled drops progress.jsonl AND events.jsonl. It does

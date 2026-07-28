@@ -137,7 +137,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ("factory", FactoryConfig.load, [
             "max_parallel", "max_retries", "retry_delay", "use_worktrees",
             "single_pr", "create_prs", "review_mode", "merge_timeout",
-            "max_adversarial_calls", "max_total_tokens",
+            "max_adversarial_calls", "max_total_tokens", "max_cost_usd",
             "pause_before_pr_merge", "progress_log_enabled",
             "keep_worktrees_on_failure",
         ]),

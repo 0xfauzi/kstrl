@@ -65,7 +65,7 @@ Model names current as of 2026-07: the claude aliases track the newest release i
 
 kstrl does not validate model names: `[agent].model` is passed straight through to the CLI (`claude --model` / `codex -m`), so any model the installed CLI accepts works.
 
-There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect.
+There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect. `[agent].budget_usd` is adapter-internal and bounds a single turn; it is not `[factory].max_cost_usd`, which is the run-level spend ceiling across every phase and component ([details](docs/env-vars.md#the-two-run-level-ceilings-max_total_tokens-and-max_cost_usd-r8)).
 
 **Python-first**: kstrl works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in kstrl.toml, but they get a reduced feedforward context (module map and conventions only).
 
@@ -300,7 +300,8 @@ create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
-max_total_tokens = 0               # run-level token budget; 0 = unbounded. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
+max_total_tokens = 0               # run-level token budget; 0 = unbounded. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
+max_cost_usd = 0.0                 # run-level USD budget; 0 = unbounded. Same halt granularity as max_total_tokens (between iterations, not mid-call), so NOT a hard cap. Not [agent] budget_usd (docs/env-vars.md)
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is written either way (docs/env-vars.md)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)

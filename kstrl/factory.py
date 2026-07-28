@@ -105,6 +105,62 @@ if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
 
+class BudgetConfigError(ValueError):
+    """A budget ceiling was configured with a value that cannot bound
+    anything.
+
+    Raised rather than coerced because these are SAFETY limits and every
+    bad value fails in a different silent direction: ``nan`` makes
+    ``max_cost_usd > 0`` false, so the ceiling disables itself while
+    reading as configured; a negative value disables it the same way;
+    ``inf`` produces a ceiling that is enabled and can never be reached.
+    All three are indistinguishable from "off" at the moment they
+    matter, which is the failure mode a budget cap must never have.
+    """
+
+
+def validate_cost_ceiling(value: float, source: str) -> float:
+    """A cost ceiling must be finite and non-negative. 0 means unbounded.
+
+    Public because the CLI has to reject a bad ``--max-cost-usd`` in
+    preflight, before the architect spends a call - the flag reaches
+    ``run_factory`` without passing any config loader.
+    """
+    import math
+
+    if not math.isfinite(value):
+        raise BudgetConfigError(
+            f"{source} must be a finite number, got {value!r}; use 0 to "
+            "disable the ceiling. A non-finite ceiling silently stops "
+            "bounding anything."
+        )
+    if value < 0:
+        raise BudgetConfigError(
+            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
+            "ceiling rather than a negative value, which disables it "
+            "without saying so."
+        )
+    return value
+
+
+def validate_token_ceiling(value: int, source: str) -> int:
+    """A token ceiling must be non-negative. 0 means unbounded.
+
+    The same defect as :func:`validate_cost_ceiling`, in the knob that
+    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
+    false, so the ceiling disabled itself while still reading as
+    configured - measured, not assumed. Only the finiteness check is
+    absent, because this one is an int.
+    """
+    if value < 0:
+        raise BudgetConfigError(
+            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
+            "ceiling rather than a negative value, which disables it "
+            "without saying so."
+        )
+    return value
+
+
 @dataclass
 class FactoryConfig:
     """Configuration for factory orchestration."""
@@ -162,10 +218,30 @@ class FactoryConfig:
     # report no usage); on breach the factory halts LOUDLY - the current
     # component fails with a synthetic budget finding and pending
     # components fail at scheduling instead of burning more spend.
-    # Enforcement granularity is the phase boundary: an in-flight
-    # engineer loop or review call can overshoot before the parent sees
-    # its usage.
+    # Enforcement granularity is the phase boundary plus, since R8, the
+    # gap between engineer iterations: an in-flight engineer loop or
+    # review call can still overshoot before the parent sees its usage.
+    #
+    # CAVEAT, measured: total_tokens counts CACHE READS at par with
+    # input tokens. A real run reached 1,864,081 total tokens of which
+    # 1,781,669 (95.6%) were cache reads, for $1.22 of actual spend, so
+    # a 500k "budget" halted at $1.22. This ceiling measures something
+    # real but nearly uncorrelated with money; max_cost_usd below is the
+    # one an operator usually means.
     max_total_tokens: int = 0
+    # R8: run-level COST budget in USD. 0.0 means unbounded, matching the
+    # max_total_tokens convention. Both ceilings may be set; whichever is
+    # reached first halts. Compared against the run's aggregated
+    # cost_usd, which - exactly like the token total - is a CLI
+    # self-report and a LOWER BOUND whenever some calls report no cost.
+    #
+    # NOT a hard cap, and it must never be described as one: it has the
+    # same between-iterations enforcement granularity as the token
+    # ceiling. Measured: one engineer call of 376s overshot the entire
+    # 500k token cap by 3.7x, and nothing in this design would have
+    # interrupted it. Distinct from [agent] budget_usd, which is
+    # adapter-internal (claude-sdk only) and bounds a single turn.
+    max_cost_usd: float = 0.0
     # R0.1: timeout limits (agent iteration, component wall clock,
     # scheduler backstop margin). None means run_factory loads
     # TimeoutConfig.load(root_dir) - toml [timeout] section + env.
@@ -208,9 +284,12 @@ class FactoryConfig:
             max_adversarial_calls=int(
                 os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
             ),
-            max_total_tokens=int(
+            max_total_tokens=validate_token_ceiling(int(
                 os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
-            ),
+            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"),
+            max_cost_usd=validate_cost_ceiling(float(
+                os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")
+            ), "KSTRL_FACTORY_MAX_COST_USD"),
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
@@ -255,7 +334,14 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = int(section["max_total_tokens"])
+            config.max_total_tokens = validate_token_ceiling(
+                int(section["max_total_tokens"]),
+                "[factory] max_total_tokens",
+            )
+        if "max_cost_usd" in section:
+            config.max_cost_usd = validate_cost_ceiling(
+                float(section["max_cost_usd"]), "[factory] max_cost_usd",
+            )
         if "pause_before_pr_merge" in section:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         if "progress_log_enabled" in section:
@@ -278,9 +364,13 @@ class FactoryConfig:
                 os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"]
             )
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = int(
+            config.max_total_tokens = validate_token_ceiling(int(
                 os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]
-            )
+            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS")
+        if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
+            config.max_cost_usd = validate_cost_ceiling(float(
+                os.environ["KSTRL_FACTORY_MAX_COST_USD"]
+            ), "KSTRL_FACTORY_MAX_COST_USD")
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
                 os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
@@ -541,11 +631,16 @@ class ComponentResult:
     # prompt against the same state is the exact spend the breaker
     # exists to stop) with a distinct journal event.
     no_progress: bool = False
-    # R8: the engineer loop halted ITSELF on the run-level token budget
-    # (between iterations). Routed to pipeline.fail_for_budget so the
-    # audit trail is identical to a breach caught at a phase boundary;
-    # ``error`` carries which budget condition fired.
+    # R8: the engineer loop halted ITSELF on a run-level ceiling
+    # (max_total_tokens or max_cost_usd, between iterations). Routed to
+    # pipeline.fail_for_budget so the audit trail is identical to a
+    # breach caught at a phase boundary; ``error`` carries WHICH ceiling
+    # and which condition fired. The typed pair below carries the same
+    # facts structurally (R8 review #180) so the pipeline never re-derives
+    # the identity from its own totals.
     budget_exceeded: bool = False
+    budget_halt_condition: str = ""
+    budget_halt_ceilings: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1013,14 +1108,15 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
 
     Returns None when the file is absent, unreadable, or not a usage
     dict - the abort path then records nothing rather than guessing.
-    ``unreported_calls`` and ``tokenless_calls`` are derived properties
-    and are deliberately not read back.
+    ``unreported_calls``, ``tokenless_calls`` and ``costless_calls`` are
+    derived properties and are deliberately not read back.
 
     Backward compatible on read: ``token_calls`` (added in R8 after the
-    review) is optional and defaults to 0 when the payload predates it.
-    That under-reports token coverage rather than inventing it, and the
-    file is rewritten at the next iteration boundary anyway - it is a
-    per-run, per-attempt scratch file, never a long-lived record.
+    review) and ``cost_calls`` (added with the cost ceiling) are optional
+    and default to 0 when the payload predates them. That under-reports
+    coverage rather than inventing it, and the file is rewritten at the
+    next iteration boundary anyway - it is a per-run, per-attempt scratch
+    file, never a long-lived record.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -1030,7 +1126,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
         return None
     totals = UsageTotals()
     int_fields = (
-        "calls", "known_calls", "token_calls", "input_tokens",
+        "calls", "known_calls", "token_calls", "cost_calls", "input_tokens",
         "output_tokens", "cache_read_tokens", "cache_creation_tokens",
         "total_tokens",
     )
@@ -1398,6 +1494,8 @@ def _run_component(
             usage=result.usage,
             no_progress=result.no_progress,
             budget_exceeded=bool(result.budget_halt_reason),
+            budget_halt_condition=result.budget_halt_condition,
+            budget_halt_ceilings=result.budget_halt_ceilings,
         )
     except Exception as exc:
         return ComponentResult(
@@ -1873,6 +1971,14 @@ def run_factory(
     (R0.5, H-7); a contending invocation is refused with exit code 2
     unless it passes ``--force-lock``.
     """
+    # The ceilings are validated at every CONFIG path, but a FactoryConfig
+    # can also be constructed programmatically (tests, embedders, the SDK
+    # path), which bypasses those. Re-check at the boundary: a safety
+    # limit that only holds when you came in through the front door is
+    # not a safety limit.
+    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
+    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
+
     try:
         run_lock = _acquire_run_lock(
             root_dir, ui, force=factory_config.force_lock,
@@ -2016,6 +2122,7 @@ def _run_factory_locked(
         ),
         max_total_tokens=factory_config.max_total_tokens,
         max_adversarial_calls=factory_config.max_adversarial_calls,
+        max_cost_usd=factory_config.max_cost_usd,
     ))
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
@@ -2421,24 +2528,30 @@ def _run_factory_locked(
             # line above may be None (review finding P2-d).
             str(usage_paths.root),
             run_id,
-            # R8: run-level token ceiling + the spend recorded so far,
-            # snapshotted AT LAUNCH so the engineer loop can halt itself
-            # between iterations. With max_parallel > 1 a worker cannot
-            # see a concurrent sibling's spend, only what the parent had
-            # recorded when this worker started.
-            # prior_calls/prior_token_calls carry the ENGINEER's tokenless
-            # call count down so the unenforceable rule does not reset on
-            # every attempt and component (review finding P1-a), while
-            # staying blind to other roles' timeouts - those say nothing
-            # about whether the engineer's adapter reports tokens.
-            # prior_total_tokens stays run-wide: the overrun check asks
-            # what the RUN has spent against the cap.
+            # R8: run-level ceilings (tokens AND cost) + the spend
+            # recorded so far, snapshotted AT LAUNCH so the engineer loop
+            # can halt itself between iterations. With max_parallel > 1 a
+            # worker cannot see a concurrent sibling's spend, only what
+            # the parent had recorded when this worker started.
+            # prior_calls plus prior_token_calls/prior_cost_calls carry
+            # the ENGINEER's non-reporting call counts down so the
+            # unenforceable rule does not reset on every attempt and
+            # component (review finding P1-a), while staying blind to
+            # other roles' timeouts - those say nothing about whether the
+            # engineer's adapter reports tokens or cost. The two counters
+            # are separate because the two axes have separate coverage:
+            # codex reports tokens and no cost, claude can report cost
+            # with no usage dict. prior_total_tokens/prior_cost_usd stay
+            # run-wide: the overrun checks ask what the RUN has spent.
             LoopBudget(
                 max_total_tokens=factory_config.max_total_tokens,
                 prior_total_tokens=pipeline.run_usage.total_tokens,
                 prior_known_calls=pipeline.run_usage.known_calls,
                 prior_calls=engineer_usage.calls,
                 prior_token_calls=engineer_usage.token_calls,
+                max_cost_usd=factory_config.max_cost_usd,
+                prior_cost_usd=pipeline.run_usage.cost_usd,
+                prior_cost_calls=engineer_usage.cost_calls,
             ),
         )
 
@@ -2489,21 +2602,29 @@ def _run_factory_locked(
                 # still-schedulable siblings.
                 transitioned_without_launch = 0
                 for comp in ready[:slots]:
-                    # R3.1 scheduling gate: a blown token budget fails
-                    # pending components loudly instead of launching an
-                    # engineer loop that would only add spend.
-                    if pipeline.token_budget_exceeded():
+                    # R3.1 scheduling gate: a blown ceiling (tokens or
+                    # cost) fails pending components loudly instead of
+                    # launching an engineer loop that would only add
+                    # spend.
+                    if pipeline.budget_exceeded():
                         pipeline.fail_for_budget(comp, "scheduling")
                         transitioned_without_launch += 1
                         continue
                     # R8 review: a loop that emits COMPLETE returns before
                     # its own budget check, so an adapter that finishes on
-                    # its first tokenless call never halts itself - the
+                    # its first silent call never halts itself - the
                     # ordinary success path for a custom agent_cmd. This
                     # gate is what stops the run handing out NEW work
-                    # under a cap that can no longer fire.
-                    unenforceable = pipeline.token_budget_unenforceable()
+                    # under a ceiling that can no longer fire. Halts only
+                    # when EVERY configured ceiling is dead: a cost-
+                    # reporting adapter still enforces max_cost_usd even
+                    # though its token cap is beyond saving.
+                    unenforceable = pipeline.budget_unenforceable()
                     if unenforceable is not None:
+                        # Identity is derived inside fail_for_budget:
+                        # nothing was BREACHED here, so the rule falls
+                        # through to the dead ceilings and names only
+                        # those actually configured.
                         pipeline.fail_for_budget(
                             comp, "scheduling", reason=unenforceable,
                         )
@@ -2970,6 +3091,11 @@ def _run_factory_locked(
         ui.err(
             f"TOKEN BUDGET EXCEEDED: {pipeline.run_usage.total_tokens} total tokens "
             f"recorded >= max_total_tokens ({factory_config.max_total_tokens})"
+        )
+    if pipeline.cost_budget_exceeded():
+        ui.err(
+            f"COST BUDGET EXCEEDED: ${pipeline.run_usage.cost_usd:.6f} recorded "
+            f">= max_cost_usd (${factory_config.max_cost_usd})"
         )
     if factory_result.pr_urls:
         ui.kv("PRs created", str(len(factory_result.pr_urls)))

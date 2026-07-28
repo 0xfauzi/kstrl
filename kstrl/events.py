@@ -33,7 +33,7 @@ import dataclasses
 import json
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Final, Protocol, TextIO
@@ -193,15 +193,18 @@ class ComponentUsage(Event):
     whenever ``unreported_calls`` > 0.
 
     R8: ``token_calls`` is the narrower coverage figure - calls that
-    reported an actual token count, as opposed to cost alone. Payloads
-    written before R8 omit it and decode to 0; the decoder reads only
-    keys it knows, so old and new readers interoperate both ways."""
+    reported an actual token count, as opposed to cost alone -
+    and ``cost_calls`` is its mirror for the cost axis. Payloads written
+    before those fields landed omit them and decode to 0; the decoder
+    reads only keys it knows, so old and new readers interoperate both
+    ways."""
 
     type: ClassVar[str] = "component_usage"
     phase: str = ""
     calls: int = 0
     known_calls: int = 0
     token_calls: int = 0
+    cost_calls: int = 0
     unreported_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -214,9 +217,55 @@ class ComponentUsage(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class BudgetExceeded(Event):
+    """A run-level ceiling stopped a component.
+
+    R8: ``ceiling`` names WHICH one (``"max_total_tokens"`` /
+    ``"max_cost_usd"``), because a consumer that assumed "token" would
+    tell the operator to raise the wrong knob. Empty on payloads written
+    before the cost ceiling landed.
+
+    R8 review (#180): ``condition`` and ``ceilings`` carry the same halt
+    structurally, because ``ceiling`` alone conflated two orthogonal
+    facts. ``condition`` is ``"breached"`` (a total reached a ceiling) or
+    ``"unenforceable"`` (a configured ceiling provably cannot fire) -
+    only the former licenses a "N >= cap" sentence, and rendering one for
+    the latter reported ``token budget exceeded: 0 >= 500`` on runs whose
+    totals never moved. ``ceilings`` holds one or many identities; the
+    unenforceable halt legitimately names both, which no single-value
+    field could express. ``ceiling`` stays as the joined legacy string so
+    payloads written before this change still decode."""
+
     type: ClassVar[str] = "budget_exceeded"
     total_tokens: int = 0
     max_total_tokens: int = 0
+    cost_usd: float = 0.0
+    max_cost_usd: float = 0.0
+    ceiling: str = ""
+    condition: str = ""
+    ceilings: tuple[str, ...] = ()
+
+
+def budget_halt_kind(
+    condition: str, ceilings: Sequence[str], ceiling: str = "",
+) -> str:
+    """Classify a :class:`BudgetExceeded` payload: the ONE vocabulary.
+
+    Returns ``"unenforceable"``, ``"cost"`` or ``"token"``. Every surface
+    that renders a budget halt classifies through here rather than
+    re-testing ``ceiling == "max_cost_usd"`` locally: those local tests
+    were what silently reclassified the multi-ceiling unenforceable halt
+    as a token breach in both the reducer and the Linear sink, and a
+    third copy of the rule is how a mislabel becomes a divergence.
+
+    Legacy payloads carry only the joined ``ceiling`` string and no
+    condition; for them the single-value test is still the only reading
+    available, and it was correct for everything written back then.
+    """
+    if condition == "unenforceable":
+        return "unenforceable"
+    if ceilings:
+        return "cost" if tuple(ceilings) == ("max_cost_usd",) else "token"
+    return "cost" if ceiling == "max_cost_usd" else "token"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -312,6 +361,7 @@ class RunPlan(Event):
     components: tuple[Mapping[str, Any], ...] = ()
     max_total_tokens: int = 0
     max_adversarial_calls: int = 0
+    max_cost_usd: float = 0.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -717,6 +767,7 @@ class V1CompatSink:
                 "calls": event.calls,
                 "known_calls": event.known_calls,
                 "token_calls": event.token_calls,
+                "cost_calls": event.cost_calls,
                 "unreported_calls": event.unreported_calls,
                 "input_tokens": event.input_tokens,
                 "output_tokens": event.output_tokens,
@@ -727,7 +778,11 @@ class V1CompatSink:
                 "duration_seconds": event.duration_seconds,
             })
         elif isinstance(event, BudgetExceeded):
-            log.budget_exceeded(comp, event.total_tokens, event.max_total_tokens)
+            log.budget_exceeded(
+                comp, event.total_tokens, event.max_total_tokens,
+                cost_usd=event.cost_usd, max_cost_usd=event.max_cost_usd,
+                ceiling=event.ceiling,
+            )
         elif isinstance(event, ContractResult):
             log.contract_result(
                 event.tier, event.passed, event.breaker, event.duration_seconds,
