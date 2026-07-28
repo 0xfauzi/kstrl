@@ -214,6 +214,7 @@ class TestCapacityAndNotification:
             (ItemKind.BUDGET_OVERRUN, True),
             (ItemKind.DEMOTION_NOTICE, False),   # informational, but notified
             (ItemKind.CALIBRATION_DRIFT, False),
+            (ItemKind.TEST_ADEQUACY, True),      # a blocked change waits
         ],
     )
     def test_action_required_taxonomy(self, kind: ItemKind, expected: bool) -> None:
@@ -381,6 +382,56 @@ class TestEmittersFireDuringRuns:
         ))
         kinds = {str(i.kind) for i in Inbox(tmp_path, InboxConfig()).items()}
         assert "policy_exception" in kinds
+
+    def test_blocking_adequacy_finding_emits_one_item(
+        self, tmp_path: Path,
+    ) -> None:
+        # R8.5 / P2-f: the claim that adequacy findings reach the inbox
+        # was made before the wiring existed. This is the wiring.
+        from kstrl.verify import CheckResult, VerificationResult
+
+        finding = Finding.adequacy_finding(
+            category="test_deleted",
+            explanation="tests/test_core.py::test_subs: test removed",
+            location="tests/test_core.py",
+            severity="high",
+        )
+        _run_factory(tmp_path, verification=VerificationResult(
+            passed=False,
+            checks=[CheckResult(
+                "test_adequacy", False, "1 finding [blocking]",
+                findings=[finding],
+            )],
+        ))
+        items = [
+            i for i in Inbox(tmp_path, InboxConfig()).items()
+            if i.kind is ItemKind.TEST_ADEQUACY
+        ]
+        assert len(items) == 1, [str(i.kind) for i in items]
+        assert items[0].component == "comp-a"
+        assert items[0].evidence.get("location") == "tests/test_core.py"
+
+    def test_advisory_adequacy_finding_emits_nothing(
+        self, tmp_path: Path,
+    ) -> None:
+        # The inbox is a queue of decisions. An advisory is a note, and it
+        # is already recorded in the component's finding stream.
+        from kstrl.verify import CheckResult, VerificationResult
+
+        finding = Finding.adequacy_finding(
+            category="weak_oracle",
+            explanation="tests/test_new.py: no strong-oracle assertion",
+            location="tests/test_new.py",
+        )
+        _run_factory(tmp_path, verification=VerificationResult(
+            passed=True,
+            checks=[CheckResult(
+                "test_adequacy", True, "1 finding [advisory]",
+                findings=[finding],
+            )],
+        ))
+        kinds = [str(i.kind) for i in Inbox(tmp_path, InboxConfig()).items()]
+        assert "test_adequacy" not in kinds, kinds
 
     def test_failed_component_emits_halted_run(self, tmp_path: Path) -> None:
         from kstrl.verify import CheckResult, VerificationResult

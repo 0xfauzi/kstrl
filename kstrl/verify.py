@@ -1042,11 +1042,17 @@ def check_test_adequacy(
     Advisory unless the level (or an explicit opt-in) says otherwise:
     findings are recorded either way, so switching the gate on later
     starts from evidence rather than a guess.
+
+    File STATUS is read alongside the names: the whole-file oracle floor
+    is a rule about NEW test files, and applying it to a file someone
+    merely edited would fail a one-line change for oracles that predate
+    it. Diff discipline applies to every changed file regardless.
     """
     start = time.monotonic()
     try:
         diff_text = git.get_diff_content(base_branch, cwd)
-        changed = git.get_diff_names(base_branch, cwd, strict=True)
+        records = git.get_diff_name_status(base_branch, cwd, strict=True)
+        changed = [path for _, path in records]
     except git.GitDiffError as exc:
         return CheckResult(
             name="test_adequacy",
@@ -1074,7 +1080,16 @@ def check_test_adequacy(
         except OSError:
             continue
 
-    adequacy_findings = evaluate_layer0(diff_text, sources, config)
+    # Only status "A" is new content. A rename/copy destination ("R"/"C")
+    # carries tests that already existed, so it is not held to the
+    # new-file oracle floor.
+    new_paths = {
+        path for status, path in records
+        if status.startswith("A") and path in sources
+    }
+    adequacy_findings = evaluate_layer0(
+        diff_text, sources, config, new_paths=new_paths,
+    )
     blocking = layer0_blocks(config, autonomy_level)
     severity = "high" if blocking else "advisory"
     findings = [

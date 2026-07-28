@@ -380,19 +380,20 @@ exists and its output over historical `experiments.tsv` is captured here.
 Status: `[x]` - Shipped in `kstrl/inbox.py` + `ks inbox` +
 `kstrl/tui/screens/inbox.py`. Append-only `.kstrl/inbox.jsonl` folded on
 read; item kinds policy_exception / merge_gate / halted_run /
-budget_overrun / demotion_notice / calibration_drift; dedupe by key,
-snooze with a TTL that RETURNS the item, and an open-item cap that R8.6
-will consult before admitting queue work.
+budget_overrun / demotion_notice / calibration_drift / test_adequacy;
+dedupe by key, snooze with a TTL that RETURNS the item, and an open-item
+cap that R8.6 will consult before admitting queue work.
 
 **Emitters are wired, not declared.** The halt paths that feed it:
 component FAILED and PR-flow failure (halted_run), MERGE_PENDING and the
 pre-merge checkpoint that no interactive UI can answer (merge_gate),
 token-budget halt (budget_overrun), R8.1 policy findings
-(policy_exception, advisories excluded), and R8.2 demotions
-(demotion_notice, carrying the triggering evidence - the item R8.2
-promised). Verified end-to-end: a run with a planted policy violation
-produces a policy_exception, a halted_run, AND a demotion_notice while
-the ladder drops L3 -> L2.
+(policy_exception, advisories excluded), R8.5 blocking test-adequacy
+findings (test_adequacy, advisories excluded for the same reason), and
+R8.2 demotions (demotion_notice, carrying the triggering evidence - the
+item R8.2 promised). Verified end-to-end: a run with a planted policy
+violation produces a policy_exception, a halted_run, AND a
+demotion_notice while the ladder drops L3 -> L2.
 
 `pause_before_pr_merge` on an unattended run no longer proceeds. It
 returns `CheckpointDecision.PARKED`: the merge is withheld, the
@@ -492,13 +493,36 @@ duckdb extra is wired for the query subcommand only.
 ## R8.5 Test-suite adequacy gate (L) - [#152](https://github.com/0xfauzi/kstrl/issues/152)
 
 Status: `[~]` - **Layer 0 only.** Shipped in `kstrl/adequacy.py` +
-`check_test_adequacy`: test-diff discipline (deleted tests, added
-skip/xfail, net assertion loss) and oracle-signal linting (each new test
-file needs one falsifiable assertion; tests that assert nothing are
-reported). Opt-in via `[adequacy] enabled`, ADVISORY first; with the R8.2
-ladder on, Layer 0 blocks from L1 up per the level table. Findings are
-typed (`adequacy_*`) and reach the R8.3 inbox through the existing
-`CheckResult.findings` lift.
+`check_test_adequacy`: test-diff discipline (deleted tests - including a
+deleted test FILE - added skip/xfail in any of its spellings, net
+assertion loss) and oracle-signal linting (a new test file needs one
+falsifiable assertion; tests that assert nothing are reported). Opt-in
+via `[adequacy] enabled`, ADVISORY first; with the R8.2 ladder on, Layer
+0 blocks from L1 up per the level table.
+
+Two scoping rules decide whether the gate is usable rather than merely
+strict:
+
+- **The whole-file oracle floor applies to ADDED test files only** (git
+  status `A`). A modified file carries tests written under a different
+  standard, and failing a one-line edit over a legacy file's weak oracles
+  is how a gate gets switched off. Modified files still get every
+  diff-discipline check, plus the assertionless check on the test defs
+  the diff added.
+- **A truthiness call is not an oracle.** `assert bool(x)`,
+  `assert compute()` and `assert a is not None or a == 3` are all WEAK; a
+  call is strong only when its arguments state an expectation
+  (`all(x > 0 for x in xs)`). `unittest` / `mock` assertion methods are
+  classified too - `assertEqual` / `assert_called_once_with` strong,
+  `assertTrue` / `assert_called` weak - so a `TestCase` file is not read
+  as asserting nothing.
+
+Findings are typed (`adequacy_*`) and land in the component's finding
+stream (PR body, journal, evolution). **Blocking** findings additionally
+raise an R8.3 inbox item (kind `test_adequacy`, deduped by category plus
+location, so a recurring finding collapses onto one item); advisory ones
+deliberately do not, because the inbox is a queue of decisions and an
+advisory asks for none.
 
 Layer 0 needs no test execution, no coverage run, no mutation tooling and
 no historical data, which is why it went first: it is the only layer whose

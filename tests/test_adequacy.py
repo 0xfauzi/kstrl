@@ -103,6 +103,140 @@ class TestOracleClassification:
             ("test_a", "pytest.mark.skip"),
         ]
 
+    # -- P1-b: truthiness is not an oracle, whatever it is wrapped in ----
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # `bool(...)` is the same assertion as `assert result`.
+            "assert bool(result)",
+            # An `or` is satisfied by its WEAKEST operand: any non-None
+            # wrong value short-circuits before the comparison.
+            "assert result is not None or result == 3",
+            "assert result or result == 3",
+            # A bare call is checked for truthiness, not for a value.
+            "assert compute()",
+            "assert obj.is_ready()",
+            "assert not ready()",
+        ],
+    )
+    def test_truthiness_is_weak(self, body: str) -> None:
+        report = lint_test_source("t/test_x.py", f"def test_a():\n    {body}\n")
+        assert report.strength is OracleStrength.WEAK, body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # Property oracles: the comparison lives inside the call.
+            "assert all(x > 0 for x in items)",
+            "assert any(v == 3 for v in vs)",
+            "assert all(len(r) == 2 for r in rows)",
+            # A comparison anywhere at the top level.
+            "assert 'x' in render()",
+            "assert sorted(xs) == [1, 2]",
+            "assert compute() != 0",
+            # `and` still takes its strongest operand.
+            "assert r is not None and r == 3",
+            # A comparison inside a call argument states an expectation.
+            "assert bool(result == 3)",
+            # `not` inverts nothing about strength.
+            "assert not (a == b)",
+        ],
+    )
+    def test_stated_expectations_stay_strong(self, body: str) -> None:
+        report = lint_test_source("t/test_x.py", f"def test_a():\n    {body}\n")
+        assert report.strength is OracleStrength.STRONG, body
+
+    # -- P2-c: unittest and mock assertion methods are oracles ----------
+    @pytest.mark.parametrize(
+        "call",
+        [
+            "self.assertEqual(compute(), 3)",
+            "self.assertIn('x', render())",
+            "self.assertRaises(ValueError, parse, '')",
+            "self.assertDictEqual(result, {'a': 1})",
+            "m.assert_called_once_with(3)",
+            "m.assert_called_with(3)",
+            "m.assert_not_called()",
+            "m.assert_has_calls([call(1)])",
+            # An expectation stated inside a weak-family method upgrades it.
+            "self.assertTrue(compute() == 3)",
+        ],
+    )
+    def test_value_pinning_methods_are_strong(self, call: str) -> None:
+        report = lint_test_source(
+            "t/test_x.py", f"def test_a(self, m):\n    {call}\n",
+        )
+        assert report.strength is OracleStrength.STRONG, call
+        assert report.without_assertions == []
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            # Satisfied by any truthy value, or any call with any args.
+            "self.assertTrue(compute())",
+            "self.assertIsNotNone(compute())",
+            "self.assertIsInstance(compute(), dict)",
+            "m.assert_called()",
+            "m.assert_called_once()",
+        ],
+    )
+    def test_presence_only_methods_are_weak(self, call: str) -> None:
+        report = lint_test_source(
+            "t/test_x.py", f"def test_a(self, m):\n    {call}\n",
+        )
+        assert report.strength is OracleStrength.WEAK, call
+
+    def test_unittest_class_file_is_not_assertionless(self) -> None:
+        # The worst false positive available: a whole TestCase file has no
+        # bare `assert` statement and used to read as "asserts nothing".
+        source = (
+            "import unittest\n"
+            "class TestCore(unittest.TestCase):\n"
+            "    def test_adds(self):\n"
+            "        self.assertEqual(add(2, 2), 4)\n"
+        )
+        report = lint_test_source("t/test_x.py", source)
+        assert report.without_assertions == []
+        assert report.strength is OracleStrength.STRONG
+
+    # -- P2-e: skips that are not decorators ----------------------------
+    def test_unconditional_body_skip_is_collected(self) -> None:
+        source = (
+            "import pytest\n"
+            "def test_a():\n    pytest.skip('disabled')\n    assert r == 1\n"
+        )
+        assert lint_test_source("t/test_x.py", source).skipped == [
+            ("test_a", "pytest.skip"),
+        ]
+
+    def test_guarded_body_skip_is_not_a_finding(self) -> None:
+        # A platform guard is not a disabled test, and flagging every one
+        # would bury the case that matters.
+        source = (
+            "import pytest\n"
+            "def test_a():\n"
+            "    if sys.platform == 'win32':\n        pytest.skip('posix')\n"
+            "    assert r == 1\n"
+        )
+        assert lint_test_source("t/test_x.py", source).skipped == []
+
+    def test_module_level_pytestmark_is_collected(self) -> None:
+        source = (
+            "import pytest\n"
+            "pytestmark = pytest.mark.skipif(WINDOWS, reason='posix only')\n"
+            "def test_a():\n    assert r == 1\n"
+        )
+        assert lint_test_source("t/test_x.py", source).skipped == [
+            ("<module>", "pytest.mark.skipif"),
+        ]
+
+    def test_a_test_named_after_skipping_is_not_a_skip(self) -> None:
+        source = (
+            "def test_skip_behaviour():\n"
+            "    assert runner.skip_count == 1\n"
+        )
+        assert lint_test_source("t/test_x.py", source).skipped == []
+
 
 class TestIsTestPath:
     @pytest.mark.parametrize(
@@ -165,6 +299,70 @@ class TestDiffDiscipline:
         assert result.removed_assertions == {}
         assert result.deleted_tests() == []
 
+    # -- P1-a: a deleted FILE is the loudest deletion there is ----------
+    def test_whole_file_deletion_reports_every_test(self, tmp_path: Path) -> None:
+        # Against a REAL git diff, because the bug was in reading git's
+        # `+++ /dev/null` header, not in the counting.
+        _repo(tmp_path)
+        (tmp_path / "tests" / "test_core.py").unlink()
+        for args in (["add", "-A"], ["commit", "-m", "delete the file"]):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True,
+                capture_output=True, text=True,
+            )
+        diff = subprocess.run(
+            ["git", "diff", "main...HEAD"], cwd=tmp_path,
+            check=True, capture_output=True, text=True,
+        ).stdout
+        assert "+++ /dev/null" in diff, "fixture must be a real deletion"
+        result = analyze_test_diff(diff)
+        assert sorted(result.deleted_tests()) == [
+            ("tests/test_core.py", "test_adds"),
+            ("tests/test_core.py", "test_subs"),
+        ]
+        assert result.net_assertion_loss() == {"tests/test_core.py": 2}
+
+    def test_added_file_still_reads_from_the_new_side(self) -> None:
+        diff = (
+            "diff --git a/tests/t.py b/tests/t.py\n"
+            "new file mode 100644\n"
+            "--- /dev/null\n+++ b/tests/t.py\n"
+            "+def test_a():\n+    assert f() == 1\n"
+        )
+        result = analyze_test_diff(diff)
+        assert result.added_tests == {("tests/t.py", "test_a")}
+        assert result.deleted_tests() == []
+
+    # -- P2-e: the skip forms a decorator-only regex cannot see ---------
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "    pytest.skip('disabled')",
+            "pytestmark = pytest.mark.skip(reason='wip')",
+            "pytestmark = [pytest.mark.xfail(reason='wip')]",
+            "    pytest.param(1, marks=pytest.mark.xfail(reason='x')),",
+            "    self.skipTest('disabled')",
+            "@pytest.mark.skip(reason='later')",
+            "@unittest.skip('later')",
+        ],
+    )
+    def test_added_skip_forms_are_detected(self, line: str) -> None:
+        diff = f"--- a/tests/t.py\n+++ b/tests/t.py\n+{line}\n"
+        assert analyze_test_diff(diff).added_skips, line
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "    assert row.skip == 1",
+            "def test_skip_behaviour():",
+            "    result = runner.skip_count",
+            "    parser.add_argument('--skip')",
+        ],
+    )
+    def test_ordinary_lines_are_not_skips(self, line: str) -> None:
+        diff = f"--- a/tests/t.py\n+++ b/tests/t.py\n+{line}\n"
+        assert analyze_test_diff(diff).added_skips == [], line
+
 
 # --------------------------------------------------------------------------
 # Config and level gating
@@ -208,32 +406,143 @@ class TestConfigAndLevels:
 # evaluate_layer0
 # --------------------------------------------------------------------------
 class TestEvaluateLayer0:
+    """``new_paths`` is a required keyword since the P2-d fix: the
+    whole-file oracle floor is a rule about NEW test files, so every
+    caller has to say which paths those are. These cases pass the file
+    under test as new, which is the behaviour they always asserted.
+    """
+
     def test_clean_change_has_no_findings(self) -> None:
         diff = "--- a/tests/t.py\n+++ b/tests/t.py\n+    assert f() == 1\n"
         sources = {"tests/t.py": "def test_a():\n    assert f() == 1\n"}
-        assert evaluate_layer0(diff, sources, AdequacyConfig(enabled=True)) == []
+        assert evaluate_layer0(
+            diff, sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+        ) == []
 
     def test_weak_oracle_file_is_flagged(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
-        findings = evaluate_layer0("", sources, AdequacyConfig(enabled=True))
+        findings = evaluate_layer0(
+            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+        )
         assert [f.kind for f in findings] == [FindingKind.WEAK_ORACLE]
 
     def test_require_strong_oracle_can_be_disabled(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
         config = AdequacyConfig(enabled=True, require_strong_oracle=False)
-        assert evaluate_layer0("", sources, config) == []
+        assert evaluate_layer0(
+            "", sources, config, new_paths={"tests/t.py"},
+        ) == []
 
     def test_assertionless_test_is_flagged(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    run()\n"}
         kinds = {
             f.kind
-            for f in evaluate_layer0("", sources, AdequacyConfig(enabled=True))
+            for f in evaluate_layer0(
+                "", sources, AdequacyConfig(enabled=True),
+                new_paths={"tests/t.py"},
+            )
         }
         assert FindingKind.NO_ORACLE in kinds
 
     def test_unparseable_file_produces_no_finding(self) -> None:
         sources = {"tests/t.py": "def test_a(:\n"}
-        assert evaluate_layer0("", sources, AdequacyConfig(enabled=True)) == []
+        assert evaluate_layer0(
+            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+        ) == []
+
+    # -- P2-d: the whole-file floor is a NEW-file rule -------------------
+    def test_modified_file_is_not_held_to_the_oracle_floor(self) -> None:
+        # Editing a legacy file whose tests predate the gate must not
+        # block: the oracles it is being judged on are not this change's.
+        sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
+        diff = (
+            "--- a/tests/t.py\n+++ b/tests/t.py\n"
+            "+    # tidy up\n"
+        )
+        assert evaluate_layer0(
+            diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
+        ) == []
+
+    def test_modified_file_still_gets_diff_discipline(self) -> None:
+        diff = (
+            "--- a/tests/t.py\n+++ b/tests/t.py\n"
+            "-def test_gone():\n-    assert f() == 1\n"
+        )
+        sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
+        kinds = [
+            f.kind for f in evaluate_layer0(
+                diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
+            )
+        ]
+        assert kinds == [
+            FindingKind.TEST_DELETED, FindingKind.ASSERTION_REMOVED,
+        ]
+
+    def test_assertionless_test_added_to_a_modified_file_is_flagged(
+        self,
+    ) -> None:
+        # The def is new even though the file is not, so it is fair game.
+        diff = (
+            "--- a/tests/t.py\n+++ b/tests/t.py\n"
+            "+def test_new():\n+    run()\n"
+        )
+        sources = {
+            "tests/t.py": (
+                "def test_old():\n    build()\n"
+                "def test_new():\n    run()\n"
+            ),
+        }
+        findings = evaluate_layer0(
+            diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
+        )
+        assert [(f.kind, f.symbol) for f in findings] == [
+            (FindingKind.NO_ORACLE, "test_new"),
+        ]
+
+    # -- P2-e: collected skips are emitted, not dropped ------------------
+    def test_skipped_test_in_a_new_file_is_emitted(self) -> None:
+        sources = {
+            "tests/t.py": (
+                "import pytest\n"
+                "@pytest.mark.skip(reason='later')\n"
+                "def test_a():\n    assert f() == 1\n"
+            ),
+        }
+        findings = evaluate_layer0(
+            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+        )
+        assert [(f.kind, f.symbol) for f in findings] == [
+            (FindingKind.TEST_SKIPPED, "test_a"),
+        ]
+
+    def test_module_level_pytestmark_is_emitted(self) -> None:
+        sources = {
+            "tests/t.py": (
+                "import pytest\n"
+                "pytestmark = pytest.mark.skip(reason='wip')\n"
+                "def test_a():\n    assert f() == 1\n"
+            ),
+        }
+        findings = evaluate_layer0(
+            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+        )
+        assert [f.kind for f in findings] == [FindingKind.TEST_SKIPPED]
+        assert "every test in this file" in findings[0].detail
+
+    def test_pre_existing_skip_in_a_modified_file_is_quiet(self) -> None:
+        # Editing a file that already had a skipped test is not this
+        # change disabling anything; the diff-level check covers what is.
+        sources = {
+            "tests/t.py": (
+                "import pytest\n"
+                "@pytest.mark.skip(reason='old')\n"
+                "def test_a():\n    assert f() == 1\n"
+            ),
+        }
+        assert evaluate_layer0(
+            "--- a/tests/t.py\n+++ b/tests/t.py\n+    # note\n",
+            sources, AdequacyConfig(enabled=True), new_paths=set(),
+        ) == []
 
 
 # --------------------------------------------------------------------------
@@ -318,6 +627,80 @@ class TestCheckEndToEnd:
         )
         assert result.passed
         assert result.findings == []
+
+    def test_editing_a_weak_legacy_file_does_not_block(
+        self, tmp_path: Path,
+    ) -> None:
+        # P2-d end to end: the file's tests predate the gate and its diff
+        # weakens nothing, so a one-line edit must survive L1.
+        _repo(tmp_path)
+        (tmp_path / "tests" / "test_legacy.py").write_text(
+            "def test_a():\n    assert build() is not None\n"
+        )
+        for args in (["add", "-A"], ["commit", "-m", "legacy"]):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True,
+                capture_output=True, text=True,
+            )
+        subprocess.run(
+            ["git", "checkout", "main"], cwd=tmp_path, check=True,
+            capture_output=True, text=True,
+        )
+        subprocess.run(
+            ["git", "merge", "feature"], cwd=tmp_path, check=True,
+            capture_output=True, text=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "-b", "edit"], cwd=tmp_path, check=True,
+            capture_output=True, text=True,
+        )
+        (tmp_path / "tests" / "test_legacy.py").write_text(
+            "def test_a():\n    # tidy up\n    assert build() is not None\n"
+        )
+        for args in (["add", "-A"], ["commit", "-m", "tidy"]):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True,
+                capture_output=True, text=True,
+            )
+        result = check_test_adequacy(
+            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+        )
+        assert result.passed, result.details
+        assert result.findings == []
+
+    def test_a_new_weak_file_still_blocks(self, tmp_path: Path) -> None:
+        # The other direction of the same rule: an ADDED file with no
+        # falsifiable assertion is exactly what the floor is for.
+        _repo(tmp_path)
+        (tmp_path / "tests" / "test_new.py").write_text(
+            "def test_a():\n    assert build() is not None\n"
+        )
+        for args in (["add", "-A"], ["commit", "-m", "add a weak file"]):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True,
+                capture_output=True, text=True,
+            )
+        result = check_test_adequacy(
+            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+        )
+        assert not result.passed
+        assert "adequacy_weak_oracle" in {f.category for f in result.findings}
+
+    def test_deleting_a_whole_test_file_is_caught(self, tmp_path: Path) -> None:
+        _repo(tmp_path)
+        (tmp_path / "tests" / "test_core.py").unlink()
+        for args in (["add", "-A"], ["commit", "-m", "delete the file"]):
+            subprocess.run(
+                ["git", *args], cwd=tmp_path, check=True,
+                capture_output=True, text=True,
+            )
+        result = check_test_adequacy(
+            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+        )
+        assert not result.passed
+        categories = {f.category for f in result.findings}
+        assert "adequacy_test_deleted" in categories
+        assert "adequacy_assertion_removed" in categories
 
     def test_unreadable_diff_fails_closed(self, tmp_path: Path) -> None:
         # No git repo: the check must not report adequacy as satisfied.

@@ -45,6 +45,7 @@ from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.findings import (
+    ADEQUACY_CATEGORY_PREFIX,
     POLICY_CATEGORY_PREFIX,
     Finding,
     finding_model,
@@ -1623,6 +1624,34 @@ class ComponentPipeline:
                         detail=finding.explanation,
                         component=comp.id,
                         dedupe_key=f"policy:{comp.id}:{finding.category}",
+                        evidence={
+                            "category": finding.category,
+                            "severity": finding.severity,
+                            "location": finding.location,
+                            "suggestion": finding.suggestion,
+                        },
+                    )
+                # R8.5: same rule, same reason. A BLOCKING adequacy
+                # finding stopped the change and needs a human to decide
+                # whether the suite may weaken here; an ADVISORY one is
+                # recorded in the finding stream and stops there, because
+                # the inbox is a queue of decisions, not of notes. The
+                # dedupe key is category + location so the same file
+                # failing the same way across retries collapses onto one
+                # item instead of fanning out.
+                elif (
+                    finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
+                    and finding.severity != "advisory"
+                ):
+                    self._inbox_add(
+                        ItemKind.TEST_ADEQUACY,
+                        f"{comp.id}: {finding.category}",
+                        detail=finding.explanation,
+                        component=comp.id,
+                        dedupe_key=(
+                            f"adequacy:{comp.id}:{finding.category}:"
+                            f"{finding.location}"
+                        ),
                         evidence={
                             "category": finding.category,
                             "severity": finding.severity,

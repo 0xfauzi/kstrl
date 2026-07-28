@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re as _re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -302,6 +303,37 @@ def get_diff_names(
     Enforcement callers must pass ``strict=True``; the pre-existing
     callers keep the lenient contract they were written against.
     """
+    return _unique_paths(
+        path for _, path in get_diff_name_status(
+            base_branch, cwd, timeout, strict=strict,
+        )
+    )
+
+
+def get_diff_name_status(
+    base_branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    strict: bool = False,
+) -> list[tuple[str, str]]:
+    """``(status, path)`` records for the diff against a base branch.
+
+    Same shell-out and same base resolution as :func:`get_diff_names`,
+    which is built on this - callers that need to tell an ADDED file from
+    a MODIFIED one should use this rather than re-running git.
+
+    The status is git's raw token (``A``, ``M``, ``D``, ``R100``, ...).
+    Rename and copy records yield TWO entries carrying the SAME status,
+    one per path, for the reason :func:`get_diff_names` documents: for
+    scope purposes content left the source too. A rename destination is
+    therefore reported as ``R``/``C`` and never as ``A``: its content is
+    not new, it moved, and treating it as new would apply new-file rules
+    to tests nobody wrote here.
+
+    ``strict`` carries the identical contract to :func:`get_diff_names`:
+    lenient returns ``[]`` on failure (fail-OPEN, indistinguishable from
+    a clean diff), strict raises :class:`GitDiffError`.
+    """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
         result = subprocess.run(
@@ -315,7 +347,7 @@ def get_diff_names(
             timeout=timeout,
         )
         if result.returncode == 0:
-            return _parse_name_status_z(result.stdout)
+            return _parse_name_status_records(result.stdout)
     except subprocess.TimeoutExpired as exc:
         if strict:
             raise GitDiffError(
@@ -331,16 +363,15 @@ def get_diff_names(
     return []
 
 
-def _parse_name_status_z(output: str) -> list[str]:
-    """Parse `git diff --name-status -z` output into a flat path list.
+def _parse_name_status_records(output: str) -> list[tuple[str, str]]:
+    """Parse `git diff --name-status -z` into ``(status, path)`` records.
 
     Records are NUL-separated: a status token followed by one path,
     except rename/copy statuses (`R<score>`/`C<score>`) which carry
-    source AND destination. Both are included. Order is preserved and
-    duplicates (e.g. a copy source that was also modified) collapse.
+    source AND destination. Both are emitted, under the same status.
     """
     tokens = output.split("\0")
-    paths: list[str] = []
+    records: list[tuple[str, str]] = []
     i = 0
     while i < len(tokens):
         status = tokens[i]
@@ -348,12 +379,19 @@ def _parse_name_status_z(output: str) -> list[str]:
             i += 1
             continue
         if status[0] in ("R", "C"):
-            paths.extend(tokens[i + 1:i + 3])
+            records.extend(
+                (status, path) for path in tokens[i + 1:i + 3] if path
+            )
             i += 3
         else:
-            if i + 1 < len(tokens):
-                paths.append(tokens[i + 1])
+            if i + 1 < len(tokens) and tokens[i + 1]:
+                records.append((status, tokens[i + 1]))
             i += 2
+    return records
+
+
+def _unique_paths(paths: Iterable[str]) -> list[str]:
+    """Order-preserving dedupe (a copy source may also be modified)."""
     seen: set[str] = set()
     unique: list[str] = []
     for path in paths:
@@ -361,6 +399,11 @@ def _parse_name_status_z(output: str) -> list[str]:
             seen.add(path)
             unique.append(path)
     return unique
+
+
+def _parse_name_status_z(output: str) -> list[str]:
+    """Flat, deduped path list from `git diff --name-status -z` output."""
+    return _unique_paths(path for _, path in _parse_name_status_records(output))
 
 
 class GitDiffError(RuntimeError):
