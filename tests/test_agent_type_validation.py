@@ -114,3 +114,81 @@ class TestOneVocabulary:
     def test_canonical_agent_type_rejects_unknown(self) -> None:
         assert canonical_agent_type("typo") is None
         assert canonical_agent_type(None) is None
+
+
+class TestFamilyResolverMatchesTheAdapter:
+    """`_cli_family` decides the ENGINEER's family and R7.1 then picks a
+    reviewer from the OTHER family. If it disagrees with `get_agent`, the
+    run gets SAME-family review while the audit trail claims otherwise -
+    the correlated-blind-spot failure R7.1 exists to prevent.
+
+    Review regression: `get_agent` learned the "claude" alias while this
+    mirror kept its own literal tuple, so a Claude engineer resolved as
+    codex and the "cross-family" reviewer came back claude-code. The two
+    had previously agreed by both being wrong, which is why fixing only
+    one side made the safety property fail rather than merely mislabel.
+    """
+
+    @staticmethod
+    def _expected_family(agent_type: str | None) -> str:
+        return (
+            "codex"
+            if isinstance(get_agent(agent_type=agent_type), CodexAgent)
+            else "claude-code"
+        )
+
+    @pytest.mark.parametrize(
+        "agent_type",
+        ["claude", "CLAUDE", " claude-code ", "claude-code", "claude-sdk",
+         "codex", "auto", None],
+    )
+    def test_family_agrees_with_the_constructed_adapter(
+        self, agent_type: str | None,
+    ) -> None:
+        from kstrl.factory import _cli_family
+
+        assert _cli_family(None, agent_type, True) == self._expected_family(
+            agent_type
+        )
+
+    def test_claude_alias_is_the_claude_family(self) -> None:
+        # The regression in one line: this returned "codex".
+        from kstrl.factory import _cli_family
+
+        assert _cli_family(None, "claude", True) == "claude-code"
+
+    def test_unset_type_still_autodetects(self) -> None:
+        """None means auto-detect, not unknown.
+
+        `canonical_agent_type` returns None for BOTH "unset" and
+        "unrecognized", so splitting them is load-bearing: without it the
+        ordinary no-type-configured case raises.
+        """
+        from kstrl.factory import _cli_family
+
+        assert _cli_family(None, None, True) == "claude-code"
+        assert _cli_family(None, None, False) == "codex"
+
+    def test_unknown_type_raises_like_get_agent(self) -> None:
+        from kstrl.factory import _cli_family
+
+        with pytest.raises(UnknownAgentTypeError):
+            _cli_family(None, "typo-here", True)
+
+    def test_custom_command_is_an_unknown_family(self) -> None:
+        # Pre-existing contract: a custom command's family cannot be known.
+        from kstrl.factory import _cli_family
+
+        assert _cli_family("echo hi", "claude", True) is None
+
+    def test_rotation_picks_a_genuinely_different_family(self) -> None:
+        """End of the chain: a "claude" engineer must not get a Claude
+        reviewer when both CLIs are installed."""
+        from kstrl.factory import _cli_family
+
+        engineer_family = _cli_family(None, "claude", True)
+        assert engineer_family == "claude-code"
+        # The rotation's job is to choose the OTHER family; with the old
+        # behavior engineer_family was "codex" and it chose claude-code -
+        # the same family the engineer actually used.
+        assert engineer_family != "codex"

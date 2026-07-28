@@ -319,14 +319,49 @@ def _cli_family(
     unknown family (None); "claude-sdk" is the Claude family through
     the SDK transport (R7.6 - without this branch it would fall through
     to codex and INVERT the R7.1 rotation for SDK engineers);
-    "auto"/None auto-detects claude-code first; any unrecognized type
-    string falls through to codex."""
+    "auto"/None auto-detects claude-code first.
+
+    Canonicalizes through the SAME table ``get_agent`` uses, and that is
+    load-bearing rather than tidiness. This function decides which family
+    the ENGINEER belongs to, and the R7.1 rotation then picks a reviewer
+    from the other family. If the two disagree - as they did when
+    ``get_agent`` learned the "claude" alias and this mirror did not -
+    a Claude engineer is recorded as codex, the rotation "cross-family"
+    reviewer resolves to claude-code, and the run gets SAME-family review
+    while reporting the opposite. Correlated blind spots are exactly what
+    R7.1 exists to avoid, so a silent mismatch here is worse than a
+    crash: the safety property fails while the audit trail says it held.
+
+    An unrecognized type raises, matching ``get_agent`` - a config that
+    cannot construct an agent must not first be assigned a family.
+    """
+    # Imported here, matching this module's lazy-agent-import pattern.
+    from kstrl.agents import (
+        VALID_AGENT_TYPES,
+        UnknownAgentTypeError,
+        canonical_agent_type,
+    )
+
     if agent_cmd:
         return None
-    if agent_type in ("claude-code", "claude-sdk"):
-        return "claude-code"
-    if agent_type in (None, "auto"):
+    if agent_type is None:
+        # Unset means auto-detect, NOT unknown. canonical_agent_type
+        # returns None for both, so they must be split before the
+        # unknown-type check or the ordinary "no [agent] type
+        # configured" case would raise.
         return "claude-code" if claude_available else "codex"
+    canonical = canonical_agent_type(agent_type)
+    if canonical is None:
+        raise UnknownAgentTypeError(
+            f"unknown agent type {agent_type!r}; expected one of "
+            f"{', '.join(VALID_AGENT_TYPES)}"
+        )
+    if canonical in ("claude-code", "claude-sdk"):
+        return "claude-code"
+    if canonical == "auto":
+        return "claude-code" if claude_available else "codex"
+    if canonical == "custom":
+        return None
     return "codex"
 
 
@@ -1116,7 +1151,9 @@ def _run_component(
     can halt itself BETWEEN iterations instead of waiting for the
     parent's next phase boundary. None disables the in-loop check.
     """
-    from kstrl.agents import get_agent
+    from kstrl.agents import (
+    get_agent,
+)
     from kstrl.loop import run_loop
     from kstrl.ui.bridge import EventBridgeUI, NullPrompter
     from kstrl.ui.plain import PlainUI
