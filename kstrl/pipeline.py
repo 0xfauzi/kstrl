@@ -569,6 +569,30 @@ class ComponentPipeline:
             dead.append("max_cost_usd")
         return dead
 
+    def budget_halt_identity(self) -> tuple[str, tuple[str, ...]]:
+        """``(condition, ceilings)`` for a halt derived from run totals.
+
+        The precedence rule lives HERE, once, because both call sites got
+        it wrong when they each spelled it out: a numeric breach and a
+        dead ceiling can coexist (a run whose token cap trips while its
+        cost cap never received a figure), and joining the dead list
+        first named ``max_cost_usd`` for a halt the TOKEN cap caused -
+        which then rendered as ``cost budget exceeded: $0 >= $100``, a
+        sentence that is both false and arithmetically impossible
+        (review finding on #180).
+
+        A breach is the stronger fact: it is a threshold that was
+        actually crossed, with numbers behind it. Dead ceilings are only
+        consulted when nothing was breached.
+        """
+        breached = self.breached_ceiling()
+        if breached is not None:
+            return ("breached", (breached,))
+        dead = self.unenforceable_ceilings()
+        if dead:
+            return ("unenforceable", tuple(dead))
+        return ("", ())
+
     def budget_unenforceable(self) -> str | None:
         """Why NO configured ceiling can fire any more, or None.
 
@@ -916,7 +940,8 @@ class ComponentPipeline:
         comp: Component,
         phase: str,
         reason: str = "",
-        ceiling: str | None = None,
+        condition: str = "",
+        ceilings: tuple[str, ...] = (),
     ) -> Transition:
         """R3.1/R8: halt LOUDLY on a blown run-level ceiling. Mirrors the
         R1.2/R1.4 synthetic-finding pattern (chunk_budget_insufficient):
@@ -937,14 +962,27 @@ class ComponentPipeline:
         :meth:`LoopBudget.halt_reason`, which names its own ceiling.
         Every other side effect is identical wherever the breach is
         caught."""
-        # An explicit identity wins: the UNENFORCEABLE paths cross no
-        # numeric threshold, so breached_ceiling() is None for them and
-        # deriving from it alone mislabels the halt.
-        if ceiling is None:
-            ceiling = self.breached_ceiling()
+        # An identity supplied by the caller wins: the engineer loop
+        # detects its own halt against priors the parent's totals do not
+        # describe, so only the loop knows what actually fired there.
+        # Everything else derives from run totals under the single
+        # precedence rule in budget_halt_identity().
+        if not ceilings:
+            condition, ceilings = self.budget_halt_identity()
+        # Only a BREACH licenses a "N >= cap" sentence. An unenforceable
+        # halt crossed nothing, and the derived comparison read
+        # "token budget exceeded: 0 >= 500" for runs where the totals
+        # never moved (review finding on #180).
         if reason:
             error = reason
-        elif ceiling == "max_cost_usd":
+        elif condition == "unenforceable":
+            error = (
+                f"budget ceiling unenforceable ({', '.join(ceilings)}): no "
+                "configured ceiling can still fire, so the run cannot be "
+                "bounded; halting rather than spending under a cap that "
+                "cannot trip (R8)"
+            )
+        elif ceilings == ("max_cost_usd",):
             error = (
                 f"cost budget exceeded: ${self.run_usage.cost_usd:.6f} "
                 f"recorded >= max_cost_usd "
@@ -958,6 +996,7 @@ class ComponentPipeline:
                 f"({self.factory_config.max_total_tokens}); halting instead "
                 "of spending further (R3.1)"
             )
+        ceiling = ", ".join(ceilings)
         label = ceiling or "budget"
         self.ui.err(f"  BUDGET EXCEEDED ({label}) for {comp.id}: {error}")
         self._add_findings(comp, [Finding.infrastructure_error(
@@ -969,7 +1008,9 @@ class ComponentPipeline:
             max_total_tokens=self.factory_config.max_total_tokens,
             cost_usd=round(self.run_usage.cost_usd, 6),
             max_cost_usd=self.factory_config.max_cost_usd,
-            ceiling=ceiling or "",
+            ceiling=ceiling,
+            condition=condition,
+            ceilings=ceilings,
         ))
         # Raised BEFORE delegating to fail(): a blown budget is its own
         # exception kind, and the generic halted_run item fail() adds
@@ -982,7 +1023,8 @@ class ComponentPipeline:
             dedupe_key=f"budget:{comp.id}",
             evidence={
                 "phase": phase,
-                "ceiling": ceiling or "",
+                "ceiling": ceiling,
+                "condition": condition,
                 "total_tokens": self.run_usage.total_tokens,
                 "max_total_tokens": self.factory_config.max_total_tokens,
                 "cost_usd": round(self.run_usage.cost_usd, 6),
@@ -1444,8 +1486,12 @@ class ComponentPipeline:
             return PipelineOutcome(
                 transition=self.fail_for_budget(
                     comp, "engineer", reason,
-                    ceiling=", ".join(self.unenforceable_ceilings())
-                    or self.breached_ceiling(),
+                    # The loop's own verdict when IT halted; empty when
+                    # the parent's totals are what tripped, in which
+                    # case fail_for_budget derives the identity under
+                    # the single precedence rule.
+                    condition=comp_result.budget_halt_condition,
+                    ceilings=comp_result.budget_halt_ceilings,
                 ),
             )
 

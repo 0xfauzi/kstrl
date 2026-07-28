@@ -61,6 +61,34 @@ _UNENFORCEABLE_CALLS = UNENFORCEABLE_CALLS  # back-compat alias
 
 
 @dataclass(frozen=True)
+class BudgetHalt:
+    """Why a run-level ceiling stopped the loop, carried structurally.
+
+    R8 review (#180): the halt used to travel as a prose string only, so
+    every consumer downstream had to re-derive WHICH ceiling and WHICH
+    condition from either the sentence or the parent's own totals. Both
+    re-derivations were wrong in ways that put false numbers in the audit
+    trail - the parent picked a dead ceiling over a breached one, and the
+    "N >= cap" wording was emitted for unenforceable halts where nothing
+    was ever exceeded.
+
+    The two facts are orthogonal and are now kept apart:
+
+    ``condition`` - ``"breached"`` (a total reached a ceiling) or
+    ``"unenforceable"`` (a configured ceiling provably cannot fire).
+    Only ``"breached"`` licenses a comparison sentence.
+
+    ``ceilings`` - the config key(s) involved. Exactly one when breached;
+    one or more when unenforceable, because the loop halts on that
+    condition only once EVERY configured ceiling is dead.
+    """
+
+    condition: str
+    ceilings: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True)
 class LoopBudget:
     """Run-level spend ceilings pushed DOWN into the engineer loop (R8).
 
@@ -161,7 +189,7 @@ class LoopBudget:
         """True when at least one ceiling is configured."""
         return self.token_enabled or self.cost_enabled
 
-    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
+    def halt_verdict(self, loop_usage: UsageTotals) -> BudgetHalt | None:
         """Why this loop must stop now, or None to keep iterating.
 
         Two conditions, both computed from CLI self-reported usage, and
@@ -259,25 +287,26 @@ class LoopBudget:
         # evaluation; over time whichever is reached first halts.
         total_tokens = self.prior_total_tokens + loop_usage.total_tokens
         if self.token_enabled and total_tokens >= self.max_total_tokens:
-            return (
+            return BudgetHalt("breached", ("max_total_tokens",), (
                 f"token budget exceeded: {total_tokens} total tokens "
                 f"recorded >= max_total_tokens ({self.max_total_tokens}); "
                 "halting the engineer loop instead of starting another "
                 "iteration (R8)"
-            )
+            ))
         total_cost = self.prior_cost_usd + loop_usage.cost_usd
         if self.cost_enabled and total_cost >= self.max_cost_usd:
-            return (
+            return BudgetHalt("breached", ("max_cost_usd",), (
                 f"cost budget exceeded: ${total_cost:.6f} recorded >= "
                 f"max_cost_usd (${self.max_cost_usd}); halting the engineer "
                 "loop instead of starting another iteration (R8)"
-            )
+            ))
 
         # UNENFORCEABLE, per ceiling. Only halts when every configured
         # ceiling is dead - a live one is worth continuing under.
         if loop_usage.calls == 0:
             return None
         clauses: list[str] = []
+        dead: list[str] = []
         if self.token_enabled:
             prior_tokenless = max(0, self.prior_calls - self.prior_token_calls)
             run_tokenless = prior_tokenless + loop_usage.tokenless_calls
@@ -294,6 +323,7 @@ class LoopBudget:
                     f"max_total_tokens ({self.max_total_tokens}) cannot "
                     f"advance from this loop"
                 )
+                dead.append("max_total_tokens")
             else:
                 return None
         if self.cost_enabled:
@@ -311,13 +341,24 @@ class LoopBudget:
                     f"frozen at ${self.prior_cost_usd:.6f}, so max_cost_usd "
                     f"(${self.max_cost_usd}) cannot advance from this loop"
                 )
+                dead.append("max_cost_usd")
             else:
                 return None
         if not clauses:
             return None
-        return "; ".join(clauses) + (
+        return BudgetHalt("unenforceable", tuple(dead), "; ".join(clauses) + (
             "; halting rather than spending under a cap that cannot fire (R8)"
-        )
+        ))
+
+    def halt_reason(self, loop_usage: UsageTotals) -> str | None:
+        """The prose half of :meth:`halt_verdict`, or None.
+
+        Kept because the sentence is what the operator reads; callers
+        that need to ACT on the halt want the verdict instead, so the
+        condition and the ceiling identities do not have to be recovered
+        by parsing this string."""
+        verdict = self.halt_verdict(loop_usage)
+        return None if verdict is None else verdict.reason
 
 
 @dataclass
@@ -351,6 +392,12 @@ class LoopResult:
     # component's error, so the audit trail records WHICH ceiling and
     # WHICH condition fired.
     budget_halt_reason: str = ""
+    # R8 review (#180): the identity half of the same halt. Carried
+    # structurally so the parent never has to re-derive which ceiling
+    # fired from its own totals - which named the wrong one whenever a
+    # breach and a dead ceiling coexisted - or from the prose above.
+    budget_halt_condition: str = ""
+    budget_halt_ceilings: tuple[str, ...] = ()
 
 
 def run_loop(
@@ -649,9 +696,9 @@ def run_loop(
         # already in flight (about one iteration per running worker); it
         # cannot interrupt a call mid-flight. See LoopBudget.
         if budget is not None:
-            halt_reason = budget.halt_reason(loop_usage)
-            if halt_reason is not None:
-                ui.err(halt_reason)
+            halt = budget.halt_verdict(loop_usage)
+            if halt is not None:
+                ui.err(halt.reason)
                 return LoopResult(
                     completed=False,
                     iterations=iteration,
@@ -660,7 +707,9 @@ def run_loop(
                     iteration_durations=iteration_durations,
                     timed_out_iterations=timed_out_iterations,
                     usage=loop_usage,
-                    budget_halt_reason=halt_reason,
+                    budget_halt_reason=halt.reason,
+                    budget_halt_condition=halt.condition,
+                    budget_halt_ceilings=halt.ceilings,
                 )
 
         # R7.5 no-progress circuit breaker: the iteration finished

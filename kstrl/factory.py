@@ -609,8 +609,12 @@ class ComponentResult:
     # (max_total_tokens or max_cost_usd, between iterations). Routed to
     # pipeline.fail_for_budget so the audit trail is identical to a
     # breach caught at a phase boundary; ``error`` carries WHICH ceiling
-    # and which condition fired.
+    # and which condition fired. The typed pair below carries the same
+    # facts structurally (R8 review #180) so the pipeline never re-derives
+    # the identity from its own totals.
     budget_exceeded: bool = False
+    budget_halt_condition: str = ""
+    budget_halt_ceilings: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1464,6 +1468,8 @@ def _run_component(
             usage=result.usage,
             no_progress=result.no_progress,
             budget_exceeded=bool(result.budget_halt_reason),
+            budget_halt_condition=result.budget_halt_condition,
+            budget_halt_ceilings=result.budget_halt_ceilings,
         )
     except Exception as exc:
         return ComponentResult(
@@ -2588,15 +2594,12 @@ def _run_factory_locked(
                     # though its token cap is beyond saving.
                     unenforceable = pipeline.budget_unenforceable()
                     if unenforceable is not None:
+                        # Identity is derived inside fail_for_budget:
+                        # nothing was BREACHED here, so the rule falls
+                        # through to the dead ceilings and names only
+                        # those actually configured.
                         pipeline.fail_for_budget(
                             comp, "scheduling", reason=unenforceable,
-                            # Nothing was BREACHED here, so the derived
-                            # identity is empty and every audit surface
-                            # would fall back to naming the token
-                            # ceiling - possibly one not even configured.
-                            ceiling=", ".join(
-                                pipeline.unenforceable_ceilings()
-                            ),
                         )
                         transitioned_without_launch += 1
                         continue

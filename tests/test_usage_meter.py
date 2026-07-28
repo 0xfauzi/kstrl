@@ -2962,3 +2962,320 @@ class TestUnenforceableHaltNamesItsCeiling:
         named = ComponentPipeline.unenforceable_ceilings(pipeline)
         assert "max_total_tokens" not in named
         assert named == ["max_cost_usd"]
+
+
+class TestBudgetHaltIdentityPrecedence:
+    """A numeric breach outranks a dead ceiling.
+
+    Review follow-up on #180: the two facts can coexist - a run whose
+    token cap trips while its cost cap never received a figure - and the
+    call sites each joined the dead list FIRST. The halt was then
+    attributed to `max_cost_usd` and rendered as
+    `cost budget exceeded: $0 >= $100`: a sentence that is false, and
+    arithmetically impossible, for a run that blew its token cap at
+    600/500.
+    """
+
+    @staticmethod
+    def _pipeline(max_tokens: int, max_cost: float, usage: UsageTotals) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+
+        class _FC:
+            max_total_tokens = max_tokens
+            max_cost_usd = max_cost
+
+        pipeline.factory_config = _FC()
+        pipeline.usage_meter = {"comp-a": {"engineer": usage}}
+        pipeline.run_usage = usage
+        return pipeline
+
+    def test_breach_wins_over_a_coexisting_dead_ceiling(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            500, 100.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
+                        total_tokens=600, cost_usd=0.0),
+        )
+        assert ComponentPipeline.breached_ceiling(pipeline) == "max_total_tokens"
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
+            "max_cost_usd",
+        ]
+        assert ComponentPipeline.budget_halt_identity(pipeline) == (
+            "breached", ("max_total_tokens",),
+        )
+
+    def test_dead_ceilings_only_when_nothing_breached(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            500, 100.0,
+            UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
+        )
+        assert ComponentPipeline.budget_halt_identity(pipeline) == (
+            "unenforceable", ("max_total_tokens", "max_cost_usd"),
+        )
+
+    def test_no_halt_yields_no_identity(self) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            1000, 5.0,
+            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
+                        total_tokens=10, cost_usd=0.1),
+        )
+        assert ComponentPipeline.budget_halt_identity(pipeline) == ("", ())
+
+
+class TestLoopHaltCarriesItsOwnIdentity:
+    """The loop halts against priors the parent cannot see, so it reports
+    WHICH ceiling structurally instead of leaving the parent to guess."""
+
+    def test_token_overrun(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(
+            max_total_tokens=500, max_cost_usd=100.0,
+        ).halt_verdict(UsageTotals(
+            calls=2, known_calls=2, token_calls=2, total_tokens=600,
+        ))
+        assert verdict is not None
+        assert verdict.condition == "breached"
+        assert verdict.ceilings == ("max_total_tokens",)
+
+    def test_cost_overrun(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(UsageTotals(
+            calls=2, known_calls=2, cost_calls=2, cost_usd=2.0,
+        ))
+        assert verdict is not None
+        assert verdict.condition == "breached"
+        assert verdict.ceilings == ("max_cost_usd",)
+
+    def test_unenforceable_names_every_dead_ceiling(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        verdict = LoopBudget(
+            max_total_tokens=500, max_cost_usd=100.0, prior_calls=2,
+        ).halt_verdict(UsageTotals(calls=2, known_calls=0))
+        assert verdict is not None
+        assert verdict.condition == "unenforceable"
+        assert verdict.ceilings == ("max_total_tokens", "max_cost_usd")
+
+    def test_halt_reason_still_returns_the_prose(self) -> None:
+        """Existing callers read the sentence; it must not change shape."""
+        from kstrl.loop import LoopBudget
+
+        budget = LoopBudget(max_total_tokens=500)
+        usage = UsageTotals(
+            calls=2, known_calls=2, token_calls=2, total_tokens=600,
+        )
+        reason = budget.halt_reason(usage)
+        verdict = budget.halt_verdict(usage)
+        assert verdict is not None
+        assert reason == verdict.reason
+        assert reason is not None and reason.startswith("token budget exceeded")
+
+    def test_no_halt_returns_none_from_both(self) -> None:
+        from kstrl.loop import LoopBudget
+
+        budget = LoopBudget(max_total_tokens=500)
+        usage = UsageTotals(
+            calls=1, known_calls=1, token_calls=1, total_tokens=10,
+        )
+        assert budget.halt_verdict(usage) is None
+        assert budget.halt_reason(usage) is None
+
+
+class TestBudgetHaltRendersHonestly:
+    """Every surface reads one payload the same way, and an unenforceable
+    halt never claims a threshold was crossed."""
+
+    @staticmethod
+    def _render(event: Any) -> tuple[str, str]:
+        from kstrl.linear import LinearSink
+        from kstrl.reducer import ComponentState, RunState, apply
+
+        state = RunState(run_id="r")
+        state.components["comp-a"] = ComponentState(component_id="comp-a")
+        apply(state, event)
+        sink = cast(Any, LinearSink.__new__(LinearSink))
+        sink._run_id = "r"
+        body = LinearSink._comment_body(
+            sink, "budget_exceeded", event.to_dict()["data"],
+        )
+        return state.components["comp-a"].error, str(body)
+
+    def test_breach_states_the_true_comparison(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=600, max_total_tokens=500,
+            cost_usd=0.0, max_cost_usd=100.0, ceiling="max_total_tokens",
+            condition="breached", ceilings=("max_total_tokens",),
+        ))
+        assert reducer == "token budget exceeded: 600 >= 500"
+        assert "600/500" in linear
+        assert "cost" not in reducer
+
+    def test_unenforceable_claims_no_threshold(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=0, max_total_tokens=500,
+            cost_usd=0.0, max_cost_usd=100.0,
+            ceiling="max_total_tokens, max_cost_usd",
+            condition="unenforceable",
+            ceilings=("max_total_tokens", "max_cost_usd"),
+        ))
+        for surface in (reducer, linear):
+            # The defect: both rendered "token budget exceeded: 0 >= 500"
+            # for a halt where no total ever moved.
+            assert "exceeded" not in surface
+            assert "0 >= 500" not in surface
+            assert "unenforceable" in surface
+            # A multi-ceiling halt names BOTH; no single-value field
+            # could express this, which is why it silently collapsed.
+            assert "max_total_tokens" in surface
+            assert "max_cost_usd" in surface
+
+    def test_a_disabled_ceiling_is_never_blamed(self) -> None:
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=200, max_total_tokens=0,
+            cost_usd=0.0, max_cost_usd=5.0, ceiling="max_cost_usd",
+            condition="unenforceable", ceilings=("max_cost_usd",),
+        ))
+        for surface in (reducer, linear):
+            assert "max_total_tokens" not in surface
+            assert "max_cost_usd" in surface
+
+    def test_legacy_payloads_still_decode(self) -> None:
+        """events.jsonl is append-only: payloads written before this
+        change carry only `ceiling` and must keep their old reading."""
+        import kstrl.events as ev
+
+        reducer, linear = self._render(ev.BudgetExceeded(
+            component="comp-a", total_tokens=5, max_total_tokens=10,
+            cost_usd=9.0, max_cost_usd=8.0, ceiling="max_cost_usd",
+        ))
+        assert reducer == "cost budget exceeded: $9.000000 >= $8.0"
+        assert "cost budget exceeded" in linear
+
+    def test_the_structured_fields_survive_a_json_round_trip(self) -> None:
+        import kstrl.events as ev
+
+        event = ev.BudgetExceeded(
+            component="comp-a", condition="unenforceable",
+            ceilings=("max_total_tokens", "max_cost_usd"),
+        )
+        back = ev.event_from_dict(event.to_dict())
+        assert isinstance(back, ev.BudgetExceeded)
+        assert back.ceilings == ("max_total_tokens", "max_cost_usd")
+        assert back.condition == "unenforceable"
+
+    @pytest.mark.parametrize(
+        ("condition", "ceilings", "legacy", "expected"),
+        [
+            ("breached", ("max_total_tokens",), "", "token"),
+            ("breached", ("max_cost_usd",), "", "cost"),
+            ("unenforceable", ("max_cost_usd",), "", "unenforceable"),
+            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "",
+             "unenforceable"),
+            ("", (), "max_cost_usd", "cost"),
+            ("", (), "", "token"),
+        ],
+    )
+    def test_one_classifier_for_every_surface(
+        self, condition: str, ceilings: tuple[str, ...], legacy: str,
+        expected: str,
+    ) -> None:
+        from kstrl.events import budget_halt_kind
+
+        assert budget_halt_kind(condition, ceilings, legacy) == expected
+
+
+class TestBudgetConfigErrorReachesTheOperator:
+    """A rejected ceiling is reported, never raised.
+
+    Review follow-up on #180: validation landed at the library boundary,
+    but `ks factory` exited 1 with empty output and an uncaught
+    BudgetConfigError - a traceback where a config error belongs.
+    """
+
+    @staticmethod
+    def _manifest() -> dict[str, Any]:
+        return {
+            "version": "1", "specFile": "s.md", "projectName": "p",
+            "baseBranch": "main", "singlePr": False,
+            "components": [{
+                "id": "comp-a", "title": "A", "description": "D",
+                "dependencies": [], "prdPath": "prd.json",
+                "branchName": "kstrl/comp-a",
+            }],
+        }
+
+    @pytest.mark.parametrize(
+        ("command", "toml_value"),
+        [
+            (["factory", "--manifest", "m.json"], "nan"),
+            (["factory", "--manifest", "m.json"], "-3.0"),
+            (["config", "show"], "nan"),
+        ],
+    )
+    def test_no_entry_point_leaks_a_traceback(
+        self, command: list[str], toml_value: str,
+    ) -> None:
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+        from kstrl.factory import BudgetConfigError
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            (root / "kstrl.toml").write_text(
+                f"[factory]\nmax_cost_usd = {toml_value}\n"
+            )
+            (root / "m.json").write_text(json.dumps(self._manifest()))
+            (root / "s.md").write_text("# spec\n")
+            result = runner.invoke(cli, command, catch_exceptions=True)
+
+        assert not isinstance(result.exception, BudgetConfigError)
+        assert result.exit_code == 1
+        assert "error:" in _strip_ansi(result.output)
+        assert "max_cost_usd" in result.output
+
+    def test_the_flag_override_is_checked_before_any_work_starts(self) -> None:
+        """`--max-cost-usd` bypasses every config-path validator, so the
+        check has to hold at the run boundary too - and has to stop the
+        run before it launches anything."""
+        from click.testing import CliRunner
+
+        from kstrl.cli import cli
+
+        runner = CliRunner()
+        with runner.isolated_filesystem() as fs:
+            root = Path(fs)
+            (root / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+            (root / "m.json").write_text(json.dumps(self._manifest()))
+            result = runner.invoke(
+                cli,
+                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf"],
+                catch_exceptions=True,
+            )
+
+        output = _strip_ansi(result.output)
+        assert result.exit_code == 1
+        assert "error: max_cost_usd must be a finite number" in output
+        assert "Starting:" not in output
+
+
+def _strip_ansi(text: str) -> str:
+    import re
+
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)

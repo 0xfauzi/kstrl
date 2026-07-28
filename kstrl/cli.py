@@ -46,7 +46,7 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.factory import FactoryConfig, run_factory
+from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
@@ -368,7 +368,32 @@ def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-@click.group(invoke_without_command=True)
+class _KstrlGroup(click.Group):
+    """The CLI group, with one guarantee: a rejected budget ceiling is
+    reported, never raised.
+
+    ``BudgetConfigError`` is thrown deep inside config loading, which
+    happens in `factory`, `run`, `retry`, the config report and the
+    launch path - and, after a ``--max-cost-usd`` override, inside
+    ``run_factory`` itself. Catching it per command meant every one of
+    those sites had to remember; `factory` did not, and exited 1 with an
+    empty stdout and a raw traceback (review finding on #180). Catching
+    it HERE means no entry point can leak one, including entry points
+    added later.
+
+    Exit code 1 with an ``error:`` line, matching what `config show`
+    already did for the same defect - one class of failure, one contract.
+    """
+
+    def invoke(self, ctx: click.Context) -> Any:
+        try:
+            return super().invoke(ctx)
+        except BudgetConfigError as exc:
+            click.echo(f"error: {exc}", err=True)
+            sys.exit(1)
+
+
+@click.group(cls=_KstrlGroup, invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx: click.Context) -> None:

@@ -328,10 +328,22 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     elif isinstance(event, ev.CheckpointResolved):
         comp.checkpoint_open = ""
     elif isinstance(event, ev.BudgetExceeded):
-        # Names the ceiling that tripped. Payloads written before the
-        # cost ceiling landed carry no ``ceiling`` and decode to "", in
-        # which case the token wording is the only honest reading.
-        if event.ceiling == "max_cost_usd":
+        # Names the ceiling that tripped, via the shared classifier so
+        # this surface cannot drift from the Linear sink's reading of
+        # the same payload. Payloads written before the cost ceiling
+        # landed carry no ``ceiling`` and decode to "", in which case
+        # the token wording is the only honest reading.
+        kind = ev.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
+        if kind == "unenforceable":
+            # No threshold was crossed, so there is no ">=" to state.
+            # The old wording claimed one and printed the untouched
+            # totals as evidence for it (review finding on #180).
+            named = ", ".join(event.ceilings) or event.ceiling or "budget"
+            comp.error = (
+                f"budget ceiling unenforceable ({named}): no configured "
+                "ceiling can still fire"
+            )
+        elif kind == "cost":
             comp.error = (
                 f"cost budget exceeded: ${event.cost_usd:.6f} >= "
                 f"${event.max_cost_usd}"
