@@ -8,6 +8,10 @@ from kstrl.agents.custom import CustomAgent
 from kstrl.sandbox import SandboxConfig
 
 __all__ = [
+    "AGENT_TYPE_ALIASES",
+    "UnknownAgentTypeError",
+    "VALID_AGENT_TYPES",
+    "canonical_agent_type",
     "Agent",
     "ClaudeCodeAgent",
     "ClaudeSdkAgent",
@@ -15,6 +19,46 @@ __all__ = [
     "CustomAgent",
     "get_agent",
 ]
+
+
+class UnknownAgentTypeError(ValueError):
+    """``[agent] type`` names an adapter that does not exist.
+
+    Raised rather than tolerated because the old behavior was the worst
+    possible one: an unrecognized type fell through every branch to the
+    codex fallback, so `type = "claude"` silently ran Codex while the
+    operator believed they were running Claude. A typo changed which
+    model wrote the code and nothing said so.
+    """
+
+
+#: The one agent-type vocabulary, shared with the CLI preflight. Two
+#: layers previously disagreed: the CLI accepted "claude" as an alias for
+#: "claude-code", while get_agent did not and fell through to the codex
+#: fallback, so a programmatic caller passing the DOCUMENTED spelling got
+#: a different model than the CLI would have chosen. One table, one
+#: vocabulary.
+AGENT_TYPE_ALIASES: dict[str, str] = {
+    "": "auto",
+    "auto": "auto",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "claude-sdk": "claude-sdk",
+    "codex": "codex",
+    "custom": "custom",
+}
+
+#: Accepted spellings for ``[agent] type``.
+VALID_AGENT_TYPES: tuple[str, ...] = tuple(
+    sorted(name for name in AGENT_TYPE_ALIASES if name)
+)
+
+
+def canonical_agent_type(agent_type: str | None) -> str | None:
+    """Canonical spelling for a configured type, or None if unknown."""
+    if agent_type is None:
+        return None
+    return AGENT_TYPE_ALIASES.get(agent_type.strip().lower())
 
 
 def get_agent(
@@ -50,6 +94,25 @@ def get_agent(
     """
     if agent_cmd:
         return CustomAgent(agent_cmd)
+    if agent_type is not None:
+        canonical = canonical_agent_type(agent_type)
+        if canonical is None:
+            raise UnknownAgentTypeError(
+                f"unknown [agent] type {agent_type!r}; expected one of "
+                f"{', '.join(VALID_AGENT_TYPES)}. Leave it unset (or use "
+                "'auto') to auto-detect. This raises rather than falling "
+                "back because an unrecognized type used to resolve silently "
+                "to the codex adapter - a typo changed which model wrote "
+                "your code and nothing said so."
+            )
+        if canonical == "custom":
+            raise UnknownAgentTypeError(
+                'agent type "custom" is configured but no agent command is '
+                "set; set [agent] command in kstrl.toml, AGENT_CMD, or "
+                "--agent-cmd. Without one there is nothing to run, and this "
+                "used to fall through to the codex adapter instead of saying so."
+            )
+        agent_type = canonical
     if agent_type == "claude-code":
         return ClaudeCodeAgent(
             model=model, effort=model_reasoning_effort, sandbox=sandbox,
