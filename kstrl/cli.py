@@ -21,6 +21,7 @@ from click.core import ParameterSource
 
 from kstrl import __version__
 from kstrl.agents import (
+    AGENT_TYPE_ALIASES,
     ClaudeCodeAgent,
     ClaudeSdkAgent,
     CodexAgent,
@@ -102,15 +103,10 @@ def _use_cli_value(ctx: click.Context, name: str) -> bool:
 # kstrl.toml documents "claude" | "codex" | "custom"; the --agent-type
 # flags and KSTRL_AGENT_TYPE historically use "claude-code" | "codex" |
 # "auto". Both families resolve to get_agent's vocabulary here.
-_AGENT_TYPE_ALIASES: dict[str, str] = {
-    "": "auto",
-    "auto": "auto",
-    "claude": "claude-code",
-    "claude-code": "claude-code",
-    "claude-sdk": "claude-sdk",
-    "codex": "codex",
-    "custom": "custom",
-}
+# One vocabulary, defined next to the adapters it selects (R8 review):
+# the CLI and get_agent previously kept separate tables and disagreed
+# about "claude".
+_AGENT_TYPE_ALIASES = AGENT_TYPE_ALIASES
 
 
 def _agent_preflight(
