@@ -90,6 +90,7 @@ class RunState:
     # Budget caps from run_plan (0 = unbounded/unknown).
     max_total_tokens: int = 0
     max_adversarial_calls: int = 0
+    max_cost_usd: float = 0.0
     unknown_events: int = 0
     # Decompose vocabulary (run-scoped). Counts are complete; the lists
     # are FIFO-bounded so a pathological stream cannot grow state.
@@ -162,6 +163,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     if isinstance(event, ev.RunPlan):
         state.max_total_tokens = event.max_total_tokens
         state.max_adversarial_calls = event.max_adversarial_calls
+        state.max_cost_usd = event.max_cost_usd
         state.plan_order = []
         for entry in event.components:
             if not isinstance(entry, Mapping):
@@ -326,10 +328,19 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     elif isinstance(event, ev.CheckpointResolved):
         comp.checkpoint_open = ""
     elif isinstance(event, ev.BudgetExceeded):
-        comp.error = (
-            f"token budget exceeded: {event.total_tokens} >= "
-            f"{event.max_total_tokens}"
-        )
+        # Names the ceiling that tripped. Payloads written before the
+        # cost ceiling landed carry no ``ceiling`` and decode to "", in
+        # which case the token wording is the only honest reading.
+        if event.ceiling == "max_cost_usd":
+            comp.error = (
+                f"cost budget exceeded: ${event.cost_usd:.6f} >= "
+                f"${event.max_cost_usd}"
+            )
+        else:
+            comp.error = (
+                f"token budget exceeded: {event.total_tokens} >= "
+                f"{event.max_total_tokens}"
+            )
 
 
 def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:

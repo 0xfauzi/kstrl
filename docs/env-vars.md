@@ -58,71 +58,120 @@ All values are seconds; 0 or less disables that limit.
 | `FACTORY_MERGE_TIMEOUT` | float | 300.0 |
 | `KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (unbounded) |
 | `KSTRL_FACTORY_MAX_TOTAL_TOKENS` | int | 0 (unbounded) |
+| `KSTRL_FACTORY_MAX_COST_USD` | float | 0 (unbounded) |
 | `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
 | `KSTRL_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
-### What `max_total_tokens` guarantees (R8)
+### The two run-level ceilings: `max_total_tokens` and `max_cost_usd` (R8)
 
-It is a **stop-before-the-next-unit-of-work** limit, not a hard cap. It is
-evaluated in two places:
+Both are configurable, both may be set at once, and whichever is reached first
+halts the run. They are **not** interchangeable.
+
+#### Why `max_total_tokens` is a poor proxy for cost
+
+`UsageTotals.total_tokens` counts **cache reads at par** with input tokens, and
+cache reads cost roughly an order of magnitude less. A real run halted on
+`max_total_tokens = 500000`; its own journal recorded:
+
+| Field | Value |
+|---|---|
+| `input_tokens` | 52 |
+| `output_tokens` | 20,855 |
+| `cache_read_tokens` | **1,781,669 (95.6%)** |
+| `cache_creation_tokens` | 61,505 |
+| `total_tokens` | 1,864,081 |
+| `cost_usd` | **1.216512** |
+
+The operator who set a 500k "budget" expecting a spend ceiling was stopped at
+**$1.22**. The token cap measures something real, but nearly uncorrelated with
+money. Set `max_cost_usd` when what you mean is "do not spend more than $X".
+`max_total_tokens` remains supported and is still the right knob for bounding
+context throughput rather than spend.
+
+#### What either ceiling guarantees
+
+A **stop-before-the-next-unit-of-work** limit, not a hard cap. `max_cost_usd`
+carries exactly the same guarantee and exactly the same gaps as
+`max_total_tokens` - it is not stronger for being denominated in dollars. Each
+is evaluated in two places:
 
 - **Between engineer iterations** (`kstrl/loop.py`, `LoopBudget.halt_reason`).
-  The worker is launched with the cap plus the run's spend as of that moment,
-  so the loop refuses to start another iteration once the total reaches the
-  cap. This is the only check that fires while the spend is being incurred.
+  The worker is launched with the ceilings plus the run's spend as of that
+  moment, so the loop refuses to start another iteration once a total reaches
+  its ceiling. This is the only check that fires while the spend is being
+  incurred.
 - **At phase boundaries** in the parent (`pipeline.process_result`, the review
   / security / distill gates, and the scheduling gate). These stop the next
   phase or the next component.
 
-Either route halts the component loudly and identically: a
-`budget_exceeded` event, a typed `infrastructure_error` finding, and exactly
-one `budget_overrun` inbox item.
+Either route halts the component loudly and identically: a `budget_exceeded`
+event (carrying `ceiling`, which names the one that tripped), a typed
+`infrastructure_error` finding, and exactly one `budget_overrun` inbox item.
 
-What is **not** bounded:
+What is **not** bounded, for both ceilings:
 
 | Gap | Why |
 |---|---|
-| The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens |
-| Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the cap |
-| Unreported spend | Every token figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
+| The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens and never in dollars. Measured: the run above overshot its entire 500k cap by **3.7x inside one engineer call of 376s** |
+| Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the ceiling |
+| Unreported spend | Every token and cost figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
 
-Unknown usage is deliberately **not** silently treated as zero in the one case
-where that would make the cap undeliverable. The loop halts with a
-`token budget unenforceable` reason when **both** hold:
+#### Unenforceable ceilings are per-ceiling
 
-1. **this engineer loop** has reported no token count on any of its calls, so
-   the run total cannot grow while it runs (the spend recorded before this
-   worker launched is frozen at launch); **and**
-2. the **engineer** has now made two calls that reported no token count -
-   counted across the run's engineer loops, so the threshold does not reset on
-   every attempt or component, while another role's timed-out call never
-   counts (it is no evidence about the engineer's adapter).
+Unknown usage is deliberately **not** silently treated as zero in the case where
+that would make a ceiling undeliverable. A ceiling is *unenforceable* when
+**both** hold:
 
-A loop that emits the completion marker returns before its own budget check,
-so a component that finishes on a single tokenless call cannot halt itself. The
-scheduling gate catches that case instead: once the engineer has made two
-tokenless calls with no token report, the run refuses to start further
-components. Spend is therefore bounded by the component already in flight, not
-by zero.
+1. **this engineer loop** has reported none of the figures that ceiling needs on
+   any of its calls (`token_calls == 0` for the token ceiling, `cost_calls == 0`
+   for the cost one), so its run total cannot grow while the loop runs (the
+   spend recorded before this worker launched is frozen at launch); **and**
+2. the **engineer** has now made two calls that reported that figure not at all
+   - counted across the run's engineer loops, so the threshold does not reset on
+   every attempt or component, while another role's timed-out call never counts
+   (it is no evidence about the engineer's adapter).
 
-Reported *cost* is not token evidence: a result carrying `total_cost_usd` with
-no `usage` dict is "known" to the meter but can never move a token total, so
-the rule counts token-bearing calls (`token_calls`), not reporting calls.
+The run halts as unenforceable only when **every configured ceiling** is dead.
+The two axes have genuinely separate coverage:
 
-The threshold counts only the calls that reported **no tokens**, so a lone
-unparseable result in an otherwise-reporting run is still treated as an
+| Adapter behavior | Token ceiling | Cost ceiling |
+|---|---|---|
+| codex: token total, no cost | enforceable | unenforceable |
+| claude with a missing `usage` dict: `total_cost_usd`, no tokens | unenforceable | enforceable |
+| custom `agent_cmd`: reports nothing | unenforceable | unenforceable |
+
+Only the last row halts. An adapter that reports cost but not tokens still
+enforces `max_cost_usd`, and killing the run because the token ceiling died
+would discard a ceiling that still works. This also fixes an inconsistency: the
+old rule counted only `token_calls`, so a cost-only adapter was condemned even
+though it could have enforced a spend ceiling perfectly well.
+
+A loop that emits the completion marker returns before its own budget check, so
+a component that finishes on a single silent call cannot halt itself. The
+scheduling gate catches that case instead: once every configured ceiling is
+dead, the run refuses to start further components. Spend is therefore bounded by
+the component already in flight, not by zero.
+
+The threshold counts only the calls that reported **nothing for that axis**, so a
+lone unparseable result in an otherwise-reporting run is still treated as an
 incident, not a dead adapter. The flip side, on purpose: once a run has
-accumulated one tokenless call anywhere, the engineer's first tokenless
-iteration reaches the threshold and halts. Two independent tokenless calls in
-one run is adapter behavior (a custom `agent_cmd` never reports usage), and a
-loud, recoverable halt beats spending under a ceiling that cannot fire.
+accumulated one such call, the engineer's next silent iteration reaches the
+threshold and halts. Two independent silent calls in one run is adapter behavior
+(a custom `agent_cmd` never reports usage), and a loud, recoverable halt beats
+spending under a ceiling that cannot fire.
 
-`KSTRL_AGENT_BUDGET_USD` is the only genuine in-turn ceiling, and only the
-`claude-sdk` adapter enforces it; `claude-code`, `codex`, and custom commands
-ignore it.
+#### `max_cost_usd` is not `[agent] budget_usd`
+
+`KSTRL_AGENT_BUDGET_USD` / `[agent] budget_usd` is **adapter-internal**: it is
+enforced inside a single turn by the `claude-sdk` adapter only, and
+`claude-code`, `codex`, and custom commands ignore it entirely. It knows nothing
+about the run. `max_cost_usd` is the run-level ceiling across every phase and
+every component, enforced by the harness. `budget_usd` is the only genuine
+in-turn ceiling kstrl has, and that is exactly what `max_cost_usd` is not - use
+both if you want the in-flight iteration bounded too.
 
 ### Usage accounting vs progress logging
 

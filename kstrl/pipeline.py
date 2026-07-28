@@ -108,8 +108,10 @@ class FailureAction(Enum):
     # A wall retrying can never fix (R1.4 chunk-budget insufficiency):
     # fail directly without burning engineer iterations.
     FAIL = "fail"
-    # R3.1 token budget: fail loudly via the budget path (synthetic
-    # finding + budget_exceeded event), never silently degrade.
+    # R3.1/R8 run-level ceiling (max_total_tokens or max_cost_usd): fail
+    # loudly via the budget path (synthetic finding + budget_exceeded
+    # event), never silently degrade. The member name is unchanged
+    # vocabulary; the ceiling that tripped travels in the message.
     TOKEN_BUDGET = "token_budget"
 
 
@@ -442,8 +444,40 @@ class ComponentPipeline:
         cap = self.factory_config.max_total_tokens
         return cap > 0 and self.run_usage.total_tokens >= cap
 
+    def cost_budget_exceeded(self) -> bool:
+        """R8: the run's reported USD spend has reached ``max_cost_usd``.
+
+        Separate from :meth:`token_budget_exceeded` because the two
+        ceilings measure genuinely different things. Measured on a real
+        run: 1,864,081 total tokens (95.6% of them cache reads, which
+        ``total_tokens`` counts at par) cost $1.22, so a token ceiling is
+        a poor proxy for spend.
+        """
+        cap = self.factory_config.max_cost_usd
+        return cap > 0 and self.run_usage.cost_usd >= cap
+
+    def breached_ceiling(self) -> str | None:
+        """Which configured ceiling the run has reached, or None.
+
+        Returns the config key name (``"max_total_tokens"`` /
+        ``"max_cost_usd"``) so every audit surface can NAME the ceiling
+        that tripped instead of asserting "token budget" for both. When
+        both are over at the same evaluation the token one is named
+        first - an arbitrary but fixed order; over time whichever is
+        reached first halts, because the gates run continuously.
+        """
+        if self.token_budget_exceeded():
+            return "max_total_tokens"
+        if self.cost_budget_exceeded():
+            return "max_cost_usd"
+        return None
+
+    def budget_exceeded(self) -> bool:
+        """Any configured run-level ceiling has been reached."""
+        return self.breached_ceiling() is not None
+
     def token_budget_unenforceable(self) -> str | None:
-        """Why the cap can no longer fire at all, or None.
+        """Why the TOKEN cap can no longer fire at all, or None.
 
         The parent-side twin of :meth:`LoopBudget.halt_reason`'s
         unenforceable branch, and it exists because the in-loop check has
@@ -455,6 +489,11 @@ class ComponentPipeline:
         tokenless count climbs, and the cap never fires (review finding
         on 22e99b4; the previous docstring's "the halt lands on the next
         loop" was simply false when the next loop also completes).
+
+        Per-ceiling by construction: a dead TOKEN cap is not on its own a
+        reason to stop when a live COST cap is also configured. The
+        scheduling gate consults :meth:`budget_unenforceable`, which
+        halts only when EVERY configured ceiling is dead.
 
         Checked at the scheduling gate, so the run stops handing out NEW
         work under a dead cap. Deliberately does not retroactively fail
@@ -478,6 +517,58 @@ class ComponentPipeline:
             "advance; refusing to schedule further components rather than "
             "spending under a cap that cannot fire (R8)"
         )
+
+    def cost_budget_unenforceable(self) -> str | None:
+        """Why the COST cap can no longer fire at all, or None.
+
+        The cost mirror of :meth:`token_budget_unenforceable`, reading
+        ``cost_calls`` rather than ``token_calls``. The two answers are
+        independent in both directions: the codex adapter reports a token
+        total and no cost (token ceiling alive, cost ceiling dead), the
+        claude adapter can report ``total_cost_usd`` with no ``usage``
+        dict (cost ceiling alive, token ceiling dead).
+        """
+        cap = self.factory_config.max_cost_usd
+        if cap <= 0:
+            return None
+        engineer = self.engineer_usage_totals()
+        if engineer.cost_calls > 0:
+            return None
+        if engineer.costless_calls < UNENFORCEABLE_CALLS:
+            return None
+        return (
+            f"cost budget unenforceable: the engineer has made "
+            f"{engineer.costless_calls} agent call(s) this run and none "
+            f"reported a cost, so max_cost_usd (${cap}) cannot advance; "
+            "refusing to schedule further components rather than spending "
+            "under a cap that cannot fire (R8)"
+        )
+
+    def budget_unenforceable(self) -> str | None:
+        """Why NO configured ceiling can fire any more, or None.
+
+        The scheduling gate's question. Halts only when EVERY configured
+        ceiling is dead: an adapter that reports cost but not tokens can
+        still enforce ``max_cost_usd``, and stopping the run because the
+        token ceiling died would discard a ceiling that still works.
+        With no ceiling configured there is nothing to enforce and this
+        is always None.
+        """
+        reasons = [
+            reason
+            for reason in (
+                self.token_budget_unenforceable(),
+                self.cost_budget_unenforceable(),
+            )
+            if reason is not None
+        ]
+        configured = sum((
+            self.factory_config.max_total_tokens > 0,
+            self.factory_config.max_cost_usd > 0,
+        ))
+        if not reasons or len(reasons) < configured:
+            return None
+        return "; ".join(reasons)
 
     # ------------------------------------------------------------------
     # Attempt lifecycle + evidence pointers (R3.3)
@@ -798,25 +889,44 @@ class ComponentPipeline:
     def fail_for_budget(
         self, comp: Component, phase: str, reason: str = "",
     ) -> Transition:
-        """R3.1: halt LOUDLY on a blown token budget. Mirrors the R1.2/
-        R1.4 synthetic-finding pattern (chunk_budget_insufficient): a
-        typed Finding in the stream, a progress-log event, and a FAILED
-        component - never a silent degrade. Retrying cannot un-spend
-        tokens, so this fails directly instead of burning retries.
+        """R3.1/R8: halt LOUDLY on a blown run-level ceiling. Mirrors the
+        R1.2/R1.4 synthetic-finding pattern (chunk_budget_insufficient):
+        a typed Finding in the stream, a progress-log event, and a FAILED
+        component - never a silent degrade. Retrying cannot un-spend what
+        was spent, so this fails directly instead of burning retries.
+
+        The message and the finding NAME the ceiling that tripped
+        (``max_total_tokens`` or ``max_cost_usd``). With two ceilings a
+        message that always said "token budget" would send the operator
+        to raise the wrong knob.
 
         ``reason`` (R8) overrides the derived message when the breach
         was detected somewhere the parent's own totals do not describe -
         specifically the engineer loop's in-loop halt on unreportable
-        usage, where ``run_usage.total_tokens >= cap`` is false and
-        stating it would put a false number in the audit trail. Every
-        other side effect is identical wherever the breach is caught."""
-        error = reason or (
-            f"token budget exceeded: {self.run_usage.total_tokens} total "
-            f"tokens recorded >= max_total_tokens "
-            f"({self.factory_config.max_total_tokens}); halting instead of "
-            "spending further (R3.1)"
-        )
-        self.ui.err(f"  TOKEN BUDGET EXCEEDED for {comp.id}: {error}")
+        usage, where ``run_usage`` shows no breach and stating one would
+        put a false number in the audit trail. That string is produced by
+        :meth:`LoopBudget.halt_reason`, which names its own ceiling.
+        Every other side effect is identical wherever the breach is
+        caught."""
+        ceiling = self.breached_ceiling()
+        if reason:
+            error = reason
+        elif ceiling == "max_cost_usd":
+            error = (
+                f"cost budget exceeded: ${self.run_usage.cost_usd:.6f} "
+                f"recorded >= max_cost_usd "
+                f"(${self.factory_config.max_cost_usd}); halting instead of "
+                "spending further (R8)"
+            )
+        else:
+            error = (
+                f"token budget exceeded: {self.run_usage.total_tokens} total "
+                f"tokens recorded >= max_total_tokens "
+                f"({self.factory_config.max_total_tokens}); halting instead "
+                "of spending further (R3.1)"
+            )
+        label = ceiling or "budget"
+        self.ui.err(f"  BUDGET EXCEEDED ({label}) for {comp.id}: {error}")
         self._add_findings(comp, [Finding.infrastructure_error(
             phase=phase, explanation=error,
         )])
@@ -824,23 +934,35 @@ class ComponentPipeline:
             component=comp.id,
             total_tokens=self.run_usage.total_tokens,
             max_total_tokens=self.factory_config.max_total_tokens,
+            cost_usd=round(self.run_usage.cost_usd, 6),
+            max_cost_usd=self.factory_config.max_cost_usd,
+            ceiling=ceiling or "",
         ))
         # Raised BEFORE delegating to fail(): a blown budget is its own
         # exception kind, and the generic halted_run item fail() adds
         # would bury why the run stopped.
         self._inbox_add(
             ItemKind.BUDGET_OVERRUN,
-            f"{comp.id} exceeded the token budget",
+            f"{comp.id} exceeded the {label} budget",
             detail=error,
             component=comp.id,
             dedupe_key=f"budget:{comp.id}",
             evidence={
                 "phase": phase,
+                "ceiling": ceiling or "",
                 "total_tokens": self.run_usage.total_tokens,
                 "max_total_tokens": self.factory_config.max_total_tokens,
+                "cost_usd": round(self.run_usage.cost_usd, 6),
+                "max_cost_usd": self.factory_config.max_cost_usd,
             },
         )
         self._inbox_suppress_generic(comp.id)
+        # The check name and failure signature stay "token_budget" for
+        # both ceilings: they are the evolution journal's stable
+        # vocabulary for "a run-level ceiling stopped this component",
+        # and renaming them would orphan every historical record. The
+        # ceiling that tripped is carried by the message, the finding,
+        # the event and the inbox evidence instead.
         return self.fail(
             comp, error, phase=phase, check="token_budget",
             signatures=["token_budget:exceeded"],
@@ -1281,9 +1403,9 @@ class ComponentPipeline:
         # worker's reason is used only when the parent's own totals do
         # not show a breach - the unreportable-usage case, where the
         # derived "N >= cap" sentence would be false.
-        if comp_result.budget_exceeded or self.token_budget_exceeded():
+        if comp_result.budget_exceeded or self.budget_exceeded():
             reason = (
-                "" if self.token_budget_exceeded()
+                "" if self.budget_exceeded()
                 else (comp_result.error or "")
             )
             return PipelineOutcome(
@@ -1968,13 +2090,14 @@ class ComponentPipeline:
         # failed or crashed review still counts.
         if review_agent is not None:
             self._record_usage(comp.id, "review", collect_usage(review_agent))
-        if self.token_budget_exceeded():
+        breached = self.breached_ceiling()
+        if breached is not None:
             return ReviewPhaseResult(
                 ran=True,
                 result=review_result,
                 failure=PhaseFailure(
                     action=FailureAction.TOKEN_BUDGET,
-                    error="token budget exceeded",
+                    error=f"budget exceeded ({breached})",
                     phase="review",
                 ),
             )
@@ -2209,13 +2332,14 @@ class ComponentPipeline:
         # failed and crashed passes still count toward the meter.
         if sec_agent is not None:
             self._record_usage(comp.id, "security", collect_usage(sec_agent))
-        if self.token_budget_exceeded():
+        breached = self.breached_ceiling()
+        if breached is not None:
             return SecurityPhaseResult(
                 ran=True,
                 result=sec_result,
                 failure=PhaseFailure(
                     action=FailureAction.TOKEN_BUDGET,
-                    error="token budget exceeded",
+                    error=f"budget exceeded ({breached})",
                     phase="security",
                 ),
             )
@@ -2340,22 +2464,31 @@ class ComponentPipeline:
             return DistillPhaseResult(
                 ran=False, skip_reason="adversarial LLM budget exhausted",
             )
-        if self.token_budget_exceeded():
-            # R3.1: the gates all passed before the cap tripped, so the
-            # component proceeds to PR - but no further LLM spend. The
-            # skip is recorded, and the scheduling gate stops any
+        breached = self.breached_ceiling()
+        if breached is not None:
+            # R3.1: the gates all passed before the ceiling tripped, so
+            # the component proceeds to PR - but no further LLM spend.
+            # The skip is recorded, and the scheduling gate stops any
             # remaining components loudly.
+            detail = (
+                f"{self.run_usage.total_tokens} >= "
+                f"{self.factory_config.max_total_tokens}"
+                if breached == "max_total_tokens"
+                else (
+                    f"${self.run_usage.cost_usd:.6f} >= "
+                    f"${self.factory_config.max_cost_usd}"
+                )
+            )
             self.ui.warn(
                 f"  Knowledge: skipped for {comp.id} "
-                f"(token budget exceeded: {self.run_usage.total_tokens} >= "
-                f"{self.factory_config.max_total_tokens})"
+                f"(budget exceeded, {breached}: {detail})"
             )
             self._record_phase_skip(
-                comp, "knowledge", "token budget (max_total_tokens) exceeded",
+                comp, "knowledge", f"budget ({breached}) exceeded",
             )
             return DistillPhaseResult(
                 ran=False,
-                skip_reason="token budget (max_total_tokens) exceeded",
+                skip_reason=f"budget ({breached}) exceeded",
             )
 
         self.adversarial_budget_consume()

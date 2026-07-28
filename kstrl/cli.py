@@ -1705,10 +1705,24 @@ def decompose(
     type=int,
     default=None,
     help="Run-level token budget across ALL phases (engineer + review "
-         "+ security + distill); 0 = unbounded. On breach the current "
-         "component fails with a synthetic budget finding and pending "
-         "components halt (default: 0, or KSTRL_FACTORY_MAX_TOTAL_TOKENS "
+         "+ security + distill); 0 = unbounded. Counts CACHE READS at "
+         "par, so it is a poor proxy for spend - prefer --max-cost-usd. "
+         "On breach the current component fails with a synthetic budget "
+         "finding and pending components halt (default: 0, or "
+         "KSTRL_FACTORY_MAX_TOTAL_TOKENS "
          "/ [factory].max_total_tokens in kstrl.toml)",
+)
+@click.option(
+    "--max-cost-usd",
+    type=float,
+    default=None,
+    help="Run-level USD budget across ALL phases; 0 = unbounded. "
+         "Checked between engineer iterations and at phase boundaries, "
+         "so it is NOT a hard cap: the iteration already in flight is "
+         "unbounded. Distinct from [agent] budget_usd, which is "
+         "adapter-internal (claude-sdk only). Default: 0, or "
+         "KSTRL_FACTORY_MAX_COST_USD / [factory].max_cost_usd in "
+         "kstrl.toml",
 )
 @click.option(
     "--pause-before-pr-merge/--no-pause-before-pr-merge",
@@ -1825,6 +1839,7 @@ def factory(
     component_timeout: float | None,
     max_adversarial_calls: int | None,
     max_total_tokens: int | None,
+    max_cost_usd: float | None,
     pause_before_pr_merge: bool | None,
     progress_log: Path | None,
     no_worktrees: bool,
@@ -1941,6 +1956,7 @@ def factory(
                 ("review_mode", review_mode is not None),
                 ("max_adversarial_calls", max_adversarial_calls is not None),
                 ("max_total_tokens", max_total_tokens is not None),
+                ("max_cost_usd", max_cost_usd is not None),
                 ("pause_before_pr_merge", pause_before_pr_merge is not None),
                 ("use_worktrees", no_worktrees),
                 ("keep_worktrees_on_failure", keep_worktrees_on_failure),
@@ -1963,6 +1979,8 @@ def factory(
         factory_config.max_adversarial_calls = max_adversarial_calls
     if max_total_tokens is not None:
         factory_config.max_total_tokens = max_total_tokens
+    if max_cost_usd is not None:
+        factory_config.max_cost_usd = max_cost_usd
     if pause_before_pr_merge is not None:
         factory_config.pause_before_pr_merge = pause_before_pr_merge
     if no_worktrees:
@@ -2355,14 +2373,16 @@ def _render_status(
             )
         if state.usage_calls:
             note = "+" if state.unreported_calls else ""
+            caps = []
+            if state.max_total_tokens:
+                caps.append(f"{state.max_total_tokens} token cap")
+            if state.max_cost_usd:
+                caps.append(f"${state.max_cost_usd} cost cap")
             ui_impl.kv(
                 "Run usage",
                 f"{state.total_tokens}{note} tokens, "
                 f"${state.cost_usd:.4f}{note}"
-                + (
-                    f" of {state.max_total_tokens} token cap"
-                    if state.max_total_tokens else ""
-                ),
+                + (f" of {', '.join(caps)}" if caps else ""),
             )
 
     counts: dict[str, int] = {}

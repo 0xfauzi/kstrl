@@ -193,15 +193,18 @@ class ComponentUsage(Event):
     whenever ``unreported_calls`` > 0.
 
     R8: ``token_calls`` is the narrower coverage figure - calls that
-    reported an actual token count, as opposed to cost alone. Payloads
-    written before R8 omit it and decode to 0; the decoder reads only
-    keys it knows, so old and new readers interoperate both ways."""
+    reported an actual token count, as opposed to cost alone -
+    and ``cost_calls`` is its mirror for the cost axis. Payloads written
+    before those fields landed omit them and decode to 0; the decoder
+    reads only keys it knows, so old and new readers interoperate both
+    ways."""
 
     type: ClassVar[str] = "component_usage"
     phase: str = ""
     calls: int = 0
     known_calls: int = 0
     token_calls: int = 0
+    cost_calls: int = 0
     unreported_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -214,9 +217,20 @@ class ComponentUsage(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class BudgetExceeded(Event):
+    """A run-level ceiling stopped a component.
+
+    R8: ``ceiling`` names WHICH one (``"max_total_tokens"`` /
+    ``"max_cost_usd"``), because a consumer that assumed "token" would
+    tell the operator to raise the wrong knob. Empty on payloads written
+    before the cost ceiling landed, and on the in-loop unenforceable
+    halt, where no ceiling was numerically breached."""
+
     type: ClassVar[str] = "budget_exceeded"
     total_tokens: int = 0
     max_total_tokens: int = 0
+    cost_usd: float = 0.0
+    max_cost_usd: float = 0.0
+    ceiling: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -312,6 +326,7 @@ class RunPlan(Event):
     components: tuple[Mapping[str, Any], ...] = ()
     max_total_tokens: int = 0
     max_adversarial_calls: int = 0
+    max_cost_usd: float = 0.0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -717,6 +732,7 @@ class V1CompatSink:
                 "calls": event.calls,
                 "known_calls": event.known_calls,
                 "token_calls": event.token_calls,
+                "cost_calls": event.cost_calls,
                 "unreported_calls": event.unreported_calls,
                 "input_tokens": event.input_tokens,
                 "output_tokens": event.output_tokens,
@@ -727,7 +743,11 @@ class V1CompatSink:
                 "duration_seconds": event.duration_seconds,
             })
         elif isinstance(event, BudgetExceeded):
-            log.budget_exceeded(comp, event.total_tokens, event.max_total_tokens)
+            log.budget_exceeded(
+                comp, event.total_tokens, event.max_total_tokens,
+                cost_usd=event.cost_usd, max_cost_usd=event.max_cost_usd,
+                ceiling=event.ceiling,
+            )
         elif isinstance(event, ContractResult):
             log.contract_result(
                 event.tier, event.passed, event.breaker, event.duration_seconds,

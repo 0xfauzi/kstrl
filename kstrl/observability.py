@@ -230,12 +230,21 @@ class ProgressLog:
         component_id: str,
         total_tokens: int,
         max_total_tokens: int,
+        cost_usd: float = 0.0,
+        max_cost_usd: float = 0.0,
+        ceiling: str = "",
     ) -> None:
-        """R3.1: the run-level token budget tripped; the named component
-        was failed with a synthetic budget finding."""
+        """R3.1/R8: a run-level ceiling tripped; the named component was
+        failed with a synthetic budget finding. ``ceiling`` names which
+        one (``max_total_tokens`` / ``max_cost_usd``); it is empty when
+        the halt came from the in-loop unenforceable branch, where no
+        ceiling was numerically breached."""
         self.emit("budget_exceeded", component_id=component_id, data={
             "total_tokens": total_tokens,
             "max_total_tokens": max_total_tokens,
+            "cost_usd": cost_usd,
+            "max_cost_usd": max_cost_usd,
+            "ceiling": ceiling,
         })
 
     def contract_result(

@@ -205,7 +205,7 @@ def _section_specs() -> list[SectionSpec]:
             identity_keys(FactoryConfig, [
                 "max_parallel", "max_retries", "retry_delay", "use_worktrees",
                 "single_pr", "create_prs", "review_mode", "merge_timeout",
-                "max_adversarial_calls", "max_total_tokens",
+                "max_adversarial_calls", "max_total_tokens", "max_cost_usd",
                 "pause_before_pr_merge", "progress_log_enabled",
                 "keep_worktrees_on_failure",
             ]),
@@ -371,8 +371,13 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "merge_timeout"): "seconds to wait for PR merge confirmation",
     ("factory", "max_adversarial_calls"): "cap on review+security+distill LLM calls; 0 = unbounded",
     ("factory", "max_total_tokens"):
-        "run-level token budget; 0 = unbounded. Halts before the next engineer "
-        "iteration or phase, never mid-call (docs/env-vars.md)",
+        "run-level token budget; 0 = unbounded. Counts cache reads at par, so "
+        "it is a poor proxy for cost - prefer max_cost_usd. Halts before the "
+        "next engineer iteration or phase, never mid-call (docs/env-vars.md)",
+    ("factory", "max_cost_usd"):
+        "run-level USD budget; 0 = unbounded. Same halt granularity as "
+        "max_total_tokens (between iterations, not mid-call), so NOT a hard "
+        "cap. Not [agent] budget_usd (docs/env-vars.md)",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
     ("factory", "progress_log_enabled"):
         "JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is "

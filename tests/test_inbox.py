@@ -280,7 +280,7 @@ def _init_git_repo(root: Path) -> None:
     run("commit", "-m", "base")
 
 
-def _usage(total: int) -> object:
+def _usage(total: int, cost: float = 0.0) -> object:
     from kstrl.agents.base import UsageRecord, UsageTotals
 
     totals = UsageTotals()
@@ -288,6 +288,7 @@ def _usage(total: int) -> object:
         input_tokens=total // 3,
         output_tokens=total - total // 3,
         total_tokens=total,
+        cost_usd=cost or None,
         duration_seconds=1.0,
         source="claude-stream-json",
     ))
@@ -302,7 +303,9 @@ def _run_factory(
     autonomy: bool = False,
     inbox_enabled: bool = True,
     max_total_tokens: int = 0,
+    max_cost_usd: float = 0.0,
     engineer_tokens: int = 0,
+    engineer_cost: float = 0.0,
     create_prs: bool = False,
     pause_before_pr_merge: bool = False,
 ) -> None:
@@ -335,6 +338,7 @@ def _run_factory(
         use_worktrees=False, create_prs=create_prs, max_parallel=1,
         max_retries=0, retry_delay=0, review_mode="skip",
         max_total_tokens=max_total_tokens,
+        max_cost_usd=max_cost_usd,
         pause_before_pr_merge=pause_before_pr_merge,
         verify_config=VerifyConfig(
             test_command="true", typecheck_command="true", lint_command="true",
@@ -351,7 +355,10 @@ def _run_factory(
     )
     component_result = ComponentResult(
         "comp-a", success=True, iterations=1,
-        usage=_usage(engineer_tokens) if engineer_tokens else None,
+        usage=(
+            _usage(engineer_tokens, engineer_cost)
+            if engineer_tokens or engineer_cost else None
+        ),
     )
     with (
         patch(
@@ -650,6 +657,41 @@ class TestBudgetEmitsOneItem:
         _run_factory(tmp_path, max_total_tokens=100, engineer_tokens=500)
         kinds = [str(i.kind) for i in _box(tmp_path).open_items()]
         assert kinds == ["budget_overrun"]
+
+    def test_cost_halt_also_emits_exactly_one_item(
+        self, tmp_path: Path,
+    ) -> None:
+        """The cost ceiling reuses the SAME suppression, so it must not
+        regress it: one budget_overrun, no duplicate halted_run."""
+        _run_factory(tmp_path, max_cost_usd=0.10, engineer_cost=0.25)
+        items = _box(tmp_path).open_items()
+        assert [str(i.kind) for i in items] == ["budget_overrun"]
+
+    def test_cost_item_names_the_ceiling_that_tripped(
+        self, tmp_path: Path,
+    ) -> None:
+        """With two ceilings, an item that always said "token" would send
+        the operator to raise the wrong knob."""
+        _run_factory(tmp_path, max_cost_usd=0.10, engineer_cost=0.25)
+        item = _box(tmp_path).open_items()[0]
+        assert "max_cost_usd" in item.title
+        assert "cost budget exceeded" in item.detail
+        assert item.evidence["ceiling"] == "max_cost_usd"
+
+    def test_token_item_still_names_the_token_ceiling(
+        self, tmp_path: Path,
+    ) -> None:
+        _run_factory(tmp_path, max_total_tokens=100, engineer_tokens=500)
+        item = _box(tmp_path).open_items()[0]
+        assert "max_total_tokens" in item.title
+        assert "token budget exceeded" in item.detail
+        assert item.evidence["ceiling"] == "max_total_tokens"
+
+    def test_zero_cost_ceiling_is_inert(self, tmp_path: Path) -> None:
+        """max_cost_usd = 0 matches the max_total_tokens convention:
+        unbounded, no item, the component completes."""
+        _run_factory(tmp_path, max_cost_usd=0.0, engineer_cost=99.0)
+        assert _box(tmp_path).open_items() == []
 
 
 class TestNotifyWiring:

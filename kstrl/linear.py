@@ -816,6 +816,15 @@ class LinearSink:
             error = str(data.get("error", ""))[:2000]
             return f"ks run `{self._run_id}`: component failed.\n\n{error}"
         if event_type == "budget_exceeded":
+            # R8: name the ceiling that tripped. Payloads written before
+            # the cost ceiling landed carry no "ceiling" key, and the
+            # token wording is then the only honest reading.
+            if data.get("ceiling") == "max_cost_usd":
+                return (
+                    f"ks run `{self._run_id}`: run cost budget exceeded "
+                    f"(${data.get('cost_usd')}/${data.get('max_cost_usd')}); "
+                    "component failed without further adversarial calls."
+                )
             return (
                 f"ks run `{self._run_id}`: run token budget exceeded "
                 f"({data.get('total_tokens')}/{data.get('max_total_tokens')}); "
