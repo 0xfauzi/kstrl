@@ -416,3 +416,95 @@ class TestJsonlSink:
         sink2.close()
         texts = [json.loads(line)["data"]["text"] for line in p.read_text().splitlines()]
         assert texts == ["one", "two"]
+
+
+class TestBothSinksCarryTheSameBudgetHalt:
+    """The durable sink and the progress log must record the same facts.
+
+    Found by a real factory run, not by this suite: `JsonlSink` writes
+    the event via `to_json_line`, so it picked up `condition`/`ceilings`
+    automatically, while `V1CompatSink` delegates to a `ProgressLog`
+    method with a HAND-WRITTEN field list that was never updated. The
+    durable events.jsonl carried both fields; progress.jsonl silently
+    dropped them.
+
+    Nothing asserted the two agreed, which is why a whole-field
+    divergence survived a green suite. These tests fix that, and are
+    written to fail for ANY future field added to one sink and not the
+    other - not just this pair.
+    """
+
+    @staticmethod
+    def _emit_both(
+        tmp_path: Path, event: ev.BudgetExceeded,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        from kstrl.observability import ProgressLog
+
+        durable_path = tmp_path / "events.jsonl"
+        progress_path = tmp_path / "progress.jsonl"
+        ev.JsonlSink(durable_path).emit(event)
+        ev.V1CompatSink(ProgressLog(progress_path)).emit(event)
+
+        def payload(path: Path) -> dict[str, Any]:
+            for line in path.read_text().splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if row.get("event") == "budget_exceeded":
+                    return dict(row["data"])
+            raise AssertionError(f"no budget_exceeded line in {path}")
+
+        return payload(durable_path), payload(progress_path)
+
+    def test_a_breach_reaches_both_sinks_identically(
+        self, tmp_path: Path,
+    ) -> None:
+        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
+            component="comp-a", total_tokens=4017316, max_total_tokens=0,
+            cost_usd=5.123713, max_cost_usd=5.0, ceiling="max_cost_usd",
+            condition="breached", ceilings=("max_cost_usd",),
+        ))
+        assert durable == progress
+
+    def test_an_unenforceable_halt_reaches_both_sinks_identically(
+        self, tmp_path: Path,
+    ) -> None:
+        """The multi-ceiling case is where a single-value field loses
+        the most, so it is the one most worth pinning."""
+        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
+            component="comp-a", total_tokens=0, max_total_tokens=500,
+            cost_usd=0.0, max_cost_usd=100.0,
+            ceiling="max_total_tokens, max_cost_usd",
+            condition="unenforceable",
+            ceilings=("max_total_tokens", "max_cost_usd"),
+        ))
+        assert durable == progress
+        assert progress["ceilings"] == ["max_total_tokens", "max_cost_usd"]
+        assert progress["condition"] == "unenforceable"
+
+    def test_every_event_field_survives_the_progress_log(
+        self, tmp_path: Path,
+    ) -> None:
+        """Generic guard: any field added to BudgetExceeded later must
+        appear in BOTH sinks. This is the assertion whose absence let a
+        two-field divergence ship."""
+        import dataclasses
+
+        event = ev.BudgetExceeded(
+            component="comp-a", total_tokens=1, max_total_tokens=2,
+            cost_usd=3.0, max_cost_usd=4.0, ceiling="max_cost_usd",
+            condition="breached", ceilings=("max_cost_usd",),
+        )
+        durable, progress = self._emit_both(tmp_path, event)
+
+        base = {f.name for f in dataclasses.fields(ev.Event)}
+        payload_fields = {
+            f.name for f in dataclasses.fields(event)
+        } - base - {"type"}
+        missing = payload_fields - progress.keys()
+        assert not missing, (
+            f"BudgetExceeded fields missing from progress.jsonl: {missing}. "
+            "Add them to ProgressLog.budget_exceeded and the V1CompatSink "
+            "bridge."
+        )
+        assert payload_fields <= durable.keys()

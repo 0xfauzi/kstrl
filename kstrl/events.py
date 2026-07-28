@@ -781,7 +781,8 @@ class V1CompatSink:
             log.budget_exceeded(
                 comp, event.total_tokens, event.max_total_tokens,
                 cost_usd=event.cost_usd, max_cost_usd=event.max_cost_usd,
-                ceiling=event.ceiling,
+                ceiling=event.ceiling, condition=event.condition,
+                ceilings=event.ceilings,
             )
         elif isinstance(event, ContractResult):
             log.contract_result(

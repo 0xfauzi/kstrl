@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -233,18 +233,31 @@ class ProgressLog:
         cost_usd: float = 0.0,
         max_cost_usd: float = 0.0,
         ceiling: str = "",
+        condition: str = "",
+        ceilings: Sequence[str] = (),
     ) -> None:
         """R3.1/R8: a run-level ceiling tripped; the named component was
-        failed with a synthetic budget finding. ``ceiling`` names which
-        one (``max_total_tokens`` / ``max_cost_usd``); it is empty when
-        the halt came from the in-loop unenforceable branch, where no
-        ceiling was numerically breached."""
+        failed with a synthetic budget finding.
+
+        ``ceiling`` is the joined legacy string. ``condition``
+        (``"breached"`` / ``"unenforceable"``) and ``ceilings`` carry the
+        halt structurally, matching :class:`events.BudgetExceeded`.
+
+        This emitter had a hand-written field list, so when the
+        structural pair was added the progress log kept writing only
+        ``ceiling`` - the durable ``events.jsonl`` carried both fields
+        while ``progress.jsonl`` silently dropped them. Caught by a real
+        factory run, not by the suite, because nothing asserted the two
+        sinks agreed.
+        """
         self.emit("budget_exceeded", component_id=component_id, data={
             "total_tokens": total_tokens,
             "max_total_tokens": max_total_tokens,
             "cost_usd": cost_usd,
             "max_cost_usd": max_cost_usd,
             "ceiling": ceiling,
+            "condition": condition,
+            "ceilings": list(ceilings),
         })
 
     def contract_result(
