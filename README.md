@@ -265,7 +265,7 @@ interactive = false  # human-in-the-loop mode for the legacy loop
 [paths]
 prompt = "scripts/kstrl/prompt.md"              # engineer prompt file
 prd = "scripts/kstrl/prd.json"                  # PRD file
-progress = "scripts/kstrl/progress.txt"         # progress log the agent appends to; set = forced on every factory component, unset = each writes beside its own PRD
+progress = ""                                   # progress log the agent appends to; empty = each factory component writes beside its own PRD (inside its allowedPaths), set = that one path is forced on every component
 codebase_map = "scripts/kstrl/codebase_map.md"  # brownfield codebase notes
 allowed = []                                    # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
 

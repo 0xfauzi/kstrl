@@ -1521,6 +1521,36 @@ class ComponentPipeline:
                 success=False,
                 error=comp_result.error,
             ))
+            if comp_result.guard_violations:
+                # The in-loop guard runs the SAME check as Phase 1's
+                # diff_scope, only earlier, so it must produce the same
+                # audit record - otherwise moving the catch forward
+                # silently changes the shape of the journal, and a
+                # scope failure caught in-loop would leave no
+                # verification_result behind at all.
+                #
+                # Exactly one check is reported. Listing the others
+                # would claim tests and typecheck ran when the loop
+                # halted before they could.
+                detail = comp_result.error or "files outside allowed scope"
+                self.bus.emit(ev.VerificationResultEvent(
+                    component=comp.id, passed=False,
+                    checks=("diff_scope",), failures=(detail,),
+                    duration_seconds=0.0,
+                ))
+                # Same "<check>: FAIL" token as
+                # VerificationResult.as_context(), and the same retry
+                # reason Phase 1 uses: consumers keying on either keep
+                # working no matter which layer caught the violation. A
+                # second wording for one failure is how a mislabel
+                # becomes a divergence (R7.1 / #179).
+                ctx.add_verification_failure(f"diff_scope: FAIL - {detail}")
+                return PipelineOutcome(
+                    transition=self.retry_or_fail(
+                        comp, "Mechanical verification failed", ctx.to_json(),
+                        phase="verify", check="diff_scope",
+                    ),
+                )
             return PipelineOutcome(
                 transition=self.retry_or_fail(
                     comp, comp_result.error or "Unknown error", ctx.to_json(),
@@ -1762,6 +1792,16 @@ class ComponentPipeline:
         # agent that corrupts or deletes its own PRD would unbind its
         # write scope. Load failure now flows into check_diff_scope as
         # allowed_paths_error, which fails the check closed.
+        #
+        # R8 review finding 5: the family is OSError, not just
+        # FileNotFoundError. A prd.json that is a DIRECTORY raises
+        # IsADirectoryError and an unreadable one PermissionError; both
+        # escaped this block and became a factory EXCEPTION instead of a
+        # failed verification. Fail-closed only works if the failure is
+        # caught: an unreadable PRD must produce a verification RESULT
+        # (check_diff_scope failing on allowed_paths_error), which is
+        # recorded, retried and reported, rather than an exception the
+        # component's error path never sees.
         component_allowed_paths: list[str] | None = None
         allowed_paths_error: str | None = None
         try:
@@ -1769,6 +1809,8 @@ class ComponentPipeline:
             component_allowed_paths = prd_for_scope.allowed_paths
         except FileNotFoundError as exc:
             allowed_paths_error = f"PRD not found: {exc}"
+        except OSError as exc:
+            allowed_paths_error = f"PRD could not be read: {exc}"
         except ValueError as exc:
             allowed_paths_error = f"PRD failed to parse: {exc}"
         # R7.2: fixtures config resolves from toml/env when the

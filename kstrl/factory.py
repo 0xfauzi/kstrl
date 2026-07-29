@@ -642,6 +642,11 @@ class ComponentResult:
     budget_exceeded: bool = False
     budget_halt_condition: str = ""
     budget_halt_ceilings: tuple[str, ...] = ()
+    # Files the in-loop scope guard rejected. Carried so the pipeline can
+    # file the halt under the retry context's verification-failures
+    # section, where R0.4 established the retry agent looks for scope
+    # guidance - catching the violation earlier must not relocate it.
+    guard_violations: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1027,7 +1032,14 @@ def _component_scope(
     """
     try:
         prd = PRD.load(root_dir / comp.prd_path)
-    except (FileNotFoundError, ValueError):
+    except (OSError, ValueError):
+        # OSError, not FileNotFoundError (R8 review finding 5): a PRD
+        # path that is a DIRECTORY raises IsADirectoryError, and an
+        # unreadable one PermissionError - both OSError subclasses that
+        # escaped the narrower catch and aborted SCHEDULING, before
+        # Phase 1 ever ran. This runs per component while the run is
+        # being planned, so an escape here takes the whole run down for
+        # one bad file. ValueError covers the parse/schema failures.
         return base_config.allowed_paths or None
     return prd.allowed_paths or base_config.allowed_paths or None
 
@@ -1244,6 +1256,7 @@ def _run_component(
     redirect_output: bool = True,
     live_line: Callable[[str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
+    base_branch: str = "main",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -1488,6 +1501,7 @@ def _run_component(
             stop_check=stop_check,
             budget=token_budget,
             on_iteration_usage=on_iteration_usage,
+            guard_base_ref=base_branch,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -1507,14 +1521,28 @@ def _run_component(
             # redo the same edit. Mirrors check_diff_scope's wording so
             # the two scope failures read identically wherever they are
             # caught.
+            #
+            # R0.4 is why the base branch and the COMPLETE allowed-paths
+            # list are repeated verbatim rather than paraphrased: the
+            # recorded e2e run guessed `main` as the base and reverted
+            # base-branch content with `git checkout main -- ...`,
+            # failing again. Those two lines used to arrive from Phase 1;
+            # now that the in-loop guard fires FIRST, this message is
+            # what reaches attempt 2, so it must carry them itself.
             shown = list(result.guard_violations[:15])
             more = len(result.guard_violations) - len(shown)
             listed = ", ".join(shown) + (f" ... and {more} more" if more else "")
             error = (
                 f"{len(result.guard_violations)} file(s) outside the "
                 f"component's allowed scope, caught in-loop after "
-                f"iteration {result.iterations}: {listed}. Revert only "
-                "your own out-of-scope edits; do not widen allowedPaths."
+                f"iteration {result.iterations}: {listed}. "
+                f"Base branch: {base_branch} "
+                f"(scope is judged on `git diff {base_branch}...HEAD`; "
+                f"do NOT `git checkout {base_branch} -- <path>`, revert "
+                "only your own out-of-scope commits/edits). "
+                f"Allowed paths (complete list): "
+                f"{', '.join(allowed_paths or [])}. "
+                "Do not widen allowedPaths."
             )
         elif result.no_progress:
             error = (
@@ -1546,6 +1574,7 @@ def _run_component(
             budget_exceeded=bool(result.budget_halt_reason),
             budget_halt_condition=result.budget_halt_condition,
             budget_halt_ceilings=result.budget_halt_ceilings,
+            guard_violations=result.guard_violations,
         )
     except Exception as exc:
         return ComponentResult(
@@ -2746,6 +2775,11 @@ def _run_factory_locked(
                         # ends at token_budget by construction.
                         task = functools.partial(
                             _run_component, *args,
+                            # Keyword, NOT appended to args: the tuple
+                            # ends at token_budget by construction (see
+                            # above) and a positional extra silently
+                            # lands on redirect_output.
+                            base_branch=manifest.base_branch,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line, "AI",
@@ -2756,7 +2790,20 @@ def _run_factory_locked(
                         )
                         future = executor.submit(task)
                     else:
-                        future = executor.submit(_run_component, *args)
+                        # Bound through partial rather than passed as a
+                        # submit() kwarg: Executor.submit types its own
+                        # **kwargs, so a keyword meant for the worker
+                        # reads as a duplicate of submit's. Picklable -
+                        # _run_component is module-level and the base
+                        # branch is a plain str.
+                        future = executor.submit(
+                            functools.partial(
+                                _run_component, *args,
+                                # Same unprovable-*args limitation the
+                                # inline branch annotates above.
+                                base_branch=manifest.base_branch,  # type: ignore[misc]
+                            ),
+                        )
                     running_futures[future] = comp.id
                     if backstop_seconds > 0:
                         future_deadlines[future] = (

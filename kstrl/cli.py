@@ -34,7 +34,7 @@ from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import (
     KstrlConfig,
     _parse_paths,
-    reconcile_progress_paths,
+    reconcile_progress_config,
     resolve_config_file,
 )
 from kstrl.config_report import build_config_report
@@ -2240,28 +2240,12 @@ def factory(
         # derivation, so they agree until exactly ONE is set - and then the
         # self-critique check inspects a file the engineer never wrote and
         # fails for a reason the operator cannot see from either setting.
-        writer_path, reader_path = reconcile_progress_paths(
-            base_config.progress_file if base_config.progress_file_explicit else None,
-            v_config.progress_file_path,
-        )
-        if (
-            writer_path is not None
-            and reader_path is not None
-            and writer_path != reader_path
-        ):
-            # Both named, and named differently. Not overridden - an operator
-            # who set two paths meant two paths - but said out loud, because
-            # the failure it produces is otherwise unattributable.
-            ui_impl.warn(
-                f"progress log writer ([paths] progress = {writer_path}) and "
-                f"reader ([verify] progress_file_path = {reader_path}) point "
-                "at different files; the self-critique check will inspect a "
-                "file the engineer does not write"
-            )
-        v_config.progress_file_path = reader_path
-        if writer_path is not None:
-            base_config.progress_file = Path(writer_path)
-            base_config.progress_file_explicit = True
+        # The reconciliation lives in config.py (and is applied in ONE path
+        # domain, review finding 3) so a test can exercise the same wiring
+        # this command runs.
+        mismatch = reconcile_progress_config(base_config, v_config, root_dir)
+        if mismatch is not None:
+            ui_impl.warn(mismatch)
 
     # Ensure prompt file exists
     if not base_config.prompt_file.exists():

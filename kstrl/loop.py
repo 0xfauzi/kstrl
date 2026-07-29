@@ -419,6 +419,10 @@ def run_loop(
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
     guard_ignored_paths: list[str] | None = None,
+    # The component's base branch. The in-loop scope guard measures from
+    # here so it asks the same question check_diff_scope does; None (the
+    # standalone `ks run` case) falls back to the starting HEAD.
+    guard_base_ref: str | None = None,
     budget: LoopBudget | None = None,
     on_iteration_usage: Callable[[UsageTotals], None] | None = None,
 ) -> LoopResult:
@@ -509,9 +513,14 @@ def run_loop(
             "to scaffold a customizable copy)."
         )
         raw_prompt = DEFAULT_PROMPT
+    # $progress_path must be CONCRETE: the agent is told to append to it.
+    # config.progress_file is None until someone configures one (R8
+    # review finding 2), so the standalone loop materializes the
+    # historical repo-root default here. A factory worker arrives with an
+    # already-resolved per-component path and gets it back untouched.
     prompt = Template(raw_prompt).safe_substitute(
         prd_path=str(config.prd_file),
-        progress_path=str(config.progress_file),
+        progress_path=str(config.resolved_progress_file(cwd)),
         codebase_map_path=str(config.codebase_map_file),
     )
 
@@ -554,8 +563,25 @@ def run_loop(
 
     # Guardrails info
     ui.subsection("Guardrails")
+    guard_baseline: git.WorkspaceBaseline | None = None
     if config.allowed_paths and is_repo:
         ui.info(f"Enforcing ALLOWED_PATHS={','.join(config.allowed_paths)}")
+        # R8 review finding 4: the guard's question is "what did THIS
+        # agent change", and only a before-picture can answer it. Taken
+        # once, here, BEFORE the first iteration and after the harness
+        # has finished staging its own files into the worktree: what is
+        # already dirty now belongs to the operator or the harness, and
+        # everything the agent does from here - committed or not - is
+        # attributable to the agent.
+        guard_baseline = git.capture_workspace_baseline(
+            cwd, base_ref=guard_base_ref,
+        )
+        if guard_baseline.dirty:
+            ui.info(
+                f"Guard baseline: HEAD {guard_baseline.head or '<unborn>'}, "
+                f"{len(guard_baseline.dirty)} pre-existing uncommitted "
+                "file(s) excluded from enforcement"
+            )
     else:
         ui.info("ALLOWED_PATHS is empty; enforcement disabled")
 
@@ -668,6 +694,7 @@ def run_loop(
             ok, violations = guards.enforce_allowed_paths(
                 config, ui, cwd, interaction=channel,
                 ignored_paths=ignored_paths,
+                baseline=guard_baseline,
             )
             if not ok:
                 return LoopResult(

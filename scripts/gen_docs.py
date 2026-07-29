@@ -346,9 +346,15 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("run", "interactive"): "human-in-the-loop mode for the legacy loop",
     ("paths", "prompt"): "engineer prompt file",
     ("paths", "prd"): "PRD file",
+    # Rendered as `progress = ""` because the dataclass default is None
+    # (unset). Copying the generated line is therefore INERT - the empty
+    # string is ignored by the loader. The previous rendering emitted the
+    # live repo-root path, and copying THAT recreated the out-of-scope
+    # defect this key's default was changed to avoid (review finding 1).
     ("paths", "progress"):
-        "progress log the agent appends to; set = forced on every "
-        "factory component, unset = each writes beside its own PRD",
+        'progress log the agent appends to; empty = each factory '
+        "component writes beside its own PRD (inside its allowedPaths), "
+        "set = that one path is forced on every component",
     ("paths", "codebase_map"): "brownfield codebase notes",
     ("paths", "allowed"): 'diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted',
     ("git", "branch"): "branch override; empty = use PRD branchName",

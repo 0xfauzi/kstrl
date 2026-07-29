@@ -7,7 +7,7 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 def _parse_bool(value: str | None) -> bool:
@@ -60,6 +60,15 @@ def relative_to_root(path: Path, root_dir: Path) -> str:
 # retry on a real paid run: $12.93.
 COMPONENT_PROGRESS_FILENAME = "progress.txt"
 
+# Where the STANDALONE loop (`ks understand`, `ks feature`) writes its
+# progress log when nothing is configured. There is no component PRD to
+# derive a sibling from there, and the prompt template needs a concrete
+# path, so this historical default is materialized by
+# KstrlConfig.resolved_progress_file - never stored in the field itself,
+# which stays None so "unset" remains distinguishable from "set to the
+# default" (R8 review finding 2).
+DEFAULT_PROGRESS_FILE = "scripts/kstrl/progress.txt"
+
 
 def reconcile_progress_paths(
     writer_explicit: str | Path | None,
@@ -89,6 +98,67 @@ def reconcile_progress_paths(
     return writer, reader
 
 
+class ProgressReaderConfig(Protocol):
+    """The one field ``reconcile_progress_config`` needs from a
+    ``VerifyConfig``. Declared structurally so this module does not
+    import kstrl.verify, which imports this one."""
+
+    progress_file_path: str | None
+
+
+def reconcile_progress_config(
+    base_config: KstrlConfig,
+    verify_config: ProgressReaderConfig,
+    root_dir: Path,
+) -> str | None:
+    """Reconcile the progress log's writer and reader IN ONE PATH DOMAIN.
+
+    Returns a warning message when both were set to different files, or
+    None. Mutates both configs.
+
+    The domain is ROOT-RELATIVE for anything inside ``root_dir``, which
+    is the domain both consumers actually resolve in: the engineer's
+    worker joins the writer path onto its WORKTREE
+    (``factory._run_component``), and the self-critique check joins the
+    reader path onto the same worktree (``verify.run_mechanical_
+    verification``). Reconciling the raw values instead (R8 review
+    finding 3) compared an ABSOLUTE writer - ``KstrlConfig.load``
+    resolves ``[paths] progress`` against the main checkout - against a
+    verbatim-relative reader. The two STRINGS came out equal while the
+    runtime paths did not: the worker wrote ``<worktree>/docs/p.md`` and
+    the check read ``<root>/docs/p.md``, so self-critique still failed,
+    or passed against a stale file in the main checkout.
+
+    A path OUTSIDE ``root_dir`` stays absolute (``relative_to_root``
+    cannot relativize it), which is also self-consistent: joining an
+    absolute path onto a worktree is a no-op, so writer and reader both
+    land on that one file, in the main checkout, for every component.
+    """
+    writer_domain = (
+        relative_to_root(base_config.progress_file, root_dir)
+        if base_config.progress_file is not None else None
+    )
+    reader_domain = (
+        relative_to_root(Path(verify_config.progress_file_path), root_dir)
+        if verify_config.progress_file_path else None
+    )
+    writer, reader = reconcile_progress_paths(writer_domain, reader_domain)
+    verify_config.progress_file_path = reader
+    if writer is not None:
+        base_config.progress_file = Path(writer)
+    if writer is not None and reader is not None and writer != reader:
+        # Both named, and named differently. Not overridden - an operator
+        # who set two paths meant two paths - but said out loud, because
+        # the failure it produces is otherwise unattributable.
+        return (
+            f"progress log writer ([paths] progress = {writer}) and "
+            f"reader ([verify] progress_file_path = {reader}) point at "
+            "different files; the self-critique check will inspect a "
+            "file the engineer does not write"
+        )
+    return None
+
+
 def component_progress_path(
     prd_path: str | Path,
     configured: str | Path | None = None,
@@ -115,14 +185,27 @@ class KstrlConfig:
     max_iterations: int = 10
     prompt_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prompt.md"))
     prd_file: Path = field(default_factory=lambda: Path("scripts/kstrl/prd.json"))
-    progress_file: Path = field(default_factory=lambda: Path("scripts/kstrl/progress.txt"))
-    # Was the progress path explicitly configured ([paths] progress or
-    # PROGRESS_FILE)? Only an explicit setting is forced on every factory
-    # component; otherwise each component derives its own next to its PRD
-    # (see component_progress_path). Mirrors kstrl_branch_explicit rather
-    # than comparing the value against the default - an explicit setting
-    # that happens to equal the default is still explicit.
-    progress_file_explicit: bool = False
+    # None = UNSET, and unset is the safe default: every factory
+    # component then derives its own log next to its own PRD, inside its
+    # allowedPaths (see component_progress_path). Any non-None value -
+    # from [paths] progress, PROGRESS_FILE, a constructor argument, or a
+    # plain attribute assignment - is an explicit setting and is forced
+    # on every component verbatim.
+    #
+    # The sentinel replaced a separate progress_file_explicit flag (R8
+    # review finding 2): the flag was set only by the toml/env loaders,
+    # so a programmatic caller doing
+    # KstrlConfig(progress_file=Path("docs/p.md")) had its value silently
+    # ignored - a regression for tests, embedders and the SDK, which
+    # could previously pass a base config to run_factory and be obeyed.
+    # It is NOT a compare-against-default heuristic (R2.1 deliberately
+    # removed that pattern from VerifyConfig.load): pinning the
+    # historical path explicitly still counts as explicit, because the
+    # field holds a Path only when someone put one there.
+    #
+    # Standalone callers that need a concrete path (the prompt template's
+    # $progress_path) call resolved_progress_file(root_dir).
+    progress_file: Path | None = None
     codebase_map_file: Path = field(
         default_factory=lambda: Path("scripts/kstrl/codebase_map.md")
     )
@@ -164,7 +247,6 @@ class KstrlConfig:
         # immediately usable regardless of cwd at the call site.
         config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
         config.prd_file = root_dir / "scripts/kstrl/prd.json"
-        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
         config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
         _apply_env_overrides(config, root_dir)
         return config
@@ -177,7 +259,6 @@ class KstrlConfig:
         config = cls()
         config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
         config.prd_file = root_dir / "scripts/kstrl/prd.json"
-        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
         config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
         if toml_path.exists():
             _apply_toml_overrides(config, toml_path, root_dir)
@@ -203,7 +284,6 @@ class KstrlConfig:
         config = cls()
         config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
         config.prd_file = root_dir / "scripts/kstrl/prd.json"
-        config.progress_file = root_dir / "scripts/kstrl/progress.txt"
         config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
 
         if toml_path.exists():
@@ -224,9 +304,29 @@ class KstrlConfig:
         """
         configured = (
             relative_to_root(self.progress_file, root_dir)
-            if self.progress_file_explicit else None
+            if self.progress_file is not None else None
         )
         return component_progress_path(prd_path, configured).as_posix()
+
+    def resolved_progress_file(self, root_dir: Path) -> Path:
+        """Concrete progress path for the STANDALONE loop.
+
+        ``progress_file`` is None until someone sets it, but the loop
+        substitutes ``$progress_path`` into the engineer prompt and needs
+        a real path there. Standalone runs have no component PRD to
+        derive a sibling from, so they get the historical repo-root
+        default; a relative explicit setting is anchored to ``root_dir``
+        the same way the loaders anchor one.
+
+        The factory does NOT come through here: its workers are handed an
+        already-concrete per-component path (factory._run_component), and
+        this method returns it untouched.
+        """
+        if self.progress_file is None:
+            return root_dir / DEFAULT_PROGRESS_FILE
+        if self.progress_file.is_absolute():
+            return self.progress_file
+        return root_dir / self.progress_file
 
     def validate(self) -> list[str]:
         """Validate configuration, returning list of errors."""
@@ -329,7 +429,6 @@ def _apply_toml_overrides(
             config.prd_file = _resolve_path(paths["prd"], root_dir)
         if isinstance(paths.get("progress"), str) and paths["progress"]:
             config.progress_file = _resolve_path(paths["progress"], root_dir)
-            config.progress_file_explicit = True
         if isinstance(paths.get("codebase_map"), str) and paths["codebase_map"]:
             config.codebase_map_file = _resolve_path(paths["codebase_map"], root_dir)
         allowed = paths.get("allowed")
@@ -371,7 +470,6 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
         config.prd_file = _resolve_path(os.environ["PRD_FILE"], root_dir)
     if "PROGRESS_FILE" in os.environ:
         config.progress_file = _resolve_path(os.environ["PROGRESS_FILE"], root_dir)
-        config.progress_file_explicit = True
     if "CODEBASE_MAP_FILE" in os.environ:
         config.codebase_map_file = _resolve_path(
             os.environ["CODEBASE_MAP_FILE"], root_dir

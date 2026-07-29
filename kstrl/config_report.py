@@ -102,10 +102,29 @@ def scrubbed_environ() -> Iterator[None]:
         os.environ.update(saved)
 
 
+# Rows whose None means something more specific than "no value", and
+# where printing bare None (or, worse, a materialized default) would
+# misreport what a run will do. R8 review finding 1: `ks config show`
+# printed <root>/scripts/kstrl/progress.txt as the effective progress
+# path, which is exactly the out-of-scope location the factory no longer
+# uses - an operator copying it into kstrl.toml would recreate the
+# defect the sentinel removed.
+UNSET_RENDERINGS: dict[tuple[str, str], str] = {
+    ("paths", "progress"): "<unset: each component writes beside its own PRD>",
+}
+
+
 def format_config_value(value: Any) -> str:
     if isinstance(value, Path):
         return str(value)
     return repr(value)
+
+
+def format_row_value(section: str, key: str, value: Any) -> str:
+    """``format_config_value`` plus the per-row unset renderings."""
+    if value is None and (section, key) in UNSET_RENDERINGS:
+        return UNSET_RENDERINGS[(section, key)]
+    return format_config_value(value)
 
 
 def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
@@ -113,7 +132,6 @@ def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
     config = KstrlConfig()
     config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
     config.prd_file = root_dir / "scripts/kstrl/prd.json"
-    config.progress_file = root_dir / "scripts/kstrl/progress.txt"
     config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
     return config
 
@@ -232,7 +250,9 @@ def build_config_report(
             rows.append(ConfigRow(
                 section=section,
                 key=toml_key,
-                value=format_config_value(getattr(resolved_base, field_name)),
+                value=format_row_value(
+                    section, toml_key, getattr(resolved_base, field_name),
+                ),
                 source=base_sources[field_name],
             ))
     for section, _, knob_fields in phase_sections:

@@ -61,12 +61,45 @@ def check_violations(
     return violations
 
 
+def _revert_violation(
+    file: str,
+    ui: UI,
+    cwd: Path | None,
+    baseline: git.WorkspaceBaseline | None,
+) -> None:
+    """Undo one out-of-scope change.
+
+    With a baseline the revert source is the BASELINE COMMIT, not the
+    index: the violation may already be committed, and restoring from
+    the index would be a no-op that reports success while leaving the
+    file exactly as the agent left it - the guard would then clear the
+    violation and the next iteration would re-detect it forever. A file
+    that did not exist at the baseline is dropped from the index and
+    deleted, so it disappears from the delta the way a revert should.
+    """
+    if baseline is not None and baseline.head is not None:
+        if git.restore_file_from(file, baseline.head, cwd):
+            ui.info(f"  Restored: {file}")
+        else:
+            git.remove_from_index(file, cwd)
+            git.delete_untracked(file, cwd)
+            ui.info(f"  Deleted: {file}")
+        return
+    if git.is_file_tracked(file, cwd):
+        git.restore_file(file, cwd)
+        ui.info(f"  Restored: {file}")
+    else:
+        git.delete_untracked(file, cwd)
+        ui.info(f"  Deleted: {file}")
+
+
 def enforce_allowed_paths(
     config: KstrlConfig,
     ui: UI,
     cwd: Path | None = None,
     interaction: InteractionChannel | None = None,
     ignored_paths: list[str] | None = None,
+    baseline: git.WorkspaceBaseline | None = None,
 ) -> tuple[bool, list[str]]:
     """Enforce ALLOWED_PATHS after an iteration.
 
@@ -76,6 +109,14 @@ def enforce_allowed_paths(
 
     ``ignored_paths`` is the caller's exact set of harness-owned outputs
     for the active run.
+
+    ``baseline`` is the workspace as it stood before the agent started
+    (``git.capture_workspace_baseline``). With one, the guard judges the
+    agent's COMPLETE delta since that point, commits included, and
+    subtracts files that were already dirty. Without one it keeps the
+    historical index+worktree-only view, which is blind to anything the
+    agent committed (R8 review finding 4) - a default preserved so
+    direct callers that never captured a baseline behave as before.
 
     In non-interactive mode, returns (False, violations) if any violations.
     In interactive mode, prompts user for action.
@@ -89,7 +130,10 @@ def enforce_allowed_paths(
         return True, []
 
     # Get changed files
-    changed = git.get_changed_files(cwd)
+    changed = (
+        git.get_changed_files_since(baseline, cwd)
+        if baseline is not None else git.get_changed_files(cwd)
+    )
     violations = check_violations(
         changed, config.allowed_paths, ignored_paths,
     )
@@ -137,12 +181,7 @@ def enforce_allowed_paths(
         # Revert
         ui.info("Reverting disallowed changes...")
         for f in violations:
-            if git.is_file_tracked(f, cwd):
-                git.restore_file(f, cwd)
-                ui.info(f"  Restored: {f}")
-            else:
-                git.delete_untracked(f, cwd)
-                ui.info(f"  Deleted: {f}")
+            _revert_violation(f, ui, cwd, baseline)
         return True, []
     else:
         # Continue anyway
