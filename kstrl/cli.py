@@ -3696,7 +3696,7 @@ def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
     ),
 )
 @click.option(
-    "--max-attempts", type=int, default=None,
+    "--max-attempts", type=click.IntRange(min=1), default=None,
     help="Execution attempts before poisoning (default: [queue] max_attempts)",
 )
 @_queue_root_option
@@ -3727,6 +3727,10 @@ def queue_add(
     )
     try:
         with queue_lock(root_dir):
+            # Under the lock, any staging directory is abandoned by
+            # definition (R8.6 #185 F3), so this is the natural recovery
+            # point for an enqueue killed mid-publish.
+            queue.sweep_staging()
             item = queue.add(
                 spec,
                 title=title,
@@ -3921,8 +3925,10 @@ def queue_rm(
     try:
         with queue_lock(root_dir):
             queue.remove(item, actor=_actor())
-    except QueueError as exc:
-        ui_impl.err(str(exc))
+    except (QueueError, OSError) as exc:
+        # A deletion that failed must not print success: the operator
+        # would believe the item is gone when it is still queued (#185 F6).
+        ui_impl.err(f"Could not remove {item.item_id[:12]}: {exc}")
         sys.exit(1)
     ui_impl.ok(f"Removed {item.item_id[:12]}")
     sys.exit(0)

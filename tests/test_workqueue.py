@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -30,10 +31,12 @@ from kstrl.workqueue import (
     MergeDisposition,
     PauseState,
     Queue,
+    QueueBudgetExhausted,
     QueueConfig,
     QueueError,
     QueueItem,
     QueueLockedError,
+    is_safe_component,
     mint_item_id,
     queue_lock,
     summarize,
@@ -87,6 +90,24 @@ class TestAdd:
     def test_add_inherits_max_attempts_from_config(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path, max_attempts=7)
         assert _add(queue).max_attempts == 7
+
+    def test_add_refuses_a_zero_attempt_budget(self, tmp_path: Path) -> None:
+        """#185 F4: the per-item override bypassed QueueConfig's check.
+
+        An admitted item with max_attempts=0 has no execution budget at
+        all, so it can never legitimately run.
+        """
+        queue = _queue(tmp_path)
+        with pytest.raises(QueueError, match="max_attempts must be >= 1"):
+            queue.add("# spec\n", max_attempts=0)
+        assert queue.items() == []
+
+    def test_add_refuses_a_negative_attempt_budget(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        with pytest.raises(QueueError, match="max_attempts must be >= 1"):
+            queue.add("# spec\n", max_attempts=-1)
 
     def test_add_leaves_no_staging_dir_when_the_write_fails(
         self, tmp_path: Path,
@@ -270,6 +291,30 @@ class TestAttemptCharging:
         assert item.state is ItemState.LEASED
         assert item.attempts == 1, "the charge stays; over-counting is safe"
 
+    def test_the_substrate_refuses_to_start_past_the_bound(
+        self, tmp_path: Path,
+    ) -> None:
+        """#185 F5: the bound is enforced at the SPENDING boundary.
+
+        The previous version of this test skipped the second `start()`
+        when no attempts remained, so it asserted the caller's good
+        manners rather than the substrate's guarantee. It passed while
+        start -> fail -> requeue -> lease -> start happily produced a
+        running item with attempts=2 against max_attempts=1.
+        """
+        queue = _queue(tmp_path, max_attempts=1)
+        item = queue.finish_failed(queue.start(queue.lease(_add(queue))))
+        item = queue.requeue(item)
+        item = queue.lease(item)
+
+        with pytest.raises(QueueBudgetExhausted, match="used all 1 attempts"):
+            queue.start(item)
+
+        assert queue.items()[0].state is ItemState.LEASED, (
+            "a refused start must not leave the item running"
+        )
+        assert queue.items()[0].attempts == 1
+
     def test_retries_are_bounded_by_max_attempts(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path, max_attempts=2)
         item = _add(queue)
@@ -280,6 +325,213 @@ class TestAttemptCharging:
                 item = queue.requeue(item)
         assert item.attempts == 2
         assert item.attempts_remaining == 0
+
+    def test_a_reset_item_can_start_again(self, tmp_path: Path) -> None:
+        """The bound is a bound, not a one-way door."""
+        queue = _queue(tmp_path, max_attempts=1)
+        item = queue.finish_failed(queue.start(queue.lease(_add(queue))))
+        item = queue.requeue(item, reset_attempts=True)
+        started = queue.start(queue.lease(item))
+        assert started.state is ItemState.RUNNING
+        assert started.attempts == 1
+
+
+class TestPathSafety:
+    """#185 F1/F2: sidecars are untrusted input.
+
+    A queue item's metadata is writable by an operator today and by a
+    remote adapter from PR 3, and two of its fields become path
+    components. Both were demonstrated escaping the queue.
+    """
+
+    def test_a_crafted_item_id_cannot_redirect_removal(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        item = _add(queue, title="safe")
+        outside = tmp_path / "outside-dir"
+        outside.mkdir()
+        (outside / "precious.txt").write_text("do not delete")
+
+        meta = queue.item_dir(item) / "meta.json"
+        data = json.loads(meta.read_text())
+        data["item_id"] = "../../../outside-dir"
+        meta.write_text(json.dumps(data))
+
+        with pytest.warns(RuntimeWarning, match="disagrees with directory"):
+            loaded = queue.items()
+        assert loaded[0].item_id == item.item_id, "the directory names the item"
+
+        queue.remove(loaded[0])
+        assert outside.is_dir(), "an unrelated directory must survive"
+        assert (outside / "precious.txt").exists()
+
+    def test_item_dir_refuses_an_unsafe_id(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        rogue = QueueItem(
+            item_id="../escape", title="t", spec_filename="spec.md",
+        )
+        with pytest.raises(QueueError, match="unsafe queue item id"):
+            queue.item_dir(rogue)
+
+    def test_a_symlinked_item_is_rejected(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        item = _add(queue)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "meta.json").write_text(
+            json.dumps({"item_id": "q-link", "spec_filename": "spec.md"})
+        )
+        (queue.state_path(ItemState.QUEUED) / "q-link").symlink_to(elsewhere)
+
+        with pytest.warns(RuntimeWarning, match="may not be symlinks"):
+            loaded = queue.items()
+        assert [i.item_id for i in loaded] == [item.item_id]
+
+    def test_add_refuses_a_traversing_spec_filename(
+        self, tmp_path: Path,
+    ) -> None:
+        """The text form of add() is what PR 3's adapters will call."""
+        queue = _queue(tmp_path)
+        with pytest.raises(QueueError, match="plain basename"):
+            queue.add("remote body\n", spec_filename="../../../../escaped.md")
+        assert not (tmp_path.parent / "escaped.md").exists()
+        assert not (tmp_path / "escaped.md").exists()
+
+    @pytest.mark.parametrize(
+        "name", ["../x.md", "a/b.md", "..", ".", "", ".hidden", "a\\b.md"],
+    )
+    def test_unsafe_names_are_rejected(self, name: str) -> None:
+        assert not is_safe_component(name)
+
+    @pytest.mark.parametrize("name", ["spec.md", "q-1", "a b.md", "SPEC.MD"])
+    def test_safe_names_are_accepted(self, name: str) -> None:
+        assert is_safe_component(name)
+
+    def test_a_crafted_spec_filename_is_rejected_on_decode(self) -> None:
+        assert QueueItem.from_dict({
+            "item_id": "q-1", "spec_filename": "../../../etc/passwd",
+        }) is None
+
+    def test_spec_path_refuses_to_escape_the_item(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        item = _add(queue)
+        item.spec_filename = "../../../../etc/passwd"
+        with pytest.raises(QueueError, match="unsafe spec filename"):
+            queue.spec_path(item)
+
+
+class TestStagingIsNeverScanned:
+    """#185 F3: a death mid-publish must leave nothing a scan can see."""
+
+    def test_staging_lives_outside_the_state_directories(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        queue.ensure_dirs()
+        assert queue.staging_path.name == ".staging"
+        assert queue.staging_path.parent == queue.path
+        for state in ItemState:
+            assert queue.staging_path.parent != queue.state_path(state)
+
+    def test_a_leftover_staging_item_is_not_a_phantom_item(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        real = _add(queue, title="real")
+        ghost = queue.staging_path / "q-ghost"
+        ghost.mkdir(parents=True)
+        (ghost / "spec.md").write_text("# ghost\n")
+        (ghost / "meta.json").write_text(json.dumps({
+            "item_id": "q-ghost", "spec_filename": "spec.md", "title": "ghost",
+        }))
+
+        assert [i.item_id for i in queue.items()] == [real.item_id]
+
+    def test_a_pre_fix_staging_dir_inside_queued_is_ignored_SILENTLY(
+        self, tmp_path: Path,
+    ) -> None:
+        """A queue written by the previous build must not wedge scans.
+
+        Silence is the assertion that matters. The name-safety check
+        would reject a `.staging-*` entry anyway, but it does so with a
+        warning - and a permanent rejected-item warning on every scan is
+        itself the defect #185 F3 reported. The dot filter is what makes
+        the leftover inert rather than noisy.
+        """
+        queue = _queue(tmp_path)
+        real = _add(queue, title="real")
+        legacy = queue.state_path(ItemState.QUEUED) / ".staging-q-ghost"
+        legacy.mkdir(parents=True)
+        (legacy / "meta.json").write_text(json.dumps({
+            "item_id": "q-ghost", "spec_filename": "spec.md", "title": "ghost",
+        }))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            found = queue.items()
+        assert [i.item_id for i in found] == [real.item_id]
+        assert caught == [], (
+            f"a scan must not warn about a staging leftover: "
+            f"{[str(w.message) for w in caught]}"
+        )
+
+    def test_a_hard_kill_mid_publish_leaves_no_phantom_item(
+        self, tmp_path: Path,
+    ) -> None:
+        """The reason staging lives outside the state directories.
+
+        Models SIGKILL rather than an exception: the publishing rename
+        fails AND `add`'s cleanup never runs, so a half-written item is
+        left on disk exactly as a killed process would leave it. With
+        staging inside `queued/`, that leftover carries a valid
+        `meta.json` and a non-dotted name, so a scan returns it as a
+        real queued item whose directory does not exist.
+        """
+        queue = _queue(tmp_path)
+        _add(queue, title="real")
+        real_replace = os.replace
+
+        def die_on_publish(src: object, dst: object) -> None:
+            if Path(str(src)).is_dir():
+                raise OSError("SIGKILL mid-publish")
+            real_replace(src, dst)  # type: ignore[arg-type]
+
+        with patch("kstrl.workqueue.os.replace", side_effect=die_on_publish):
+            with patch("kstrl.workqueue.shutil.rmtree"):  # no cleanup on kill
+                with pytest.raises(OSError):
+                    _add(queue, title="ghost")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            found = queue.items()
+        assert [i.title for i in found] == ["real"], (
+            "a killed publish must leave nothing a scan can see"
+        )
+        assert caught == []
+
+    def test_sweep_removes_abandoned_staging(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        queue.ensure_dirs()
+        (queue.staging_path / "q-ghost").mkdir(parents=True)
+        (queue.staging_path / "q-ghost2").mkdir(parents=True)
+
+        assert queue.sweep_staging() == 2
+        assert list(queue.staging_path.iterdir()) == []
+        assert any(e["to"] == "swept" for e in queue.journal_entries())
+
+    def test_sweep_on_an_empty_queue_is_a_noop(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        assert queue.sweep_staging() == 0
+
+    def test_a_successful_add_leaves_staging_empty(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        assert list(queue.staging_path.iterdir()) == []
 
     def test_requeue_does_not_reset_attempts_by_default(
         self, tmp_path: Path,
@@ -356,7 +608,7 @@ class TestCorruptionHandling:
         bad = tmp_path / ".kstrl" / "queue" / "queued" / "q-nameless"
         bad.mkdir(parents=True)
         (bad / "meta.json").write_text(json.dumps({"title": "x"}))
-        with pytest.warns(RuntimeWarning, match="missing item_id"):
+        with pytest.warns(RuntimeWarning, match="missing/unsafe item_id"):
             assert queue.items() == []
 
     def test_corrupt_merge_disposition_falls_back_to_gated(self) -> None:
@@ -475,6 +727,37 @@ class TestRemoval:
         with pytest.raises(QueueError, match="is running"):
             queue.remove(item)
 
+    def test_a_failed_deletion_is_not_reported_as_success(
+        self, tmp_path: Path,
+    ) -> None:
+        """#185 F6: ignore_errors made both the result and the trail false."""
+        queue = _queue(tmp_path)
+        item = _add(queue)
+        with patch(
+            "kstrl.workqueue.shutil.rmtree",
+            side_effect=PermissionError("read-only"),
+        ):
+            with pytest.raises(OSError):
+                queue.remove(item)
+
+        assert len(queue.items()) == 1, "the item is still there"
+        assert not any(
+            e["to"] == "removed" for e in queue.journal_entries(item.item_id)
+        ), "the audit trail must not claim a removal that did not happen"
+
+    def test_a_silently_failed_deletion_is_caught(
+        self, tmp_path: Path,
+    ) -> None:
+        """Even a no-op rmtree must not produce a `removed` record."""
+        queue = _queue(tmp_path)
+        item = _add(queue)
+        with patch("kstrl.workqueue.shutil.rmtree", return_value=None):
+            with pytest.raises(QueueError, match="still exists"):
+                queue.remove(item)
+        assert not any(
+            e["to"] == "removed" for e in queue.journal_entries(item.item_id)
+        )
+
 
 class TestPause:
     def test_default_is_running(self, tmp_path: Path) -> None:
@@ -525,6 +808,42 @@ class TestPause:
         queue.ensure_dirs()
         queue.pause_path.write_text("[]")
         assert queue.is_paused()
+
+    def test_an_unreadable_marker_file_reads_as_paused(
+        self, tmp_path: Path,
+    ) -> None:
+        """#185 F7: a broad `except OSError` made PermissionError = RUNNING.
+
+        Only FileNotFoundError means "not paused". Any other read failure
+        is a marker we could not read, and resuming unattended spend on
+        that basis is the exact fail-open this module claims not to do.
+        """
+        queue = _queue(tmp_path)
+        queue.ensure_dirs()
+        queue.pause(reason="daily budget")
+
+        with patch.object(
+            Path, "read_text", side_effect=PermissionError("denied"),
+        ):
+            assert queue.is_paused()
+            assert "unreadable" in queue.pause_state().reason
+
+    def test_an_absent_marker_reads_as_running(self, tmp_path: Path) -> None:
+        """FileNotFoundError is the ONE read failure that means unpaused."""
+        queue = _queue(tmp_path)
+        queue.ensure_dirs()
+        assert not queue.pause_path.exists()
+        assert not queue.is_paused()
+
+    def test_next_ready_is_none_when_the_marker_is_unreadable(
+        self, tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        with patch.object(
+            Path, "read_text", side_effect=PermissionError("denied"),
+        ):
+            assert queue.next_ready() is None
 
 
 class TestJournal:

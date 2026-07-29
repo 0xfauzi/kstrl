@@ -23,6 +23,7 @@ is a DIRECTORY holding its spec file plus ``meta.json``::
       done/     finished green
       failed/   finished red and eligible to retry
       poison/   finished red and NOT eligible to retry
+      .staging/ items being assembled; NEVER scanned
       journal.jsonl
       pause.json    (absent = running)
       queue.lock    (short-lived per-transition mutex)
@@ -88,6 +89,47 @@ class QueueError(RuntimeError):
 
 class QueueLockedError(QueueError):
     """Another process holds the queue mutex."""
+
+
+class QueueBudgetExhausted(QueueError):
+    """An item was asked to run with no attempts left.
+
+    Raised by :meth:`Queue.start` - the substrate's own enforcement of
+    ``max_attempts``, independent of whatever the caller believes. The
+    daemon catches this and poisons the item; a caller that ignores it
+    leaves the item leased for the reaper, never running.
+    """
+
+
+#: Names a queue path component may never take. ``.`` and ``..`` are the
+#: traversal primitives; the empty string collapses a join silently.
+_UNSAFE_NAMES = frozenset({"", ".", ".."})
+
+#: Prefix for the hidden staging directory used while publishing an item.
+#: It lives OUTSIDE the state directories so a scan cannot reach it even
+#: if the name filter were removed (review #185 F3).
+STAGING_DIR_NAME = ".staging"
+
+
+def is_safe_component(name: str) -> bool:
+    """Whether ``name`` is a single path component safe to join.
+
+    Rejects separators, traversal, empty names, NUL, and leading dots.
+    Every string that becomes part of a queue path passes through here,
+    because two of them (``item_id`` and ``spec_filename``) are read back
+    from a sidecar an operator or a remote adapter can write. Review
+    #185 F1/F2 demonstrated both: an ``item_id`` of ``../../../outside``
+    made ``remove()`` delete an unrelated directory, and a
+    ``spec_filename`` of ``../../../../escaped.md`` wrote outside the
+    queue while still publishing a normal-looking item.
+    """
+    if name in _UNSAFE_NAMES:
+        return False
+    if name.startswith("."):
+        return False
+    if "/" in name or "\\" in name or "\x00" in name:
+        return False
+    return Path(name).name == name
 
 
 class ItemState(StrEnum):
@@ -315,6 +357,11 @@ class QueueItem:
         item_id = _as_str(data, "item_id")
         spec_filename = _as_str(data, "spec_filename")
         if not item_id or not spec_filename:
+            return None
+        # Both become path components. A sidecar is operator-writable and
+        # (from PR 3) remote-adapter-writable, so it is untrusted input:
+        # reject traversal here rather than at each join site (#185 F2).
+        if not is_safe_component(spec_filename):
             return None
 
         raw_state = _as_str(data, "state", str(ItemState.QUEUED))
@@ -596,16 +643,66 @@ class Queue:
     def state_path(self, state: ItemState) -> Path:
         return self.path / str(state)
 
+    @property
+    def staging_path(self) -> Path:
+        """Where items are assembled before being published.
+
+        Deliberately a sibling of the state directories rather than a
+        hidden entry inside ``queued/``: a scan cannot reach it even if
+        the name filter were removed. Same filesystem, so the publishing
+        ``os.replace`` is still atomic (#185 F3).
+        """
+        return self.path / STAGING_DIR_NAME
+
     def item_dir(self, item: QueueItem) -> Path:
+        if not is_safe_component(item.item_id):
+            raise QueueError(f"unsafe queue item id {item.item_id!r}")
         return self.state_path(item.state) / item.item_id
 
     def ensure_dirs(self) -> None:
         for state in ALL_STATES:
             self.state_path(state).mkdir(parents=True, exist_ok=True)
+        self.staging_path.mkdir(parents=True, exist_ok=True)
+
+    def sweep_staging(self) -> int:
+        """Delete every half-published item, returning how many went.
+
+        A staging directory only exists while ``add`` is mid-publish, and
+        ``add`` runs under the queue mutex, so anything found here while
+        holding that mutex is by definition abandoned - no age heuristic
+        is needed. Call it under ``queue_lock``; calling it without the
+        lock can race a concurrent enqueue. This is the recovery half of
+        the staging policy the scan filter enforces (#185 F3).
+        """
+        if not self.staging_path.is_dir():
+            return 0
+        swept = 0
+        for entry in sorted(self.staging_path.iterdir()):
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
+                swept += 1
+        if swept:
+            self._journal(JournalEntry(
+                ts=_iso(_utc_now()), item_id="", from_state="staging",
+                to_state="swept", reason="abandoned mid-publish",
+                detail={"count": swept},
+            ))
+        return swept
 
     # ---------------------------------------------------------------- read
 
     def _load_item_dir(self, item_path: Path, state: ItemState) -> QueueItem | None:
+        # The DIRECTORY ENTRY is the item's identity, exactly as it is the
+        # item's state. A sidecar that disagrees is corrupt or tampered
+        # with, and trusting its ``item_id`` let a crafted value redirect
+        # rmtree outside the queue (#185 F1).
+        if item_path.is_symlink():
+            _warn_rejected(item_path, "queue items may not be symlinks")
+            return None
+        if not is_safe_component(item_path.name):
+            _warn_rejected(item_path, "unsafe item directory name")
+            return None
+
         meta_path = item_path / META_FILENAME
         try:
             raw = meta_path.read_text(encoding="utf-8")
@@ -622,10 +719,21 @@ class Queue:
             return None
         item = QueueItem.from_dict(data)
         if item is None:
-            _warn_rejected(item_path, "missing item_id or spec_filename")
+            _warn_rejected(
+                item_path, "missing/unsafe item_id or spec_filename",
+            )
             return None
-        # The DIRECTORY is authoritative; the sidecar's copy is a mirror
-        # that may be one crash behind. See the module docstring.
+        # The DIRECTORY is authoritative for both identity and state; the
+        # sidecar's copies are mirrors that may be one crash behind. See
+        # the module docstring.
+        if item.item_id != item_path.name:
+            warnings.warn(
+                f"queue: sidecar item_id {item.item_id!r} disagrees with "
+                f"directory {item_path.name!r}; using the directory",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            item.item_id = item_path.name
         item.state = state
         return item
 
@@ -638,6 +746,12 @@ class Queue:
                 continue
             for entry in sorted(directory.iterdir()):
                 if not entry.is_dir():
+                    continue
+                # Dotted entries are never published items: staging lives
+                # under its own directory now, but the filter stays as
+                # defence in depth so a leftover from any source is inert
+                # rather than surfacing as a phantom item (#185 F3).
+                if entry.name.startswith("."):
                     continue
                 item = self._load_item_dir(entry, state)
                 if item is not None:
@@ -683,7 +797,23 @@ class Queue:
         return None
 
     def spec_path(self, item: QueueItem) -> Path:
-        return self.item_dir(item) / item.spec_filename
+        """The item's spec file, guaranteed to be inside the item.
+
+        Belt and braces over the decode-time filter: an item constructed
+        in memory rather than loaded from disk never passed through
+        ``from_dict``, so the containment check is re-done here (#185 F2).
+        """
+        directory = self.item_dir(item)
+        if not is_safe_component(item.spec_filename):
+            raise QueueError(
+                f"unsafe spec filename {item.spec_filename!r} on {item.item_id}"
+            )
+        candidate = directory / item.spec_filename
+        if directory.resolve() not in candidate.resolve().parents:
+            raise QueueError(
+                f"spec path for {item.item_id} escapes its item directory"
+            )
+        return candidate
 
     def read_spec(self, item: QueueItem) -> str:
         return self.spec_path(item).read_text(encoding="utf-8")
@@ -772,6 +902,23 @@ class Queue:
             resolved_title = title or "untitled"
         if not content.strip():
             raise QueueError("refusing to enqueue an empty spec")
+        # The text form of this API is what PR 3's remote adapters call,
+        # so the filename is untrusted: a caller-supplied
+        # "../../../escaped.md" wrote outside the queue while still
+        # publishing a normal-looking item (#185 F2).
+        if not is_safe_component(spec_filename):
+            raise QueueError(
+                f"spec filename must be a plain basename, got {spec_filename!r}"
+            )
+        resolved_attempts = (
+            self.config.max_attempts if max_attempts is None else max_attempts
+        )
+        # QueueConfig rejects this, but a per-item override bypassed it and
+        # admitted an item with no execution budget at all (#185 F4).
+        if resolved_attempts < 1:
+            raise QueueError(
+                f"max_attempts must be >= 1, got {resolved_attempts}"
+            )
 
         now = _iso(_utc_now())
         item = QueueItem(
@@ -782,9 +929,7 @@ class Queue:
             priority=priority,
             created_at=now,
             updated_at=now,
-            max_attempts=(
-                self.config.max_attempts if max_attempts is None else max_attempts
-            ),
+            max_attempts=resolved_attempts,
             merge_disposition=merge_disposition,
             source=source,
             source_ref=source_ref,
@@ -796,9 +941,10 @@ class Queue:
         directory = self.state_path(ItemState.QUEUED) / item.item_id
         if directory.exists():
             raise QueueError(f"queue item {item.item_id} already exists")
-        # Build in a hidden staging directory and rename into place, so a
-        # scan never sees an item whose spec has not landed yet.
-        staging = self.state_path(ItemState.QUEUED) / f".staging-{item.item_id}"
+        # Build under the staging directory and rename into place, so a
+        # scan never sees an item whose spec has not landed yet. Staging
+        # sits outside the state directories entirely (#185 F3).
+        staging = self.staging_path / item.item_id
         staging.mkdir(parents=True, exist_ok=False)
         try:
             _atomic_write(staging / spec_filename, content)
@@ -904,7 +1050,20 @@ class Queue:
         Charged here rather than on completion because completion is the
         step a crash, a sleep, or a killed process can skip. An attempt
         that ran but was never counted is an unbounded retry loop.
+
+        ``max_attempts`` is enforced HERE, at the spending boundary, not
+        only in the CLI's retry policy. Review #185 F5 showed the bound
+        was advertised but not enforced: start -> fail -> requeue ->
+        lease -> start produced a running item with ``attempts == 2``
+        against ``max_attempts == 1``. A bound that only holds when every
+        caller remembers to check it is not a bound, and the callers here
+        will be an unattended daemon and a reaper.
         """
+        if item.attempts_remaining <= 0:
+            raise QueueBudgetExhausted(
+                f"{item.item_id} has used all {item.max_attempts} attempts; "
+                "refusing to start (poison it or reset attempts explicitly)"
+            )
         return self.transition(
             item, ItemState.RUNNING, reason="started", actor=actor,
             charge_attempt=True, last_run_id=run_id,
@@ -980,7 +1139,15 @@ class Queue:
                 f"{item.item_id} is running; stop the run before removing it"
             )
         directory = self.item_dir(item)
-        shutil.rmtree(directory, ignore_errors=True)
+        # NOT ignore_errors: that swallowed permission and filesystem
+        # failures, after which this journaled a "removed" record and the
+        # CLI printed success for an item still on disk - a false operator
+        # result AND a false audit trail (#185 F6).
+        shutil.rmtree(directory)
+        if directory.exists():
+            raise QueueError(
+                f"failed to remove {item.item_id}: {directory} still exists"
+            )
         self._journal(JournalEntry(
             ts=_iso(_utc_now()), item_id=item.item_id,
             from_state=str(item.state), to_state="removed",
@@ -996,8 +1163,16 @@ class Queue:
     def pause_state(self) -> PauseState:
         try:
             raw = self.pause_path.read_text(encoding="utf-8")
-        except OSError:
+        except FileNotFoundError:
+            # The ONLY read failure that means "not paused". Everything
+            # else is a marker we could not read, and a broad `except
+            # OSError` here made a PermissionError read as RUNNING -
+            # exactly the fail-open this module claims not to do (#185 F7).
             return PauseState()
+        except OSError as exc:
+            return PauseState(
+                paused=True, reason=f"unreadable pause marker: {exc}",
+            )
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:

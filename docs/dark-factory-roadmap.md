@@ -642,6 +642,59 @@ attacker or a bad disk could push it: an unreadable `merge_disposition`
 decodes to `stop_at_pr`, never `auto_merge`, and an unreadable pause
 marker reads as PAUSED, never as running.
 
+**Review corrections (PR #185).** Seven gaps were caught in review and
+closed before merge, all reproduced against the submitted code first.
+Recorded here because five were enforcement bypasses rather than style
+notes, and two of them broke guarantees the PR body had claimed:
+
+1. **`meta.json` was trusted for item IDENTITY**, not just for the
+   fields the directory does not carry. A sidecar edited to
+   `"item_id": "../../../outside-dir"` loaded normally and then made
+   `remove()` delete an unrelated directory while leaving the real item
+   in place. The directory entry is now authoritative for identity
+   exactly as it already was for state, symlinked items are rejected,
+   and every path component passes `is_safe_component`.
+2. **`spec_filename` was joined to a queue path unvalidated.** The
+   text form of `Queue.add` is the API PR 3's remote adapters will call,
+   and `spec_filename="../../../../escaped.md"` wrote outside the queue
+   while still publishing a normal-looking item. Validated on enqueue
+   AND on decode, with a containment re-check in `spec_path`.
+3. **Staging directories were scanned.** A process killed after
+   `meta.json` was written but before the publishing rename left a
+   `.staging-*` entry inside `queued/` that `items()` returned as a real
+   item whose directory did not exist - defeating the stated invariant
+   that scans never see partially published work. Staging moved OUT of
+   the state directories into `.kstrl/queue/.staging/`, scans skip
+   dotted entries as defence in depth, and `sweep_staging()` is the
+   explicit recovery policy (run under the queue lock, where an
+   abandoned staging dir is stale by definition - no age heuristic).
+4. **`max_attempts` was advertised but not enforced.** `start -> fail
+   -> requeue -> lease -> start` produced a running item with
+   `attempts == 2` against `max_attempts == 1`. The bound now holds at
+   the SPENDING boundary (`Queue.start` raises `QueueBudgetExhausted`),
+   not only in the CLI's retry path - the callers here are an
+   unattended daemon and a reaper, so a bound that requires every caller
+   to remember it is not a bound. The pre-existing test skipped the
+   second `start()` when no attempts remained, so it asserted the
+   caller's good manners rather than the substrate's guarantee.
+5. **The per-item `max_attempts` override bypassed `QueueConfig`'s
+   validation**, admitting an item with a zero execution budget.
+   Rejected in `Queue.add` and by a `click.IntRange(min=1)` option.
+6. **`remove()` used `ignore_errors=True` and then journaled success**,
+   so a permission failure produced a false operator result AND a false
+   audit trail. Failures now propagate and the record is written only
+   after the directory is confirmed gone.
+7. **The pause marker failed OPEN.** A broad `except OSError` meant a
+   `PermissionError` on `pause.json` read as RUNNING, which would have
+   resumed unattended spend on an unreadable stop signal.
+   `FileNotFoundError` is now the only read failure that means unpaused.
+
+All seven fixes are mutation-checked (14 mutations, 14 caught). Three
+of the first-draft regression tests were NOT discriminating - they
+passed with the fix reverted, because a second, redundant guard caught
+the same case - and were rewritten to assert the specific mechanism
+before being counted.
+
 **Why.** Intake is one-shot; the factory has no queue. The first US software
 factory (SDC, 1972-78) died because work was not required to flow through
 it - intake is a survival capability, not plumbing.

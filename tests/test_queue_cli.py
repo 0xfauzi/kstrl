@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner, Result
@@ -108,6 +109,36 @@ class TestAdd:
         result = _invoke(["queue", "add", str(blank)], tmp_path)
         assert result.exit_code == 1
         assert "empty spec" in result.output
+
+    def test_zero_max_attempts_is_rejected_by_the_option(
+        self, tmp_path: Path, spec_file: Path,
+    ) -> None:
+        """#185 F4: this used to exit 0 and admit an unrunnable item.
+
+        Asserts the OPTION rejects it (exit 2, a click usage error) rather
+        than merely that something did. `Queue.add` refuses the same value
+        as defence in depth, so a weaker assertion would pass with the
+        option constraint removed and prove only the library guard.
+        """
+        result = _invoke(
+            ["queue", "add", str(spec_file), "--max-attempts", "0"], tmp_path,
+        )
+        assert result.exit_code == 2, "click usage error, not a runtime error"
+        assert "is not in the range" in result.output
+        assert _queue(tmp_path).items() == []
+
+    def test_add_sweeps_an_abandoned_staging_dir(
+        self, tmp_path: Path, spec_file: Path,
+    ) -> None:
+        """#185 F3: enqueue under the lock is the staging recovery point."""
+        queue = _queue(tmp_path)
+        queue.ensure_dirs()
+        (queue.staging_path / "q-ghost").mkdir(parents=True)
+
+        result = _invoke(["queue", "add", str(spec_file)], tmp_path)
+        assert result.exit_code == 0
+        assert list(_queue(tmp_path).staging_path.iterdir()) == []
+        assert len(_queue(tmp_path).items()) == 1
 
 
 class TestLs:
@@ -300,6 +331,21 @@ class TestRm:
             input="n\n",
         )
         assert result.exit_code == 0
+        assert len(_queue(tmp_path).items()) == 1
+
+    def test_rm_reports_a_failed_deletion_as_failure(
+        self, tmp_path: Path, spec_file: Path,
+    ) -> None:
+        """#185 F6: the operator must not be told an item is gone."""
+        _invoke(["queue", "add", str(spec_file)], tmp_path)
+        item = _queue(tmp_path).items()[0]
+        with patch(
+            "kstrl.workqueue.shutil.rmtree",
+            side_effect=PermissionError("read-only"),
+        ):
+            result = _invoke(["queue", "rm", item.item_id, "--yes"], tmp_path)
+        assert result.exit_code == 1
+        assert "Could not remove" in result.output
         assert len(_queue(tmp_path).items()) == 1
 
     def test_rm_refuses_a_running_item(
