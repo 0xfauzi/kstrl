@@ -41,6 +41,7 @@ from kstrl.git import (
 )
 from kstrl.manifest import Component, Manifest
 from kstrl.review import (
+    REVIEWER_PROMPT,
     ReviewMode,
     ReviewResult,
     merge_review_results,
@@ -48,6 +49,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.security import (
+    SECURITY_PROMPT,
     SecurityConfig,
     SecurityMode,
     SecurityResult,
@@ -1191,3 +1193,81 @@ class TestFactoryStripOnce:
         # The real change survives the strip for both reviewers.
         assert "def add(a, b)" in captured["review"]
         assert "def add(a, b)" in captured["security"]
+
+
+class TestChunkHeadersMatchTheReviewContract:
+    """A within-file chunk must arrive with instructions that describe
+    what it actually hides.
+
+    Review finding on #183: both calibrated prompt bodies stated that a
+    `# [kstrl R1.4] diff chunk` was split on FILE boundaries and that
+    only cross-FILE interactions were invisible. Once an oversized single
+    file could be split within itself, that told the reviewer it was
+    holding a whole file when it was holding one part of one - so a
+    defect spanning two hunks of the same file could read as complete,
+    and a guard present in another part could read as missing. The part
+    marker alone contradicting the standing instruction is not a
+    reliable hard-mode contract; the prompts had to move with the code.
+    """
+
+    @staticmethod
+    def _within_file_diff() -> str:
+        header = "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n"
+        hunks = "".join(
+            f"@@ -{i * 10 + 1},3 +{i * 10 + 1},4 @@ def f{i}():\n"
+            f"     a = {i}\n+    b = {i}\n     return a\n"
+            + "+" + "x" * 900 + "\n"
+            for i in range(90)
+        )
+        return header + hunks
+
+    def test_an_oversized_file_really_does_split_within_itself(self) -> None:
+        """Precondition: without this the rest of the class is vacuous."""
+        chunks = split_diff_for_prompt(self._within_file_diff())
+        assert len(chunks) > 1
+        assert any("file part" in c for c in chunks)
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_prompt_describes_the_granularity_it_will_receive(
+        self, prompt: str,
+    ) -> None:
+        chunks = split_diff_for_prompt(self._within_file_diff())
+        partial = next(c for c in chunks if "file part" in c)
+
+        # The exact wording the harness emits must appear in the
+        # instructions, or the reviewer is told about a different
+        # mechanism than the one it is looking at.
+        assert "split on file/hunk boundaries" in partial
+        assert "split on file/hunk boundaries" in prompt
+        assert "file part" in prompt
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_prompt_names_same_file_omission_not_only_cross_file(
+        self, prompt: str,
+    ) -> None:
+        """The substance of the finding: scoping the blindness to
+        'other files' is the part that was actively false."""
+        assert "SAME FILE" in prompt
+        # And it must say what NOT to conclude from a part alone -
+        # 'note that it is partial' is not enough to stop a
+        # false-negative on a same-file cross-hunk defect.
+        assert "another part" in prompt or "elsewhere in the same file" in prompt
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_file_boundary_case_is_still_described(
+        self, prompt: str,
+    ) -> None:
+        """The common case did not stop existing; both must be covered."""
+        assert "split on file boundaries" in prompt

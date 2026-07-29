@@ -458,6 +458,32 @@ def architect_caught(
     return caught, detail
 
 
+
+def _is_within(entry: str, forbidden_dir: str) -> bool:
+    """Is ``entry`` the forbidden directory, or inside it?
+
+    Path-prefix, NOT substring. The substring form was correct while the
+    harness package was ``ralph_py/``, because that string never occurs
+    inside a legitimate path. The kstrl rename (#122/#124/#172) changed
+    the forbidden entry to ``kstrl/``, which IS a substring of
+    ``scripts/kstrl/feature/<id>/`` - the one feature subtree
+    DECOMPOSE_PROMPT explicitly instructs the architect to include. So
+    the check began rejecting the exact output it asks for, and
+    architect_allowed_paths has been failing ever since on correct
+    behaviour. Calibration is opt-in and slow, so nothing surfaced it
+    until an H2 run (finding on #183).
+
+    A false failure here is worse than an ordinary broken test: H2 treats
+    calibration as the truth signal for prompt changes, so a permanently
+    red check trains everyone to wave the gate through.
+    """
+    lhs = entry.strip().lstrip("./")
+    rhs = forbidden_dir.strip().lstrip("./").rstrip("/")
+    if not rhs:
+        return False
+    return lhs == rhs or lhs.startswith(f"{rhs}/")
+
+
 def architect_allowed_paths_caught(
     decompose_output: dict, requirement: dict,
 ) -> tuple[bool, str]:
@@ -505,11 +531,11 @@ def architect_allowed_paths_caught(
                 if not isinstance(entry, str):
                     continue
                 for forbid in forbidden:
-                    if forbid in entry:
+                    if _is_within(entry, forbid):
                         return False, (
                             f"component {c.get('id', '?')} allowedPaths "
                             f"contains forbidden harness internal: "
-                            f"{entry!r} matches {forbid!r}"
+                            f"{entry!r} is inside {forbid!r}"
                         )
 
     test_root = requirement.get("includes_test_root_prefix")
