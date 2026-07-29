@@ -242,6 +242,20 @@ reviewers' output as much as it distrusts the engineer's.
     oversized diff in hard mode. Knowledge distiller input (still head-
     truncated, unstripped) stays out of scope per the session prompt.
     Reviewer-facing chunk/truncation DIRECTIVE remains Session 8C's.
+  - Note (2026-07-29, R8): the "single file over the cap is unsplittable" rule
+    above cost real money. A paid factory run halted hard-mode review on
+    `single-file diff segment is 55710 chars` for a legitimately large test
+    file; the engineer recovered by splitting the file, but that recovery was a
+    full engineer-loop pass ($3.99 in a run where engineer calls cost
+    $1.70-$7.42) spent on a harness packaging limit, not on a defect in the
+    code under review. `split_diff_for_prompt` now splits an over-budget file
+    further on `@@` hunk boundaries, repeating the `diff --git`/`---`/`+++`
+    header and a `file part i of n` marker on every part so each chunk stays a
+    self-describing reviewable unit. Files that already fit are untouched, so
+    multi-file packing is byte-identical to before. The residual floor is a
+    SINGLE hunk over the cap: still `DiffUnsplittableError`, still fail-closed
+    through the retry path (R1.4 forbids truncating a diff under review), with
+    the retry guidance now naming hunk granularity.
 - [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.

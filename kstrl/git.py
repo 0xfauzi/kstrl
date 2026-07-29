@@ -767,9 +767,9 @@ def truncate_diff_for_prompt(
 
 
 class DiffUnsplittableError(ValueError):
-    """An oversized diff cannot be split into <=limit chunks on file
-    boundaries: a single file's diff alone exceeds the limit (or the
-    diff has no ``diff --git`` boundaries at all).
+    """An oversized diff cannot be split into <=limit chunks: a single
+    *hunk* alone exceeds the limit, a file's header leaves no room for
+    hunks, or the diff has no ``diff --git`` / ``@@`` boundaries at all.
 
     R1.4 (H-16): hard-mode callers must treat this as fail-closed - the
     diff cannot be fully reviewed, so it must not merge."""
@@ -782,9 +782,156 @@ class DiffUnsplittableError(ValueError):
 # dropped content, because chunks are contiguous slices of the input.
 _DIFF_FILE_BOUNDARY_RE = _re.compile(r"^diff --git ", _re.MULTILINE)
 
+# Start of a hunk inside one file's segment. The trailing space keeps
+# combined-diff markers ("@@@ ...") out, and unified-diff content lines
+# are always prefixed with ' ', '+' or '-', so a line that begins with
+# "@@ " is a real hunk header (a diff quoted inside a fixture shows up
+# as "+@@ ..."). As with the file boundary, a missed boundary only
+# produces a coarser split, never dropped content: parts are contiguous
+# slices of the segment.
+_DIFF_HUNK_BOUNDARY_RE = _re.compile(r"^@@ ", _re.MULTILINE)
+
 # Headroom reserved inside each chunk for the one-line provenance
 # header split_diff_for_prompt prepends, so header + content <= limit.
 _CHUNK_HEADER_RESERVE = 120
+
+# Provenance headers for a chunk. The file-boundary wording is the
+# pre-R8 text and is kept byte-identical for chunks that carry only
+# whole files, so diffs that already split cleanly chunk exactly as
+# before; chunks carrying a within-file part get the accurate wording
+# instead (a reviewer must not be told "file boundaries" while holding
+# a fragment of a file).
+_CHUNK_HEADER = (
+    "# [kstrl R1.4] diff chunk {i} of {n}: oversized diff split on file "
+    "boundaries; other files are in other chunks\n"
+)
+_CHUNK_HEADER_PARTIAL_FILE = (
+    "# [kstrl R1.4] diff chunk {i} of {n}: oversized diff split on "
+    "file/hunk boundaries; the rest is in other chunks\n"
+)
+
+# Markers prepended to each part of a file that had to be split within
+# itself. Every part names the file and its part number so a reviewer
+# cannot read one part as the file's whole change; parts after the
+# first also carry a repeat of the file header (diff --git / --- / +++)
+# so the part is a self-describing, reviewable unit, and the marker
+# says the header is a repeat so it is not read as a second change.
+_FILE_PART_MARKER = (
+    "# [kstrl R1.4] file part {i} of {n}: {path} - this file's diff is "
+    "split on hunk boundaries; the other parts are in other chunks\n"
+)
+_FILE_PART_CONTINUED_MARKER = (
+    "# [kstrl R1.4] file part {i} of {n}: {path} - continued; the file "
+    "header below is repeated for context, not a second change\n"
+)
+
+
+@dataclass(frozen=True)
+class _DiffUnit:
+    """One indivisible piece of a diff for packing purposes: either a
+    whole file's segment or one within-file part."""
+
+    text: str
+    is_file_part: bool
+
+
+def _file_segment_label(header: str) -> str:
+    """Human-readable path for a file segment's part markers.
+
+    Best-effort: the label is provenance for the reviewer, not a parsed
+    path, so anything unrecognized falls back to the raw first line.
+    """
+    first_line = header.split("\n", 1)[0]
+    if first_line.startswith("diff --git a/"):
+        a_path = first_line[len("diff --git a/"):].split(" b/", 1)[0]
+        if a_path:
+            return a_path[:200]
+    return first_line[:200] or "(unnamed diff segment)"
+
+
+def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
+    """R8: split ONE file's diff segment into ``<=budget`` parts on
+    ``@@`` hunk boundaries, repeating the file header on every part.
+
+    Motivated by a 2026-07-27 factory run: hard-mode review halted on
+    ``single-file diff segment is 55710 chars`` for a legitimately large
+    test file, and recovery cost a full engineer-loop pass ($3.99) to
+    repackage a diff the harness simply could not chunk. A file bigger
+    than the per-chunk budget is a normal outcome, not misbehaviour.
+
+    Raises :class:`DiffUnsplittableError` when even hunk granularity is
+    not enough (one hunk over the budget, or no hunks at all). That
+    floor is deliberate: R1.4 forbids truncating a diff that is being
+    reviewed for correctness, so an unreviewable diff must fail closed.
+    """
+    starts = [m.start() for m in _DIFF_HUNK_BOUNDARY_RE.finditer(segment)]
+    first_line = segment.split("\n", 1)[0][:200]
+    if not starts:
+        raise DiffUnsplittableError(
+            f"single-file diff segment is {len(segment)} chars, over the "
+            f"{budget}-char per-chunk budget, and contains no '@@ ' hunk "
+            f"boundaries to split on ({first_line})"
+        )
+    header = segment[: starts[0]]
+    hunks = [
+        segment[start:end]
+        for start, end in zip(
+            starts, starts[1:] + [len(segment)], strict=True,
+        )
+    ]
+    path = _file_segment_label(header)
+
+    # The marker cannot be rendered until the part count is known, so
+    # reserve its worst-case width now. Part indices and the part count
+    # are both bounded by the hunk count, so formatting with that count
+    # bounds the marker's width exactly - no guessed digit padding.
+    widest = len(hunks)
+    reserve = max(
+        len(_FILE_PART_MARKER.format(i=widest, n=widest, path=path)),
+        len(_FILE_PART_CONTINUED_MARKER.format(i=widest, n=widest, path=path)),
+    )
+    content_budget = budget - reserve - len(header)
+    if content_budget <= 0:
+        raise DiffUnsplittableError(
+            f"file header for {path} is {len(header)} chars, leaving no "
+            f"room for hunks in the {budget}-char per-chunk budget "
+            f"({first_line})"
+        )
+
+    # Greedy packing preserves hunk order, so parts stay contiguous
+    # slices of the segment and the reassembly invariant holds.
+    groups: list[list[str]] = [[]]
+    size = 0
+    for hunk in hunks:
+        if len(hunk) > content_budget:
+            hunk_line = hunk.split("\n", 1)[0][:200]
+            raise DiffUnsplittableError(
+                f"single hunk in {path} is {len(hunk)} chars, over the "
+                f"{content_budget} chars left for hunk content after the "
+                f"{len(header)}-char file header; a diff cannot be split "
+                f"below hunk granularity ({hunk_line})"
+            )
+        if groups[-1] and size + len(hunk) > content_budget:
+            groups.append([])
+            size = 0
+        groups[-1].append(hunk)
+        size += len(hunk)
+
+    total = len(groups)
+    parts: list[_DiffUnit] = []
+    for i, group in enumerate(groups, 1):
+        template = (
+            _FILE_PART_MARKER if i == 1 else _FILE_PART_CONTINUED_MARKER
+        )
+        marker = template.format(i=i, n=total, path=path)
+        text = marker + header + "".join(group)
+        if len(text) > budget:  # defensive: the reserve math prevents this
+            raise DiffUnsplittableError(
+                f"file part {i}/{total} of {path} is {len(text)} chars, "
+                f"over the {budget}-char per-chunk budget"
+            )
+        parts.append(_DiffUnit(text=text, is_file_part=True))
+    return parts
 
 
 def split_diff_for_prompt(
@@ -797,12 +944,18 @@ def split_diff_for_prompt(
     engineer pad the first 50KB with benign churn and land a malicious
     hunk after the cut).
 
-    Returns ``[diff_content]`` unchanged when it already fits. Raises
-    :class:`DiffUnsplittableError` when file-boundary splitting cannot
-    produce compliant chunks (single file over the limit, or no file
-    boundaries found).
+    R8: a file whose own diff exceeds the per-chunk budget is split
+    further on ``@@`` hunk boundaries (see :func:`_split_file_segment`)
+    instead of failing the component; before that, one oversized file
+    cost a full engineer-loop pass to repackage.
 
-    Invariant: concatenating the chunks with their header lines removed
+    Returns ``[diff_content]`` unchanged when it already fits. Raises
+    :class:`DiffUnsplittableError` when even hunk granularity cannot
+    produce compliant chunks (a single hunk over the limit, or no
+    boundaries found at all).
+
+    Invariant: concatenating the chunks with the injected provenance
+    lines (and the file header repeated on continuation parts) removed
     reproduces the input exactly - chunking never drops content.
     """
     if limit <= _CHUNK_HEADER_RESERVE:
@@ -834,36 +987,39 @@ def split_diff_for_prompt(
     ]
 
     budget = limit - _CHUNK_HEADER_RESERVE
+    # R8: an over-budget file is split within itself rather than being
+    # a hard stop; files that already fit stay whole, so multi-file
+    # diffs that split cleanly pack exactly as they did before.
+    units: list[_DiffUnit] = []
     for seg in segments:
         if len(seg) > budget:
-            first_line = seg.split("\n", 1)[0][:200]
-            raise DiffUnsplittableError(
-                f"single-file diff segment is {len(seg)} chars, over the "
-                f"{budget}-char per-chunk budget; cannot split on file "
-                f"boundaries ({first_line})"
-            )
+            units.extend(_split_file_segment(seg, budget))
+        else:
+            units.append(_DiffUnit(text=seg, is_file_part=False))
 
-    # Greedy packing preserves segment order, so contiguity (and the
+    # Greedy packing preserves unit order, so contiguity (and the
     # reassembly invariant) holds.
-    packed: list[list[str]] = [[]]
+    packed: list[list[_DiffUnit]] = [[]]
     size = 0
-    for seg in segments:
-        if packed[-1] and size + len(seg) > budget:
+    for unit in units:
+        if packed[-1] and size + len(unit.text) > budget:
             packed.append([])
             size = 0
-        packed[-1].append(seg)
-        size += len(seg)
+        packed[-1].append(unit)
+        size += len(unit.text)
 
     total = len(packed)
     chunks = []
     for i, group in enumerate(packed, 1):
         # Provenance only, no reviewer directives: prompt-body guidance
         # about truncated/chunked diffs is Session 8C's calibrated change.
-        header = (
-            f"# [kstrl R1.4] diff chunk {i} of {total}: oversized diff "
-            f"split on file boundaries; other files are in other chunks\n"
+        template = (
+            _CHUNK_HEADER_PARTIAL_FILE
+            if any(u.is_file_part for u in group)
+            else _CHUNK_HEADER
         )
-        chunk = header + "".join(group)
+        header = template.format(i=i, n=total)
+        chunk = header + "".join(u.text for u in group)
         if len(chunk) > limit:  # defensive: budget math above prevents this
             raise DiffUnsplittableError(
                 f"chunk {i}/{total} is {len(chunk)} chars, over limit {limit}"
