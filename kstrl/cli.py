@@ -2441,7 +2441,11 @@ def _render_status(
                 f"{run_state} (last event {age})" if age else run_state,
             )
         if state.usage_calls:
-            note = "+" if state.unreported_calls else ""
+            # Per axis (R8 review finding 1): the two totals can be
+            # short by different amounts, and on the measured run only
+            # the dollar one was.
+            token_note = "+" if state.tokens_are_lower_bound else ""
+            cost_note = "+" if state.cost_is_lower_bound else ""
             caps = []
             if state.max_total_tokens:
                 caps.append(f"{state.max_total_tokens} token cap")
@@ -2449,10 +2453,14 @@ def _render_status(
                 caps.append(f"${state.max_cost_usd} cost cap")
             ui_impl.kv(
                 "Run usage",
-                f"{state.total_tokens}{note} tokens, "
-                f"${state.cost_usd:.4f}{note}"
+                f"{state.total_tokens}{token_note} tokens, "
+                f"${state.cost_usd:.4f}{cost_note}"
                 + (f" of {', '.join(caps)}" if caps else ""),
             )
+            for gap in state.coverage_gaps.values():
+                # The ceiling's own words, uncovered magnitude in TOKENS.
+                if gap.detail:
+                    ui_impl.kv("  coverage", gap.detail)
 
     counts: dict[str, int] = {}
     for comp in manifest.components:
@@ -2512,11 +2520,22 @@ def _render_status(
                     f"last heartbeat {_age_label_epoch(comp_state.last_heartbeat_ts)}",
                 )
             if comp_state.usage_calls:
-                note = (
-                    f" (lower bound: {comp_state.unreported_calls} "
-                    f"call(s) unreported)"
-                    if comp_state.unreported_calls else ""
-                )
+                # Which AXIS is short, not just how many calls said
+                # nothing (R8 review finding 1): a call reporting a cost
+                # and no token count is not "unreported" but still
+                # leaves the token total short.
+                short = [
+                    name for name, is_short in (
+                        ("tokens", comp_state.tokens_are_lower_bound),
+                        ("cost", comp_state.cost_is_lower_bound),
+                    ) if is_short
+                ]
+                detail = f"lower bound: {', '.join(short)}" if short else ""
+                if comp_state.unreported_calls:
+                    detail += (
+                        f"; {comp_state.unreported_calls} call(s) unreported"
+                    )
+                note = f" ({detail})" if detail else ""
                 ui_impl.kv(
                     "  usage",
                     f"{comp_state.total_tokens} tokens, "

@@ -75,7 +75,11 @@ def _row_values(
     comp: ComponentState, state: RunState, now: float,
 ) -> tuple[Text | str, ...]:
     glyph, color = theme.status_glyph(comp.status)
-    marker = "+" if comp.unreported_calls else ""
+    # Per axis, matching the meter (R8 review finding 1): one shared
+    # marker keyed on unreported_calls could not mark a cost total that
+    # a costless reviewer left short while the token total was exact.
+    token_marker = "+" if comp.tokens_are_lower_bound else ""
+    cost_marker = "+" if comp.cost_is_lower_bound else ""
     name = Text(comp.component_id)
     if comp.checkpoint_open:
         name.append("  ◆", style=theme.ACCENT)
@@ -88,9 +92,9 @@ def _row_values(
         _num(str(comp.attempt)) if comp.attempt else _dim(theme.EMPTY_CELL),
         _num(str(comp.iteration)) if comp.iteration else _dim(theme.EMPTY_CELL),
         _dim(age) if age == theme.EMPTY_CELL else _num(age),
-        _num(f"{comp.total_tokens:,}{marker}")
+        _num(f"{comp.total_tokens:,}{token_marker}")
         if comp.total_tokens else _dim(theme.EMPTY_CELL),
-        _num(f"${comp.cost_usd:.2f}{marker}")
+        _num(f"${comp.cost_usd:.2f}{cost_marker}")
         if comp.cost_usd else _dim(theme.EMPTY_CELL),
     )
 

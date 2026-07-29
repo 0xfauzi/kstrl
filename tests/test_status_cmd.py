@@ -371,3 +371,53 @@ class TestStatusV2Layout:
         assert "pinned-run" in output
         assert "custom-progress.jsonl" in output
         assert "events.jsonl" not in output
+
+
+class TestStatusPerAxisCoverage:
+    """R8 review finding 1, applied to the other run-usage surface.
+
+    `ks status` marked both totals with one flag keyed on
+    ``unreported_calls``, so the measured shape - a reviewer that
+    reports tokens and no cost - rendered an exact dollar figure.
+    """
+
+    def _write_run(self, root: Path, run_id: str) -> None:
+        from kstrl import events as ev
+
+        paths = ev.RunPaths.for_run(root, run_id)
+        bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
+        bus.emit(ev.RunStarted(project="demo", components=1))
+        bus.emit(ev.RunPlan(
+            components=({"id": "comp-a", "title": "A", "deps": []},),
+            max_cost_usd=10.0,
+        ))
+        bus.emit(ev.ComponentStarted(component="comp-a"))
+        bus.emit(ev.ComponentUsage(
+            component="comp-a", phase="engineer", calls=1, known_calls=1,
+            token_calls=1, cost_calls=1, total_tokens=500, cost_usd=5.0,
+        ))
+        bus.emit(ev.ComponentUsage(
+            component="comp-a", phase="review", calls=1, known_calls=1,
+            token_calls=1, cost_calls=0, total_tokens=500, cost_usd=0.0,
+        ))
+        bus.emit(ev.BudgetCoverage(
+            ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
+            uncovered_calls=1, uncovered_tokens=500,
+            uncovered_roles=("review",),
+            detail="cost coverage is PARTIAL: 1 of 2 metered call(s) "
+                   "reported a cost",
+        ))
+        bus.close()
+
+    def test_only_the_uncovered_axis_is_marked(self, tmp_path: Path) -> None:
+        run_id = "factory-20260729-000001.000000-t"
+        self._write_run(tmp_path, run_id)
+        manifest = _synthetic_manifest()
+        manifest.run_id = run_id
+        manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+        assert exit_code == 0
+        assert "1000 tokens" in output      # token axis fully covered
+        assert "1000+ tokens" not in output
+        assert "$5.0000+" in output         # cost axis is not
+        assert "cost coverage is PARTIAL" in output

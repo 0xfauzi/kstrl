@@ -44,7 +44,15 @@ def _sample_events() -> list[ev.Event]:
             cache_read_tokens=10, cache_creation_tokens=5, total_tokens=165,
             cost_usd=0.123456, duration_seconds=42.0,
         ),
-        ev.BudgetExceeded(component="comp-a", total_tokens=100, max_total_tokens=50),
+        ev.BudgetExceeded(
+            component="comp-a", total_tokens=100, max_total_tokens=50,
+            coverage=({"ceiling": "max_cost_usd", "covered_calls": 8},),
+        ),
+        ev.BudgetCoverage(
+            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
+            uncovered_calls=5, uncovered_tokens=193633,
+            uncovered_roles=("review",), detail="cost coverage is PARTIAL",
+        ),
         ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.9),
         ev.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0),
         ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"),
@@ -319,6 +327,16 @@ class TestV1CompatGoldenParity:
         bus.emit(ev.BudgetExceeded(component="comp-a", total_tokens=100,
                                    max_total_tokens=50))
 
+        coverage_kwargs: dict[str, Any] = {
+            "ceiling": "max_cost_usd", "axis": "cost", "calls": 13,
+            "covered_calls": 8, "uncovered_calls": 5,
+            "uncovered_tokens": 193633, "detail": "cost coverage is PARTIAL",
+        }
+        direct.budget_coverage(uncovered_roles=["review"], **coverage_kwargs)
+        bus.emit(ev.BudgetCoverage(
+            uncovered_roles=("review",), **coverage_kwargs,
+        ))
+
         direct.contract_result(1, False, "comp-a", 9.876)
         bus.emit(ev.ContractResult(tier=1, passed=False, breaker="comp-a",
                                    duration_seconds=9.876))
@@ -364,7 +382,7 @@ class TestV1CompatGoldenParity:
         direct_lines = [_strip_ts(e) for e in read_progress_events(direct_path)]
         compat_lines = [_strip_ts(e) for e in read_progress_events(compat_path)]
         assert compat_lines == direct_lines
-        assert len(direct_lines) == 19  # every v1-named event type exercised
+        assert len(direct_lines) == 20  # every v1-named event type exercised
 
     def test_v2_only_events_are_dropped(self, tmp_path: Path) -> None:
         compat_path = tmp_path / "compat.jsonl"
@@ -482,6 +500,86 @@ class TestBothSinksCarryTheSameBudgetHalt:
         assert progress["ceilings"] == ["max_total_tokens", "max_cost_usd"]
         assert progress["condition"] == "unenforceable"
 
+    def test_a_partially_covered_halt_reaches_both_sinks_identically(
+        self, tmp_path: Path,
+    ) -> None:
+        """R8: the coverage a ceiling had when it halted is part of the
+        halt record, on BOTH sinks. Payload is the measured run's."""
+        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
+            component="comp-a", total_tokens=26522034, max_total_tokens=0,
+            cost_usd=28.7545, max_cost_usd=25.0, ceiling="max_cost_usd",
+            condition="breached", ceilings=("max_cost_usd",),
+            coverage=({
+                "ceiling": "max_cost_usd", "axis": "cost", "calls": 13,
+                "covered_calls": 8, "uncovered_calls": 5,
+                "uncovered_tokens": 193633, "uncovered_roles": ["review"],
+                "roles": [],
+            },),
+        ))
+        assert durable == progress
+        assert progress["coverage"][0]["uncovered_roles"] == ["review"]
+
+    def test_a_legacy_halt_payload_decodes_without_coverage(self) -> None:
+        """events.jsonl is append-only: a payload written before the
+        coverage field must still decode, to an empty tuple rather than
+        to a fabricated claim of full coverage."""
+        event = ev.event_from_dict({
+            "event": "budget_exceeded",
+            "data": {"total_tokens": 5, "max_total_tokens": 10,
+                     "cost_usd": 9.0, "max_cost_usd": 8.0,
+                     "ceiling": "max_cost_usd"},
+        })
+        assert isinstance(event, ev.BudgetExceeded)
+        assert event.coverage == ()
+        assert event.ceiling == "max_cost_usd"
+
+    def test_a_legacy_coverage_payload_decodes_with_defaults(self) -> None:
+        event = ev.event_from_dict({
+            "event": "budget_coverage", "data": {"ceiling": "max_cost_usd"},
+        })
+        assert isinstance(event, ev.BudgetCoverage)
+        assert event.ceiling == "max_cost_usd"
+        assert event.uncovered_roles == ()
+        assert event.uncovered_tokens == 0
+
+    def test_every_coverage_field_survives_the_progress_log(
+        self, tmp_path: Path,
+    ) -> None:
+        """The same generic guard for the new run-scoped event."""
+        import dataclasses
+
+        from kstrl.observability import ProgressLog
+
+        event = ev.BudgetCoverage(
+            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
+            uncovered_calls=5, uncovered_tokens=193633,
+            uncovered_roles=("review",), detail="cost coverage is PARTIAL",
+        )
+        durable_path = tmp_path / "events.jsonl"
+        progress_path = tmp_path / "progress.jsonl"
+        ev.JsonlSink(durable_path).emit(event)
+        ev.V1CompatSink(ProgressLog(progress_path)).emit(event)
+
+        def payload(path: Path) -> dict[str, Any]:
+            for line in path.read_text().splitlines():
+                row = json.loads(line)
+                if row.get("event") == "budget_coverage":
+                    return dict(row["data"])
+            raise AssertionError(f"no budget_coverage line in {path}")
+
+        durable, progress = payload(durable_path), payload(progress_path)
+        assert durable == progress
+        base = {f.name for f in dataclasses.fields(ev.Event)}
+        payload_fields = {
+            f.name for f in dataclasses.fields(event)
+        } - base - {"type"}
+        missing = payload_fields - progress.keys()
+        assert not missing, (
+            f"BudgetCoverage fields missing from progress.jsonl: {missing}. "
+            "Add them to ProgressLog.budget_coverage and the V1CompatSink "
+            "bridge."
+        )
+
     def test_every_event_field_survives_the_progress_log(
         self, tmp_path: Path,
     ) -> None:
@@ -494,6 +592,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
             component="comp-a", total_tokens=1, max_total_tokens=2,
             cost_usd=3.0, max_cost_usd=4.0, ceiling="max_cost_usd",
             condition="breached", ceilings=("max_cost_usd",),
+            coverage=({"ceiling": "max_cost_usd", "covered_calls": 8},),
         )
         durable, progress = self._emit_both(tmp_path, event)
 

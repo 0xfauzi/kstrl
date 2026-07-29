@@ -6,6 +6,13 @@ empty region into the live pulse of the run - what k9s' event pane is
 to pods. Deliberately curated: heartbeats, raw Log narration, and
 usage rollups stay out (the meter and board carry those); lifecycle,
 verdicts, findings, PRs, and checkpoints go in.
+
+Raw ``Log`` narration stays out even at ``severity="warn"``: the
+factory's warnings are imperative prose with no schema, and admitting
+them would put every homogeneity/config warning in the feed. Anything
+worth narrating gets a typed event instead - which is why R8's
+coverage gap is fed from ``BudgetCoverage`` and not from the
+``BUDGET COVERAGE:`` warning line that accompanies it.
 """
 
 from __future__ import annotations
@@ -149,6 +156,34 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         line.append(f"{event.label or 'artifact'} written", style=theme.MUTED)
         if event.path:
             line.append(f" · {event.path}", style=theme.MUTED)
+    elif isinstance(event, ev.BudgetCoverage):
+        # R8 review finding 1: this was dropped, so the one event that
+        # says "a configured ceiling stopped covering the run" never
+        # reached the surface an operator watches. Usage ROLLUPS stay
+        # out of the feed (the meter carries those); a ceiling that
+        # counts a subset of the run is not a rollup, it is a verdict
+        # about what the meter's numbers mean.
+        #
+        # Deliberately no dollar figure: the uncovered calls reported no
+        # price, and this repo holds no price table (the same rule the
+        # pipeline's note() and the rollup footer follow).
+        line.append("▲ ", style=theme.WARNING)
+        line.append("budget coverage", style="bold")
+        line.append(
+            f": {event.ceiling or event.axis or 'ceiling'} counts "
+            f"{event.covered_calls} of {event.calls} metered call(s)",
+            style=theme.WARNING,
+        )
+        if event.uncovered_roles:
+            line.append(
+                f" · uncovered: {', '.join(event.uncovered_roles)}",
+                style=theme.MUTED,
+            )
+        if event.uncovered_tokens:
+            line.append(
+                f" · {event.uncovered_tokens:,} token(s) unpriced",
+                style=theme.MUTED,
+            )
     elif isinstance(event, ev.RunCompleted):
         line.append("■ ", style="bold")
         line.append(

@@ -411,3 +411,107 @@ class TestLoadRunState:
             f.write(json.dumps({"event": "log"})[:9])  # torn, no newline
         state, _ = reducer.load_run_state(tmp_path)
         assert state.project == "proj"  # reader skipped the torn tail
+
+
+class TestPerAxisCoverageFold:
+    """R8 review finding 1: the reducer dropped every per-axis signal.
+
+    ``apply`` folded ``cost_usd`` and ``unreported_calls`` but not
+    ``cost_calls`` / ``token_calls``, and returned early for the
+    run-scoped ``budget_coverage`` event - so the dashboard held no
+    state that could distinguish "this cost total is a measurement" from
+    "this cost total covers one role".
+    """
+
+    def test_axis_call_counts_reach_run_and_component_state(self) -> None:
+        # The reviewer's shape: two metered calls, both reported tokens,
+        # only one reported a cost.
+        state = reducer.fold(_stamped([
+            ev.ComponentUsage(
+                component="a", phase="engineer", calls=1, known_calls=1,
+                token_calls=1, cost_calls=1, total_tokens=500, cost_usd=5.0,
+            ),
+            ev.ComponentUsage(
+                component="a", phase="review", calls=1, known_calls=1,
+                token_calls=1, cost_calls=0, total_tokens=500, cost_usd=0.0,
+            ),
+        ]))
+        assert state.usage_calls == 2
+        assert state.token_calls == 2
+        assert state.cost_calls == 1
+        assert state.components["a"].token_calls == 2
+        assert state.components["a"].cost_calls == 1
+        # The two axes disagree, which is the whole point: tokens are
+        # fully covered, cost is not.
+        assert state.tokens_are_lower_bound is False
+        assert state.cost_is_lower_bound is True
+
+    def test_a_payload_predating_the_axis_fields_claims_nothing(self) -> None:
+        """``known_calls > 0`` with both axis counts at 0 is impossible
+        for a post-R8 payload (a known call reported tokens or cost), so
+        it identifies a legacy one. Those calls are coverage-UNKNOWN, not
+        coverage-MISSING - inventing a gap is the same class of lie as
+        hiding one."""
+        state = reducer.fold(_stamped([
+            ev.ComponentUsage(
+                component="a", phase="engineer", calls=2, known_calls=2,
+                total_tokens=100, cost_usd=1.0,
+            ),
+        ]))
+        assert state.coverage_unknown_calls == 2
+        assert state.tokens_are_lower_bound is False
+        assert state.cost_is_lower_bound is False
+
+    def test_a_legacy_payloads_unreported_calls_still_mark_both_axes(
+        self,
+    ) -> None:
+        state = reducer.fold(_stamped([
+            ev.ComponentUsage(
+                component="a", phase="engineer", calls=3, known_calls=2,
+                unreported_calls=1, total_tokens=100, cost_usd=1.0,
+            ),
+        ]))
+        assert state.tokens_are_lower_bound is True
+        assert state.cost_is_lower_bound is True
+
+    def test_budget_coverage_is_run_scoped_state(self) -> None:
+        state = reducer.fold(_stamped([
+            ev.BudgetCoverage(
+                ceiling="max_cost_usd", axis="cost", calls=2,
+                covered_calls=1, uncovered_calls=1, uncovered_tokens=40_000,
+                uncovered_roles=("review",), detail="cost coverage is PARTIAL",
+            ),
+        ]))
+        gap = state.coverage_gaps.get("cost")
+        assert gap is not None
+        assert gap.ceiling == "max_cost_usd"
+        assert gap.uncovered_roles == ("review",)
+        assert gap.uncovered_tokens == 40_000
+        assert state.cost_is_lower_bound is True
+
+    def test_budget_coverage_survives_the_v1_upconversion(
+        self, tmp_path: Path,
+    ) -> None:
+        """progress.jsonl is the other sink (#181 parity): the same fact
+        must reach the same state through the v1 path."""
+        log = ProgressLog(tmp_path / "progress.jsonl", run_id="run-9")
+        log.budget_coverage(
+            ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
+            uncovered_calls=1, uncovered_tokens=40_000,
+            uncovered_roles=["review"], detail="cost coverage is PARTIAL",
+        )
+        log.component_usage("a", "review", {
+            "calls": 1, "known_calls": 1, "token_calls": 1, "cost_calls": 0,
+            "unreported_calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_creation_tokens": 0,
+            "total_tokens": 500, "cost_usd": 0.0, "duration_seconds": 1.0,
+        })
+        raw = read_progress_events(tmp_path / "progress.jsonl")
+        state = reducer.fold(
+            [reducer.upconvert_v1(e) for e in raw], run_id="run-9",
+        )
+        assert state.token_calls == 1
+        assert state.cost_calls == 0
+        gap = state.coverage_gaps.get("cost")
+        assert gap is not None
+        assert gap.uncovered_roles == ("review",)

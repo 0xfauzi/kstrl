@@ -12,7 +12,8 @@ from unittest.mock import PropertyMock, patch
 
 from rich.text import Text
 
-from kstrl.reducer import RunState, load_run_state
+from kstrl import events as ev
+from kstrl.reducer import RunState, fold, load_run_state
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.overview import CheckpointBanner
 from kstrl.tui.widgets.component_table import ComponentTable
@@ -156,3 +157,96 @@ class TestRenderHelpers:
         )
         plain = render_cost_meter(state).plain
         assert "lower bound" not in plain
+
+
+class TestCostMeterPerAxisLowerBound:
+    """R8 review finding 1, reproduced on the RENDERED meter.
+
+    The defect was not that the state was wrong - it was that the
+    dashboard rendered a partially covered total as an exact one. So
+    these assert on ``render_cost_meter(...).plain``, never on state.
+    """
+
+    @staticmethod
+    def _state(
+        *, token_calls: int, cost_calls: int, gap: bool,
+    ) -> RunState:
+        # The reviewer's shape: two metered calls, both reporting tokens,
+        # only one reporting a cost; $5 against a $10 cap.
+        events: list[ev.Event] = [
+            ev.RunPlan(components=(), max_cost_usd=10.0,
+                       max_total_tokens=100_000),
+            ev.ComponentUsage(
+                component="a", phase="engineer", calls=2, known_calls=2,
+                token_calls=token_calls, cost_calls=cost_calls,
+                total_tokens=1_000, cost_usd=5.0,
+            ),
+        ]
+        if gap:
+            events.append(ev.BudgetCoverage(
+                ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
+                uncovered_calls=1, uncovered_tokens=500,
+                uncovered_roles=("review",),
+                detail="cost coverage is PARTIAL",
+            ))
+        return fold(events)
+
+    def test_partial_cost_coverage_marks_the_cost_figure(self) -> None:
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=1, gap=True),
+        ).plain
+        assert "$5.00+" in plain
+        assert "lower bound" in plain
+        assert "cost" in plain
+
+    def test_the_covered_token_axis_stays_unmarked(self) -> None:
+        """The two axes differ in the measured run - tokens were fully
+        covered while cost was not - so one shared marker would be
+        wrong."""
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=1, gap=True),
+        ).plain
+        assert "1.0k tok" in plain
+        assert "1.0k+" not in plain
+        assert "% of token cap" in plain
+        assert "%+ of token cap" not in plain
+
+    def test_the_cap_percentage_is_marked_too(self) -> None:
+        """The percentage is what an operator reads as headroom; leaving
+        it unmarked reports 50% of a cap that counts half the calls."""
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=1, gap=True),
+        ).plain
+        assert "50%+ of cost cap" in plain
+
+    def test_the_marker_needs_no_budget_coverage_event(self) -> None:
+        """The usage events alone carry the fact; the run-scoped event is
+        corroboration, not the only source."""
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=1, gap=False),
+        ).plain
+        assert "$5.00+" in plain
+
+    def test_a_tokenless_axis_marks_tokens_only(self) -> None:
+        plain = render_cost_meter(
+            self._state(token_calls=0, cost_calls=2, gap=False),
+        ).plain
+        assert "1.0k+ tok" in plain
+        assert "$5.00 " in plain
+        assert "lower bound (tokens)" in plain
+
+    def test_full_coverage_says_nothing(self) -> None:
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=2, gap=False),
+        ).plain
+        assert "+" not in plain
+        assert "lower bound" not in plain
+
+    def test_no_price_is_invented_for_the_uncovered_calls(self) -> None:
+        """Standing constraint on this PR, extended to the dashboard: the
+        uncovered magnitude is never converted into dollars."""
+        plain = render_cost_meter(
+            self._state(token_calls=2, cost_calls=1, gap=True),
+        ).plain
+        # Exactly one dollar figure on the line: the reported total.
+        assert plain.count("$") == 1

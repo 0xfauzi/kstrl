@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,6 +235,7 @@ class ProgressLog:
         ceiling: str = "",
         condition: str = "",
         ceilings: Sequence[str] = (),
+        coverage: Sequence[Mapping[str, Any]] = (),
     ) -> None:
         """R3.1/R8: a run-level ceiling tripped; the named component was
         failed with a synthetic budget finding.
@@ -242,13 +243,18 @@ class ProgressLog:
         ``ceiling`` is the joined legacy string. ``condition``
         (``"breached"`` / ``"unenforceable"``) and ``ceilings`` carry the
         halt structurally, matching :class:`events.BudgetExceeded`.
+        ``coverage`` says what each named ceiling actually counted (one
+        ``CeilingCoverage.to_dict()`` per ceiling), because a total
+        without its coverage reads as a measurement when it is a lower
+        bound over a subset of the run's calls.
 
         This emitter had a hand-written field list, so when the
         structural pair was added the progress log kept writing only
         ``ceiling`` - the durable ``events.jsonl`` carried both fields
         while ``progress.jsonl`` silently dropped them. Caught by a real
         factory run, not by the suite, because nothing asserted the two
-        sinks agreed.
+        sinks agreed. Every field added here must be added there too;
+        ``TestBothSinksCarryTheSameBudgetHalt`` fails otherwise.
         """
         self.emit("budget_exceeded", component_id=component_id, data={
             "total_tokens": total_tokens,
@@ -258,6 +264,37 @@ class ProgressLog:
             "ceiling": ceiling,
             "condition": condition,
             "ceilings": list(ceilings),
+            "coverage": [dict(entry) for entry in coverage],
+        })
+
+    def budget_coverage(
+        self,
+        *,
+        ceiling: str = "",
+        axis: str = "",
+        calls: int = 0,
+        covered_calls: int = 0,
+        uncovered_calls: int = 0,
+        uncovered_tokens: int = 0,
+        uncovered_roles: Sequence[str] = (),
+        detail: str = "",
+    ) -> None:
+        """R8: a configured ceiling stopped covering every metered call.
+
+        Run-scoped, so no ``component_id`` - the gap belongs to the run's
+        adapters. Written at the first phase that exposes the gap rather
+        than at the halt, because a coverage fact an operator learns
+        after the spend is a post-mortem, not a control.
+        """
+        self.emit("budget_coverage", data={
+            "ceiling": ceiling,
+            "axis": axis,
+            "calls": calls,
+            "covered_calls": covered_calls,
+            "uncovered_calls": uncovered_calls,
+            "uncovered_tokens": uncovered_tokens,
+            "uncovered_roles": list(uncovered_roles),
+            "detail": detail,
         })
 
     def contract_result(

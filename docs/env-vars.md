@@ -118,6 +118,48 @@ What is **not** bounded, for both ceilings:
 | The iteration already running | Nothing interrupts a single agent call mid-flight. Overshoot is up to one iteration per running worker; `KSTRL_TIMEOUT_AGENT_ITERATION` bounds that in wall clock, never in tokens and never in dollars. Measured: the run above overshot its entire 500k cap by **3.7x inside one engineer call of 376s** |
 | Concurrent workers | Each worker sees the run total as of its own launch. With `FACTORY_MAX_PARALLEL = N`, up to N iterations can be in flight past the ceiling |
 | Unreported spend | Every token and cost figure is a CLI self-report. Calls that report nothing count as zero, so totals are lower bounds whenever `unreported_calls > 0` and the halt can arrive late. A loop that reports *nothing* is a separate case and halts outright - see below |
+| Roles whose adapter reports one axis and not the other | A ceiling only counts calls that reported the figure it is denominated in, so it can bound part of a run while reading as healthy - see below |
+
+#### A ceiling covers only the calls that report its figure
+
+Measured on a paid run that set `--max-cost-usd 25.0`. Its own per-phase
+`component_usage` events:
+
+| phase | calls | tokens | cost | cost_calls |
+|---|---|---|---|---|
+| engineer | 5 | 8,036,800 | $9.9929 | 5 |
+| review | 2 | 78,157 | $0.0000 | 0 |
+| engineer | 1 | 7,939,537 | $7.3448 | 1 |
+| review | 3 | 115,476 | $0.0000 | 0 |
+| engineer | 1 | 7,404,185 | $7.4238 | 1 |
+| engineer | 1 | 2,947,879 | $3.9930 | 1 |
+
+The run's total cost equalled the engineer total **exactly**: 193,633 reviewer
+tokens over 5 calls contributed **$0**. Tokens were counted across every role
+(26,522,034 run vs 26,328,401 engineer) - only the dollar figure under-counted,
+because the cross-family reviewer (codex) reports a token total and no cost.
+That is an adapter capability gap, not a mis-wired meter.
+
+Nothing was breached and no ceiling was *unenforceable* (the engineer reports
+cost on every call), so every surface reported the run as healthy - including
+the rollup's lower-bound footer, which keys off `unreported_calls` and saw 0
+because every call reported *something*.
+
+kstrl now states the gap instead of implying it. **No price is ever inferred for
+an uncovered call**: the uncovered magnitude is reported in tokens, because
+converting it to dollars would need a price table the harness does not have, and
+a fabricated cost in an audit trail is worse than a missing one.
+
+| Surface | When |
+|---|---|
+| `Cost ceiling` / `Token ceiling` lines in the run preflight | At the plan stage, stating what the ceiling counts. Deliberately says nothing about *which roles* will be covered - no call has been made yet, so that would be a prediction |
+| `budget_coverage` event (`events.jsonl` **and** `progress.jsonl`) plus a `BUDGET COVERAGE:` warning | Once per ceiling per run, at the first phase whose calls report nothing on that axis - the earliest point the evidence exists |
+| `coverage` on the `budget_exceeded` event, the component error, and the `budget_overrun` inbox item | At the halt. Recorded for **every** configured named ceiling, including fully-covered ones, so an absent field means "written before this landed" rather than "no gap" |
+| Per-axis `note:` lines under the usage rollup | At the run summary, naming the uncovered roles |
+
+The ceiling's **semantics are unchanged**: `max_cost_usd` still halts on reported
+dollars only. Whether a partially-covered ceiling should instead refuse to run is
+a policy question, not a reporting one, and is deliberately left open.
 
 #### Unenforceable ceilings are per-ceiling
 

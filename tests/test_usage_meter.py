@@ -2058,13 +2058,18 @@ class TestRollupRendering:
         lines = _format_usage_rollup(
             {"comp-a": {"review": review, "engineer": engineer}}, run_usage,
         )
-        # Header, engineer row before review row (fixed phase order), TOTAL.
-        assert len(lines) == 4
-        assert "tokens_total" in lines[0]
-        assert "engineer" in lines[1]
-        assert "review" in lines[2]
-        assert lines[3].startswith("TOTAL")
-        assert "350" in lines[3]
+        # Header, engineer row before review row (fixed phase order),
+        # TOTAL. This fixture is the measured mixed shape - a claude
+        # engineer reporting cost and a codex reviewer reporting tokens
+        # only - so R8 adds one cost-coverage note after the TOTAL row.
+        rows = [line for line in lines if not line.startswith("note:")]
+        assert len(rows) == 4
+        assert "tokens_total" in rows[0]
+        assert "engineer" in rows[1]
+        assert "review" in rows[2]
+        assert rows[3].startswith("TOTAL")
+        assert "350" in rows[3]
+        assert any("cost coverage is PARTIAL" in line for line in lines)
 
     def test_unknown_usage_rendered_as_dash_with_note(self) -> None:
         unknown = UsageTotals()
@@ -3453,3 +3458,745 @@ class TestTokenCeilingRejectsUnboundingValues:
         base = KstrlConfig(ui_mode="plain", no_color=True)
         with pytest.raises(BudgetConfigError):
             run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# R8: cost-ceiling COVERAGE.
+#
+# WHY, measured rather than assumed. A paid factory run set
+# `--max-cost-usd 25.0` and got a ceiling that bounded ONE role. Its own
+# per-phase component_usage events:
+#
+#     engineer   calls=5  tokens= 8,036,800  cost=$9.9929  cost_calls=5
+#     review     calls=2  tokens=    78,157  cost=$0.0000  cost_calls=0
+#     engineer   calls=1  tokens= 7,939,537  cost=$7.3448  cost_calls=1
+#     review     calls=3  tokens=   115,476  cost=$0.0000  cost_calls=0
+#     engineer   calls=1  tokens= 7,404,185  cost=$7.4238  cost_calls=1
+#     engineer   calls=1  tokens= 2,947,879  cost=$3.9930  cost_calls=1
+#
+# The run's TOTAL cost equalled the engineer total exactly: 193,633
+# reviewer tokens contributed $0. TOKENS are counted across roles
+# (26,522,034 run vs 26,328,401 engineer) - only the dollar figure
+# under-counts, because the cross-family reviewer (codex) reports a
+# token total and no cost. An adapter capability gap, not a mis-wired
+# meter.
+#
+# The gap was invisible on every surface: nothing was breached, no
+# ceiling was unenforceable (the engineer reports cost perfectly well),
+# and the rollup's lower-bound footer reads `unreported_calls`, which was
+# 0 because every call reported SOMETHING.
+# ---------------------------------------------------------------------------
+
+
+# (phase, calls, total_tokens, cost_usd, cost_calls, token_calls) verbatim.
+_MEASURED_RUN = [
+    ("engineer", 5, 8_036_800, 9.9929, 5, 5),
+    ("review", 2, 78_157, 0.0, 0, 2),
+    ("engineer", 1, 7_939_537, 7.3448, 1, 1),
+    ("review", 3, 115_476, 0.0, 0, 3),
+    ("engineer", 1, 7_404_185, 7.4238, 1, 1),
+    ("engineer", 1, 2_947_879, 3.9930, 1, 1),
+]
+
+
+def _measured_meter() -> tuple[dict[str, dict[str, UsageTotals]], UsageTotals]:
+    """The production run's meter and run total, rebuilt from its events."""
+    meter: dict[str, dict[str, UsageTotals]] = {}
+    run_usage = UsageTotals()
+    for index, row in enumerate(_MEASURED_RUN):
+        phase, calls, tokens, cost, cost_calls, token_calls = row
+        totals = UsageTotals(
+            calls=calls, known_calls=calls, token_calls=token_calls,
+            cost_calls=cost_calls, total_tokens=tokens, cost_usd=cost,
+        )
+        comp_id = f"comp-{index // 2}"
+        meter.setdefault(comp_id, {}).setdefault(
+            phase, UsageTotals(),
+        ).merge(totals)
+        run_usage.merge(totals)
+    return meter, run_usage
+
+
+class TestMeasuredCoverageGap:
+    """The measurement itself, pinned so the premise cannot rot."""
+
+    def test_cost_undercounts_while_tokens_do_not(self) -> None:
+        meter, run_usage = _measured_meter()
+        engineer_cost = sum(
+            phases["engineer"].cost_usd
+            for phases in meter.values() if "engineer" in phases
+        )
+        engineer_tokens = sum(
+            phases["engineer"].total_tokens
+            for phases in meter.values() if "engineer" in phases
+        )
+        # The run's dollar total IS the engineer's, to the cent.
+        assert run_usage.cost_usd == pytest.approx(engineer_cost)
+        # Tokens are counted across roles; only money under-counts.
+        assert run_usage.total_tokens == 26_522_034
+        assert engineer_tokens == 26_328_401
+
+    def test_no_existing_signal_could_see_it(self, tmp_path: Path) -> None:
+        """Every pre-existing surface reported this run as healthy."""
+        from kstrl.pipeline import ComponentPipeline
+
+        meter, run_usage = _measured_meter()
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        pipeline.usage_meter = meter
+        pipeline.run_usage = run_usage
+        pipeline.factory_config = _factory_config(tmp_path, max_cost_usd=25.0)
+
+        # Not breached at the moment the reviews were logged...
+        assert run_usage.costless_calls == 5
+        # ...not unenforceable either: the engineer reports cost.
+        assert ComponentPipeline.cost_budget_unenforceable(pipeline) is None
+        assert ComponentPipeline.unenforceable_ceilings(pipeline) == []
+        # ...and the rollup's lower-bound footer keys off a counter that
+        # this run left at zero.
+        assert run_usage.unreported_calls == 0
+
+
+class TestUsageCoverage:
+    """The coverage fold: the middle term between enforceable and dead."""
+
+    def test_the_measured_run_is_partial_and_names_the_role(self) -> None:
+        from kstrl.agents.base import usage_coverage
+
+        meter, _ = _measured_meter()
+        coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
+        assert coverage.calls == 13
+        assert coverage.covered_calls == 8
+        assert coverage.uncovered_calls == 5
+        assert coverage.partial is True
+        assert coverage.complete is False
+        assert coverage.empty is False
+        assert coverage.uncovered_roles == ("review",)
+        assert coverage.uncovered_tokens == 193_633
+
+    def test_the_token_axis_of_the_same_run_is_complete(self) -> None:
+        """Both axes are folded by the same code and must not be
+        conflated: this run's TOKEN coverage was perfect."""
+        from kstrl.agents.base import usage_coverage
+
+        meter, _ = _measured_meter()
+        coverage = usage_coverage(meter, axis="token")
+        assert coverage.complete is True
+        assert coverage.note() == ""
+
+    def test_the_note_states_the_gap_without_inventing_a_price(self) -> None:
+        """The uncovered magnitude stays in TOKENS. Converting it to
+        dollars would need a price table this repo does not have; a
+        fabricated cost in an audit trail is worse than a missing one."""
+        from kstrl.agents.base import usage_coverage
+
+        meter, _ = _measured_meter()
+        note = usage_coverage(
+            meter, axis="cost", ceiling="max_cost_usd",
+        ).note()
+        assert "8 of 13 metered call(s) reported a cost" in note
+        assert "max_cost_usd bounds only those" in note
+        assert "review" in note
+        assert "193,633 token(s) unpriced" in note
+        assert "lower bound" in note
+        # No estimated dollar figure anywhere in the sentence.
+        assert "$" not in note
+
+    def test_a_partially_covered_role_does_not_attribute_its_tokens(
+        self,
+    ) -> None:
+        """A role where SOME calls reported a cost cannot say which of
+        its tokens were unpriced - the aggregate does not carry that -
+        so no token figure is claimed for it."""
+        from kstrl.agents.base import usage_coverage
+
+        meter = {"comp-a": {"review": UsageTotals(
+            calls=4, known_calls=4, token_calls=4, cost_calls=2,
+            total_tokens=1_000, cost_usd=0.5,
+        )}}
+        coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
+        assert coverage.uncovered_tokens == 0  # not 1000, and not a guess
+        assert "review (2 of 4 call(s))" in coverage.note()
+        assert "1,000" not in coverage.note()
+
+    def test_full_coverage_says_nothing(self) -> None:
+        from kstrl.agents.base import usage_coverage
+
+        meter = {"comp-a": {"engineer": UsageTotals(
+            calls=3, known_calls=3, token_calls=3, cost_calls=3,
+            total_tokens=10, cost_usd=1.0,
+        )}}
+        coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
+        assert coverage.complete is True
+        assert coverage.note() == ""
+
+    def test_an_empty_axis_is_labelled_empty_not_partial(self) -> None:
+        from kstrl.agents.base import usage_coverage
+
+        meter = {"comp-a": {"engineer": UsageTotals(
+            calls=2, known_calls=2, token_calls=2, cost_calls=0,
+            total_tokens=500,
+        )}}
+        coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
+        assert coverage.empty is True
+        assert coverage.partial is False
+        assert "EMPTY" in coverage.note()
+
+    def test_an_empty_meter_reports_nothing(self) -> None:
+        from kstrl.agents.base import usage_coverage
+
+        coverage = usage_coverage({}, axis="cost", ceiling="max_cost_usd")
+        assert coverage.calls == 0
+        assert coverage.complete is False  # no calls is not "covered"
+        assert coverage.note() == ""
+
+    def test_an_unknown_axis_degrades_instead_of_raising(self) -> None:
+        """Accounting must never gate a run (R3.1 requirement 4)."""
+        from kstrl.agents.base import usage_coverage
+
+        meter, _ = _measured_meter()
+        coverage = usage_coverage(meter, axis="bananas")
+        assert coverage.covered_calls == 0
+        assert coverage.calls == 13
+
+    def test_roles_fold_across_components(self) -> None:
+        from kstrl.agents.base import usage_coverage
+
+        meter, _ = _measured_meter()
+        coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
+        roles = {role.role: role for role in coverage.roles}
+        assert set(roles) == {"engineer", "review"}
+        assert roles["engineer"].calls == 8      # 5 + 1 + 1 + 1
+        assert roles["review"].calls == 5        # 2 + 3
+        assert roles["review"].silent is True
+        assert roles["engineer"].covered is True
+
+
+class TestPipelineCeilingCoverage:
+    """The pipeline accessor: configured ceilings only."""
+
+    @staticmethod
+    def _pipeline(tmp_path: Path, **config: Any) -> Any:
+        from kstrl.pipeline import ComponentPipeline
+
+        meter, run_usage = _measured_meter()
+        pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
+        pipeline.usage_meter = meter
+        pipeline.run_usage = run_usage
+        pipeline.factory_config = _factory_config(tmp_path, **config)
+        return pipeline
+
+    def test_a_configured_cost_ceiling_reports_its_coverage(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(tmp_path, max_cost_usd=25.0)
+        coverage = ComponentPipeline.ceiling_coverage(pipeline, "max_cost_usd")
+        assert coverage is not None
+        assert coverage.ceiling == "max_cost_usd"
+        assert coverage.uncovered_roles == ("review",)
+
+    def test_an_unconfigured_ceiling_has_nothing_to_qualify(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(tmp_path)
+        assert ComponentPipeline.ceiling_coverage(
+            pipeline, "max_cost_usd",
+        ) is None
+        assert ComponentPipeline.ceiling_coverage(
+            pipeline, "max_total_tokens",
+        ) is None
+
+    def test_an_unknown_key_is_not_a_ceiling(self, tmp_path: Path) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(tmp_path, max_cost_usd=25.0)
+        assert ComponentPipeline.ceiling_coverage(
+            pipeline, "max_adversarial_calls",
+        ) is None
+
+    def test_notes_are_emitted_only_for_ceilings_that_fall_short(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.pipeline import ComponentPipeline
+
+        pipeline = self._pipeline(
+            tmp_path, max_cost_usd=25.0, max_total_tokens=30_000_000,
+        )
+        notes = ComponentPipeline.coverage_notes(
+            pipeline, ("max_total_tokens", "max_cost_usd"),
+        )
+        # The token ceiling covered every call on this run; only the
+        # cost one has anything to disclose.
+        assert len(notes) == 1
+        assert "max_cost_usd bounds only those" in notes[0]
+
+
+class TestRollupReportsPerAxisCoverage:
+    """The rollup footer is where the operator reads the totals."""
+
+    def test_the_measured_run_gets_a_cost_coverage_note(self) -> None:
+        meter, run_usage = _measured_meter()
+        lines = _format_usage_rollup(meter, run_usage)
+        notes = [line for line in lines if line.startswith("note:")]
+        assert len(notes) == 1
+        assert "cost coverage is PARTIAL" in notes[0]
+        assert "8 of 13 metered call(s) reported a cost" in notes[0]
+        assert "review" in notes[0]
+        # The pre-existing footer could not fire: nothing was unreported.
+        assert run_usage.unreported_calls == 0
+
+    def test_an_uncosted_row_renders_a_dash_not_a_zero(self) -> None:
+        """`-` means "no call here reported a cost", never "free"."""
+        meter, run_usage = _measured_meter()
+        lines = _format_usage_rollup(meter, run_usage)
+        review_rows = [line for line in lines if " review " in line]
+        assert review_rows
+        for row in review_rows:
+            assert "0.0000" not in row
+
+    def test_a_reported_zero_cost_is_not_rendered_as_silence(self) -> None:
+        totals = UsageTotals(
+            calls=1, known_calls=1, token_calls=1, cost_calls=1,
+            total_tokens=10, cost_usd=0.0,
+        )
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        assert "0.0000" in lines[1]
+
+    def test_a_cost_only_row_renders_dashes_not_zero_tokens(self) -> None:
+        """R8 review finding 2: the token cells were gated on
+        ``known_calls``, so a cost-only invocation printed ``0 0 0``
+        tokens while the footer said token coverage was EMPTY and the
+        total was a lower bound - the row and the footer contradicted
+        each other. The reviewer's repro is one cost-only record.
+        """
+        totals = UsageTotals()
+        totals.add_record(UsageRecord(
+            cost_usd=1.0, source="claude-stream-json",
+        ))
+        assert (totals.known_calls, totals.token_calls) == (1, 0)
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        rows = [line for line in lines if not line.startswith("note:")]
+        # Both the component row and the TOTAL row showed numeric zeros.
+        assert len(rows) == 3
+        for row in rows[1:]:
+            assert row.split()[-4:-2] == ["-", "-"], row
+        assert any("token coverage is EMPTY" in line for line in lines)
+
+    def test_a_reported_zero_token_count_is_not_rendered_as_silence(
+        self,
+    ) -> None:
+        """The counterpart of the reported-zero-cost case: a call that
+        reported zero tokens is a measurement, not silence."""
+        totals = UsageTotals(
+            calls=1, known_calls=1, token_calls=1, cost_calls=1,
+            total_tokens=0, cost_usd=1.0,
+        )
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        assert lines[1].split()[-4:-2] == ["0", "0"]
+
+    def test_a_fully_covered_run_gets_no_coverage_note(self) -> None:
+        totals = UsageTotals(
+            calls=2, known_calls=2, token_calls=2, cost_calls=2,
+            total_tokens=10, cost_usd=1.0,
+        )
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        assert not [line for line in lines if line.startswith("note:")]
+
+    def test_a_silent_run_keeps_exactly_one_note(self) -> None:
+        """When nothing was reported at all the pre-existing footer says
+        so precisely; three lines for one fact would read as noise."""
+        unknown = UsageTotals()
+        unknown.add_record(UsageRecord(duration_seconds=3.0))
+        lines = _format_usage_rollup({"comp-a": {"engineer": unknown}}, unknown)
+        notes = [line for line in lines if line.startswith("note:")]
+        assert len(notes) == 1
+        assert "lower bounds" in notes[0]
+
+
+class TestCoverageReachesTheAuditTrail:
+    """A mixed run, end to end: engineer reports cost, reviewer does not.
+
+    The exact production shape, at test scale. Asserts the durable
+    events.jsonl and the legacy progress.jsonl carry the same coverage
+    facts - the divergence #181 fixed must not come back through a new
+    field.
+    """
+
+    @staticmethod
+    def _mixed_run(
+        tmp_path: Path, *, max_cost_usd: float, engineer_costs: dict[str, float],
+    ) -> tuple[Path, str]:
+        """comp-a then comp-b, engineer cost per component.
+
+        Two components on purpose: the budget gate fires the moment the
+        engineer's usage lands, so a run that breaches on its FIRST
+        component never reaches a review and would have perfect
+        coverage. The measured run breached later, after several
+        reviewer calls had gone unpriced.
+        """
+        from kstrl.review import ReviewResult
+
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
+        config = _factory_config(
+            root, max_cost_usd=max_cost_usd, review_mode="advisory",
+        )
+
+        def fresh_review_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
+            # A NEW agent per phase: usage_records accumulate on the
+            # instance, and a shared one would re-count the first
+            # component's reviewer call against the second.
+            agent = FakeUsageAgent(outputs=[["ok"]])
+            # The cross-family reviewer: a token total and no cost,
+            # which is verbatim what the codex adapter produces.
+            agent._usage_records.append(UsageRecord(
+                total_tokens=40_000, duration_seconds=0.5,
+                source="codex-text",
+            ))
+            return agent
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            comp_id = str(args[0])
+            return ComponentResult(
+                comp_id, success=True, iterations=1,
+                usage=_engineer_usage(
+                    1_000, cost=engineer_costs.get(comp_id, 0.0),
+                ),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch(
+            "kstrl.git.get_diff_content", return_value="",
+        ), patch(
+            "kstrl.agents.get_agent", side_effect=fresh_review_agent,
+        ), patch(
+            "kstrl.factory.run_review",
+            return_value=ReviewResult(passed=True, mode="advisory"),
+        ):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        run_dirs = sorted((root / ".kstrl" / "runs").iterdir())
+        return root, str(run_dirs[-1])
+
+    @staticmethod
+    def _events(path: Path, name: str) -> list[dict[str, Any]]:
+        rows = []
+        for line in path.read_text().splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if row.get("event") == name:
+                    rows.append(row)
+        return rows
+
+    def test_the_gap_is_announced_before_the_money_is_spent(
+        self, tmp_path: Path,
+    ) -> None:
+        """A `budget_coverage` record lands at the first phase that
+        exposes the gap - not only in the halt the operator reads
+        afterwards. Cost stays well under the ceiling here, so nothing
+        breached and nothing is unenforceable: this signal is the ONLY
+        one that fires."""
+        root, run_dir = self._mixed_run(
+            tmp_path, max_cost_usd=100.0,
+            engineer_costs={"comp-a": 0.01, "comp-b": 0.01},
+        )
+        durable = self._events(
+            Path(run_dir) / "events.jsonl", "budget_coverage",
+        )
+        assert len(durable) == 1, "one warning per ceiling per run"
+        data = durable[0]["data"]
+        assert data["ceiling"] == "max_cost_usd"
+        assert data["axis"] == "cost"
+        assert data["uncovered_roles"] == ["review"]
+        assert data["uncovered_tokens"] == 40_000
+        assert data["covered_calls"] == 1
+        assert "PARTIAL" in data["detail"]
+        # Nothing halted; the run completed under its ceiling.
+        assert not self._events(
+            Path(run_dir) / "events.jsonl", "budget_exceeded",
+        )
+
+    def test_both_sinks_carry_the_same_coverage_record(
+        self, tmp_path: Path,
+    ) -> None:
+        root, run_dir = self._mixed_run(
+            tmp_path, max_cost_usd=100.0,
+            engineer_costs={"comp-a": 0.01, "comp-b": 0.01},
+        )
+        durable = self._events(
+            Path(run_dir) / "events.jsonl", "budget_coverage",
+        )
+        legacy = self._events(root / "progress.jsonl", "budget_coverage")
+        assert len(durable) == len(legacy) == 1
+        assert durable[0]["data"] == legacy[0]["data"]
+
+    def test_the_halt_record_says_what_the_ceiling_counted(
+        self, tmp_path: Path,
+    ) -> None:
+        """The measured defect: a breach message that states a total
+        without stating what the total covers."""
+        # comp-a stays under the ceiling so its review runs and its
+        # 40,000 unpriced reviewer tokens are on the meter; comp-b's
+        # engineer then breaches. The measured shape.
+        root, run_dir = self._mixed_run(
+            tmp_path, max_cost_usd=0.10,
+            engineer_costs={"comp-a": 0.05, "comp-b": 0.25},
+        )
+        durable = self._events(
+            Path(run_dir) / "events.jsonl", "budget_exceeded",
+        )
+        legacy = self._events(root / "progress.jsonl", "budget_exceeded")
+        assert durable and len(durable) == len(legacy)
+        for a, b in zip(durable, legacy, strict=True):
+            assert a["data"] == b["data"]
+        coverage = durable[-1]["data"]["coverage"]
+        assert coverage, "the halt must record what its ceiling covered"
+        assert coverage[0]["ceiling"] == "max_cost_usd"
+        assert coverage[0]["uncovered_roles"] == ["review"]
+
+    def test_the_component_error_states_the_coverage(
+        self, tmp_path: Path,
+    ) -> None:
+        # comp-a stays under the ceiling so its review runs and its
+        # 40,000 unpriced reviewer tokens are on the meter; comp-b's
+        # engineer then breaches. The measured shape.
+        root, run_dir = self._mixed_run(
+            tmp_path, max_cost_usd=0.10,
+            engineer_costs={"comp-a": 0.05, "comp-b": 0.25},
+        )
+        failures = self._events(
+            Path(run_dir) / "events.jsonl", "component_failed",
+        )
+        errors = [row["data"]["error"] for row in failures]
+        budget_errors = [e for e in errors if "cost budget" in e]
+        assert budget_errors
+        assert any("cost coverage is PARTIAL" in e for e in budget_errors)
+        assert any("review" in e for e in budget_errors)
+
+    def test_a_fully_covered_halt_message_is_unchanged(
+        self, tmp_path: Path,
+    ) -> None:
+        """No coverage clause when the ceiling counted every call - the
+        disclosure must not become boilerplate on runs it does not
+        apply to."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_cost_usd=0.10)
+        success = ComponentResult(
+            "comp-a", success=True, iterations=1,
+            usage=_engineer_usage(600, cost=0.25),
+        )
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        comp_a = manifest.get_component("comp-a")
+        assert comp_a is not None
+        assert "cost budget exceeded" in (comp_a.error or "")
+        assert "coverage" not in (comp_a.error or "")
+
+        # The EVENT still records the coverage, positively. An absent
+        # field would be ambiguous between "covered everything" and
+        # "written before this landed"; a present entry with no
+        # uncovered calls is a verified fact.
+        run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
+        halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        assert halts
+        coverage = halts[-1]["data"]["coverage"]
+        assert len(coverage) == 1
+        assert coverage[0]["ceiling"] == "max_cost_usd"
+        assert coverage[0]["uncovered_calls"] == 0
+        assert coverage[0]["uncovered_roles"] == []
+
+
+class TestCeilingScopeIsStatedUpFront:
+    """At the plan stage an operator can still act; after the spend they
+    cannot. What CANNOT be stated up front is which roles will report -
+    no call has been made, so that would be a prediction."""
+
+    @staticmethod
+    def _run(tmp_path: Path, **config: Any) -> str:
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        buffer = io.StringIO()
+        success = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_engineer_usage(10),
+        )
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, _factory_config(root, **config),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=buffer), root,
+            )
+        return buffer.getvalue()
+
+    def test_the_cost_ceiling_states_what_it_counts(
+        self, tmp_path: Path,
+    ) -> None:
+        out = self._run(tmp_path, max_cost_usd=25.0)
+        assert "Cost ceiling" in out
+        assert "$25.0" in out
+        assert "counts only calls whose agent reports a cost" in out
+
+    def test_the_token_ceiling_states_what_it_counts(
+        self, tmp_path: Path,
+    ) -> None:
+        out = self._run(tmp_path, max_total_tokens=500_000)
+        assert "Token ceiling" in out
+        assert "counts only calls whose agent reports a token count" in out
+
+    def test_an_unconfigured_ceiling_is_not_advertised(
+        self, tmp_path: Path,
+    ) -> None:
+        out = self._run(tmp_path)
+        assert "Cost ceiling" not in out
+        assert "Token ceiling" not in out
+
+
+class TestEveryConfiguredCeilingRecordsItsCoverage:
+    """R8 review finding 3: coverage was built by iterating ``ceilings``.
+
+    ``ceilings`` is the CAUSAL halt identity - with both caps enabled a
+    token breach makes ``budget_halt_identity()`` return
+    ``("max_total_tokens",)`` alone, so a simultaneously partial
+    ``max_cost_usd`` never reached the halt event or the inbox evidence.
+    That contradicts the docstring's "EVERY configured named ceiling is
+    recorded", and makes a missing per-ceiling entry ambiguous between
+    "not configured" and "not the cause".
+    """
+
+    @staticmethod
+    def _dual_cap_run(tmp_path: Path) -> tuple[Path, Path]:
+        """One component whose engineer breaches the TOKEN cap, after a
+        review call that reported tokens and no cost.
+
+        The reviewer's shape: two metered calls, both caps configured,
+        the token axis fully covered and the cost axis PARTIAL.
+        """
+        from kstrl.review import ReviewResult
+
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
+        config = _factory_config(
+            root, max_total_tokens=5_000, max_cost_usd=100.0,
+            review_mode="advisory",
+        )
+
+        def fresh_review_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
+            agent = FakeUsageAgent(outputs=[["ok"]])
+            # The cross-family reviewer: tokens, no cost (codex).
+            agent._usage_records.append(UsageRecord(
+                total_tokens=1_000, duration_seconds=0.5, source="codex-text",
+            ))
+            return agent
+
+        costs = {"comp-a": 0.01, "comp-b": 0.02}
+        tokens = {"comp-a": 1_000, "comp-b": 9_000}
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            comp_id = str(args[0])
+            return ComponentResult(
+                comp_id, success=True, iterations=1,
+                usage=_engineer_usage(tokens[comp_id], cost=costs[comp_id]),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch(
+            "kstrl.git.get_diff_content", return_value="",
+        ), patch(
+            "kstrl.agents.get_agent", side_effect=fresh_review_agent,
+        ), patch(
+            "kstrl.factory.run_review",
+            return_value=ReviewResult(passed=True, mode="advisory"),
+        ):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
+        return root, run_dir
+
+    @staticmethod
+    def _events(path: Path, name: str) -> list[dict[str, Any]]:
+        rows = []
+        for line in path.read_text().splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if row.get("event") == name:
+                    rows.append(row)
+        return rows
+
+    def test_a_token_breach_still_records_the_cost_ceilings_coverage(
+        self, tmp_path: Path,
+    ) -> None:
+        root, run_dir = self._dual_cap_run(tmp_path)
+        halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        assert halts, "the token cap must have halted the run"
+        data = halts[-1]["data"]
+        # The causal identity is unchanged: the TOKEN cap is what fired.
+        assert data["ceilings"] == ["max_total_tokens"]
+        assert data["condition"] == "breached"
+        by_ceiling = {entry["ceiling"]: entry for entry in data["coverage"]}
+        assert set(by_ceiling) == {"max_total_tokens", "max_cost_usd"}
+        # Positively recorded, both ways round: the token ceiling counted
+        # everything, the cost ceiling did not.
+        assert by_ceiling["max_total_tokens"]["uncovered_calls"] == 0
+        assert by_ceiling["max_cost_usd"]["uncovered_roles"] == ["review"]
+
+    def test_the_inbox_evidence_carries_the_same_entries(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.inbox import Inbox, InboxConfig
+
+        root, _ = self._dual_cap_run(tmp_path)
+        items = [
+            item for item in Inbox(root, InboxConfig()).items()
+            if str(item.kind) == "budget_overrun"
+        ]
+        assert items
+        coverage = items[-1].evidence["coverage"]
+        assert {entry["ceiling"] for entry in coverage} == {
+            "max_total_tokens", "max_cost_usd",
+        }
+
+    def test_both_sinks_still_agree(self, tmp_path: Path) -> None:
+        root, run_dir = self._dual_cap_run(tmp_path)
+        durable = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        legacy = self._events(root / "progress.jsonl", "budget_exceeded")
+        assert durable and len(durable) == len(legacy)
+        for a, b in zip(durable, legacy, strict=True):
+            assert a["data"] == b["data"]
+
+    def test_a_disabled_ceiling_is_still_absent(self, tmp_path: Path) -> None:
+        """``ceiling_coverage()`` filters unconfigured ceilings, so an
+        absent entry keeps ONE meaning: that cap was not enabled."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_total_tokens=500)
+        success = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_engineer_usage(600),
+        )
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
+        halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        assert halts
+        coverage = halts[-1]["data"]["coverage"]
+        assert [entry["ceiling"] for entry in coverage] == ["max_total_tokens"]

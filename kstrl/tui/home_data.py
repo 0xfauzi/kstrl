@@ -62,7 +62,10 @@ def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
         components_failed=failed,
         components_total=total,
         total_tokens=state.total_tokens,
-        tokens_lower_bound=state.unreported_calls > 0,
+        # The TOKEN axis specifically (R8 review finding 1): a call that
+        # reported a cost and no token count is not "unreported", yet it
+        # still leaves total_tokens short.
+        tokens_lower_bound=state.tokens_are_lower_bound,
         cost_usd=state.cost_usd,
     )
 

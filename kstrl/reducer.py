@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl import events as ev
+from kstrl.agents.base import CEILING_AXES
 from kstrl.observability import latest_run_id, parse_event_ts, read_progress_events
 
 # Bounded so a security-heavy run cannot bloat the state.
@@ -56,6 +57,12 @@ class ComponentState:
     last_heartbeat_ts: float = 0.0
     usage_calls: int = 0
     unreported_calls: int = 0
+    # Per-axis coverage (R8 review finding 1). Kept beside the totals
+    # they qualify: a component's cost_usd means something different
+    # when cost_calls < usage_calls.
+    token_calls: int = 0
+    cost_calls: int = 0
+    coverage_unknown_calls: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
     findings_count: int = 0
@@ -69,6 +76,46 @@ class ComponentState:
     checkpoint_open: str = ""  # kind of the unresolved checkpoint_requested
     error: str = ""
 
+    @property
+    def tokens_are_lower_bound(self) -> bool:
+        """This component's ``total_tokens`` omits a call's spend."""
+        return (
+            self.usage_calls - self.coverage_unknown_calls - self.token_calls
+        ) > 0
+
+    @property
+    def cost_is_lower_bound(self) -> bool:
+        """This component's ``cost_usd`` omits a call's spend.
+
+        Per axis, like the run-level twin: a component whose engineer
+        reported cost and whose reviewer reported only tokens has an
+        exact token total and a partial cost one.
+        """
+        return (
+            self.usage_calls - self.coverage_unknown_calls - self.cost_calls
+        ) > 0
+
+
+@dataclass(frozen=True)
+class CoverageGap:
+    """One ceiling that stopped covering every metered call.
+
+    Folded from :class:`events.BudgetCoverage`, which is run-scoped: the
+    gap belongs to the run's adapters, not to whichever component
+    happened to expose it. ``uncovered_tokens`` stays a TOKEN count on
+    this surface too - the dashboard has no price table either, and a
+    dollar figure invented for display is still an invented figure.
+    """
+
+    ceiling: str = ""
+    axis: str = ""
+    calls: int = 0
+    covered_calls: int = 0
+    uncovered_calls: int = 0
+    uncovered_tokens: int = 0
+    uncovered_roles: tuple[str, ...] = ()
+    detail: str = ""
+
 
 @dataclass
 class RunState:
@@ -81,16 +128,37 @@ class RunState:
     finished: bool = False
     plan_order: list[str] = field(default_factory=list)
     components: dict[str, ComponentState] = field(default_factory=dict)
-    # Run-level rollup of every component_usage event (R3.1 semantics:
-    # lower bounds whenever unreported_calls > 0).
+    # Run-level rollup of every component_usage event. R3.1 semantics,
+    # narrowed per axis by R8: each total is a lower bound whenever some
+    # call did not report THAT figure (see tokens_are_lower_bound /
+    # cost_is_lower_bound), which unreported_calls alone cannot say.
     usage_calls: int = 0
     unreported_calls: int = 0
+    # Per-axis coverage (R8 review finding 1). ``unreported_calls`` fires
+    # only when a call reported NOTHING, so it stayed at 0 on the
+    # measured run whose cross-family reviewer reported tokens and no
+    # cost - the run the whole PARTIAL-coverage concept exists for. The
+    # dashboard cannot mark a total as a lower bound with a signal that
+    # is blind to the case.
+    token_calls: int = 0
+    cost_calls: int = 0
+    #: Calls from a usage payload written before the per-axis fields
+    #: existed. ``known_calls > 0`` with both axis counts at 0 is
+    #: impossible in a post-R8 payload (a known call reported tokens or
+    #: cost), so it identifies a legacy one. Those calls are coverage-
+    #: UNKNOWN, not coverage-MISSING: claiming a gap that was never
+    #: measured is the same class of false statement as hiding one.
+    coverage_unknown_calls: int = 0
     total_tokens: int = 0
     cost_usd: float = 0.0
     # Budget caps from run_plan (0 = unbounded/unknown).
     max_total_tokens: int = 0
     max_adversarial_calls: int = 0
     max_cost_usd: float = 0.0
+    # Coverage gaps announced by the pipeline, keyed by axis (one
+    # ceiling per axis). Corroborates - and names the roles behind - what
+    # the per-axis call counts already imply.
+    coverage_gaps: dict[str, CoverageGap] = field(default_factory=dict)
     unknown_events: int = 0
     # Decompose vocabulary (run-scoped). Counts are complete; the lists
     # are FIFO-bounded so a pathological stream cannot grow state.
@@ -106,6 +174,45 @@ class RunState:
         from kstrl.runid import run_kind
 
         return run_kind(self.run_id) or "factory"
+
+    def _axis_is_lower_bound(self, axis: str, covered_calls: int) -> bool:
+        """Does this axis's total omit at least one call's spend?
+
+        Two independent sources, either of which is sufficient: the
+        per-call arithmetic over the usage stream, and the pipeline's own
+        ``budget_coverage`` announcement. The announcement is computed
+        from the orchestrator's meter, so it can be ahead of what a
+        tailing dashboard has folded; the arithmetic works on runs with
+        no configured ceiling, where no announcement is ever emitted.
+
+        Coverage-unknown calls (legacy payloads) are excluded from both
+        sides of the arithmetic, so an old run dir renders exactly as it
+        did before rather than growing a lower-bound marker nobody
+        measured.
+        """
+        gap = self.coverage_gaps.get(axis)
+        if gap is not None and gap.uncovered_calls > 0:
+            return True
+        uncovered = (
+            self.usage_calls - self.coverage_unknown_calls - covered_calls
+        )
+        return uncovered > 0
+
+    @property
+    def tokens_are_lower_bound(self) -> bool:
+        """``total_tokens`` omits at least one call's spend."""
+        return self._axis_is_lower_bound("token", self.token_calls)
+
+    @property
+    def cost_is_lower_bound(self) -> bool:
+        """``cost_usd`` omits at least one call's spend.
+
+        Independent of :attr:`tokens_are_lower_bound` in both directions:
+        on the measured run tokens were fully covered while cost was not,
+        so a single shared marker would have been wrong on one axis
+        whichever way it fired.
+        """
+        return self._axis_is_lower_bound("cost", self.cost_calls)
 
 
 def _infer_phase(event: ev.Event) -> str | None:
@@ -191,6 +298,25 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
                 comp.error = f"contract failed at tier {event.tier}"
         return
 
+    if isinstance(event, ev.BudgetCoverage):
+        # Run-scoped, so it MUST be handled above the
+        # `if not event.component: return` guard below - that early
+        # return is what dropped it before (R8 review finding 1).
+        # Keyed by axis: one ceiling counts one axis, and the axis is
+        # what every surface renders against. A ceiling-only legacy
+        # payload still resolves through CEILING_AXES.
+        axis = event.axis or CEILING_AXES.get(event.ceiling, "")
+        state.coverage_gaps[axis] = CoverageGap(
+            ceiling=event.ceiling,
+            axis=axis,
+            calls=event.calls,
+            covered_calls=event.covered_calls,
+            uncovered_calls=event.uncovered_calls,
+            uncovered_tokens=event.uncovered_tokens,
+            uncovered_roles=tuple(event.uncovered_roles),
+            detail=event.detail,
+        )
+        return
     if isinstance(event, ev.SpecIssueRecorded):
         severity = (
             event.severity
@@ -289,6 +415,24 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         state.unreported_calls += event.unreported_calls
         state.total_tokens += event.total_tokens
         state.cost_usd += event.cost_usd
+        # Per-axis coverage (R8 review finding 1): dropping these left
+        # the dashboard unable to tell a measured total from one that
+        # counts a subset of the run's roles.
+        comp.token_calls += event.token_calls
+        comp.cost_calls += event.cost_calls
+        state.token_calls += event.token_calls
+        state.cost_calls += event.cost_calls
+        legacy = (
+            event.known_calls > 0
+            and event.token_calls == 0
+            and event.cost_calls == 0
+        )
+        if legacy:
+            # See RunState.coverage_unknown_calls: a known call always
+            # reported tokens or cost, so this shape can only be a
+            # payload written before the axis fields existed.
+            comp.coverage_unknown_calls += event.known_calls
+            state.coverage_unknown_calls += event.known_calls
     elif isinstance(event, ev.FindingRecorded):
         comp.findings_count += 1
         comp.recent_findings.append({

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
@@ -41,7 +41,13 @@ from typing import TYPE_CHECKING, Any
 from kstrl import events as ev
 from kstrl import git
 from kstrl.adequacy import AdequacyConfig
-from kstrl.agents.base import UsageTotals, collect_usage
+from kstrl.agents.base import (
+    CEILING_AXES,
+    CeilingCoverage,
+    UsageTotals,
+    collect_usage,
+    usage_coverage,
+)
 from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.findings import (
@@ -333,6 +339,13 @@ class ComponentPipeline:
         self._usage_salvage_unsafe: set[str] = set()
         self.run_usage = UsageTotals()
 
+        # R8 (measured): ceilings whose coverage gap has already been
+        # announced this run. One warning per ceiling - the gap only
+        # widens, and a line per phase would train the operator to
+        # ignore it. The final numbers travel with the halt and the
+        # rollup.
+        self._coverage_announced: set[str] = set()
+
         # E4: adversarial-call counter shared across review / security /
         # knowledge phases. When max_adversarial_calls is 0 the budget is
         # unbounded; otherwise the LLM phase is skipped once the budget
@@ -383,6 +396,42 @@ class ComponentPipeline:
         self.bus.emit(ev.ComponentUsage(
             component=comp_id, phase=phase, **totals.to_dict(),
         ))
+        self._announce_coverage_gaps()
+
+    def _announce_coverage_gaps(self) -> None:
+        """Report the FIRST time a configured ceiling stops covering
+        every metered call (R8, measured).
+
+        Evaluated on every usage capture rather than at the halt,
+        because a coverage fact delivered with the halt arrives after
+        the money is spent. The earliest honest moment is the phase that
+        first reports nothing on that axis - typically the first
+        cross-family review, a few minutes into a run.
+
+        Adds no failure mode to ``_record_usage``: the work is integer
+        arithmetic over the meter plus one ``bus.emit``, and
+        ``EventBus.emit`` already isolates sink exceptions. The meter
+        must never gate correctness (R3.1 requirement 4).
+        """
+        for ceiling in CEILING_AXES:
+            if ceiling in self._coverage_announced:
+                continue
+            coverage = self.ceiling_coverage(ceiling)
+            if coverage is None or coverage.calls == 0 or coverage.complete:
+                continue
+            self._coverage_announced.add(ceiling)
+            detail = coverage.note()
+            self.ui.warn(f"  BUDGET COVERAGE: {detail}")
+            self.bus.emit(ev.BudgetCoverage(
+                ceiling=coverage.ceiling,
+                axis=coverage.axis,
+                calls=coverage.calls,
+                covered_calls=coverage.covered_calls,
+                uncovered_calls=coverage.uncovered_calls,
+                uncovered_tokens=coverage.uncovered_tokens,
+                uncovered_roles=coverage.uncovered_roles,
+                detail=detail,
+            ))
 
     def record_engineer_usage(
         self, comp_id: str, totals: UsageTotals,
@@ -543,6 +592,56 @@ class ComponentPipeline:
             "refusing to schedule further components rather than spending "
             "under a cap that cannot fire (R8)"
         )
+
+    def ceiling_coverage(self, ceiling: str) -> CeilingCoverage | None:
+        """What fraction of the run's metered calls ``ceiling`` counts.
+
+        None when that ceiling is not configured (nothing to qualify) or
+        the key is not a ceiling.
+
+        The middle term the R8 ceilings were missing. ``*_budget_exceeded``
+        answers "was it breached", ``*_budget_unenforceable`` answers "can
+        it ever fire"; both were true-or-false over the WHOLE run, and a
+        ceiling that counts some roles and not others is neither. Measured
+        on a real run: the engineer reported cost on every call, the
+        cross-family reviewer reported tokens and no cost on 5, and the
+        run's cost total equalled the engineer's exactly - a $25 ceiling
+        that bounded one role while every existing surface reported it as
+        healthy.
+
+        Deliberately does NOT change what the ceiling counts. Converting
+        the uncovered calls' tokens to dollars would need a price table
+        this repo does not have and must not invent (a fabricated cost in
+        an audit trail is worse than a missing one). What changes is that
+        the gap is now stated instead of implied.
+        """
+        axis = CEILING_AXES.get(ceiling)
+        if axis is None:
+            return None
+        if ceiling == "max_cost_usd" and self.factory_config.max_cost_usd <= 0:
+            return None
+        if (
+            ceiling == "max_total_tokens"
+            and self.factory_config.max_total_tokens <= 0
+        ):
+            return None
+        return usage_coverage(self.usage_meter, axis=axis, ceiling=ceiling)
+
+    def coverage_notes(self, ceilings: Sequence[str]) -> list[str]:
+        """Operator sentences for the named ceilings that fall short.
+
+        Empty when every named ceiling counted every call, so a
+        fully-covered halt reads exactly as it did before.
+        """
+        notes: list[str] = []
+        for ceiling in ceilings:
+            coverage = self.ceiling_coverage(ceiling)
+            if coverage is None:
+                continue
+            note = coverage.note()
+            if note:
+                notes.append(note)
+        return notes
 
     def unenforceable_ceilings(self) -> list[str]:
         """Configured ceilings that can no longer fire, by config key.
@@ -961,7 +1060,16 @@ class ComponentPipeline:
         put a false number in the audit trail. That string is produced by
         :meth:`LoopBudget.halt_reason`, which names its own ceiling.
         Every other side effect is identical wherever the breach is
-        caught."""
+        caught.
+
+        R8 (measured): the message and the event also state what the
+        named ceilings COVER when they do not cover everything. A run
+        whose engineer reported cost and whose cross-family reviewer
+        reported tokens and no cost halted on a total that equalled the
+        engineer's exactly - 193,633 reviewer tokens contributed $0 -
+        while the sentence said only "cost budget exceeded". The number
+        was true and the sentence was misleading, so the coverage is now
+        attached where the ceiling is evaluated."""
         # An identity supplied by the caller wins: the engineer loop
         # detects its own halt against priors the parent's totals do not
         # describe, so only the loop knows what actually fired there.
@@ -996,6 +1104,39 @@ class ComponentPipeline:
                 f"({self.factory_config.max_total_tokens}); halting instead "
                 "of spending further (R3.1)"
             )
+        # Coverage rides along with the halt, in the prose AND
+        # structurally. Appended rather than folded into each branch so
+        # it also qualifies a loop-supplied ``reason``: the loop knows
+        # what fired, only the parent knows what the ceiling counted.
+        #
+        # EVERY CONFIGURED named ceiling is recorded, including ones that
+        # covered every call and ones that did not cause this halt. An
+        # empty or partial ``coverage`` would otherwise mean several
+        # things at once - "no gap", "not the cause", "written before
+        # this landed" - and a reader could not tell verified from
+        # unknown (the distinction E9 added ``infrastructure_error``
+        # for).
+        #
+        # Iterating CEILING_AXES rather than ``ceilings`` is R8 review
+        # finding 3: ``ceilings`` is the CAUSAL identity, so with both
+        # caps enabled a token breach yields ``("max_total_tokens",)``
+        # and a simultaneously PARTIAL ``max_cost_usd`` was dropped from
+        # the halt event and the inbox evidence - the operator deciding
+        # which knob to raise never saw that the other cap was counting
+        # a subset. ``ceiling_coverage()`` returns None for a ceiling
+        # that is not configured, so an absent entry keeps exactly one
+        # meaning: that cap was off.
+        #
+        # The PROSE stays quiet on full coverage, because ``note()``
+        # returns "" there: the operator-facing sentence is unchanged
+        # wherever there is nothing to disclose.
+        coverage = [
+            cov for cov in (self.ceiling_coverage(c) for c in CEILING_AXES)
+            if cov is not None
+        ]
+        notes = [note for note in (cov.note() for cov in coverage) if note]
+        if notes:
+            error = f"{error} [{'; '.join(notes)}]"
         ceiling = ", ".join(ceilings)
         label = ceiling or "budget"
         self.ui.err(f"  BUDGET EXCEEDED ({label}) for {comp.id}: {error}")
@@ -1011,6 +1152,7 @@ class ComponentPipeline:
             ceiling=ceiling,
             condition=condition,
             ceilings=ceilings,
+            coverage=tuple(cov.to_dict() for cov in coverage),
         ))
         # Raised BEFORE delegating to fail(): a blown budget is its own
         # exception kind, and the generic halted_run item fail() adds
@@ -1029,6 +1171,10 @@ class ComponentPipeline:
                 "max_total_tokens": self.factory_config.max_total_tokens,
                 "cost_usd": round(self.run_usage.cost_usd, 6),
                 "max_cost_usd": self.factory_config.max_cost_usd,
+                # The operator triaging this item is deciding whether to
+                # raise the ceiling; what it counted is part of that
+                # decision, not a footnote.
+                "coverage": [cov.to_dict() for cov in coverage],
             },
         )
         self._inbox_suppress_generic(comp.id)

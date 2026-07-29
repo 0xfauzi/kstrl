@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
 logger = logging.getLogger(__name__)
+
+#: Which usage figure each run-level ceiling counts. Stated once so no
+#: surface re-derives "max_cost_usd means the cost axis" locally - local
+#: re-derivation of a budget fact is exactly what let two sinks disagree
+#: in #181.
+CEILING_AXES: Final[Mapping[str, str]] = {
+    "max_cost_usd": "cost",
+    "max_total_tokens": "token",
+}
 
 
 @dataclass(frozen=True)
@@ -205,6 +214,211 @@ class UsageTotals:
             "cost_usd": round(self.cost_usd, 6),
             "duration_seconds": round(self.duration_seconds, 2),
         }
+
+
+@dataclass(frozen=True)
+class RoleCoverage:
+    """One role's (phase's) contribution to a coverage axis.
+
+    ``covered_calls`` counts this role's invocations that reported the
+    figure the axis is denominated in - ``cost_calls`` for the cost axis,
+    ``token_calls`` for the token axis. ``total_tokens`` is carried
+    because it is the only MEASURED magnitude available for calls that
+    reported no cost; it is never converted into one.
+    """
+
+    role: str
+    calls: int
+    covered_calls: int
+    total_tokens: int = 0
+
+    @property
+    def uncovered_calls(self) -> int:
+        return max(0, self.calls - self.covered_calls)
+
+    @property
+    def covered(self) -> bool:
+        """Every one of this role's calls reported the axis figure."""
+        return self.uncovered_calls == 0
+
+    @property
+    def silent(self) -> bool:
+        """NOT ONE of this role's calls reported the axis figure.
+
+        The distinction matters for attribution: a silent role's whole
+        token total is provably uncounted by the ceiling, while a
+        partially covered role's is not attributable at all - the
+        aggregate does not say which of its calls carried the figure,
+        and guessing a split would invent a number.
+        """
+        return self.calls > 0 and self.covered_calls == 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "role": self.role,
+            "calls": self.calls,
+            "covered_calls": self.covered_calls,
+            "uncovered_calls": self.uncovered_calls,
+            "total_tokens": self.total_tokens,
+        }
+
+
+@dataclass(frozen=True)
+class CeilingCoverage:
+    """What fraction of a run's metered calls one axis actually counts.
+
+    The missing middle between "the ceiling works" and "the ceiling is
+    unenforceable" (``ComponentPipeline.cost_budget_unenforceable``).
+    Measured on a real run: the engineer reported cost on all 8 of its
+    calls while the cross-family reviewer (codex) reported tokens and no
+    cost on 5, so the run's cost total equalled the engineer's exactly
+    and ``max_cost_usd`` bounded one role. Neither ceiling was dead and
+    nothing was breached, so every existing surface stayed silent -
+    including the rollup's lower-bound footer, which fires on
+    ``unreported_calls`` and saw 0 because every call reported SOMETHING.
+
+    ``uncovered_tokens`` sums only the SILENT roles' tokens (see
+    :attr:`RoleCoverage.silent`). It is a lower bound on the unpriced
+    magnitude and is deliberately left in tokens: this codebase does not
+    hold a price table, and inventing one to render a dollar estimate
+    would put a fabricated figure in the audit trail.
+    """
+
+    axis: str
+    calls: int
+    covered_calls: int
+    uncovered_tokens: int = 0
+    roles: tuple[RoleCoverage, ...] = ()
+    #: Config key of the ceiling this describes, when it describes one.
+    #: Empty for the rollup's axis-only view, where no ceiling is
+    #: configured but the total is still a lower bound.
+    ceiling: str = ""
+
+    @property
+    def uncovered_calls(self) -> int:
+        return max(0, self.calls - self.covered_calls)
+
+    @property
+    def uncovered_roles(self) -> tuple[str, ...]:
+        """Roles with at least one call that reported nothing on this
+        axis - the "which subset" an operator has to be told."""
+        return tuple(role.role for role in self.roles if not role.covered)
+
+    @property
+    def complete(self) -> bool:
+        """Every metered call reported this axis's figure."""
+        return self.calls > 0 and self.uncovered_calls == 0
+
+    @property
+    def partial(self) -> bool:
+        """Some calls reported it and some did not - the measured case."""
+        return self.covered_calls > 0 and self.uncovered_calls > 0
+
+    @property
+    def empty(self) -> bool:
+        """Calls were made and not one reported this axis's figure."""
+        return self.calls > 0 and self.covered_calls == 0
+
+    def note(self) -> str:
+        """The operator sentence, or "" when there is nothing to report.
+
+        Stops at the token count for uncovered calls and never converts
+        it to dollars: the adapter reported no price, and a fabricated
+        cost in an audit trail is worse than a missing one.
+        """
+        if self.calls == 0 or self.complete:
+            return ""
+        figure = "a cost" if self.axis == "cost" else "a token count"
+        noun = "price" if self.axis == "cost" else "token count"
+        bounded = (
+            f"{self.ceiling} bounds only those"
+            if self.ceiling else f"the {self.axis} total covers only those"
+        )
+        parts: list[str] = []
+        for role in self.roles:
+            if role.covered:
+                continue
+            detail = (
+                f"{role.role} ({role.uncovered_calls} of {role.calls} call(s)"
+            )
+            # Only a SILENT role's tokens are attributable to uncovered
+            # calls; a partially covered role's aggregate does not say
+            # which call carried the figure.
+            if role.silent and role.total_tokens > 0:
+                detail += f", {role.total_tokens:,} token(s) unpriced"
+            parts.append(detail + ")")
+        state = "PARTIAL" if self.partial else "EMPTY"
+        return (
+            f"{self.axis} coverage is {state}: {self.covered_calls} of "
+            f"{self.calls} metered call(s) reported {figure}, so {bounded}; "
+            f"uncovered: {', '.join(parts)}. No {noun} is inferred for "
+            f"uncovered calls, so the {self.axis} total is a lower bound"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serializable form for events, the progress log and the inbox."""
+        return {
+            "ceiling": self.ceiling,
+            "axis": self.axis,
+            "calls": self.calls,
+            "covered_calls": self.covered_calls,
+            "uncovered_calls": self.uncovered_calls,
+            "uncovered_tokens": self.uncovered_tokens,
+            "uncovered_roles": list(self.uncovered_roles),
+            "roles": [role.to_dict() for role in self.roles],
+        }
+
+
+def usage_coverage(
+    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
+    *,
+    axis: str,
+    ceiling: str = "",
+) -> CeilingCoverage:
+    """Fold a ``{component: {phase: UsageTotals}}`` meter by ROLE.
+
+    Roles are the meter's phase keys (engineer / review / security /
+    distill), folded across every component so the answer is run-scoped
+    like the ceilings it describes. Order is alphabetical, which is
+    arbitrary but fixed - the note must not reshuffle between runs.
+
+    An unknown ``axis`` yields zero coverage rather than raising: this
+    is accounting, and accounting must never gate a run.
+    """
+    by_role: dict[str, UsageTotals] = {}
+    for phases in usage_meter.values():
+        for phase, totals in phases.items():
+            by_role.setdefault(phase, UsageTotals()).merge(totals)
+    roles: list[RoleCoverage] = []
+    calls = 0
+    covered_calls = 0
+    uncovered_tokens = 0
+    for role_name in sorted(by_role):
+        totals = by_role[role_name]
+        role_covered = (
+            totals.cost_calls if axis == "cost"
+            else totals.token_calls if axis == "token"
+            else 0
+        )
+        role = RoleCoverage(
+            role=role_name,
+            calls=totals.calls,
+            covered_calls=role_covered,
+            total_tokens=totals.total_tokens,
+        )
+        roles.append(role)
+        calls += role.calls
+        covered_calls += role.covered_calls
+        if role.silent:
+            uncovered_tokens += role.total_tokens
+    return CeilingCoverage(
+        axis=axis,
+        calls=calls,
+        covered_calls=covered_calls,
+        uncovered_tokens=uncovered_tokens,
+        roles=tuple(roles),
+        ceiling=ceiling,
+    )
 
 
 def _as_int(value: object) -> int | None:
