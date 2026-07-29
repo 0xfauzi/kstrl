@@ -826,6 +826,16 @@ _FILE_PART_CONTINUED_MARKER = (
 )
 
 
+# Cap on the part-count fixed-point rounds in _split_file_segment.
+# The iteration provably converges (see the proof there) in at most one
+# round per distinct DIGIT WIDTH of the part count, and a part count
+# cannot exceed the hunk count of a string held in memory, so 24 rounds
+# is far above the reachable ceiling (len(str(2**63)) == 19). It exists
+# only so an unforeseen non-monotonicity fails loudly instead of
+# spinning; hitting it is a bug, not a diff shape.
+_PART_COUNT_FIXED_POINT_ROUNDS = 24
+
+
 @dataclass(frozen=True)
 class _DiffUnit:
     """One indivisible piece of a diff for packing purposes: either a
@@ -849,6 +859,43 @@ def _file_segment_label(header: str) -> str:
     return first_line[:200] or "(unnamed diff segment)"
 
 
+def _part_marker_reserve(path: str, parts: int) -> int:
+    """Width of the widest part-marker line for a file rendered as
+    ``parts`` parts.
+
+    Part indices run ``1..parts`` and ``len(str(i)) <= len(str(parts))``,
+    so formatting both fields with ``parts`` bounds every part's marker
+    exactly - no guessed digit padding. Depends on ``parts`` ONLY through
+    its digit count, which is what bounds the fixed-point iteration in
+    :func:`_split_file_segment`.
+    """
+    return max(
+        len(_FILE_PART_MARKER.format(i=parts, n=parts, path=path)),
+        len(_FILE_PART_CONTINUED_MARKER.format(i=parts, n=parts, path=path)),
+    )
+
+
+def _pack_hunks(hunks: list[str], content_budget: int) -> list[list[str]]:
+    """Group ``hunks`` into the fewest ordered, contiguous runs that each
+    fit ``content_budget``.
+
+    Order-preserving next-fit: since a part must be a contiguous slice of
+    the file (that is what keeps reassembly byte-exact), closing a group
+    only when the next hunk would overflow is optimal - any partition
+    into contiguous runs is dominated by this one. Callers must have
+    checked that every hunk fits ``content_budget`` on its own.
+    """
+    groups: list[list[str]] = [[]]
+    size = 0
+    for hunk in hunks:
+        if groups[-1] and size + len(hunk) > content_budget:
+            groups.append([])
+            size = 0
+        groups[-1].append(hunk)
+        size += len(hunk)
+    return groups
+
+
 def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     """R8: split ONE file's diff segment into ``<=budget`` parts on
     ``@@`` hunk boundaries, repeating the file header on every part.
@@ -858,6 +905,11 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     test file, and recovery cost a full engineer-loop pass ($3.99) to
     repackage a diff the harness simply could not chunk. A file bigger
     than the per-chunk budget is a normal outcome, not misbehaviour.
+
+    Produces the FEWEST parts the budget allows: the width reserved for
+    the ``file part i of n`` marker is derived from the part count the
+    packer actually settles on (see the fixed point below), so no hunk is
+    rejected over headroom the rendering never uses.
 
     Raises :class:`DiffUnsplittableError` when even hunk granularity is
     not enough (one hunk over the budget, or no hunks at all). That
@@ -881,41 +933,68 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     ]
     path = _file_segment_label(header)
 
-    # The marker cannot be rendered until the part count is known, so
-    # reserve its worst-case width now. Part indices and the part count
-    # are both bounded by the hunk count, so formatting with that count
-    # bounds the marker's width exactly - no guessed digit padding.
-    widest = len(hunks)
-    reserve = max(
-        len(_FILE_PART_MARKER.format(i=widest, n=widest, path=path)),
-        len(_FILE_PART_CONTINUED_MARKER.format(i=widest, n=widest, path=path)),
-    )
-    content_budget = budget - reserve - len(header)
-    if content_budget <= 0:
-        raise DiffUnsplittableError(
-            f"file header for {path} is {len(header)} chars, leaving no "
-            f"room for hunks in the {budget}-char per-chunk budget "
-            f"({first_line})"
+    # The marker cannot be rendered until the part count is known, but
+    # the part count depends on how much budget the marker takes: a
+    # chicken-and-egg the pre-fix code broke by reserving the width of
+    # the HUNK count. Reviewer finding [P3]: the hunk count is only an
+    # UPPER BOUND on the part count, so that reserve is too large and
+    # rejects hunks an exact rendering would fit (reproduced at the
+    # default cap by one 49,706-char hunk plus 999 tiny ones - the
+    # 1,000-hunk reserve left 6 chars too few, while the true 2-part
+    # rendering fits). Solve the chicken-and-egg instead: iterate to the
+    # part count that reproduces itself, then render with exactly that.
+    #
+    # Termination: reserve() is non-decreasing in the assumed part count
+    # (it grows only with the count's digit width), so content_budget is
+    # non-increasing, so the packed group count f(n) is non-decreasing in
+    # n. Starting at n=1 (the smallest possible count) gives f(n_0) >=
+    # n_0, and monotonicity carries that forward: the sequence is
+    # non-decreasing, bounded above by len(hunks) (every group holds at
+    # least one hunk), hence eventually constant - and the first repeat
+    # is a fixed point. Stronger: f depends on n only through its digit
+    # width, so a round that does not change the digit width is already
+    # the fixed point; the loop runs at most one round per digit width.
+    # It also lands on the LEAST fixed point, i.e. the fewest parts, so
+    # no reviewer pass is spent on avoidable fragmentation.
+    parts_assumed = 1
+    groups: list[list[str]] = []
+    for _ in range(_PART_COUNT_FIXED_POINT_ROUNDS):
+        content_budget = (
+            budget - _part_marker_reserve(path, parts_assumed) - len(header)
         )
-
-    # Greedy packing preserves hunk order, so parts stay contiguous
-    # slices of the segment and the reassembly invariant holds.
-    groups: list[list[str]] = [[]]
-    size = 0
-    for hunk in hunks:
-        if len(hunk) > content_budget:
-            hunk_line = hunk.split("\n", 1)[0][:200]
+        if content_budget <= 0:
             raise DiffUnsplittableError(
-                f"single hunk in {path} is {len(hunk)} chars, over the "
-                f"{content_budget} chars left for hunk content after the "
-                f"{len(header)}-char file header; a diff cannot be split "
-                f"below hunk granularity ({hunk_line})"
+                f"file header for {path} is {len(header)} chars, leaving no "
+                f"room for hunks in the {budget}-char per-chunk budget "
+                f"({first_line})"
             )
-        if groups[-1] and size + len(hunk) > content_budget:
-            groups.append([])
-            size = 0
-        groups[-1].append(hunk)
-        size += len(hunk)
+        # Fail closed on the residual case at whatever count the
+        # iteration has reached. Sound at every round, not just the
+        # first: n_k is a lower bound on ANY self-consistent part count
+        # (monotonicity again), so a hunk that overflows the budget here
+        # overflows every valid rendering too - it is genuinely
+        # unsplittable, not a casualty of an over-wide reserve.
+        for hunk in hunks:
+            if len(hunk) > content_budget:
+                hunk_line = hunk.split("\n", 1)[0][:200]
+                raise DiffUnsplittableError(
+                    f"single hunk in {path} is {len(hunk)} chars, over the "
+                    f"{content_budget} chars left for hunk content after the "
+                    f"{len(header)}-char file header; a diff cannot be split "
+                    f"below hunk granularity ({hunk_line})"
+                )
+        groups = _pack_hunks(hunks, content_budget)
+        if len(groups) == parts_assumed:
+            break
+        parts_assumed = len(groups)
+    else:
+        # Unreachable given the proof above; explicit so a future change
+        # that breaks monotonicity fails closed instead of oscillating.
+        raise DiffUnsplittableError(
+            f"part count for {path} did not settle within "
+            f"{_PART_COUNT_FIXED_POINT_ROUNDS} rounds (last: "
+            f"{parts_assumed} parts, {len(hunks)} hunks) ({first_line})"
+        )
 
     total = len(groups)
     parts: list[_DiffUnit] = []

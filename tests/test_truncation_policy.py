@@ -180,6 +180,26 @@ def _multi_hunk_segment(
     return header + hunks
 
 
+def _hunk_of_size(index: int, size: int) -> str:
+    """One hunk of EXACTLY ``size`` chars, starting with a ``@@ `` header.
+
+    Exact sizes are what make the part-marker reserve observable: the
+    P3 cases below sit one char either side of the content budget, so an
+    approximate fixture would not distinguish "fits" from "does not".
+    """
+    head = f"@@ -{index},0 +{index},1 @@ h{index}\n"
+    rest = size - len(head)
+    if rest < 0:
+        raise ValueError(f"size {size} is under the {len(head)}-char header")
+    line = "+" + "x" * 98 + "\n"
+    full, tail = divmod(rest, 100)
+    if tail == 1 and full:  # a 1-char tail cannot be a "+...\n" line
+        full, tail = full - 1, tail + 100
+    text = head + line * full + ("+" + "x" * (tail - 2) + "\n" if tail else "")
+    assert len(text) == size, (len(text), size)
+    return text
+
+
 # Inverse of split_diff_for_prompt's injected provenance. The chunk
 # header is one line; a within-file part adds a marker line, and a
 # continuation part additionally repeats the file header (every line up
@@ -418,6 +438,110 @@ class TestSplitWithinFile:
         assert DEFAULT_PROMPT_DIFF_CHAR_LIMIT == 50_000
         chunks = split_diff_for_prompt(self._production_shape())
         assert max(len(c) for c in chunks) <= DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+
+
+class TestPartMarkerWidthFromPartCount:
+    """[P3] The ``file part i of n`` marker's digit width must be sized
+    from the ACTUAL part count, not from the hunk count.
+
+    The hunk count is only an UPPER BOUND on the part count, so reserving
+    its width shrinks the per-part content budget by more than the marker
+    will ever need. A hunk that fits an exact rendering then gets
+    rejected and the harness forces the engineer retry this PR exists to
+    eliminate.
+    """
+
+    PATH = "xx.py"
+    HEADER = (
+        f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
+    )
+
+    def _reviewer_case(self) -> str:
+        """The reviewer's reproduction: ONE 49,706-char hunk followed by
+        999 tiny hunks, at the default 50,000-char limit.
+
+        49,706 is the knife edge: it is exactly the content budget left
+        for a 1-digit part count, and 6 chars over the budget left once
+        the marker is (wrongly) sized for 1,000 parts.
+        """
+        diff = (
+            self.HEADER
+            + _hunk_of_size(1, 49_706)
+            + "".join(_hunk_of_size(i + 2, 30) for i in range(999))
+        )
+        assert len(_hunk_headers(diff)) == 1000
+        return diff
+
+    def test_reviewer_case_splits_instead_of_raising(self) -> None:
+        """Before the fix this raised DiffUnsplittableError and bounced
+        the component back to the engineer; a compliant hunk-boundary
+        partition existed the whole time."""
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        assert len(chunks) == 2
+        for chunk in chunks:
+            assert len(chunk) <= DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        # The big hunk is alone in part 1; the 999 tiny ones follow.
+        assert _hunk_headers(chunks[0]) == _hunk_headers(diff)[:1]
+        assert _hunk_headers(chunks[1]) == _hunk_headers(diff)[1:]
+
+    def test_reviewer_case_round_trips(self) -> None:
+        """The round-trip property must hold for the newly-splittable
+        case too: every hunk exactly once, in order, byte-exact."""
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers("".join(chunks)) == _hunk_headers(diff)
+
+    def test_reviewer_case_parts_are_labelled_and_self_describing(
+        self,
+    ) -> None:
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        for i, chunk in enumerate(chunks, 1):
+            assert f"file part {i} of 2: {self.PATH}" in chunk
+            assert self.HEADER in chunk
+
+    def test_marker_width_comes_from_parts_not_hunks(self) -> None:
+        """Same failure mode without the knife edge: 100 hunks that pack
+        into 50 parts. Sizing the marker from the 3-digit hunk count
+        costs 2 chars per part - just enough to stop two hunks sharing a
+        part, doubling the reviewer passes (100 chunks instead of 50).
+        """
+        diff = self.HEADER + "".join(
+            _hunk_of_size(i + 1, 2352) for i in range(100)
+        )
+        chunks = split_diff_for_prompt(diff, limit=5000)
+        assert len(chunks) == 50
+        for chunk in chunks:
+            assert len(chunk) <= 5000
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers("".join(chunks)) == _hunk_headers(diff)
+
+    def test_non_convergence_fails_closed_instead_of_looping(self) -> None:
+        """The part-count fixed point provably settles (at most one round
+        per digit width), but the loop is bounded anyway. If that bound
+        is ever reached the diff must fail closed like any other
+        unsplittable diff - never spin, never emit parts whose markers
+        disagree with the rendered part count."""
+        diff = self.HEADER + "".join(
+            _hunk_of_size(i + 1, 2352) for i in range(100)
+        )
+        # This shape needs two rounds (assume 1 part -> pack 50 -> 50),
+        # so a one-round budget cannot settle it.
+        with patch("kstrl.git._PART_COUNT_FIXED_POINT_ROUNDS", 1):
+            with pytest.raises(DiffUnsplittableError, match="did not settle"):
+                split_diff_for_prompt(diff, limit=5000)
+
+    def test_single_oversized_hunk_among_many_still_raises(self) -> None:
+        """The residual floor is unchanged: a hunk over the budget that
+        even a 1-part rendering could not hold still fails closed. The
+        fix must not paper over it by shrinking the marker away."""
+        diff = self.HEADER + _hunk_of_size(1, 60_000) + "".join(
+            _hunk_of_size(i + 2, 30) for i in range(999)
+        )
+        with pytest.raises(DiffUnsplittableError, match="single hunk"):
+            split_diff_for_prompt(diff)
 
 
 # ---------------------------------------------------------------------------

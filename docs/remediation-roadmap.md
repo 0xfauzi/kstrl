@@ -256,6 +256,16 @@ reviewers' output as much as it distrusts the engineer's.
     SINGLE hunk over the cap: still `DiffUnsplittableError`, still fail-closed
     through the retry path (R1.4 forbids truncating a diff under review), with
     the retry guidance now naming hunk granularity.
+  - Note (2026-07-29, R8, review [P3]): the `file part i of n` marker's width is
+    reserved from the ACTUAL part count, found by iterating the packer to a
+    fixed point, not from the hunk count. The hunk count only upper-bounds the
+    part count, so reserving its digits shrank the per-part content budget below
+    what the rendering needs and bounced diffs a compliant hunk-boundary
+    partition existed for (one 49,706-char hunk plus 999 tiny ones was rejected
+    at the 50,000 cap, six chars short, though it renders as two parts). The
+    iteration is monotone from below, so it settles at the FEWEST parts in at
+    most one round per digit width; the loop is still bounded and fails closed
+    if the bound is ever reached.
 - [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.
