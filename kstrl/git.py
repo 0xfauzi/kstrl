@@ -5,6 +5,7 @@ from __future__ import annotations
 import re as _re
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -212,7 +213,20 @@ def get_changed_files(
                 line.strip() for line in result.stdout.splitlines() if line.strip()
             )
 
-        # Untracked files
+    except subprocess.TimeoutExpired:
+        pass
+
+    files.update(get_untracked_files(cwd, timeout))
+    return files
+
+
+def get_untracked_files(
+    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> set[str]:
+    """Untracked, non-ignored files. Separate from ``get_changed_files``
+    because a baseline comparison needs them WITHOUT the index/HEAD
+    deltas that function also folds in (see get_changed_files_since)."""
+    try:
         result = subprocess.run(
             ["git", "ls-files", "--others", "--exclude-standard"],
             cwd=cwd,
@@ -220,14 +234,223 @@ def get_changed_files(
             text=True,
             timeout=timeout,
         )
-        if result.returncode == 0:
-            files.update(
-                line.strip() for line in result.stdout.splitlines() if line.strip()
-            )
     except subprocess.TimeoutExpired:
-        pass
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {
+        line.strip() for line in result.stdout.splitlines() if line.strip()
+    }
 
-    return files
+
+@dataclass(frozen=True)
+class WorkspaceBaseline:
+    """The workspace as it stood BEFORE an agent was let loose on it.
+
+    ``head`` is the commit HEAD pointed at (None in a repo with no
+    commits yet, or when rev-parse failed); ``dirty`` is the set of files
+    that were already staged, modified or untracked at that moment.
+
+    Both halves exist because ``get_changed_files`` alone answers the
+    wrong question for scope enforcement (R8 review finding 4). It sees
+    only the index and the working tree, and the engineer prompt tells
+    the agent to COMMIT after every story - so an out-of-scope file that
+    was committed is invisible to it, i.e. the tripwire was blind exactly
+    when the agent had done the most work. The converse also bit: in a
+    --no-worktrees run, an operator's own uncommitted file was reported
+    as the AGENT's violation and could be destroyed by "Revert and
+    continue".
+    """
+
+    head: str | None
+    dirty: frozenset[str]
+
+
+def get_head_sha(
+    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """The commit HEAD points at, or None (unborn HEAD, not a repo,
+    timeout)."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def capture_workspace_baseline(
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    base_ref: str | None = None,
+) -> WorkspaceBaseline:
+    """Snapshot the comparison commit and the pre-existing dirty set.
+
+    ``base_ref`` should be the component's BASE BRANCH, so this guard
+    judges scope from the same point ``check_diff_scope`` does. Anchoring
+    on the worker's starting HEAD instead looked more natural and was
+    wrong: a retry resumes the component branch carrying the previous
+    attempt's out-of-scope commit, so DELETING that file - the exact fix
+    the retry prompt asks for - registers as a fresh out-of-scope change
+    and the guard rejects its own remedy. Against the base branch the
+    add-and-delete nets to nothing, which is why Phase 1 never had this
+    problem.
+
+    Falls back to HEAD when no ref is given or it cannot be resolved
+    (``ks run`` outside a factory has no base branch), which is the
+    pre-existing behavior. Cheap: two plumbing calls, taken once per
+    loop rather than once per iteration.
+    """
+    head = resolve_ref(base_ref, cwd, timeout) if base_ref else None
+    return WorkspaceBaseline(
+        head=head or get_head_sha(cwd, timeout),
+        dirty=frozenset(get_changed_files(cwd, timeout)),
+    )
+
+
+def resolve_ref(
+    ref: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """The sha ``ref`` names, or None when it does not resolve.
+
+    Tries the local ref first, then ``origin/<ref>``: a fresh worktree
+    may carry the remote-tracking ref only.
+    """
+    for candidate in (ref, f"origin/{ref}"):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
+                cwd=cwd, capture_output=True, text=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return None
+
+
+def get_changed_files_since(
+    baseline: WorkspaceBaseline,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> set[str]:
+    """The COMPLETE delta an agent produced since ``baseline``.
+
+    Every tracked file that differs between the baseline COMMIT and the
+    working tree - which spans the agent's commits, its index and its
+    unstaged edits in one comparison - plus everything untracked, MINUS
+    the files that were already dirty when the baseline was taken.
+
+    Measured against the BASELINE, never against HEAD: HEAD moves as the
+    agent commits, so a file reverted to its baseline content still
+    differs from HEAD and would be reported as an outstanding change
+    forever. The question here is only "does this differ from how the
+    agent found it".
+
+    The subtraction is what keeps an operator's own uncommitted work out
+    of the agent's violation list in a --no-worktrees run. Its cost is a
+    known false NEGATIVE: a file the operator had already modified and
+    the agent then modified again is attributed to the operator and not
+    reported. Chosen over refusing to run in a dirty checkout because it
+    is the less disruptive half of that trade, and because the missed
+    case is bounded by files a human touched deliberately - whereas the
+    committed-file blind spot it replaces covered EVERY file the agent
+    touched after its first commit.
+
+    Fails OPEN like the rest of this module: an unborn HEAD (nothing to
+    diff against) or a diff that cannot be produced falls back to the
+    working-tree view, which is today's behavior, rather than raising.
+    """
+    if baseline.head is None:
+        changed = get_changed_files(cwd, timeout)
+    else:
+        changed = set(_committed_since(baseline.head, cwd, timeout))
+        changed.update(get_untracked_files(cwd, timeout))
+    return changed - set(baseline.dirty)
+
+
+def _committed_since(
+    ref: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> list[str]:
+    """Paths differing between ``ref`` and the working tree.
+
+    ``git diff <ref>`` spans commits AND the index AND the working tree,
+    so one call covers "committed since the baseline" without a separate
+    rev-list. Rename/copy records contribute both paths, exactly as
+    ``get_diff_names`` does, because for scope purposes content left the
+    source too.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-status", "-z", ref, "--"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+    if result.returncode != 0:
+        return []
+    return _unique_paths(path for _, path in _parse_name_status_records(result.stdout))
+
+
+def restore_file_from(
+    file: str,
+    ref: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Restore ``file`` to its content at ``ref`` (index AND working tree).
+
+    Returns False when the file did not exist at ``ref`` - the caller's
+    cue that reverting means deleting it, not restoring it. Needed
+    because a baseline-aware guard can be reverting a COMMITTED change,
+    which ``restore_file`` (index/HEAD as the source) would treat as
+    already-correct and leave in place.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git", "restore", f"--source={ref}", "--staged", "--worktree",
+                "--", file,
+            ],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def remove_from_index(
+    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Drop ``file`` from the index, leaving the working tree alone.
+
+    Paired with ``delete_untracked`` to revert a file the agent both
+    created and committed: after both, the path is absent from the index
+    and from disk, so it no longer appears in the delta against the
+    baseline.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rm", "--cached", "--ignore-unmatch", "-q", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def restore_file(

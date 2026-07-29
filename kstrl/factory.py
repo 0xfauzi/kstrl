@@ -32,7 +32,7 @@ from kstrl.autonomy import (
 )
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
-from kstrl.config import KstrlConfig
+from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -84,6 +84,7 @@ from kstrl.observability import (
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
+from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
     run_chunked_review,
@@ -641,6 +642,11 @@ class ComponentResult:
     budget_exceeded: bool = False
     budget_halt_condition: str = ""
     budget_halt_ceilings: tuple[str, ...] = ()
+    # Files the in-loop scope guard rejected. Carried so the pipeline can
+    # file the halt under the retry context's verification-failures
+    # section, where R0.4 established the retry agent looks for scope
+    # guidance - catching the violation earlier must not relocate it.
+    guard_violations: tuple[str, ...] = ()
 
 
 @dataclass
@@ -1006,6 +1012,38 @@ def _prune_stale_worktrees(
         )
 
 
+def _component_scope(
+    comp: Component, root_dir: Path, base_config: KstrlConfig,
+) -> list[str] | None:
+    """The scope the in-loop guard enforces for one component.
+
+    The component's architect-emitted ``allowedPaths``, falling back to
+    the run-wide ``--allowed-paths`` flag when the PRD carries none
+    (legacy PRDs predate the field).
+
+    Fails OPEN, unlike Phase 1's ``check_diff_scope``, and the asymmetry
+    is deliberate. This guard is an early, cheap tripwire; Phase 1 is the
+    gate. A PRD that cannot be read here returns None, the loop runs
+    unguarded, and Phase 1 still fails CLOSED on the same unreadable PRD
+    (R1.5) - so nothing merges unverified. Failing closed here instead
+    would convert an unreadable PRD into an immediate component failure
+    before the engineer has done anything, which is a worse trade for a
+    tripwire whose only job is to save iterations.
+    """
+    try:
+        prd = PRD.load(root_dir / comp.prd_path)
+    except (OSError, ValueError):
+        # OSError, not FileNotFoundError (R8 review finding 5): a PRD
+        # path that is a DIRECTORY raises IsADirectoryError, and an
+        # unreadable one PermissionError - both OSError subclasses that
+        # escaped the narrower catch and aborted SCHEDULING, before
+        # Phase 1 ever ran. This runs per component while the run is
+        # being planned, so an escape here takes the whole run down for
+        # one bad file. ValueError covers the parse/schema failures.
+        return base_config.allowed_paths or None
+    return prd.allowed_paths or base_config.allowed_paths or None
+
+
 def _preflight_component_branches(
     manifest: Manifest, root_dir: Path, ui: UI,
 ) -> list[str]:
@@ -1198,7 +1236,7 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
-    progress_file_str: str = "scripts/kstrl/progress.txt",
+    progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
@@ -1218,6 +1256,7 @@ def _run_component(
     redirect_output: bool = True,
     live_line: Callable[[str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
+    base_branch: str = "main",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -1246,6 +1285,11 @@ def _run_component(
     the spend recorded before this worker launched, so the engineer loop
     can halt itself BETWEEN iterations instead of waiting for the
     parent's next phase boundary. None disables the in-loop check.
+
+    ``progress_file_str`` is None unless the operator explicitly
+    configured a progress path; None means "derive it next to this
+    component's PRD", which is what keeps the file inside the
+    component's allowedPaths (see config.component_progress_path).
     """
     from kstrl.agents import (
     get_agent,
@@ -1380,7 +1424,9 @@ def _run_component(
         max_iterations=max_iterations,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
-        progress_file=worktree_path / progress_file_str,
+        progress_file=worktree_path / component_progress_path(
+            prd_path_str, progress_file_str,
+        ),
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
@@ -1455,6 +1501,7 @@ def _run_component(
             stop_check=stop_check,
             budget=token_budget,
             on_iteration_usage=on_iteration_usage,
+            guard_base_ref=base_branch,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -1466,6 +1513,37 @@ def _run_component(
             # pipeline needs when its own totals do not yet show a
             # breach (unreported-usage case).
             error = result.budget_halt_reason
+        elif result.guard_violations:
+            # R8 review: name the files. The guard used to fail the
+            # iteration and fall through to "Did not complete", so the
+            # retry agent was told only that something went wrong - and
+            # the cheapest strategy for an agent with no diagnosis is to
+            # redo the same edit. Mirrors check_diff_scope's wording so
+            # the two scope failures read identically wherever they are
+            # caught.
+            #
+            # R0.4 is why the base branch and the COMPLETE allowed-paths
+            # list are repeated verbatim rather than paraphrased: the
+            # recorded e2e run guessed `main` as the base and reverted
+            # base-branch content with `git checkout main -- ...`,
+            # failing again. Those two lines used to arrive from Phase 1;
+            # now that the in-loop guard fires FIRST, this message is
+            # what reaches attempt 2, so it must carry them itself.
+            shown = list(result.guard_violations[:15])
+            more = len(result.guard_violations) - len(shown)
+            listed = ", ".join(shown) + (f" ... and {more} more" if more else "")
+            error = (
+                f"{len(result.guard_violations)} file(s) outside the "
+                f"component's allowed scope, caught in-loop after "
+                f"iteration {result.iterations}: {listed}. "
+                f"Base branch: {base_branch} "
+                f"(scope is judged on `git diff {base_branch}...HEAD`; "
+                f"do NOT `git checkout {base_branch} -- <path>`, revert "
+                "only your own out-of-scope commits/edits). "
+                f"Allowed paths (complete list): "
+                f"{', '.join(allowed_paths or [])}. "
+                "Do not widen allowedPaths."
+            )
         elif result.no_progress:
             error = (
                 "no-progress circuit breaker tripped: "
@@ -1496,6 +1574,7 @@ def _run_component(
             budget_exceeded=bool(result.budget_halt_reason),
             budget_halt_condition=result.budget_halt_condition,
             budget_halt_ceilings=result.budget_halt_ceilings,
+            guard_violations=result.guard_violations,
         )
     except Exception as exc:
         return ComponentResult(
@@ -2432,18 +2511,13 @@ def _run_factory_locked(
         """Render `path` relative to root_dir for use inside per-component
         worktrees. Falls back to the absolute path string when relativization
         fails (e.g. a path on a different mount)."""
-        if not path.is_absolute():
-            return str(path)
-        try:
-            return path.relative_to(root_dir).as_posix()
-        except ValueError:
-            try:
-                return path.resolve().relative_to(root_dir.resolve()).as_posix()
-            except ValueError:
-                return str(path)
+        return relative_to_root(path, root_dir)
 
     prompt_file_rel = _path_relative_to_root(base_config.prompt_file)
-    progress_file_rel = _path_relative_to_root(base_config.progress_file)
+    # The progress path is deliberately NOT hoisted out of the per-component
+    # loop: unless it was explicitly configured, each component derives its
+    # own next to its PRD so the engineer writes inside its allowedPaths
+    # (base_config.component_progress_file, called from _submit_args).
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
 
     def _launch_component(comp: Component) -> Path | None:
@@ -2502,7 +2576,9 @@ def _run_factory_locked(
             comp.scaffold or None,
             comp.dependencies or None,
             knowledge_prefix,
-            progress_file_rel,
+            # Per-component, not run-wide: KstrlConfig.component_progress_file
+            # keeps the engineer's progress log inside allowedPaths.
+            base_config.component_progress_file(comp.prd_path, root_dir),
             codebase_map_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,
@@ -2511,7 +2587,23 @@ def _run_factory_locked(
             # hardcoded 30 non-interactive iterations with no path guard.
             base_config.max_iterations,
             base_config.interactive,
-            base_config.allowed_paths or None,
+            # R8 review: the COMPONENT's allowedPaths, not the run-wide
+            # --allowed-paths flag. That flag is empty in every ordinary
+            # factory run, so `if config.allowed_paths` in the loop was
+            # False and guards.enforce_allowed_paths never ran: the
+            # in-loop guard existed and was inert. A scope violation was
+            # therefore only caught at Phase 1, AFTER the whole engineer
+            # loop had been paid for - measured at $12.93 for one such
+            # component, versus ~$2.50 for the single iteration it takes
+            # to catch it here.
+            #
+            # Read from root_dir, NOT the worktree: Phase 1 deliberately
+            # re-reads the PRD from the worktree (fail-closed on load
+            # error), but an in-loop guard sourced from a file the agent
+            # may edit would let the agent widen its own scope mid-run.
+            # The pre-run PRD is the honest input for enforcement; the
+            # worktree copy remains the input for verification.
+            _component_scope(comp, root_dir, base_config),
             # R7.5: no-progress circuit breaker limits.
             breaker_cfg.no_progress_iterations,
             breaker_cfg.test_command,
@@ -2683,6 +2775,11 @@ def _run_factory_locked(
                         # ends at token_budget by construction.
                         task = functools.partial(
                             _run_component, *args,
+                            # Keyword, NOT appended to args: the tuple
+                            # ends at token_budget by construction (see
+                            # above) and a positional extra silently
+                            # lands on redirect_output.
+                            base_branch=manifest.base_branch,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line, "AI",
@@ -2693,7 +2790,20 @@ def _run_factory_locked(
                         )
                         future = executor.submit(task)
                     else:
-                        future = executor.submit(_run_component, *args)
+                        # Bound through partial rather than passed as a
+                        # submit() kwarg: Executor.submit types its own
+                        # **kwargs, so a keyword meant for the worker
+                        # reads as a duplicate of submit's. Picklable -
+                        # _run_component is module-level and the base
+                        # branch is a plain str.
+                        future = executor.submit(
+                            functools.partial(
+                                _run_component, *args,
+                                # Same unprovable-*args limitation the
+                                # inline branch annotates above.
+                                base_branch=manifest.base_branch,  # type: ignore[misc]
+                            ),
+                        )
                     running_futures[future] = comp.id
                     if backstop_seconds > 0:
                         future_deadlines[future] = (

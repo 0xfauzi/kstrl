@@ -16,7 +16,7 @@ Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 | `MAX_ITERATIONS` | int | 10 | Per-component max agent iterations |
 | `PROMPT_FILE` | path | `scripts/kstrl/prompt.md` | |
 | `PRD_FILE` | path | `scripts/kstrl/prd.json` | |
-| `PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` | |
+| `PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` | Setting it forces that path on every factory component; unset, each component's engineer writes `progress.txt` beside its own PRD, inside the component's `allowedPaths` |
 | `CODEBASE_MAP_FILE` | path | `scripts/kstrl/codebase_map.md` | |
 | `SLEEP_SECONDS` | float | 2.0 | Inter-iteration sleep |
 | `INTERACTIVE` | bool | false | Pause between iterations for human input |
@@ -221,7 +221,7 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_TIMEOUT_VERIFY` | float | 300 |
 | `KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE` | bool (`1`) | false |
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
-| `KSTRL_VERIFY_PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` |
+| `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
 
 ## FixturesConfig (`[fixtures]`)
 

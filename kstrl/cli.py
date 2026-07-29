@@ -31,7 +31,12 @@ from kstrl.agents.base import Agent
 from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
-from kstrl.config import KstrlConfig, _parse_paths, resolve_config_file
+from kstrl.config import (
+    KstrlConfig,
+    _parse_paths,
+    reconcile_progress_config,
+    resolve_config_file,
+)
 from kstrl.config_report import build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.decompose import SpecBlockerError, decompose_spec
@@ -1271,6 +1276,8 @@ def feature(
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
 
+
+
     sandbox_cfg = SandboxConfig.load(root_dir)
     if sandbox_cfg.enabled and base_config.agent_cmd:
         ui_impl.warn(
@@ -2225,6 +2232,20 @@ def factory(
     # through to the codex default - and _cli_family misreads the
     # engineer family, inverting the R7.1 reviewer rotation.
     _check_agent_preflight(base_config, ui_impl)
+
+    # --no-verify leaves no reader, so there is nothing to reconcile.
+    if v_config is not None:
+        # R8 review: the progress log's writer ([paths] progress) and its
+        # reader ([verify] progress_file_path) default to the same
+        # derivation, so they agree until exactly ONE is set - and then the
+        # self-critique check inspects a file the engineer never wrote and
+        # fails for a reason the operator cannot see from either setting.
+        # The reconciliation lives in config.py (and is applied in ONE path
+        # domain, review finding 3) so a test can exercise the same wiring
+        # this command runs.
+        mismatch = reconcile_progress_config(base_config, v_config, root_dir)
+        if mismatch is not None:
+            ui_impl.warn(mismatch)
 
     # Ensure prompt file exists
     if not base_config.prompt_file.exists():

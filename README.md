@@ -265,7 +265,7 @@ interactive = false  # human-in-the-loop mode for the legacy loop
 [paths]
 prompt = "scripts/kstrl/prompt.md"              # engineer prompt file
 prd = "scripts/kstrl/prd.json"                  # PRD file
-progress = "scripts/kstrl/progress.txt"         # progress log the agent appends to
+progress = ""                                   # progress log the agent appends to; empty = each factory component writes beside its own PRD (inside its allowedPaths), set = that one path is forced on every component
 codebase_map = "scripts/kstrl/codebase_map.md"  # brownfield codebase notes
 allowed = []                                    # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
 
@@ -319,20 +319,20 @@ allow_network = false  # re-open outbound network inside the sandbox (off = deny
 
 # Phase 1 mechanical verification
 [verify]
-test_command = ""                                  # empty = smart default (uv run pytest)
-typecheck_command = ""                             # empty = smart default (uv run mypy)
-lint_command = ""                                  # empty = smart default (uv run ruff check)
-check_diff_scope = true                            # fail on changes outside allowed paths
-check_bad_patterns = true                          # scan the diff for secret-like patterns
-dead_code_cleanup = false                          # optional dead-code check
-dead_code_command = ""                             # empty = smart default when dead_code_cleanup is on
-mutation_testing = false                           # optional mutation testing
-mutation_threshold = 50.0                          # minimum mutation kill rate (percent)
-mutation_timeout = 600.0                           # seconds for the mutation run
-subprocess_timeout = 300.0                         # seconds per verification subprocess
-require_self_critique = false                      # fail Phase 1 if the ## Self-Critique block is missing/sparse
-self_critique_min_bullets = 3                      # minimum substantive bullets in the block
-progress_file_path = "scripts/kstrl/progress.txt"  # progress file the self-critique check reads
+test_command = ""              # empty = smart default (uv run pytest)
+typecheck_command = ""         # empty = smart default (uv run mypy)
+lint_command = ""              # empty = smart default (uv run ruff check)
+check_diff_scope = true        # fail on changes outside allowed paths
+check_bad_patterns = true      # scan the diff for secret-like patterns
+dead_code_cleanup = false      # optional dead-code check
+dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
+mutation_testing = false       # optional mutation testing
+mutation_threshold = 50.0      # minimum mutation kill rate (percent)
+mutation_timeout = 600.0       # seconds for the mutation run
+subprocess_timeout = 300.0     # seconds per verification subprocess
+require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
+self_critique_min_bullets = 3  # minimum substantive bullets in the block
+progress_file_path = ""        # progress file the self-critique check reads; empty = the log beside the component's PRD
 
 # Phase 1 approved-fixtures oracle (R7.2; default off)
 [fixtures]
