@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO
 
-from kstrl.agents.base import UsageTotals, collect_usage
+from kstrl.agents.base import UsageTotals, collect_usage, usage_coverage
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.autonomy import (
     AutonomyConfig,
@@ -1859,6 +1859,14 @@ def _format_usage_rollup(
     only a total (in/out columns stay 0), CustomAgent reports nothing.
     Whenever some calls reported no usage the footer says so explicitly -
     the totals are then lower bounds, not measurements (H4).
+
+    R8 (measured): the ``unreported_calls`` footer alone was not enough.
+    It fires only when a call reported NOTHING, so a cross-family
+    reviewer that reports tokens and no cost left it at 0 while
+    contributing $0 to a run whose cost total covered 8 of 13 calls -
+    the footer stayed silent on exactly the run it existed for. Each
+    axis now reports its own coverage, and names the roles that are
+    missing from it.
     """
     header = (
         f"{'component':<24} {'phase':<10} {'calls':>5} "
@@ -1878,7 +1886,11 @@ def _format_usage_rollup(
             tokens_in = f"{totals.input_tokens:,}"
             tokens_out = f"{totals.output_tokens:,}"
             tokens_total = f"{totals.total_tokens:,}"
-            cost = f"{totals.cost_usd:.4f}" if totals.cost_usd > 0 else "-"
+            # "-" means "no call in this row reported a cost", never
+            # "it was free". Keyed on cost_calls rather than on the
+            # total so a genuinely reported $0.0000 is not rendered as
+            # silence - the same distinction the cost ceiling makes.
+            cost = f"{totals.cost_usd:.4f}" if totals.cost_calls > 0 else "-"
         else:
             tokens_in = tokens_out = tokens_total = cost = "-"
         return (
@@ -1898,6 +1910,15 @@ def _format_usage_rollup(
             "call(s) reported no token/cost data; token and cost totals "
             "are lower bounds"
         )
+    # Per-axis coverage, which the note above cannot express: a call can
+    # report tokens and no cost. Suppressed when nothing at all was
+    # reported, because the note above already says precisely that and
+    # three lines for one fact reads as noise.
+    if run_usage.known_calls > 0:
+        for axis in ("token", "cost"):
+            note = usage_coverage(usage_meter, axis=axis).note()
+            if note:
+                lines.append(f"note: {note}")
     return lines
 
 
@@ -2506,6 +2527,32 @@ def _run_factory_locked(
         f"{timeout_cfg.component_total}s"
         if timeout_cfg.component_total > 0 else "<disabled>",
     )
+    # R8 (measured): state each ceiling AND what it counts, before the
+    # run spends anything. An operator set --max-cost-usd 25.0 on a run
+    # whose cross-family reviewer reports tokens and no cost, and got a
+    # ceiling that bounded the engineer alone; nothing had told them the
+    # ceiling is denominated in REPORTED dollars.
+    #
+    # Deliberately says nothing about which roles will be covered. No
+    # call has been made yet, so any per-role claim here would be a
+    # prediction from a hard-coded adapter capability table - a table
+    # this repo does not have and that would go stale the day an adapter
+    # starts reporting cost. The measured per-role figure follows as a
+    # `budget_coverage` event at the first call that reports nothing,
+    # which is still early enough to act on.
+    if factory_config.max_total_tokens > 0:
+        ui.kv(
+            "Token ceiling",
+            f"{factory_config.max_total_tokens} total tokens "
+            "(counts only calls whose agent reports a token count)",
+        )
+    if factory_config.max_cost_usd > 0:
+        ui.kv(
+            "Cost ceiling",
+            f"${factory_config.max_cost_usd} "
+            "(counts only calls whose agent reports a cost; roles whose "
+            "agent reports none are unpriced and unbounded by it)",
+        )
 
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component

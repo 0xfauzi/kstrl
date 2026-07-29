@@ -233,7 +233,16 @@ class BudgetExceeded(Event):
     totals never moved. ``ceilings`` holds one or many identities; the
     unenforceable halt legitimately names both, which no single-value
     field could express. ``ceiling`` stays as the joined legacy string so
-    payloads written before this change still decode."""
+    payloads written before this change still decode.
+
+    R8 (measured): ``coverage`` records, per named ceiling, how many of
+    the run's metered calls that ceiling actually counted and which roles
+    it did not - one entry per ceiling, mirroring
+    ``CeilingCoverage.to_dict()``. Without it the halt record states a
+    total without saying what the total covers, which is how a run whose
+    reviewer reported tokens and no cost recorded a dollar ceiling that
+    bounded the engineer alone. Empty on payloads written before this
+    landed, and on halts whose ceilings covered every call."""
 
     type: ClassVar[str] = "budget_exceeded"
     total_tokens: int = 0
@@ -243,6 +252,35 @@ class BudgetExceeded(Event):
     ceiling: str = ""
     condition: str = ""
     ceilings: tuple[str, ...] = ()
+    coverage: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class BudgetCoverage(Event):
+    """A configured ceiling stopped covering every metered call.
+
+    Emitted ONCE per ceiling per run, at the first phase whose usage
+    leaves that ceiling short - the earliest point the evidence exists,
+    and long before the halt message the operator would otherwise be
+    reading only after the money is spent.
+
+    Run-scoped (no component): coverage is a property of the run's
+    adapters, not of whichever component happened to expose it.
+
+    ``uncovered_tokens`` is deliberately a TOKEN count. The uncovered
+    calls reported no price and this codebase holds no price table;
+    converting them to dollars would put an invented number in the audit
+    trail, which is worse than a missing one."""
+
+    type: ClassVar[str] = "budget_coverage"
+    ceiling: str = ""
+    axis: str = ""
+    calls: int = 0
+    covered_calls: int = 0
+    uncovered_calls: int = 0
+    uncovered_tokens: int = 0
+    uncovered_roles: tuple[str, ...] = ()
+    detail: str = ""
 
 
 def budget_halt_kind(
@@ -782,7 +820,20 @@ class V1CompatSink:
                 comp, event.total_tokens, event.max_total_tokens,
                 cost_usd=event.cost_usd, max_cost_usd=event.max_cost_usd,
                 ceiling=event.ceiling, condition=event.condition,
-                ceilings=event.ceilings,
+                ceilings=event.ceilings, coverage=event.coverage,
+            )
+        elif isinstance(event, BudgetCoverage):
+            # Mirrored rather than left v2-only: a ceiling that counts
+            # only part of the run is a BUDGET fact, and every other
+            # budget fact reaches progress.jsonl (and through it the
+            # v1 `ks status` arm and the Linear ProgressSink).
+            log.budget_coverage(
+                ceiling=event.ceiling, axis=event.axis, calls=event.calls,
+                covered_calls=event.covered_calls,
+                uncovered_calls=event.uncovered_calls,
+                uncovered_tokens=event.uncovered_tokens,
+                uncovered_roles=event.uncovered_roles,
+                detail=event.detail,
             )
         elif isinstance(event, ContractResult):
             log.contract_result(
