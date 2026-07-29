@@ -3765,6 +3765,38 @@ class TestRollupReportsPerAxisCoverage:
         lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert "0.0000" in lines[1]
 
+    def test_a_cost_only_row_renders_dashes_not_zero_tokens(self) -> None:
+        """R8 review finding 2: the token cells were gated on
+        ``known_calls``, so a cost-only invocation printed ``0 0 0``
+        tokens while the footer said token coverage was EMPTY and the
+        total was a lower bound - the row and the footer contradicted
+        each other. The reviewer's repro is one cost-only record.
+        """
+        totals = UsageTotals()
+        totals.add_record(UsageRecord(
+            cost_usd=1.0, source="claude-stream-json",
+        ))
+        assert (totals.known_calls, totals.token_calls) == (1, 0)
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        rows = [line for line in lines if not line.startswith("note:")]
+        # Both the component row and the TOTAL row showed numeric zeros.
+        assert len(rows) == 3
+        for row in rows[1:]:
+            assert row.split()[-4:-2] == ["-", "-"], row
+        assert any("token coverage is EMPTY" in line for line in lines)
+
+    def test_a_reported_zero_token_count_is_not_rendered_as_silence(
+        self,
+    ) -> None:
+        """The counterpart of the reported-zero-cost case: a call that
+        reported zero tokens is a measurement, not silence."""
+        totals = UsageTotals(
+            calls=1, known_calls=1, token_calls=1, cost_calls=1,
+            total_tokens=0, cost_usd=1.0,
+        )
+        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        assert lines[1].split()[-4:-2] == ["0", "0"]
+
     def test_a_fully_covered_run_gets_no_coverage_note(self) -> None:
         totals = UsageTotals(
             calls=2, known_calls=2, token_calls=2, cost_calls=2,
@@ -4030,3 +4062,141 @@ class TestCeilingScopeIsStatedUpFront:
         out = self._run(tmp_path)
         assert "Cost ceiling" not in out
         assert "Token ceiling" not in out
+
+
+class TestEveryConfiguredCeilingRecordsItsCoverage:
+    """R8 review finding 3: coverage was built by iterating ``ceilings``.
+
+    ``ceilings`` is the CAUSAL halt identity - with both caps enabled a
+    token breach makes ``budget_halt_identity()`` return
+    ``("max_total_tokens",)`` alone, so a simultaneously partial
+    ``max_cost_usd`` never reached the halt event or the inbox evidence.
+    That contradicts the docstring's "EVERY configured named ceiling is
+    recorded", and makes a missing per-ceiling entry ambiguous between
+    "not configured" and "not the cause".
+    """
+
+    @staticmethod
+    def _dual_cap_run(tmp_path: Path) -> tuple[Path, Path]:
+        """One component whose engineer breaches the TOKEN cap, after a
+        review call that reported tokens and no cost.
+
+        The reviewer's shape: two metered calls, both caps configured,
+        the token axis fully covered and the cost axis PARTIAL.
+        """
+        from kstrl.review import ReviewResult
+
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
+        config = _factory_config(
+            root, max_total_tokens=5_000, max_cost_usd=100.0,
+            review_mode="advisory",
+        )
+
+        def fresh_review_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
+            agent = FakeUsageAgent(outputs=[["ok"]])
+            # The cross-family reviewer: tokens, no cost (codex).
+            agent._usage_records.append(UsageRecord(
+                total_tokens=1_000, duration_seconds=0.5, source="codex-text",
+            ))
+            return agent
+
+        costs = {"comp-a": 0.01, "comp-b": 0.02}
+        tokens = {"comp-a": 1_000, "comp-b": 9_000}
+
+        def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            comp_id = str(args[0])
+            return ComponentResult(
+                comp_id, success=True, iterations=1,
+                usage=_engineer_usage(tokens[comp_id], cost=costs[comp_id]),
+            )
+
+        with patch(
+            "kstrl.factory._run_component", side_effect=fake_run_component,
+        ), patch(
+            "kstrl.git.get_diff_content", return_value="",
+        ), patch(
+            "kstrl.agents.get_agent", side_effect=fresh_review_agent,
+        ), patch(
+            "kstrl.factory.run_review",
+            return_value=ReviewResult(passed=True, mode="advisory"),
+        ):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
+        return root, run_dir
+
+    @staticmethod
+    def _events(path: Path, name: str) -> list[dict[str, Any]]:
+        rows = []
+        for line in path.read_text().splitlines():
+            if line.strip():
+                row = json.loads(line)
+                if row.get("event") == name:
+                    rows.append(row)
+        return rows
+
+    def test_a_token_breach_still_records_the_cost_ceilings_coverage(
+        self, tmp_path: Path,
+    ) -> None:
+        root, run_dir = self._dual_cap_run(tmp_path)
+        halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        assert halts, "the token cap must have halted the run"
+        data = halts[-1]["data"]
+        # The causal identity is unchanged: the TOKEN cap is what fired.
+        assert data["ceilings"] == ["max_total_tokens"]
+        assert data["condition"] == "breached"
+        by_ceiling = {entry["ceiling"]: entry for entry in data["coverage"]}
+        assert set(by_ceiling) == {"max_total_tokens", "max_cost_usd"}
+        # Positively recorded, both ways round: the token ceiling counted
+        # everything, the cost ceiling did not.
+        assert by_ceiling["max_total_tokens"]["uncovered_calls"] == 0
+        assert by_ceiling["max_cost_usd"]["uncovered_roles"] == ["review"]
+
+    def test_the_inbox_evidence_carries_the_same_entries(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.inbox import Inbox, InboxConfig
+
+        root, _ = self._dual_cap_run(tmp_path)
+        items = [
+            item for item in Inbox(root, InboxConfig()).items()
+            if str(item.kind) == "budget_overrun"
+        ]
+        assert items
+        coverage = items[-1].evidence["coverage"]
+        assert {entry["ceiling"] for entry in coverage} == {
+            "max_total_tokens", "max_cost_usd",
+        }
+
+    def test_both_sinks_still_agree(self, tmp_path: Path) -> None:
+        root, run_dir = self._dual_cap_run(tmp_path)
+        durable = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        legacy = self._events(root / "progress.jsonl", "budget_exceeded")
+        assert durable and len(durable) == len(legacy)
+        for a, b in zip(durable, legacy, strict=True):
+            assert a["data"] == b["data"]
+
+    def test_a_disabled_ceiling_is_still_absent(self, tmp_path: Path) -> None:
+        """``ceiling_coverage()`` filters unconfigured ceilings, so an
+        absent entry keeps ONE meaning: that cap was not enabled."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+        config = _factory_config(root, max_total_tokens=500)
+        success = ComponentResult(
+            "comp-a", success=True, iterations=1, usage=_engineer_usage(600),
+        )
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch("kstrl.git.get_diff_content", return_value=""):
+            run_factory(
+                manifest, config, _make_base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
+        halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
+        assert halts
+        coverage = halts[-1]["data"]["coverage"]
+        assert [entry["ceiling"] for entry in coverage] == ["max_total_tokens"]

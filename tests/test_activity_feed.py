@@ -65,3 +65,39 @@ class TestArtifactLines:
 class TestCurationControl:
     def test_heartbeats_stay_out_of_the_feed(self) -> None:
         assert humanize(ev.WorkerHeartbeat(pid=1, elapsed_seconds=1.0)) is None
+
+
+class TestBudgetCoverageLine:
+    """R8 review finding 1: the feed dropped the one event that says a
+    ceiling stopped covering the run."""
+
+    def _event(self) -> ev.BudgetCoverage:
+        return ev.BudgetCoverage(
+            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
+            uncovered_calls=5, uncovered_tokens=193_633,
+            uncovered_roles=("review",),
+            detail="cost coverage is PARTIAL: 8 of 13 metered call(s) "
+                   "reported a cost",
+        )
+
+    def test_the_gap_is_narrated(self) -> None:
+        line = humanize(self._event())
+        assert line is not None
+        assert "max_cost_usd" in line.plain
+        assert "8 of 13" in line.plain
+        assert "review" in line.plain
+
+    def test_the_uncovered_magnitude_stays_in_tokens(self) -> None:
+        """Standing constraint: no price is ever inferred for uncovered
+        calls, on any surface."""
+        line = humanize(self._event())
+        assert line is not None
+        assert "193,633" in line.plain
+        assert "$" not in line.plain
+
+    def test_a_ceilingless_gap_still_names_its_axis(self) -> None:
+        line = humanize(ev.BudgetCoverage(
+            axis="token", calls=2, covered_calls=0, uncovered_calls=2,
+        ))
+        assert line is not None
+        assert "token" in line.plain

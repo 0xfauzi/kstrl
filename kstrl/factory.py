@@ -1882,17 +1882,24 @@ def _format_usage_rollup(
             return (len(_USAGE_PHASE_ORDER), phase)
 
     def _row(label: str, phase: str, totals: UsageTotals) -> str:
-        if totals.known_calls > 0:
+        # Each cell is gated by ITS OWN axis, never by known_calls (R8
+        # review finding 2). known_calls means only "reported
+        # something", so a cost-only invocation (known_calls=1,
+        # token_calls=0) printed `0 0 0` tokens while the footer said
+        # token coverage was EMPTY and the total was a lower bound - the
+        # row contradicted the footer directly under it.
+        #
+        # "-" means "no call in this row reported this figure", never
+        # "it was zero". Keyed on the call counters rather than on the
+        # totals so a genuinely reported 0 tokens / $0.0000 is not
+        # rendered as silence - the same distinction the ceilings make.
+        if totals.token_calls > 0:
             tokens_in = f"{totals.input_tokens:,}"
             tokens_out = f"{totals.output_tokens:,}"
             tokens_total = f"{totals.total_tokens:,}"
-            # "-" means "no call in this row reported a cost", never
-            # "it was free". Keyed on cost_calls rather than on the
-            # total so a genuinely reported $0.0000 is not rendered as
-            # silence - the same distinction the cost ceiling makes.
-            cost = f"{totals.cost_usd:.4f}" if totals.cost_calls > 0 else "-"
         else:
-            tokens_in = tokens_out = tokens_total = cost = "-"
+            tokens_in = tokens_out = tokens_total = "-"
+        cost = f"{totals.cost_usd:.4f}" if totals.cost_calls > 0 else "-"
         return (
             f"{label:<24} {phase:<10} {totals.calls:>5} "
             f"{tokens_in:>11} {tokens_out:>11} {tokens_total:>13} "

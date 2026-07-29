@@ -81,12 +81,21 @@ def _emit_run(root: Path, spec: FakeRunSpec, run_id: str) -> Iterator[None]:
             component=cid, phase="engineer", passed=True,
             duration_seconds=25.0,
         ))
+        # A claude-style engineer: every call that reported anything
+        # reported BOTH figures, so token_calls == cost_calls ==
+        # known_calls. Emitted explicitly because a payload with
+        # known_calls > 0 and both axis counters at 0 is the signature
+        # of a pre-R8 log, and the reducer reads it as "coverage not
+        # measured" - which is not what this fixture means.
+        known = (
+            spec.iterations - 1 if spec.include_unreported_usage
+            else spec.iterations
+        )
         bus.emit(ev.ComponentUsage(
             component=cid, phase="engineer", calls=spec.iterations,
-            known_calls=(
-                spec.iterations - 1 if spec.include_unreported_usage
-                else spec.iterations
-            ),
+            known_calls=known,
+            token_calls=known,
+            cost_calls=known,
             unreported_calls=1 if spec.include_unreported_usage else 0,
             input_tokens=40_000 * (index + 1),
             output_tokens=8_000,

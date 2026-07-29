@@ -1109,16 +1109,29 @@ class ComponentPipeline:
         # it also qualifies a loop-supplied ``reason``: the loop knows
         # what fired, only the parent knows what the ceiling counted.
         #
-        # EVERY configured named ceiling is recorded, including ones that
-        # covered every call. An empty ``coverage`` would otherwise mean
-        # two different things - "no gap" and "written before this
-        # landed" - and a reader could not tell verified from unknown
-        # (the distinction E9 added ``infrastructure_error`` for). The
-        # PROSE stays quiet on full coverage, because ``note()`` returns
-        # "" there: the operator-facing sentence is unchanged wherever
-        # there is nothing to disclose.
+        # EVERY CONFIGURED named ceiling is recorded, including ones that
+        # covered every call and ones that did not cause this halt. An
+        # empty or partial ``coverage`` would otherwise mean several
+        # things at once - "no gap", "not the cause", "written before
+        # this landed" - and a reader could not tell verified from
+        # unknown (the distinction E9 added ``infrastructure_error``
+        # for).
+        #
+        # Iterating CEILING_AXES rather than ``ceilings`` is R8 review
+        # finding 3: ``ceilings`` is the CAUSAL identity, so with both
+        # caps enabled a token breach yields ``("max_total_tokens",)``
+        # and a simultaneously PARTIAL ``max_cost_usd`` was dropped from
+        # the halt event and the inbox evidence - the operator deciding
+        # which knob to raise never saw that the other cap was counting
+        # a subset. ``ceiling_coverage()`` returns None for a ceiling
+        # that is not configured, so an absent entry keeps exactly one
+        # meaning: that cap was off.
+        #
+        # The PROSE stays quiet on full coverage, because ``note()``
+        # returns "" there: the operator-facing sentence is unchanged
+        # wherever there is nothing to disclose.
         coverage = [
-            cov for cov in (self.ceiling_coverage(c) for c in ceilings)
+            cov for cov in (self.ceiling_coverage(c) for c in CEILING_AXES)
             if cov is not None
         ]
         notes = [note for note in (cov.note() for cov in coverage) if note]
