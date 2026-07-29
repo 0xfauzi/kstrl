@@ -616,6 +616,32 @@ level-dependent behavior tested; calibration captures the family delta.
 
 Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
 
+Landing in four slices; PR 1 of 4 is the substrate only. Shipped so far:
+`kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
+mutex, lease fields, journal, pause marker) and the `ks queue
+add/ls/show/retry/rm/pause/resume` verbs. **Nothing drains the queue
+yet** - `ks serve`, the lease reaper, the retry classifier, and the
+`daily_budget_usd` stop are PR 2; the GitHub adapter is PR 3; launchd is
+PR 4.
+
+Two invariants in the substrate are money-safety properties rather than
+style, and both are mutation-checked:
+
+1. **The attempt is charged before the rename into `running/`.** Every
+   transition writes `meta.json` first and renames second, so a crash in
+   the commit window over-counts an attempt (one fewer retry - safe)
+   instead of under-counting one (a retry nobody recorded - an unbounded
+   loop at $1.70-2.60 per first attempt and $3.99-7.42 per retry).
+2. **The item directory is authoritative; the sidecar's `state` is a
+   mirror.** Readers derive state from the parent directory, so the same
+   crash window cannot leave an item whose location and metadata
+   disagree about what it is.
+
+Corrupt metadata resolves toward the GATED value in both directions an
+attacker or a bad disk could push it: an unreadable `merge_disposition`
+decodes to `stop_at_pr`, never `auto_merge`, and an unreadable pause
+marker reads as PAUSED, never as running.
+
 **Why.** Intake is one-shot; the factory has no queue. The first US software
 factory (SDC, 1972-78) died because work was not required to flow through
 it - intake is a survival capability, not plumbing.

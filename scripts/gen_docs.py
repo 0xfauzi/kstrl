@@ -135,6 +135,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.security import SecurityConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
+    from kstrl.workqueue import QueueConfig
 
     def kstrl_loader(root: Path) -> Any:
         return KstrlConfig.load(root_dir=root)
@@ -267,6 +268,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: InboxConfig.load(root_dir=root),
             InboxConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "queue", "Continuous intake queue (R8.6)",
+            identity_keys(QueueConfig, [
+                f.name for f in dataclasses.fields(QueueConfig)
+            ]),
+            lambda root: QueueConfig.load(root_dir=root),
+            QueueConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "adequacy", "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
@@ -446,6 +455,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
     ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
+    ("queue", "max_attempts"):
+        "execution attempts per queue item before it is poisoned",
+    ("queue", "lease_ttl_seconds"):
+        "claim validity in seconds; the reaper recovers anything past this",
     ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
     ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
     ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",

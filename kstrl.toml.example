@@ -200,6 +200,17 @@ open_item_cap = 50                 # open items after which queue intake pauses 
 snooze_hours = 24.0                # default snooze TTL; a snoozed item RETURNS
 notify_action_required = true      # notify on action-required items and demotions only
 
+# Continuous intake (R8.6): the local work queue under .kstrl/queue/. Work
+# waits here instead of a human firing each run; `ks queue add` enqueues and
+# (from PR 2) `ks serve` drains. max_attempts is the retry BOUND - it holds
+# even when the failure classifier is wrong, which is the point: a measured
+# engineer iteration costs ~$1.70-2.60 first-attempt and $3.99-7.42 on a
+# retry, so an unbounded loop is real money. Only infrastructure_error
+# failures are ever retried automatically; spec-level failures go to poison/.
+[queue]
+max_attempts = 3                   # execution attempts per item before poisoning
+lease_ttl_seconds = 3600.0         # claim validity; the reaper recovers anything past this
+
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the
 # suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)

@@ -46,6 +46,7 @@ KSTRL_ENV_PREFIXES: tuple[str, ...] = (
     "KSTRL_DEAD_CODE_",
     "KSTRL_LINEAR_",
     "KSTRL_NOTIFY_",
+    "KSTRL_QUEUE_",
 )
 
 # Legacy single-loop env vars (exact names, no shared prefix).

@@ -228,6 +228,13 @@ ks inbox retry ITEM_ID          Requeue the item's component and close the item.
 ks inbox show ITEM_ID           Show one item in full, including its evidence.
 ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
+ks queue add SPEC               Enqueue a spec file.
+ks queue ls                     List queue items in run order.
+ks queue pause                  Stop admitting queued work.
+ks queue resume                 Start admitting queued work again.
+ks queue retry ITEM_ID          Send a failed or poisoned item back to queued.
+ks queue rm ITEM_ID             Delete an item and its spec.
+ks queue show ITEM_ID           Show one item in full, with its transition history.
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
 ks status                       Show per-component status from the manifest + progress log.
@@ -367,6 +374,11 @@ enabled = true                 # record exceptions awaiting a human decision
 open_item_cap = 50             # open items after which queue intake pauses; 0 = unbounded
 snooze_hours = 24.0            # default snooze TTL in hours; snoozed items return
 notify_action_required = true  # notify on action-required items and demotions only
+
+# Continuous intake queue (R8.6)
+[queue]
+max_attempts = 3            # execution attempts per queue item before it is poisoned
+lease_ttl_seconds = 3600.0  # claim validity in seconds; the reaper recovers anything past this
 
 # Test-suite adequacy gate (R8.5; opt-in, advisory first)
 [adequacy]

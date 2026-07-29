@@ -3636,6 +3636,340 @@ def inbox_retry(
     sys.exit(0)
 
 
+@cli.group(name="queue")
+def queue_group() -> None:
+    """Manage the continuous-intake work queue (R8.6).
+
+    Work waits here instead of requiring a human to fire each run.
+    `ks serve` drains it. Nothing in this group starts a factory run or
+    spends anything: these verbs only move items between states.
+    """
+
+
+_queue_root_option = click.option(
+    "--root", type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+_queue_ui_option = click.option(
+    "--ui", type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto", help="UI mode",
+)
+_queue_no_color_option = click.option(
+    "--no-color", is_flag=True, help="Disable colors",
+)
+
+
+def _queue_for(root: Path | None) -> tuple[Path, Any]:
+    from kstrl.workqueue import Queue, QueueConfig
+
+    root_dir = (root or Path.cwd()).resolve()
+    return root_dir, Queue(root_dir, QueueConfig.load(root_dir))
+
+
+def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
+    """Look up one item or exit; an ambiguous prefix is an error."""
+    from kstrl.workqueue import QueueError
+
+    try:
+        item = queue.get(item_id)
+    except QueueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    if item is None:
+        ui_impl.err(f"No queue item matching {item_id!r}")
+        sys.exit(1)
+    return item
+
+
+@queue_group.command(name="add")
+@click.argument("spec", type=click.Path(exists=True, path_type=Path))
+@click.option("--priority", type=int, default=0, help="Higher runs first")
+@click.option("--title", default="", help="Human label (default: spec filename)")
+@click.option("--project-name", default="", help="Factory project name")
+@click.option(
+    "--auto-merge/--stop-at-pr",
+    "auto_merge",
+    default=False,
+    help=(
+        "Request auto-merge when green (still gated by the autonomy "
+        "ladder), or stop at the PR for a human (default)"
+    ),
+)
+@click.option(
+    "--max-attempts", type=int, default=None,
+    help="Execution attempts before poisoning (default: [queue] max_attempts)",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_add(
+    spec: Path,
+    priority: int,
+    title: str,
+    project_name: str,
+    auto_merge: bool,
+    max_attempts: int | None,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Enqueue a spec file.
+
+    The spec is COPIED into the item, so editing or deleting the
+    original afterwards cannot change what eventually runs.
+    """
+    from kstrl.workqueue import MergeDisposition, QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    disposition = (
+        MergeDisposition.AUTO_MERGE if auto_merge else MergeDisposition.STOP_AT_PR
+    )
+    try:
+        with queue_lock(root_dir):
+            item = queue.add(
+                spec,
+                title=title,
+                priority=priority,
+                project_name=project_name,
+                merge_disposition=disposition,
+                max_attempts=max_attempts,
+                actor=_actor(),
+            )
+    except QueueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    ui_impl.ok(f"Queued {item.item_id} - {item.title}")
+    ui_impl.kv("merge", str(item.merge_disposition))
+    ui_impl.kv("attempts allowed", str(item.max_attempts))
+    if queue.is_paused():
+        ui_impl.warn("Queue is paused; this item waits until `ks queue resume`.")
+    sys.exit(0)
+
+
+@queue_group.command(name="ls")
+@click.option(
+    "--state", "states", multiple=True,
+    help="Filter by state (repeatable): queued/leased/running/done/failed/poison",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_ls(
+    states: tuple[str, ...], root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """List queue items in run order."""
+    from kstrl.workqueue import ItemState, summarize
+
+    _root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    selected: tuple[ItemState, ...] | None = None
+    if states:
+        try:
+            selected = tuple(ItemState(value) for value in states)
+        except ValueError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(1)
+    items = queue.items(selected)
+    pause = queue.pause_state()
+    if pause.active():
+        detail = f" ({pause.reason})" if pause.reason else ""
+        ui_impl.warn(f"Queue is PAUSED{detail}")
+    if not items:
+        ui_impl.ok("Queue is empty.")
+        sys.exit(0)
+    ui_impl.section("Queue")
+    for item in items:
+        attempts = f"{item.attempts}/{item.max_attempts}"
+        ui_impl.info(
+            f"  {item.item_id[:12]}  {str(item.state):<8} "
+            f"p{item.priority:<3} {attempts:<6} {item.title}"
+        )
+    ui_impl.info("")
+    ui_impl.kv("summary", summarize(queue.counts()))
+    sys.exit(0)
+
+
+@queue_group.command(name="show")
+@click.argument("item_id")
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_show(
+    item_id: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Show one item in full, with its transition history."""
+    _root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = _resolve_queue_item(queue, item_id, ui_impl)
+
+    ui_impl.section(item.title)
+    ui_impl.kv("id", item.item_id)
+    ui_impl.kv("state", str(item.state))
+    ui_impl.kv("priority", str(item.priority))
+    ui_impl.kv("attempts", f"{item.attempts} of {item.max_attempts}")
+    ui_impl.kv("merge", str(item.merge_disposition))
+    ui_impl.kv("source", str(item.source) + (f" ({item.source_ref})" if item.source_ref else ""))
+    ui_impl.kv("created", item.created_at)
+    ui_impl.kv("updated", item.updated_at)
+    if item.project_name:
+        ui_impl.kv("project", item.project_name)
+    if item.last_run_id:
+        ui_impl.kv("last run", item.last_run_id)
+    if item.lease_pid:
+        ui_impl.kv(
+            "lease",
+            f"pid {item.lease_pid} on {item.lease_host} "
+            f"until {item.lease_expires_at}"
+            + (" (EXPIRED)" if item.lease_expired() else ""),
+        )
+    if item.last_error:
+        ui_impl.kv("last error", item.last_error)
+    if item.poison_reason:
+        ui_impl.kv("poisoned", item.poison_reason)
+    ui_impl.kv("spec", str(queue.spec_path(item)))
+
+    history = queue.journal_entries(item.item_id)
+    if history:
+        ui_impl.subsection("History")
+        for entry in history:
+            origin = entry.get("from") or "-"
+            reason = entry.get("reason") or ""
+            ui_impl.info(
+                f"  {entry.get('ts', '')}  {origin} -> {entry.get('to', '')}"
+                + (f"  ({reason})" if reason else "")
+            )
+    sys.exit(0)
+
+
+@queue_group.command(name="retry")
+@click.argument("item_id")
+@click.option(
+    "--reset-attempts", is_flag=True,
+    help="Zero the attempt counter (explicit human decision to spend again)",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_retry(
+    item_id: str,
+    reset_attempts: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Send a failed or poisoned item back to queued.
+
+    A poisoned item that has already spent its attempts needs
+    `--reset-attempts` to run again: re-queuing it otherwise would have
+    it poisoned straight back without spending anything, which looks
+    like the command silently failed.
+    """
+    from kstrl.workqueue import ItemState, QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = _resolve_queue_item(queue, item_id, ui_impl)
+    if item.state not in (ItemState.FAILED, ItemState.POISON):
+        ui_impl.err(
+            f"{item.item_id[:12]} is {item.state}; only failed or poisoned "
+            "items can be retried"
+        )
+        sys.exit(1)
+    if not reset_attempts and item.attempts_remaining == 0:
+        ui_impl.err(
+            f"{item.item_id[:12]} has used all {item.max_attempts} attempts; "
+            "pass --reset-attempts to authorize spending again"
+        )
+        sys.exit(1)
+    try:
+        with queue_lock(root_dir):
+            queue.requeue(
+                item, reason="retry (manual)", actor=_actor(),
+                reset_attempts=reset_attempts,
+            )
+    except (QueueError, OSError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    ui_impl.ok(
+        f"Requeued {item.item_id[:12]} "
+        f"({item.attempts}/{item.max_attempts} attempts used)"
+    )
+    sys.exit(0)
+
+
+@queue_group.command(name="rm")
+@click.argument("item_id")
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt")
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_rm(
+    item_id: str, yes: bool, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Delete an item and its spec."""
+    from kstrl.workqueue import QueueError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    item = _resolve_queue_item(queue, item_id, ui_impl)
+    if not yes and not click.confirm(
+        f"Delete {item.item_id[:12]} ({item.title})?", default=False,
+    ):
+        ui_impl.info("Left alone.")
+        sys.exit(0)
+    try:
+        with queue_lock(root_dir):
+            queue.remove(item, actor=_actor())
+    except QueueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    ui_impl.ok(f"Removed {item.item_id[:12]}")
+    sys.exit(0)
+
+
+@queue_group.command(name="pause")
+@click.option("--reason", default="", help="Why intake is paused")
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_pause(
+    reason: str, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Stop admitting queued work.
+
+    Does not touch anything already running - a pause is an admission
+    gate, not a kill switch.
+    """
+    from kstrl.workqueue import queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    with queue_lock(root_dir):
+        queue.pause(reason=reason, actor=_actor())
+    ui_impl.ok("Queue paused; nothing new will be claimed.")
+    if reason:
+        ui_impl.kv("reason", reason)
+    sys.exit(0)
+
+
+@queue_group.command(name="resume")
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
+    """Start admitting queued work again."""
+    from kstrl.workqueue import ItemState, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    with queue_lock(root_dir):
+        queue.resume(actor=_actor())
+    waiting = len(queue.items((ItemState.QUEUED,)))
+    ui_impl.ok(f"Queue resumed; {waiting} item(s) waiting.")
+    sys.exit(0)
+
+
 def main() -> None:
     """Main entry point."""
     cli()
