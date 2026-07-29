@@ -2143,8 +2143,9 @@ class ComponentPipeline:
         # R1.4 (H-16): a diff over the prompt cap must never be
         # partially reviewed in hard mode - a rogue engineer could pad
         # the first 50KB with benign churn and land a malicious hunk
-        # after the cut. Split once on file boundaries; both hard-mode
-        # phases reuse the same chunks (one budget call per chunk).
+        # after the cut. Split once on file (and, for an over-budget
+        # file, hunk) boundaries; both hard-mode phases reuse the same
+        # chunks (one budget call per chunk).
         # Advisory phases keep the single truncated pass, which
         # run_review/run_security_review annotate as PARTIAL.
         review_mode = ReviewMode(self.factory_config.review_mode)
@@ -2167,6 +2168,15 @@ class ComponentPipeline:
                 # Fail closed via the retry path: unlike budget
                 # exhaustion, the engineer CAN fix this by producing a
                 # smaller diff, so the retry context carries the signal.
+                # R8 narrowed what reaches here: chunking now splits
+                # within an over-budget file on hunk boundaries, so the
+                # residual case is a SINGLE hunk over the cap - hundreds
+                # of contiguous changed lines with no context line to
+                # break on. That is genuinely unreviewable by a human or
+                # an LLM at this cap, so charging the engineer a retry
+                # to restructure it is the right trade; the retry
+                # guidance below names hunk granularity, since "make
+                # each file smaller" no longer describes the fix.
                 self.ui.err(f"  Diff unsplittable for {comp.id}: {exc}")
                 self._add_findings(comp, [Finding.infrastructure_error(
                     phase="review",
@@ -2184,10 +2194,12 @@ class ComponentPipeline:
                     comp_result.context_json or "{}",
                 )
                 ctx.add_review_finding(
-                    f"The diff is too large to review ({exc}). Reduce "
-                    "the change so each file's diff fits the "
+                    f"The diff is too large to review ({exc}). Split the "
+                    "change into smaller contiguous edits so that every "
+                    "individual hunk fits the "
                     f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
-                    "KB review cap."
+                    "KB review cap; whole files may exceed it, since "
+                    "oversized files are chunked on hunk boundaries."
                 )
                 return DiffPhaseResult(
                     diff=shared_diff,

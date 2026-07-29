@@ -433,6 +433,12 @@ class TestVerifyAndDiffTransitions:
         assert outcome.transition == Transition.RETRYING
         assert comp.failed_phase == "review"
         assert comp.failed_check == "diff_chunking"
+        # R8: the residual unsplittable case is a single over-cap HUNK,
+        # so the retry guidance must name hunk granularity - "make each
+        # file smaller" no longer describes the fix now that oversized
+        # files are chunked on hunk boundaries.
+        retry_ctx = pipeline.component_contexts["comp-a"]
+        assert "hunk" in retry_ctx
 
 
 class TestReviewAndSecurityTransitions:

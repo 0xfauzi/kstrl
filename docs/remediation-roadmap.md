@@ -242,6 +242,30 @@ reviewers' output as much as it distrusts the engineer's.
     oversized diff in hard mode. Knowledge distiller input (still head-
     truncated, unstripped) stays out of scope per the session prompt.
     Reviewer-facing chunk/truncation DIRECTIVE remains Session 8C's.
+  - Note (2026-07-29, R8): the "single file over the cap is unsplittable" rule
+    above cost real money. A paid factory run halted hard-mode review on
+    `single-file diff segment is 55710 chars` for a legitimately large test
+    file; the engineer recovered by splitting the file, but that recovery was a
+    full engineer-loop pass ($3.99 in a run where engineer calls cost
+    $1.70-$7.42) spent on a harness packaging limit, not on a defect in the
+    code under review. `split_diff_for_prompt` now splits an over-budget file
+    further on `@@` hunk boundaries, repeating the `diff --git`/`---`/`+++`
+    header and a `file part i of n` marker on every part so each chunk stays a
+    self-describing reviewable unit. Files that already fit are untouched, so
+    multi-file packing is byte-identical to before. The residual floor is a
+    SINGLE hunk over the cap: still `DiffUnsplittableError`, still fail-closed
+    through the retry path (R1.4 forbids truncating a diff under review), with
+    the retry guidance now naming hunk granularity.
+  - Note (2026-07-29, R8, review [P3]): the `file part i of n` marker's width is
+    reserved from the ACTUAL part count, found by iterating the packer to a
+    fixed point, not from the hunk count. The hunk count only upper-bounds the
+    part count, so reserving its digits shrank the per-part content budget below
+    what the rendering needs and bounced diffs a compliant hunk-boundary
+    partition existed for (one 49,706-char hunk plus 999 tiny ones was rejected
+    at the 50,000 cap, six chars short, though it renders as two parts). The
+    iteration is monotone from below, so it settles at the FEWEST parts in at
+    most one round per digit width; the loop is still bounded and fails closed
+    if the bound is ever reached.
 - [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.

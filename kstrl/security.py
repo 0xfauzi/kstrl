@@ -328,7 +328,7 @@ class SecurityConfig:
         return config
 
 
-SECURITY_PROMPT_VERSION = "1.1.1"
+SECURITY_PROMPT_VERSION = "1.2.0"
 
 SECURITY_PROMPT = """\
 You are an adversarial application security reviewer. Your default stance
@@ -445,11 +445,22 @@ Truncated and chunked diffs:
   in "overallNotes" and set "exhaustively_searched": false. Never treat
   unseen content as clean.
 - A header line like "# [kstrl R1.4] diff chunk 2 of 5" means the diff
-  was split on file boundaries and you are reviewing one slice; other
-  slices go to separate review passes. Review everything present, note
-  "chunk i of N" in "overallNotes", and set "exhaustively_searched":
-  false - a vulnerability spanning files in different chunks is
-  invisible to you.
+  was split and you are reviewing one slice; other slices go to separate
+  review passes. Review everything present, note "chunk i of N" in
+  "overallNotes", and set "exhaustively_searched": false. The header
+  states which granularity was used, and the two hide different things:
+  - "split on file boundaries": a vulnerability spanning files in
+    different chunks is invisible to you.
+  - "split on file/hunk boundaries": one file was too large for a single
+    pass and was ALSO split within itself. A line like "# [kstrl R1.4]
+    file part 2 of 3: <path>" means you are seeing only part of that
+    file's diff - other hunks OF THIS SAME FILE are in other chunks. A
+    taint that is introduced in one part and sanitized in another is
+    invisible from either part alone, so do not report a missing check,
+    and do not clear one, on the strength of a part: the sanitizer or
+    the sink may be elsewhere in the same file. A part marked
+    "continued" repeats the file header for context; that is not a
+    second change to the same file.
 
 Process: read every hunk. For each new function that touches a trust
 boundary (HTTP handler, file read, subprocess, deserialization, SQL,

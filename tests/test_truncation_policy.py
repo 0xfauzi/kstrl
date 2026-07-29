@@ -7,8 +7,10 @@ policy, so the unreviewed tail merged. These tests prove the mechanical
 policy:
 
 - Oversized diffs split on file boundaries into <=cap chunks; splitting
-  never drops content; a single file over the cap is unsplittable and
-  fails closed.
+  never drops content. R8: a single file over the cap splits further on
+  hunk boundaries (with its file header repeated on every part) instead
+  of failing the component; only a single hunk over the cap is still
+  unsplittable, and that fails closed.
 - Hard mode runs one review pass per chunk (each pass consumes the
   adversarial budget) and merges verdicts: any chunk failure fails.
 - Budget that cannot cover the chunks is an infrastructure failure with
@@ -23,6 +25,7 @@ policy:
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
@@ -38,6 +41,7 @@ from kstrl.git import (
 )
 from kstrl.manifest import Component, Manifest
 from kstrl.review import (
+    REVIEWER_PROMPT,
     ReviewMode,
     ReviewResult,
     merge_review_results,
@@ -45,6 +49,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.security import (
+    SECURITY_PROMPT,
     SecurityConfig,
     SecurityMode,
     SecurityResult,
@@ -152,6 +157,91 @@ def _synthetic_diff(n_files: int, payload_chars: int) -> str:
     )
 
 
+def _multi_hunk_segment(
+    name: str, n_hunks: int, hunk_payload_chars: int,
+) -> str:
+    """One file's diff carrying ``n_hunks`` hunks.
+
+    Models the shape that broke file-boundary chunking in the
+    2026-07-27 factory run: a single test file whose diff exceeds the
+    per-chunk budget on its own, but which has plenty of internal hunk
+    boundaries to split on.
+    """
+    header = (
+        f"diff --git a/{name} b/{name}\n"
+        f"--- a/{name}\n"
+        f"+++ b/{name}\n"
+    )
+    line = "+" + "x" * 98 + "\n"
+    n_lines = max(1, hunk_payload_chars // 100)
+    hunks = "".join(
+        f"@@ -{i * 50 + 1},0 +{i * 50 + 1},{n_lines} @@ def test_{i}()\n"
+        + line * n_lines
+        for i in range(n_hunks)
+    )
+    return header + hunks
+
+
+def _hunk_of_size(index: int, size: int) -> str:
+    """One hunk of EXACTLY ``size`` chars, starting with a ``@@ `` header.
+
+    Exact sizes are what make the part-marker reserve observable: the
+    P3 cases below sit one char either side of the content budget, so an
+    approximate fixture would not distinguish "fits" from "does not".
+    """
+    head = f"@@ -{index},0 +{index},1 @@ h{index}\n"
+    rest = size - len(head)
+    if rest < 0:
+        raise ValueError(f"size {size} is under the {len(head)}-char header")
+    line = "+" + "x" * 98 + "\n"
+    full, tail = divmod(rest, 100)
+    if tail == 1 and full:  # a 1-char tail cannot be a "+...\n" line
+        full, tail = full - 1, tail + 100
+    text = head + line * full + ("+" + "x" * (tail - 2) + "\n" if tail else "")
+    assert len(text) == size, (len(text), size)
+    return text
+
+
+# Inverse of split_diff_for_prompt's injected provenance. The chunk
+# header is one line; a within-file part adds a marker line, and a
+# continuation part additionally repeats the file header (every line up
+# to the part's first "@@ " hunk line).
+_CHUNK_HEADER_RE = re.compile(r"^# \[kstrl R1\.4\] diff chunk [^\n]*\n")
+_CONTINUED_PART_RE = re.compile(
+    r"^# \[kstrl R1\.4\] file part \d+ of \d+: [^\n]*- continued;[^\n]*\n"
+    r"(?:(?!@@ )[^\n]*\n)*",
+    re.MULTILINE,
+)
+_FIRST_PART_RE = re.compile(
+    r"^# \[kstrl R1\.4\] file part \d+ of \d+: [^\n]*\n", re.MULTILINE,
+)
+
+
+def _reassemble(chunks: list[str]) -> str:
+    """Strip every line split_diff_for_prompt injected and concatenate.
+
+    Must reproduce the input byte for byte: chunking is a repackaging,
+    never a truncation (R1.4).
+    """
+    out = []
+    for chunk in chunks:
+        body = _CHUNK_HEADER_RE.sub("", chunk, count=1)
+        body = _CONTINUED_PART_RE.sub("", body)
+        out.append(_FIRST_PART_RE.sub("", body))
+    return "".join(out)
+
+
+def _hunk_headers(text: str) -> list[str]:
+    """Every ``@@`` hunk header line, in order.
+
+    Hunk headers are unique per file here, so comparing this list
+    between the original diff and the raw concatenation of the chunks
+    proves each hunk appears exactly once - none dropped, none
+    duplicated across chunks.
+    """
+    return re.findall(r"(?m)^@@ [^\n]*$", text)
+
+
 _SELF_CRITIQUE_DIFF = """\
 diff --git a/scripts/kstrl/progress.txt b/scripts/kstrl/progress.txt
 +## Iteration 1 - US-001
@@ -199,9 +289,20 @@ class TestSplitDiffForPrompt:
         reassembled = "".join(c.split("\n", 1)[1] for c in chunks)
         assert reassembled == diff
 
-    def test_single_oversized_file_raises(self) -> None:
-        diff = _file_segment("src/big.py", 3000)
-        with pytest.raises(DiffUnsplittableError, match="single-file"):
+    def test_single_oversized_hunk_raises(self) -> None:
+        """One hunk over the budget is the floor: a diff cannot be split
+        below hunk granularity, and R1.4 forbids truncating a diff that
+        is under review, so it must fail closed."""
+        diff = _file_segment("src/big.py", 3000)  # one file, ONE hunk
+        assert len(_hunk_headers(diff)) == 1
+        with pytest.raises(DiffUnsplittableError, match="single hunk"):
+            split_diff_for_prompt(diff, limit=1000)
+
+    def test_oversized_file_without_hunks_raises(self) -> None:
+        diff = (
+            "diff --git a/x.bin b/x.bin\nBinary files differ\n" + "x" * 2000
+        )
+        with pytest.raises(DiffUnsplittableError, match="no '@@ ' hunk"):
             split_diff_for_prompt(diff, limit=1000)
 
     def test_no_file_boundaries_raises(self) -> None:
@@ -211,6 +312,238 @@ class TestSplitDiffForPrompt:
     def test_limit_must_exceed_header_reserve(self) -> None:
         with pytest.raises(ValueError, match="header"):
             split_diff_for_prompt("x", limit=100)
+
+    def test_multi_file_packing_is_unchanged_by_within_file_splitting(
+        self,
+    ) -> None:
+        """R8 regression guard: diffs that already split cleanly on file
+        boundaries must chunk EXACTLY as before - same chunk count, same
+        pre-R8 header wording, whole files only, byte-exact reassembly.
+        Within-file splitting must not perturb the common path."""
+        diff = _synthetic_diff(10, 300)
+        chunks = split_diff_for_prompt(diff, limit=1000)
+        # Golden values captured from the pre-R8 implementation.
+        assert len(chunks) == 4
+        assert [len(c) for c in chunks] == [950, 950, 950, 388]
+        for i, chunk in enumerate(chunks, 1):
+            assert chunk.startswith(
+                f"# [kstrl R1.4] diff chunk {i} of 4: oversized diff split "
+                "on file boundaries; other files are in other chunks\n"
+            )
+            # Whole files only: no within-file part markers anywhere.
+            assert "file part" not in chunk
+            assert chunk.split("\n", 1)[1].startswith("diff --git ")
+        assert "".join(c.split("\n", 1)[1] for c in chunks) == diff
+
+
+class TestSplitWithinFile:
+    """R8: a single file whose diff exceeds the per-chunk budget used to
+    raise DiffUnsplittableError and fail the component, even though the
+    file had many hunks to split on. In the 2026-07-27 factory run that
+    cost a full engineer-loop pass ($3.99) to repackage a 55,710-char
+    test file - a harness packaging limit charged to the engineer, not a
+    defect in the code under review. Split within the file instead.
+    """
+
+    def _production_shape(self) -> str:
+        """~55.7KB in one file, the size that halted the real run."""
+        diff = _multi_hunk_segment("tests/test_purity.py", 12, 4600)
+        assert len(diff) > DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        return diff
+
+    def test_single_oversized_file_now_splits_on_hunks(self) -> None:
+        diff = self._production_shape()
+        chunks = split_diff_for_prompt(diff)
+        assert len(chunks) >= 2
+        for chunk in chunks:
+            assert len(chunk) <= DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+
+    def test_within_file_chunks_reassemble_byte_exactly(self) -> None:
+        diff = self._production_shape()
+        assert _reassemble(split_diff_for_prompt(diff)) == diff
+
+    def test_every_hunk_appears_exactly_once(self) -> None:
+        """Round-trip property: the chunks cover every hunk of the
+        original diff, in order, with nothing dropped or duplicated."""
+        diff = self._production_shape()
+        chunks = split_diff_for_prompt(diff)
+        original = _hunk_headers(diff)
+        assert len(original) == 12
+        assert _hunk_headers("".join(chunks)) == original
+
+    def test_every_part_repeats_the_file_header(self) -> None:
+        """A reviewer holding part 2 must still know which file it is
+        looking at: the diff --git / --- / +++ header is repeated on
+        every part."""
+        diff = self._production_shape()
+        chunks = split_diff_for_prompt(diff)
+        for chunk in chunks:
+            assert (
+                "diff --git a/tests/test_purity.py b/tests/test_purity.py"
+                in chunk
+            )
+            assert "--- a/tests/test_purity.py" in chunk
+            assert "+++ b/tests/test_purity.py" in chunk
+
+    def test_every_part_is_labelled_with_file_and_part_number(self) -> None:
+        """A part must not read as the file's whole change."""
+        diff = self._production_shape()
+        chunks = split_diff_for_prompt(diff)
+        n = len(chunks)
+        for i, chunk in enumerate(chunks, 1):
+            assert (
+                f"# [kstrl R1.4] file part {i} of {n}: tests/test_purity.py"
+                in chunk
+            )
+            # The chunk header states the true split granularity.
+            assert chunk.startswith(
+                f"# [kstrl R1.4] diff chunk {i} of {n}: oversized diff "
+                "split on file/hunk boundaries; the rest is in other "
+                "chunks\n"
+            )
+        # Continuation parts flag their repeated header as a repeat, so
+        # it is not reviewed as a second change to the same file.
+        assert "not a second change" not in chunks[0]
+        for chunk in chunks[1:]:
+            assert "not a second change" in chunk
+
+    def test_mixed_diff_splits_only_the_oversized_file(self) -> None:
+        """Small files stay whole; only the over-budget one is parted."""
+        diff = (
+            _file_segment("src/small_a.py", 300)
+            + _multi_hunk_segment("src/big.py", 8, 400)
+            + _file_segment("src/small_b.py", 300)
+        )
+        chunks = split_diff_for_prompt(diff, limit=1500)
+        joined = "".join(chunks)
+        assert joined.count("file part 1 of") == 1
+        assert "src/small_a.py -" not in joined  # never parted
+        assert "src/small_b.py -" not in joined
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers(joined) == _hunk_headers(diff)
+        for chunk in chunks:
+            assert len(chunk) <= 1500
+
+    def test_hundred_hunk_file_splits_and_reassembles(self) -> None:
+        """Many parts: part numbering stays within the header reserve
+        and every chunk still fits the limit."""
+        diff = _multi_hunk_segment("src/huge.py", 100, 2000)
+        chunks = split_diff_for_prompt(diff, limit=5000)
+        assert len(chunks) >= 40
+        for chunk in chunks:
+            assert len(chunk) <= 5000
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers("".join(chunks)) == _hunk_headers(diff)
+
+    def test_chunks_are_still_capped_at_the_default_limit(self) -> None:
+        """The fix must not paper over the cap by raising the budget."""
+        assert DEFAULT_PROMPT_DIFF_CHAR_LIMIT == 50_000
+        chunks = split_diff_for_prompt(self._production_shape())
+        assert max(len(c) for c in chunks) <= DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+
+
+class TestPartMarkerWidthFromPartCount:
+    """[P3] The ``file part i of n`` marker's digit width must be sized
+    from the ACTUAL part count, not from the hunk count.
+
+    The hunk count is only an UPPER BOUND on the part count, so reserving
+    its width shrinks the per-part content budget by more than the marker
+    will ever need. A hunk that fits an exact rendering then gets
+    rejected and the harness forces the engineer retry this PR exists to
+    eliminate.
+    """
+
+    PATH = "xx.py"
+    HEADER = (
+        f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
+    )
+
+    def _reviewer_case(self) -> str:
+        """The reviewer's reproduction: ONE 49,706-char hunk followed by
+        999 tiny hunks, at the default 50,000-char limit.
+
+        49,706 is the knife edge: it is exactly the content budget left
+        for a 1-digit part count, and 6 chars over the budget left once
+        the marker is (wrongly) sized for 1,000 parts.
+        """
+        diff = (
+            self.HEADER
+            + _hunk_of_size(1, 49_706)
+            + "".join(_hunk_of_size(i + 2, 30) for i in range(999))
+        )
+        assert len(_hunk_headers(diff)) == 1000
+        return diff
+
+    def test_reviewer_case_splits_instead_of_raising(self) -> None:
+        """Before the fix this raised DiffUnsplittableError and bounced
+        the component back to the engineer; a compliant hunk-boundary
+        partition existed the whole time."""
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        assert len(chunks) == 2
+        for chunk in chunks:
+            assert len(chunk) <= DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        # The big hunk is alone in part 1; the 999 tiny ones follow.
+        assert _hunk_headers(chunks[0]) == _hunk_headers(diff)[:1]
+        assert _hunk_headers(chunks[1]) == _hunk_headers(diff)[1:]
+
+    def test_reviewer_case_round_trips(self) -> None:
+        """The round-trip property must hold for the newly-splittable
+        case too: every hunk exactly once, in order, byte-exact."""
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers("".join(chunks)) == _hunk_headers(diff)
+
+    def test_reviewer_case_parts_are_labelled_and_self_describing(
+        self,
+    ) -> None:
+        diff = self._reviewer_case()
+        chunks = split_diff_for_prompt(diff)
+        for i, chunk in enumerate(chunks, 1):
+            assert f"file part {i} of 2: {self.PATH}" in chunk
+            assert self.HEADER in chunk
+
+    def test_marker_width_comes_from_parts_not_hunks(self) -> None:
+        """Same failure mode without the knife edge: 100 hunks that pack
+        into 50 parts. Sizing the marker from the 3-digit hunk count
+        costs 2 chars per part - just enough to stop two hunks sharing a
+        part, doubling the reviewer passes (100 chunks instead of 50).
+        """
+        diff = self.HEADER + "".join(
+            _hunk_of_size(i + 1, 2352) for i in range(100)
+        )
+        chunks = split_diff_for_prompt(diff, limit=5000)
+        assert len(chunks) == 50
+        for chunk in chunks:
+            assert len(chunk) <= 5000
+        assert _reassemble(chunks) == diff
+        assert _hunk_headers("".join(chunks)) == _hunk_headers(diff)
+
+    def test_non_convergence_fails_closed_instead_of_looping(self) -> None:
+        """The part-count fixed point provably settles (at most one round
+        per digit width), but the loop is bounded anyway. If that bound
+        is ever reached the diff must fail closed like any other
+        unsplittable diff - never spin, never emit parts whose markers
+        disagree with the rendered part count."""
+        diff = self.HEADER + "".join(
+            _hunk_of_size(i + 1, 2352) for i in range(100)
+        )
+        # This shape needs two rounds (assume 1 part -> pack 50 -> 50),
+        # so a one-round budget cannot settle it.
+        with patch("kstrl.git._PART_COUNT_FIXED_POINT_ROUNDS", 1):
+            with pytest.raises(DiffUnsplittableError, match="did not settle"):
+                split_diff_for_prompt(diff, limit=5000)
+
+    def test_single_oversized_hunk_among_many_still_raises(self) -> None:
+        """The residual floor is unchanged: a hunk over the budget that
+        even a 1-part rendering could not hold still fails closed. The
+        fix must not paper over it by shrinking the marker away."""
+        diff = self.HEADER + _hunk_of_size(1, 60_000) + "".join(
+            _hunk_of_size(i + 2, 30) for i in range(999)
+        )
+        with pytest.raises(DiffUnsplittableError, match="single hunk"):
+            split_diff_for_prompt(diff)
 
 
 # ---------------------------------------------------------------------------
@@ -684,17 +1017,63 @@ class TestFactoryChunkedReview:
         assert "comp-a" in result.completed
         assert agent.calls == 3
 
+    def test_oversized_single_file_is_reviewed_not_bounced(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """R8 end-to-end: the production shape (one 55KB test file with
+        many hunks) used to fail the component and buy a full engineer
+        retry ($3.99 measured). It must now chunk and review instead."""
+        # Knowledge distillation off: it would spend another agent call
+        # and put a second copy of the diff in agent.prompts.
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        root = _scaffold(tmp_path, ["comp-a"])
+        manifest = _make_manifest(["comp-a"])
+        log_path = tmp_path / "progress.jsonl"
+        config = _factory_config(
+            review_mode="hard", max_adversarial_calls=5,
+            progress_log_path=log_path,
+        )
+        one_big_file = _multi_hunk_segment("tests/test_purity.py", 12, 4600)
+        assert len(one_big_file) > DEFAULT_PROMPT_DIFF_CHAR_LIMIT
+        agent = CountingAgent([_review_json("pass")])
+        success = ComponentResult("comp-a", success=True, iterations=1)
+        with patch(
+            "kstrl.factory._run_component", return_value=success,
+        ), patch(
+            "kstrl.agents.get_agent", return_value=agent,
+        ), patch(
+            "kstrl.git.get_diff_content", return_value=one_big_file,
+        ):
+            result = run_factory(
+                manifest, config, _base_config(root),
+                PlainUI(no_color=True), root,
+            )
+        assert "comp-a" in result.completed
+        events = _read_events(log_path)
+        assert not any(e["event"] == "diff_unsplittable" for e in events)
+        chunk_events = [e for e in events if e["event"] == "diff_chunked"]
+        assert len(chunk_events) == 1
+        n_chunks = chunk_events[0]["data"]["chunks"]  # type: ignore[index]
+        assert n_chunks >= 2
+        # One review pass per chunk, every hunk seen by a reviewer.
+        assert agent.calls == n_chunks
+        seen = _hunk_headers("".join(agent.prompts))
+        assert seen == _hunk_headers(one_big_file)
+
     def test_unsplittable_diff_fails_closed(self, tmp_path: Path) -> None:
+        """Residual floor: one hunk over the cap still fails closed via
+        the retry path (R1.4 - an unreviewable diff must not merge)."""
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         log_path = tmp_path / "progress.jsonl"
         config = _factory_config(
             review_mode="hard", progress_log_path=log_path,
         )
-        # One file bigger than the cap: no file boundary to split on.
+        # One file, ONE hunk, bigger than the cap: nothing to split on.
         big_single_file = _file_segment(
             "src/huge.py", DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 10_000,
         )
+        assert len(_hunk_headers(big_single_file)) == 1
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
         with patch(
@@ -814,3 +1193,81 @@ class TestFactoryStripOnce:
         # The real change survives the strip for both reviewers.
         assert "def add(a, b)" in captured["review"]
         assert "def add(a, b)" in captured["security"]
+
+
+class TestChunkHeadersMatchTheReviewContract:
+    """A within-file chunk must arrive with instructions that describe
+    what it actually hides.
+
+    Review finding on #183: both calibrated prompt bodies stated that a
+    `# [kstrl R1.4] diff chunk` was split on FILE boundaries and that
+    only cross-FILE interactions were invisible. Once an oversized single
+    file could be split within itself, that told the reviewer it was
+    holding a whole file when it was holding one part of one - so a
+    defect spanning two hunks of the same file could read as complete,
+    and a guard present in another part could read as missing. The part
+    marker alone contradicting the standing instruction is not a
+    reliable hard-mode contract; the prompts had to move with the code.
+    """
+
+    @staticmethod
+    def _within_file_diff() -> str:
+        header = "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n"
+        hunks = "".join(
+            f"@@ -{i * 10 + 1},3 +{i * 10 + 1},4 @@ def f{i}():\n"
+            f"     a = {i}\n+    b = {i}\n     return a\n"
+            + "+" + "x" * 900 + "\n"
+            for i in range(90)
+        )
+        return header + hunks
+
+    def test_an_oversized_file_really_does_split_within_itself(self) -> None:
+        """Precondition: without this the rest of the class is vacuous."""
+        chunks = split_diff_for_prompt(self._within_file_diff())
+        assert len(chunks) > 1
+        assert any("file part" in c for c in chunks)
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_prompt_describes_the_granularity_it_will_receive(
+        self, prompt: str,
+    ) -> None:
+        chunks = split_diff_for_prompt(self._within_file_diff())
+        partial = next(c for c in chunks if "file part" in c)
+
+        # The exact wording the harness emits must appear in the
+        # instructions, or the reviewer is told about a different
+        # mechanism than the one it is looking at.
+        assert "split on file/hunk boundaries" in partial
+        assert "split on file/hunk boundaries" in prompt
+        assert "file part" in prompt
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_prompt_names_same_file_omission_not_only_cross_file(
+        self, prompt: str,
+    ) -> None:
+        """The substance of the finding: scoping the blindness to
+        'other files' is the part that was actively false."""
+        assert "SAME FILE" in prompt
+        # And it must say what NOT to conclude from a part alone -
+        # 'note that it is partial' is not enough to stop a
+        # false-negative on a same-file cross-hunk defect.
+        assert "another part" in prompt or "elsewhere in the same file" in prompt
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_the_file_boundary_case_is_still_described(
+        self, prompt: str,
+    ) -> None:
+        """The common case did not stop existing; both must be covered."""
+        assert "split on file boundaries" in prompt

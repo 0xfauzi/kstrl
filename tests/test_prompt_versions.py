@@ -84,13 +84,20 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "8bce50b09f19220e58d941fe0b99a0f45d0c4e003d90a40c7570a4af542b1452",
         "1.4.2",
     ),
+    # 1.2.0: the chunk contract now describes file/HUNK splitting. Both
+    # bodies previously stated that a chunk was split on file boundaries
+    # and that only cross-FILE interactions were invisible; once a single
+    # oversized file could be split within itself, that told the reviewer
+    # it could see a whole file when it was holding one part of one, so a
+    # same-file cross-hunk defect could read as complete (review finding
+    # on #183).
     "REVIEWER_PROMPT": (
-        "987f8a7d0de3957c5917f0d34c9e3a086ab2fa815eb06d7d3cad3424cf7c5347",
-        "1.1.1",
+        "fb6284d0a329ee947bd243a2ab98b10c75dab624c6a4f1e6e9c464c973ad963c",
+        "1.2.0",
     ),
     "SECURITY_PROMPT": (
-        "36d8b55d8b33cd9517839efe8e9f9036503c6c740dd97087f3d4844ff39254f5",
-        "1.1.1",
+        "c4e2518c89283cd5ff14dc0fe0ce2bc1078214476eac2237d1185bafed5e0193",
+        "1.2.0",
     ),
     "DISTILL_PROMPT": (
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",

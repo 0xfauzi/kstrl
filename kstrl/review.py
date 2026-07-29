@@ -300,7 +300,7 @@ class ReviewResult:
         ]
 
 
-REVIEWER_PROMPT_VERSION = "1.1.1"
+REVIEWER_PROMPT_VERSION = "1.2.0"
 
 REVIEWER_PROMPT = """\
 You are a hostile senior reviewer. Your default stance is that the diff is
@@ -406,11 +406,21 @@ Truncated and chunked diffs:
   in "overallNotes" and set "exhaustively_searched": false. Never extend
   a pass verdict to content you could not see.
 - A header line like "# [kstrl R1.4] diff chunk 2 of 5" means the diff
-  was split on file boundaries and you are reviewing one slice; other
-  slices go to separate review passes. Review everything present, note
-  "chunk i of N" in "overallNotes", and set "exhaustively_searched":
-  false - you cannot see cross-file interactions with files outside this
-  chunk.
+  was split and you are reviewing one slice; other slices go to separate
+  review passes. Review everything present, note "chunk i of N" in
+  "overallNotes", and set "exhaustively_searched": false. The header
+  states which granularity was used, and the two hide different things:
+  - "split on file boundaries": whole files are elsewhere, so you cannot
+    see cross-file interactions with files outside this chunk.
+  - "split on file/hunk boundaries": one file was too large for a single
+    pass and was ALSO split within itself. A line like "# [kstrl R1.4]
+    file part 2 of 3: <path>" means you are seeing only part of that
+    file's diff - other hunks OF THIS SAME FILE are in other chunks. Do
+    not conclude from a part alone that a function is incomplete, that a
+    guard is missing, or that a value is never validated: the code you
+    are looking for may be in another part of the same file. A part
+    marked "continued" repeats the file header for context; that is not
+    a second change to the same file.
 
 Process: read every hunk in the diff. For each new function, ask: what
 inputs make this misbehave? what callers does it have? what error paths
