@@ -4076,6 +4076,19 @@ def queue_sync(
     "--dry-run", is_flag=True,
     help="Report what the next cycle would do without spending anything",
 )
+@click.option(
+    "--print-plist", "print_plist", is_flag=True,
+    help="Print a launchd LaunchAgent plist for this checkout and exit",
+)
+@click.option(
+    "--plist-mode", type=click.Choice(["keepalive", "interval"]),
+    default="keepalive",
+    help="keepalive: one long-lived daemon; interval: `--once` on a timer",
+)
+@click.option(
+    "--plist-interval", type=click.IntRange(min=60), default=300,
+    help="Seconds between runs in interval mode (>= the 60s restart throttle)",
+)
 @_queue_root_option
 @_queue_ui_option
 @_queue_no_color_option
@@ -4083,6 +4096,9 @@ def serve(
     once: bool,
     max_cycles: int,
     dry_run: bool,
+    print_plist: bool,
+    plist_mode: str,
+    plist_interval: int,
     root: Path | None,
     ui: str,
     no_color: bool,
@@ -4114,6 +4130,32 @@ def serve(
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
+
+    if print_plist:
+        # Printed rather than installed: writing into ~/Library/LaunchAgents
+        # and running launchctl are outward-facing acts an operator should
+        # perform deliberately, and the docs walk through them.
+        from kstrl.serve import launchd_log_dir, render_launchd_plist
+
+        # launchd creates the log FILE but not its directory, and a
+        # missing directory makes the job fail to spawn with nothing in
+        # the log to say why. Create it here, where the operator is
+        # actively setting the job up.
+        try:
+            launchd_log_dir(root_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            ui_impl.err(f"could not create the launchd log directory: {exc}")
+            sys.exit(2)
+
+        try:
+            click.echo(render_launchd_plist(
+                root_dir, mode=plist_mode, interval_seconds=plist_interval,
+            ), nl=False)
+        except ServeError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        sys.exit(0)
+
     try:
         config = ServeConfig.load(root_dir)
     except (ServeError, ValueError) as exc:

@@ -614,9 +614,12 @@ level-dependent behavior tested; calibration captures the family delta.
 
 ## R8.6 Continuous intake (L) - [#153](https://github.com/0xfauzi/kstrl/issues/153)
 
-Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
+Status: `[x]` - Shipped across PRs #185, #186, #187, #189. Operator guide:
+[docs/continuous-intake.md](continuous-intake.md).
 
-Landing in four slices; PRs 1-3 of 4 are in. Shipped so far:
+All four slices landed: `kstrl/workqueue.py` + `ks queue` (#185),
+`kstrl/serve.py` + `ks serve` (#186), `kstrl/intake_github.py` +
+`ks queue sync` (#187), and launchd packaging + the operator guide (#189). Shipped so far:
 `kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
 mutex, pid/ttl leases, journal, pause marker) with the `ks queue
 add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
@@ -958,7 +961,56 @@ the human trigger - `stop_at_pr` default preserves the merge gate).
 
 **Done when:** all queue verbs + `ks serve --once` work; poison path and
 budget pause tested; GitHub adapter round-trips labels/comments against a
-test repo; launchd plist + caffeinate behavior documented.
+test repo; launchd plist + caffeinate behavior documented. **All met.**
+
+**launchd and caffeinate (PR 4).** `ks serve --print-plist` generates the
+LaunchAgent rather than shipping a template: every path is absolute and
+checkout-specific, and a hand-edited template is a class of setup error
+(wrong interpreter, wrong root, a `Label` colliding with another checkout)
+that costs a debugging session to find. Validated against `plutil -lint`
+and round-tripped through `plistlib` in both modes.
+
+Three decisions worth recording:
+
+- **The `Label` is a path hash.** launchd keeps only the last job loaded
+  for a given label, silently, so two checkouts of one repo would leave
+  one unserved.
+- **`ThrottleInterval` is 60s, not launchd's 10s default.** At 10s a
+  crash-looping daemon attempts six restarts a minute; the throttle is a
+  spend control.
+- **`PATH` is set explicitly.** A LaunchAgent inherits no shell
+  environment, and both `gh` and `git` must be findable. Getting this
+  wrong yields a daemon that runs and silently fails every poll.
+
+Two modes ship, with the trade-off stated rather than hidden: `keepalive`
+(one long-lived daemon, restarted on exit - but launchd cannot see a
+process wedged on a network call) and `interval` (`--once` on a timer, so a
+wedge cannot outlive one interval and the exit code carries "needs a
+human").
+
+**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
+around a child process: `caffeinate -i <child>` creates a
+`PreventUserIdleSystemSleep` assertion *on behalf of the child*, and that
+assertion is gone once the child exits - nothing lingers, which is the
+"held only during work" property R8.6 asked for.
+
+The caveat the plan implied but did not state: the assertion is
+`PreventUserIdleSystemSleep`, **not** `PreventSystemSleep`. It prevents
+*idle* sleep and does not prevent an explicit one, so **closing the lid
+still suspends the machine mid-run.** Sleep mid-run is survivable - the
+lease reaper reclaims the item and a signal-killed process classifies as
+infrastructural - but it is not prevented.
+
+**Still not verified (H4), and both need the user.** Sleep/wake resilience
+has not been exercised: whether launchd fires a missed interval on wake,
+and whether the reaper recovers a run interrupted by a real lid close,
+requires genuinely suspending the machine. Apple documents the
+`StartInterval`-on-wake behaviour; that is documentation, not a
+measurement taken here. Separately, `ks serve` has never driven a real
+factory run - every daemon test uses a stub runner, deliberately, since a
+suite that spawned real runs would cost dollars per assertion. The first
+unattended run is also the first end-to-end integration test. This is
+roadmap open question 11 in concrete form.
 
 ---
 

@@ -2179,3 +2179,159 @@ def serve(
         while True:
             recent.append(_cycle())
             sleep(cfg.poll_interval_seconds)
+
+
+# ---------------------------------------------------------------------------
+# launchd packaging
+# ---------------------------------------------------------------------------
+
+#: Reverse-DNS label prefix. The per-root suffix keeps two checkouts from
+#: fighting over one launchd job.
+LAUNCHD_LABEL_PREFIX = "com.kstrl.serve"
+
+#: Minimum seconds launchd waits before restarting the job. launchd's own
+#: default is 10s, which for a crash-looping daemon means six restart
+#: attempts a minute; at a measured $1.70-2.60 per engineer iteration the
+#: throttle is a spend control, not a politeness.
+LAUNCHD_THROTTLE_SECONDS = 60
+
+
+def launchd_label(root_dir: Path) -> str:
+    """A launchd label unique to this checkout.
+
+    Derived from the path rather than the directory name because two
+    checkouts of the same repo (a worktree and its parent) would
+    otherwise collide on one job, and launchd would silently keep only
+    the last one loaded.
+    """
+    import hashlib
+
+    digest = hashlib.sha256(str(root_dir.resolve()).encode()).hexdigest()[:10]
+    return f"{LAUNCHD_LABEL_PREFIX}.{digest}"
+
+
+def launchd_log_dir(root_dir: Path) -> Path:
+    """Where the LaunchAgent writes stdout/stderr.
+
+    Its own function because the CLI must CREATE it: launchd creates the
+    log file but not its parent, and a missing parent makes the job fail
+    to spawn with nothing in the log explaining why - the worst kind of
+    setup failure. ``render_launchd_plist`` stays pure.
+    """
+    return state_dir(root_dir) / "logs"
+
+
+def _plist_escape(value: str) -> str:
+    """XML-escape a plist string value."""
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def render_launchd_plist(
+    root_dir: Path,
+    *,
+    mode: str = "keepalive",
+    interval_seconds: int = 300,
+    python: str = "",
+    extra_path: str = "",
+) -> str:
+    """Render a LaunchAgent plist for ``ks serve`` on this checkout.
+
+    Generated rather than shipped as a template with placeholders: every
+    path here is absolute and specific to one checkout, and a
+    hand-edited template is a class of setup error (wrong python, wrong
+    root, a label colliding with another checkout) that costs an operator
+    a debugging session to find.
+
+    Two modes, and the trade-off is real:
+
+    - ``keepalive`` - one long-lived ``ks serve`` that paces itself from
+      ``[serve] poll_interval_seconds``, restarted by launchd if it dies.
+      Fewer moving parts. Its weakness: launchd only notices a process
+      that EXITED, so a daemon wedged on a network call looks healthy.
+    - ``interval`` - launchd runs ``ks serve --once`` every
+      ``interval_seconds``. Each cycle is isolated, so a wedge cannot
+      outlive one interval, and the exit code carries "work needs a
+      human". This is the cron-fallback shape.
+
+    ``PATH`` is set explicitly because a LaunchAgent does not inherit
+    your shell's environment, and both ``gh`` (the GitHub adapter) and
+    ``git`` must be findable. Getting this wrong produces a daemon that
+    runs and silently fails every poll.
+    """
+    if mode not in ("keepalive", "interval"):
+        raise ServeError(
+            f"launchd mode must be 'keepalive' or 'interval', got {mode!r}"
+        )
+    if interval_seconds < LAUNCHD_THROTTLE_SECONDS:
+        raise ServeError(
+            f"launchd interval must be >= {LAUNCHD_THROTTLE_SECONDS}s "
+            f"(the restart throttle), got {interval_seconds}"
+        )
+
+    root = root_dir.resolve()
+    interpreter = python or sys.executable
+    log_dir = launchd_log_dir(root)
+    args = [interpreter, "-m", "kstrl", "serve", "--root", str(root)]
+    if mode == "interval":
+        args.append("--once")
+
+    # A LaunchAgent gets a minimal PATH; gh and git must be reachable.
+    path_parts = [
+        str(Path(interpreter).parent),
+        "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+        "/usr/sbin", "/sbin",
+    ]
+    if extra_path:
+        path_parts.insert(0, extra_path)
+    deduped: list[str] = []
+    for part in path_parts:
+        if part and part not in deduped:
+            deduped.append(part)
+    path_value = ":".join(deduped)
+
+    arg_xml = "\n".join(
+        f"        <string>{_plist_escape(a)}</string>" for a in args
+    )
+    schedule = (
+        "    <key>KeepAlive</key>\n    <true/>"
+        if mode == "keepalive"
+        else f"    <key>StartInterval</key>\n    <integer>{interval_seconds}</integer>"
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{launchd_label(root)}</string>
+    <key>ProgramArguments</key>
+    <array>
+{arg_xml}
+    </array>
+    <key>WorkingDirectory</key>
+    <string>{_plist_escape(str(root))}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{_plist_escape(path_value)}</string>
+        <key>KSTRL_NO_TUI</key>
+        <string>1</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+{schedule}
+    <key>ThrottleInterval</key>
+    <integer>{LAUNCHD_THROTTLE_SECONDS}</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>{_plist_escape(str(log_dir / 'serve.out.log'))}</string>
+    <key>StandardErrorPath</key>
+    <string>{_plist_escape(str(log_dir / 'serve.err.log'))}</string>
+</dict>
+</plist>
+"""
