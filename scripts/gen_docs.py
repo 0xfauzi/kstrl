@@ -133,6 +133,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.policy import PolicyConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
+    from kstrl.serve import ServeConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
     from kstrl.workqueue import QueueConfig
@@ -268,6 +269,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: InboxConfig.load(root_dir=root),
             InboxConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "serve", "Continuous-intake daemon (R8.6)",
+            identity_keys(ServeConfig, [
+                f.name for f in dataclasses.fields(ServeConfig)
+            ]),
+            lambda root: ServeConfig.load(root_dir=root),
+            ServeConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "queue", "Continuous intake queue (R8.6)",
@@ -455,6 +464,18 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
     ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
+    ("serve", "poll_interval_seconds"):
+        "seconds between poll cycles when ks serve runs as a daemon",
+    ("serve", "daily_budget_usd"):
+        "hard stop on reported spend per local day; 0 = no cap",
+    ("serve", "max_consecutive_poison"):
+        "consecutive poisoned items that pause the whole queue",
+    ("serve", "caffeinate"):
+        "hold caffeinate -i for each run so the machine cannot sleep mid-factory",
+    ("serve", "factory_timeout_seconds"):
+        "kill a factory run after this long; 0 = no timeout",
+    ("serve", "allow_uncovered_cost"):
+        "run unattended even when no adapter reports cost, making the budget unenforceable",
     ("queue", "max_attempts"):
         "execution attempts per queue item before it is poisoned",
     ("queue", "lease_ttl_seconds"):

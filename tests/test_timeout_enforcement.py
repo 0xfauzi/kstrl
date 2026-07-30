@@ -983,11 +983,18 @@ class TestSubprocessTimeoutAudit:
     - kstrl/agents/proc.py: reader-thread deadline + group kill (R0.1)
     - kstrl/verify.py: run_scrubbed communicate(timeout) + group kill
       (R2.6)
+    - kstrl/serve.py: subprocess_factory_runner communicate(timeout) +
+      group kill (R8.6). Popen is REQUIRED here rather than incidental:
+      review #186 F1 showed subprocess.run's timeout signals only the
+      direct child, which on macOS is the caffeinate wrapper, so the
+      factory itself outlived the timeout and the daemon requeued an
+      item that was still executing.
     """
 
     SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
     POPEN_ALLOWLIST = frozenset({
         "kstrl/agents/proc.py",
+        "kstrl/serve.py",
         "kstrl/verify.py",
     })
 
