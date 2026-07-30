@@ -70,6 +70,7 @@ from typing import Any, Protocol
 
 from kstrl.statedir import state_dir
 from kstrl.workqueue import (
+    ItemSource,
     ItemState,
     MergeDisposition,
     Queue,
@@ -1572,6 +1573,38 @@ def _file_inbox_item(
         return ""
 
 
+def _report_remote_outcome(
+    root_dir: Path,
+    item: QueueItem | None,
+    *,
+    state: str,
+    detail: str,
+    observer: ServeObserver,
+) -> None:
+    """Tell the source front-end what happened, best effort.
+
+    R8.6 requires the adapters be strictly additive, so this swallows
+    every failure into a warning: the queue transition it describes has
+    already committed locally, and a GitHub outage must not be able to
+    roll it back or halt the daemon.
+    """
+    if item is None or item.source is not ItemSource.GITHUB:
+        return
+    try:
+        from kstrl.intake_github import GitHubIntakeConfig, report_outcome
+
+        config = GitHubIntakeConfig.load(root_dir)
+        if not config.enabled:
+            return
+        error = report_outcome(
+            item, state=state, detail=detail, config=config, root_dir=root_dir,
+        )
+        if error:
+            observer.warn(f"  writeback to {item.source_ref} failed: {error}")
+    except Exception as exc:  # noqa: BLE001 - additive by contract
+        observer.warn(f"  writeback to {item.source_ref} raised: {exc}")
+
+
 def _pause_queue(
     queue: Queue,
     admission: Admission,
@@ -1907,6 +1940,10 @@ def serve_cycle(
             queue.finish_ok(current, actor="serve")
             ledger.record_terminal(poisoned=False)
             obs.info(f"  {running.item_id[:12]} done")
+            _report_remote_outcome(
+                root_dir, current, state="done",
+                detail="The factory run completed.", observer=obs,
+            )
             return result
 
         queue.finish_failed(current, error=verdict.reason, actor="serve")
@@ -1940,6 +1977,10 @@ def serve_cycle(
 
     result.needs_human = True
     obs.err(f"  {running.item_id[:12]} poisoned: {verdict.reason}")
+    _report_remote_outcome(
+        root_dir, queue.get(running.item_id), state="poison",
+        detail=verdict.reason, observer=obs,
+    )
     result.inbox_items += (_file_inbox_item(
         root_dir,
         kind_name="halted_run",

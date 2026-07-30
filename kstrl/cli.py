@@ -3976,6 +3976,94 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+@queue_group.command(name="sync")
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Poll and report what would be enqueued, writing nothing",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_sync(
+    dry_run: bool, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Pull labelled GitHub issues into the queue (R8.6).
+
+    Polls open issues carrying the trigger label and enqueues the ones
+    not already seen. Remote items ALWAYS stop at the PR for a human.
+
+    The label is the authorization: applying it needs write access to the
+    repository, so an issue from a stranger cannot queue a factory run.
+    """
+    from kstrl.intake_github import (
+        GitHubIntakeConfig,
+        IntakeError,
+        ProcessedLedger,
+        poll_queued,
+        resolve_repo,
+    )
+    from kstrl.intake_github import sync as run_sync
+    from kstrl.workqueue import queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        config = GitHubIntakeConfig.load(root_dir)
+    except (IntakeError, ValueError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    if not config.enabled:
+        ui_impl.err(
+            "GitHub intake is off. Set [intake_github] enabled = true in "
+            "kstrl.toml (or KSTRL_INTAKE_GITHUB_ENABLED=1)."
+        )
+        sys.exit(1)
+
+    if dry_run:
+        repo, error = resolve_repo(config, root_dir)
+        if error:
+            ui_impl.err(error)
+            sys.exit(1)
+        issues, poll_error = poll_queued(config, repo, root_dir)
+        if poll_error:
+            ui_impl.err(poll_error)
+            sys.exit(1)
+        ledger = ProcessedLedger(root_dir).load()
+        ui_impl.section(f"Would sync from {repo}")
+        ui_impl.kv("label", config.queued_label)
+        ui_impl.kv("polled", str(len(issues)))
+        if not issues:
+            ui_impl.info("  nothing labelled")
+        for issue in issues:
+            ref = issue.source_ref(repo)
+            if ledger.contains(ref):
+                verdict = "skip (already processed)"
+            elif queue.find_by_source_ref(ref) is not None:
+                verdict = "skip (already queued)"
+            elif not issue.body.strip():
+                verdict = "skip (empty body)"
+            else:
+                verdict = "ENQUEUE"
+            ui_impl.info(f"  {ref:<28} {verdict}  {issue.title}")
+        sys.exit(0)
+
+    with queue_lock(root_dir):
+        result = run_sync(queue, config, root_dir)
+
+    ui_impl.section(f"Sync from {result.repo or 'unknown repo'}")
+    ui_impl.kv("polled", str(result.polled))
+    ui_impl.kv("enqueued", str(len(result.enqueued)))
+    for ref in result.enqueued:
+        ui_impl.ok(f"  queued {ref}")
+    for ref, reason in sorted(result.skipped.items()):
+        ui_impl.info(f"  skipped {ref}: {reason}")
+    for error in result.errors:
+        ui_impl.err(f"  {error}")
+    # Nonzero on error so a cron/launchd wrapper notices, but note that
+    # partial success is real: items already enqueued stay enqueued.
+    sys.exit(1 if result.errors else 0)
+
+
 @cli.command()
 @click.option(
     "--once", is_flag=True,

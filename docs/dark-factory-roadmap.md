@@ -616,13 +616,39 @@ level-dependent behavior tested; calibration captures the family delta.
 
 Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
 
-Landing in four slices; PRs 1-2 of 4 are in. Shipped so far:
+Landing in four slices; PRs 1-3 of 4 are in. Shipped so far:
 `kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
 mutex, pid/ttl leases, journal, pause marker) with the `ks queue
 add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
 (`ks serve [--once] [--dry-run]`, lease reaper, retry classifier, daily
-spend ledger, poison breaker, `caffeinate -i`). The GitHub adapter is
-PR 3; the launchd plist and its docs are PR 4.
+spend ledger, poison breaker, `caffeinate -i`), and
+`kstrl/intake_github.py` + `ks queue sync` (label polling, processed-ids
+ledger, label/comment writeback). The launchd plist and its docs are PR 4.
+
+**GitHub intake (PR 3).** The trigger is the LABEL, not the issue, and
+that is the entire access-control story: applying a label needs write
+access, so on a public repo a stranger can open an issue but cannot queue
+a factory run. Remote items are forced to `stop_at_pr` regardless of any
+label or config value - an issue label is the last place a merge decision
+should be settable from. Idempotency has two halves: `find_by_source_ref`
+covers items still in the queue, and the processed-ids ledger covers
+items that have already left it (without which a completed issue would be
+re-enqueued on the very next poll). The adapter is strictly additive:
+every `gh` call returns a result object rather than raising, so a GitHub
+outage produces an empty sync instead of a stalled queue.
+
+Recorded because the plan claimed otherwise (H4): this does NOT use
+ETag-conditional requests. `gh issue list` exposes no ETag, so the saving
+R8.6 attributed to ETags is not realised. It is also not needed at this
+cadence - one call per poll interval is ~60/hour against a 5,000/hour
+budget.
+
+**Measured during the live round-trip:** GitHub's issue-list endpoint can
+lag a label write by a short interval. A sync issued immediately after
+labelling returned `polled: 0`, and the same sync a minute later returned
+`polled: 1`. At any realistic poll interval this is invisible, but a test
+that labels and syncs in the same breath will look flaky. Not a defect in
+the adapter - confirmed by re-running rather than assumed.
 
 **The retry rule as implemented (PR 2).** "Only `infrastructure_error`
 failures auto-retry" leaves the UNKNOWN case undefined, and the unknown

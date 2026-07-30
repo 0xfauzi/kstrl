@@ -228,6 +228,25 @@ caffeinate = true                  # hold caffeinate -i per run (macOS); sleeps 
 factory_timeout_seconds = 0.0      # kill a run after this long; 0 = no timeout
 allow_uncovered_cost = false       # true = run unattended under an unenforceable budget
 
+# GitHub Issues as the remote inbox (R8.6). An issue carrying queued_label
+# becomes a queue item; the verdict comes back as a state label and a comment.
+# Polling only - no webhooks, no public endpoint. THE LABEL IS THE
+# AUTHORIZATION: applying a label needs write access to the repo, so on a
+# public repo a stranger can open an issue but cannot queue a factory run.
+# Remote items ALWAYS stop at the PR regardless of any label or setting.
+# Off by default: enabling makes this an outbound poller and a writer of
+# public comments, which should never happen because a default changed.
+[intake_github]
+enabled = false
+repo = ""                          # "owner/name"; empty resolves from the checkout
+queued_label = "kstrl:queued"      # the trigger; applying it requires write access
+label_prefix = "kstrl:"            # state labels written back: running/done/failed/poison
+max_items_per_sync = 5             # a label applied to 50 issues must not queue 50 runs
+default_priority = 0
+comment_on_result = true           # post the verdict back to the source issue
+dry_run = false                    # true = poll and log, send no writebacks
+timeout_seconds = 60.0
+
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the
 # suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)
