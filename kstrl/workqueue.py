@@ -1090,6 +1090,51 @@ class Queue:
             charge_attempt=True, last_run_id=run_id,
         )
 
+    def adopt_lease(
+        self,
+        item: QueueItem,
+        *,
+        pid: int,
+        host: str = "",
+        actor: str = "",
+    ) -> QueueItem:
+        """Re-point a held lease at the process actually doing the work.
+
+        Not a transition: the item stays where it is and only its lease
+        fields move, so this is the one write that rewrites ``meta.json``
+        in place. Needed because ``lease``/``start`` record the DAEMON's
+        pid, while the run executes in a child process. Review #186 F1:
+        if the daemon dies and the child survives, a successor's reaper
+        sees the daemon gone, judges the lease dead, and requeues a run
+        that is still executing - two factories on one repo.
+
+        Refuses unless the item is leased or running: adopting a lease on
+        a queued item would invent one.
+        """
+        if item.state not in (ItemState.LEASED, ItemState.RUNNING):
+            raise QueueError(
+                f"cannot adopt a lease on {item.item_id} in state {item.state}"
+            )
+        import socket
+
+        directory = self.item_dir(item)
+        if not directory.is_dir():
+            raise QueueError(f"queue item {item.item_id} is not at {directory}")
+        item.lease_pid = pid
+        item.lease_host = host or socket.gethostname()
+        item.lease_expires_at = _iso(
+            _utc_now() + timedelta(seconds=self.config.lease_ttl_seconds)
+        )
+        item.updated_at = _iso(_utc_now())
+        self._write_meta(item, directory)
+        self._journal(JournalEntry(
+            ts=item.updated_at, item_id=item.item_id,
+            from_state=str(item.state), to_state=str(item.state),
+            reason="lease adopted by the run process", actor=actor,
+            attempts=item.attempts, detail={"lease_pid": pid},
+        ))
+        return item
+
     def finish_ok(self, item: QueueItem, *, actor: str = "") -> QueueItem:
         return self.transition(
             item, ItemState.DONE, reason="completed", actor=actor, last_error="",

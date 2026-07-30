@@ -93,14 +93,14 @@ class TestDryRun:
         (tmp_path / "kstrl.toml").write_text(
             "[serve]\ndaily_budget_usd = 5.0\nallow_uncovered_cost = true\n"
         )
-        SpendLedger(tmp_path).charge(10.0)
+        SpendLedger(tmp_path).charge(10.0, covered_calls=1, total_calls=1)
         result = _invoke(["serve", "--dry-run"], tmp_path)
         assert "BLOCKS" in result.output
         assert "daily budget reached" in result.output
 
     def test_dry_run_labels_a_floor_total(self, tmp_path: Path) -> None:
         """H4: never let a floor read as a measurement."""
-        SpendLedger(tmp_path).charge(3.0, lower_bound=True, uncovered_calls=2)
+        SpendLedger(tmp_path).charge(3.0, covered_calls=1, total_calls=3)
         result = _invoke(["serve", "--dry-run"], tmp_path)
         assert "FLOOR" in result.output
 
@@ -141,6 +141,64 @@ class TestServeOnce:
             result = _invoke(["serve", "--once"], tmp_path)
         assert result.exit_code == 1
         assert _queue(tmp_path).items()[0].state is ItemState.POISON
+
+    def test_an_exhausted_infra_verdict_also_exits_nonzero(
+        self, tmp_path: Path, spec_file: Path,
+    ) -> None:
+        """#186 F10: the case the may_retry filter let through.
+
+        An infrastructure verdict whose last attempt is spent is poisoned
+        by serve_cycle, but Verdict.RETRY_INFRA.may_retry stays true - so
+        the old filter excluded it and `ks serve --once` exited 0 on work
+        that was waiting for a human.
+        """
+        from kstrl.findings import Finding
+        from kstrl.manifest import Component, ComponentStatus, Manifest
+
+        _invoke(
+            ["queue", "add", str(spec_file), "--max-attempts", "1"], tmp_path,
+        )
+        run_id = "factory-20260730-000000.000000-aaa"
+        comp = Component("comp-a", "A", "", [], "a.json", "b/a")
+        comp.status = ComponentStatus("failed")
+        comp.findings = [Finding.infrastructure_error("review", "cli died")]
+        manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        Manifest(
+            version="1", spec_file="s.md", project_name="p",
+            base_branch="main", single_pr=False, components=[comp],
+            run_id=run_id,
+        ).save(manifest_path)
+
+        def fake_runner(**kwargs: object) -> RunOutcome:
+            run_dir = tmp_path / ".kstrl" / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "events.jsonl").touch()
+            return RunOutcome(returncode=1)
+
+        with patch("kstrl.serve.subprocess_factory_runner", fake_runner):
+            result = _invoke(["serve", "--once"], tmp_path)
+        assert _queue(tmp_path).items()[0].state is ItemState.POISON
+        assert result.exit_code == 1, "poisoned work must not report success"
+
+    def test_a_reaped_poison_with_no_item_run_exits_nonzero(
+        self, tmp_path: Path, spec_file: Path,
+    ) -> None:
+        """A path that sets no ran_item, which the old filter also skipped."""
+        from kstrl.workqueue import QueueConfig as _QC
+
+        _invoke(
+            ["queue", "add", str(spec_file), "--max-attempts", "1"], tmp_path,
+        )
+        queue = Queue(tmp_path, _QC(max_attempts=1))
+        queue.start(queue.lease(queue.items()[0], pid=999999))
+        with patch(
+            "kstrl.serve.subprocess_factory_runner",
+            return_value=RunOutcome(returncode=0),
+        ):
+            result = _invoke(["serve", "--once"], tmp_path)
+        assert _queue(tmp_path).items()[0].state is ItemState.POISON
+        assert result.exit_code == 1
 
     def test_an_empty_queue_exits_zero(self, tmp_path: Path) -> None:
         result = _invoke(["serve", "--once"], tmp_path)

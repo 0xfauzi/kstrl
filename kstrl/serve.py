@@ -54,13 +54,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections import deque
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -73,6 +75,7 @@ from kstrl.workqueue import (
     Queue,
     QueueBudgetExhausted,
     QueueConfig,
+    QueueError,
     QueueItem,
     queue_lock,
     queue_root,
@@ -81,11 +84,20 @@ from kstrl.workqueue import (
 SERVE_LOCK_FILENAME = "serve.lock"
 SPEND_FILENAME = "spend.json"
 
+#: Substrings the factory prints on each of its two exit-2 refusals.
+#: Matching output is EVIDENCE; a pre-launch lock probe is inference and
+#: races (#186 F6). Both come from kstrl/factory.py and kstrl/cli.py.
+_LOCK_REFUSAL_MARKER = "--force-lock"
+_SPEC_BLOCKER_MARKER = "Spec issues written to:"
+
 #: Retry backoff: ``base * 2 ** (attempts - 1)``, capped. Not tunable by
 #: config on purpose - the cap is a safety floor on how fast an item can
 #: consume its attempts, not a preference.
 BACKOFF_BASE_SECONDS = 60.0
 BACKOFF_CAP_SECONDS = 1800.0
+
+#: How many recent cycles an unbounded daemon keeps for diagnostics.
+RECENT_CYCLE_WINDOW = 100
 
 
 class ServeError(RuntimeError):
@@ -137,6 +149,14 @@ class RunOutcome:
     timed_out: bool = False
     #: Non-empty when the launch itself failed (binary missing, etc).
     launch_error: str = ""
+    #: Tail of the child's combined output. The factory's two exit-2
+    #: refusals are only distinguishable from what it printed (#186 F6),
+    #: so this is classification evidence rather than a log nicety.
+    output_tail: str = ""
+    #: True when the timeout path confirmed the whole process GROUP was
+    #: signalled and reaped. False means a descendant may still be alive,
+    #: which must never be treated as "the run is over" (#186 F1).
+    group_reaped: bool = False
 
 
 class FactoryRunner(Protocol):
@@ -155,6 +175,7 @@ class FactoryRunner(Protocol):
         project_name: str,
         pause_before_pr_merge: bool,
         timeout_seconds: float,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
         ...
 
@@ -324,33 +345,72 @@ class ServeConfig:
 
 
 # ---------------------------------------------------------------------------
-# Daily spend ledger
+# Persistent daemon state: spend, coverage, and the poison streak
 # ---------------------------------------------------------------------------
+
+
+class ServeStateError(ServeError):
+    """The daemon's own state file could not be read.
+
+    A distinct error because every consumer must FAIL CLOSED on it.
+    Review #186 F4: the ledger previously read an unparseable file as a
+    fresh zero day, so charging $9, corrupting the file, and setting a
+    $5 budget allowed another run - and kept allowing them. The other
+    backstops do not bound that: they are per-item, and this is the only
+    queue-WIDE spend limit.
+    """
 
 
 @dataclass(frozen=True)
 class DailySpend:
     """What the queue has spent today, and how well we know it.
 
-    ``lower_bound`` is not decoration. When it is true the real spend is
-    higher than ``spent_usd`` by an amount this codebase deliberately
-    does not estimate, so the budget comparison is a comparison against
-    a floor. ``uncovered_calls`` says how many calls contributed nothing.
+    Coverage is recorded as CALL COUNTS, not inferred from whether the
+    dollar total is positive. Review #186 F9: a fully-metered run that
+    legitimately cost $0 was reported as having no cost coverage, and a
+    launch failure that metered nothing counted as a run.
+
+    ``covered_calls``/``total_calls`` make the three cases distinct:
+    full coverage (equal), partial coverage (a floor - the cap still
+    fires, just late), and ZERO coverage (the cap can never fire at all).
+    Only the third is unenforceable.
+
+    ``unmetered_phases`` names phases known to spend without reporting
+    anything. The architect is always in it for a spec-decomposed item:
+    ``decompose_spec`` calls the agent but emits no usage events at all,
+    so its spend is real and invisible (#186 F3). Naming it is the honest
+    alternative to estimating it.
     """
 
     date: str = ""
     spent_usd: float = 0.0
     runs: int = 0
-    lower_bound: bool = False
-    uncovered_calls: int = 0
+    covered_calls: int = 0
+    total_calls: int = 0
+    unmetered_phases: tuple[str, ...] = ()
+
+    @property
+    def uncovered_calls(self) -> int:
+        return max(0, self.total_calls - self.covered_calls)
+
+    @property
+    def has_any_coverage(self) -> bool:
+        """Whether ANY call reported cost. False = the cap cannot fire."""
+        return self.covered_calls > 0
+
+    @property
+    def lower_bound(self) -> bool:
+        """Whether the real spend exceeds ``spent_usd`` by an unmeasured amount."""
+        return self.uncovered_calls > 0 or bool(self.unmetered_phases)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "date": self.date,
             "spent_usd": self.spent_usd,
             "runs": self.runs,
-            "lower_bound": self.lower_bound,
-            "uncovered_calls": self.uncovered_calls,
+            "covered_calls": self.covered_calls,
+            "total_calls": self.total_calls,
+            "unmetered_phases": list(self.unmetered_phases),
         }
 
     @classmethod
@@ -361,22 +421,74 @@ class DailySpend:
                 return 0.0
             return float(value)
 
+        raw_phases = data.get("unmetered_phases")
+        phases = tuple(
+            str(p) for p in raw_phases if isinstance(p, str)
+        ) if isinstance(raw_phases, list) else ()
         return cls(
             date=str(data.get("date") or ""),
             spent_usd=_num("spent_usd"),
             runs=int(_num("runs")),
-            lower_bound=bool(data.get("lower_bound", False)),
-            uncovered_calls=int(_num("uncovered_calls")),
+            covered_calls=int(_num("covered_calls")),
+            total_calls=int(_num("total_calls")),
+            unmetered_phases=phases,
+        )
+
+
+@dataclass(frozen=True)
+class ServeState:
+    """Everything the daemon must remember between cycles.
+
+    The poison streak lives HERE rather than being derived from the
+    queue journal. Review #186 F5: ``Queue._journal`` deliberately
+    swallows append failures and ``journal_entries`` returns ``[]`` on
+    any read error, so making the journal unreadable reported a zero
+    streak and re-allowed spending while three poisoned items sat on
+    disk. A money backstop cannot be built on narration the queue
+    explicitly permits itself to lose.
+    """
+
+    spend: DailySpend = field(default_factory=DailySpend)
+    consecutive_poison: int = 0
+    #: Set once any run has reported a cost figure. Until then a
+    #: configured budget is unenforceable and serve refuses to claim
+    #: work (#186 F8) rather than discovering it after a run.
+    cost_coverage_seen: bool = False
+    schema_version: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "spend": self.spend.to_dict(),
+            "consecutive_poison": self.consecutive_poison,
+            "cost_coverage_seen": self.cost_coverage_seen,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ServeState:
+        raw_spend = data.get("spend")
+        spend = (
+            DailySpend.from_dict(raw_spend) if isinstance(raw_spend, dict)
+            else DailySpend()
+        )
+        streak = data.get("consecutive_poison", 0)
+        return cls(
+            spend=spend,
+            consecutive_poison=(
+                streak if isinstance(streak, int) and not isinstance(streak, bool)
+                else 0
+            ),
+            cost_coverage_seen=bool(data.get("cost_coverage_seen", False)),
         )
 
 
 class SpendLedger:
-    """Append-nothing, rewrite-atomically record of today's spend.
+    """Atomic store for :class:`ServeState` under ``.kstrl/queue/``.
 
-    Deliberately NOT a journal: the only question asked of it is "how
-    much today", and a single small file keeps the pre-admission check
-    cheap enough to run before every item. The per-run detail already
-    lives in the run's own event stream.
+    Rewritten whole on every update rather than appended: the only
+    questions asked of it are "how much today", "how many poisons in a
+    row", and "has cost ever been reported", all of which must be cheap
+    enough to evaluate before every item.
     """
 
     def __init__(self, root_dir: Path) -> None:
@@ -386,67 +498,107 @@ class SpendLedger:
     def path(self) -> Path:
         return queue_root(self.root_dir) / SPEND_FILENAME
 
-    def read(self, today: str | None = None) -> DailySpend:
-        """Today's spend; a stale date reads as a fresh zero day.
+    def read_state(self, today: str | None = None) -> ServeState:
+        """Load state, rolling the spend over on a new local day.
 
-        An unreadable or malformed ledger reads as a fresh day too, which
-        is the ONE fail-open choice in this module and is called out
-        here: failing closed would mean an unparseable ledger halts the
-        queue permanently with no way for the daemon itself to recover.
-        The exposure is bounded by ``max_attempts``, the backoff, and the
-        poison breaker, and by the ledger being rewritten atomically so
-        a torn write is not a normal event.
+        Raises :class:`ServeStateError` for every read failure EXCEPT a
+        missing file, which is the genuine first-run case. Failing closed
+        here is the same correction PR #185 F7 applied to the pause
+        marker: a file we cannot parse is not evidence that spending is
+        safe.
         """
         stamp = today or _local_today()
         try:
             raw = self.path.read_text(encoding="utf-8")
-        except OSError:
-            return DailySpend(date=stamp)
+        except FileNotFoundError:
+            return ServeState(spend=DailySpend(date=stamp))
+        except OSError as exc:
+            raise ServeStateError(
+                f"cannot read the daemon spend ledger {self.path}: {exc}. "
+                "Refusing to spend against an unknown daily total; fix the "
+                "file's permissions or move it aside to start a fresh day."
+            ) from exc
         try:
             data = json.loads(raw)
-        except json.JSONDecodeError:
-            return DailySpend(date=stamp)
+        except json.JSONDecodeError as exc:
+            raise ServeStateError(
+                f"the daemon spend ledger {self.path} is malformed ({exc}). "
+                "Refusing to spend against an unknown daily total; inspect "
+                "it and move it aside to start a fresh day."
+            ) from exc
         if not isinstance(data, dict):
-            return DailySpend(date=stamp)
-        spend = DailySpend.from_dict(data)
-        if spend.date != stamp:
-            return DailySpend(date=stamp)
-        return spend
+            raise ServeStateError(
+                f"the daemon spend ledger {self.path} is not an object. "
+                "Refusing to spend against an unknown daily total."
+            )
+        state = ServeState.from_dict(data)
+        if state.spend.date != stamp:
+            # A new day resets the SPEND only. The poison streak and the
+            # coverage flag are not daily facts.
+            return replace(state, spend=DailySpend(date=stamp))
+        return state
 
-    def _write(self, spend: DailySpend) -> None:
+    def read(self, today: str | None = None) -> DailySpend:
+        """Today's spend. Raises ServeStateError like ``read_state``."""
+        return self.read_state(today).spend
+
+    def _write(self, state: ServeState) -> None:
         from kstrl.workqueue import atomic_write
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(
             self.path,
-            json.dumps(spend.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
         )
 
     def charge(
         self,
         usd: float,
         *,
-        lower_bound: bool = False,
-        uncovered_calls: int = 0,
+        covered_calls: int = 0,
+        total_calls: int = 0,
+        unmetered_phases: Sequence[str] = (),
+        metered_run: bool = True,
         today: str | None = None,
     ) -> DailySpend:
-        """Add one run's reported cost to today's total.
+        """Add one run's reported cost and coverage to today's total.
 
-        ``lower_bound`` is sticky for the day: once any run reported
-        partial cost coverage, the day's figure is a floor and stays
-        labelled as one.
+        ``metered_run=False`` records the spend without counting a run,
+        for a launch that never reached an agent (#186 F9: a launch
+        failure previously incremented ``runs`` and then tripped the
+        coverage gate on the next cycle).
         """
         stamp = today or _local_today()
-        current = self.read(stamp)
-        updated = DailySpend(
+        state = self.read_state(stamp)
+        current = state.spend
+        merged_phases = tuple(sorted(
+            set(current.unmetered_phases) | {p for p in unmetered_phases if p}
+        ))
+        spend = DailySpend(
             date=stamp,
             spent_usd=round(current.spent_usd + max(0.0, usd), 6),
-            runs=current.runs + 1,
-            lower_bound=current.lower_bound or lower_bound,
-            uncovered_calls=current.uncovered_calls + max(0, uncovered_calls),
+            runs=current.runs + (1 if metered_run else 0),
+            covered_calls=current.covered_calls + max(0, covered_calls),
+            total_calls=current.total_calls + max(0, total_calls),
+            unmetered_phases=merged_phases,
         )
-        self._write(updated)
-        return updated
+        self._write(replace(
+            state,
+            spend=spend,
+            cost_coverage_seen=state.cost_coverage_seen or covered_calls > 0,
+        ))
+        return spend
+
+    def record_terminal(self, *, poisoned: bool, today: str | None = None) -> int:
+        """Update the authoritative poison streak; returns the new value."""
+        state = self.read_state(today)
+        streak = state.consecutive_poison + 1 if poisoned else 0
+        self._write(replace(state, consecutive_poison=streak))
+        return streak
+
+    def reset_poison_streak(self, today: str | None = None) -> None:
+        state = self.read_state(today)
+        self._write(replace(state, consecutive_poison=0))
 
 
 @dataclass(frozen=True)
@@ -454,19 +606,30 @@ class RunSpend:
     """One run's cost as read back from its event stream."""
 
     cost_usd: float = 0.0
-    lower_bound: bool = False
-    uncovered_calls: int = 0
     cost_calls: int = 0
     usage_calls: int = 0
 
+    @property
+    def uncovered_calls(self) -> int:
+        return max(0, self.usage_calls - self.cost_calls)
+
+    @property
+    def lower_bound(self) -> bool:
+        return self.uncovered_calls > 0
+
 
 def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
-    """Reported cost of one run, with its coverage.
+    """Reported cost of ONE named run, with its coverage.
 
-    Reads through ``kstrl.reducer`` rather than re-parsing the journals,
-    so the daemon's cost figure is the same number the dashboard shows
-    and the per-axis coverage flags (R8/PR #184) come along for free.
+    ``run_id`` must be non-empty and owned by the invocation being
+    charged. Review #186 F2: an empty id made ``load_run_state`` fall
+    back to the NEWEST run on disk, so a failed invocation charged a
+    previous run's spend and could be classified from a stale manifest.
+    An empty id now returns zeros instead of silently reading someone
+    else's run.
     """
+    if not run_id:
+        return RunSpend()
     from kstrl.reducer import load_run_state
 
     try:
@@ -475,11 +638,27 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
         return RunSpend()
     return RunSpend(
         cost_usd=state.cost_usd,
-        lower_bound=state.cost_is_lower_bound,
-        uncovered_calls=max(0, state.usage_calls - state.cost_calls),
         cost_calls=state.cost_calls,
         usage_calls=state.usage_calls,
     )
+
+
+def run_dir_names(root_dir: Path) -> frozenset[str]:
+    """Names of every run directory currently on disk.
+
+    Snapshotted before and after a launch so the daemon charges only the
+    runs THIS invocation created (#186 F2). It also picks up a
+    decompose-kind run dir when one exists, which is the only way the
+    architect phase could ever be charged without changing the
+    architect's own instrumentation (#186 F3).
+    """
+    runs_root = state_dir(root_dir) / "runs"
+    try:
+        return frozenset(
+            entry.name for entry in runs_root.iterdir() if entry.is_dir()
+        )
+    except OSError:
+        return frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +682,7 @@ def classify_run(
     root_dir: Path,
     *,
     run: RunOutcome,
-    manifest_path: Path,
+    manifest_path: Path | None,
 ) -> Outcome:
     """Decide what a finished factory run means for its queue item.
 
@@ -546,19 +725,52 @@ def classify_run(
         )
 
     if run.returncode == 2:
-        # The factory's own "refused to proceed" code. With the run lock
-        # probed before launch and --spec always supplied, the reachable
-        # cause here is the architect halting on a blocker-severity spec
-        # issue - a SPEC failure, and retrying it would re-run the same
-        # architect against the same words.
+        # The factory's own "refused to proceed" code, which covers BOTH
+        # an architect halt on a blocker-severity spec issue and refusal
+        # because another run holds .kstrl/factory.lock. Those need
+        # opposite treatment, and a pre-launch lock probe cannot tell
+        # them apart: the probe releases the lock, so a manual factory
+        # can take it in the gap before our child does (#186 F6, a real
+        # TOCTOU on exactly the distinction this branch relies on).
+        #
+        # So decide from the child's own output, which is evidence, not
+        # inference - and stay UNCLASSIFIABLE when neither marker is
+        # present rather than guessing.
+        tail = run.output_tail
+        if _LOCK_REFUSAL_MARKER in tail:
+            return Outcome(
+                Verdict.RETRY_INFRA,
+                "factory exited 2 because another run held the run lock; "
+                "contention is infrastructural",
+                {"returncode": 2, "cause": "lock_contention"},
+            )
+        if _SPEC_BLOCKER_MARKER in tail:
+            return Outcome(
+                Verdict.SPEC_FAILURE,
+                "factory exited 2: the architect halted on a blocker-severity "
+                "spec issue; the spec needs a human",
+                {"returncode": 2, "cause": "spec_blocker"},
+            )
         return Outcome(
-            Verdict.SPEC_FAILURE,
-            "factory exited 2: the architect halted on a blocker-severity "
-            "spec issue; the spec needs a human",
-            {"returncode": 2},
+            Verdict.UNCLASSIFIABLE,
+            "factory exited 2 but its output named neither a spec blocker "
+            "nor lock contention; refusing to guess which refusal it was",
+            {"returncode": 2, "output_tail": tail[-500:]},
         )
 
-    # Everything else needs the manifest to say something specific.
+    # Everything else needs the manifest to say something specific - and
+    # it must be a manifest THIS invocation wrote. ``None`` means the run
+    # produced no owned artifacts, so there is nothing to read and the
+    # honest verdict is unclassifiable (#186 F2: an empty run id used to
+    # fall back to the newest run on disk).
+    if manifest_path is None:
+        return Outcome(
+            Verdict.UNCLASSIFIABLE,
+            f"exit {run.returncode} and this invocation produced no run "
+            "artifacts of its own; refusing to classify from another run\u2019s "
+            "manifest",
+            {"returncode": run.returncode},
+        )
     from kstrl.manifest import Manifest
 
     try:
@@ -836,17 +1048,33 @@ def subprocess_factory_runner(
     project_name: str,
     pause_before_pr_merge: bool,
     timeout_seconds: float,
+    on_spawn: Callable[[int], None] | None = None,
     caffeinate: bool = True,
 ) -> RunOutcome:
-    """Run ``ks factory`` as a child process.
+    """Run ``ks factory`` as a supervised child process GROUP.
 
     A subprocess rather than an in-process ``run_factory`` call for three
     reasons: a crash or OOM in a run cannot take the daemon with it, the
     ``.kstrl/factory.lock`` flock is released by process death whatever
-    happens, and a timeout is enforceable by killing a process tree.
-    The cost of that choice is that classification reads artifacts from
-    disk instead of holding a ``FactoryResult`` - which is also what
-    makes classification work after a crash.
+    happens, and a timeout is enforceable. The cost of that choice is
+    that classification reads artifacts from disk instead of holding a
+    ``FactoryResult`` - which is also what makes classification work
+    after a crash.
+
+    **Why a process group and not ``subprocess.run(timeout=...)``.**
+    That helper signals only its DIRECT child. On macOS the direct child
+    is the ``caffeinate`` wrapper, so the factory itself is a grandchild
+    and outlived the timeout while this code recorded an infrastructure
+    failure and requeued the item - two factories on one repo, which is
+    exactly what ``factory.lock`` exists to prevent (#186 F1, reproduced:
+    descendants were still running after ``TimeoutExpired``). So:
+    ``start_new_session=True`` puts the child in its own process group,
+    and the timeout path signals the GROUP and waits for it.
+
+    ``on_spawn`` receives the child's pid so the caller can make it the
+    lease owner. Without that the lease records the DAEMON's pid, and a
+    successor daemon would see the daemon gone, judge the lease dead, and
+    requeue a run that is still executing.
     """
     command = [
         *caffeinate_prefix(caffeinate),
@@ -865,21 +1093,168 @@ def subprocess_factory_runner(
     )
     env = dict(os.environ)
     env["KSTRL_NO_TUI"] = "1"
+
+    return run_supervised(
+        command,
+        cwd=root_dir,
+        env=env,
+        timeout_seconds=timeout_seconds,
+        on_spawn=on_spawn,
+    )
+
+
+def run_supervised(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout_seconds: float = 0.0,
+    on_spawn: Callable[[int], None] | None = None,
+) -> RunOutcome:
+    """Run ``command`` in its own process group, enforcing a deadline.
+
+    Split out of :func:`subprocess_factory_runner` so the supervision -
+    the money-critical half - is testable without spawning a factory. The
+    runner above only builds the argv.
+    """
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             command,
-            cwd=str(root_dir),
+            cwd=str(cwd),
             env=env,
-            timeout=timeout_seconds if timeout_seconds > 0 else None,
-            check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
+            # The whole point: an own session/group so descendants are
+            # signallable together.
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired:
-        return RunOutcome(returncode=-9, timed_out=True)
     except OSError as exc:
         return RunOutcome(returncode=-1, launch_error=str(exc))
-    return RunOutcome(returncode=completed.returncode)
+
+    # Captured now, while the child is certainly alive: after it is
+    # reaped the pgid is unrecoverable (#186 F1).
+    try:
+        pgid: int | None = _safe_pgid(process)
+    except OSError:
+        pgid = None
+
+    if on_spawn is not None:
+        on_spawn(process.pid)
+
+    try:
+        output, _ = process.communicate(
+            timeout=timeout_seconds if timeout_seconds > 0 else None,
+        )
+        return RunOutcome(
+            returncode=process.returncode,
+            output_tail=_tail(output),
+        )
+    except subprocess.TimeoutExpired:
+        reaped = terminate_process_group(process, pgid)
+        try:
+            output, _ = process.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, ValueError, OSError):
+            output = ""
+        return RunOutcome(
+            returncode=(
+                process.returncode if process.returncode is not None else -9
+            ),
+            timed_out=True,
+            output_tail=_tail(output),
+            group_reaped=reaped,
+        )
+
+
+#: How much of a child's output to keep. Enough for the exit-2 markers
+#: and a human-readable tail, not enough to hold a whole factory log.
+OUTPUT_TAIL_CHARS = 8000
+
+
+def _tail(output: str | None) -> str:
+    if not output:
+        return ""
+    return output[-OUTPUT_TAIL_CHARS:]
+
+
+#: Grace period between SIGTERM and SIGKILL for a run's process group.
+GROUP_TERM_GRACE_SECONDS = 15.0
+
+
+def terminate_process_group(
+    process: subprocess.Popen[str], pgid: int | None = None,
+) -> bool:
+    """SIGTERM then SIGKILL a child's whole process group; True if reaped.
+
+    Returns False when the group could not be confirmed gone, so a
+    caller never reports a timed-out run as finished while a factory may
+    still be writing to the repo (#186 F1).
+
+    ``pgid`` should be captured at SPAWN time. Looking it up here fails
+    once the direct child has been reaped - and that is precisely the
+    case where descendants may still be alive, so deriving it lazily
+    would report "reaped" for the one situation this function exists to
+    detect. Caught by the test that kills only the direct child.
+    """
+    if pgid is None:
+        try:
+            pgid = _safe_pgid(process)
+        except (ProcessLookupError, OSError):
+            pgid = None
+    if pgid is None:
+        # No group to signal and no id to check: the most we can honestly
+        # say is whether the direct child is gone.
+        return process.poll() is not None
+
+    for sig, wait in (
+        (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS), (signal.SIGKILL, 10.0),
+    ):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        try:
+            process.wait(timeout=wait)
+        except subprocess.TimeoutExpired:
+            continue
+        # The direct child is gone; confirm the group is too.
+        return not process_group_alive(pgid)
+    return not process_group_alive(pgid)
+
+
+def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
+    """The child's process-group id, or None when it is not safe to signal.
+
+    The guards are load-bearing and are the same ones
+    ``verify._signal_process_group`` documents: a mocked ``Popen``'s pid
+    coerces to 1 via ``MagicMock.__index__``, and ``killpg(1, sig)`` is
+    ``kill(-1, sig)`` - signal every process this user owns. With
+    ``start_new_session=True`` the child leads its own group, so a pgid at
+    or below 1, or equal to ours, means something is wrong and the group
+    kill must not proceed.
+    """
+    pid = process.pid
+    if not isinstance(pid, int) or pid <= 1 or not hasattr(os, "killpg"):
+        return None
+    pgid = os.getpgid(pid)
+    if pgid <= 1 or pgid == os.getpgrp():
+        return None
+    return pgid
+
+
+def process_group_alive(pgid: int) -> bool:
+    """Whether any process remains in ``pgid``."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -905,13 +1280,18 @@ def check_budget(
 
     Checked before rather than after because after is a post-mortem: the
     point of a cap is to not spend the money.
+
+    The cap is a LOWER-BOUND cap whenever coverage is partial: it fires
+    at or after the threshold, never before. That is a real safety
+    property but not an exact one, and the reason string says so rather
+    than presenting a floor as a measurement.
     """
     if config.daily_budget_usd <= 0:
         return Admission(allowed=True)
     spend = ledger.read(today)
     if spend.spent_usd < config.daily_budget_usd:
         return Admission(allowed=True)
-    floor = " (a FLOOR: some calls reported no cost)" if spend.lower_bound else ""
+    floor = _floor_note(spend)
     return Admission(
         allowed=False,
         reason=(
@@ -926,64 +1306,72 @@ def check_budget(
     )
 
 
+def _floor_note(spend: DailySpend) -> str:
+    """Say out loud when a total is a floor, and why."""
+    if not spend.lower_bound:
+        return ""
+    parts: list[str] = []
+    if spend.uncovered_calls:
+        parts.append(f"{spend.uncovered_calls} call(s) reported no cost")
+    if spend.unmetered_phases:
+        parts.append("unmetered: " + ", ".join(spend.unmetered_phases))
+    return f" (a FLOOR: {'; '.join(parts)})"
+
+
 def check_cost_coverage(
     ledger: SpendLedger, config: ServeConfig, *, today: str | None = None,
 ) -> Admission:
-    """Refuse to run unattended under a budget we cannot enforce.
+    """Refuse to run under a budget that can never fire.
 
-    ``max_cost_usd`` covers only roles whose adapter reports cost, and
-    the codex adapter reports tokens and no cost. The same gap makes
-    ``daily_budget_usd`` UNENFORCEABLE rather than approximate. PR #184
-    established that the honest response is to make the gap visible
-    instead of estimating across it, so this refuses and names the
-    override rather than quietly running with a cap that does nothing.
+    Three cases, and only the third is unenforceable:
 
-    Only fires once a run has actually reported: with no data yet there
-    is no evidence of a gap, and refusing on absence of evidence would
-    make the daemon unusable on a fresh repo.
+    - full coverage: the cap is exact.
+    - PARTIAL coverage: the cap is a lower-bound cap. It still fires,
+      just later than the threshold. Allowed, and labelled a floor
+      everywhere it is reported.
+    - ZERO coverage: no call has ever reported a cost figure, so the
+      total stays at $0 forever and the cap can never fire. Refused.
+
+    The distinction is drawn from CALL COUNTS, not from whether the
+    dollar total is positive: a fully-metered run that legitimately cost
+    $0 has perfect coverage (#186 F9).
+
+    Evaluated before the first claim using the persisted
+    ``cost_coverage_seen`` flag, so an unenforceable budget is caught
+    without spending a run to discover it (#186 F8).
     """
     if config.daily_budget_usd <= 0 or config.allow_uncovered_cost:
         return Admission(allowed=True)
-    spend = ledger.read(today)
-    if spend.runs == 0:
-        return Admission(allowed=True)
-    if spend.spent_usd > 0 and not spend.lower_bound:
+    state = ledger.read_state(today)
+    if state.cost_coverage_seen:
         return Admission(allowed=True)
     return Admission(
         allowed=False,
         reason=(
-            f"daily_budget_usd is set to ${config.daily_budget_usd:.2f} but "
-            f"{spend.uncovered_calls} of this day's calls reported no cost, "
-            "so the budget cannot be enforced. The unreported spend is "
-            "deliberately NOT estimated. Use a cost-reporting agent, or set "
-            "[serve] allow_uncovered_cost = true to run anyway."
+            f"daily_budget_usd is ${config.daily_budget_usd:.2f} but no call "
+            "has ever reported a cost figure on this repo, so the cap can "
+            "never fire. The unreported spend is deliberately NOT estimated. "
+            "Use a cost-reporting agent (the codex adapter reports tokens and "
+            "no cost), or set [serve] allow_uncovered_cost = true to accept an "
+            "unenforceable budget."
         ),
         pause_reason="daily budget is unenforceable: no cost coverage",
     )
 
 
-def consecutive_poison_count(queue: Queue) -> int:
-    """How many items poisoned in a row, most recent first.
+def consecutive_poison_count(ledger: SpendLedger) -> int:
+    """Poisons in a row, from the daemon's authoritative state.
 
-    Derived from the journal rather than a counter file: the journal is
-    already the audit trail, and a separate counter is one more thing
-    that can disagree with reality. Only terminal transitions count -
-    a requeue or a lease in between is not a verdict.
+    Read from :class:`ServeState`, not from the queue journal. The
+    journal is best-effort by design (``Queue._journal`` swallows append
+    failures; ``journal_entries`` returns ``[]`` on any read error), so
+    deriving a spend backstop from it meant an unreadable journal
+    reported a zero streak and re-allowed spending (#186 F5).
     """
-    terminal = {"done", "poison"}
-    streak = 0
-    for entry in reversed(queue.journal_entries()):
-        to_state = str(entry.get("to") or "")
-        if to_state not in terminal:
-            continue
-        if to_state == "poison":
-            streak += 1
-            continue
-        break
-    return streak
+    return ledger.read_state().consecutive_poison
 
 
-def check_poison_breaker(queue: Queue, config: ServeConfig) -> Admission:
+def check_poison_breaker(ledger: SpendLedger, config: ServeConfig) -> Admission:
     """Pause everything after a run of poisoned items.
 
     The failure this catches is systemic rather than per-item: if the
@@ -992,7 +1380,7 @@ def check_poison_breaker(queue: Queue, config: ServeConfig) -> Admission:
     Only a cross-item signal notices, and by then the queue has spent
     once per item.
     """
-    streak = consecutive_poison_count(queue)
+    streak = consecutive_poison_count(ledger)
     if streak < config.max_consecutive_poison:
         return Admission(allowed=True)
     return Admission(
@@ -1049,7 +1437,9 @@ def factory_lock_held(root_dir: Path) -> bool:
     try:
         handle = open(lock_path, "a+")
     except OSError:
-        return False
+        # Fail CLOSED: an unopenable lock file is not evidence that no
+        # run owns this root (#186 F6).
+        return True
     try:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1109,6 +1499,13 @@ class CycleResult:
     ran_item: str = ""
     verdict: Verdict | None = None
     reason: str = ""
+    #: An item ended in a state only a human can move. Set on EVERY
+    #: poison and refusal path, including the reaper's and the merge-gate
+    #: refusal, neither of which sets ``ran_item``. Review #186 F10: the
+    #: CLI derived its exit status from ``Verdict.may_retry``, which
+    #: stays true for an infra verdict whose last attempt was spent, so
+    #: `ks serve --once` exited 0 on a poisoned item.
+    needs_human: bool = False
     reaped: ReapResult = field(default_factory=ReapResult)
     swept_staging: int = 0
     paused: str = ""
@@ -1176,14 +1573,23 @@ def _file_inbox_item(
 
 
 def _pause_queue(
-    queue: Queue, admission: Admission, observer: ServeObserver,
+    queue: Queue,
+    admission: Admission,
+    observer: ServeObserver,
+    root_dir: Path,
 ) -> str:
-    """Apply a pausing admission decision."""
-    queue.pause(
-        reason=admission.pause_reason or admission.reason,
-        actor="serve",
-        resume_after=admission.resume_after,
-    )
+    """Apply a pausing admission decision, under the queue mutex.
+
+    Taken under the lock for the same reason the elapsed-pause clear is
+    (#186 F7): a pause write that races an operator\u2019s write can lose one
+    of them, and losing the operator\u2019s is the dangerous direction.
+    """
+    with queue_lock(root_dir, blocking=True):
+        queue.pause(
+            reason=admission.pause_reason or admission.reason,
+            actor="serve",
+            resume_after=admission.resume_after,
+        )
     observer.warn(f"Queue paused: {admission.pause_reason or admission.reason}")
     return admission.pause_reason or admission.reason
 
@@ -1218,16 +1624,38 @@ def serve_cycle(
 
     queue.ensure_dirs()
 
+    # The daemon's own state is consulted by three gates. If it cannot be
+    # read, none of them can be evaluated, so stop before claiming
+    # anything (#186 F4/F5) rather than proceeding with unknown totals.
+    try:
+        ledger.read_state()
+    except ServeStateError as exc:
+        result.skipped = str(exc)
+        result.needs_human = True
+        obs.err(str(exc))
+        result.inbox_items += (_file_inbox_item(
+            root_dir,
+            kind_name="budget_overrun",
+            title="Continuous intake halted: unreadable spend ledger",
+            detail=str(exc),
+            dedupe_key=f"serve-ledger:{ledger.path}",
+            evidence={"path": str(ledger.path)},
+        ),)
+        return result
+
     # 1. Recovery, under the mutex: staging leftovers and dead leases.
     with queue_lock(root_dir, blocking=True):
         result.swept_staging = queue.sweep_staging()
         result.reaped = reap_leases(queue, now=moment)
+        for _item_id in result.reaped.poisoned:
+            ledger.record_terminal(poisoned=True)
     if result.swept_staging:
         obs.info(f"Swept {result.swept_staging} abandoned staging item(s)")
     for item_id in result.reaped.requeued + result.reaped.failed_for_retry:
         obs.warn(f"Reaped {item_id[:12]}: owner gone, requeued")
     for item_id in result.reaped.poisoned:
         obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
+        result.needs_human = True
         result.inbox_items += (_file_inbox_item(
             root_dir,
             kind_name="halted_run",
@@ -1241,33 +1669,52 @@ def serve_cycle(
             evidence={"item_id": item_id, "cause": "interrupted run"},
         ),)
 
-    # 2. An elapsed resume_after clears the pause on its own; that is what
-    #    makes the daily-budget stop self-healing rather than a weekend
-    #    of dead queue.
-    pause = queue.pause_state()
-    if pause.paused and not pause.active(moment):
-        queue.resume(actor="serve")
+    # 2. The pause marker is read AND cleared under the mutex, re-reading
+    #    inside it. Review #186 F7: read and clear outside the lock let an
+    #    operator's fresh emergency pause be overwritten by the daemon
+    #    clearing a previously-expired budget pause, after which the queue
+    #    started work the operator had just stopped.
+    with queue_lock(root_dir, blocking=True):
+        pause = queue.pause_state()
+        if pause.paused and not pause.active(moment):
+            queue.resume(actor="serve")
+            pause = queue.pause_state()
+            cleared = True
+        else:
+            cleared = False
+    if cleared:
         obs.info("Pause window elapsed; resuming intake")
-    elif pause.active(moment):
+    if pause.active(moment):
         result.skipped = f"paused: {pause.reason}"
         return result
 
-    # 3. Gates, cheapest and most consequential first.
-    for admission in (
-        check_poison_breaker(queue, cfg),
-        check_cost_coverage(ledger, cfg),
-        check_budget(ledger, cfg),
-    ):
+    # 3. Gates, all evaluated BEFORE the claim.
+    try:
+        gates = (
+            check_poison_breaker(ledger, cfg),
+            check_cost_coverage(ledger, cfg),
+            check_budget(ledger, cfg),
+        )
+    except ServeStateError as exc:
+        result.skipped = str(exc)
+        result.needs_human = True
+        obs.err(str(exc))
+        return result
+
+    for admission in gates:
         if admission.allowed:
             continue
         if admission.pause_reason:
-            result.paused = _pause_queue(queue, admission, obs)
+            result.paused = _pause_queue(queue, admission, obs, root_dir)
+            result.needs_human = True
             result.inbox_items += (_file_inbox_item(
                 root_dir,
                 kind_name="budget_overrun",
                 title="Continuous intake paused",
                 detail=admission.reason,
-                dedupe_key=f"serve-pause:{_local_today()}:{admission.pause_reason[:40]}",
+                dedupe_key=(
+                    f"serve-pause:{_local_today()}:{admission.pause_reason[:40]}"
+                ),
                 evidence={"reason": admission.reason},
             ),)
         result.skipped = admission.reason
@@ -1281,7 +1728,9 @@ def serve_cycle(
 
     if factory_lock_held(root_dir):
         # Not a failure and not the item's fault: something else owns the
-        # repo. Wait rather than charging an attempt.
+        # repo. Wait rather than charging an attempt. This is a courtesy
+        # check only - it cannot make exit 2 unambiguous, which is why
+        # classify_run reads the child's output instead (#186 F6).
         result.skipped = "a factory run already holds this root"
         obs.info(result.skipped)
         return result
@@ -1299,11 +1748,15 @@ def serve_cycle(
                 reason=f"merge-gate conflict: {gate.refusal}",
                 actor="serve",
             )
+            ledger.record_terminal(poisoned=True)
             obs.err(f"{candidate.item_id[:12]}: {gate.refusal}")
+            result.needs_human = True
             result.inbox_items += (_file_inbox_item(
                 root_dir,
                 kind_name="merge_gate",
-                title=f"Queue item {candidate.item_id[:12]} needs a merge decision",
+                title=(
+                    f"Queue item {candidate.item_id[:12]} needs a merge decision"
+                ),
                 detail=gate.refusal,
                 dedupe_key=f"queue-merge-gate:{candidate.item_id}",
                 evidence={"item_id": candidate.item_id},
@@ -1322,8 +1775,10 @@ def serve_cycle(
     except QueueBudgetExhausted as exc:
         with queue_lock(root_dir, blocking=True):
             queue.poison(leased, reason=str(exc), actor="serve")
+            ledger.record_terminal(poisoned=True)
         obs.err(str(exc))
         result.skipped = str(exc)
+        result.needs_human = True
         return result
 
     result.ran_item = running.item_id
@@ -1332,6 +1787,23 @@ def serve_cycle(
         f"attempt {running.attempts}/{running.max_attempts}, "
         f"merge gate {'on' if gate.pause_before_pr_merge else 'off'}"
     )
+
+    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    # Snapshot BEFORE the launch so only runs this invocation created are
+    # charged or trusted (#186 F2). Without it, an early failure charged a
+    # previous run's spend and could be classified from a stale manifest.
+    runs_before = run_dir_names(root_dir)
+
+    def _adopt(child_pid: int) -> None:
+        # The child, not the daemon, owns the lease for the duration of
+        # the run (#186 F1).
+        try:
+            with queue_lock(root_dir, blocking=True):
+                current = queue.get(running.item_id)
+                if current is not None:
+                    queue.adopt_lease(current, pid=child_pid, actor="serve")
+        except (QueueError, OSError) as exc:
+            obs.warn(f"  could not adopt the run\u2019s lease: {exc}")
 
     run_factory_fn = runner or _default_runner(cfg)
     spec_path = queue.spec_path(running)
@@ -1342,36 +1814,88 @@ def serve_cycle(
         project_name=project_name,
         pause_before_pr_merge=gate.pause_before_pr_merge,
         timeout_seconds=cfg.factory_timeout_seconds,
+        on_spawn=_adopt,
     )
+
+    if outcome.timed_out and not outcome.group_reaped:
+        # A descendant may still be running against this repo. Do NOT
+        # release the item for another attempt (#186 F1).
+        detail = (
+            "the run timed out and its process group could not be confirmed "
+            "reaped, so a factory may still be executing against this repo"
+        )
+        with queue_lock(root_dir, blocking=True):
+            current = queue.get(running.item_id)
+            if current is not None:
+                queue.poison(current, reason=detail, actor="serve")
+                ledger.record_terminal(poisoned=True)
+        obs.err(f"  {running.item_id[:12]}: {detail}")
+        result.verdict = Verdict.UNCLASSIFIABLE
+        result.reason = detail
+        result.needs_human = True
+        result.inbox_items += (_file_inbox_item(
+            root_dir,
+            kind_name="halted_run",
+            title=f"Queue item {running.item_id[:12]}: orphaned factory process",
+            detail=detail,
+            dedupe_key=f"queue-orphan:{running.item_id}",
+            evidence={"item_id": running.item_id},
+        ),)
+        return result
 
     # 6. Charge the spend before deciding anything, so a classification
-    #    bug cannot also lose the accounting.
-    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-    run_id = _run_id_from_manifest(manifest_path)
-    spend = read_run_spend(root_dir, run_id)
+    #    bug cannot also lose the accounting. Only NEW run dirs count.
+    owned_runs = sorted(run_dir_names(root_dir) - runs_before)
+    total = 0.0
+    covered_calls = 0
+    total_calls = 0
+    for rid in owned_runs:
+        spend = read_run_spend(root_dir, rid)
+        total += spend.cost_usd
+        covered_calls += spend.cost_calls
+        total_calls += spend.usage_calls
+
+    # The architect always spends and never reports: decompose_spec calls
+    # the agent but emits no usage events at all, so its cost is real and
+    # invisible. Naming it keeps the day's total honestly labelled a
+    # floor instead of estimating it (#186 F3).
+    unmetered = ("architect",)
     charged = ledger.charge(
-        spend.cost_usd,
-        lower_bound=spend.lower_bound,
-        uncovered_calls=spend.uncovered_calls,
+        total,
+        covered_calls=covered_calls,
+        total_calls=total_calls,
+        unmetered_phases=unmetered,
+        metered_run=bool(owned_runs),
     )
-    result.charged_usd = spend.cost_usd
+    result.charged_usd = total
     obs.info(
-        f"  charged ${spend.cost_usd:.2f}"
-        + (" (a floor: some calls reported no cost)" if spend.lower_bound else "")
+        f"  charged ${total:.2f} over {len(owned_runs)} run dir(s)"
+        + (
+            f"; {total_calls - covered_calls} call(s) reported no cost"
+            if total_calls > covered_calls else ""
+        )
         + f"; today ${charged.spent_usd:.2f}"
+        + (" (a floor)" if charged.lower_bound else "")
     )
 
-    verdict = classify_run(root_dir, run=outcome, manifest_path=manifest_path)
+    # Classification may only read a manifest this invocation produced.
+    manifest_run_after = _run_id_from_manifest(manifest_path)
+    owns_manifest = bool(manifest_run_after) and manifest_run_after in owned_runs
+    verdict = classify_run(
+        root_dir,
+        run=outcome,
+        manifest_path=manifest_path if owns_manifest else None,
+    )
     result.verdict = verdict.verdict
     result.reason = verdict.reason
     evidence = dict(verdict.evidence)
     evidence.update({
         "item_id": running.item_id,
-        "run_id": run_id,
+        "owned_run_ids": owned_runs,
         "attempts": running.attempts,
         "max_attempts": running.max_attempts,
-        "cost_usd": spend.cost_usd,
-        "cost_is_lower_bound": spend.lower_bound,
+        "cost_usd": total,
+        "cost_is_lower_bound": charged.lower_bound,
     })
 
     with queue_lock(root_dir, blocking=True):
@@ -1381,6 +1905,7 @@ def serve_cycle(
             return result
         if verdict.verdict is Verdict.SUCCESS:
             queue.finish_ok(current, actor="serve")
+            ledger.record_terminal(poisoned=False)
             obs.info(f"  {running.item_id[:12]} done")
             return result
 
@@ -1411,7 +1936,9 @@ def serve_cycle(
         queue.poison(
             failed, reason=f"{verdict.reason}{exhausted}", actor="serve",
         )
+        ledger.record_terminal(poisoned=True)
 
+    result.needs_human = True
     obs.err(f"  {running.item_id[:12]} poisoned: {verdict.reason}")
     result.inbox_items += (_file_inbox_item(
         root_dir,
@@ -1425,7 +1952,7 @@ def serve_cycle(
         ),
         dedupe_key=f"queue-poison:{running.item_id}",
         evidence=evidence,
-        run_id=run_id,
+        run_id=owned_runs[-1] if owned_runs else "",
     ),)
     return result
 
@@ -1440,6 +1967,7 @@ def _default_runner(config: ServeConfig) -> FactoryRunner:
         project_name: str,
         pause_before_pr_merge: bool,
         timeout_seconds: float,
+        on_spawn: Callable[[int], None] | None = None,
     ) -> RunOutcome:
         return subprocess_factory_runner(
             root_dir=root_dir,
@@ -1447,6 +1975,7 @@ def _default_runner(config: ServeConfig) -> FactoryRunner:
             project_name=project_name,
             pause_before_pr_merge=pause_before_pr_merge,
             timeout_seconds=timeout_seconds,
+            on_spawn=on_spawn,
             caffeinate=config.caffeinate,
         )
 
@@ -1471,7 +2000,10 @@ def _run_id_from_manifest(manifest_path: Path) -> str:
         return ""
     if not isinstance(data, dict):
         return ""
-    run_id = data.get("run_id")
+    # "runId", not "run_id": Manifest.to_dict is camelCase on disk.
+    # Review #186 F2 - reading the snake_case key returned "" for every
+    # real manifest, which then selected the NEWEST run instead.
+    run_id = data.get("runId")
     return run_id if isinstance(run_id, str) else ""
 
 
@@ -1516,9 +2048,20 @@ def serve(
         if once:
             return [_cycle()]
 
-        results: list[CycleResult] = []
+        # A bounded window, not a growing list. Review #186 F11: the
+        # unbounded daemon path appended one CycleResult per poll forever
+        # with no consumer - the CLI catches KeyboardInterrupt outside
+        # this call and discards the value - so memory grew by
+        # construction. Bounded runs still return every result.
+        if max_cycles:
+            bounded: list[CycleResult] = []
+            while True:
+                bounded.append(_cycle())
+                if len(bounded) >= max_cycles:
+                    return bounded
+                sleep(cfg.poll_interval_seconds)
+
+        recent: deque[CycleResult] = deque(maxlen=RECENT_CYCLE_WINDOW)
         while True:
-            results.append(_cycle())
-            if max_cycles and len(results) >= max_cycles:
-                return results
+            recent.append(_cycle())
             sleep(cfg.poll_interval_seconds)

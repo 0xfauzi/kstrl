@@ -666,6 +666,85 @@ whenever any run under-reported, never converts unreported calls into an
 estimated dollar figure, and `ks serve` refuses to run unattended under
 an unenforceable budget unless `[serve] allow_uncovered_cost = true`.
 
+**Review corrections (PR #186).** Eleven gaps were caught in review and
+closed before merge, all reproduced against the submitted code first.
+Recorded because eight were enforcement bypasses in the unattended
+spend path, and two broke guarantees the PR body had claimed:
+
+1. **The timeout killed only the direct child.** `subprocess.run(timeout=)`
+   signals its immediate child, which on macOS is the `caffeinate`
+   wrapper - so the factory was a grandchild and outlived the timeout
+   while the daemon recorded an infra failure and requeued the item. Two
+   factories on one repo, which is what `factory.lock` exists to prevent.
+   Now `Popen(start_new_session=True)` plus `killpg`, with the pgid
+   captured AT SPAWN (after the child is reaped it is unrecoverable, and
+   that is exactly the case where descendants survive). A timeout whose
+   group cannot be confirmed dead poisons instead of retrying. The
+   factory child also adopts the queue lease, so a successor's reaper
+   cannot requeue a live run.
+2. **Accounting and classification read the wrong run.** `serve` read
+   `run_id` from the manifest but `Manifest.to_dict` writes `runId`, so
+   it got `""` for every real manifest - and an empty id made
+   `load_run_state` fall back to the NEWEST run on disk. A failed
+   invocation charged a previous run's spend and could be classified from
+   a stale manifest. Ownership is now a pre/post snapshot of run
+   directories: only runs THIS invocation created are charged, and the
+   manifest is read only when its run id is among them.
+3. **The architect's spend was invisible.** `decompose_spec` calls the
+   agent but emits no usage events at all, so every queued item's
+   mandatory architect call was missing from the budget. Metering it
+   belongs with the architect's instrumentation, not R8.6, so the phase
+   is recorded as a named `unmetered_phases` entry and the day's total is
+   always labelled a FLOOR rather than estimated.
+4. **The spend ledger failed OPEN.** An unparseable file read as a fresh
+   zero day, so charging $9, corrupting it, and setting a $5 budget
+   allowed another run - indefinitely, because the other backstops are
+   per-item and this is the only queue-wide limit. `ServeStateError` now
+   halts the cycle; `FileNotFoundError` remains the one read failure that
+   legitimately means "first run".
+5. **The poison breaker was built on the queue journal**, which is
+   best-effort by design (`_journal` swallows append failures,
+   `journal_entries` returns `[]` on any read error). Losing the journal
+   reported a zero streak and re-allowed spending with three poisoned
+   items on disk. The streak is now authoritative state in `ServeState`,
+   reset by a success and NOT by a new day.
+6. **A pre-launch lock probe cannot disambiguate exit 2.** The probe
+   releases the lock, so a manual factory can take it in the gap - and
+   `ks factory` exits 2 for both lock contention and an architect halt.
+   The classifier now reads the child's own OUTPUT for each refusal's
+   marker and stays unclassifiable when neither is present.
+   `factory_lock_held` also fails closed on an unopenable lock file.
+7. **The elapsed-pause clear raced operator pauses.** Read and clear
+   happened outside the queue mutex, so a fresh emergency pause could be
+   overwritten. Both now happen under the lock, re-read inside it.
+8. **One full run was spent before an unenforceable budget was noticed.**
+   Coverage is now resolved from a persisted `cost_coverage_seen` flag
+   before the first claim.
+9. **Coverage was inferred from dollars, not calls.** A fully-metered run
+   that legitimately cost $0 was rejected as having no coverage, and a
+   launch failure counted as a metered run. The ledger now stores
+   covered/total call counts, which makes the three cases distinct: exact
+   cap, lower-bound cap (fires late - still a bound), and unenforceable.
+10. **The exit status followed the classifier, not the outcome.** An
+    infra verdict whose last attempt was spent is poisoned, yet
+    `may_retry` stays true, so `ks serve --once` exited 0 on work waiting
+    for a human - as did the reaper and merge-gate poison paths, which
+    set no `ran_item`. `CycleResult.needs_human` is now set on every
+    poison and refusal path and drives the exit code.
+11. **The daemon retained every poll result forever** with no consumer.
+    Bounded runs still return everything; the unbounded path keeps a
+    fixed window.
+
+All eleven fixes are mutation-checked (36 mutations, 36 caught). Nine of
+the first-draft tests were NOT discriminating and were rewritten before
+being counted - including one where the autouse fixture patched the very
+function under test, so it passed regardless of that function's
+behaviour, and one where a spy counted the liveness probe
+(`killpg(pgid, 0)`) as if it were the kill. One "missed" mutation turned
+out not to be a defect at all: dropping the spawn-time pgid is
+behaviourally identical on the timeout path, so that test now asserts
+the wiring and says so.
+
 **Open R8.2 tension found while building PR 2.** `run_factory` assigns
 `factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge`
 unconditionally, so at L3+ the ladder OVERRIDES an explicit request for

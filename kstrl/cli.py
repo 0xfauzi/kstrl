@@ -4046,8 +4046,21 @@ def serve(
             "paused",
             f"yes - {pause.reason}" if pause.active() else "no",
         )
-        spend = ledger.read()
-        floor = " (a FLOOR: some calls reported no cost)" if spend.lower_bound else ""
+        from kstrl.serve import ServeStateError
+
+        try:
+            spend = ledger.read()
+        except ServeStateError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        floor = (
+            f" (a FLOOR: {spend.uncovered_calls} call(s) reported no cost"
+            + (
+                "; unmetered: " + ", ".join(spend.unmetered_phases)
+                if spend.unmetered_phases else ""
+            )
+            + ")"
+        ) if spend.lower_bound else ""
         ui_impl.kv(
             "today", f"${spend.spent_usd:.2f} over {spend.runs} run(s){floor}",
         )
@@ -4056,13 +4069,13 @@ def serve(
             f"${config.daily_budget_usd:.2f}"
             if config.daily_budget_usd > 0 else "unset (no cap)",
         )
-        ui_impl.kv("consecutive poison", str(consecutive_poison_count(queue)))
+        ui_impl.kv("consecutive poison", str(consecutive_poison_count(ledger)))
         ui_impl.kv(
             "factory lock", "held by another run" if factory_lock_held(root_dir)
             else "free",
         )
         for label, admission in (
-            ("poison breaker", check_poison_breaker(queue, config)),
+            ("poison breaker", check_poison_breaker(ledger, config)),
             ("cost coverage", check_cost_coverage(ledger, config)),
             ("budget", check_budget(ledger, config)),
             ("inbox cap", check_inbox_cap(root_dir)),
@@ -4107,11 +4120,19 @@ def serve(
     ui_impl.info("")
     ui_impl.kv("cycles", str(len(results)))
     ui_impl.kv("items run", str(len(ran)))
-    # Nonzero only when an item ended up needing a human, so a launchd
-    # KeepAlive job's exit status means something.
-    poisoned = [r for r in ran if r.verdict is not None and not r.verdict.may_retry
-                and str(r.verdict) != "success"]
-    sys.exit(1 if poisoned else 0)
+    # Derived from the TERMINAL queue outcome, not from the classifier's
+    # retry permission. Review #186 F10: an infra verdict whose last
+    # attempt was spent is poisoned by serve_cycle, yet
+    # Verdict.RETRY_INFRA.may_retry stays true - and the reaper and
+    # merge-gate poison paths set no ran_item at all - so the old filter
+    # exited 0 on work that was waiting for a human.
+    needs_human = [r for r in results if r.needs_human]
+    if needs_human:
+        ui_impl.warn(
+            f"{len(needs_human)} cycle(s) produced work awaiting a human; "
+            "see `ks inbox ls` and `ks queue ls --state poison`"
+        )
+    sys.exit(1 if needs_human else 0)
 
 
 class _ServeUiObserver:
