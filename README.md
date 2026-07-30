@@ -235,6 +235,7 @@ ks queue resume                 Start admitting queued work again.
 ks queue retry ITEM_ID          Send a failed or poisoned item back to queued.
 ks queue rm ITEM_ID             Delete an item and its spec.
 ks queue show ITEM_ID           Show one item in full, with its transition history.
+ks queue sync                   Pull labelled GitHub issues into the queue (R8.6).
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
 ks serve                        Drain the continuous-intake queue (R8.6).
@@ -375,6 +376,18 @@ enabled = true                 # record exceptions awaiting a human decision
 open_item_cap = 50             # open items after which queue intake pauses; 0 = unbounded
 snooze_hours = 24.0            # default snooze TTL in hours; snoozed items return
 notify_action_required = true  # notify on action-required items and demotions only
+
+# GitHub Issues remote inbox (R8.6)
+[intake_github]
+enabled = false                # poll GitHub Issues for labelled work (opt-in outbound poller)
+repo = ""                      # owner/name to poll; empty resolves from the checkout's remote
+queued_label = "kstrl:queued"  # the trigger label; applying it requires repo write access
+label_prefix = "kstrl:"        # prefix for the state labels written back to the issue
+max_items_per_sync = 5         # upper bound on items admitted per sync
+default_priority = 0           # queue priority given to remote-sourced items
+comment_on_result = true       # post the queue's verdict back to the source issue
+dry_run = false                # poll and log, but send no labels or comments
+timeout_seconds = 60.0         # per-gh-invocation timeout in seconds
 
 # Continuous-intake daemon (R8.6)
 [serve]

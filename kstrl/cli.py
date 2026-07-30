@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
     from kstrl.interaction import InteractionChannel
 
+from dataclasses import replace
+
 import click
 from click.core import ParameterSource
 
@@ -3974,6 +3976,91 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     waiting = len(queue.items((ItemState.QUEUED,)))
     ui_impl.ok(f"Queue resumed; {waiting} item(s) waiting.")
     sys.exit(0)
+
+
+@queue_group.command(name="sync")
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Poll and report what would be enqueued, writing nothing",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def queue_sync(
+    dry_run: bool, root: Path | None, ui: str, no_color: bool,
+) -> None:
+    """Pull labelled GitHub issues into the queue (R8.6).
+
+    Polls open issues carrying the trigger label and enqueues the ones
+    not already seen. Remote items ALWAYS stop at the PR for a human.
+
+    The label is the authorization: applying it needs write access to the
+    repository, so an issue from a stranger cannot queue a factory run.
+    """
+    from kstrl.intake_github import GitHubIntakeConfig, IntakeError
+    from kstrl.intake_github import sync as run_sync
+    from kstrl.workqueue import QueueError, QueueLockedError, queue_lock
+
+    root_dir, queue = _queue_for(root)
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        config = GitHubIntakeConfig.load(root_dir)
+    except (IntakeError, ValueError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    if not config.enabled:
+        ui_impl.err(
+            "GitHub intake is off. Set [intake_github] enabled = true in "
+            "kstrl.toml (or KSTRL_INTAKE_GITHUB_ENABLED=1)."
+        )
+        sys.exit(1)
+
+    # --dry-run runs the PRODUCTION planner with writes disabled, rather
+    # than a second decision tree. Review #187 F4/F11: the old dry-run
+    # had its own logic that ignored the admission cap, and a dry run
+    # that disagrees with the real thing is worse than none.
+    if dry_run:
+        config = replace(config, dry_run=True)
+
+    try:
+        with queue_lock(root_dir):
+            result = run_sync(queue, config, root_dir)
+    except QueueLockedError as exc:
+        ui_impl.err(
+            f"{exc}. Another queue operation is in progress; retry shortly."
+        )
+        sys.exit(1)
+    except (QueueError, OSError) as exc:
+        ui_impl.err(f"Sync failed: {exc}")
+        sys.exit(1)
+
+    heading = "Would sync from" if dry_run else "Sync from"
+    ui_impl.section(f"{heading} {result.repo or 'unknown repo'}")
+    ui_impl.kv("label", config.queued_label)
+    ui_impl.kv("polled", str(result.polled))
+    if dry_run:
+        ui_impl.kv("would enqueue", str(len(result.would_enqueue)))
+    else:
+        ui_impl.kv("enqueued", str(len(result.enqueued)))
+
+    for entry in result.planned:
+        ref = entry.issue.source_ref(result.repo)
+        verdict = "ENQUEUE" if entry.decision.admits else str(entry.decision)
+        line = f"  {ref:<28} {verdict:<22} {entry.issue.title}"
+        if entry.decision.admits:
+            ui_impl.ok(line)
+        elif entry.decision is entry.decision.__class__.REFUSE_UNAUTHORIZED:
+            ui_impl.err(f"{line}\n      {entry.reason}")
+        else:
+            ui_impl.info(f"{line}  ({entry.reason})")
+    if not result.planned:
+        ui_impl.info("  nothing labelled")
+
+    for error in result.errors:
+        ui_impl.err(f"  {error}")
+    # Nonzero on error so a cron/launchd wrapper notices. Partial success
+    # is real: items already enqueued stay enqueued.
+    sys.exit(1 if result.errors else 0)
 
 
 @cli.command()

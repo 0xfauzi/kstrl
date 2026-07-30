@@ -616,13 +616,98 @@ level-dependent behavior tested; calibration captures the family delta.
 
 Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
 
-Landing in four slices; PRs 1-2 of 4 are in. Shipped so far:
+Landing in four slices; PRs 1-3 of 4 are in. Shipped so far:
 `kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
 mutex, pid/ttl leases, journal, pause marker) with the `ks queue
 add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
 (`ks serve [--once] [--dry-run]`, lease reaper, retry classifier, daily
-spend ledger, poison breaker, `caffeinate -i`). The GitHub adapter is
-PR 3; the launchd plist and its docs are PR 4.
+spend ledger, poison breaker, `caffeinate -i`), and
+`kstrl/intake_github.py` + `ks queue sync` (label polling, processed-ids
+ledger, label/comment writeback). The launchd plist and its docs are PR 4.
+
+**GitHub intake (PR 3).** The trigger is the LABEL, not the issue, and
+that is the entire access-control story: applying a label needs write
+access, so on a public repo a stranger can open an issue but cannot queue
+a factory run. Remote items are forced to `stop_at_pr` regardless of any
+label or config value - an issue label is the last place a merge decision
+should be settable from. Idempotency has two halves: `find_by_source_ref`
+covers items still in the queue, and the processed-ids ledger covers
+items that have already left it (without which a completed issue would be
+re-enqueued on the very next poll). The adapter is strictly additive:
+every `gh` call returns a result object rather than raising, so a GitHub
+outage produces an empty sync instead of a stalled queue.
+
+Recorded because the plan claimed otherwise (H4): this does NOT use
+ETag-conditional requests. `gh issue list` exposes no ETag, so the saving
+R8.6 attributed to ETags is not realised. It is also not needed at this
+cadence - one call per poll interval is ~60/hour against a 5,000/hour
+budget.
+
+**Review corrections (PR #187).** Twelve gaps were caught in review and
+closed before merge, all reproduced against the submitted code first. Two
+invalidated claims the PR itself made:
+
+1. **The authorization was not bound to the bytes it authorized.** GitHub
+   lets an issue AUTHOR edit the body after the fact, so a contributor
+   could submit something benign, wait for a maintainer to label it, then
+   rewrite the body - and those new bytes became factory input under an
+   authorization granted for different ones. One GraphQL call now fetches
+   the trigger label's timestamp and the body's `lastEditedAt`; an edit
+   after authorization is refused. Fails closed on every uncertainty.
+2. **The stated security premise was FALSE.** Applying a label needs the
+   **Triage** role, not push access, so on an organization repo a triager
+   who cannot push code can authorize factory spend - and any Action with
+   `issues: write` can label. The claim "requires write access" appeared
+   in the module docstring, the config comment, the CLI help, and the PR
+   body; all corrected, residual risk named, and #188 opened to replace
+   the inherited permission with an explicit actor allowlist.
+3. **Cross-repository execution.** `target_repo` was metadata only and
+   `serve` always runs in its own `root_dir`, so `repo = "B"` inside
+   checkout A admitted B's issues and would have opened a PR in A. The
+   inbox must now match the checkout.
+4. **`dry_run` was not side-effect free** - it suppressed the remote
+   writes but still called `queue.add`, so with `ks serve` active a "dry
+   run" could launch paid work. Together with the CLI dry-run ignoring
+   the admission cap, both had one root cause: two decision trees. There
+   is now a single side-effect-free `plan_sync` used by both, so a dry run
+   cannot disagree with the real thing.
+5. **Admission and dedupe were not transactional.** `queue.add` publishes
+   atomically, so a failing `ledger.record` left a live queued item with
+   no processed entry AND escaped the whole batch. Now rolled back with a
+   structured error per item.
+6. **The poll window could not find eligible work.** A fixed `2 x cap`
+   window filled with skips hid eligible issues indefinitely, and sorting
+   one truncated page does not establish FIFO. Ordering is now requested
+   (`sort:created-asc`) and the window widens until the cap is filled or
+   the inbox is exhausted. The first fix put that loop inside the poll,
+   which was structurally wrong: eligibility is only knowable after
+   planning, so the loop belongs where planning happens.
+7. **A malformed poll looked like a healthy empty one**, so no cron or
+   launchd wrapper could alert. Per-entry tolerance kept; the top level
+   is strict.
+8. **Remote labels did not track the queue.** Admission labelled the
+   issue `running` while the item sat in QUEUED, so a paused or
+   backlogged item read as running with no process. Labels now follow real
+   transitions - `running` at `queue.start`, `failed` on a queued retry,
+   terminal states at the end.
+9. **Terminal writeback was incomplete.** Reaper exhaustion, merge-gate
+   refusal, `QueueBudgetExhausted`, and an unreaped timeout all poisoned
+   and returned without reporting, leaving the issue labelled `running`
+   forever. Every committed terminal transition now reports.
+10. **Remote I/O ran under the queue mutex**, so an unavailable GitHub
+    blocked every local queue transition for the configured timeout.
+    Every writeback now happens after the critical section.
+11. **Queue-lock contention surfaced as a traceback** rather than an
+    actionable message.
+
+All twelve fixes are mutation-checked (28 mutations, 28 caught first run).
+
+**Measured during the live round-trip:** GitHub's issue-list endpoint can
+lag a label write by a short interval. A sync issued immediately after
+labelling returned `polled: 0`, and the same sync a minute later returned
+`polled: 1`. At any realistic poll interval this is invisible, but a test
+that labels and syncs in the same breath will look flaky. Not a defect in
+the adapter - confirmed by re-running rather than assumed.
 
 **The retry rule as implemented (PR 2).** "Only `infrastructure_error`
 failures auto-retry" leaves the UNKNOWN case undefined, and the unknown

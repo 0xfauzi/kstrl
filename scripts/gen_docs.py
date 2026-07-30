@@ -127,6 +127,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.feedforward import FeedforwardConfig
     from kstrl.fixtures import FixturesConfig
     from kstrl.inbox import InboxConfig
+    from kstrl.intake_github import GitHubIntakeConfig
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
@@ -269,6 +270,14 @@ def _section_specs() -> list[SectionSpec]:
             ]),
             lambda root: InboxConfig.load(root_dir=root),
             InboxConfig(), probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "intake_github", "GitHub Issues remote inbox (R8.6)",
+            identity_keys(GitHubIntakeConfig, [
+                f.name for f in dataclasses.fields(GitHubIntakeConfig)
+            ]),
+            lambda root: GitHubIntakeConfig.load(root_dir=root),
+            GitHubIntakeConfig(), probe_undocumented_fields=True,
         ),
         SectionSpec(
             "serve", "Continuous-intake daemon (R8.6)",
@@ -464,6 +473,24 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
     ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
+    ("intake_github", "enabled"):
+        "poll GitHub Issues for labelled work (opt-in outbound poller)",
+    ("intake_github", "repo"):
+        "owner/name to poll; empty resolves from the checkout's remote",
+    ("intake_github", "queued_label"):
+        "the trigger label; applying it requires repo write access",
+    ("intake_github", "label_prefix"):
+        "prefix for the state labels written back to the issue",
+    ("intake_github", "max_items_per_sync"):
+        "upper bound on items admitted per sync",
+    ("intake_github", "default_priority"):
+        "queue priority given to remote-sourced items",
+    ("intake_github", "comment_on_result"):
+        "post the queue's verdict back to the source issue",
+    ("intake_github", "dry_run"):
+        "poll and log, but send no labels or comments",
+    ("intake_github", "timeout_seconds"):
+        "per-gh-invocation timeout in seconds",
     ("serve", "poll_interval_seconds"):
         "seconds between poll cycles when ks serve runs as a daemon",
     ("serve", "daily_budget_usd"):
@@ -547,6 +574,9 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("contract", "mode"): "final",
     ("knowledge", "dependency_scope"): "transitive",
     ("linear", "auth_mode"): "oauth",
+    # intake_github.repo is validated as owner/name, so the generic
+    # string sentinel is rejected by the loader.
+    ("intake_github", "repo"): "sentinel-owner/sentinel-repo",
 }
 
 

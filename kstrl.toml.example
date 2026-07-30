@@ -228,6 +228,32 @@ caffeinate = true                  # hold caffeinate -i per run (macOS); sleeps 
 factory_timeout_seconds = 0.0      # kill a run after this long; 0 = no timeout
 allow_uncovered_cost = false       # true = run unattended under an unenforceable budget
 
+# GitHub Issues as the remote inbox (R8.6). An issue carrying queued_label
+# becomes a queue item; the verdict comes back as a state label and a comment.
+# Polling only - no webhooks, no public endpoint.
+#
+# WHAT AUTHORIZES WORK, accurately: a stranger can open an issue but cannot
+# label it. But applying a label needs the TRIAGE role, not push access, so on
+# an org repo a triager who cannot push code can still authorize spend - and any
+# Action with `issues: write` can label too. Issue #188 replaces that inherited
+# permission with an explicit actor allowlist. What IS enforced today: an issue
+# edited AFTER it was labelled is refused, because GitHub lets an issue author
+# rewrite the body after a maintainer labelled it.
+#
+# Remote items ALWAYS stop at the PR regardless of any label or setting.
+# Off by default: enabling makes this an outbound poller and a writer of
+# public comments, which should never happen because a default changed.
+[intake_github]
+enabled = false
+repo = ""                          # "owner/name"; empty resolves from the checkout
+queued_label = "kstrl:queued"      # the trigger; applying it requires write access
+label_prefix = "kstrl:"            # state labels written back: running/done/failed/poison
+max_items_per_sync = 5             # a label applied to 50 issues must not queue 50 runs
+default_priority = 0
+comment_on_result = true           # post the verdict back to the source issue
+dry_run = false                    # true = poll and log, send no writebacks
+timeout_seconds = 60.0
+
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the
 # suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)
