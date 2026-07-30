@@ -1689,6 +1689,13 @@ def serve_cycle(
     for item_id in result.reaped.poisoned:
         obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
         result.needs_human = True
+        _report_remote_outcome(
+            root_dir, queue.get(item_id), state="poison",
+            detail=(
+                "The run was interrupted and the item had no attempts left."
+            ),
+            observer=obs,
+        )
         result.inbox_items += (_file_inbox_item(
             root_dir,
             kind_name="halted_run",
@@ -1769,6 +1776,7 @@ def serve_cycle(
         return result
 
     # 4. Claim exactly one item.
+    refused_item: QueueItem | None = None
     with queue_lock(root_dir, blocking=True):
         candidate = queue.next_ready(moment)
         if candidate is None:
@@ -1782,21 +1790,31 @@ def serve_cycle(
                 actor="serve",
             )
             ledger.record_terminal(poisoned=True)
-            obs.err(f"{candidate.item_id[:12]}: {gate.refusal}")
-            result.needs_human = True
-            result.inbox_items += (_file_inbox_item(
-                root_dir,
-                kind_name="merge_gate",
-                title=(
-                    f"Queue item {candidate.item_id[:12]} needs a merge decision"
-                ),
-                detail=gate.refusal,
-                dedupe_key=f"queue-merge-gate:{candidate.item_id}",
-                evidence={"item_id": candidate.item_id},
-            ),)
-            result.skipped = gate.refusal
-            return result
-        leased = queue.lease(candidate, actor="serve")
+            refused_item = queue.get(candidate.item_id)
+        else:
+            leased = queue.lease(candidate, actor="serve")
+
+    if refused_item is not None:
+        obs.err(f"{candidate.item_id[:12]}: {gate.refusal}")
+        result.needs_human = True
+        result.inbox_items += (_file_inbox_item(
+            root_dir,
+            kind_name="merge_gate",
+            title=(
+                f"Queue item {candidate.item_id[:12]} needs a merge decision"
+            ),
+            detail=gate.refusal,
+            dedupe_key=f"queue-merge-gate:{candidate.item_id}",
+            evidence={"item_id": candidate.item_id},
+        ),)
+        # Outside the mutex: two gh calls at the configured timeout must
+        # not block every local queue transition (#187 F10).
+        _report_remote_outcome(
+            root_dir, refused_item, state="poison", detail=gate.refusal,
+            observer=obs,
+        )
+        result.skipped = gate.refusal
+        return result
 
     for note in gate.notes:
         obs.warn(f"  {note}")
@@ -1809,12 +1827,28 @@ def serve_cycle(
         with queue_lock(root_dir, blocking=True):
             queue.poison(leased, reason=str(exc), actor="serve")
             ledger.record_terminal(poisoned=True)
+            exhausted_item = queue.get(leased.item_id)
         obs.err(str(exc))
         result.skipped = str(exc)
         result.needs_human = True
+        _report_remote_outcome(
+            root_dir, exhausted_item, state="poison", detail=str(exc),
+            observer=obs,
+        )
         return result
 
     result.ran_item = running.item_id
+    # The remote label now tracks the REAL queue state: admission leaves
+    # the trigger label alone and `running` is applied here, when the item
+    # actually starts (#187 F8).
+    _report_remote_outcome(
+        root_dir, running, state="running",
+        detail=(
+            f"Claimed by the queue as `{running.item_id}` "
+            f"(attempt {running.attempts} of {running.max_attempts})."
+        ),
+        observer=obs,
+    )
     obs.info(
         f"Running {running.item_id[:12]} ({running.title}) "
         f"attempt {running.attempts}/{running.max_attempts}, "
@@ -1862,7 +1896,11 @@ def serve_cycle(
             if current is not None:
                 queue.poison(current, reason=detail, actor="serve")
                 ledger.record_terminal(poisoned=True)
+                current = queue.get(running.item_id)
         obs.err(f"  {running.item_id[:12]}: {detail}")
+        _report_remote_outcome(
+            root_dir, current, state="poison", detail=detail, observer=obs,
+        )
         result.verdict = Verdict.UNCLASSIFIABLE
         result.reason = detail
         result.needs_human = True
@@ -1939,11 +1977,32 @@ def serve_cycle(
         if verdict.verdict is Verdict.SUCCESS:
             queue.finish_ok(current, actor="serve")
             ledger.record_terminal(poisoned=False)
-            obs.info(f"  {running.item_id[:12]} done")
-            _report_remote_outcome(
-                root_dir, current, state="done",
-                detail="The factory run completed.", observer=obs,
-            )
+            finished = queue.get(running.item_id)
+            succeeded = True
+        else:
+            finished = None
+            succeeded = False
+
+    if succeeded:
+        obs.info(f"  {running.item_id[:12]} done")
+        # Outside the mutex (#187 F10).
+        _report_remote_outcome(
+            root_dir, finished, state="done",
+            detail="The factory run completed.", observer=obs,
+        )
+        return result
+
+    # The failure branch. Every remote writeback below happens AFTER the
+    # mutex is released (#187 F10): report_outcome makes two gh calls at
+    # the configured timeout, and an unavailable GitHub must not block
+    # every local queue transition.
+    retried = False
+    poisoned_item: QueueItem | None = None
+    retry_delay = 0.0
+    with queue_lock(root_dir, blocking=True):
+        current = queue.get(running.item_id)
+        if current is None:
+            obs.err(f"{running.item_id[:12]} vanished mid-run")
             return result
 
         queue.finish_failed(current, error=verdict.reason, actor="serve")
@@ -1952,33 +2011,47 @@ def serve_cycle(
             return result
 
         if verdict.verdict.may_retry and failed.attempts_remaining > 0:
-            delay = backoff_seconds(failed.attempts)
+            retry_delay = backoff_seconds(failed.attempts)
             queue.requeue(
                 failed,
                 reason=f"retry: {verdict.reason}",
                 actor="serve",
-                not_before=_iso(moment + timedelta(seconds=delay)),
+                not_before=_iso(moment + timedelta(seconds=retry_delay)),
             )
-            obs.warn(
-                f"  {running.item_id[:12]} retrying in {int(delay)}s "
-                f"({failed.attempts}/{failed.max_attempts} attempts used): "
-                f"{verdict.reason}"
+            retried = True
+        else:
+            exhausted = (
+                f"; no attempts left ({failed.attempts}/{failed.max_attempts})"
+                if verdict.verdict.may_retry else ""
             )
-            return result
+            queue.poison(
+                failed, reason=f"{verdict.reason}{exhausted}", actor="serve",
+            )
+            ledger.record_terminal(poisoned=True)
+            poisoned_item = queue.get(running.item_id)
 
-        exhausted = (
-            f"; no attempts left ({failed.attempts}/{failed.max_attempts})"
-            if verdict.verdict.may_retry else ""
+    if retried:
+        obs.warn(
+            f"  {running.item_id[:12]} retrying in {int(retry_delay)}s "
+            f"({running.attempts}/{running.max_attempts} attempts used): "
+            f"{verdict.reason}"
         )
-        queue.poison(
-            failed, reason=f"{verdict.reason}{exhausted}", actor="serve",
+        # A retry IS a state change the remote should see: the item is
+        # back in the queue, not running (#187 F8).
+        _report_remote_outcome(
+            root_dir, queue.get(running.item_id), state="failed",
+            detail=(
+                f"{verdict.reason}\n\nRetrying in {int(retry_delay)}s "
+                f"({running.attempts} of {running.max_attempts} attempts used)."
+            ),
+            observer=obs,
         )
-        ledger.record_terminal(poisoned=True)
+        return result
 
     result.needs_human = True
     obs.err(f"  {running.item_id[:12]} poisoned: {verdict.reason}")
     _report_remote_outcome(
-        root_dir, queue.get(running.item_id), state="poison",
+        root_dir, poisoned_item, state="poison",
         detail=verdict.reason, observer=obs,
     )
     result.inbox_items += (_file_inbox_item(

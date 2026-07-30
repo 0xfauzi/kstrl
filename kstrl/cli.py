@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
     from kstrl.interaction import InteractionChannel
 
+from dataclasses import replace
+
 import click
 from click.core import ParameterSource
 
@@ -3995,15 +3997,9 @@ def queue_sync(
     The label is the authorization: applying it needs write access to the
     repository, so an issue from a stranger cannot queue a factory run.
     """
-    from kstrl.intake_github import (
-        GitHubIntakeConfig,
-        IntakeError,
-        ProcessedLedger,
-        poll_queued,
-        resolve_repo,
-    )
+    from kstrl.intake_github import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
-    from kstrl.workqueue import queue_lock
+    from kstrl.workqueue import QueueError, QueueLockedError, queue_lock
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -4019,48 +4015,51 @@ def queue_sync(
         )
         sys.exit(1)
 
+    # --dry-run runs the PRODUCTION planner with writes disabled, rather
+    # than a second decision tree. Review #187 F4/F11: the old dry-run
+    # had its own logic that ignored the admission cap, and a dry run
+    # that disagrees with the real thing is worse than none.
     if dry_run:
-        repo, error = resolve_repo(config, root_dir)
-        if error:
-            ui_impl.err(error)
-            sys.exit(1)
-        issues, poll_error = poll_queued(config, repo, root_dir)
-        if poll_error:
-            ui_impl.err(poll_error)
-            sys.exit(1)
-        ledger = ProcessedLedger(root_dir).load()
-        ui_impl.section(f"Would sync from {repo}")
-        ui_impl.kv("label", config.queued_label)
-        ui_impl.kv("polled", str(len(issues)))
-        if not issues:
-            ui_impl.info("  nothing labelled")
-        for issue in issues:
-            ref = issue.source_ref(repo)
-            if ledger.contains(ref):
-                verdict = "skip (already processed)"
-            elif queue.find_by_source_ref(ref) is not None:
-                verdict = "skip (already queued)"
-            elif not issue.body.strip():
-                verdict = "skip (empty body)"
-            else:
-                verdict = "ENQUEUE"
-            ui_impl.info(f"  {ref:<28} {verdict}  {issue.title}")
-        sys.exit(0)
+        config = replace(config, dry_run=True)
 
-    with queue_lock(root_dir):
-        result = run_sync(queue, config, root_dir)
+    try:
+        with queue_lock(root_dir):
+            result = run_sync(queue, config, root_dir)
+    except QueueLockedError as exc:
+        ui_impl.err(
+            f"{exc}. Another queue operation is in progress; retry shortly."
+        )
+        sys.exit(1)
+    except (QueueError, OSError) as exc:
+        ui_impl.err(f"Sync failed: {exc}")
+        sys.exit(1)
 
-    ui_impl.section(f"Sync from {result.repo or 'unknown repo'}")
+    heading = "Would sync from" if dry_run else "Sync from"
+    ui_impl.section(f"{heading} {result.repo or 'unknown repo'}")
+    ui_impl.kv("label", config.queued_label)
     ui_impl.kv("polled", str(result.polled))
-    ui_impl.kv("enqueued", str(len(result.enqueued)))
-    for ref in result.enqueued:
-        ui_impl.ok(f"  queued {ref}")
-    for ref, reason in sorted(result.skipped.items()):
-        ui_impl.info(f"  skipped {ref}: {reason}")
+    if dry_run:
+        ui_impl.kv("would enqueue", str(len(result.would_enqueue)))
+    else:
+        ui_impl.kv("enqueued", str(len(result.enqueued)))
+
+    for entry in result.planned:
+        ref = entry.issue.source_ref(result.repo)
+        verdict = "ENQUEUE" if entry.decision.admits else str(entry.decision)
+        line = f"  {ref:<28} {verdict:<22} {entry.issue.title}"
+        if entry.decision.admits:
+            ui_impl.ok(line)
+        elif entry.decision is entry.decision.__class__.REFUSE_UNAUTHORIZED:
+            ui_impl.err(f"{line}\n      {entry.reason}")
+        else:
+            ui_impl.info(f"{line}  ({entry.reason})")
+    if not result.planned:
+        ui_impl.info("  nothing labelled")
+
     for error in result.errors:
         ui_impl.err(f"  {error}")
-    # Nonzero on error so a cron/launchd wrapper notices, but note that
-    # partial success is real: items already enqueued stay enqueued.
+    # Nonzero on error so a cron/launchd wrapper notices. Partial success
+    # is real: items already enqueued stay enqueued.
     sys.exit(1 if result.errors else 0)
 
 

@@ -230,9 +230,16 @@ allow_uncovered_cost = false       # true = run unattended under an unenforceabl
 
 # GitHub Issues as the remote inbox (R8.6). An issue carrying queued_label
 # becomes a queue item; the verdict comes back as a state label and a comment.
-# Polling only - no webhooks, no public endpoint. THE LABEL IS THE
-# AUTHORIZATION: applying a label needs write access to the repo, so on a
-# public repo a stranger can open an issue but cannot queue a factory run.
+# Polling only - no webhooks, no public endpoint.
+#
+# WHAT AUTHORIZES WORK, accurately: a stranger can open an issue but cannot
+# label it. But applying a label needs the TRIAGE role, not push access, so on
+# an org repo a triager who cannot push code can still authorize spend - and any
+# Action with `issues: write` can label too. Issue #188 replaces that inherited
+# permission with an explicit actor allowlist. What IS enforced today: an issue
+# edited AFTER it was labelled is refused, because GitHub lets an issue author
+# rewrite the body after a maintainer labelled it.
+#
 # Remote items ALWAYS stop at the PR regardless of any label or setting.
 # Off by default: enabling makes this an outbound poller and a writer of
 # public comments, which should never happen because a default changed.
