@@ -296,11 +296,30 @@ class QueueItem:
     #: Why this item may never be retried automatically. Set only on the
     #: transition into ``poison/``.
     poison_reason: str = ""
+    #: Earliest time this item may be claimed again (retry backoff, R8.6
+    #: PR 2). Empty means "now". A payload written before this field
+    #: existed decodes to empty, i.e. immediately ready.
+    not_before: str = ""
     schema_version: int = QUEUE_SCHEMA_VERSION
 
     @property
     def attempts_remaining(self) -> int:
         return max(0, self.max_attempts - self.attempts)
+
+    def ready_at(self, now: datetime | None = None) -> bool:
+        """Whether the retry backoff has elapsed.
+
+        An UNPARSEABLE ``not_before`` counts as not-ready, the opposite of
+        the lease-expiry default: there the fail-safe direction is to
+        reclaim a stuck item, here it is to hold off spending. Both
+        choices err away from launching a run.
+        """
+        if not self.not_before:
+            return True
+        deadline = _parse_iso(self.not_before)
+        if deadline is None:
+            return False
+        return (now or _utc_now()) >= deadline
 
     @property
     def sort_key(self) -> tuple[int, str]:
@@ -343,6 +362,7 @@ class QueueItem:
             "last_error": self.last_error,
             "last_run_id": self.last_run_id,
             "poison_reason": self.poison_reason,
+            "not_before": self.not_before,
         }
 
     @classmethod
@@ -408,6 +428,7 @@ class QueueItem:
             last_error=_as_str(data, "last_error"),
             last_run_id=_as_str(data, "last_run_id"),
             poison_reason=_as_str(data, "poison_reason"),
+            not_before=_as_str(data, "not_before"),
             schema_version=_as_int(
                 data, "schema_version", QUEUE_SCHEMA_VERSION,
             ),
@@ -551,7 +572,7 @@ class JournalEntry:
         }
 
 
-def _atomic_write(target: Path, content: str) -> None:
+def atomic_write(target: Path, content: str) -> None:
     """Write ``content`` to ``target`` atomically.
 
     ``tempfile.mkstemp`` in the destination directory plus ``os.replace``
@@ -866,7 +887,7 @@ class Queue:
     # --------------------------------------------------------------- write
 
     def _write_meta(self, item: QueueItem, directory: Path) -> None:
-        _atomic_write(
+        atomic_write(
             directory / META_FILENAME,
             json.dumps(item.to_dict(), indent=2, ensure_ascii=False) + "\n",
         )
@@ -947,7 +968,7 @@ class Queue:
         staging = self.staging_path / item.item_id
         staging.mkdir(parents=True, exist_ok=False)
         try:
-            _atomic_write(staging / spec_filename, content)
+            atomic_write(staging / spec_filename, content)
             self._write_meta(item, staging)
             os.replace(str(staging), str(directory))
         except BaseException:
@@ -1110,6 +1131,7 @@ class Queue:
         reason: str = "requeued",
         actor: str = "",
         reset_attempts: bool = False,
+        not_before: str | None = None,
     ) -> QueueItem:
         """Send an item back to ``queued/``.
 
@@ -1120,9 +1142,14 @@ class Queue:
         updates: dict[str, Any] = {
             "lease_pid": 0, "lease_host": "", "lease_expires_at": "",
         }
+        if not_before is not None:
+            updates["not_before"] = not_before
         if reset_attempts:
             updates["attempts"] = 0
             updates["poison_reason"] = ""
+            # A human authorizing a fresh run should not then wait out a
+            # backoff computed for the automatic path.
+            updates["not_before"] = ""
         return self.transition(
             item, ItemState.QUEUED, reason=reason, actor=actor, **updates,
         )
@@ -1195,7 +1222,7 @@ class Queue:
             resume_after=resume_after,
         )
         self.path.mkdir(parents=True, exist_ok=True)
-        _atomic_write(
+        atomic_write(
             self.pause_path,
             json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
         )
@@ -1209,7 +1236,7 @@ class Queue:
     def resume(self, *, actor: str = "") -> PauseState:
         state = PauseState()
         self.path.mkdir(parents=True, exist_ok=True)
-        _atomic_write(
+        atomic_write(
             self.pause_path,
             json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
         )
@@ -1233,11 +1260,18 @@ class Queue:
         Returns None while paused: the pause is an admission gate, and
         checking it anywhere other than the point of claiming would let
         a racing worker slip one more run past a budget stop.
+
+        Items still inside their retry backoff are skipped rather than
+        blocking the queue behind them - a flaking item must not starve
+        the ones that would succeed.
         """
-        if self.is_paused(now):
+        moment = now or _utc_now()
+        if self.is_paused(moment):
             return None
-        ready = self.items((ItemState.QUEUED,))
-        return ready[0] if ready else None
+        for item in self.items((ItemState.QUEUED,)):
+            if item.ready_at(moment):
+                return item
+        return None
 
 
 def summarize(counts: dict[ItemState, int]) -> str:

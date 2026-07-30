@@ -211,6 +211,23 @@ notify_action_required = true      # notify on action-required items and demotio
 max_attempts = 3                   # execution attempts per item before poisoning
 lease_ttl_seconds = 3600.0         # claim validity; the reaper recovers anything past this
 
+# Continuous-intake daemon (R8.6): `ks serve` drains the queue above, one
+# factory run at a time. Only infrastructure failures retry, and only on
+# positive evidence - spec failures go to poison/ and wait for a human, because
+# a queue that retries spec failures overnight is the most expensive bug this
+# repo could ship. daily_budget_usd is the real cap on unattended spend; note
+# it can only count cost an adapter REPORTS (the codex adapter reports tokens
+# and no cost), so with a cost-blind agent it is unenforceable rather than
+# approximate - serve refuses to run in that case unless you set
+# allow_uncovered_cost. The unreported spend is deliberately never estimated.
+[serve]
+poll_interval_seconds = 60.0       # seconds between poll cycles
+daily_budget_usd = 0.0             # 0 = no cap; any positive value is a HARD stop
+max_consecutive_poison = 3         # poisoned in a row before the queue pauses
+caffeinate = true                  # hold caffeinate -i per run (macOS); sleeps between
+factory_timeout_seconds = 0.0      # kill a run after this long; 0 = no timeout
+allow_uncovered_cost = false       # true = run unattended under an unenforceable budget
+
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the
 # suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)

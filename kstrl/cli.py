@@ -3976,6 +3976,160 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+@cli.command()
+@click.option(
+    "--once", is_flag=True,
+    help="Run a single poll cycle and exit (launchd/cron fallback mode)",
+)
+@click.option(
+    "--max-cycles", type=click.IntRange(min=0), default=0,
+    help="Stop after this many cycles; 0 runs until interrupted",
+)
+@click.option(
+    "--dry-run", is_flag=True,
+    help="Report what the next cycle would do without spending anything",
+)
+@_queue_root_option
+@_queue_ui_option
+@_queue_no_color_option
+def serve(
+    once: bool,
+    max_cycles: int,
+    dry_run: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Drain the continuous-intake queue (R8.6).
+
+    Runs one factory invocation at a time, holding a daemon singleton
+    lock. Under launchd this is invoked with --once on an interval;
+    StartInterval fires immediately for intervals that elapsed while the
+    machine slept, so a laptop that was closed catches up on wake.
+
+    Only infrastructure failures are retried, and only with positive
+    evidence. Spec-level failures go to poison/ and wait for a human.
+    """
+    from kstrl.serve import (
+        ServeConfig,
+        ServeError,
+        ServeLockedError,
+        SpendLedger,
+        check_budget,
+        check_cost_coverage,
+        check_inbox_cap,
+        check_poison_breaker,
+        consecutive_poison_count,
+        factory_lock_held,
+    )
+    from kstrl.serve import serve as run_serve
+    from kstrl.workqueue import Queue, QueueConfig, summarize
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        config = ServeConfig.load(root_dir)
+    except (ServeError, ValueError) as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    queue = Queue(root_dir, QueueConfig.load(root_dir))
+    ledger = SpendLedger(root_dir)
+
+    if dry_run:
+        # Deliberately reports the same gates the loop evaluates, in the
+        # same order, so "what would it do" cannot drift from "what it
+        # does" without a test noticing.
+        ui_impl.section("Serve dry run")
+        ui_impl.kv("queue", summarize(queue.counts()))
+        pause = queue.pause_state()
+        ui_impl.kv(
+            "paused",
+            f"yes - {pause.reason}" if pause.active() else "no",
+        )
+        spend = ledger.read()
+        floor = " (a FLOOR: some calls reported no cost)" if spend.lower_bound else ""
+        ui_impl.kv(
+            "today", f"${spend.spent_usd:.2f} over {spend.runs} run(s){floor}",
+        )
+        ui_impl.kv(
+            "daily budget",
+            f"${config.daily_budget_usd:.2f}"
+            if config.daily_budget_usd > 0 else "unset (no cap)",
+        )
+        ui_impl.kv("consecutive poison", str(consecutive_poison_count(queue)))
+        ui_impl.kv(
+            "factory lock", "held by another run" if factory_lock_held(root_dir)
+            else "free",
+        )
+        for label, admission in (
+            ("poison breaker", check_poison_breaker(queue, config)),
+            ("cost coverage", check_cost_coverage(ledger, config)),
+            ("budget", check_budget(ledger, config)),
+            ("inbox cap", check_inbox_cap(root_dir)),
+        ):
+            if admission.allowed:
+                ui_impl.info(f"  gate {label}: ok")
+            else:
+                ui_impl.warn(f"  gate {label}: BLOCKS - {admission.reason}")
+        candidate = queue.next_ready()
+        ui_impl.kv(
+            "next item",
+            f"{candidate.item_id[:12]} - {candidate.title}"
+            if candidate else "nothing ready",
+        )
+        sys.exit(0)
+
+    ui_impl.info(
+        f"ks serve on {root_dir} "
+        f"(poll {config.poll_interval_seconds:.0f}s, "
+        f"budget "
+        + (f"${config.daily_budget_usd:.2f}/day" if config.daily_budget_usd > 0
+           else "unset")
+        + f", caffeinate {'on' if config.caffeinate else 'off'})"
+    )
+    observer = _ServeUiObserver(ui_impl)
+    try:
+        results = run_serve(
+            root_dir,
+            once=once,
+            config=config,
+            observer=observer,
+            max_cycles=max_cycles,
+        )
+    except ServeLockedError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    except KeyboardInterrupt:
+        ui_impl.info("Interrupted; the current item keeps its lease for the reaper.")
+        sys.exit(0)
+
+    ran = [r for r in results if r.ran_item]
+    ui_impl.info("")
+    ui_impl.kv("cycles", str(len(results)))
+    ui_impl.kv("items run", str(len(ran)))
+    # Nonzero only when an item ended up needing a human, so a launchd
+    # KeepAlive job's exit status means something.
+    poisoned = [r for r in ran if r.verdict is not None and not r.verdict.may_retry
+                and str(r.verdict) != "success"]
+    sys.exit(1 if poisoned else 0)
+
+
+class _ServeUiObserver:
+    """Adapts the daemon's narration onto the console UI."""
+
+    def __init__(self, ui_impl: UI) -> None:
+        self._ui = ui_impl
+
+    def info(self, message: str) -> None:
+        self._ui.info(message)
+
+    def warn(self, message: str) -> None:
+        self._ui.warn(message)
+
+    def err(self, message: str) -> None:
+        self._ui.err(message)
+
+
 def main() -> None:
     """Main entry point."""
     cli()

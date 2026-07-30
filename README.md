@@ -237,6 +237,7 @@ ks queue rm ITEM_ID             Delete an item and its spec.
 ks queue show ITEM_ID           Show one item in full, with its transition history.
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
+ks serve                        Drain the continuous-intake queue (R8.6).
 ks status                       Show per-component status from the manifest + progress log.
 ks understand [MAX_ITERATIONS]  Run codebase understanding loop (read-only mode).
 ```
@@ -374,6 +375,15 @@ enabled = true                 # record exceptions awaiting a human decision
 open_item_cap = 50             # open items after which queue intake pauses; 0 = unbounded
 snooze_hours = 24.0            # default snooze TTL in hours; snoozed items return
 notify_action_required = true  # notify on action-required items and demotions only
+
+# Continuous-intake daemon (R8.6)
+[serve]
+poll_interval_seconds = 60.0   # seconds between poll cycles when ks serve runs as a daemon
+daily_budget_usd = 0.0         # hard stop on reported spend per local day; 0 = no cap
+max_consecutive_poison = 3     # consecutive poisoned items that pause the whole queue
+caffeinate = true              # hold caffeinate -i for each run so the machine cannot sleep mid-factory
+factory_timeout_seconds = 0.0  # kill a factory run after this long; 0 = no timeout
+allow_uncovered_cost = false   # run unattended even when no adapter reports cost, making the budget unenforceable
 
 # Continuous intake queue (R8.6)
 [queue]

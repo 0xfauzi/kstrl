@@ -114,7 +114,7 @@ class TestAdd:
     ) -> None:
         queue = _queue(tmp_path)
         with patch(
-            "kstrl.workqueue._atomic_write", side_effect=OSError("disk full"),
+            "kstrl.workqueue.atomic_write", side_effect=OSError("disk full"),
         ):
             with pytest.raises(OSError):
                 _add(queue)

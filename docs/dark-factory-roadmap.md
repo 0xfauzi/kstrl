@@ -616,13 +616,69 @@ level-dependent behavior tested; calibration captures the family delta.
 
 Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
 
-Landing in four slices; PR 1 of 4 is the substrate only. Shipped so far:
+Landing in four slices; PRs 1-2 of 4 are in. Shipped so far:
 `kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
-mutex, lease fields, journal, pause marker) and the `ks queue
-add/ls/show/retry/rm/pause/resume` verbs. **Nothing drains the queue
-yet** - `ks serve`, the lease reaper, the retry classifier, and the
-`daily_budget_usd` stop are PR 2; the GitHub adapter is PR 3; launchd is
-PR 4.
+mutex, pid/ttl leases, journal, pause marker) with the `ks queue
+add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
+(`ks serve [--once] [--dry-run]`, lease reaper, retry classifier, daily
+spend ledger, poison breaker, `caffeinate -i`). The GitHub adapter is
+PR 3; the launchd plist and its docs are PR 4.
+
+**The retry rule as implemented (PR 2).** "Only `infrastructure_error`
+failures auto-retry" leaves the UNKNOWN case undefined, and the unknown
+case is where the money goes, so `serve.classify_run` implements
+*positive evidence only, failing closed*:
+
+| Evidence | Verdict |
+|---|---|
+| exit 0 | success |
+| launch failed before any spend | retry (free) |
+| killed by signal / our timeout | retry (external cause, not a spec verdict) |
+| exit 2 | spec failure - the architect halted on a blocker |
+| every failed component carries `infrastructure_error` | retry |
+| any failed component failed on its merits | spec failure |
+| nonzero exit, nothing failed | **unclassifiable** - poison |
+| manifest unreadable or absent | **unclassifiable** - poison |
+
+The run lock is probed BEFORE launching, which is what keeps exit 2
+unambiguous: `ks factory` returns 2 both for a held lock and for an
+architect halt, and those need opposite treatment. The classifier reuses
+`Finding.is_infrastructure_error` rather than re-deriving the predicate -
+two copies of that rule drifting apart is how a spec failure becomes
+retryable.
+
+**Four backstops**, because a correct classifier is not sufficient (a
+*persistent* infra fault is retryable by the rules and still burns
+money): `max_attempts` enforced inside `Queue.start`; exponential backoff
+(60s doubling, capped at 30 min); `daily_budget_usd` checked before
+admitting each item, pausing until the next LOCAL midnight so a Friday
+budget hit is not a dead weekend; and a consecutive-poison breaker that
+pauses the whole queue - if `main` is broken then every run fails
+verification, each failure is individually legitimate, and no per-item
+bound ever notices.
+
+**`daily_budget_usd` honesty (H4).** The budget can only count cost an
+adapter reported, and the codex adapter reports tokens with no cost. With
+a cost-blind agent the budget is *unenforceable*, not approximate - the
+same condition PR #184 named for `max_cost_usd`. The ledger therefore
+stores the day's spend WITH its coverage, labels the total a FLOOR
+whenever any run under-reported, never converts unreported calls into an
+estimated dollar figure, and `ks serve` refuses to run unattended under
+an unenforceable budget unless `[serve] allow_uncovered_cost = true`.
+
+**Open R8.2 tension found while building PR 2.** `run_factory` assigns
+`factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge`
+unconditionally, so at L3+ the ladder OVERRIDES an explicit request for
+a human merge gate and logs it as "manual override ignored". The R8.2
+docstring says the failure mode it guards is a hand-edited flag
+*granting* autonomy the ladder never awarded, but the implementation is
+symmetric and also refuses a MORE-restrictive request. Rather than change
+ladder semantics from inside R8.6, `serve.resolve_merge_gate` REFUSES an
+item whose `stop_at_pr` the current level cannot honour (poison + inbox
+item) instead of letting the gate be removed silently. Unreachable
+today - `[autonomy] enabled` defaults false and L2+ entry is still
+blocked on the user-run measurements - but it needs an R8.2 decision
+before L3 is real.
 
 Two invariants in the substrate are money-safety properties rather than
 style, and both are mutation-checked:
