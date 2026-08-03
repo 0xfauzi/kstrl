@@ -90,11 +90,17 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   fact-utilization telemetry nonzero, and one `ks evolve` proposal
   traceable to a real recorded signature. STILL OUTSTANDING as of
   2026-08-03, and now the sole remaining L2+ gate (the two bullets above
-  are captured). Prerequisite found in review:
-  [#191](https://github.com/0xfauzi/kstrl/issues/191) - utilization is
-  computed each distill but only printed, never recorded to events or
-  the journal, so "telemetry nonzero" cannot yet be evidenced durably.
-  Run the two runs after #191 lands.
+  are captured). The recording prerequisite
+  ([#191](https://github.com/0xfauzi/kstrl/issues/191)) has landed:
+  utilization is written to the `DistillResult` event and to
+  `component_result.knowledge_utilization` in the evolution journal.
+  Evidence "telemetry nonzero" with
+  `EvolutionJournal.get_fact_utilization`, whose `runs_with_referenced`
+  counts only runs where a MEASURED entry referenced at least one fact -
+  unmeasured components never count as zeros. #191 also fixed the
+  measurement, which had been taken against a prefix rebuilt after
+  distillation wrote that run's own facts, so any pre-#191 utilization
+  figure is not valid evidence here. What remains is the two runs.
 
 Execution order: R0 -> R1 -> R2 -> R4 -> R3 -> R5 -> R6 -> R7.
 R4 (test spine) deliberately precedes R3/R5: the spine tests are the regression
@@ -889,7 +895,7 @@ listed gate is green and the claim is backed by a named test or measurement
 | Architect / decompose (B+) | R0.6 + R1.5 + R1.7 + R1.8 + R5.3 spec-as-data + calibration: architect detection >= baseline on hard fixtures, 0 hallucinated findings across 3 consecutive runs, spec_issues persisted |
 | Mechanical verification (B-) | R1.5 rename-aware scope + R2.6 env scrub + R5.4 self-critique correctness + R7.2 fixtures wired sandboxed: an adversarial-agent test battery (tautological test, conftest deselect, rename-move, sweep-in commit) all caught - `tests/test_adversarial_battery.py` (first two; module docstring maps all four) + `tests/test_scope_hardening.py` / `tests/test_verify.py` (latter two). Caveat: the fixtures-oracle scenarios require `[fixtures].enabled`, which ships default-off (decision 4) |
 | LLM review + security (C+) | R1.1-R1.4 + R5.3: empty/partial/oversized/truncated outputs all fail closed; injection battery (in-diff instructions) does not flip a verdict on the calibration negatives; FP rate measured and under threshold |
-| Knowledge layer (C-) | R1.6: decay regression tests green; evidence-field injection battery rejected; utilization telemetry nonzero on a real run |
+| Knowledge layer (C-) | R1.6: decay regression tests green; evidence-field injection battery rejected; utilization telemetry nonzero on a real run - evidenced by `component_result.knowledge_utilization` in the evolution journal via `get_fact_utilization` (#191), not by the console line |
 | Factory orchestration (C) | R0.1-R0.6 + R2.3 + R7.3: induced hang/push-fail/conflict battery green; state machine unit-tested in isolation; no subprocess call without a timeout (enforced by `tests/test_timeout_enforcement.py::TestSubprocessTimeoutAudit`, an alias-aware AST audit with a Popen allowlist for the two deadline-managed runners) |
 | Evolution / learning (D) | R4.1 + R6.1-R6.4: journal clean, signatures real, hit-rate live, one traceable proposal from real runs |
 | Test suite (B) | R4.1-R4.4: five spine behaviors covered unmocked; suite network-free by default; coverage ratcheted; zero misleading-name tests from the T-findings list remain |

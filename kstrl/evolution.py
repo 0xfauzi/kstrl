@@ -33,6 +33,21 @@ logger = logging.getLogger("kstrl.evolution")
 # .kstrl/archive/, so fresh journals contain v2 entries only.
 JOURNAL_SCHEMA_VERSION = 2
 
+# #191: what a component_result entry records when no fact-utilization
+# measurement reached the journal - the component never got past the
+# gates to the distill phase, knowledge was off, or the measurement
+# itself failed. Deliberately NOT the same value as a measured zero:
+# `measured=False` is "no evidence", `measured=True, referenced=0` is
+# evidence that injected facts went unused. Not version-gated, because
+# the key is written on every entry from here on; a pre-#191 entry has
+# no key at all, which is a third, distinguishable state.
+_UNMEASURED_UTILIZATION: dict[str, Any] = {
+    "measured": False,
+    "injected": 0,
+    "referenced": 0,
+    "reason": "not measured",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -403,6 +418,7 @@ class EvolutionJournal:
         usage_by_component: dict[str, dict[str, dict[str, Any]]] | None = None,
         run_usage: dict[str, Any] | None = None,
         failure_signatures: dict[str, list[str]] | None = None,
+        fact_utilization: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Record a completed factory run to the journal.
 
@@ -422,12 +438,22 @@ class EvolutionJournal:
         "review:scope_creep"). When absent for a failed component, the
         legacy flattened-string classification is the fallback so
         journal entries never lose the signature fields entirely.
+
+        #191: ``fact_utilization`` maps component id -> ``{"measured",
+        "injected", "referenced", "reason"}``. The key is written for
+        EVERY component, present in the map or not. ``measured=False``
+        means the run could not measure, which is not the same as a
+        measured ``referenced=0``; reading a missing or false
+        ``measured`` as a real zero is what made the L2+
+        fact-utilization gate un-evidenceable. Only ``measured=True``
+        entries are evidence.
         """
         from kstrl.manifest import ComponentStatus
 
         timestamp = _timestamp_now()
         usage_by_component = usage_by_component or {}
         failure_signatures = failure_signatures or {}
+        fact_utilization = fact_utilization or {}
 
         # --- JSONL entries per component ---
         entries: list[dict[str, Any]] = []
@@ -476,6 +502,14 @@ class EvolutionJournal:
                 "findings": findings_serialized,
                 "findings_summary": findings_summary,
                 "usage": usage_by_component.get(comp.id, {}),
+                # #191: always present, so a pre-#191 journal (key
+                # missing) is distinguishable from "measured=false, we
+                # could not measure" and from "measured=true,
+                # referenced=0", which is real evidence of unused facts.
+                "knowledge_utilization": (
+                    fact_utilization.get(comp.id)
+                    or dict(_UNMEASURED_UTILIZATION)
+                ),
             }
             entries.append(entry)
 
@@ -1012,6 +1046,59 @@ class EvolutionJournal:
             "components": components,
             "with_concern": with_concern,
             "by_category": by_category,
+        }
+
+    def get_fact_utilization(self, lookback_runs: int = 10) -> dict[str, Any]:
+        """Aggregate knowledge fact-utilization across recent runs (#191).
+
+        Returns ``{"runs", "components", "measured", "unmeasured",
+        "injected", "referenced", "runs_with_referenced"}``.
+
+        Only ``measured=True`` entries contribute to ``injected`` and
+        ``referenced``. An unmeasured component is counted under
+        ``unmeasured`` and NEVER as a zero - that conflation is the
+        defect this field exists to prevent. Entries written before
+        #191 have no ``knowledge_utilization`` key and count as
+        unmeasured.
+
+        This is the query behind the L2+ cATO gate in
+        ``docs/remediation-roadmap.md``: "two real factory runs with
+        nonzero fact-utilization" is ``runs_with_referenced >= 2``.
+        ``injected``/``referenced`` are lower bounds - see
+        ``knowledge.measure_fact_utilization``.
+        """
+        entries = [
+            e for e in self._read_journal_entries(lookback_runs)
+            if e.get("event_type", "component_result") == "component_result"
+        ]
+        measured = unmeasured = 0
+        injected = referenced = 0
+        runs_with_referenced: set[str] = set()
+        for entry in entries:
+            util = entry.get("knowledge_utilization")
+            if not isinstance(util, dict) or not util.get("measured"):
+                unmeasured += 1
+                continue
+            try:
+                n_injected = int(util.get("injected", 0))
+                n_referenced = int(util.get("referenced", 0))
+            except (TypeError, ValueError):
+                # Present but unreadable is not evidence either.
+                unmeasured += 1
+                continue
+            measured += 1
+            injected += n_injected
+            referenced += n_referenced
+            if n_referenced > 0:
+                runs_with_referenced.add(str(entry.get("run_id", "")))
+        return {
+            "runs": len({e.get("run_id", "") for e in entries}),
+            "components": len(entries),
+            "measured": measured,
+            "unmeasured": unmeasured,
+            "injected": injected,
+            "referenced": referenced,
+            "runs_with_referenced": len(runs_with_referenced),
         }
 
     # ------------------------------------------------------------------
