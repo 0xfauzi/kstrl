@@ -132,11 +132,17 @@ def _pipeline(
     *,
     measure_fact_utilization: Any = None,
     run_mechanical_verification: Any = None,
+    knowledge_prefix: str | None = None,
 ) -> ComponentPipeline:
     """A ComponentPipeline wired to stub hooks so a single phase can be
-    driven directly. Only the hooks a test cares about are injected."""
+    driven directly. Only the hooks a test cares about are injected.
+
+    ``knowledge_prefix`` stands in for the factory's submit-time capture
+    (#191): the distill phase measures fact utilization against what was
+    recorded here, so a test that wants a measurement must supply one.
+    """
     ui = PlainUI(no_color=True, file=io.StringIO())
-    return ComponentPipeline(
+    pipeline = ComponentPipeline(
         manifest=_manifest([comp]),
         manifest_path=root / "manifest.json",
         factory_config=FactoryConfig(
@@ -182,7 +188,6 @@ def _pipeline(
                 passed=True, mode="hard",
             ),
             distill_facts=lambda *a, **k: (1, "1 fact written"),
-            build_knowledge_context=lambda *a, **k: "FACT: fact-alpha",
             measure_fact_utilization=(
                 measure_fact_utilization
                 or (lambda *a, **k: {"injected": 0, "referenced": 0})
@@ -194,6 +199,9 @@ def _pipeline(
         fresh_base_retry_ids=set(),
         component_failure_signatures={},
     )
+    if knowledge_prefix is not None:
+        pipeline.record_injected_knowledge(comp.id, knowledge_prefix)
+    return pipeline
 
 
 def _setup_project(root: Path, comp_ids: list[str]) -> None:
@@ -597,6 +605,7 @@ class TestFactUtilizationReadsTheComponentLog:
         pipeline = _pipeline(
             tmp_path, comp, wt_path,
             measure_fact_utilization=fake_measure,
+            knowledge_prefix="FACT: fact-alpha",
         )
 
         pipeline._phase_distill(

@@ -2423,7 +2423,6 @@ def _run_factory_locked(
             run_security_review=run_security_review,
             run_chunked_security_review=run_chunked_security_review,
             distill_facts=distill_facts,
-            build_knowledge_context=build_knowledge_context,
             measure_fact_utilization=measure_fact_utilization,
             cleanup_worktree=_cleanup_worktree,
         ),
@@ -2619,8 +2618,19 @@ def _run_factory_locked(
                 knowledge_prefix = build_knowledge_context(
                     manifest, comp, knowledge_config.knowledge_root, knowledge_config,
                 )
-            except Exception:
-                pass  # knowledge retrieval is non-fatal
+            except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+                # Non-fatal, but NOT a metrics detail: the engineer runs
+                # without any of its facts when this fires. That is a
+                # real degradation of the run, and it used to be a bare
+                # `except: pass` that said nothing (#191).
+                ui.warn(
+                    f"  Knowledge retrieval failed for {comp.id}: {exc}"
+                )
+                pipeline.record_injected_knowledge(comp.id, None)
+            else:
+                pipeline.record_injected_knowledge(comp.id, knowledge_prefix)
+        else:
+            pipeline.record_injected_knowledge(comp.id, None)
         return (
             comp.id, comp.prd_path, str(wt_path), str(root_dir),
             prompt_file_rel, base_config.agent_cmd, base_config.model,
@@ -3336,6 +3346,10 @@ def _run_factory_locked(
                 },
                 run_usage=pipeline.run_usage.to_dict(),
                 failure_signatures=component_failure_signatures,
+                fact_utilization={
+                    comp_id: util.to_dict()
+                    for comp_id, util in pipeline.fact_utilization.items()
+                },
             )
     except Exception as exc:
         # Evolution recording is non-fatal, but never silent (R6.1).

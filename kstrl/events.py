@@ -481,9 +481,27 @@ class PrMergePending(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class DistillResult(Event):
+    """Pre-PR knowledge distillation outcome for one component.
+
+    ``facts_written`` is the distiller's output. The three utilization
+    fields are the opposite direction: did the engineer reference the
+    facts we injected at the top of its prompt?
+
+    ``utilization_measured`` must be read FIRST. False means we could
+    not measure - it does NOT mean the engineer referenced nothing. A
+    payload written before #191 landed decodes to ``(False, 0, 0)``,
+    which is correct: those runs genuinely never measured. Reading
+    ``facts_referenced`` without checking the flag turns both a legacy
+    payload and a broken recorder into a legitimate-looking zero, which
+    is what made the L2+ fact-utilization gate un-evidenceable.
+    """
+
     type: ClassVar[str] = "distill_result"
     facts_written: int = 0
     duration_seconds: float = 0.0
+    utilization_measured: bool = False
+    facts_injected: int = 0
+    facts_referenced: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)

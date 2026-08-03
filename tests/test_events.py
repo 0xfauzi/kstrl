@@ -83,7 +83,9 @@ def _sample_events() -> list[ev.Event]:
         ev.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
         ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7"),
         ev.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
-        ev.DistillResult(component="comp-a", facts_written=3, duration_seconds=12.0),
+        ev.DistillResult(component="comp-a", facts_written=3, duration_seconds=12.0,
+                         utilization_measured=True, facts_injected=5,
+                         facts_referenced=2),
         ev.FindingRecorded(component="comp-a", phase="review", category="test_quality",
                            severity="fail", location="a.py:10",
                            explanation="weak assert", attempt=1),
@@ -169,6 +171,28 @@ class TestTolerantDecode:
         event = ev.event_from_dict(obj)
         assert isinstance(event, ev.ComponentCompleted)
         assert event.duration_seconds == 5.0
+
+    def test_distill_result_legacy_payload_is_unmeasured(self) -> None:
+        """#191: a payload written before the utilization fields existed
+        must decode as UNMEASURED, never as a measured zero. Those runs
+        genuinely never measured, and reading their 0 as evidence would
+        make the L2+ gate look permanently unsatisfiable."""
+        obj = {"event": "distill_result",
+               "data": {"facts_written": 3, "duration_seconds": 1.0}}
+        event = ev.event_from_dict(obj)
+        assert isinstance(event, ev.DistillResult)
+        assert event.facts_written == 3
+        assert event.utilization_measured is False
+        assert event.facts_injected == 0
+        assert event.facts_referenced == 0
+
+    def test_mistyped_utilization_flag_degrades_to_unmeasured(self) -> None:
+        """The flag degrades toward "no evidence", the safe direction."""
+        obj = {"event": "distill_result",
+               "data": {"utilization_measured": "yes", "facts_referenced": 4}}
+        event = ev.event_from_dict(obj)
+        assert isinstance(event, ev.DistillResult)
+        assert event.utilization_measured is False
 
     def test_list_becomes_tuple(self) -> None:
         obj = {"event": "verification_result", "data": {"checks": ["a", "b"]}}
