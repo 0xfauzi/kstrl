@@ -4109,14 +4109,20 @@ def serve(
     """Drain the continuous-intake queue (R8.6).
 
     Runs one factory invocation at a time, holding a daemon singleton
-    lock. Under launchd this is invoked with --once on an interval;
-    StartInterval fires immediately for intervals that elapsed while the
-    machine slept, so a laptop that was closed catches up on wake.
+    lock, and polls any enabled remote inbox at the start of each cycle.
+
+    Under launchd, `--print-plist --plist-mode interval` schedules this
+    with --once on a StartCalendarInterval, which is the only launchd
+    timer that catches up after sleep: launchd.plist(5) says a
+    StartInterval firing during sleep "will be missed", while
+    StartCalendarInterval "will start the job the next time the computer
+    wakes up".
 
     Only infrastructure failures are retried, and only with positive
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
     from kstrl.serve import (
+        REQUIRE_TIMEOUT_ENV,
         ServeConfig,
         ServeError,
         ServeLockedError,
@@ -4168,6 +4174,22 @@ def serve(
         config = ServeConfig.load(root_dir)
     except (ServeError, ValueError) as exc:
         ui_impl.err(str(exc))
+        sys.exit(2)
+
+    # A scheduled LaunchAgent carries this marker, so the promise it was
+    # installed under is re-checked on every invocation rather than only
+    # the day the plist was written (#189 N3).
+    if os.environ.get(REQUIRE_TIMEOUT_ENV) == "1" and (
+        config.factory_timeout_seconds <= 0
+    ):
+        ui_impl.err(
+            "this scheduled job was installed on the promise of a bounded "
+            "cycle, but [serve] factory_timeout_seconds is now 0. launchd "
+            "neither kills nor replaces a job still running at the next "
+            "firing, so an unbounded cycle would silently stop every later "
+            "one. Restore the timeout, or reinstall the LaunchAgent in "
+            "keepalive mode."
+        )
         sys.exit(2)
     queue = Queue(root_dir, QueueConfig.load(root_dir))
     ledger = SpendLedger(root_dir)
@@ -4221,12 +4243,46 @@ def serve(
                 ui_impl.info(f"  gate {label}: ok")
             else:
                 ui_impl.warn(f"  gate {label}: BLOCKS - {admission.reason}")
+        # The real cycle SYNCS before selecting, so a dry run that reads
+        # only the existing queue can report "nothing ready" while the
+        # live loop would admit an issue and spend on it immediately
+        # (#189 N2). Runs the adapter's side-effect-free planner.
+        from dataclasses import replace as _replace
+
+        from kstrl.intake_github import GitHubIntakeConfig, IntakeError
+        from kstrl.intake_github import sync as intake_sync
+
+        try:
+            intake_config = GitHubIntakeConfig.load(root_dir)
+        except (IntakeError, ValueError) as exc:
+            intake_config = None
+            ui_impl.warn(f"  intake config unreadable: {exc}")
+        if intake_config is not None and intake_config.enabled:
+            plan = intake_sync(
+                queue, _replace(intake_config, dry_run=True), root_dir,
+            )
+            ui_impl.kv("intake", f"{plan.polled} polled from {plan.repo or '?'}")
+            for ref in plan.would_enqueue:
+                ui_impl.ok(f"  would admit {ref}")
+            for ref, reason in sorted(plan.skipped.items()):
+                ui_impl.info(f"  skip {ref}: {reason}")
+            for error in plan.errors:
+                ui_impl.warn(f"  intake: {error}")
+        else:
+            ui_impl.kv("intake", "disabled")
+
         candidate = queue.next_ready()
-        ui_impl.kv(
-            "next item",
+        pending = (
             f"{candidate.item_id[:12]} - {candidate.title}"
-            if candidate else "nothing ready",
+            if candidate else "nothing ready"
         )
+        if candidate is None and intake_config is not None and (
+            intake_config.enabled
+        ):
+            # Say so explicitly: "nothing ready" alone would be misleading
+            # when intake is about to admit work.
+            pending = "nothing queued yet (intake may admit the items above)"
+        ui_impl.kv("next item", pending)
         sys.exit(0)
 
     ui_impl.info(

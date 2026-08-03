@@ -1600,7 +1600,13 @@ def _run_intake(
         config = GitHubIntakeConfig.load(root_dir)
         if not config.enabled:
             return (), ()
-        result = intake_sync(queue, config, root_dir)
+        result = intake_sync(
+            queue, config, root_dir,
+            # Poll and authorize unlocked; take the queue mutex only for
+            # the local commit, so a slow GitHub cannot block
+            # `ks queue pause` or any other transition (#189 N1).
+            commit_guard=lambda: queue_lock(root_dir, blocking=True),
+        )
     except Exception as exc:  # noqa: BLE001 - additive by contract
         observer.warn(f"GitHub intake raised: {exc}")
         return (), (str(exc),)
@@ -1749,9 +1755,9 @@ def serve_cycle(
         ),)
 
     # 2. Pull remote work in BEFORE the gates, so newly-admitted items face
-    #    the same budget, breaker and cap checks as everything else.
-    with queue_lock(root_dir, blocking=True):
-        result.synced, result.sync_errors = _run_intake(root_dir, queue, obs)
+    #    the same budget, breaker and cap checks as everything else. The
+    #    mutex is taken INSIDE, around the commit only (#189 N1).
+    result.synced, result.sync_errors = _run_intake(root_dir, queue, obs)
 
     # 3. The pause marker is read AND cleared under the mutex, re-reading
     #    inside it. Review #186 F7: read and clear outside the lock let an
@@ -2240,6 +2246,11 @@ LAUNCHD_LABEL_PREFIX = "com.kstrl.serve"
 #: how long a running job may take (review #189 F2).
 LAUNCHD_THROTTLE_SECONDS = 60
 
+#: Set by a scheduled (interval-mode) LaunchAgent. Its presence means the
+#: job was installed on the promise of a bounded cycle, so `ks serve`
+#: refuses to start without one (#189 N3).
+REQUIRE_TIMEOUT_ENV = "KSTRL_SERVE_REQUIRE_TIMEOUT"
+
 
 def launchd_label(root_dir: Path) -> str:
     """A launchd label unique to this checkout.
@@ -2302,6 +2313,16 @@ def calendar_schedule(interval_minutes: int) -> list[dict[str, int]]:
             "schedule"
         )
     step = interval_minutes // 60
+    if 24 % step:
+        # Review #189 N6: range(0, 24, 5) gives hours 0,5,10,15,20 - gaps
+        # of 5,5,5,5,4 across midnight. That is not "every five hours",
+        # and a job silently firing on an uneven cadence is worse than one
+        # that refuses to be created.
+        raise ServeError(
+            f"a {step}-hour interval does not divide a day evenly, so the "
+            "schedule would be uneven across midnight; use an hour count "
+            "that divides 24 (1, 2, 3, 4, 6, 8, 12, 24)"
+        )
     return [{"Hour": h, "Minute": 0} for h in range(0, 24, step)]
 
 
@@ -2390,6 +2411,15 @@ def launchd_plist_dict(
         plist["KeepAlive"] = True
     else:
         plist["StartCalendarInterval"] = calendar_schedule(interval_minutes)
+        # Review #189 N3: checking the timeout at GENERATION only binds the
+        # config as it was that day. An operator who later clears
+        # factory_timeout_seconds leaves an installed job running
+        # unbounded, and launchd will not notice. The marker travels WITH
+        # the job, so every scheduled invocation re-checks and fails
+        # closed.
+        env = plist["EnvironmentVariables"]
+        assert isinstance(env, dict)
+        env[REQUIRE_TIMEOUT_ENV] = "1"
     return plist
 
 

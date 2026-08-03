@@ -1427,3 +1427,131 @@ class TestServePollsIntake:
         assert result.synced == (f"{REPO}#4",), "the item was admitted"
         assert not result.ran_item, "but the budget still stopped it running"
         assert queue.items()[0].state is ItemState.QUEUED
+
+
+class TestIntakeLockDiscipline:
+    """#189 N1: the queue mutex must not span remote I/O.
+
+    Wrapping intake in the lock reintroduced exactly the problem #187 F10
+    removed from writeback: a slow GitHub blocks `ks queue pause` and
+    every other transition.
+    """
+
+    def test_the_mutex_is_free_during_the_network_phase(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.workqueue import QueueLockedError, queue_lock
+
+        (tmp_path / "kstrl.toml").write_text(
+            f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n'
+        )
+        _queue(tmp_path).ensure_dirs()
+        held: list[bool] = []
+        real_gh = _GhStub(issues=_issue_payload(_issue(4)))
+
+        def probing_gh(args, *, timeout, cwd=None):  # type: ignore[no-untyped-def]
+            # Every network call must find the mutex free.
+            try:
+                with queue_lock(tmp_path):
+                    held.append(False)
+            except QueueLockedError:
+                held.append(True)
+            return real_gh(args, timeout=timeout, cwd=cwd)
+
+        with patch("kstrl.intake_github.run_gh", probing_gh):
+            with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+                serve_cycle(tmp_path, runner=lambda **k: RunOutcome(0))
+
+        assert held, "the network phase must have run"
+        assert not any(held), (
+            "no gh call may happen while the queue mutex is held"
+        )
+
+    def test_serve_guards_the_COMMIT_even_though_the_poll_is_free(
+        self, tmp_path: Path,
+    ) -> None:
+        """Unlocking the network must not unlock the enqueue.
+
+        The free-during-network test alone cannot catch a dropped guard:
+        with no guard at all the mutex is free everywhere, so that test
+        passes even harder. This asserts the other half.
+        """
+        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.workqueue import Queue as _Queue
+        from kstrl.workqueue import QueueLockedError, queue_lock
+
+        (tmp_path / "kstrl.toml").write_text(
+            f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n'
+        )
+        _queue(tmp_path).ensure_dirs()
+        held_during_add: list[bool] = []
+        real_add = _Queue.add
+
+        def probing_add(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            try:
+                with queue_lock(tmp_path):
+                    held_during_add.append(False)
+            except QueueLockedError:
+                held_during_add.append(True)
+            return real_add(self, *args, **kwargs)
+
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            with patch.object(_Queue, "add", probing_add):
+                with patch(
+                    "kstrl.serve.read_run_spend", lambda r, i: RunSpend(),
+                ):
+                    serve_cycle(tmp_path, runner=lambda **k: RunOutcome(0))
+
+        assert held_during_add, "intake must have enqueued something"
+        assert all(held_during_add), (
+            "every intake enqueue must happen with the queue mutex held"
+        )
+
+    def test_the_commit_still_happens_under_the_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        """Unlocking the poll must not unlock the enqueue."""
+        from contextlib import contextmanager
+
+        entered: list[str] = []
+
+        @contextmanager
+        def guard():  # type: ignore[no-untyped-def]
+            entered.append("in")
+            yield
+            entered.append("out")
+
+        queue = _queue(tmp_path)
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            result = sync(queue, _config(), tmp_path, commit_guard=guard)
+        assert entered == ["in", "out"], "the commit must be guarded"
+        assert result.enqueued == (f"{REPO}#4",)
+
+    def test_the_plan_is_refreshed_under_the_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        """Another process may have queued the same ref while we polled.
+
+        Re-planning inside the guard is what stops a TOCTOU double-admit.
+        """
+        from contextlib import contextmanager
+
+        queue = _queue(tmp_path)
+
+        @contextmanager
+        def guard():  # type: ignore[no-untyped-def]
+            # Simulate a racing writer that admits the same issue first.
+            queue.add(
+                "# raced\n", title="raced", source=ItemSource.GITHUB,
+                source_ref=f"{REPO}#4", target_repo=REPO,
+            )
+            yield
+
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            result = sync(queue, _config(), tmp_path, commit_guard=guard)
+        assert result.enqueued == (), "the refreshed plan must see the race"
+        assert len(queue.items()) == 1, "no duplicate admission"

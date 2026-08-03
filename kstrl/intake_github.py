@@ -58,6 +58,7 @@ import json
 import os
 import subprocess
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -887,6 +888,7 @@ def sync(
     *,
     now_iso: str = "",
     verify: bool = True,
+    commit_guard: Callable[[], AbstractContextManager[Any]] | None = None,
 ) -> SyncResult:
     """Admit labelled issues into the local queue.
 
@@ -898,6 +900,15 @@ def sync(
     without touching the queue or the ledger (review #187 F4: it
     previously suppressed only the remote writes while still enqueueing,
     so a "dry run" could launch paid work).
+
+    ``commit_guard`` is entered ONLY around the local commit, never around
+    the network work. Review #189 N1: the daemon wrapped this whole
+    function in the queue mutex, so a slow GitHub blocked
+    ``ks queue pause`` and every other queue transition - reintroducing
+    exactly the problem #187 F10 removed from writeback. Polling and
+    per-issue authorization now happen unlocked; the plan is then RE-run
+    under the guard against fresh queue state, which costs nothing
+    because authorization is memoized.
     """
     result = SyncResult()
     if not config.enabled:
@@ -943,6 +954,8 @@ def sync(
 
     authorizer = _authorize if verify else None
     planned: list[PlannedIssue] = []
+    polled_issues: list[RemoteIssue] = []
+    # ---- network phase: NO lock is held here (#189 N1) ----
     for page_limit in poll_ladder(config):
         issues, poll_error, exhausted = poll_queued(
             config, repo, root_dir, limit=page_limit,
@@ -951,6 +964,7 @@ def sync(
             result.errors = (poll_error,)
             return result
         result.polled = len(issues)
+        polled_issues = issues
         planned = plan_sync(
             queue, config, repo, issues, ledger, authorizer=authorizer,
         )
@@ -976,6 +990,41 @@ def sync(
     enqueued: list[str] = []
     errors: list[str] = []
 
+    # ---- commit phase: the guard covers ONLY local writes ----
+    guard = commit_guard() if commit_guard is not None else nullcontext()
+    with guard:
+        # Re-plan against fresh queue state: another process may have
+        # enqueued the same ref while we were on the network. Authorization
+        # is memoized, so this makes no new requests.
+        ledger = ProcessedLedger(root_dir).load()
+        planned = plan_sync(
+            queue, config, repo, polled_issues, ledger, authorizer=authorizer,
+        )
+        result.planned = tuple(planned)
+        result.skipped = {
+            entry.issue.source_ref(repo): entry.reason
+            for entry in planned if not entry.decision.admits
+        }
+        enqueued, errors = _commit_admissions(
+            queue, config, repo, planned, ledger, stamp,
+        )
+
+    result.enqueued = tuple(enqueued)
+    result.errors = tuple(errors)
+    return result
+
+
+def _commit_admissions(
+    queue: Queue,
+    config: GitHubIntakeConfig,
+    repo: str,
+    planned: Sequence[PlannedIssue],
+    ledger: ProcessedLedger,
+    stamp: str,
+) -> tuple[list[str], list[str]]:
+    """Enqueue the admitted issues. Caller holds the commit guard."""
+    enqueued: list[str] = []
+    errors: list[str] = []
     for entry in planned:
         if not entry.decision.admits:
             continue
@@ -1020,9 +1069,7 @@ def sync(
 
         enqueued.append(ref)
 
-    result.enqueued = tuple(enqueued)
-    result.errors = tuple(errors)
-    return result
+    return enqueued, errors
 
 
 def report_outcome(

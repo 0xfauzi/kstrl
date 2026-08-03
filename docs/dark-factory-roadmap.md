@@ -1032,6 +1032,15 @@ code carries "needs a human", but launchd bounds neither runtime nor
 overlap, so `[serve] factory_timeout_seconds` is the only real bound on
 a wedged cycle and interval mode refuses to generate a plist without one.
 
+Two constraints added after that paragraph was written (review #189
+N3/N6): the generated interval job also carries
+`KSTRL_SERVE_REQUIRE_TIMEOUT`, so every scheduled invocation re-checks
+the bound and fails closed if the timeout is later removed - a
+generation-time check binds only the config of the day it was run. And
+the interval must divide an hour, or be an hour count dividing 24:
+`range(0, 24, 5)` yields gaps of 5,5,5,5,4 across midnight, which is not
+"every five hours".
+
 **Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
 around a child process: `caffeinate -i <child>` creates a
 `PreventUserIdleSystemSleep` assertion *on behalf of the child*, and that
@@ -1041,16 +1050,22 @@ assertion is gone once the child exits - nothing lingers, which is the
 The caveat the plan implied but did not state: the assertion is
 `PreventUserIdleSystemSleep`, **not** `PreventSystemSleep`. It prevents
 *idle* sleep and does not prevent an explicit one, so **closing the lid
-still suspends the machine mid-run.** Sleep mid-run is survivable - the
-lease reaper reclaims the item and a signal-killed process classifies as
-infrastructural - but it is not prevented.
+still suspends the machine mid-run.**
+
+What that means is narrower than "the run is lost". Sleep SUSPENDS
+processes; it does not kill them. On wake the same `ks serve` and the
+same factory child resume and the cycle finishes, and nothing reaps the
+run because the process that would reap it is the one running it. The
+lease reaper, and the classification of a signal-killed process as
+infrastructural, exist for the case where the process really is gone - a
+crash, an OOM kill, a reboot - not for an ordinary lid close.
 
 **Still not verified (H4), and both need the user.** Sleep/wake resilience
 has not been exercised: whether launchd fires a missed interval on wake,
 and whether the reaper recovers a run interrupted by a real lid close,
-requires genuinely suspending the machine. Apple documents the
-`StartInterval`-on-wake behaviour; that is documentation, not a
-measurement taken here. Separately, `ks serve` has never driven a real
+requires genuinely suspending the machine. The `launchd.plist(5)`
+contracts quoted above are Apple's documentation, not measurements taken
+here. Separately, `ks serve` has never driven a real
 factory run - every daemon test uses a stub runner, deliberately, since a
 suite that spawned real runs would cost dollars per assertion. The first
 unattended run is also the first end-to-end integration test. This is
