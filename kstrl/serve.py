@@ -121,6 +121,10 @@ class Verdict(StrEnum):
     RETRY_INFRA = "retry_infra"
     SPEC_FAILURE = "spec_failure"
     UNCLASSIFIABLE = "unclassifiable"
+    #: The run halted itself on a configured ceiling. Deliberate and
+    #: DETERMINISTIC - the only verdict that would otherwise have been
+    #: read as retryable infrastructure. See budget_halt_reason.
+    BUDGET_HALT = "budget_halt"
 
     @property
     def may_retry(self) -> bool:
@@ -667,6 +671,63 @@ def run_dir_names(root_dir: Path) -> frozenset[str]:
 # ---------------------------------------------------------------------------
 
 
+def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
+    """Why an owned run halted on a ceiling, or "" if none did.
+
+    Found by the first live `ks serve` run, and it is the most expensive
+    thing this module could have got wrong. `pipeline.fail_for_budget`
+    records a blown ceiling as ``Finding.infrastructure_error`` with no
+    distinguishing category, so the classifier read a deliberate
+    "stop spending" as transient infrastructure trouble and RETRIED it.
+
+    A budget halt is deterministic, not transient. The retry re-runs the
+    same work against the same ceiling, and retries cost MORE because
+    they carry accumulated context ($3.99-7.42 versus $1.70-2.60
+    measured). Three attempts of that is the crash loop R8.6 exists to
+    prevent, arrived at through the one branch meant to be safe.
+
+    Read from the typed ``BudgetExceeded`` event rather than by matching
+    the finding's prose, so this cannot drift when the wording changes.
+    """
+    from kstrl import events as ev
+    from kstrl.reducer import read_run_dir
+
+    for run_id in owned_run_ids:
+        if not run_id:
+            continue
+        try:
+            events = read_run_dir(state_dir(root_dir) / "runs" / run_id)
+        except OSError:
+            continue
+        for event in events:
+            if isinstance(event, ev.BudgetExceeded):
+                named = ", ".join(event.ceilings) or event.ceiling or "budget"
+                # BudgetExceeded also carries condition="unenforceable",
+                # where NO threshold was crossed - the ceiling simply
+                # cannot fire because nothing reports that axis. Telling
+                # that operator to "raise the ceiling" points them at a
+                # breach that never happened (#197 M2). Routed through the
+                # shared classifier so this cannot drift from the reducer's
+                # and the Linear sink's reading of the same payload.
+                kind = ev.budget_halt_kind(
+                    event.condition, event.ceilings, event.ceiling,
+                )
+                if kind == "unenforceable":
+                    return (
+                        f"the run halted in {run_id} because no configured "
+                        f"ceiling ({named}) can still fire: no metered call "
+                        "reported that axis, so the cap could never stop the "
+                        "spend. Fix the coverage or the configuration - "
+                        "raising a limit would change nothing"
+                    )
+                return (
+                    f"the run halted on a configured ceiling ({named}) in "
+                    f"{run_id}: raising the ceiling or narrowing the spec is "
+                    "a human decision, and retrying would re-run the same "
+                    "work against the same limit at a higher cost"
+                )
+    return ""
+
 def _infra_casualty(component: Any) -> bool:
     """Whether a component's failure was infrastructural.
 
@@ -684,6 +745,7 @@ def classify_run(
     *,
     run: RunOutcome,
     manifest_path: Path | None,
+    owned_run_ids: Sequence[str] = (),
 ) -> Outcome:
     """Decide what a finished factory run means for its queue item.
 
@@ -699,6 +761,20 @@ def classify_run(
             Verdict.RETRY_INFRA,
             f"launch failed before any spend: {run.launch_error}",
             {"launch_error": run.launch_error},
+        )
+
+    # Checked BEFORE every retry-authorizing branch, and immediately after
+    # the launch-error case (the one place where no child artifacts can
+    # exist). Review #197 M1: placing it after the timeout / signal /
+    # exit-2 branches meant a run that blew its ceiling and then hung long
+    # enough for factory_timeout_seconds to kill it was requeued against
+    # the very ceiling this verdict exists to make terminal.
+    halted = budget_halt_reason(root_dir, owned_run_ids)
+    if halted:
+        return Outcome(
+            Verdict.BUDGET_HALT,
+            halted,
+            {"returncode": run.returncode, "owned_run_ids": list(owned_run_ids)},
         )
 
     if run.timed_out:
@@ -806,14 +882,66 @@ def classify_run(
             },
         )
 
-    judged = [comp.id for comp in failed if not _infra_casualty(comp)]
+    # A component that produced FINDINGS, none of them infrastructural, is
+    # positive evidence of a merits-based failure. A component that
+    # produced NO findings at all is not evidence of anything - and
+    # claiming otherwise sent a real operator looking in the wrong place.
+    #
+    # Found by the first live `ks serve` run: a git worktree creation
+    # failure ("fatal: invalid reference") set Component.error and emitted
+    # no Finding, and this branch reported it as "failed on their own
+    # merits, not on infrastructure". Both verdicts poison, so the money
+    # behaviour was already right; the STATEMENT was false. Every unit
+    # test had constructed manifests WITH findings, so nothing caught it.
+    judged = [
+        comp.id for comp in failed
+        if comp.findings and not _infra_casualty(comp)
+    ]
+    unevidenced = [comp for comp in failed if not comp.findings]
+    # Collected BEFORE the SPEC_FAILURE return: a mixed manifest used to
+    # report only the component with a finding, silently dropping a
+    # sibling's "fatal: invalid reference" from both the reason and the
+    # evidence - recreating the exact operator misdirection this change
+    # exists to remove (#197 M3).
+    sibling_note = ""
+    if unevidenced:
+        sibling_note = "; also failed with no finding to explain it - " + "; ".join(
+            f"{comp.id}: {comp.error or 'no error recorded'}"
+            for comp in unevidenced
+        )
     if judged:
         return Outcome(
             Verdict.SPEC_FAILURE,
             "spec-level failure: "
             + ", ".join(judged)
-            + " failed on their own merits, not on infrastructure",
-            {"returncode": run.returncode, "judged_failures": judged},
+            + " failed on their own merits, not on infrastructure"
+            + sibling_note,
+            {
+                "returncode": run.returncode,
+                "judged_failures": judged,
+                "unevidenced_failures": [comp.id for comp in unevidenced],
+                "component_errors": {
+                    comp.id: comp.error for comp in unevidenced
+                },
+            },
+        )
+
+    if unevidenced:
+        detail = "; ".join(
+            f"{comp.id}: {comp.error or 'no error recorded'}"
+            for comp in unevidenced
+        )
+        return Outcome(
+            Verdict.UNCLASSIFIABLE,
+            "failed with no finding to attribute it to, so the cause is "
+            f"unproven - {detail}",
+            {
+                "returncode": run.returncode,
+                "unevidenced_failures": [comp.id for comp in unevidenced],
+                "component_errors": {
+                    comp.id: comp.error for comp in unevidenced
+                },
+            },
         )
 
     return Outcome(
@@ -2006,6 +2134,7 @@ def serve_cycle(
         root_dir,
         run=outcome,
         manifest_path=manifest_path if owns_manifest else None,
+        owned_run_ids=owned_runs,
     )
     result.verdict = verdict.verdict
     result.reason = verdict.reason
