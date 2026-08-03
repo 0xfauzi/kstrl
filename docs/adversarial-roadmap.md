@@ -1,7 +1,12 @@
 # Adversarial Factory Hardening Roadmap
 
-Durable tracker for the 42-item hardening cycle that follows PRs #35 and #36.
-Strategy doc: `~/.claude/plans/zazzy-orbiting-sketch.md`.
+Durable tracker for the 42-item hardening cycle that followed PRs #35 and
+#36. Historical: this cycle is complete except for the markers noted below;
+successor plans live in `docs/remediation-roadmap.md` and
+`docs/dark-factory-roadmap.md`. PR links below use the pre-rename repo name
+(`kstrl-loop`, now `kstrl`); GitHub redirects them. (Header refreshed
+2026-08-03; the original pointed at a local strategy scratch file that no
+longer governs anything.)
 
 Status legend: `[ ]` pending - `[~]` in progress - `[x]` done - `[-]` skipped.
 

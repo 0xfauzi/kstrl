@@ -94,6 +94,17 @@ Doctrine for this cycle:
 4. **Enforcement reads artifacts, never agent self-report.** Policy and
    adequacy checks run on the git diff, lockfiles, and coverage/mutation
    output, in the mechanical verifier.
+5. **The first-class phase count is frozen** (added 2026-08-03). New
+   evaluations land inside an existing phase (as R8.5 adequacy landed
+   inside mechanical verify) or behind a shared evaluator seam - never as
+   another hard-coded pipeline branch with its own result type threaded
+   through factory, TUI, and events.
+6. **New terminal-status vocabularies reuse one disposition set** (added
+   2026-08-03). Twelve distinct terminal-outcome vocabularies already
+   exist across manifest, pipeline, PR, inbox, queue, and serve. New
+   surfaces (R8.7 release states, R8.8 signals) express outcomes as a
+   shared disposition plus a structured reason code instead of minting
+   another enum. Existing enums are not retrofitted.
 
 ---
 
@@ -137,10 +148,18 @@ The ladder's entry criteria are the factory's cATO evidence. These are
 already tracked in `docs/remediation-roadmap.md` and remain blocking there;
 R8.2 consumes them:
 
-- Calibration baselines green at threshold over 3 runs (R5.1-R5.3).
-- Same-family vs cross-family reviewer detection delta (R7.1).
+- Calibration baselines green at threshold over 3 runs (R5.1-R5.3):
+  **CAPTURED 2026-07-20** (recorded in the remediation roadmap).
+- Same-family vs cross-family reviewer detection delta (R7.1): **CAPTURED
+  2026-07-20** - both families at the detection ceiling, no
+  correlated-miss benefit visible at current fixture difficulty.
 - Two real factory runs with nonzero fact-utilization and one traceable
-  evolve proposal.
+  evolve proposal: **OUTSTANDING - the sole remaining L2+ gate.** Caveat
+  found 2026-08-03: utilization is computed each distill but only printed,
+  never recorded to events or the journal, so this gate cannot yet be
+  evidenced durably. [#191](https://github.com/0xfauzi/kstrl/issues/191)
+  (record the ratio in the `DistillResult` event and the evolution
+  journal) is a prerequisite for satisfying it.
 
 L2+ entry is blocked until these exist. R8 adds no new user-run gates beyond
 threshold-replay captures noted per item.
@@ -158,11 +177,14 @@ proceed in parallel.
 | 2 - adequacy | R8.5 test adequacy gate | The lights-out precondition; advisory-first so it can land early |
 | 3 - operation | R8.6 continuous intake | Needs merge dispositions (R8.2) and inbox routing (R8.3) |
 | 4 - release + loop | R8.7 release stage, then R8.8 runtime feedback | Highest blast radius, lands on top of the ladder and envelope |
+| hardening (added 2026-08-03) | R8.9 control-state relocation | Trust boundary for unattended operation; blocks L3+ and unattended serve with the ladder on |
 
 Dependency edges: R8.2 needs R8.1 (envelope defines L3) and consumes R8.4
 triggers when available. R8.3 needs R8.1/R8.2 item types (can land with
 today's subset). R8.6 needs R8.2 + R8.3. R8.7 needs R8.2 (L4) + R8.6
-(re-queue). R8.8 needs R8.6 + R8.7.
+(re-queue). R8.8 needs R8.6 + R8.7. R8.9 has no upstream dependency but
+BLOCKS enabling `[autonomy]` at L3+ and unattended `ks serve` with the
+ladder enabled.
 
 ---
 
@@ -213,9 +235,13 @@ show` both return nothing), so pip-licenses would resolve nothing.
 back to the **PyPI JSON API** (`license_expression` / classifiers /
 `license`; `KSTRL_POLICY_LICENSE_NET=0` forces offline). A license that
 resolves to a `deny_partial` substring or is not in `license_allow`
-blocks; an unresolvable license is advisory (a merge is not held hostage
-to a cache/network miss). Classification (deny-wins, compound-SPDX atom
-tokenizing) is pure in `kstrl.policy`.
+blocks; an unresolvable license BLOCKS by default per correction 3 above
+(`license_unresolved = "advisory"` is the explicit opt-out for repos that
+prefer not to hold a merge hostage to a cache/network miss).
+Classification (deny-wins, compound-SPDX atom tokenizing) is pure in
+`kstrl.policy`. (This paragraph originally said unresolved was advisory,
+contradicting correction 3 fifteen lines up; fixed 2026-08-03 to match
+the code, where `"block"` is the default.)
 
 **Why.** Machine-made merge decisions are only defensible inside an explicit,
 written envelope. Today the rules are implicit and scattered (diff-scope,
@@ -459,6 +485,15 @@ renders and acts; an ntfy hook example is documented.
 
 Status: `[ ]` - Depends on: none (feeds R8.2)
 
+**Two-stage delivery (decided 2026-08-03).** Stage 1 ships the evidence
+surface only: `ks health` reporting plus the documented historical
+replay. Stage 2 wires the `HEALTH_BREACH` demotion emitter, and only
+after the stage 1 replay has been captured and recorded in this doc - an
+unmeasured EWMA limit must not demote on task-mix noise. The trigger
+R8.2 pre-wired stays dormant until then; this makes the standing
+"no assumed thresholds" rule (top of this doc) an explicit gate between
+the two stages rather than an implied one.
+
 **Why.** Demotion triggers need trend detection over run metrics, and the
 operator needs an evidence surface. The journal and `experiments.tsv` record
 the data; nothing trends it.
@@ -624,6 +659,15 @@ add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
 spend ledger, poison breaker, `caffeinate -i`), and
 `kstrl/intake_github.py` + `ks queue sync` (label polling, processed-ids
 ledger, label/comment writeback). The launchd plist and its docs are PR 4.
+
+**Inbox cap wiring (recorded 2026-08-03).** The R8.3 promise that serve
+consults the inbox open-item cap before admitting queue work IS fulfilled
+in code - `check_inbox_cap` is one of serve's admission gates - it was
+just never stated in this section. One defect found in that wiring: the
+cap currently fails OPEN, because the inbox fold skips unparseable lines
+by design, so a torn emission line undercounts open items and admits work
+past the cap. Fail-closed fix tracked in
+[#190](https://github.com/0xfauzi/kstrl/issues/190).
 
 **GitHub intake (PR 3).** The trigger is the LABEL, not the issue, and
 that is the entire access-control story: applying a label needs write
@@ -844,6 +888,15 @@ today - `[autonomy] enabled` defaults false and L2+ entry is still
 blocked on the user-run measurements - but it needs an R8.2 decision
 before L3 is real.
 
+**RESOLVED 2026-08-03**
+([#195](https://github.com/0xfauzi/kstrl/issues/195)): an explicit
+`pause_before_pr_merge = true` survives every level - the bundle may only
+WITHHOLD autonomy, never remove a human gate the operator asked for,
+mirroring PR #174 correction 1 in the opposite direction.
+`serve.resolve_merge_gate`'s refusal stays as a defense-in-depth
+backstop. Implementation wrinkle recorded in the issue: `FactoryConfig`
+must learn explicit-vs-default provenance for the flag first.
+
 Two invariants in the substrate are money-safety properties rather than
 style, and both are mutation-checked:
 
@@ -987,7 +1040,10 @@ State split: `MERGED` (was `COMPLETED`) -> `RELEASING` -> `RELEASED` |
 mirroring the confidence-tier aliasing precedent. Every transition emits
 events and a Deployment status. Write-ahead intent record before executing:
 deploys are not idempotent; resume asks "did attempt N complete?" via
-status_command / `gh run view` instead of re-firing.
+status_command / `gh run view` instead of re-firing. Per doctrine 6
+(2026-08-03), the new states express their terminal outcomes through the
+shared disposition + reason-code model rather than growing another
+standalone status enum alongside the twelve that already exist.
 
 Verification ladder (each rung optional, failure budget, Argo-analysis
 style): exit code -> health poll with SHA match (endpoint must echo the
@@ -1090,6 +1146,43 @@ release tag; end-to-end demo: planted error -> signal -> queue item -> fix
 PR carrying a reproducing test.
 
 ---
+
+## R8.9 Control-state relocation (M) - [#194](https://github.com/0xfauzi/kstrl/issues/194)
+
+Status: `[ ]` - Added 2026-08-03. Depends on: none; BLOCKS enabling
+`[autonomy]` at L3+ and unattended `ks serve` with the ladder enabled
+
+**Why.** Every durable state surface lives inside the repo tree
+(`.kstrl/`), and the R8.1 halt set protects diffs, not shell activity: an
+engineer agent in a worktree under `.kstrl/worktrees/` can reach
+`autonomy.json`, `queue/spend.json`, `queue/pause.json`, and
+`inbox.jsonl` with ordinary shell access. `autonomy.py`'s own docstring
+concedes the boundary is "real but not absolute". Unattended operation
+(launchd, R8.6 PR 4) turns that from a theoretical concern into the live
+trust boundary: the ladder's level, the spend ledger, the pause marker,
+and the record of human approvals are all editable by the thing they
+govern.
+
+**Design.** Control state moves to `~/.local/state/kstrl/<repo-id>/`
+(XDG): `autonomy.json`, the spend ledger, the queue pause marker;
+evaluate the inbox decision lines and the processed-ids ledger. Locks
+stay in-tree - flock must live near the resource it guards. Events,
+evidence artifacts, worktrees, and knowledge stay in-tree deliberately:
+they are the audit record, not the control plane. `statedir.py` grows the
+split resolution plus a one-time migration with a back-compat read,
+mirroring the `.ralph` -> `.kstrl` pattern. `workqueue.py` already
+anticipates a global queue in a forward-compat comment.
+
+**Failure modes.** Two checkouts of one repo sharing a state dir (the
+repo-id derivation must be stable and documented); state dir missing
+while a queue is live (fail closed: missing control state reads as
+PAUSED, never as empty-and-running); the legacy in-tree paths must remain
+in the halt set so a diff touching them still trips enforcement.
+
+**Done when:** the control files resolve outside the tree; a migration
+test moves legacy in-tree state once and warns; a diff touching the
+legacy paths still trips the halt set; enabling `[autonomy]` at L3+
+refuses to proceed while control state resolves in-tree.
 
 ## Non-goals for R8
 
