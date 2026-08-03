@@ -3116,8 +3116,17 @@ class ComponentPipeline:
                 progress_text = progress_path.read_text(encoding="utf-8")
             except OSError:
                 pass
+            # The diff MUST go in as `diff=`, never as a positional
+            # artifact. Artifacts are searched raw; only `diff=` is
+            # reduced to added lines. Passing it positionally silently
+            # restores the false positive where deleting the code that
+            # expressed a fact scores as referencing it - and it does so
+            # invisibly, because the signature accepts *artifacts, so
+            # neither mypy nor a permissive test stub can see it.
+            # TestFactUtilizationUsesTheRealMatcher pins this call shape
+            # against the real matcher for exactly that reason.
             util = self.hooks.measure_fact_utilization(
-                prefix, shared_diff, progress_text,
+                prefix, progress_text, diff=shared_diff,
             )
             # .get for the per-tier keys: this is an injected seam, and
             # a hook that only reports the totals must degrade to "no

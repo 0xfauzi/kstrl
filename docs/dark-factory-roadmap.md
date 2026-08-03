@@ -157,8 +157,8 @@ R8.2 consumes them:
   evolve proposal: **OUTSTANDING - the sole remaining L2+ gate.** The
   recording prerequisite is closed:
   [#191](https://github.com/0xfauzi/kstrl/issues/191) landed, so
-  utilization now reaches the `DistillResult` event and the evolution
-  journal's `component_result.knowledge_utilization`. Query it with
+  utilization now reaches the `fact_utilization_measured` event and the
+  evolution journal's `component_result.knowledge_utilization`. Query it with
   `EvolutionJournal.get_fact_utilization`; the gate is
   `runs_with_referenced >= 2`. #191 also corrected the number itself -
   it was measured against a knowledge prefix rebuilt AFTER distillation

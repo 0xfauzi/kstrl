@@ -597,9 +597,12 @@ class TestFactUtilizationReadsTheComponentLog:
         seen: list[str] = []
 
         def fake_measure(
-            prefix: str, diff: str, progress: str,
+            prefix: str, *artifacts: str, **kwargs: Any,
         ) -> dict[str, int]:
-            seen.append(progress)
+            # Mirrors the real signature: the progress log is a plain
+            # artifact, the diff arrives as `diff=` so it can be
+            # reduced to added lines.
+            seen.extend(artifacts)
             return {"injected": 1, "referenced": 1}
 
         pipeline = _pipeline(

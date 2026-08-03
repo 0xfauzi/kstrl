@@ -92,7 +92,7 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   2026-08-03, and now the sole remaining L2+ gate (the two bullets above
   are captured). The recording prerequisite
   ([#191](https://github.com/0xfauzi/kstrl/issues/191)) has landed:
-  utilization is written to the `DistillResult` event and to
+  utilization is written to the `fact_utilization_measured` event and to
   `component_result.knowledge_utilization` in the evolution journal.
   Evidence "telemetry nonzero" with
   `EvolutionJournal.get_fact_utilization`, whose `runs_with_referenced`

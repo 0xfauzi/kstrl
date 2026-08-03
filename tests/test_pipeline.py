@@ -31,7 +31,7 @@ from kstrl.factory import (
 )
 from kstrl.fixtures import FixturesConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.knowledge import KnowledgeConfig
+from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import (
@@ -1012,6 +1012,91 @@ class TestDistillPlacement:
         assert any(f.is_phase_skip for f in comp.findings)
 
 
+class TestFactUtilizationUsesTheRealMatcher:
+    """Integration cover for the pipeline -> matcher seam.
+
+    Every test in TestFactUtilizationRecording stubs
+    `measure_fact_utilization`, so none of them can see the pipeline
+    calling it with the wrong shape. That is exactly how the diff came
+    to be passed positionally - bypassing added-line filtering - while
+    the matcher's own unit tests stayed green. These wire the REAL
+    matcher into the pipeline so the contract cannot drift again.
+    """
+
+    CLAIM = "The widget parser rejects trailing commas."
+
+    def _prefix(self) -> str:
+        from kstrl.knowledge import _format_section
+        return _format_section("Dependencies", [Fact(
+            id="fact-001", component_id="comp-x", created_iter=1,
+            created_run_id="factory-20260101-120000-aaaaaa",
+            scope="contract", evidence=["src/x.py:1"],
+            confidence="review_passed", claim=self.CLAIM,
+        )])
+
+    def _run_with_diff(
+        self, tmp_path: Path, diff: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> FactUtilization:
+        monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: diff)
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(review_mode="skip"),
+            knowledge=KnowledgeConfig(
+                enabled=True, knowledge_root=tmp_path / "knowledge",
+            ),
+            # The real function, not a stub.
+            hooks_overrides={
+                "measure_fact_utilization": measure_fact_utilization,
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.record_injected_knowledge("comp-a", self._prefix())
+        pipeline.begin_attempt(comp)
+        pipeline.process_result("comp-a", _success("comp-a"))
+        return pipeline.fact_utilization["comp-a"]
+
+    def _diff(self, body: str) -> str:
+        return (
+            "diff --git a/w.py b/w.py\n--- a/w.py\n+++ b/w.py\n"
+            "@@ -1,3 +1,3 @@\n" + body
+        )
+
+    def test_added_line_is_referenced_end_to_end(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        util = self._run_with_diff(
+            tmp_path, self._diff(f"+# {self.CLAIM}\n"), monkeypatch,
+        )
+        assert util.measured is True
+        assert util.injected == 1
+        assert util.referenced == 1
+
+    def test_deleted_line_is_not_referenced_end_to_end(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The regression this seam let through: deleting the code that
+        expressed a fact must not satisfy the utilization gate."""
+        util = self._run_with_diff(
+            tmp_path,
+            self._diff(f"-# {self.CLAIM}\n+def parse2(): pass\n"),
+            monkeypatch,
+        )
+        assert util.measured is True
+        assert util.injected == 1
+        assert util.referenced == 0
+
+    def test_context_line_is_not_referenced_end_to_end(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        util = self._run_with_diff(
+            tmp_path,
+            self._diff(f" # {self.CLAIM}\n-x = 1\n+x = 2\n"),
+            monkeypatch,
+        )
+        assert util.referenced == 0
+
+
 class TestFactUtilizationRecording:
     """#191: the metric is recorded, measured against the prefix the
     engineer actually saw, and an unmeasured result never reads as a
@@ -1100,7 +1185,9 @@ class TestFactUtilizationRecording:
         factory recorded at submit time, verbatim."""
         seen: list[str] = []
 
-        def measure(prefix: str, *artifacts: str) -> dict[str, int]:
+        def measure(
+            prefix: str, *artifacts: str, **kwargs: Any,
+        ) -> dict[str, int]:
             seen.append(prefix)
             return {"injected": 1, "referenced": 1}
 
@@ -1135,7 +1222,9 @@ class TestFactUtilizationRecording:
 
         seen: list[str] = []
 
-        def measure(prefix: str, *artifacts: str) -> dict[str, int]:
+        def measure(
+            prefix: str, *artifacts: str, **kwargs: Any,
+        ) -> dict[str, int]:
             seen.append(prefix)
             return {"injected": 1, "referenced": 1}
 
@@ -1440,6 +1529,34 @@ class TestFactUtilizationRecording:
         assert util.measured is False
         assert util.reason == "diff unavailable: git exploded"
         assert "utilization" not in calls
+
+    def test_the_real_matcher_is_called_with_the_diff_as_a_keyword(
+        self, tmp_path: Path,
+    ) -> None:
+        """Pins the call SHAPE, not just the matcher.
+
+        `measure_fact_utilization` filters only its keyword-only
+        `diff=`; positional artifacts are searched raw by design. So
+        passing the diff positionally silently restores the
+        deletion/context false positive - and nothing else can see it:
+        the signature takes *artifacts so mypy is happy, and every other
+        test here injects a permissive `lambda *a, **k` stub that
+        accepts either shape. This one asserts the keyword directly.
+        """
+        seen: dict[str, Any] = {}
+
+        def spy(
+            prefix: str, *artifacts: str, **kwargs: Any,
+        ) -> dict[str, int]:
+            seen["artifacts"] = artifacts
+            seen["diff"] = kwargs.get("diff")
+            return {"injected": 1, "referenced": 1}
+
+        self._run(tmp_path, measure=spy)
+        assert seen["diff"] == "diff --git a b\n", (
+            "the diff must be passed as diff=, not as an artifact"
+        )
+        assert "diff --git" not in "".join(seen["artifacts"])
 
     def test_per_tier_counts_are_carried_through(
         self, tmp_path: Path,
