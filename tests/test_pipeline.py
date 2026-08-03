@@ -1278,6 +1278,144 @@ class TestFactUtilizationRecording:
         assert pipeline.fact_utilization == {}
         assert "utilization" not in calls
 
+    def test_review_failed_component_is_still_measured(
+        self, tmp_path: Path,
+    ) -> None:
+        """The sampling-bias fix. Distillation runs only after review
+        and security pass, so measuring there sampled successful
+        components exclusively - a component that failed review had
+        facts injected and may well have used them."""
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(review_mode="hard"),
+            knowledge=KnowledgeConfig(
+                enabled=True, knowledge_root=tmp_path / "knowledge",
+            ),
+            hooks_overrides={
+                "run_review": lambda *a, **k: ReviewResult(
+                    passed=False, mode="hard",
+                ),
+                "measure_fact_utilization": (
+                    lambda *a, **k: {"injected": 4, "referenced": 3}
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.record_injected_knowledge("comp-a", "FACT: alpha")
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        # The component never reached the distill phase...
+        assert outcome.distill is None
+        # ...and is measured anyway.
+        assert pipeline.fact_utilization["comp-a"] == FactUtilization(
+            measured=True, injected=4, referenced=3,
+        )
+
+    def test_security_failed_component_is_still_measured(
+        self, tmp_path: Path,
+    ) -> None:
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(
+                review_mode="hard",
+                security_config=SecurityConfig(mode="hard"),
+            ),
+            security_selection=_selection("security"),
+            knowledge=KnowledgeConfig(
+                enabled=True, knowledge_root=tmp_path / "knowledge",
+            ),
+            hooks_overrides={
+                "run_security_review": lambda *a, **k: SecurityResult(
+                    passed=False, mode="hard",
+                ),
+                "measure_fact_utilization": (
+                    lambda *a, **k: {"injected": 2, "referenced": 1}
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.record_injected_knowledge("comp-a", "FACT: alpha")
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.distill is None
+        assert pipeline.fact_utilization["comp-a"].measured is True
+        assert pipeline.fact_utilization["comp-a"].referenced == 1
+
+    def test_verify_failed_component_records_why_it_is_unmeasured(
+        self, tmp_path: Path,
+    ) -> None:
+        """No diff exists yet, so it cannot be measured - but the gap is
+        recorded with a reason instead of the component going silently
+        absent from the population."""
+        pipeline, manifest, _, calls = _make_pipeline(
+            tmp_path,
+            knowledge=KnowledgeConfig(
+                enabled=True, knowledge_root=tmp_path / "knowledge",
+            ),
+            hooks_overrides={
+                "run_mechanical_verification": (
+                    lambda *a, **k: VerificationResult(
+                        passed=False,
+                        checks=[CheckResult(
+                            name="test_suite", passed=False,
+                            message="boom", duration_seconds=0.1,
+                        )],
+                    )
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.record_injected_knowledge("comp-a", "FACT: alpha")
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        util = pipeline.fact_utilization["comp-a"]
+        assert util.measured is False
+        assert util.reason == "component failed verification, before a diff"
+        assert "utilization" not in calls
+
+    def test_per_tier_counts_are_carried_through(
+        self, tmp_path: Path,
+    ) -> None:
+        """The denominator-bias fix: the sibling tier inflates the
+        overall ratio, so the core tier is recorded separately."""
+        _, outcome, _, _ = self._run(
+            tmp_path,
+            measure=lambda *a, **k: {
+                "injected": 6, "referenced": 2,
+                "core_injected": 2, "core_referenced": 2,
+                "dependency_injected": 1, "dependency_referenced": 0,
+                "sibling_injected": 3, "sibling_referenced": 0,
+            },
+        )
+        util = outcome.distill.utilization
+        # Overall reads 2/6; the core tier reads 2/2.
+        assert (util.injected, util.referenced) == (6, 2)
+        assert (util.core_injected, util.core_referenced) == (2, 2)
+        assert (util.sibling_injected, util.sibling_referenced) == (3, 0)
+        assert util.to_dict()["by_tier"]["core"] == {
+            "injected": 2, "referenced": 2,
+        }
+
+    def test_hook_without_tier_keys_degrades_to_no_breakdown(
+        self, tmp_path: Path,
+    ) -> None:
+        """measure_fact_utilization is an injected seam; a hook that
+        reports only the totals must not break the measurement."""
+        _, outcome, _, _ = self._run(
+            tmp_path,
+            measure=lambda *a, **k: {"injected": 3, "referenced": 1},
+        )
+        util = outcome.distill.utilization
+        assert util.measured is True
+        assert (util.injected, util.referenced) == (3, 1)
+        assert util.core_injected == 0
+
     def test_none_record_supersedes_a_previous_attempt(
         self, tmp_path: Path,
     ) -> None:

@@ -165,9 +165,13 @@ R8.2 consumes them:
   had written that run's own facts, so it counted facts the engineer
   never saw. Any utilization figure observed before #191 is not valid
   evidence for this gate. What remains is running the two real runs.
-  See `docs/evolution-metrics.md` for the three caveats that bound what
-  the number means (lower bound; sibling summaries inflate the
-  denominator; only components reaching the distill phase are sampled).
+  The two sampling defects found alongside it are fixed, not just
+  documented: measurement happens at the diff phase, so components that
+  fail review or security are in the sample, and the counts are split
+  per prefix tier so sibling summaries no longer inflate the
+  denominator. `docs/evolution-metrics.md` records what is in the
+  sample, how to read the tiers, and the one standing caveat (the
+  30-char substring match is a lower bound).
 
 L2+ entry is blocked until these exist. R8 adds no new user-run gates beyond
 threshold-replay captures noted per item.

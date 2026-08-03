@@ -568,6 +568,29 @@ class TestRecordRunFactUtilization:
             "measured": True, "injected": 4, "referenced": 2, "reason": "",
         }
 
+    def test_entry_carries_the_tier_breakdown(self, tmp_path: Path) -> None:
+        """The denominator bias is only visible if the tiers survive to
+        the journal: an overall 2/6 with a core 2/2 is a very different
+        result from a genuine 2/6."""
+        journal, config = self._journal(tmp_path)
+        comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
+        journal.record_run(
+            "run-001", _make_manifest([comp]),
+            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            fact_utilization={"b": {
+                "measured": True, "injected": 6, "referenced": 2, "reason": "",
+                "by_tier": {
+                    "core": {"injected": 2, "referenced": 2},
+                    "dependency": {"injected": 1, "referenced": 0},
+                    "sibling": {"injected": 3, "referenced": 0},
+                },
+            }},
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        by_tier = entry["knowledge_utilization"]["by_tier"]
+        assert by_tier["core"] == {"injected": 2, "referenced": 2}
+        assert by_tier["sibling"] == {"injected": 3, "referenced": 0}
+
     def test_unrecorded_component_gets_measured_false(
         self, tmp_path: Path,
     ) -> None:

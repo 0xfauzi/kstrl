@@ -43,7 +43,7 @@ migrations are detectable.
 | `findings` | Full typed Finding stream of the last attempt (E3), attempt-tagged. |
 | `findings_summary` | Aggregates of `findings`: `total`, `by_phase`, `by_severity`, `by_category`, `by_owasp`, `infrastructure_errors`. |
 | `usage` | R3.1 per-phase token/cost self-reports (lower bounds when `unreported_calls` > 0). |
-| `knowledge_utilization` | #191: `{measured, injected, referenced, reason}`. Written on EVERY entry. `measured` must be read first: `false` means the run could not measure and the entry is NOT evidence - it is not a zero. `injected`/`referenced` are meaningful only when `measured` is `true`; `measured: true, referenced: 0` IS evidence, of injected facts going unused. `reason` says why an unmeasured entry is unmeasured (`"not measured"` when the component never reached the distill phase, `"knowledge retrieval failed"`, `"no injected prefix recorded for this attempt"`, or an exception string). Entries written before #191 have no key at all, a third distinguishable state that also counts as unmeasured. See the caveats below. |
+| `knowledge_utilization` | #191: `{measured, injected, referenced, reason, by_tier}`. Written on EVERY entry. `measured` must be read first: `false` means the run could not measure and the entry is NOT evidence - it is not a zero. `injected`/`referenced` are meaningful only when `measured` is `true`; `measured: true, referenced: 0` IS evidence, of injected facts going unused. `reason` says why an unmeasured entry is unmeasured (`"not measured"`, `"component failed verification, before a diff"`, `"diff unavailable"`, `"knowledge retrieval failed"`, `"no injected prefix recorded for this attempt"`, or an exception string). `by_tier` splits the counts across `core` / `dependency` / `sibling`. Entries written before #191 have no key at all, a third distinguishable state that also counts as unmeasured. See the sections below for which components are sampled and how to read the tiers. |
 
 ## Experiments: `.kstrl/experiments.tsv`
 
@@ -88,24 +88,59 @@ This is the query behind the sole remaining L2+ cATO gate in
 `docs/remediation-roadmap.md`: "two real factory runs with nonzero
 fact-utilization" is `runs_with_referenced >= 2`.
 
-Three caveats bound what the numbers mean. None of them is a defect in
-the recording; all three are properties of the measurement:
+### Which components are in the sample
 
-1. **It is a lower bound.** `measure_fact_utilization` is a 30-character
-   case-insensitive substring match against the diff and the component's
-   progress log. An LLM that paraphrases a fact it genuinely used scores
-   as not referencing it.
-2. **`injected` counts sibling-tier summaries.** The prefix's third tier
-   carries first-sentence summaries of every OTHER component's facts,
-   rendered in the same shape as full-text core facts, so the claim
-   extractor counts them. Those are the claims a component is least
-   likely to echo, which inflates the denominator. Per-tier counts are
-   not yet recorded.
-3. **Only components that reach the distill phase are measured.** The
-   phase runs after verification, review, and security all pass, so a
-   component that FAILED review is never measured even though its
-   engineer had facts and may have used them. The population is
-   therefore biased toward successful components.
+Utilization is measured as soon as the diff phase produces a diff, so
+the population is **every component that produced a diff** - including
+those that then failed review or security.
+
+It was previously measured in the distill phase, which runs only after
+verification, review, and security all pass. That sampled successful
+components exclusively: a component that failed review had facts
+injected and may well have used them, and the gate never saw it. The
+measurement is a substring scan costing no tokens, so there was never a
+cost reason to defer it.
+
+Two failure classes still cannot be measured, because no diff exists
+yet. They are recorded as `measured: false` with a specific `reason`
+rather than left absent, so the gap is visible in the data:
+
+| Case | `reason` |
+|---|---|
+| Failed mechanical verification | `component failed verification, before a diff` |
+| Diff phase itself failed | `diff unavailable` |
+
+Measuring these against `progress.txt` alone would trade this gap for a
+subtler bias - a sample whose artifact set differs between the
+components in it - so it is deliberately not done.
+
+### Reading the tiers
+
+`by_tier` splits the same measurement across the prefix's three tiers.
+It exists because the totals are denominator-biased: the sibling tier
+carries a first-sentence summary of every OTHER component's facts,
+rendered in the same shape as full-text core facts, and those are the
+claims a component is least likely to echo.
+
+`core_referenced / core_injected` is the sharper question - did the
+engineer use what was known about the component it was actually
+building? An overall `2/6` alongside a core `2/2` is a very different
+result from a genuine `2/6`.
+
+Per-tier counts can sum to **less** than the totals: a claim under a
+heading the knowledge module did not write counts in the total but is
+attributed to no tier, rather than being silently credited to a real
+one. `kstrl/knowledge.py` shares its section-title constants between
+the renderer and the tier parser precisely so the two cannot drift and
+mis-bin claims while still summing correctly.
+
+### The remaining caveat
+
+**It is a lower bound.** `measure_fact_utilization` is a 30-character
+case-insensitive substring match against the diff and the component's
+progress log. An LLM that paraphrases a fact it genuinely used scores as
+not referencing it. This is a property of the measurement, not a defect
+in the recording, and it bounds every number above.
 
 ## Proposals: `.kstrl/proposals/prop-NNN.md`
 

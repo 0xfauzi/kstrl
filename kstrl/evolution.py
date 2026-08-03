@@ -46,6 +46,13 @@ _UNMEASURED_UTILIZATION: dict[str, Any] = {
     "injected": 0,
     "referenced": 0,
     "reason": "not measured",
+    # Same shape as a measured entry, so a consumer reads `measured`
+    # rather than probing for key presence.
+    "by_tier": {
+        "core": {"injected": 0, "referenced": 0},
+        "dependency": {"injected": 0, "referenced": 0},
+        "sibling": {"injected": 0, "referenced": 0},
+    },
 }
 
 

@@ -30,6 +30,7 @@ from kstrl.knowledge import (
     build_knowledge_context,
     current_run_id,
     distill_facts,
+    measure_fact_utilization,
     read_facts,
     write_facts,
 )
@@ -1583,7 +1584,13 @@ class TestFactUtilization:
     def test_empty_prefix_zero_zero(self) -> None:
         from kstrl.knowledge import measure_fact_utilization
         result = measure_fact_utilization("", "diff", "progress")
-        assert result == {"injected": 0, "referenced": 0}
+        assert result["injected"] == 0
+        assert result["referenced"] == 0
+        # Every tier key is present even with nothing to count, so a
+        # consumer never has to tell "absent" from "zero".
+        for tier in ("core", "dependency", "sibling"):
+            assert result[f"{tier}_injected"] == 0
+            assert result[f"{tier}_referenced"] == 0
 
     def test_referenced_when_claim_in_diff(self) -> None:
         from kstrl.knowledge import measure_fact_utilization
@@ -1614,6 +1621,113 @@ class TestFactUtilization:
         result = measure_fact_utilization(prefix, diff, "")
         assert result["injected"] == 3
         assert result["referenced"] == 2
+
+
+class TestFactUtilizationTiers:
+    """#191 follow-up: the totals are denominator-biased because the
+    sibling tier carries a first-sentence summary of every OTHER
+    component's facts - the claims this component is least likely to
+    echo. The per-tier split is what makes that visible."""
+
+    def _facts(self, comp_id: str, *claims: str) -> list[Fact]:
+        return [
+            Fact(
+                id=f"fact-{i + 1:03d}", component_id=comp_id, created_iter=1,
+                created_run_id="factory-20260101-120000-aaaaaa",
+                scope="contract", evidence=["src/x.py:1"],
+                confidence="review_passed", claim=claim,
+            )
+            for i, claim in enumerate(claims)
+        ]
+
+    def _real_prefix(self, tmp_path: Path) -> str:
+        """A prefix built by build_knowledge_context itself, not by
+        hand. Hand-built fixtures cannot catch the renderer and the
+        tier parser drifting apart, which is the failure this split is
+        exposed to."""
+        write_facts(
+            self._facts("comp-a", "Core fact about the widget parser."),
+            tmp_path, "comp-a", "run-1",
+        )
+        write_facts(
+            self._facts("comp-b", "Dependency fact about the token store."),
+            tmp_path, "comp-b", "run-1",
+        )
+        write_facts(
+            self._facts("comp-c", "Sibling fact about the report renderer."),
+            tmp_path, "comp-c", "run-1",
+        )
+        manifest = _make_manifest([
+            _make_component("comp-a", ["comp-b"]),
+            _make_component("comp-b"),
+            _make_component("comp-c"),
+        ])
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        return build_knowledge_context(
+            manifest, comp, tmp_path, KnowledgeConfig(enabled=True),
+        )
+
+    def test_tiers_are_attributed_from_a_real_prefix(
+        self, tmp_path: Path,
+    ) -> None:
+        prefix = self._real_prefix(tmp_path)
+        result = measure_fact_utilization(prefix, "", "")
+        assert result["injected"] == 3
+        assert result["core_injected"] == 1
+        assert result["dependency_injected"] == 1
+        assert result["sibling_injected"] == 1
+
+    def test_core_ratio_is_not_diluted_by_the_sibling_tier(
+        self, tmp_path: Path,
+    ) -> None:
+        """The bias, demonstrated: the engineer used every fact about
+        the component it was building, but the overall ratio reads 1/3
+        because two other tiers are in the denominator."""
+        prefix = self._real_prefix(tmp_path)
+        diff = "+# Core fact about the widget parser.\n"
+        result = measure_fact_utilization(prefix, diff, "")
+        assert result["referenced"] == 1
+        assert result["injected"] == 3
+        # The debiased view: 1/1 on the tier that is actually about
+        # this component.
+        assert result["core_referenced"] == 1
+        assert result["core_injected"] == 1
+        assert result["sibling_referenced"] == 0
+        assert result["dependency_referenced"] == 0
+
+    def test_claims_under_an_unknown_heading_count_only_in_the_total(
+        self,
+    ) -> None:
+        """An unrecognized section is not folded into a real tier - the
+        per-tier counts sum to less than the total instead of silently
+        crediting the wrong tier."""
+        from kstrl.knowledge import _format_section
+        prefix = _format_section(
+            "Some future section", self._facts("comp-x", "A novel claim."),
+        )
+        result = measure_fact_utilization(prefix, "A novel claim.", "")
+        assert result["injected"] == 1
+        assert result["referenced"] == 1
+        assert result["core_injected"] == 0
+        assert result["dependency_injected"] == 0
+        assert result["sibling_injected"] == 0
+
+    def test_tier_totals_never_exceed_the_overall_totals(
+        self, tmp_path: Path,
+    ) -> None:
+        prefix = self._real_prefix(tmp_path)
+        diff = (
+            "+# Core fact about the widget parser.\n"
+            "+# Sibling fact about the report renderer.\n"
+        )
+        result = measure_fact_utilization(prefix, diff, "")
+        for key in ("injected", "referenced"):
+            tiered = sum(
+                result[f"{tier}_{key}"]
+                for tier in ("core", "dependency", "sibling")
+            )
+            assert tiered <= result[key]
 
 
 def test_current_run_id_format_has_microseconds() -> None:

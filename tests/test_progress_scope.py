@@ -608,14 +608,10 @@ class TestFactUtilizationReadsTheComponentLog:
             knowledge_prefix="FACT: fact-alpha",
         )
 
-        pipeline._phase_distill(
-            comp,
-            ComponentResult(
-                comp.id, success=True, iterations=1, duration_seconds=1.0,
-            ),
-            wt_path,
-            "diff",
-        )
+        # Measurement moved off the distill phase to the diff phase
+        # (#191 follow-up) so components that fail review are sampled
+        # too; the progress path it resolves is unchanged.
+        pipeline.record_fact_utilization(comp, wt_path, "diff")
 
         assert seen == ["component log: fact-alpha referenced\n"]
 

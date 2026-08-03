@@ -184,16 +184,33 @@ class FactUtilization:
     L2+ fact-utilization gate un-evidenceable (#191).
 
     ``injected`` is a lower bound: the metric is a 30-char
-    case-insensitive substring match (``knowledge.measure_fact_utilization``)
-    and it counts sibling-tier first-sentence summaries alongside
-    full-text core facts.
+    case-insensitive substring match
+    (``knowledge.measure_fact_utilization``).
+
+    The totals are also biased upward in the denominator, which is what
+    ``by_tier`` exists to expose: the sibling tier carries
+    first-sentence summaries of every OTHER component's facts, and those
+    are the claims this component is least likely to echo.
+    ``core_referenced / core_injected`` is the sharper ratio - did the
+    engineer use what was known about the component it was building?
     """
 
     measured: bool = False
     injected: int = 0
     referenced: int = 0
+    # Per-tier split of the same measurement. These can sum to less than
+    # the totals when the prefix carries a section the knowledge module
+    # did not write; an unrecognized section is not folded into a real
+    # tier.
+    core_injected: int = 0
+    core_referenced: int = 0
+    dependency_injected: int = 0
+    dependency_referenced: int = 0
+    sibling_injected: int = 0
+    sibling_referenced: int = 0
     # Why unmeasured; "" when measured. Journal-only: the event stream
-    # carries the three numbers, the journal carries the diagnosis.
+    # carries the top-line numbers, the journal carries the diagnosis
+    # and the tier breakdown.
     reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -202,6 +219,20 @@ class FactUtilization:
             "injected": self.injected,
             "referenced": self.referenced,
             "reason": self.reason,
+            "by_tier": {
+                "core": {
+                    "injected": self.core_injected,
+                    "referenced": self.core_referenced,
+                },
+                "dependency": {
+                    "injected": self.dependency_injected,
+                    "referenced": self.dependency_referenced,
+                },
+                "sibling": {
+                    "injected": self.sibling_injected,
+                    "referenced": self.sibling_referenced,
+                },
+            },
         }
 
 
@@ -518,6 +549,62 @@ class ComponentPipeline:
         way. Neither is reachable from a submit-time snapshot.
         """
         self.injected_knowledge[comp_id] = prefix
+
+    def record_fact_utilization(
+        self,
+        comp: Component,
+        wt_path: Path,
+        diff_text: str,
+        *,
+        unavailable: str = "",
+    ) -> None:
+        """Measure and store this attempt's fact utilization (#191).
+
+        Called from ``process_result`` as soon as the diff phase yields
+        a diff, NOT from the distill phase. Distillation runs only after
+        verification, review, and security all pass, so measuring there
+        sampled successful components exclusively - a component that
+        failed review had facts injected and may well have used them,
+        and the gate never saw it. Measuring at the diff phase moves the
+        sampled population from "passed every gate" to "produced a
+        diff", which is what the question is actually about.
+
+        Components that fail verification or the diff phase itself have
+        no diff to measure against, and are recorded as unmeasured with
+        ``unavailable`` as the reason rather than left absent. Measuring
+        those against progress.txt alone would trade this bias for a
+        subtler one: a sample whose artifact set differs between the
+        components in it.
+
+        The measurement is free (a substring scan, no LLM call), so it
+        sits above every budget guard. Overwrites per attempt, matching
+        ``record_injected_knowledge``.
+        """
+        if not self.knowledge_config.enabled:
+            return
+        if self.manifest.single_pr:
+            # That mode's shared diff carries sibling components'
+            # changes, which would inflate `referenced` - the same
+            # reason distillation skips it.
+            return
+        if unavailable:
+            self.fact_utilization[comp.id] = FactUtilization(
+                reason=unavailable,
+            )
+            return
+        util = self._measure_utilization(comp, wt_path, diff_text)
+        self.fact_utilization[comp.id] = util
+        if util.measured and util.injected > 0:
+            self.ui.info(
+                f"  Knowledge utilization: "
+                f"{util.referenced}/{util.injected} "
+                f"facts referenced in diff or progress.txt"
+                + (
+                    f" (core {util.core_referenced}/{util.core_injected})"
+                    if util.core_injected
+                    else ""
+                )
+            )
 
     def mark_usage_salvage_safe(self, comp_id: str) -> None:
         """The attempt's usage snapshot slot is provably clean."""
@@ -1793,6 +1880,10 @@ class ComponentPipeline:
             verify.failure.error if verify.failure else "",
         )
         if verify.failure is not None:
+            self.record_fact_utilization(
+                comp, wt_path, "",
+                unavailable="component failed verification, before a diff",
+            )
             return PipelineOutcome(
                 transition=self._route_failure(comp, verify.failure),
                 verify=verify,
@@ -1805,10 +1896,18 @@ class ComponentPipeline:
             diff.failure.error if diff.failure else "",
         )
         if diff.failure is not None:
+            self.record_fact_utilization(
+                comp, wt_path, "", unavailable="diff unavailable",
+            )
             return PipelineOutcome(
                 transition=self._route_failure(comp, diff.failure),
                 verify=verify, diff=diff,
             )
+
+        # #191: measure fact utilization the moment a diff exists, so
+        # the sample is every component that produced one - not only
+        # those that survive the review and security gates below.
+        self.record_fact_utilization(comp, wt_path, diff.diff)
 
         # PHASE 2: Second-opinion review
         t0 = self._phase_started(comp, "review")
@@ -2792,9 +2891,11 @@ class ComponentPipeline:
         A's code as evidence. Skip the phase entirely until A2's
         follow-up wires up per-component diff isolation.
 
-        The phase also measures fact utilization - the READ side of the
-        knowledge layer, versus distillation's write side. It is not
-        gated on distillation running: see ``_measure_utilization``.
+        Fact utilization is NOT measured here. It is measured as soon as
+        the diff phase produces a diff, so that components which fail
+        review or security are still sampled - see
+        ``record_fact_utilization``. This phase only reads the stored
+        result to put it on the ``DistillResult`` event.
         """
         knowledge_config = self.knowledge_config
         if not knowledge_config.enabled:
@@ -2816,28 +2917,13 @@ class ComponentPipeline:
                     "single_pr mode produces a polluted per-component diff"
                 ),
             )
-        # Fact utilization is measured HERE (#191), above the budget
-        # guards and above distillation itself. Three deliberate
-        # ordering choices:
-        #   1. It costs zero tokens - a substring scan - so gating it on
-        #      the adversarial/cost ceilings threw away free evidence
-        #      from exactly the runs that hit a ceiling.
-        #   2. It must not depend on distillation succeeding: "did the
-        #      engineer use the facts we gave it" is answered by the
-        #      diff, not by the distiller's output.
-        #   3. The DistillResult event carries the numbers, so they have
-        #      to exist before the emit.
-        # It stays BELOW the single_pr guard for the same reason
-        # distillation does: that mode's shared diff carries sibling
-        # components' changes, which would inflate `referenced`.
-        util = self._measure_utilization(comp, wt_path, shared_diff)
-        self.fact_utilization[comp.id] = util
-        if util.measured and util.injected > 0:
-            self.ui.info(
-                f"  Knowledge utilization: "
-                f"{util.referenced}/{util.injected} "
-                f"facts referenced in diff or progress.txt"
-            )
+        # Already measured at the diff phase, for every component that
+        # got that far - including the ones that then failed review or
+        # security and never reach this line. Read, do not re-measure:
+        # measuring again here would score the same component twice and
+        # re-introduce the ordering hazard that put the measurement
+        # after distillation's writes in the first place.
+        util = self.fact_utilization.get(comp.id) or FactUtilization()
 
         if not self.adversarial_budget_ok():
             self.ui.info(
@@ -2990,10 +3076,21 @@ class ComponentPipeline:
             util = self.hooks.measure_fact_utilization(
                 prefix, shared_diff, progress_text,
             )
+            # .get for the per-tier keys: this is an injected seam, and
+            # a hook that only reports the totals must degrade to "no
+            # tier breakdown", not blow up the measurement.
             return FactUtilization(
                 measured=True,
                 injected=int(util["injected"]),
                 referenced=int(util["referenced"]),
+                core_injected=int(util.get("core_injected", 0)),
+                core_referenced=int(util.get("core_referenced", 0)),
+                dependency_injected=int(util.get("dependency_injected", 0)),
+                dependency_referenced=int(
+                    util.get("dependency_referenced", 0),
+                ),
+                sibling_injected=int(util.get("sibling_injected", 0)),
+                sibling_referenced=int(util.get("sibling_referenced", 0)),
             )
         except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
             # Was a bare `except: pass`. Silence made a broken recorder
