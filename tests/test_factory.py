@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from kstrl.config import KstrlConfig
@@ -12,6 +14,7 @@ from kstrl.factory import (
     FactoryConfig,
     run_factory,
 )
+from kstrl.knowledge import Fact, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.ui.plain import PlainUI
@@ -448,3 +451,129 @@ class TestEvolutionRecording:
         comp = manifest.get_component("a")
         assert comp is not None
         assert comp.duration_seconds > 0
+
+    def _knowledge_project(self, tmp_path: Path) -> tuple[Path, Manifest]:
+        """A project whose knowledge store already holds one fact for
+        component 'a', so the submit-time prefix is non-empty."""
+        root = _setup_project(tmp_path)
+        prd_rel = "scripts/kstrl/feature/a/prd.json"
+        manifest = _make_manifest([
+            Component("a", "A", "", [], prd_rel, "b/a"),
+        ])
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
+        feature_dir.mkdir(parents=True)
+        (feature_dir / "prd.json").write_text(json.dumps({
+            "branchName": "test",
+            "userStories": [{
+                "id": "US-001", "title": "Test",
+                "acceptanceCriteria": ["AC1"],
+                "priority": 1, "passes": True, "notes": "",
+            }],
+        }))
+        # Written through the real writer so the fixture cannot drift
+        # from the on-disk format the reader expects.
+        write_facts(
+            [Fact(
+                id="fact-001", component_id="a", created_iter=1,
+                created_run_id="seed-run", scope="contract",
+                evidence=["widget.py:12"],
+                confidence="review_passed",
+                claim="The widget parser rejects trailing commas.",
+            )],
+            root / ".kstrl" / "knowledge", "a", "seed-run",
+        )
+        return root, manifest
+
+    def _passing_config(self, root: Path) -> FactoryConfig:
+        return FactoryConfig(
+            use_worktrees=False, create_prs=False, max_parallel=1,
+            max_retries=0, retry_delay=0, review_mode="skip",
+            verify_config=VerifyConfig(
+                test_command="true", typecheck_command="true",
+                lint_command="true", check_diff_scope=False,
+                check_bad_patterns=False, subprocess_timeout=5.0,
+            ),
+        )
+
+    def _component_entry(self, root: Path) -> dict[str, Any]:
+        entries = [
+            json.loads(line)
+            for line in (root / ".kstrl" / "evolution.jsonl")
+            .read_text().strip().splitlines()
+        ]
+        comp_entries = [
+            e for e in entries
+            if e.get("event_type") == "component_result"
+            and e.get("component_id") == "a"
+        ]
+        assert comp_entries, f"no component_result entry in {entries}"
+        return comp_entries[-1]
+
+    def test_fact_utilization_reaches_the_journal(
+        self, tmp_path: Path,
+    ) -> None:
+        """#191 end to end: the prefix captured at submit time survives
+        through the pipeline into the journal, with no LLM spend."""
+        root, manifest = self._knowledge_project(tmp_path)
+        base = _make_base_config(root)
+        seen_prefixes: list[str] = []
+
+        def fake_measure(
+            prefix: str, *artifacts: str, **kwargs: Any,
+        ) -> dict[str, int]:
+            seen_prefixes.append(prefix)
+            return {"injected": 1, "referenced": 1}
+
+        with patch(
+            "kstrl.factory._run_component",
+            return_value=ComponentResult("a", success=True, iterations=1),
+        ), patch("kstrl.git.get_diff_content", return_value="some diff"), \
+                patch(
+                    "kstrl.factory.measure_fact_utilization", fake_measure,
+                ), patch(
+                    "kstrl.factory.distill_facts", return_value=(0, "none"),
+                ):
+            run_factory(
+                manifest, self._passing_config(root), base,
+                PlainUI(no_color=True), root,
+            )
+
+        # The measured prefix is the real one built at submit time, so
+        # it carries the seeded fact.
+        assert seen_prefixes, "utilization was never measured"
+        assert "trailing commas" in seen_prefixes[0]
+
+        util = self._component_entry(root)["knowledge_utilization"]
+        assert util["measured"] is True
+        assert util["injected"] == 1
+        assert util["referenced"] == 1
+
+    def test_knowledge_retrieval_failure_warns_and_is_unmeasured(
+        self, tmp_path: Path,
+    ) -> None:
+        """The retrieval failure used to be a bare `except: pass` - it
+        strips the engineer's whole prefix, so it must be loud, and the
+        run must not be scored as if facts had been injected."""
+        root, manifest = self._knowledge_project(tmp_path)
+        base = _make_base_config(root)
+        buf = io.StringIO()
+        ui = PlainUI(no_color=True, file=buf)
+
+        def boom(*args: Any, **kwargs: Any) -> str:
+            raise RuntimeError("knowledge store unreadable")
+
+        with patch(
+            "kstrl.factory._run_component",
+            return_value=ComponentResult("a", success=True, iterations=1),
+        ), patch("kstrl.git.get_diff_content", return_value="some diff"), \
+                patch("kstrl.factory.build_knowledge_context", boom), patch(
+                    "kstrl.factory.distill_facts", return_value=(0, "none"),
+                ):
+            run_factory(
+                manifest, self._passing_config(root), base, ui, root,
+            )
+
+        assert "Knowledge retrieval failed" in buf.getvalue()
+        util = self._component_entry(root)["knowledge_utilization"]
+        assert util["measured"] is False
+        assert util["reason"] == "knowledge retrieval failed"

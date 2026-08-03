@@ -539,6 +539,166 @@ class TestRecordRunSignatures:
         assert entry["failure_signatures"] == ["linter:S608"]
 
 
+class TestRecordRunFactUtilization:
+    """#191: the L2+ gate needs fact-utilization to survive the run, and
+    it needs "we could not measure" to stay distinguishable from "the
+    engineer referenced nothing"."""
+
+    def _journal(
+        self, tmp_path: Path,
+    ) -> tuple[EvolutionJournal, EvolutionConfig]:
+        config = EvolutionConfig(
+            journal_path=tmp_path / "evolution.jsonl",
+            experiments_path=tmp_path / "experiments.tsv",
+        )
+        return EvolutionJournal(config), config
+
+    def test_entry_carries_utilization(self, tmp_path: Path) -> None:
+        journal, config = self._journal(tmp_path)
+        comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
+        journal.record_run(
+            "run-001", _make_manifest([comp]),
+            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            fact_utilization={"b": {
+                "measured": True, "injected": 4, "referenced": 2, "reason": "",
+            }},
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        assert entry["knowledge_utilization"] == {
+            "measured": True, "injected": 4, "referenced": 2, "reason": "",
+        }
+
+    def test_entry_carries_the_tier_breakdown(self, tmp_path: Path) -> None:
+        """The denominator bias is only visible if the tiers survive to
+        the journal: an overall 2/6 with a core 2/2 is a very different
+        result from a genuine 2/6."""
+        journal, config = self._journal(tmp_path)
+        comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
+        journal.record_run(
+            "run-001", _make_manifest([comp]),
+            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            fact_utilization={"b": {
+                "measured": True, "injected": 6, "referenced": 2, "reason": "",
+                "by_tier": {
+                    "core": {"injected": 2, "referenced": 2},
+                    "dependency": {"injected": 1, "referenced": 0},
+                    "sibling": {"injected": 3, "referenced": 0},
+                },
+            }},
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        by_tier = entry["knowledge_utilization"]["by_tier"]
+        assert by_tier["core"] == {"injected": 2, "referenced": 2}
+        assert by_tier["sibling"] == {"injected": 3, "referenced": 0}
+
+    def test_unrecorded_component_gets_measured_false(
+        self, tmp_path: Path,
+    ) -> None:
+        """The key is written for every component, so a reader never has
+        to guess whether a missing field means zero or means nothing."""
+        journal, config = self._journal(tmp_path)
+        comp = _make_component("b", status=ComponentStatus.FAILED.value)
+        journal.record_run(
+            "run-001", _make_manifest([comp]),
+            FactoryResult(completed=[], failed=["b"], skipped=[]),
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        util = entry["knowledge_utilization"]
+        assert util["measured"] is False
+        assert util["injected"] == 0 and util["referenced"] == 0
+        assert util["reason"] == "not measured"
+
+    def test_schema_version_not_bumped(self, tmp_path: Path) -> None:
+        """Purely additive: every journal reader is .get()-based, and the
+        three-way distinction rides on always writing the key."""
+        journal, config = self._journal(tmp_path)
+        comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
+        journal.record_run(
+            "run-001", _make_manifest([comp]),
+            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            fact_utilization={"b": {
+                "measured": True, "injected": 1, "referenced": 1, "reason": "",
+            }},
+        )
+        entry = json.loads(config.journal_path.read_text().strip())
+        assert entry["schema_version"] == JOURNAL_SCHEMA_VERSION
+        assert "knowledge_utilization" in entry
+
+    def test_get_fact_utilization_never_counts_unmeasured_as_zero(
+        self, tmp_path: Path,
+    ) -> None:
+        journal, config = self._journal(tmp_path)
+        # run-001: one component referenced facts, one measured zero.
+        journal.record_run(
+            "run-001",
+            _make_manifest([
+                _make_component("a", status=ComponentStatus.COMPLETED.value),
+                _make_component("b", status=ComponentStatus.COMPLETED.value),
+            ]),
+            FactoryResult(completed=["a", "b"], failed=[], skipped=[]),
+            fact_utilization={
+                "a": {"measured": True, "injected": 4, "referenced": 2,
+                      "reason": ""},
+                "b": {"measured": True, "injected": 3, "referenced": 0,
+                      "reason": ""},
+            },
+        )
+        # run-002: never measured at all.
+        journal.record_run(
+            "run-002",
+            _make_manifest([
+                _make_component("a", status=ComponentStatus.FAILED.value),
+            ]),
+            FactoryResult(completed=[], failed=["a"], skipped=[]),
+        )
+
+        stats = journal.get_fact_utilization()
+        assert stats["runs"] == 2
+        assert stats["components"] == 3
+        assert stats["measured"] == 2
+        assert stats["unmeasured"] == 1
+        # The unmeasured component contributes nothing to either total.
+        assert stats["injected"] == 7
+        assert stats["referenced"] == 2
+        # The gate reads this: only run-001 has nonzero utilization.
+        assert stats["runs_with_referenced"] == 1
+
+    def test_get_fact_utilization_ignores_legacy_entries(
+        self, tmp_path: Path,
+    ) -> None:
+        """Pre-#191 entries have no knowledge_utilization key at all and
+        must count as unmeasured, not as measured zeros."""
+        journal, config = self._journal(tmp_path)
+        config.journal_path.write_text(json.dumps({
+            "schema_version": JOURNAL_SCHEMA_VERSION,
+            "run_id": "run-legacy", "component_id": "a",
+            "event_type": "component_result", "status": "completed",
+        }) + "\n")
+        stats = journal.get_fact_utilization()
+        assert stats["measured"] == 0
+        assert stats["unmeasured"] == 1
+        assert stats["runs_with_referenced"] == 0
+
+    def test_get_fact_utilization_rejects_unreadable_counts(
+        self, tmp_path: Path,
+    ) -> None:
+        """Present but garbled is not evidence either - fail toward
+        "no measurement", never toward a fabricated number."""
+        journal, config = self._journal(tmp_path)
+        config.journal_path.write_text(json.dumps({
+            "schema_version": JOURNAL_SCHEMA_VERSION,
+            "run_id": "r", "component_id": "a",
+            "event_type": "component_result", "status": "completed",
+            "knowledge_utilization": {
+                "measured": True, "injected": "four", "referenced": 2,
+            },
+        }) + "\n")
+        stats = journal.get_fact_utilization()
+        assert stats["measured"] == 0
+        assert stats["unmeasured"] == 1
+        assert stats["referenced"] == 0
+
+
 class TestEvolutionIntegration:
     """R6 'done when': a synthetic-but-realistic journal (real signature
     strings, typed findings) yields a proposal traceable to a recorded

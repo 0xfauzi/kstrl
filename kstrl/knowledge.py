@@ -599,6 +599,44 @@ def _pack_facts_summary(
     return kept, overflowed
 
 
+# The three prefix tiers, named once. The renderer below and the
+# fact-utilization parser (`_extract_prefix_claims`) both resolve
+# section titles through these, because the two drifting apart would
+# silently mis-bin claims: per-tier counts would keep summing to the
+# right total while attributing facts to the wrong tier, and nothing
+# would fail. `_tier_for_section` is the single decoder.
+TIER_CORE = "core"
+TIER_DEPENDENCY = "dependency"
+TIER_SIBLING = "sibling"
+FACT_TIERS = (TIER_CORE, TIER_DEPENDENCY, TIER_SIBLING)
+
+# The core title carries the component id, so it is matched by prefix.
+_CORE_SECTION_PREFIX = "Current component ("
+_DEPENDENCY_SECTION_TITLE = "Dependencies"
+_SIBLING_SECTION_TITLE = "Other components (summary)"
+
+
+def _core_section_title(component_id: str) -> str:
+    return f"{_CORE_SECTION_PREFIX}{component_id})"
+
+
+def _tier_for_section(title: str) -> str:
+    """Map a rendered ``### `` heading back to its tier.
+
+    Returns ``""`` for a heading this module did not write. Such claims
+    still count toward the totals but are attributed to no tier, so the
+    per-tier counts can sum to less than ``injected`` - deliberately, an
+    unrecognized section is not silently folded into a real tier.
+    """
+    if title.startswith(_CORE_SECTION_PREFIX):
+        return TIER_CORE
+    if title == _DEPENDENCY_SECTION_TITLE:
+        return TIER_DEPENDENCY
+    if title == _SIBLING_SECTION_TITLE:
+        return TIER_SIBLING
+    return ""
+
+
 def _format_section(title: str, facts: list[Fact]) -> str:
     if not facts:
         return ""
@@ -700,15 +738,15 @@ def build_knowledge_context(
     )
     parts.append("")
 
-    core_section = _format_section(f"Current component ({component.id})", core_kept)
+    core_section = _format_section(_core_section_title(component.id), core_kept)
     if core_section:
         parts.append(core_section)
         parts.append("")
-    dep_section = _format_section("Dependencies", dep_kept)
+    dep_section = _format_section(_DEPENDENCY_SECTION_TITLE, dep_kept)
     if dep_section:
         parts.append(dep_section)
         parts.append("")
-    sibling_section = _format_section("Other components (summary)", sibling_kept)
+    sibling_section = _format_section(_SIBLING_SECTION_TITLE, sibling_kept)
     if sibling_section:
         parts.append(sibling_section)
         parts.append("")
@@ -1280,48 +1318,114 @@ _PREFIX_CLAIM_RE = re.compile(
 )
 
 
-def _extract_prefix_claims(knowledge_prefix: str) -> list[str]:
-    """Return the human-readable claim sentences from a rendered
-    knowledge prefix. Used by the fact-utilization metric to look for
-    downstream references."""
-    claims: list[str] = []
+_PREFIX_SECTION_RE = re.compile(r"^###\s+(.+?)\s*$")
+
+
+def _extract_prefix_claims(knowledge_prefix: str) -> list[tuple[str, str]]:
+    """Return ``(claim, tier)`` pairs from a rendered knowledge prefix.
+
+    Used by the fact-utilization metric to look for downstream
+    references. ``tier`` is one of :data:`FACT_TIERS`, or ``""`` for a
+    claim under a heading this module did not write (including a claim
+    that appears before any heading).
+    """
+    claims: list[tuple[str, str]] = []
+    tier = ""
     for line in knowledge_prefix.splitlines():
+        section = _PREFIX_SECTION_RE.match(line)
+        if section:
+            tier = _tier_for_section(section.group(1))
+            continue
         m = _PREFIX_CLAIM_RE.match(line)
         if m:
             claim = m.group(1).strip()
             if claim:
-                claims.append(claim)
+                claims.append((claim, tier))
     return claims
 
 
+def diff_added_content(diff_text: str) -> str:
+    """Return only the ADDED lines of a unified diff, `+` stripped.
+
+    Utilization must be matched against what the engineer WROTE. A raw
+    diff also carries deletion lines and unchanged context, and a claim
+    found in either is not evidence the fact was used: deleting the code
+    that expressed a fact, or editing near it, would otherwise score as
+    referencing it and satisfy the nonzero-utilization gate. That is a
+    false POSITIVE, which is the one error direction a lower-bound
+    metric must not have.
+
+    ``+++ `` file headers are excluded so a path cannot match. A line
+    whose added content itself begins with ``++ `` is dropped with them;
+    that is a false negative, the safe direction.
+    """
+    return "\n".join(
+        line[1:]
+        for line in diff_text.splitlines()
+        if line.startswith("+") and not line.startswith("+++ ")
+    )
+
+
 def measure_fact_utilization(
-    knowledge_prefix: str, *artifacts: str, snippet_length: int = 30,
+    knowledge_prefix: str,
+    *artifacts: str,
+    diff: str = "",
+    snippet_length: int = 30,
 ) -> dict[str, int]:
     """Approximate fact-utilization metric.
 
-    Returns ``{"injected": N, "referenced": M}`` where N is the number
-    of fact claims injected via ``knowledge_prefix`` and M is the count
-    that have a 30-char snippet from their first sentence appearing as
-    a substring in any of the provided ``artifacts`` (typically the
-    component's git diff and progress.txt).
+    Returns ``{"injected": N, "referenced": M}`` plus a
+    ``"<tier>_injected"`` / ``"<tier>_referenced"`` pair for each of
+    :data:`FACT_TIERS`. N is the number of fact claims injected via
+    ``knowledge_prefix``; M is the count whose 30-char first-sentence
+    snippet appears as a substring in the searched text.
 
-    The substring match is crude: LLMs paraphrase, so a False
-    negative just means we under-count. The metric is meant to surface
-    the lower bound of utilization, not measure semantic understanding.
+    Pass a unified diff as ``diff``, NOT as an artifact: it is reduced
+    to its added lines by :func:`diff_added_content` first. Keeping it a
+    separate parameter is deliberate - a raw diff handed in through
+    ``artifacts`` would silently match deletions and context again, and
+    the signature is the only place that can prevent it. ``artifacts``
+    is for plain text such as the component's progress log, where the
+    engineer writing about a fact IS the signal.
+
+    The substring match is crude: LLMs paraphrase, so a false negative
+    just means we under-count. The metric surfaces the lower bound of
+    utilization, it does not measure semantic understanding.
+
+    The per-tier split exists because the totals are biased. The
+    sibling tier carries first-sentence summaries of EVERY other
+    component's facts, which are the claims this component is least
+    likely to echo, so they inflate the denominator of the overall
+    ratio. Reading ``core_referenced / core_injected`` asks the sharper
+    question: did the engineer use what was known about the component
+    it was actually building? Per-tier counts can sum to less than the
+    totals when a prefix carries an unrecognized section.
     """
     claims = _extract_prefix_claims(knowledge_prefix)
+    counts = {"injected": 0, "referenced": 0}
+    for tier in FACT_TIERS:
+        counts[f"{tier}_injected"] = 0
+        counts[f"{tier}_referenced"] = 0
     if not claims:
-        return {"injected": 0, "referenced": 0}
+        return counts
     # Case-insensitive substring match: LLMs frequently echo facts with
     # casing changes (e.g. starting a sentence with "The" vs the
     # mid-sentence "the").
-    haystack = "\n".join(artifacts).lower()
-    referenced = 0
-    for claim in claims:
+    searched = list(artifacts)
+    if diff:
+        searched.append(diff_added_content(diff))
+    haystack = "\n".join(searched).lower()
+    for claim, tier in claims:
         snippet = _first_sentence(claim)[:snippet_length].strip().lower()
-        if snippet and snippet in haystack:
-            referenced += 1
-    return {"injected": len(claims), "referenced": referenced}
+        hit = bool(snippet) and snippet in haystack
+        counts["injected"] += 1
+        if hit:
+            counts["referenced"] += 1
+        if tier:
+            counts[f"{tier}_injected"] += 1
+            if hit:
+                counts[f"{tier}_referenced"] += 1
+    return counts
 
 
 def current_run_id() -> str:

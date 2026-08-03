@@ -43,6 +43,7 @@ migrations are detectable.
 | `findings` | Full typed Finding stream of the last attempt (E3), attempt-tagged. |
 | `findings_summary` | Aggregates of `findings`: `total`, `by_phase`, `by_severity`, `by_category`, `by_owasp`, `infrastructure_errors`. |
 | `usage` | R3.1 per-phase token/cost self-reports (lower bounds when `unreported_calls` > 0). |
+| `knowledge_utilization` | #191: `{measured, injected, referenced, reason, by_tier}`. Written on EVERY entry. `measured` must be read first: `false` means the run could not measure and the entry is NOT evidence - it is not a zero. `injected`/`referenced` are meaningful only when `measured` is `true`; `measured: true, referenced: 0` IS evidence, of injected facts going unused. `reason` says why an unmeasured entry is unmeasured - see the reason table below. `by_tier` splits the counts across `core` / `dependency` / `sibling`. Entries written before #191 have no key at all, a third distinguishable state that also counts as unmeasured. See the sections below for which components are sampled and how to read the tiers. |
 
 ## Experiments: `.kstrl/experiments.tsv`
 
@@ -73,6 +74,104 @@ when it has at least one finding in a real category; the synthetic
 non-execution, not adversarial signal, and are excluded. `by_category`
 in the result sums finding counts (not component counts) per category
 across the window.
+
+## Fact utilization (`get_fact_utilization`, #191)
+
+Aggregates `knowledge_utilization` across the lookback window and
+returns `{runs, components, measured, unmeasured, injected, referenced,
+runs_with_referenced}`. Only `measured: true` entries contribute to
+`injected`/`referenced`; everything else lands in `unmeasured` and
+contributes nothing. An entry that is present but whose counts do not
+parse is also counted unmeasured, never as a zero.
+
+This is the query behind the sole remaining L2+ cATO gate in
+`docs/remediation-roadmap.md`: "two real factory runs with nonzero
+fact-utilization" is `runs_with_referenced >= 2`.
+
+The same measurement is on the event stream as `fact_utilization_measured`
+in `events.jsonl`, emitted once per component per attempt on every path
+that reaches a measurement point - including components that later fail
+review or security, and including the paths where distillation is
+skipped or raises. It is deliberately NOT carried on `distill_result`:
+one measurement lives in one event, so a consumer folding both cannot
+double count, and the utilization record does not depend on a later LLM
+phase having run.
+
+### Which components are in the sample
+
+The population is **every component whose diff can be fetched**. That
+includes components which fail mechanical verification, review, or
+security - a failed component's engineer still received facts and may
+well have used them.
+
+Utilization was previously measured in the distill phase, which runs
+only after verification, review, and security all pass, so the sample
+was successful components exclusively. It is a substring scan costing
+no tokens, so there was never a cost reason to defer it.
+
+A verification failure means the diff phase has not run *yet*, not that
+no diff exists: the engineer's change is committed in the worktree and
+is exactly what verification just inspected. That path therefore
+fetches the diff itself rather than writing off every test, typecheck,
+and lint failure - which is most of the failure population.
+
+`measured: false` is reserved for a real inability to measure, and the
+entry always says which:
+
+| `reason` | When |
+|---|---|
+| `diff unavailable: <error>` | the `git diff` itself failed |
+| `diff unavailable` | the diff phase had already failed |
+| `knowledge retrieval failed` | the engineer's prefix could not be built |
+| `no injected prefix recorded for this attempt` | nothing was captured at submit |
+| `not measured` | the component never reached a measurement point |
+
+### Reading the tiers
+
+`by_tier` splits the same measurement across the prefix's three tiers.
+It exists because the totals are denominator-biased: the sibling tier
+carries a first-sentence summary of every OTHER component's facts,
+rendered in the same shape as full-text core facts, and those are the
+claims a component is least likely to echo.
+
+`core_referenced / core_injected` is the sharper question - did the
+engineer use what was known about the component it was actually
+building? An overall `2/6` alongside a core `2/2` is a very different
+result from a genuine `2/6`.
+
+Per-tier counts can sum to **less** than the totals: a claim under a
+heading the knowledge module did not write counts in the total but is
+attributed to no tier, rather than being silently credited to a real
+one. `kstrl/knowledge.py` shares its section-title constants between
+the renderer and the tier parser precisely so the two cannot drift and
+mis-bin claims while still summing correctly.
+
+### What counts as a reference
+
+Only **added** diff lines and the component's progress log are searched.
+
+A raw unified diff also carries deletion lines and unchanged context. A
+claim found in either is not evidence the fact was used - and counting
+them meant an engineer could delete the very code that expressed a
+fact, or merely edit near it, and still satisfy the
+nonzero-utilization gate. That is a false *positive*, the one error
+direction a lower-bound metric must not have. `measure_fact_utilization`
+takes the diff as a separate `diff=` parameter for this reason: an
+artifact is searched raw, so the signature is what prevents a raw diff
+being matched unfiltered again.
+
+The progress log is searched whole, because it is not a diff - the
+engineer writing about a fact is itself the signal.
+
+### The remaining caveat
+
+**It is a lower bound.** `measure_fact_utilization` is a 30-character
+case-insensitive substring match. An LLM that paraphrases a fact it
+genuinely used scores as not referencing it, and an added line that
+merely happens to contain the claim text scores as using it. The error
+is now overwhelmingly in the under-counting direction, but the match is
+lexical, not semantic. This is a property of the measurement, not a
+defect in the recording, and it bounds every number above.
 
 ## Proposals: `.kstrl/proposals/prop-NNN.md`
 

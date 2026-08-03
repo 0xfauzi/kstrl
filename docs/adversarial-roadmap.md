@@ -48,7 +48,7 @@ PR: _pending push_
 - [x] D3 - 3 vague-spec fixtures (no error handling, unspecified auth, ambiguous perf)
 - [x] D4 - Calibration runner `tests/test_calibration.py` opt-in via `KSTRL_RUN_CALIBRATION=1`; structural sanity always runs; per-role detection-rate JSON report at `_results/baseline-<date>.json`
 - [x] D5 - `SECURITY_CATEGORY_MAP` in security.py maps every category to its OWASP Top 10 bucket + CWE, with helpers `category_owasp` / `category_cwe`
-- [x] D6 - `knowledge.measure_fact_utilization` instruments factory.py post-distill: counts referenced facts via case-insensitive 30-char substring match against shared_diff + progress.txt
+- [x] D6 - `knowledge.measure_fact_utilization` is called from `pipeline.record_fact_utilization` as soon as a diff is fetchable, so every component with a diff is sampled rather than only those passing every gate: counts referenced facts via case-insensitive 30-char substring match against the diff's ADDED lines plus progress.txt, against the prefix the factory captured at engineer-submit time. Recorded to the `fact_utilization_measured` event and to `component_result.knowledge_utilization` in the evolution journal (#191); it was print-only, measured post-distill against a rebuilt prefix, and matched deletions and context, until then
 - [x] D7 - `exhaustively_searched` docstring updated to mark it as an unverifiable self-report; calibration suite is the trustworthy verification path
 - [x] D8 - `EvolutionJournal.get_concern_hit_rate` aggregates concerns across recent runs by category
 

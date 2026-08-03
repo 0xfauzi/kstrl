@@ -154,12 +154,29 @@ R8.2 consumes them:
   2026-07-20** - both families at the detection ceiling, no
   correlated-miss benefit visible at current fixture difficulty.
 - Two real factory runs with nonzero fact-utilization and one traceable
-  evolve proposal: **OUTSTANDING - the sole remaining L2+ gate.** Caveat
-  found 2026-08-03: utilization is computed each distill but only printed,
-  never recorded to events or the journal, so this gate cannot yet be
-  evidenced durably. [#191](https://github.com/0xfauzi/kstrl/issues/191)
-  (record the ratio in the `DistillResult` event and the evolution
-  journal) is a prerequisite for satisfying it.
+  evolve proposal: **OUTSTANDING - the sole remaining L2+ gate.** The
+  recording prerequisite is closed:
+  [#191](https://github.com/0xfauzi/kstrl/issues/191) landed, so
+  utilization now reaches the `fact_utilization_measured` event and the
+  evolution journal's `component_result.knowledge_utilization`. Query it with
+  `EvolutionJournal.get_fact_utilization`; the gate is
+  `runs_with_referenced >= 2`. #191 also corrected the number itself -
+  it was measured against a knowledge prefix rebuilt AFTER distillation
+  had written that run's own facts, so it counted facts the engineer
+  never saw. Any utilization figure observed before #191 is not valid
+  evidence for this gate. What remains is running the two real runs.
+  The measurement defects found alongside it are fixed, not merely
+  documented: only ADDED diff lines are searched, so deleting the code
+  that expressed a fact no longer scores as using it (a false positive
+  that could have satisfied this very gate); every component whose diff
+  can be fetched is in the sample, not only those passing every gate;
+  and the counts are split per prefix tier so sibling summaries do not
+  inflate the denominator. The measurement is on both surfaces the
+  acceptance criteria name - `fact_utilization_measured` in
+  `events.jsonl` and `knowledge_utilization` in `evolution.jsonl`.
+  `docs/evolution-metrics.md` records what is in the sample, what
+  counts as a reference, how to read the tiers, and the one standing
+  caveat (the 30-char match is lexical, not semantic).
 
 L2+ entry is blocked until these exist. R8 adds no new user-run gates beyond
 threshold-replay captures noted per item.

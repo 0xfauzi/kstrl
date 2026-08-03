@@ -303,7 +303,7 @@ class TestSemanticEvents:
             "run_plan", "phase_started", "phase_completed",
             "checkpoint_requested", "checkpoint_resolved", "pr_created",
             "pr_merged", "pr_merge_pending", "distill_result",
-            "finding_recorded",
+            "finding_recorded", "fact_utilization_measured",
         }
 
     def test_reducer_sees_explicit_phases(self, tmp_path: Path) -> None:
