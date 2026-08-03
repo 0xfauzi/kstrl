@@ -1021,7 +1021,18 @@ and the same factory child resume, and nothing reaps the run because the
 process that would reap it is the one running it. The recovery machinery
 is for a crash, an OOM kill or a reboot, not an ordinary lid close.
 
-Two modes ship, with the trade-off stated rather than hidden: `keepalive`**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
+Two modes ship, with the trade-off stated rather than hidden: `keepalive`
+(default) runs one long-lived `ks serve` pacing itself from
+`[serve] poll_interval_seconds`, relaunched by launchd when it EXITS -
+fewer moving parts, but launchd only notices a process that has exited,
+so a daemon wedged on a network call looks healthy forever. `interval`
+runs `ks serve --once` on a `StartCalendarInterval` calendar schedule
+(which catches up after wake) - each cycle is a fresh process whose exit
+code carries "needs a human", but launchd bounds neither runtime nor
+overlap, so `[serve] factory_timeout_seconds` is the only real bound on
+a wedged cycle and interval mode refuses to generate a plist without one.
+
+**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
 around a child process: `caffeinate -i <child>` creates a
 `PreventUserIdleSystemSleep` assertion *on behalf of the child*, and that
 assertion is gone once the child exits - nothing lingers, which is the
