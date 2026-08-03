@@ -1,0 +1,489 @@
+"""R8.6 follow-up (#205): the serve-to-factory seam, executed for real.
+
+Every other serve test injects a stub ``runner=`` - 46 of them in
+``tests/test_serve.py`` alone - and ``subprocess_factory_runner`` is
+only ever patched out. The supervision half is genuinely tested
+(``run_supervised`` against a real process group), but the half that
+decides **what to invoke** was never executed: the argv, the cwd, the
+env, and whether remote work reaches the queue at all.
+
+That is exactly where #189 F1 lived. ``serve_cycle`` drained a queue
+nothing could fill because it never called the intake adapter, and both
+halves were independently correct and independently green. No
+stub-runner test could see it, because the stub replaced the boundary
+the defect lived on.
+
+Three checks, none of which spends money:
+
+1. :class:`TestTheRealRunnerExecsItsArgv` runs the shipping
+   ``subprocess_factory_runner`` against a stub interpreter. Only
+   ``sys.executable`` is replaced - argv construction, the caffeinate
+   prefix, the env mutation, the process-group spawn and the
+   ``RunOutcome`` mapping are all production code.
+2. :class:`TestTheArgvIsAcceptedByTheRealCli` hands that recorded argv
+   to the real Click command, so a flag the daemon sends but the CLI no
+   longer accepts is caught here rather than on the next unattended run.
+3. :class:`TestRemoteWorkSurvivesTheSeam` covers the two facts about a
+   remotely-sourced item that only become observable at the runner
+   boundary: the spec content, and the merge gate.
+
+Measured, by mutation, against the rest of the suite (3125 tests):
+
+- Renaming the merge-gate flag in ``subprocess_factory_runner`` is
+  caught by four tests here and by NOTHING else: with that mutant
+  applied the other 3125 tests pass, 28 skip, zero fail. That is the gap
+  this module exists to close.
+- Deleting the ``_run_intake`` call from ``serve_cycle`` - the #189 F1
+  defect itself - is already caught by nine tests in
+  ``tests/test_intake_github.py::TestServePollsIntake``, so this module
+  deliberately does not re-assert it.
+- Renaming the option on the ``ks factory`` side is caught both here and
+  by ``test_config_control_plane.py::TestSafetyKnobs``.
+
+What is NOT covered, so nobody reads more into it: no factory is run, so
+nothing below ``ks factory``'s argument parsing is exercised, and the
+classification of a real run's artifacts remains the stub-driven tests'
+job. The end-to-end path is still only verified by hand
+(``docs/continuous-intake.md`` section 7).
+"""
+
+from __future__ import annotations
+
+import json
+import stat
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
+
+import click
+import pytest
+
+from kstrl.serve import RunOutcome, serve_cycle, subprocess_factory_runner
+from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
+
+# --------------------------------------------------------------------------
+# A stub interpreter: the narrowest possible intercept
+# --------------------------------------------------------------------------
+
+#: Stands in for ``sys.executable``. Records what the real runner asked
+#: for, then exits how the test told it to. Deliberately dependency-free
+#: and tiny: it is spawned by the code under test, so a failure inside it
+#: surfaces as a confusing RunOutcome rather than a test error.
+_STUB_INTERPRETER = """#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["SEAM_RECORD"], "w") as handle:
+    json.dump({
+        "argv": sys.argv[1:],
+        "cwd": os.getcwd(),
+        "pid": os.getpid(),
+        "kstrl_env": {
+            k: v for k, v in os.environ.items() if k.startswith("KSTRL_")
+        },
+    }, handle)
+sys.stdout.write(os.environ.get("SEAM_STDOUT", ""))
+sys.exit(int(os.environ.get("SEAM_EXIT", "0")))
+"""
+
+
+@dataclass(frozen=True)
+class _Exec:
+    """What the child process actually received."""
+
+    argv: tuple[str, ...]
+    cwd: Path
+    pid: int
+    kstrl_env: dict[str, str]
+
+    def value_of(self, flag: str) -> str:
+        """The argument following ``flag``."""
+        return self.argv[self.argv.index(flag) + 1]
+
+
+def _exec_real_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    pause_before_pr_merge: bool = False,
+    caffeinate: bool = False,
+    exit_code: int = 0,
+    stdout: str = "",
+    timeout_seconds: float = 60.0,
+    on_spawn: Callable[[int], None] | None = None,
+    project_name: str = "seam-project",
+) -> tuple[RunOutcome, _Exec]:
+    """Run the REAL ``subprocess_factory_runner`` against a stub interpreter.
+
+    ``sys.executable`` is the only thing replaced. Everything the runner
+    decides - which module, which flags, which cwd, which env - is left
+    to the shipping code and read back out of the child.
+    """
+    interpreter = tmp_path / "stub_interpreter"
+    interpreter.write_text(_STUB_INTERPRETER, encoding="utf-8")
+    interpreter.chmod(
+        interpreter.stat().st_mode
+        | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    )
+    record = tmp_path / "exec_record.json"
+    root_dir = tmp_path / "root"
+    root_dir.mkdir(exist_ok=True)
+    # `--spec` is a click Path(exists=True), so the CLI-acceptance test
+    # downstream needs this to be a real file.
+    spec_path = tmp_path / "spec.md"
+    spec_path.write_text("# Spec\n\nDo the thing.\n", encoding="utf-8")
+
+    monkeypatch.setenv("SEAM_RECORD", str(record))
+    monkeypatch.setenv("SEAM_EXIT", str(exit_code))
+    monkeypatch.setenv("SEAM_STDOUT", stdout)
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+
+    outcome = subprocess_factory_runner(
+        root_dir=root_dir,
+        spec_path=spec_path,
+        project_name=project_name,
+        pause_before_pr_merge=pause_before_pr_merge,
+        timeout_seconds=timeout_seconds,
+        on_spawn=on_spawn,
+        caffeinate=caffeinate,
+    )
+    assert record.exists(), (
+        "the stub interpreter never ran, so the runner did not exec what "
+        f"this test thinks it did; outcome={outcome}"
+    )
+    raw = json.loads(record.read_text(encoding="utf-8"))
+    return outcome, _Exec(
+        argv=tuple(raw["argv"]),
+        cwd=Path(raw["cwd"]),
+        pid=raw["pid"],
+        kstrl_env=raw["kstrl_env"],
+    )
+
+
+class TestTheRealRunnerExecsItsArgv:
+    """The half that was only ever patched out."""
+
+    def test_it_invokes_the_factory_as_a_module_of_this_interpreter(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Not a bare ``ks`` off PATH: an installed LaunchAgent has no
+        guarantee about PATH, so the runner names the interpreter and the
+        module explicitly."""
+        _, ran = _exec_real_runner(tmp_path, monkeypatch)
+        assert ran.argv[:3] == ("-m", "kstrl", "factory")
+
+    def test_it_passes_the_spec_project_and_root_it_was_given(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _, ran = _exec_real_runner(
+            tmp_path, monkeypatch, project_name="deckgen",
+        )
+        assert ran.value_of("--project-name") == "deckgen"
+        assert Path(ran.value_of("--spec")) == tmp_path / "spec.md"
+        assert Path(ran.value_of("--root")) == tmp_path / "root"
+
+    def test_it_forces_non_interactive_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A daemon-spawned factory has no terminal. If any of these
+        regress the child blocks on a prompt or emits escape codes into
+        the captured output the classifier reads."""
+        _, ran = _exec_real_runner(tmp_path, monkeypatch)
+        assert "--yes" in ran.argv
+        assert "--no-tui" in ran.argv
+        assert "--no-color" in ran.argv
+        assert ran.value_of("--ui") == "plain"
+        assert ran.kstrl_env.get("KSTRL_NO_TUI") == "1"
+
+    @pytest.mark.parametrize(
+        ("gate_on", "expected", "forbidden"),
+        [
+            (True, "--pause-before-pr-merge", "--no-pause-before-pr-merge"),
+            (False, "--no-pause-before-pr-merge", "--pause-before-pr-merge"),
+        ],
+    )
+    def test_the_merge_gate_is_passed_explicitly_both_ways(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        gate_on: bool,
+        expected: str,
+        forbidden: str,
+    ) -> None:
+        """Explicit in both directions on purpose: the child must not
+        inherit the gate from its own kstrl.toml, because the queue
+        item's merge disposition is what decided it."""
+        _, ran = _exec_real_runner(
+            tmp_path, monkeypatch, pause_before_pr_merge=gate_on,
+        )
+        assert expected in ran.argv
+        assert forbidden not in ran.argv
+
+    def test_the_child_runs_in_the_target_root(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`--root` and the cwd must agree; a factory that runs beside
+        the repo it was pointed at would resolve every relative
+        `.kstrl/` default somewhere else."""
+        _, ran = _exec_real_runner(tmp_path, monkeypatch)
+        assert ran.cwd.resolve() == (tmp_path / "root").resolve()
+        assert Path(ran.value_of("--root")).resolve() == ran.cwd.resolve()
+
+    def test_on_spawn_receives_the_pid_that_actually_ran(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The lease is adopted by this pid. If it is the daemon's own,
+        a successor judges the lease dead and requeues a live run
+        (#186 F1)."""
+        seen: list[int] = []
+        _, ran = _exec_real_runner(
+            tmp_path, monkeypatch, on_spawn=seen.append, caffeinate=False,
+        )
+        assert seen == [ran.pid]
+
+    def test_the_childs_exit_code_and_output_reach_the_outcome(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The classifier reads both: exit 2 is only disambiguated by
+        what the child printed (#186 F6)."""
+        outcome, _ = _exec_real_runner(
+            tmp_path, monkeypatch, exit_code=2, stdout="halted: budget\n",
+        )
+        assert outcome.returncode == 2
+        assert "halted: budget" in outcome.output_tail
+        assert not outcome.timed_out
+        assert outcome.launch_error == ""
+
+    def test_a_missing_interpreter_is_a_launch_error_not_a_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An unlaunchable child must be a value the daemon can classify,
+        never an exception that takes the loop down."""
+        root_dir = tmp_path / "root"
+        root_dir.mkdir()
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "nope"))
+        outcome = subprocess_factory_runner(
+            root_dir=root_dir,
+            spec_path=tmp_path / "spec.md",
+            project_name="p",
+            pause_before_pr_merge=False,
+            timeout_seconds=30.0,
+            caffeinate=False,
+        )
+        assert outcome.returncode == -1
+        assert outcome.launch_error
+
+    @pytest.mark.skipif(
+        sys.platform != "darwin", reason="caffeinate is macOS-only"
+    )
+    def test_the_factory_still_runs_correctly_under_caffeinate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The wrapper must not disturb the argv, the exit code, or the
+        pid the lease is adopted by.
+
+        Measured on macOS 25.5 while writing this: ``caffeinate -i cmd``
+        **execs in place**, so the pid ``on_spawn`` reports is the
+        factory's own - there is no intermediate process. That is pinned
+        here as a canary rather than assumed: ``subprocess_factory_runner``'s
+        docstring describes the factory as a GRANDCHILD of the daemon
+        under caffeinate, and the process-group termination path is built
+        around descendants outliving a signal to the direct child. If a
+        future caffeinate forks instead of exec'ing, this fails and that
+        reasoning wants re-checking.
+
+        This asserts topology only. Whether the power assertion survives a
+        dark wake is a separate, unmeasured question tracked in #203.
+        """
+        import shutil
+
+        if shutil.which("caffeinate") is None:
+            pytest.skip("caffeinate not installed")
+        seen: list[int] = []
+        outcome, ran = _exec_real_runner(
+            tmp_path, monkeypatch, caffeinate=True, exit_code=7,
+            on_spawn=seen.append,
+        )
+        assert ran.argv[:3] == ("-m", "kstrl", "factory")
+        assert outcome.returncode == 7, (
+            "caffeinate must pass the factory's exit status through; the "
+            "classifier reads it"
+        )
+        assert seen == [ran.pid], (
+            "caffeinate no longer execs in place, so the daemon's direct "
+            "child is not the factory - re-check the process-group "
+            "termination path in subprocess_factory_runner"
+        )
+
+
+class TestTheArgvIsAcceptedByTheRealCli:
+    """A check a recording stub structurally cannot make.
+
+    A stub records whatever it is handed and is happy. If someone deletes
+    `--project-name` or changes an option's arity, every assertion in the
+    class above still passes and the daemon breaks on its next real run.
+    So the recorded argv is parsed by the actual command object.
+
+    Honest scope: for the merge-gate flag specifically this overlaps with
+    ``test_config_control_plane.py::TestSafetyKnobs``, which enumerates
+    that knob's surfaces and catches a rename on the CLI side (measured).
+    The value added here is that this parses the argv the daemon ACTUALLY
+    BUILT rather than a list restated in a test, so it also covers the
+    flags no safety-knob test enumerates.
+    """
+
+    @staticmethod
+    def _parse(argv: tuple[str, ...]) -> click.Context:
+        from kstrl.cli import cli
+
+        # argv is "-m kstrl factory ..."; drop the module invocation.
+        assert argv[:2] == ("-m", "kstrl")
+        name, *rest = argv[2:]
+        command = cli.commands[name]
+        ctx = click.Context(command, info_name=name)
+        command.parse_args(ctx, list(rest))
+        return ctx
+
+    def test_the_real_factory_command_accepts_the_runners_argv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _, ran = _exec_real_runner(
+            tmp_path, monkeypatch, pause_before_pr_merge=True,
+        )
+        ctx = self._parse(ran.argv)
+        assert ctx.params["pause_before_pr_merge"] is True
+        assert ctx.params["project_name"] == "seam-project"
+
+    def test_the_negated_merge_gate_also_parses(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _, ran = _exec_real_runner(
+            tmp_path, monkeypatch, pause_before_pr_merge=False,
+        )
+        ctx = self._parse(ran.argv)
+        assert ctx.params["pause_before_pr_merge"] is False
+
+    def test_the_control_an_unknown_flag_is_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without this the two tests above prove nothing: they would
+        pass just as well against a command that accepted anything."""
+        _, ran = _exec_real_runner(tmp_path, monkeypatch)
+        with pytest.raises(click.NoSuchOption):
+            self._parse(ran.argv + ("--flag-that-does-not-exist",))
+
+
+# --------------------------------------------------------------------------
+# The composition: intake -> queue -> run, in one cycle
+# --------------------------------------------------------------------------
+
+
+def _enable_github_intake(root: Path) -> None:
+    (root / "kstrl.toml").write_text(
+        "[intake_github]\n"
+        "enabled = true\n"
+        f'repo = "{REPO}"\n'
+        "comment_on_result = false\n",
+        encoding="utf-8",
+    )
+
+
+def _recording_runner(
+    calls: list[dict[str, Any]], outcome: RunOutcome | None = None,
+) -> Any:
+    """A factory stand-in for the composition tests.
+
+    These tests are about whether the daemon reaches the runner AT ALL
+    with remotely-sourced work, so the runner records and returns; the
+    stub-driven classification tests own everything past that point.
+    """
+    result = outcome or RunOutcome(0)
+
+    def runner(
+        *,
+        root_dir: Path,
+        spec_path: Path,
+        project_name: str,
+        pause_before_pr_merge: bool,
+        timeout_seconds: float,
+        on_spawn: Callable[[int], None] | None = None,
+    ) -> RunOutcome:
+        # The spec is read at CALL time on purpose. The queue moves the
+        # item out of running/ when the cycle finishes, so a path
+        # captured here and read afterwards is already stale - which is
+        # correct behaviour, and would otherwise read as a defect.
+        calls.append({
+            "spec_path": spec_path,
+            "spec_exists": spec_path.exists(),
+            "spec_text": (
+                spec_path.read_text(encoding="utf-8")
+                if spec_path.exists() else ""
+            ),
+            "project_name": project_name,
+            "pause_before_pr_merge": pause_before_pr_merge,
+        })
+        return result
+
+    return runner
+
+
+class TestRemoteWorkSurvivesTheSeam:
+    """What ``TestServePollsIntake`` in tests/test_intake_github.py does
+    not already assert.
+
+    That class is the regression test for #189 F1 and it is thorough:
+    polled every cycle, disabled makes no calls, a synced item runs in
+    the same cycle, failures and exceptions do not stop the cycle,
+    repeated cycles do not re-admit, and intake precedes the gates.
+    Verified by mutation: deleting the ``_run_intake`` call from
+    ``serve_cycle`` turns 9 of those tests red.
+
+    So the composition itself is covered. What is not is what the
+    remote item CONTAINS by the time the factory is invoked - the two
+    facts below, both of which sit on the runner boundary that every
+    other test stubs.
+    """
+
+    def test_the_spec_handed_to_the_factory_is_the_issue_body(
+        self, tmp_path: Path,
+    ) -> None:
+        """The seam is only real if the content survives it. Existing
+        tests assert the item reaches DONE, which a cycle that handed the
+        factory an empty or missing spec would also satisfy."""
+        _enable_github_intake(tmp_path)
+        gh = _GhStub(issues=_issue_payload(
+            _issue(7, title="Add a widget", body="Build the widget."),
+        ))
+        calls: list[dict[str, Any]] = []
+        with patch("kstrl.intake_github.run_gh", gh):
+            serve_cycle(tmp_path, runner=_recording_runner(calls))
+
+        assert len(calls) == 1
+        assert calls[0]["spec_exists"], (
+            "the factory was handed a spec path that did not exist at the "
+            f"moment it was invoked: {calls[0]['spec_path']}"
+        )
+        assert "Build the widget." in calls[0]["spec_text"]
+
+    def test_a_remote_item_keeps_its_merge_gate_through_the_seam(
+        self, tmp_path: Path,
+    ) -> None:
+        """A remotely-triggered run may never auto-merge. That is decided
+        at admission; this asserts it is still true at the point the
+        factory is actually invoked."""
+        _enable_github_intake(tmp_path)
+        gh = _GhStub(issues=_issue_payload(_issue(4)))
+        calls: list[dict[str, Any]] = []
+        with patch("kstrl.intake_github.run_gh", gh):
+            serve_cycle(tmp_path, runner=_recording_runner(calls))
+
+        assert len(calls) == 1
+        assert calls[0]["pause_before_pr_merge"] is True
+
+        # Covered already in tests/test_intake_github.py::TestServePollsIntake
+        # and deliberately not repeated here: that the adapter is polled
+        # every cycle, that a disabled adapter makes no gh calls, that a
+        # synced item runs in the same cycle, that a failure or exception
+        # does not stop the cycle, that repeated cycles do not re-admit,
+        # and that intake precedes the admission gates.

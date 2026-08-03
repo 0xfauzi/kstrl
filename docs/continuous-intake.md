@@ -359,11 +359,26 @@ and exiting nonzero.
   suspended machine. **If you plan to run this on a laptop, close the lid
   mid-run once and confirm the cycle finishes on wake and the calendar
   job fires.**
-- **Automated coverage of a real factory run.** The end-to-end path IS
-  verified by hand (see above), but every daemon test in the suite uses a
-  stub runner, deliberately: a suite that spawned real runs would cost
-  dollars per assertion. So a regression in the serve-to-factory seam
-  would not be caught by CI - only by another live run.
+- **Automated coverage of a real factory run.** Still true, and still
+  deliberate: a suite that spawned real runs would cost dollars per
+  assertion, so no test runs a factory. The end-to-end path above is
+  verified by hand only.
+
+  Narrowed since (#205, `tests/test_serve_seam.py`): the *launch* half no
+  longer depends on that hand check. `subprocess_factory_runner` is now
+  executed for real against a stub interpreter - only `sys.executable` is
+  replaced, so the argv, the cwd, the `KSTRL_NO_TUI` env, the caffeinate
+  wrapping, the process-group spawn and the `RunOutcome` mapping are all
+  shipping code - and the argv it builds is then parsed by the real
+  `ks factory` Click command, so a flag renamed on either side fails a
+  test instead of the next unattended run. Measured by mutation:
+  renaming the merge-gate flag in the runner is caught by four tests
+  there, while the other 3,125 tests all still pass.
+
+  What remains uncovered is everything *below* `ks factory`'s argument
+  parsing: no component is built, no review runs, and the classification
+  of a real run's on-disk artifacts is still exercised only through stub
+  runners. A regression there is still caught only by a live run.
 - **Rate-limit behaviour under sustained polling.** One call per poll
   interval is ~60/hour against a 5,000/hour budget, so this is expected to
   be a non-issue, but it has not been driven to a limit.
