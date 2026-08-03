@@ -235,16 +235,69 @@ class TestClassifierRetriesOnlyWithEvidence:
         assert outcome.verdict is Verdict.SPEC_FAILURE
         assert "comp-b" in outcome.reason
 
-    def test_a_failure_with_no_findings_is_a_spec_failure(
+    def test_a_failure_with_no_findings_is_UNCLASSIFIABLE(
         self, tmp_path: Path,
     ) -> None:
-        """No findings is not evidence OF infrastructure trouble."""
+        """Corrected by the first live run.
+
+        This used to assert SPEC_FAILURE on the reasoning that "no
+        findings is not evidence OF infrastructure trouble". True - but
+        it is not evidence of a merits-based failure either, and the
+        reason string asserted one. A real `ks serve` run hit a git
+        worktree failure that set Component.error with no Finding, and
+        was told the component "failed on their own merits, not on
+        infrastructure". Both verdicts poison, so the money behaviour was
+        always right; the claim was false and pointed the operator at the
+        spec instead of at git.
+        """
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [])])
         outcome = classify_run(
             tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
         )
+        assert outcome.verdict is Verdict.UNCLASSIFIABLE
+        assert not outcome.verdict.may_retry, "still must not retry"
+
+    def test_an_unevidenced_failure_surfaces_the_component_error(
+        self, tmp_path: Path,
+    ) -> None:
+        """The operator needs the actual cause, not a guess about it."""
+        path = tmp_path / "m.json"
+        comp = _component("comp-a", "failed", [])
+        comp.error = "Failed to create worktree: fatal: invalid reference"
+        _manifest(path, [comp])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+        )
+        assert "invalid reference" in outcome.reason
+        assert outcome.evidence["component_errors"]["comp-a"] == comp.error
+
+    def test_a_findings_backed_failure_is_still_a_spec_failure(
+        self, tmp_path: Path,
+    ) -> None:
+        """The positive case must keep its stronger, accurate label."""
+        path = tmp_path / "m.json"
+        _manifest(path, [_component("comp-a", "failed", [_spec_finding()])])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+        )
         assert outcome.verdict is Verdict.SPEC_FAILURE
+        assert "on their own merits" in outcome.reason
+
+    def test_a_spec_finding_outweighs_an_unevidenced_sibling(
+        self, tmp_path: Path,
+    ) -> None:
+        """Real evidence beats the absence of it."""
+        path = tmp_path / "m.json"
+        _manifest(path, [
+            _component("comp-a", "failed", []),
+            _component("comp-b", "failed", [_spec_finding()]),
+        ])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+        )
+        assert outcome.verdict is Verdict.SPEC_FAILURE
+        assert "comp-b" in outcome.reason
 
     def test_an_unreadable_manifest_does_not_retry(self, tmp_path: Path) -> None:
         path = tmp_path / "m.json"
@@ -1896,3 +1949,123 @@ class TestBoundedRetention:
         source = inspect.getsource(serve)
         assert "deque(maxlen=RECENT_CYCLE_WINDOW)" in source
         assert "bounded.append" in source
+
+
+class TestBudgetHaltIsNotRetryableInfrastructure:
+    """The most expensive defect the live run found.
+
+    `pipeline.fail_for_budget` records a blown ceiling as
+    `Finding.infrastructure_error` with no distinguishing category, so
+    the classifier read a deliberate "stop spending" as transient
+    infrastructure trouble and retried it. The retry re-runs the same
+    work against the same ceiling and costs MORE, because retries carry
+    accumulated context. Three attempts of that is the crash loop this
+    module exists to prevent, reached through the one branch meant to be
+    safe.
+
+    Every unit test had built `Finding.infrastructure_error(...)` by hand
+    to mean "the CLI died". None encoded that the factory ALSO uses that
+    category for a self-imposed halt.
+    """
+
+    @staticmethod
+    def _budget_run(root: Path, run_id: str = "factory-budget") -> None:
+        """Write a run dir whose stream carries a real BudgetExceeded."""
+        from kstrl import events as ev
+        from kstrl.events import JsonlSink, RunPaths
+
+        paths = RunPaths.for_run(root, run_id)
+        sink = JsonlSink(paths.events_file)
+        sink.emit(ev.BudgetExceeded(
+            component="comp-a",
+            total_tokens=716348,
+            max_total_tokens=400000,
+            cost_usd=2.53,
+            max_cost_usd=0.0,
+            ceiling="max_total_tokens",
+            condition="breached",
+            ceilings=("max_total_tokens",),
+        ))
+
+    def test_a_budget_halt_does_NOT_retry(self, tmp_path: Path) -> None:
+        path = tmp_path / "m.json"
+        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
+        self._budget_run(tmp_path)
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            owned_run_ids=["factory-budget"],
+        )
+        assert outcome.verdict is Verdict.BUDGET_HALT
+        assert not outcome.verdict.may_retry, (
+            "retrying a ceiling breach re-runs the same work at higher cost"
+        )
+
+    def test_the_reason_names_the_ceiling_and_the_decision(
+        self, tmp_path: Path,
+    ) -> None:
+        path = tmp_path / "m.json"
+        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
+        self._budget_run(tmp_path)
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            owned_run_ids=["factory-budget"],
+        )
+        assert "max_total_tokens" in outcome.reason
+        assert "human decision" in outcome.reason
+
+    def test_a_genuine_infra_failure_still_retries(
+        self, tmp_path: Path,
+    ) -> None:
+        """The fix must not swallow the case it was carved out of."""
+        path = tmp_path / "m.json"
+        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            owned_run_ids=["factory-no-budget-event"],
+        )
+        assert outcome.verdict is Verdict.RETRY_INFRA
+
+    def test_the_check_reads_the_typed_event_not_the_prose(
+        self, tmp_path: Path,
+    ) -> None:
+        """A finding whose text merely mentions a budget is not a halt."""
+        from kstrl.findings import Finding
+
+        path = tmp_path / "m.json"
+        misleading = Finding.infrastructure_error(
+            "engineer", "token budget exceeded: agent CLI printed this",
+        )
+        _manifest(path, [_component("comp-a", "failed", [misleading])])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            owned_run_ids=["factory-no-budget-event"],
+        )
+        assert outcome.verdict is Verdict.RETRY_INFRA, (
+            "prose must not decide this; only the typed event may"
+        )
+
+    def test_a_budget_halt_poisons_the_item_in_a_full_cycle(
+        self, tmp_path: Path,
+    ) -> None:
+        """End to end: the item must not be requeued for another attempt."""
+        queue = _queue(tmp_path, max_attempts=3)
+        _add(queue)
+        run_id = "factory-20260730-000000.000000-aaa"
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [_component("comp-a", "failed", [_infra_finding()])],
+            run_id=run_id,
+        )
+
+        def runner(*, root_dir: Path, **kwargs: object) -> RunOutcome:
+            _make_run_dir(root_dir, run_id)
+            self._budget_run(root_dir, run_id)
+            return RunOutcome(returncode=1)
+
+        result = serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
+        assert result.verdict is Verdict.BUDGET_HALT
+        item = queue.items()[0]
+        assert item.state is ItemState.POISON, (
+            "a ceiling breach must not consume further attempts"
+        )
+        assert result.needs_human
