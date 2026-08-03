@@ -178,13 +178,15 @@ proceed in parallel.
 | 3 - operation | R8.6 continuous intake | Needs merge dispositions (R8.2) and inbox routing (R8.3) |
 | 4 - release + loop | R8.7 release stage, then R8.8 runtime feedback | Highest blast radius, lands on top of the ladder and envelope |
 | hardening (added 2026-08-03) | R8.9 control-state relocation | Trust boundary for unattended operation; blocks L3+ and unattended serve with the ladder on |
+| brownfield (added 2026-08-03) | R8.10 `ks doctor` | Repo-level admission gate: fail before spending, not while spending |
 
 Dependency edges: R8.2 needs R8.1 (envelope defines L3) and consumes R8.4
 triggers when available. R8.3 needs R8.1/R8.2 item types (can land with
 today's subset). R8.6 needs R8.2 + R8.3. R8.7 needs R8.2 (L4) + R8.6
 (re-queue). R8.8 needs R8.6 + R8.7. R8.9 has no upstream dependency but
 BLOCKS enabling `[autonomy]` at L3+ and unattended `ks serve` with the
-ladder enabled.
+ladder enabled. R8.10 has no upstream dependency and is recommended
+before the first unattended serve on any newly onboarded repo.
 
 ---
 
@@ -1294,6 +1296,64 @@ in the halt set so a diff touching them still trips enforcement.
 test moves legacy in-tree state once and warns; a diff touching the
 legacy paths still trips the halt set; enabling `[autonomy]` at L3+
 refuses to proceed while control state resolves in-tree.
+
+## R8.10 Repo readiness: `ks doctor` (M) - [#198](https://github.com/0xfauzi/kstrl/issues/198)
+
+Status: `[ ]` - Added 2026-08-03. Depends on: none; recommended before
+the first unattended `ks serve` on any new repo
+
+**Why.** Majority usage is expected to be brownfield, and the most
+expensive failure mode on a new repo is discovering unsuitability
+mid-run, after money is spent: a red baseline suite fails every
+iteration for reasons the agent did not cause; a flaky suite feeds
+false failure evidence into the retry classifier; a slow test command
+multiplies the measured per-iteration cost by wall-clock. `ks serve`
+checks admission before spending at item granularity; `ks doctor` is
+the same doctrine at repo granularity.
+
+**Design.** Mechanical only (no LLM), advisory-first, two tiers. Tier A
+(static, instant): git/gh state, config validity, verification commands
+configured or inferable, language detection (Python gets full
+feedforward; otherwise warn, see #200), source/test roots, `.gitignore`
+coverage, protected-path candidates suggested for `[policy] paths_deny`.
+Tier B (measured, behind an explicit flag, prints what it will run
+first): baseline suite run (red baseline = NOT READY), timing, a
+two-run flakiness SMOKE (labeled a smoke, not proof), typecheck/lint
+baseline noise, an oracle-quality report over the existing suite
+reusing the shipped R8.5 linting machinery read-only, and a projected
+cost/wall-clock range per component from measured timing. Verdict:
+ready / ready-with-warnings / not-ready, plus an ordered fix-first
+list, written to a timestamped report.
+
+**Scope constraint (anti-chimera).** Doctor checks ONLY what kstrl
+actually consumes; it is not a general repo linter. Additions must name
+the kstrl component that consumes the signal.
+
+**Measurement synergy.** Tier B's read-only oracle report over existing
+suites accumulates exactly the empirical weak-oracle/coverage
+distribution R8.5 Layers 1-2 are blocked on.
+
+**Related brownfield work** (label `brownfield`, tracked outside this
+milestone): [#199](https://github.com/0xfauzi/kstrl/issues/199) feeds
+`codebase_map.md` + extracted interfaces into the architect prompt (the
+planner is currently the context-starved side of the pipeline; H2/H3
+apply since `DECOMPOSE_PROMPT` changes);
+[#200](https://github.com/0xfauzi/kstrl/issues/200) is the
+research-first verdict on language-pluggable interface extraction
+(ctags/tree-sitter as edge integrations per doctrine 1, demand check
+before any build).
+
+**Failure modes.** A green doctor is repo-readiness, not spec-readiness
+(it cannot tell you a task is too cross-cutting for the component
+model - the report says so and the fit boundary is documented); the
+flakiness smoke is weak by construction; timing gives a range, never a
+point estimate; Tier B on suites with side effects is mitigated by the
+explicit flag plus print-before-run.
+
+**Done when:** Tier A and Tier B produce the verdict and ordered
+recommendations on a real repo; red-baseline, missing-gh, and
+non-Python repos each produce the correct verdict in tests; the report
+includes the fit-boundaries text, mirrored in the operator docs.
 
 ## Non-goals for R8
 
