@@ -2069,3 +2069,124 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
             "a ceiling breach must not consume further attempts"
         )
         assert result.needs_human
+
+
+class TestBudgetHaltPrecedence:
+    """#197 M1/M2/M3: the halt must win over every retry-authorizing branch."""
+
+    @staticmethod
+    def _budget_run(
+        root: Path,
+        run_id: str = "factory-budget",
+        *,
+        condition: str = "breached",
+        ceilings: tuple[str, ...] = ("max_total_tokens",),
+    ) -> None:
+        from kstrl import events as ev
+        from kstrl.events import JsonlSink, RunPaths
+
+        paths = RunPaths.for_run(root, run_id)
+        JsonlSink(paths.events_file).emit(ev.BudgetExceeded(
+            component="comp-a",
+            total_tokens=716348,
+            max_total_tokens=400000,
+            cost_usd=2.53,
+            max_cost_usd=0.0,
+            ceiling=ceilings[0] if ceilings else "",
+            condition=condition,
+            ceilings=ceilings,
+        ))
+
+    def test_a_timed_out_run_that_blew_its_ceiling_does_not_retry(
+        self, tmp_path: Path,
+    ) -> None:
+        """The exact hole: halt, then hang until our timeout kills it.
+
+        The timeout branch returns RETRY_INFRA, so checking the budget
+        after it requeued the item against the very ceiling this verdict
+        exists to make terminal.
+        """
+        self._budget_run(tmp_path)
+        outcome = classify_run(
+            tmp_path,
+            run=RunOutcome(returncode=-9, timed_out=True, group_reaped=True),
+            manifest_path=None,
+            owned_run_ids=["factory-budget"],
+        )
+        assert outcome.verdict is Verdict.BUDGET_HALT
+        assert not outcome.verdict.may_retry
+
+    @pytest.mark.parametrize("run", [
+        RunOutcome(returncode=-9, timed_out=True, group_reaped=True),
+        RunOutcome(returncode=-9),
+        RunOutcome(returncode=2, output_tail="--force-lock"),
+        RunOutcome(returncode=1),
+    ])
+    def test_no_retry_authorizing_branch_outranks_the_halt(
+        self, tmp_path: Path, run: RunOutcome,
+    ) -> None:
+        self._budget_run(tmp_path)
+        outcome = classify_run(
+            tmp_path, run=run, manifest_path=None,
+            owned_run_ids=["factory-budget"],
+        )
+        assert outcome.verdict is Verdict.BUDGET_HALT, (
+            f"{run} outranked the ceiling"
+        )
+
+    def test_a_launch_failure_still_retries(self, tmp_path: Path) -> None:
+        """The one branch that must precede it: no child, no artifacts."""
+        self._budget_run(tmp_path)
+        outcome = classify_run(
+            tmp_path,
+            run=RunOutcome(returncode=-1, launch_error="No such file"),
+            manifest_path=None,
+            owned_run_ids=["factory-budget"],
+        )
+        assert outcome.verdict is Verdict.RETRY_INFRA
+
+    def test_an_unenforceable_halt_does_not_claim_a_breach(
+        self, tmp_path: Path,
+    ) -> None:
+        """#197 M2: no threshold was crossed, so do not report one."""
+        self._budget_run(
+            tmp_path, condition="unenforceable", ceilings=("max_cost_usd",),
+        )
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=None,
+            owned_run_ids=["factory-budget"],
+        )
+        assert outcome.verdict is Verdict.BUDGET_HALT
+        assert "can still fire" in outcome.reason
+        assert "raising a limit would change nothing" in outcome.reason
+        assert "same limit at a higher cost" not in outcome.reason, (
+            "the breach wording must not appear for an unenforceable halt"
+        )
+
+    def test_a_breached_halt_still_says_so(self, tmp_path: Path) -> None:
+        self._budget_run(tmp_path, condition="breached")
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=None,
+            owned_run_ids=["factory-budget"],
+        )
+        assert "human decision" in outcome.reason
+        assert "can still fire" not in outcome.reason
+
+    def test_an_unevidenced_sibling_is_never_dropped(
+        self, tmp_path: Path,
+    ) -> None:
+        """#197 M3: a spec finding must not hide a sibling's real error."""
+        path = tmp_path / "m.json"
+        spec_comp = _component("comp-a", "failed", [_spec_finding()])
+        silent = _component("comp-b", "failed", [])
+        silent.error = "Failed to create worktree: fatal: invalid reference"
+        _manifest(path, [spec_comp, silent])
+        outcome = classify_run(
+            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+        )
+        assert outcome.verdict is Verdict.SPEC_FAILURE, "terminal verdict stands"
+        assert "comp-a" in outcome.reason
+        assert "invalid reference" in outcome.reason, (
+            "the sibling's real cause must reach the operator"
+        )
+        assert outcome.evidence["component_errors"]["comp-b"] == silent.error

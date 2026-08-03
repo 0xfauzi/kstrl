@@ -359,10 +359,11 @@ and exiting nonzero.
   suspended machine. **If you plan to run this on a laptop, close the lid
   mid-run once and confirm the cycle finishes on wake and the calendar
   job fires.**
-- **`ks serve` driving a real factory run end to end.** Every daemon test
-  uses a stub runner, deliberately: a suite that spawned real runs would
-  cost dollars per assertion. Your first unattended run is also the first
-  end-to-end integration test.
+- **Automated coverage of a real factory run.** The end-to-end path IS
+  verified by hand (see above), but every daemon test in the suite uses a
+  stub runner, deliberately: a suite that spawned real runs would cost
+  dollars per assertion. So a regression in the serve-to-factory seam
+  would not be caught by CI - only by another live run.
 - **Rate-limit behaviour under sustained polling.** One call per poll
   interval is ~60/hour against a 5,000/hour budget, so this is expected to
   be a non-issue, but it has not been driven to a limit.

@@ -702,6 +702,24 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
         for event in events:
             if isinstance(event, ev.BudgetExceeded):
                 named = ", ".join(event.ceilings) or event.ceiling or "budget"
+                # BudgetExceeded also carries condition="unenforceable",
+                # where NO threshold was crossed - the ceiling simply
+                # cannot fire because nothing reports that axis. Telling
+                # that operator to "raise the ceiling" points them at a
+                # breach that never happened (#197 M2). Routed through the
+                # shared classifier so this cannot drift from the reducer's
+                # and the Linear sink's reading of the same payload.
+                kind = ev.budget_halt_kind(
+                    event.condition, event.ceilings, event.ceiling,
+                )
+                if kind == "unenforceable":
+                    return (
+                        f"the run halted in {run_id} because no configured "
+                        f"ceiling ({named}) can still fire: no metered call "
+                        "reported that axis, so the cap could never stop the "
+                        "spend. Fix the coverage or the configuration - "
+                        "raising a limit would change nothing"
+                    )
                 return (
                     f"the run halted on a configured ceiling ({named}) in "
                     f"{run_id}: raising the ceiling or narrowing the spec is "
@@ -743,6 +761,20 @@ def classify_run(
             Verdict.RETRY_INFRA,
             f"launch failed before any spend: {run.launch_error}",
             {"launch_error": run.launch_error},
+        )
+
+    # Checked BEFORE every retry-authorizing branch, and immediately after
+    # the launch-error case (the one place where no child artifacts can
+    # exist). Review #197 M1: placing it after the timeout / signal /
+    # exit-2 branches meant a run that blew its ceiling and then hung long
+    # enough for factory_timeout_seconds to kill it was requeued against
+    # the very ceiling this verdict exists to make terminal.
+    halted = budget_halt_reason(root_dir, owned_run_ids)
+    if halted:
+        return Outcome(
+            Verdict.BUDGET_HALT,
+            halted,
+            {"returncode": run.returncode, "owned_run_ids": list(owned_run_ids)},
         )
 
     if run.timed_out:
@@ -850,17 +882,6 @@ def classify_run(
             },
         )
 
-    # A deliberate budget halt is recorded as an infrastructure_error by
-    # the pipeline, so it must be separated out BEFORE the infra check or
-    # it reads as retryable (found by the first live run).
-    halted = budget_halt_reason(root_dir, owned_run_ids)
-    if halted:
-        return Outcome(
-            Verdict.BUDGET_HALT,
-            halted,
-            {"returncode": run.returncode, "owned_run_ids": list(owned_run_ids)},
-        )
-
     # A component that produced FINDINGS, none of them infrastructural, is
     # positive evidence of a merits-based failure. A component that
     # produced NO findings at all is not evidence of anything - and
@@ -876,16 +897,35 @@ def classify_run(
         comp.id for comp in failed
         if comp.findings and not _infra_casualty(comp)
     ]
+    unevidenced = [comp for comp in failed if not comp.findings]
+    # Collected BEFORE the SPEC_FAILURE return: a mixed manifest used to
+    # report only the component with a finding, silently dropping a
+    # sibling's "fatal: invalid reference" from both the reason and the
+    # evidence - recreating the exact operator misdirection this change
+    # exists to remove (#197 M3).
+    sibling_note = ""
+    if unevidenced:
+        sibling_note = "; also failed with no finding to explain it - " + "; ".join(
+            f"{comp.id}: {comp.error or 'no error recorded'}"
+            for comp in unevidenced
+        )
     if judged:
         return Outcome(
             Verdict.SPEC_FAILURE,
             "spec-level failure: "
             + ", ".join(judged)
-            + " failed on their own merits, not on infrastructure",
-            {"returncode": run.returncode, "judged_failures": judged},
+            + " failed on their own merits, not on infrastructure"
+            + sibling_note,
+            {
+                "returncode": run.returncode,
+                "judged_failures": judged,
+                "unevidenced_failures": [comp.id for comp in unevidenced],
+                "component_errors": {
+                    comp.id: comp.error for comp in unevidenced
+                },
+            },
         )
 
-    unevidenced = [comp for comp in failed if not comp.findings]
     if unevidenced:
         detail = "; ".join(
             f"{comp.id}: {comp.error or 'no error recorded'}"
