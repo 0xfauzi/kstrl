@@ -1513,6 +1513,11 @@ class CycleResult:
     skipped: str = ""
     charged_usd: float = 0.0
     inbox_items: tuple[str, ...] = ()
+    #: Remote refs admitted by the intake stage this cycle.
+    synced: tuple[str, ...] = ()
+    #: Intake errors. Non-empty does NOT stop the cycle: a front-end
+    #: outage must never block the local queue (R8.6).
+    sync_errors: tuple[str, ...] = ()
 
 
 class ServeObserver(Protocol):
@@ -1571,6 +1576,40 @@ def _file_inbox_item(
         return item.id
     except (OSError, ValueError, KeyError):
         return ""
+
+
+def _run_intake(
+    root_dir: Path, queue: Queue, observer: ServeObserver,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Pull remote work into the queue, best effort.
+
+    Review #189 F1: without this the daemon drained a queue nothing could
+    fill. `ks queue sync` existed but only as a manual command, so an
+    installed LaunchAgent could never admit a labelled issue - the
+    adapter and the daemon were each correct and their composition did
+    nothing.
+
+    Strictly additive, like the adapter itself: every failure is recorded
+    and the cycle continues to drain whatever is already queued. A GitHub
+    outage must not stop local work.
+    """
+    try:
+        from kstrl.intake_github import GitHubIntakeConfig
+        from kstrl.intake_github import sync as intake_sync
+
+        config = GitHubIntakeConfig.load(root_dir)
+        if not config.enabled:
+            return (), ()
+        result = intake_sync(queue, config, root_dir)
+    except Exception as exc:  # noqa: BLE001 - additive by contract
+        observer.warn(f"GitHub intake raised: {exc}")
+        return (), (str(exc),)
+
+    for ref in result.enqueued:
+        observer.info(f"Intake queued {ref}")
+    for error in result.errors:
+        observer.warn(f"  intake: {error}")
+    return result.enqueued, result.errors
 
 
 def _report_remote_outcome(
@@ -1709,7 +1748,12 @@ def serve_cycle(
             evidence={"item_id": item_id, "cause": "interrupted run"},
         ),)
 
-    # 2. The pause marker is read AND cleared under the mutex, re-reading
+    # 2. Pull remote work in BEFORE the gates, so newly-admitted items face
+    #    the same budget, breaker and cap checks as everything else.
+    with queue_lock(root_dir, blocking=True):
+        result.synced, result.sync_errors = _run_intake(root_dir, queue, obs)
+
+    # 3. The pause marker is read AND cleared under the mutex, re-reading
     #    inside it. Review #186 F7: read and clear outside the lock let an
     #    operator's fresh emergency pause be overwritten by the daemon
     #    clearing a previously-expired budget pause, after which the queue
@@ -1728,7 +1772,7 @@ def serve_cycle(
         result.skipped = f"paused: {pause.reason}"
         return result
 
-    # 3. Gates, all evaluated BEFORE the claim.
+    # 4. Gates, all evaluated BEFORE the claim.
     try:
         gates = (
             check_poison_breaker(ledger, cfg),
@@ -1775,7 +1819,7 @@ def serve_cycle(
         obs.info(result.skipped)
         return result
 
-    # 4. Claim exactly one item.
+    # 5. Claim exactly one item.
     refused_item: QueueItem | None = None
     with queue_lock(root_dir, blocking=True):
         candidate = queue.next_ready(moment)
@@ -1819,7 +1863,7 @@ def serve_cycle(
     for note in gate.notes:
         obs.warn(f"  {note}")
 
-    # 5. Charge the attempt, then spend. Never the other way round.
+    # 6. Charge the attempt, then spend. Never the other way round.
     try:
         with queue_lock(root_dir, blocking=True):
             running = queue.start(leased, actor="serve")
@@ -1914,7 +1958,7 @@ def serve_cycle(
         ),)
         return result
 
-    # 6. Charge the spend before deciding anything, so a classification
+    # 7. Charge the spend before deciding anything, so a classification
     #    bug cannot also lose the accounting. Only NEW run dirs count.
     owned_runs = sorted(run_dir_names(root_dir) - runs_before)
     total = 0.0
@@ -2189,10 +2233,11 @@ def serve(
 #: fighting over one launchd job.
 LAUNCHD_LABEL_PREFIX = "com.kstrl.serve"
 
-#: Minimum seconds launchd waits before restarting the job. launchd's own
-#: default is 10s, which for a crash-looping daemon means six restart
-#: attempts a minute; at a measured $1.70-2.60 per engineer iteration the
-#: throttle is a spend control, not a politeness.
+#: Minimum seconds launchd waits before RELAUNCHING an exited job.
+#: launchd's own default is 10s, which for a crash-looping daemon means
+#: six restarts a minute; at a measured $1.70-2.60 per engineer iteration
+#: the throttle is a spend control. Note what it is NOT: it does not bound
+#: how long a running job may take (review #189 F2).
 LAUNCHD_THROTTLE_SECONDS = 60
 
 
@@ -2201,8 +2246,8 @@ def launchd_label(root_dir: Path) -> str:
 
     Derived from the path rather than the directory name because two
     checkouts of the same repo (a worktree and its parent) would
-    otherwise collide on one job, and launchd would silently keep only
-    the last one loaded.
+    otherwise collide on one job, and launchd keeps only the last one
+    loaded - silently.
     """
     import hashlib
 
@@ -2215,61 +2260,95 @@ def launchd_log_dir(root_dir: Path) -> Path:
 
     Its own function because the CLI must CREATE it: launchd creates the
     log file but not its parent, and a missing parent makes the job fail
-    to spawn with nothing in the log explaining why - the worst kind of
-    setup failure. ``render_launchd_plist`` stays pure.
+    to spawn with nothing in the log explaining why.
     """
     return state_dir(root_dir) / "logs"
 
 
-def _plist_escape(value: str) -> str:
-    """XML-escape a plist string value."""
-    return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+def calendar_schedule(interval_minutes: int) -> list[dict[str, int]]:
+    """A ``StartCalendarInterval`` array firing every N minutes.
+
+    ``StartCalendarInterval`` rather than ``StartInterval`` because only
+    the former catches up after sleep. ``launchd.plist(5)``:
+
+        StartInterval - "If the system is asleep during the time of the
+        next scheduled interval firing, that interval will be missed due
+        to shortcomings in kqueue(3)."
+
+        StartCalendarInterval - "Unlike cron which skips job invocations
+        when the computer is asleep, launchd will start the job the next
+        time the computer wakes up."
+
+    Review #189 F3: the guide previously claimed the opposite, and the
+    R8.6 plan had recorded the correct behaviour all along.
+    """
+    if interval_minutes < 1:
+        raise ServeError(
+            f"launchd interval must be >= 1 minute, got {interval_minutes}"
+        )
+    if interval_minutes <= 60:
+        if 60 % interval_minutes:
+            raise ServeError(
+                f"a {interval_minutes}-minute interval does not divide an "
+                "hour evenly, so it cannot be expressed as a calendar "
+                "schedule; use a divisor of 60 (1, 2, 3, 4, 5, 6, 10, 12, "
+                "15, 20, 30, 60)"
+            )
+        return [{"Minute": m} for m in range(0, 60, interval_minutes)]
+    if interval_minutes % 60 or interval_minutes > 24 * 60:
+        raise ServeError(
+            f"a {interval_minutes}-minute interval must be a whole number "
+            "of hours (and at most 24h) to be expressed as a calendar "
+            "schedule"
+        )
+    step = interval_minutes // 60
+    return [{"Hour": h, "Minute": 0} for h in range(0, 24, step)]
 
 
-def render_launchd_plist(
+def launchd_plist_dict(
     root_dir: Path,
     *,
     mode: str = "keepalive",
-    interval_seconds: int = 300,
+    interval_minutes: int = 5,
     python: str = "",
     extra_path: str = "",
-) -> str:
-    """Render a LaunchAgent plist for ``ks serve`` on this checkout.
+    factory_timeout_seconds: float = 0.0,
+) -> dict[str, Any]:
+    """Build the LaunchAgent as a plist DICT.
 
-    Generated rather than shipped as a template with placeholders: every
-    path here is absolute and specific to one checkout, and a
-    hand-edited template is a class of setup error (wrong python, wrong
-    root, a label colliding with another checkout) that costs an operator
-    a debugging session to find.
+    A dict fed to :mod:`plistlib` rather than a formatted XML string:
+    hand-escaping covered ``&``, ``<`` and ``>`` but not control
+    characters, which XML 1.0 cannot represent at all - a checkout path
+    containing one produced a plist that failed to parse (review #189
+    F4). ``plistlib`` rejects those values outright, which is turned into
+    a clear ``ServeError`` by :func:`render_launchd_plist`.
 
-    Two modes, and the trade-off is real:
+    Two modes, and neither gets a guarantee launchd does not provide:
 
-    - ``keepalive`` - one long-lived ``ks serve`` that paces itself from
-      ``[serve] poll_interval_seconds``, restarted by launchd if it dies.
-      Fewer moving parts. Its weakness: launchd only notices a process
-      that EXITED, so a daemon wedged on a network call looks healthy.
-    - ``interval`` - launchd runs ``ks serve --once`` every
-      ``interval_seconds``. Each cycle is isolated, so a wedge cannot
-      outlive one interval, and the exit code carries "work needs a
-      human". This is the cron-fallback shape.
+    - ``keepalive`` - one long-lived ``ks serve`` pacing itself from
+      ``[serve] poll_interval_seconds``, relaunched by launchd when it
+      EXITS. Sleep is survived because the process simply resumes.
+    - ``interval`` - ``ks serve --once`` on a calendar schedule, which
+      catches up after wake.
 
-    ``PATH`` is set explicitly because a LaunchAgent does not inherit
-    your shell's environment, and both ``gh`` (the GitHub adapter) and
-    ``git`` must be findable. Getting this wrong produces a daemon that
-    runs and silently fails every poll.
+    **launchd bounds neither runtime nor overlap.** ``launchd.plist(5)``:
+    "If the job is running during an interval firing, that interval
+    firing will likewise be missed." So a wedged cycle is not killed and
+    not replaced - it silently blocks every later firing. The only real
+    bound is ``[serve] factory_timeout_seconds``, which is why interval
+    mode refuses to generate without one (review #189 F2).
     """
     if mode not in ("keepalive", "interval"):
         raise ServeError(
             f"launchd mode must be 'keepalive' or 'interval', got {mode!r}"
         )
-    if interval_seconds < LAUNCHD_THROTTLE_SECONDS:
+    if mode == "interval" and factory_timeout_seconds <= 0:
         raise ServeError(
-            f"launchd interval must be >= {LAUNCHD_THROTTLE_SECONDS}s "
-            f"(the restart throttle), got {interval_seconds}"
+            "interval mode needs [serve] factory_timeout_seconds > 0. "
+            "launchd does not bound how long a job runs and does not "
+            "replace a job still running at the next firing - it just "
+            "skips it - so without a timeout one wedged cycle silently "
+            "stops every later one."
         )
 
     root = root_dir.resolve()
@@ -2279,7 +2358,8 @@ def render_launchd_plist(
     if mode == "interval":
         args.append("--once")
 
-    # A LaunchAgent gets a minimal PATH; gh and git must be reachable.
+    # A LaunchAgent inherits no shell environment; gh and git must be
+    # findable or every poll fails silently.
     path_parts = [
         str(Path(interpreter).parent),
         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
@@ -2291,47 +2371,56 @@ def render_launchd_plist(
     for part in path_parts:
         if part and part not in deduped:
             deduped.append(part)
-    path_value = ":".join(deduped)
 
-    arg_xml = "\n".join(
-        f"        <string>{_plist_escape(a)}</string>" for a in args
+    plist: dict[str, Any] = {
+        "Label": launchd_label(root),
+        "ProgramArguments": args,
+        "WorkingDirectory": str(root),
+        "EnvironmentVariables": {
+            "PATH": ":".join(deduped),
+            "KSTRL_NO_TUI": "1",
+        },
+        "RunAtLoad": True,
+        "ThrottleInterval": LAUNCHD_THROTTLE_SECONDS,
+        "ProcessType": "Background",
+        "StandardOutPath": str(log_dir / "serve.out.log"),
+        "StandardErrorPath": str(log_dir / "serve.err.log"),
+    }
+    if mode == "keepalive":
+        plist["KeepAlive"] = True
+    else:
+        plist["StartCalendarInterval"] = calendar_schedule(interval_minutes)
+    return plist
+
+
+def render_launchd_plist(
+    root_dir: Path,
+    *,
+    mode: str = "keepalive",
+    interval_minutes: int = 5,
+    python: str = "",
+    extra_path: str = "",
+    factory_timeout_seconds: float = 0.0,
+) -> str:
+    """Serialize the LaunchAgent plist, refusing values XML cannot carry."""
+    import plistlib
+
+    payload = launchd_plist_dict(
+        root_dir,
+        mode=mode,
+        interval_minutes=interval_minutes,
+        python=python,
+        extra_path=extra_path,
+        factory_timeout_seconds=factory_timeout_seconds,
     )
-    schedule = (
-        "    <key>KeepAlive</key>\n    <true/>"
-        if mode == "keepalive"
-        else f"    <key>StartInterval</key>\n    <integer>{interval_seconds}</integer>"
-    )
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" \
-"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{launchd_label(root)}</string>
-    <key>ProgramArguments</key>
-    <array>
-{arg_xml}
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{_plist_escape(str(root))}</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>{_plist_escape(path_value)}</string>
-        <key>KSTRL_NO_TUI</key>
-        <string>1</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-{schedule}
-    <key>ThrottleInterval</key>
-    <integer>{LAUNCHD_THROTTLE_SECONDS}</integer>
-    <key>ProcessType</key>
-    <string>Background</string>
-    <key>StandardOutPath</key>
-    <string>{_plist_escape(str(log_dir / 'serve.out.log'))}</string>
-    <key>StandardErrorPath</key>
-    <string>{_plist_escape(str(log_dir / 'serve.err.log'))}</string>
-</dict>
-</plist>
-"""
+    try:
+        return plistlib.dumps(payload).decode("utf-8")
+    except (ValueError, TypeError) as exc:
+        # plistlib rejects control characters outright, which is the
+        # honest place to fail: a path XML cannot represent has no valid
+        # plist, and emitting one that fails to parse later is worse.
+        raise ServeError(
+            f"cannot express this checkout as a launchd plist ({exc}). "
+            "The path most likely contains a control character; move the "
+            "checkout somewhere with a plain path."
+        ) from exc

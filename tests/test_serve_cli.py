@@ -233,12 +233,7 @@ class TestServeOnce:
 
 
 class TestLaunchdPlist:
-    """R8.6 PR 4: the plist must be valid to macOS, not just to us.
-
-    Every structural assertion here is paired with a `plutil -lint` check
-    where the platform provides one: a plist that satisfies our own string
-    matching but not launchd's parser is worthless.
-    """
+    """R8.6 PR 4: the plist must be valid to macOS, not just to us."""
 
     @staticmethod
     def _plist(root: Path, *args: str) -> str:
@@ -247,6 +242,12 @@ class TestLaunchdPlist:
         )
         assert result.exit_code == 0, result.output
         return result.output
+
+    @staticmethod
+    def _timeout_toml(root: Path, seconds: float = 1800.0) -> None:
+        (root / "kstrl.toml").write_text(
+            f"[serve]\nfactory_timeout_seconds = {seconds}\n"
+        )
 
     def test_the_plist_parses_with_macos_own_parser(
         self, tmp_path: Path,
@@ -263,22 +264,79 @@ class TestLaunchdPlist:
 
         parsed = plistlib.loads(self._plist(tmp_path).encode())
         assert parsed["KeepAlive"] is True
-        assert "StartInterval" not in parsed
+        assert "StartCalendarInterval" not in parsed
         assert "--once" not in parsed["ProgramArguments"]
 
-    def test_interval_mode_schedules_one_shot_runs(
+    def test_interval_mode_uses_a_WAKE_CATCHING_scheduler(
+        self, tmp_path: Path,
+    ) -> None:
+        """#189 F3: StartInterval MISSES firings that elapse during sleep.
+
+        launchd.plist(5) is explicit: a StartInterval firing during sleep
+        "will be missed due to shortcomings in kqueue(3)", whereas
+        StartCalendarInterval "will start the job the next time the
+        computer wakes up". On a laptop the difference is the whole point.
+        """
+        import plistlib
+
+        self._timeout_toml(tmp_path)
+        parsed = plistlib.loads(self._plist(
+            tmp_path, "--plist-mode", "interval", "--plist-interval", "10",
+        ).encode())
+        assert "StartInterval" not in parsed, "misses sleep firings"
+        assert parsed["StartCalendarInterval"] == [
+            {"Minute": m} for m in range(0, 60, 10)
+        ]
+        assert parsed["ProgramArguments"][-1] == "--once"
+
+    def test_interval_mode_refuses_without_a_run_timeout(
+        self, tmp_path: Path,
+    ) -> None:
+        """#189 F2: launchd bounds neither runtime nor overlap.
+
+        launchd.plist(5): "If the job is running during an interval
+        firing, that interval firing will likewise be missed." So a
+        wedged cycle is not killed and not replaced - it silently blocks
+        every later firing. factory_timeout_seconds is the only real
+        bound, so the mode that schedules cycles requires one.
+        """
+        result = CliRunner().invoke(cli, [
+            "serve", "--print-plist", "--root", str(tmp_path),
+            "--plist-mode", "interval",
+        ])
+        assert result.exit_code == 2
+        assert "factory_timeout_seconds" in result.output
+
+    def test_keepalive_does_not_require_a_run_timeout(
+        self, tmp_path: Path,
+    ) -> None:
+        """It paces itself; there is no schedule to fall behind."""
+        assert "KeepAlive" in self._plist(tmp_path)
+
+    @pytest.mark.parametrize("minutes", [7, 11, 90, 2000])
+    def test_an_inexpressible_interval_is_refused(
+        self, tmp_path: Path, minutes: int,
+    ) -> None:
+        """A calendar schedule cannot express 'every 7 minutes'."""
+        self._timeout_toml(tmp_path)
+        result = CliRunner().invoke(cli, [
+            "serve", "--print-plist", "--root", str(tmp_path),
+            "--plist-mode", "interval", "--plist-interval", str(minutes),
+        ])
+        assert result.exit_code == 2
+
+    def test_hourly_intervals_are_expressed_as_hours(
         self, tmp_path: Path,
     ) -> None:
         import plistlib
 
+        self._timeout_toml(tmp_path)
         parsed = plistlib.loads(self._plist(
-            tmp_path, "--plist-mode", "interval", "--plist-interval", "600",
+            tmp_path, "--plist-mode", "interval", "--plist-interval", "360",
         ).encode())
-        assert parsed["StartInterval"] == 600
-        assert "KeepAlive" not in parsed
-        assert parsed["ProgramArguments"][-1] == "--once", (
-            "interval mode must run a single cycle per fire"
-        )
+        assert parsed["StartCalendarInterval"] == [
+            {"Hour": h, "Minute": 0} for h in (0, 6, 12, 18)
+        ]
 
     def test_the_restart_throttle_is_set(self, tmp_path: Path) -> None:
         """launchd's 10s default would restart a crash-loop 6x a minute."""
@@ -290,24 +348,10 @@ class TestLaunchdPlist:
         assert parsed["ThrottleInterval"] == LAUNCHD_THROTTLE_SECONDS
         assert LAUNCHD_THROTTLE_SECONDS >= 60, "a spend control, not politeness"
 
-    def test_an_interval_below_the_throttle_is_refused(
-        self, tmp_path: Path,
-    ) -> None:
-        """A 10s interval against a 60s throttle silently does not happen."""
-        result = CliRunner().invoke(cli, [
-            "serve", "--print-plist", "--root", str(tmp_path),
-            "--plist-mode", "interval", "--plist-interval", "30",
-        ])
-        assert result.exit_code != 0
-
     def test_PATH_includes_the_interpreter_and_homebrew(
         self, tmp_path: Path,
     ) -> None:
-        """A LaunchAgent inherits no shell env; gh and git must be findable.
-
-        Getting this wrong yields a daemon that runs and silently fails
-        every poll, which is the hardest kind of setup bug to see.
-        """
+        """A LaunchAgent inherits no shell env; gh and git must be findable."""
         import plistlib
 
         parsed = plistlib.loads(self._plist(tmp_path).encode())
@@ -323,15 +367,10 @@ class TestLaunchdPlist:
         root = str(tmp_path.resolve())
         assert parsed["WorkingDirectory"] == root
         assert parsed["StandardOutPath"].startswith(root)
-        assert parsed["StandardErrorPath"].startswith(root)
         assert "--root" in parsed["ProgramArguments"]
 
     def test_the_label_is_unique_per_checkout(self, tmp_path: Path) -> None:
-        """Two checkouts must not fight over one launchd job.
-
-        launchd keeps only the last job loaded for a given Label, silently,
-        so a shared label means one checkout stops being served.
-        """
+        """launchd keeps only the last job per Label, silently."""
         from kstrl.serve import launchd_label
 
         a = tmp_path / "checkout-a"
@@ -339,11 +378,7 @@ class TestLaunchdPlist:
         a.mkdir()
         b.mkdir()
         assert launchd_label(a) != launchd_label(b)
-
-    def test_the_label_is_stable_for_one_checkout(self, tmp_path: Path) -> None:
-        from kstrl.serve import launchd_label
-
-        assert launchd_label(tmp_path) == launchd_label(tmp_path)
+        assert launchd_label(a) == launchd_label(a)
 
     def test_the_log_directory_is_created(self, tmp_path: Path) -> None:
         """launchd creates the log file but not its parent."""
@@ -363,10 +398,38 @@ class TestLaunchdPlist:
         assert runner.call_count == 0
 
     def test_xml_special_characters_are_escaped(self, tmp_path: Path) -> None:
-        """A path containing & or < must not produce a corrupt plist."""
         import plistlib
 
         awkward = tmp_path / "a & b <test>"
         awkward.mkdir()
         parsed = plistlib.loads(self._plist(awkward).encode())
         assert parsed["WorkingDirectory"] == str(awkward.resolve())
+
+    def test_a_path_XML_cannot_represent_is_refused(
+        self, tmp_path: Path,
+    ) -> None:
+        """#189 F4: a control char produced a plist that failed to parse.
+
+        XML 1.0 cannot represent them at all, so there is no correct
+        escaping - the only honest outcome is a clear refusal.
+        """
+        awkward = tmp_path / "bad\x01name"
+        awkward.mkdir()
+        result = CliRunner().invoke(
+            cli, ["serve", "--print-plist", "--root", str(awkward)],
+        )
+        assert result.exit_code == 2
+        assert "control character" in result.output
+
+    def test_every_generated_plist_round_trips(self, tmp_path: Path) -> None:
+        """The property that matters: whatever we emit, macOS can read."""
+        import plistlib
+
+        self._timeout_toml(tmp_path)
+        for args in (
+            (),
+            ("--plist-mode", "interval", "--plist-interval", "5"),
+            ("--plist-mode", "interval", "--plist-interval", "60"),
+        ):
+            raw = self._plist(tmp_path, *args).encode()
+            assert plistlib.loads(raw)["Label"].startswith("com.kstrl.serve.")

@@ -207,24 +207,46 @@ launchctl unload ~/Library/LaunchAgents/$LABEL.plist
 
 Logs land in `.kstrl/logs/serve.{out,err}.log`.
 
-### Two modes, and the trade-off is real
+### Two modes
 
 ```bash
 ks serve --print-plist                                        # keepalive
-ks serve --print-plist --plist-mode interval --plist-interval 600
+ks serve --print-plist --plist-mode interval --plist-interval 10
 ```
 
-- **`keepalive`** (default) - one long-lived `ks serve` that paces itself
-  from `[serve] poll_interval_seconds`; launchd restarts it if it exits.
-  Fewer moving parts. **Its weakness:** launchd only notices a process
-  that *exited*, so a daemon wedged on a network call looks healthy
-  forever.
-- **`interval`** - launchd runs `ks serve --once` every N seconds. Each
-  cycle is isolated, so a wedge cannot outlive one interval, and the exit
-  code carries "work needs a human". This is the cron-fallback shape.
+- **`keepalive`** (default) - one long-lived `ks serve` pacing itself from
+  `[serve] poll_interval_seconds`; launchd relaunches it when it **exits**.
+  Sleep is survived trivially: the process simply resumes on wake.
+- **`interval`** - `ks serve --once` on a **calendar** schedule.
+  `--plist-interval` is in MINUTES and must divide an hour evenly
+  (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60) or be whole hours.
 
-If you are leaving this unattended for long stretches, `interval` fails
-more visibly.
+### What launchd does NOT do
+
+Two guarantees people assume and `launchd.plist(5)` explicitly denies:
+
+> **`StartInterval`** - "If the system is asleep during the time of the
+> next scheduled interval firing, that interval will be missed due to
+> shortcomings in `kqueue(3)`. **If the job is running during an interval
+> firing, that interval firing will likewise be missed.**"
+
+> **`StartCalendarInterval`** - "Unlike cron which skips job invocations
+> when the computer is asleep, launchd will start the job **the next time
+> the computer wakes up**."
+
+So:
+
+1. **Only `StartCalendarInterval` catches up after sleep.** Interval mode
+   uses it for that reason. `StartInterval` would silently skip every
+   firing that elapsed while the lid was shut.
+2. **launchd never bounds how long a job runs, and never replaces one
+   still running.** It just skips the firing. A wedged cycle is therefore
+   not killed - it silently stops every later one.
+
+Because of (2), interval mode **refuses to generate** unless
+`[serve] factory_timeout_seconds` is set. That timeout is the only real
+bound on a cycle; `ThrottleInterval` limits relaunch after exit, not
+runtime.
 
 ### Why the label is a path hash
 
@@ -264,9 +286,15 @@ freely between runs.
 sleep. It does **not** prevent an explicit sleep - **closing the lid will
 still suspend the machine mid-run.**
 
-That is why the rest of the design exists: the lease reaper reclaims a run
-whose owner vanished, and a process killed by a signal classifies as
-infrastructural and retries. Sleep mid-run is survivable, not prevented.
+What that actually means is narrower than "the run is lost". Sleep
+*suspends* processes; it does not kill them. On wake the same `ks serve`
+and the same factory child resume and the cycle finishes. The lease TTL
+may have elapsed during the suspend, but nothing reaps it, because the
+process holding the run is the same one that would do the reaping and it
+is busy running.
+
+The recovery machinery exists for the case where the process really is
+gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
 
 ---
 
@@ -299,13 +327,12 @@ label plus a comment. And the caffeinate assertion lifetime above.
 
 **NOT verified:**
 
-- **Sleep and wake resilience.** Whether launchd fires a missed interval
-  on wake, and whether the reaper recovers a run interrupted by an actual
-  lid close, has not been exercised - it needs the machine genuinely
-  suspended. Apple documents that a `StartInterval` job runs once on wake
-  if its interval elapsed; that is documentation, not a measurement taken
-  here. **If you plan to run this on a laptop, close the lid mid-run once
-  and confirm the item recovers.**
+- **Sleep and wake behaviour end to end.** The `launchd.plist(5)`
+  contracts quoted above are Apple's documentation, not measurements
+  taken here, and nothing has been exercised against a genuinely
+  suspended machine. **If you plan to run this on a laptop, close the lid
+  mid-run once and confirm the cycle finishes on wake and the calendar
+  job fires.**
 - **`ks serve` driving a real factory run end to end.** Every daemon test
   uses a stub runner, deliberately: a suite that spawned real runs would
   cost dollars per assertion. Your first unattended run is also the first

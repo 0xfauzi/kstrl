@@ -4086,8 +4086,11 @@ def queue_sync(
     help="keepalive: one long-lived daemon; interval: `--once` on a timer",
 )
 @click.option(
-    "--plist-interval", type=click.IntRange(min=60), default=300,
-    help="Seconds between runs in interval mode (>= the 60s restart throttle)",
+    "--plist-interval", type=click.IntRange(min=1), default=5,
+    help=(
+        "MINUTES between runs in interval mode; must divide an hour "
+        "(1,2,3,4,5,6,10,12,15,20,30,60) or be whole hours"
+    ),
 )
 @_queue_root_option
 @_queue_ui_option
@@ -4149,7 +4152,12 @@ def serve(
 
         try:
             click.echo(render_launchd_plist(
-                root_dir, mode=plist_mode, interval_seconds=plist_interval,
+                root_dir,
+                mode=plist_mode,
+                interval_minutes=plist_interval,
+                factory_timeout_seconds=(
+                    ServeConfig.load(root_dir).factory_timeout_seconds
+                ),
             ), nl=False)
         except ServeError as exc:
             ui_impl.err(str(exc))

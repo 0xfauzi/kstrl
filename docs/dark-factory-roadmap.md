@@ -982,13 +982,46 @@ Three decisions worth recording:
   environment, and both `gh` and `git` must be findable. Getting this
   wrong yields a daemon that runs and silently fails every poll.
 
-Two modes ship, with the trade-off stated rather than hidden: `keepalive`
-(one long-lived daemon, restarted on exit - but launchd cannot see a
-process wedged on a network call) and `interval` (`--once` on a timer, so a
-wedge cannot outlive one interval and the exit code carries "needs a
-human").
+**Review corrections (PR #189).** Four gaps were caught in review, all
+reproduced first. Two were consequential:
 
-**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
+1. **The scheduled job never polled GitHub intake.** `ks serve` never
+   called `intake_github.sync`; that was reachable only through the
+   manual `ks queue sync`. So an installed LaunchAgent drained a queue
+   nothing could fill, and a labelled issue could never enter it. The
+   adapter (PR 3) and the daemon (PR 2) were each correct and their
+   COMPOSITION did nothing - a seam no single-PR review would catch.
+   Intake is now an explicit stage of the cycle, running before the
+   admission gates so newly-synced work faces the same budget, breaker
+   and cap checks, and strictly additive so an outage cannot stop the
+   queue draining.
+2. **The `StartInterval` wake contract was stated backwards.**
+   `launchd.plist(5)` says a `StartInterval` firing during sleep "will be
+   missed due to shortcomings in kqueue(3)", while
+   `StartCalendarInterval` "will start the job the next time the computer
+   wakes up". The guide claimed the opposite - and this plan had recorded
+   the correct behaviour all along. Interval mode now uses
+   `StartCalendarInterval`.
+3. **`StartInterval` does not bound a wedged cycle either.** The same man
+   page: "If the job is running during an interval firing, that interval
+   firing will likewise be missed." launchd neither kills nor replaces a
+   running job, so a wedge silently stops every later firing - the
+   opposite of the "a wedge cannot outlive one interval" claim the PR
+   made. `factory_timeout_seconds` is the only real bound, so interval
+   mode now refuses to generate without one.
+4. **A legal path could produce malformed XML.** Hand-escaping covered
+   `&`, `<`, `>` but not control characters, which XML 1.0 cannot
+   represent at all. The plist is now built as a dict through
+   `plistlib`, which rejects such values outright; that rejection becomes
+   a clear `ServeError`.
+
+Also corrected: the claim that a lid close makes the lease owner vanish.
+Sleep SUSPENDS processes, it does not kill them - on wake the same serve
+and the same factory child resume, and nothing reaps the run because the
+process that would reap it is the one running it. The recovery machinery
+is for a crash, an OOM kill or a reboot, not an ordinary lid close.
+
+Two modes ship, with the trade-off stated rather than hidden: `keepalive`**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
 around a child process: `caffeinate -i <child>` creates a
 `PreventUserIdleSystemSleep` assertion *on behalf of the child*, and that
 assertion is gone once the child exits - nothing lingers, which is the
