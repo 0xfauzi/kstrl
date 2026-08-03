@@ -28,6 +28,7 @@ from kstrl.intake_github import (
     IntakeError,
     ProcessedLedger,
     RemoteIssue,
+    SyncResult,
     apply_state_label,
     issue_number_from_ref,
     parse_issue_list,
@@ -1267,3 +1268,290 @@ class TestServeDrivesRemoteLabels:
         assert not any(held), (
             "every remote writeback must run with the queue mutex released"
         )
+
+
+class TestServePollsIntake:
+    """#189 F1: the daemon must FILL the queue, not only drain it.
+
+    `ks queue sync` existed as a manual command and the serve cycle never
+    called it, so an installed LaunchAgent could never admit a labelled
+    issue. The adapter and the daemon were each correct; their
+    composition did nothing. Covers enabled, disabled, failure, once, and
+    repeated cycles, as the review asked.
+    """
+
+    @staticmethod
+    def _runner(returncode: int = 0):  # type: ignore[no-untyped-def]
+        from kstrl.serve import RunOutcome
+
+        def runner(*, root_dir: Path, **kwargs: object) -> RunOutcome:
+            run_dir = root_dir / ".kstrl" / "runs" / "factory-x"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "events.jsonl").touch()
+            return RunOutcome(returncode=returncode)
+
+        return runner
+
+    @staticmethod
+    def _enable(root: Path) -> None:
+        (root / "kstrl.toml").write_text(
+            f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n'
+        )
+
+    def _cycle(self, root: Path, **kwargs: object):  # type: ignore[no-untyped-def]
+        from kstrl.serve import RunSpend, serve_cycle
+
+        with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+            return serve_cycle(root, runner=self._runner(), **kwargs)  # type: ignore[arg-type]
+
+    def test_an_enabled_adapter_is_polled_every_cycle(
+        self, tmp_path: Path,
+    ) -> None:
+        self._enable(tmp_path)
+        _queue(tmp_path).ensure_dirs()
+        with patch("kstrl.intake_github.sync") as sync:
+            sync.return_value = SyncResult(repo=REPO)
+            self._cycle(tmp_path)
+        assert sync.call_count == 1
+
+    def test_a_disabled_adapter_makes_no_gh_calls(
+        self, tmp_path: Path,
+    ) -> None:
+        """Off must mean no outbound traffic at all, not a wasted call."""
+        _queue(tmp_path).ensure_dirs()
+        with patch("kstrl.intake_github.run_gh") as gh:
+            result = self._cycle(tmp_path)
+        assert gh.call_count == 0
+        # And no spurious error every cycle. `sync` itself reports
+        # "enabled is false" as an error, so without the early return the
+        # common case (intake off) would log a failure on every poll.
+        assert result.sync_errors == (), (
+            "a disabled adapter must be silent, not report an error each cycle"
+        )
+
+    def test_a_synced_item_is_RUN_in_the_same_cycle(
+        self, tmp_path: Path,
+    ) -> None:
+        """The end-to-end property the missing wiring broke."""
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        stub = _GhStub(issues=_issue_payload(_issue(4)))
+        with patch("kstrl.intake_github.run_gh", stub):
+            result = self._cycle(tmp_path)
+        assert result.synced == (f"{REPO}#4",)
+        assert result.ran_item, "the freshly synced item must also run"
+        assert queue.items()[0].state is ItemState.DONE
+
+    def test_an_intake_failure_does_not_stop_the_cycle(
+        self, tmp_path: Path,
+    ) -> None:
+        """A front-end outage must never block local work."""
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        queue.add("# local\n", title="local work")
+        with patch(
+            "kstrl.intake_github.run_gh",
+            _GhStub(issues=GhResult(ok=False, error="HTTP 503")),
+        ):
+            result = self._cycle(tmp_path)
+        assert result.sync_errors, "the failure is recorded"
+        assert result.ran_item, "and the local item still runs"
+        assert queue.items()[0].state is ItemState.DONE
+
+    def test_an_intake_exception_does_not_stop_the_cycle(
+        self, tmp_path: Path,
+    ) -> None:
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        queue.add("# local\n", title="local work")
+        with patch(
+            "kstrl.intake_github.sync", side_effect=RuntimeError("boom"),
+        ):
+            result = self._cycle(tmp_path)
+        assert any("boom" in e for e in result.sync_errors)
+        assert queue.items()[0].state is ItemState.DONE
+
+    def test_repeated_cycles_do_not_re_admit(self, tmp_path: Path) -> None:
+        """Idempotency has to hold across cycles, not just across syncs."""
+        from kstrl.serve import RunSpend, serve
+
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+                serve(
+                    tmp_path, runner=self._runner(), max_cycles=3,
+                    sleeper=lambda _s: None,
+                )
+        assert len(queue.items()) == 1, "one issue must yield one item"
+
+    def test_once_mode_still_polls_intake(self, tmp_path: Path) -> None:
+        """--once is the launchd shape; it must admit work too."""
+        from kstrl.serve import RunSpend, serve
+
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+                results = serve(tmp_path, once=True, runner=self._runner())
+        assert results[0].synced == (f"{REPO}#4",)
+        assert len(queue.items()) == 1
+
+    def test_intake_runs_BEFORE_the_admission_gates(
+        self, tmp_path: Path,
+    ) -> None:
+        """Newly synced work must face the same budget and breaker checks.
+
+        Syncing after the gates would let a fresh item bypass a budget
+        pause that had already stopped everything else.
+        """
+        from kstrl.serve import ServeConfig, SpendLedger
+
+        self._enable(tmp_path)
+        queue = _queue(tmp_path)
+        SpendLedger(tmp_path).charge(50.0, covered_calls=1, total_calls=1)
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            from kstrl.serve import RunSpend, serve_cycle
+
+            with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+                result = serve_cycle(
+                    tmp_path,
+                    config=ServeConfig(
+                        daily_budget_usd=10.0, allow_uncovered_cost=True,
+                    ),
+                    runner=self._runner(),
+                )
+        assert result.synced == (f"{REPO}#4",), "the item was admitted"
+        assert not result.ran_item, "but the budget still stopped it running"
+        assert queue.items()[0].state is ItemState.QUEUED
+
+
+class TestIntakeLockDiscipline:
+    """#189 N1: the queue mutex must not span remote I/O.
+
+    Wrapping intake in the lock reintroduced exactly the problem #187 F10
+    removed from writeback: a slow GitHub blocks `ks queue pause` and
+    every other transition.
+    """
+
+    def test_the_mutex_is_free_during_the_network_phase(
+        self, tmp_path: Path,
+    ) -> None:
+        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.workqueue import QueueLockedError, queue_lock
+
+        (tmp_path / "kstrl.toml").write_text(
+            f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n'
+        )
+        _queue(tmp_path).ensure_dirs()
+        held: list[bool] = []
+        real_gh = _GhStub(issues=_issue_payload(_issue(4)))
+
+        def probing_gh(args, *, timeout, cwd=None):  # type: ignore[no-untyped-def]
+            # Every network call must find the mutex free.
+            try:
+                with queue_lock(tmp_path):
+                    held.append(False)
+            except QueueLockedError:
+                held.append(True)
+            return real_gh(args, timeout=timeout, cwd=cwd)
+
+        with patch("kstrl.intake_github.run_gh", probing_gh):
+            with patch("kstrl.serve.read_run_spend", lambda r, i: RunSpend()):
+                serve_cycle(tmp_path, runner=lambda **k: RunOutcome(0))
+
+        assert held, "the network phase must have run"
+        assert not any(held), (
+            "no gh call may happen while the queue mutex is held"
+        )
+
+    def test_serve_guards_the_COMMIT_even_though_the_poll_is_free(
+        self, tmp_path: Path,
+    ) -> None:
+        """Unlocking the network must not unlock the enqueue.
+
+        The free-during-network test alone cannot catch a dropped guard:
+        with no guard at all the mutex is free everywhere, so that test
+        passes even harder. This asserts the other half.
+        """
+        from kstrl.serve import RunOutcome, RunSpend, serve_cycle
+        from kstrl.workqueue import Queue as _Queue
+        from kstrl.workqueue import QueueLockedError, queue_lock
+
+        (tmp_path / "kstrl.toml").write_text(
+            f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n'
+        )
+        _queue(tmp_path).ensure_dirs()
+        held_during_add: list[bool] = []
+        real_add = _Queue.add
+
+        def probing_add(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            try:
+                with queue_lock(tmp_path):
+                    held_during_add.append(False)
+            except QueueLockedError:
+                held_during_add.append(True)
+            return real_add(self, *args, **kwargs)
+
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            with patch.object(_Queue, "add", probing_add):
+                with patch(
+                    "kstrl.serve.read_run_spend", lambda r, i: RunSpend(),
+                ):
+                    serve_cycle(tmp_path, runner=lambda **k: RunOutcome(0))
+
+        assert held_during_add, "intake must have enqueued something"
+        assert all(held_during_add), (
+            "every intake enqueue must happen with the queue mutex held"
+        )
+
+    def test_the_commit_still_happens_under_the_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        """Unlocking the poll must not unlock the enqueue."""
+        from contextlib import contextmanager
+
+        entered: list[str] = []
+
+        @contextmanager
+        def guard():  # type: ignore[no-untyped-def]
+            entered.append("in")
+            yield
+            entered.append("out")
+
+        queue = _queue(tmp_path)
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            result = sync(queue, _config(), tmp_path, commit_guard=guard)
+        assert entered == ["in", "out"], "the commit must be guarded"
+        assert result.enqueued == (f"{REPO}#4",)
+
+    def test_the_plan_is_refreshed_under_the_guard(
+        self, tmp_path: Path,
+    ) -> None:
+        """Another process may have queued the same ref while we polled.
+
+        Re-planning inside the guard is what stops a TOCTOU double-admit.
+        """
+        from contextlib import contextmanager
+
+        queue = _queue(tmp_path)
+
+        @contextmanager
+        def guard():  # type: ignore[no-untyped-def]
+            # Simulate a racing writer that admits the same issue first.
+            queue.add(
+                "# raced\n", title="raced", source=ItemSource.GITHUB,
+                source_ref=f"{REPO}#4", target_repo=REPO,
+            )
+            yield
+
+        with patch("kstrl.intake_github.run_gh",
+                   _GhStub(issues=_issue_payload(_issue(4)))):
+            result = sync(queue, _config(), tmp_path, commit_guard=guard)
+        assert result.enqueued == (), "the refreshed plan must see the race"
+        assert len(queue.items()) == 1, "no duplicate admission"

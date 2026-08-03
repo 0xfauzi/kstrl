@@ -614,9 +614,12 @@ level-dependent behavior tested; calibration captures the family delta.
 
 ## R8.6 Continuous intake (L) - [#153](https://github.com/0xfauzi/kstrl/issues/153)
 
-Status: `[ ]` - Depends on: R8.2 (merge dispositions), R8.3 (notifications)
+Status: `[x]` - Shipped across PRs #185, #186, #187, #189. Operator guide:
+[docs/continuous-intake.md](continuous-intake.md).
 
-Landing in four slices; PRs 1-3 of 4 are in. Shipped so far:
+All four slices landed: `kstrl/workqueue.py` + `ks queue` (#185),
+`kstrl/serve.py` + `ks serve` (#186), `kstrl/intake_github.py` +
+`ks queue sync` (#187), and launchd packaging + the operator guide (#189). Shipped so far:
 `kstrl/workqueue.py` (maildir queue, `os.replace` transitions, flock
 mutex, pid/ttl leases, journal, pause marker) with the `ks queue
 add/ls/show/retry/rm/pause/resume` verbs, and `kstrl/serve.py`
@@ -958,7 +961,115 @@ the human trigger - `stop_at_pr` default preserves the merge gate).
 
 **Done when:** all queue verbs + `ks serve --once` work; poison path and
 budget pause tested; GitHub adapter round-trips labels/comments against a
-test repo; launchd plist + caffeinate behavior documented.
+test repo; launchd plist + caffeinate behavior documented. **All met.**
+
+**launchd and caffeinate (PR 4).** `ks serve --print-plist` generates the
+LaunchAgent rather than shipping a template: every path is absolute and
+checkout-specific, and a hand-edited template is a class of setup error
+(wrong interpreter, wrong root, a `Label` colliding with another checkout)
+that costs a debugging session to find. Validated against `plutil -lint`
+and round-tripped through `plistlib` in both modes.
+
+Three decisions worth recording:
+
+- **The `Label` is a path hash.** launchd keeps only the last job loaded
+  for a given label, silently, so two checkouts of one repo would leave
+  one unserved.
+- **`ThrottleInterval` is 60s, not launchd's 10s default.** At 10s a
+  crash-looping daemon attempts six restarts a minute; the throttle is a
+  spend control.
+- **`PATH` is set explicitly.** A LaunchAgent inherits no shell
+  environment, and both `gh` and `git` must be findable. Getting this
+  wrong yields a daemon that runs and silently fails every poll.
+
+**Review corrections (PR #189).** Four gaps were caught in review, all
+reproduced first. Two were consequential:
+
+1. **The scheduled job never polled GitHub intake.** `ks serve` never
+   called `intake_github.sync`; that was reachable only through the
+   manual `ks queue sync`. So an installed LaunchAgent drained a queue
+   nothing could fill, and a labelled issue could never enter it. The
+   adapter (PR 3) and the daemon (PR 2) were each correct and their
+   COMPOSITION did nothing - a seam no single-PR review would catch.
+   Intake is now an explicit stage of the cycle, running before the
+   admission gates so newly-synced work faces the same budget, breaker
+   and cap checks, and strictly additive so an outage cannot stop the
+   queue draining.
+2. **The `StartInterval` wake contract was stated backwards.**
+   `launchd.plist(5)` says a `StartInterval` firing during sleep "will be
+   missed due to shortcomings in kqueue(3)", while
+   `StartCalendarInterval` "will start the job the next time the computer
+   wakes up". The guide claimed the opposite - and this plan had recorded
+   the correct behaviour all along. Interval mode now uses
+   `StartCalendarInterval`.
+3. **`StartInterval` does not bound a wedged cycle either.** The same man
+   page: "If the job is running during an interval firing, that interval
+   firing will likewise be missed." launchd neither kills nor replaces a
+   running job, so a wedge silently stops every later firing - the
+   opposite of the "a wedge cannot outlive one interval" claim the PR
+   made. `factory_timeout_seconds` is the only real bound, so interval
+   mode now refuses to generate without one.
+4. **A legal path could produce malformed XML.** Hand-escaping covered
+   `&`, `<`, `>` but not control characters, which XML 1.0 cannot
+   represent at all. The plist is now built as a dict through
+   `plistlib`, which rejects such values outright; that rejection becomes
+   a clear `ServeError`.
+
+Also corrected: the claim that a lid close makes the lease owner vanish.
+Sleep SUSPENDS processes, it does not kill them - on wake the same serve
+and the same factory child resume, and nothing reaps the run because the
+process that would reap it is the one running it. The recovery machinery
+is for a crash, an OOM kill or a reboot, not an ordinary lid close.
+
+Two modes ship, with the trade-off stated rather than hidden: `keepalive`
+(default) runs one long-lived `ks serve` pacing itself from
+`[serve] poll_interval_seconds`, relaunched by launchd when it EXITS -
+fewer moving parts, but launchd only notices a process that has exited,
+so a daemon wedged on a network call looks healthy forever. `interval`
+runs `ks serve --once` on a `StartCalendarInterval` calendar schedule
+(which catches up after wake) - each cycle is a fresh process whose exit
+code carries "needs a human", but launchd bounds neither runtime nor
+overlap, so `[serve] factory_timeout_seconds` is the only real bound on
+a wedged cycle and interval mode refuses to generate a plist without one.
+
+Two constraints added after that paragraph was written (review #189
+N3/N6): the generated interval job also carries
+`KSTRL_SERVE_REQUIRE_TIMEOUT`, so every scheduled invocation re-checks
+the bound and fails closed if the timeout is later removed - a
+generation-time check binds only the config of the day it was run. And
+the interval must divide an hour, or be an hour count dividing 24:
+`range(0, 24, 5)` yields gaps of 5,5,5,5,4 across midnight, which is not
+"every five hours".
+
+**Measured caffeinate behaviour (H4).** With `pmset -g assertions` sampled
+around a child process: `caffeinate -i <child>` creates a
+`PreventUserIdleSystemSleep` assertion *on behalf of the child*, and that
+assertion is gone once the child exits - nothing lingers, which is the
+"held only during work" property R8.6 asked for.
+
+The caveat the plan implied but did not state: the assertion is
+`PreventUserIdleSystemSleep`, **not** `PreventSystemSleep`. It prevents
+*idle* sleep and does not prevent an explicit one, so **closing the lid
+still suspends the machine mid-run.**
+
+What that means is narrower than "the run is lost". Sleep SUSPENDS
+processes; it does not kill them. On wake the same `ks serve` and the
+same factory child resume and the cycle finishes, and nothing reaps the
+run because the process that would reap it is the one running it. The
+lease reaper, and the classification of a signal-killed process as
+infrastructural, exist for the case where the process really is gone - a
+crash, an OOM kill, a reboot - not for an ordinary lid close.
+
+**Still not verified (H4), and both need the user.** Sleep/wake resilience
+has not been exercised: whether launchd fires a missed interval on wake,
+and whether the reaper recovers a run interrupted by a real lid close,
+requires genuinely suspending the machine. The `launchd.plist(5)`
+contracts quoted above are Apple's documentation, not measurements taken
+here. Separately, `ks serve` has never driven a real
+factory run - every daemon test uses a stub runner, deliberately, since a
+suite that spawned real runs would cost dollars per assertion. The first
+unattended run is also the first end-to-end integration test. This is
+roadmap open question 11 in concrete form.
 
 ---
 
