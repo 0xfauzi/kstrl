@@ -88,7 +88,13 @@ consolidated here 2026-07-19 - previously these lived only in item notes):
   R7.5 closed `[x]`; the adapter implementation is tracked as R7.6.
 - **Two real factory runs** (knowledge + evolution A+ gates): knowledge
   fact-utilization telemetry nonzero, and one `ks evolve` proposal
-  traceable to a real recorded signature.
+  traceable to a real recorded signature. STILL OUTSTANDING as of
+  2026-08-03, and now the sole remaining L2+ gate (the two bullets above
+  are captured). Prerequisite found in review:
+  [#191](https://github.com/0xfauzi/kstrl/issues/191) - utilization is
+  computed each distill but only printed, never recorded to events or
+  the journal, so "telemetry nonzero" cannot yet be evidenced durably.
+  Run the two runs after #191 lands.
 
 Execution order: R0 -> R1 -> R2 -> R4 -> R3 -> R5 -> R6 -> R7.
 R4 (test spine) deliberately precedes R3/R5: the spine tests are the regression
