@@ -481,27 +481,56 @@ class PrMergePending(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class DistillResult(Event):
-    """Pre-PR knowledge distillation outcome for one component.
+    """Pre-PR knowledge distillation outcome: the knowledge layer's
+    WRITE side, for one component.
 
-    ``facts_written`` is the distiller's output. The three utilization
-    fields are the opposite direction: did the engineer reference the
-    facts we injected at the top of its prompt?
-
-    ``utilization_measured`` must be read FIRST. False means we could
-    not measure - it does NOT mean the engineer referenced nothing. A
-    payload written before #191 landed decodes to ``(False, 0, 0)``,
-    which is correct: those runs genuinely never measured. Reading
-    ``facts_referenced`` without checking the flag turns both a legacy
-    payload and a broken recorder into a legitimate-looking zero, which
-    is what made the L2+ fact-utilization gate un-evidenceable.
+    The read side - did the engineer use the facts it was given - is
+    :class:`FactUtilizationMeasured`, deliberately a separate event.
+    Carrying utilization here too would duplicate one measurement
+    across two events and invite a consumer to double count, and this
+    event is only emitted when distillation actually ran.
     """
 
     type: ClassVar[str] = "distill_result"
     facts_written: int = 0
     duration_seconds: float = 0.0
-    utilization_measured: bool = False
-    facts_injected: int = 0
-    facts_referenced: int = 0
+
+
+@dataclass(frozen=True, kw_only=True)
+class FactUtilizationMeasured(Event):
+    """Did the engineer reference the facts injected into its prompt?
+
+    Emitted once per component per attempt, on EVERY path the pipeline
+    can take once a diff is obtainable - including components that go
+    on to fail review or security, and including the paths where
+    distillation is skipped or raises. That is the point of it being
+    its own event: `evolution.jsonl` and `events.jsonl` must carry the
+    same population, and the earlier design emitted only from a
+    successful distill.
+
+    ``measured`` must be read FIRST. False means we could not measure -
+    it does NOT mean the engineer referenced nothing, and ``reason``
+    says which it was. A measured ``referenced=0`` IS evidence, that
+    injected facts went unused.
+
+    The counts are matched against ADDED diff lines and the progress
+    log only, so deleting the code that expressed a fact does not score
+    as referencing it. Per-tier counts can sum to less than the totals;
+    read ``core_*`` for the ratio that is about the component actually
+    being built, since the sibling tier inflates the denominator.
+    """
+
+    type: ClassVar[str] = "fact_utilization_measured"
+    measured: bool = False
+    injected: int = 0
+    referenced: int = 0
+    reason: str = ""
+    core_injected: int = 0
+    core_referenced: int = 0
+    dependency_injected: int = 0
+    dependency_referenced: int = 0
+    sibling_injected: int = 0
+    sibling_referenced: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)

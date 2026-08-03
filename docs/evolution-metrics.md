@@ -88,31 +88,43 @@ This is the query behind the sole remaining L2+ cATO gate in
 `docs/remediation-roadmap.md`: "two real factory runs with nonzero
 fact-utilization" is `runs_with_referenced >= 2`.
 
+The same measurement is on the event stream as `fact_utilization_measured`
+in `events.jsonl`, emitted once per component per attempt on every path
+that reaches a measurement point - including components that later fail
+review or security, and including the paths where distillation is
+skipped or raises. It is deliberately NOT carried on `distill_result`:
+one measurement lives in one event, so a consumer folding both cannot
+double count, and the utilization record does not depend on a later LLM
+phase having run.
+
 ### Which components are in the sample
 
-Utilization is measured as soon as the diff phase produces a diff, so
-the population is **every component that produced a diff** - including
-those that then failed review or security.
+The population is **every component whose diff can be fetched**. That
+includes components which fail mechanical verification, review, or
+security - a failed component's engineer still received facts and may
+well have used them.
 
-It was previously measured in the distill phase, which runs only after
-verification, review, and security all pass. That sampled successful
-components exclusively: a component that failed review had facts
-injected and may well have used them, and the gate never saw it. The
-measurement is a substring scan costing no tokens, so there was never a
-cost reason to defer it.
+Utilization was previously measured in the distill phase, which runs
+only after verification, review, and security all pass, so the sample
+was successful components exclusively. It is a substring scan costing
+no tokens, so there was never a cost reason to defer it.
 
-Two failure classes still cannot be measured, because no diff exists
-yet. They are recorded as `measured: false` with a specific `reason`
-rather than left absent, so the gap is visible in the data:
+A verification failure means the diff phase has not run *yet*, not that
+no diff exists: the engineer's change is committed in the worktree and
+is exactly what verification just inspected. That path therefore
+fetches the diff itself rather than writing off every test, typecheck,
+and lint failure - which is most of the failure population.
 
-| Case | `reason` |
+`measured: false` is reserved for a real inability to measure, and the
+entry always says which:
+
+| `reason` | When |
 |---|---|
-| Failed mechanical verification | `component failed verification, before a diff` |
-| Diff phase itself failed | `diff unavailable` |
-
-Measuring these against `progress.txt` alone would trade this gap for a
-subtler bias - a sample whose artifact set differs between the
-components in it - so it is deliberately not done.
+| `diff unavailable: <error>` | the `git diff` itself failed |
+| `diff unavailable` | the diff phase had already failed |
+| `knowledge retrieval failed` | the engineer's prefix could not be built |
+| `no injected prefix recorded for this attempt` | nothing was captured at submit |
+| `not measured` | the component never reached a measurement point |
 
 ### Reading the tiers
 
@@ -134,13 +146,32 @@ one. `kstrl/knowledge.py` shares its section-title constants between
 the renderer and the tier parser precisely so the two cannot drift and
 mis-bin claims while still summing correctly.
 
+### What counts as a reference
+
+Only **added** diff lines and the component's progress log are searched.
+
+A raw unified diff also carries deletion lines and unchanged context. A
+claim found in either is not evidence the fact was used - and counting
+them meant an engineer could delete the very code that expressed a
+fact, or merely edit near it, and still satisfy the
+nonzero-utilization gate. That is a false *positive*, the one error
+direction a lower-bound metric must not have. `measure_fact_utilization`
+takes the diff as a separate `diff=` parameter for this reason: an
+artifact is searched raw, so the signature is what prevents a raw diff
+being matched unfiltered again.
+
+The progress log is searched whole, because it is not a diff - the
+engineer writing about a fact is itself the signal.
+
 ### The remaining caveat
 
 **It is a lower bound.** `measure_fact_utilization` is a 30-character
-case-insensitive substring match against the diff and the component's
-progress log. An LLM that paraphrases a fact it genuinely used scores as
-not referencing it. This is a property of the measurement, not a defect
-in the recording, and it bounds every number above.
+case-insensitive substring match. An LLM that paraphrases a fact it
+genuinely used scores as not referencing it, and an added line that
+merely happens to contain the claim text scores as using it. The error
+is now overwhelmingly in the under-counting direction, but the match is
+lexical, not semantic. This is a property of the measurement, not a
+defect in the recording, and it bounds every number above.
 
 ## Proposals: `.kstrl/proposals/prop-NNN.md`
 

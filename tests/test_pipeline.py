@@ -11,6 +11,7 @@ run_factory; these tests are the regression net that extraction bought.
 
 from __future__ import annotations
 
+import dataclasses
 import io
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 import pytest
 
 from kstrl import events as ev
+from kstrl import git
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
@@ -1050,23 +1052,45 @@ class TestFactUtilizationRecording:
         return pipeline, outcome, captured, calls
 
     @staticmethod
-    def _distill_events(captured: list[Event]) -> list[ev.DistillResult]:
-        return [e for e in captured if isinstance(e, ev.DistillResult)]
+    def _util_events(
+        captured: list[Event],
+    ) -> list[ev.FactUtilizationMeasured]:
+        return [
+            e for e in captured
+            if isinstance(e, ev.FactUtilizationMeasured)
+        ]
 
-    def test_distill_result_event_carries_utilization(
+    def test_utilization_event_carries_the_measurement(
         self, tmp_path: Path,
     ) -> None:
         _, outcome, captured, _ = self._run(
             tmp_path,
             measure=lambda *a, **k: {"injected": 4, "referenced": 2},
         )
-        events = self._distill_events(captured)
+        events = self._util_events(captured)
         assert len(events) == 1
-        assert events[0].utilization_measured is True
-        assert events[0].facts_injected == 4
-        assert events[0].facts_referenced == 2
+        assert events[0].measured is True
+        assert events[0].injected == 4
+        assert events[0].referenced == 2
         assert outcome.distill.utilization == FactUtilization(
             measured=True, injected=4, referenced=2,
+        )
+
+    def test_distill_result_does_not_duplicate_the_measurement(
+        self, tmp_path: Path,
+    ) -> None:
+        """One measurement, one event. Carrying it on DistillResult too
+        would let a consumer folding both double count."""
+        _, _, captured, _ = self._run(
+            tmp_path,
+            measure=lambda *a, **k: {"injected": 4, "referenced": 2},
+        )
+        distills = [e for e in captured if isinstance(e, ev.DistillResult)]
+        assert len(distills) == 1
+        assert not any(
+            f.name.startswith(("facts_injected", "facts_referenced",
+                               "utilization"))
+            for f in dataclasses.fields(distills[0])
         )
 
     def test_measured_against_the_injected_prefix(
@@ -1120,7 +1144,7 @@ class TestFactUtilizationRecording:
             measure=measure, distill=distill,
         )
         assert seen == ["FACT: only what the engineer saw"]
-        assert self._distill_events(captured)[0].facts_injected == 1
+        assert self._util_events(captured)[0].injected == 1
 
     def test_unmeasured_when_no_prefix_recorded(
         self, tmp_path: Path,
@@ -1132,7 +1156,9 @@ class TestFactUtilizationRecording:
         assert util.measured is False
         assert util.reason == "no injected prefix recorded for this attempt"
         assert "utilization" not in calls
-        assert self._distill_events(captured)[0].utilization_measured is False
+        # The event is emitted even when nothing could be measured, so
+        # the stream carries the same population the journal does.
+        assert self._util_events(captured)[0].measured is False
 
     def test_unmeasured_when_retrieval_failed(self, tmp_path: Path) -> None:
         """A None record (the factory's retrieval-failure path) is not a
@@ -1208,7 +1234,12 @@ class TestFactUtilizationRecording:
             measure=lambda *a, **k: {"injected": 5, "referenced": 3},
             distill=_raise(RuntimeError("distiller down")),
         )
-        assert self._distill_events(captured) == []
+        assert [
+            e for e in captured if isinstance(e, ev.DistillResult)
+        ] == []
+        # ...but the utilization event still fires: it no longer rides
+        # on distillation succeeding.
+        assert self._util_events(captured)[0].measured is True
         assert pipeline.fact_utilization["comp-a"] == FactUtilization(
             measured=True, injected=5, referenced=3,
         )
@@ -1345,12 +1376,9 @@ class TestFactUtilizationRecording:
         assert pipeline.fact_utilization["comp-a"].measured is True
         assert pipeline.fact_utilization["comp-a"].referenced == 1
 
-    def test_verify_failed_component_records_why_it_is_unmeasured(
+    def _verify_failing_pipeline(
         self, tmp_path: Path,
-    ) -> None:
-        """No diff exists yet, so it cannot be measured - but the gap is
-        recorded with a reason instead of the component going silently
-        absent from the population."""
+    ) -> tuple[ComponentPipeline, Manifest, list[str]]:
         pipeline, manifest, _, calls = _make_pipeline(
             tmp_path,
             knowledge=KnowledgeConfig(
@@ -1366,17 +1394,51 @@ class TestFactUtilizationRecording:
                         )],
                     )
                 ),
+                "measure_fact_utilization": (
+                    lambda *a, **k: {"injected": 5, "referenced": 2}
+                ),
             },
         )
+        return pipeline, manifest, calls
+
+    def test_verify_failed_component_is_still_measured(
+        self, tmp_path: Path,
+    ) -> None:
+        """A verification failure means the diff phase has not run yet,
+        NOT that no diff exists - the engineer's change is committed and
+        is exactly what verification just inspected. Writing these off
+        would drop every test, typecheck and lint failure from the
+        sample, which is most of the failure population."""
+        pipeline, manifest, _ = self._verify_failing_pipeline(tmp_path)
         comp = manifest.get_component("comp-a")
         assert comp is not None
         pipeline.record_injected_knowledge("comp-a", "FACT: alpha")
         pipeline.begin_attempt(comp)
         outcome = pipeline.process_result("comp-a", _success("comp-a"))
         assert outcome is not None
+        assert outcome.transition != Transition.COMPLETED
+        assert pipeline.fact_utilization["comp-a"] == FactUtilization(
+            measured=True, injected=5, referenced=2,
+        )
+
+    def test_unmeasured_only_when_the_diff_fetch_actually_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`measured: false` is reserved for a real inability to
+        measure, and it says so rather than going silently absent."""
+        def _boom(*args: Any, **kwargs: Any) -> str:
+            raise git.GitDiffError("git exploded")
+
+        monkeypatch.setattr("kstrl.git.get_diff_content", _boom)
+        pipeline, manifest, calls = self._verify_failing_pipeline(tmp_path)
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.record_injected_knowledge("comp-a", "FACT: alpha")
+        pipeline.begin_attempt(comp)
+        pipeline.process_result("comp-a", _success("comp-a"))
         util = pipeline.fact_utilization["comp-a"]
         assert util.measured is False
-        assert util.reason == "component failed verification, before a diff"
+        assert util.reason == "diff unavailable: git exploded"
         assert "utilization" not in calls
 
     def test_per_tier_counts_are_carried_through(

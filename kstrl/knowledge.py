@@ -1344,8 +1344,33 @@ def _extract_prefix_claims(knowledge_prefix: str) -> list[tuple[str, str]]:
     return claims
 
 
+def diff_added_content(diff_text: str) -> str:
+    """Return only the ADDED lines of a unified diff, `+` stripped.
+
+    Utilization must be matched against what the engineer WROTE. A raw
+    diff also carries deletion lines and unchanged context, and a claim
+    found in either is not evidence the fact was used: deleting the code
+    that expressed a fact, or editing near it, would otherwise score as
+    referencing it and satisfy the nonzero-utilization gate. That is a
+    false POSITIVE, which is the one error direction a lower-bound
+    metric must not have.
+
+    ``+++ `` file headers are excluded so a path cannot match. A line
+    whose added content itself begins with ``++ `` is dropped with them;
+    that is a false negative, the safe direction.
+    """
+    return "\n".join(
+        line[1:]
+        for line in diff_text.splitlines()
+        if line.startswith("+") and not line.startswith("+++ ")
+    )
+
+
 def measure_fact_utilization(
-    knowledge_prefix: str, *artifacts: str, snippet_length: int = 30,
+    knowledge_prefix: str,
+    *artifacts: str,
+    diff: str = "",
+    snippet_length: int = 30,
 ) -> dict[str, int]:
     """Approximate fact-utilization metric.
 
@@ -1353,8 +1378,15 @@ def measure_fact_utilization(
     ``"<tier>_injected"`` / ``"<tier>_referenced"`` pair for each of
     :data:`FACT_TIERS`. N is the number of fact claims injected via
     ``knowledge_prefix``; M is the count whose 30-char first-sentence
-    snippet appears as a substring in any of the provided ``artifacts``
-    (typically the component's git diff and progress.txt).
+    snippet appears as a substring in the searched text.
+
+    Pass a unified diff as ``diff``, NOT as an artifact: it is reduced
+    to its added lines by :func:`diff_added_content` first. Keeping it a
+    separate parameter is deliberate - a raw diff handed in through
+    ``artifacts`` would silently match deletions and context again, and
+    the signature is the only place that can prevent it. ``artifacts``
+    is for plain text such as the component's progress log, where the
+    engineer writing about a fact IS the signal.
 
     The substring match is crude: LLMs paraphrase, so a false negative
     just means we under-count. The metric surfaces the lower bound of
@@ -1379,7 +1411,10 @@ def measure_fact_utilization(
     # Case-insensitive substring match: LLMs frequently echo facts with
     # casing changes (e.g. starting a sentence with "The" vs the
     # mid-sentence "the").
-    haystack = "\n".join(artifacts).lower()
+    searched = list(artifacts)
+    if diff:
+        searched.append(diff_added_content(diff))
+    haystack = "\n".join(searched).lower()
     for claim, tier in claims:
         snippet = _first_sentence(claim)[:snippet_length].strip().lower()
         hit = bool(snippet) and snippet in haystack

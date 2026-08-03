@@ -1623,6 +1623,78 @@ class TestFactUtilization:
         assert result["referenced"] == 2
 
 
+class TestFactUtilizationMatchesAddedLinesOnly:
+    """A claim found in a DELETED line or an unchanged CONTEXT line is
+    not evidence the fact was used. Counting those was a false positive
+    in a metric documented as a lower bound, and it let an engineer
+    satisfy the nonzero-utilization gate by deleting the very code that
+    expressed the fact."""
+
+    CLAIM = "The widget parser rejects trailing commas."
+
+    def _prefix(self) -> str:
+        from kstrl.knowledge import _format_section
+        return _format_section("Dependencies", [Fact(
+            id="fact-001", component_id="comp-x", created_iter=1,
+            created_run_id="factory-20260101-120000-aaaaaa",
+            scope="contract", evidence=["src/x.py:1"],
+            confidence="review_passed", claim=self.CLAIM,
+        )])
+
+    def _diff(self, body: str) -> str:
+        return (
+            "diff --git a/w.py b/w.py\n--- a/w.py\n+++ b/w.py\n"
+            "@@ -1,3 +1,3 @@\n" + body
+        )
+
+    def test_deleted_line_is_not_utilization(self) -> None:
+        diff = self._diff(f"-# {self.CLAIM}\n+def parse2(): pass\n")
+        result = measure_fact_utilization(self._prefix(), diff=diff)
+        assert result["injected"] == 1
+        assert result["referenced"] == 0
+
+    def test_context_line_is_not_utilization(self) -> None:
+        diff = self._diff(f" # {self.CLAIM}\n-x = 1\n+x = 2\n")
+        result = measure_fact_utilization(self._prefix(), diff=diff)
+        assert result["referenced"] == 0
+
+    def test_added_line_is_utilization(self) -> None:
+        diff = self._diff(f"+# {self.CLAIM}\n")
+        result = measure_fact_utilization(self._prefix(), diff=diff)
+        assert result["referenced"] == 1
+
+    def test_file_header_path_is_not_searched(self) -> None:
+        """`+++ b/<path>` starts with '+' but is a header, not content -
+        a path that happened to contain claim text must not match."""
+        diff = (
+            f"diff --git a/{self.CLAIM} b/{self.CLAIM}\n"
+            f"--- a/{self.CLAIM}\n+++ b/{self.CLAIM}\n"
+            "@@ -0,0 +1 @@\n+unrelated\n"
+        )
+        result = measure_fact_utilization(self._prefix(), diff=diff)
+        assert result["referenced"] == 0
+
+    def test_progress_log_still_matches_as_plain_text(self) -> None:
+        """progress.txt is not a diff: the engineer writing about a fact
+        IS the signal, so it is searched whole."""
+        result = measure_fact_utilization(
+            self._prefix(), f"I applied: {self.CLAIM}", diff="",
+        )
+        assert result["referenced"] == 1
+
+    def test_diff_passed_as_an_artifact_would_not_be_filtered(self) -> None:
+        """Guards the contract: the diff must go in via `diff=`. This
+        pins WHY the parameter is separate - an artifact is searched
+        raw, so a deletion would count again."""
+        diff = self._diff(f"-# {self.CLAIM}\n")
+        assert measure_fact_utilization(
+            self._prefix(), diff,
+        )["referenced"] == 1
+        assert measure_fact_utilization(
+            self._prefix(), diff=diff,
+        )["referenced"] == 0
+
+
 class TestFactUtilizationTiers:
     """#191 follow-up: the totals are denominator-biased because the
     sibling tier carries a first-sentence summary of every OTHER

@@ -165,13 +165,18 @@ R8.2 consumes them:
   had written that run's own facts, so it counted facts the engineer
   never saw. Any utilization figure observed before #191 is not valid
   evidence for this gate. What remains is running the two real runs.
-  The two sampling defects found alongside it are fixed, not just
-  documented: measurement happens at the diff phase, so components that
-  fail review or security are in the sample, and the counts are split
-  per prefix tier so sibling summaries no longer inflate the
-  denominator. `docs/evolution-metrics.md` records what is in the
-  sample, how to read the tiers, and the one standing caveat (the
-  30-char substring match is a lower bound).
+  The measurement defects found alongside it are fixed, not merely
+  documented: only ADDED diff lines are searched, so deleting the code
+  that expressed a fact no longer scores as using it (a false positive
+  that could have satisfied this very gate); every component whose diff
+  can be fetched is in the sample, not only those passing every gate;
+  and the counts are split per prefix tier so sibling summaries do not
+  inflate the denominator. The measurement is on both surfaces the
+  acceptance criteria name - `fact_utilization_measured` in
+  `events.jsonl` and `knowledge_utilization` in `evolution.jsonl`.
+  `docs/evolution-metrics.md` records what is in the sample, what
+  counts as a reference, how to read the tiers, and the one standing
+  caveat (the 30-char match is lexical, not semantic).
 
 L2+ entry is blocked until these exist. R8 adds no new user-run gates beyond
 threshold-replay captures noted per item.

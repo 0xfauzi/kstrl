@@ -554,27 +554,33 @@ class ComponentPipeline:
         self,
         comp: Component,
         wt_path: Path,
-        diff_text: str,
+        diff_text: str | None = None,
         *,
         unavailable: str = "",
     ) -> None:
-        """Measure and store this attempt's fact utilization (#191).
+        """Measure, store and emit this attempt's fact utilization (#191).
 
-        Called from ``process_result`` as soon as the diff phase yields
-        a diff, NOT from the distill phase. Distillation runs only after
+        Called from ``process_result`` as soon as a diff is obtainable,
+        NOT from the distill phase. Distillation runs only after
         verification, review, and security all pass, so measuring there
         sampled successful components exclusively - a component that
-        failed review had facts injected and may well have used them,
-        and the gate never saw it. Measuring at the diff phase moves the
-        sampled population from "passed every gate" to "produced a
-        diff", which is what the question is actually about.
+        failed any gate had facts injected and may well have used them,
+        and the gate never saw it.
 
-        Components that fail verification or the diff phase itself have
-        no diff to measure against, and are recorded as unmeasured with
-        ``unavailable`` as the reason rather than left absent. Measuring
-        those against progress.txt alone would trade this bias for a
-        subtler one: a sample whose artifact set differs between the
-        components in it.
+        Pass ``diff_text`` when the diff phase already fetched it. Pass
+        nothing to have the diff fetched here: a mechanical-verification
+        failure means ``_phase_diff`` has not run YET, not that no diff
+        exists - the engineer's change is committed in the worktree and
+        is exactly what verification just inspected. Excluding those
+        components would leave every test, typecheck, and lint failure
+        out of the sample, which is most of the failure population. The
+        extra ``git diff`` only runs on that path and is cheap next to
+        the component run that preceded it.
+
+        ``unavailable`` records a component as unmeasured with a stated
+        reason rather than letting it go silently absent; it is used
+        when the diff phase itself already failed, so we do not re-run a
+        fetch that is known to fail.
 
         The measurement is free (a substring scan, no LLM call), so it
         sits above every budget guard. Overwrites per attempt, matching
@@ -588,17 +594,55 @@ class ComponentPipeline:
             # reason distillation skips it.
             return
         if unavailable:
-            self.fact_utilization[comp.id] = FactUtilization(
+            self._store_fact_utilization(comp, FactUtilization(
                 reason=unavailable,
-            )
+            ))
             return
-        util = self._measure_utilization(comp, wt_path, diff_text)
+        if diff_text is None:
+            try:
+                diff_text = git.get_diff_content(
+                    self.manifest.base_branch, wt_path,
+                )
+            except git.GitDiffError as exc:
+                self._store_fact_utilization(comp, FactUtilization(
+                    reason=f"diff unavailable: {exc}",
+                ))
+                return
+        self._store_fact_utilization(
+            comp, self._measure_utilization(comp, wt_path, diff_text),
+        )
+
+    def _store_fact_utilization(
+        self, comp: Component, util: FactUtilization,
+    ) -> None:
+        """Persist one measurement and put it on the event stream.
+
+        The event is emitted HERE, not from the distill phase, so that
+        `events.jsonl` carries the same population `evolution.jsonl`
+        does. Emitting it from the distill phase meant a component that
+        failed review, or whose distill was budget-skipped or raised,
+        landed in the journal with evidence the event stream never saw -
+        and #191 requires the ratio in both.
+        """
         self.fact_utilization[comp.id] = util
+        self.bus.emit(ev.FactUtilizationMeasured(
+            component=comp.id,
+            measured=util.measured,
+            injected=util.injected,
+            referenced=util.referenced,
+            reason=util.reason,
+            core_injected=util.core_injected,
+            core_referenced=util.core_referenced,
+            dependency_injected=util.dependency_injected,
+            dependency_referenced=util.dependency_referenced,
+            sibling_injected=util.sibling_injected,
+            sibling_referenced=util.sibling_referenced,
+        ))
         if util.measured and util.injected > 0:
             self.ui.info(
                 f"  Knowledge utilization: "
                 f"{util.referenced}/{util.injected} "
-                f"facts referenced in diff or progress.txt"
+                f"facts referenced in added lines or progress.txt"
                 + (
                     f" (core {util.core_referenced}/{util.core_injected})"
                     if util.core_injected
@@ -1880,10 +1924,12 @@ class ComponentPipeline:
             verify.failure.error if verify.failure else "",
         )
         if verify.failure is not None:
-            self.record_fact_utilization(
-                comp, wt_path, "",
-                unavailable="component failed verification, before a diff",
-            )
+            # No diff_text: the diff phase has not run, but the change
+            # IS committed in the worktree - it is what verification
+            # just inspected - so the diff is fetched here rather than
+            # writing off every test/lint/typecheck failure as
+            # unmeasurable.
+            self.record_fact_utilization(comp, wt_path)
             return PipelineOutcome(
                 transition=self._route_failure(comp, verify.failure),
                 verify=verify,
@@ -3002,9 +3048,6 @@ class ComponentPipeline:
                 duration_seconds=round(
                     time.monotonic() - distill_start, 2,
                 ),
-                utilization_measured=util.measured,
-                facts_injected=util.injected,
-                facts_referenced=util.referenced,
             ))
             if written > 0:
                 self.ui.ok(f"  Knowledge: {status}")
