@@ -371,9 +371,28 @@ and exiting nonzero.
   wrapping, the process-group spawn and the `RunOutcome` mapping are all
   shipping code - and the argv it builds is then parsed by the real
   `ks factory` Click command, so a flag renamed on either side fails a
-  test instead of the next unattended run. Measured by mutation:
-  renaming the merge-gate flag in the runner is caught by four tests
-  there, while the other 3,125 tests all still pass.
+  test instead of the next unattended run. A further set drives
+  `serve_cycle` with no injected runner at all, which is the only path
+  that executes `_default_runner`.
+
+  Measured by mutation, each of these passed the whole suite before those
+  tests existed:
+
+  | Mutation | Suite before |
+  |---|---|
+  | Rename the merge-gate flag in the runner | 3,125 pass |
+  | `_default_runner` forwards a wrong `project_name` | 3,140 pass |
+  | Drop `caffeinate_prefix` from the runner's command | 3,140 pass |
+  | `_default_runner` ignores `serve.caffeinate` | 3,140 pass |
+
+  The caffeinate ones are worth knowing about: `caffeinate -i` **execs in
+  place** (measured, macOS 25.5), so the wrapper leaves the child's pid,
+  argv and exit status all identical and its absence is invisible from
+  the outside. The tests use a fake `caffeinate` on `PATH` that touches a
+  marker before exec'ing, which is the only way the wiring is observable
+  at all - and they patch `sys.platform` so they run on CI's ubuntu
+  rather than skipping there, which is where a macOS-gated test would
+  have been useless.
 
   What remains uncovered is everything *below* `ks factory`'s argument
   parsing: no component is built, no review runs, and the classification

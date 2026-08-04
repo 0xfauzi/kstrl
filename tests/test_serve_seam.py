@@ -13,7 +13,7 @@ halves were independently correct and independently green. No
 stub-runner test could see it, because the stub replaced the boundary
 the defect lived on.
 
-Three checks, none of which spends money:
+Four checks, none of which spends money:
 
 1. :class:`TestTheRealRunnerExecsItsArgv` runs the shipping
    ``subprocess_factory_runner`` against a stub interpreter. Only
@@ -23,16 +23,23 @@ Three checks, none of which spends money:
 2. :class:`TestTheArgvIsAcceptedByTheRealCli` hands that recorded argv
    to the real Click command, so a flag the daemon sends but the CLI no
    longer accepts is caught here rather than on the next unattended run.
-3. :class:`TestRemoteWorkSurvivesTheSeam` covers the two facts about a
+3. :class:`TestACycleWithNoInjectedRunnerLaunchesTheRealCommand` drives
+   ``serve_cycle`` with no ``runner=`` at all, which is the only way
+   ``_default_runner`` is executed anywhere in the suite.
+4. :class:`TestRemoteWorkSurvivesTheSeam` covers the two facts about a
    remotely-sourced item that only become observable at the runner
    boundary: the spec content, and the merge gate.
 
-Measured, by mutation, against the rest of the suite (3125 tests):
+Measured, by mutation, against the rest of the suite:
 
 - Renaming the merge-gate flag in ``subprocess_factory_runner`` is
-  caught by four tests here and by NOTHING else: with that mutant
-  applied the other 3125 tests pass, 28 skip, zero fail. That is the gap
-  this module exists to close.
+  caught here and by NOTHING else: with that mutant applied the other
+  3125 tests pass, 28 skip, zero fail.
+- Making ``_default_runner`` forward a wrong ``project_name`` passed all
+  3140 tests before check 3 existed. It had zero references in ``tests/``.
+- Deleting ``*caffeinate_prefix(caffeinate)`` from the runner's command
+  passed all 3140 tests, on macOS as well as CI's ubuntu, because
+  caffeinate execs in place and so leaves no observable trace.
 - Deleting the ``_run_intake`` call from ``serve_cycle`` - the #189 F1
   defect itself - is already caught by nine tests in
   ``tests/test_intake_github.py::TestServePollsIntake``, so this module
@@ -50,6 +57,7 @@ job. The end-to-end path is still only verified by hand
 from __future__ import annotations
 
 import json
+import os
 import stat
 import sys
 from collections.abc import Callable
@@ -61,7 +69,13 @@ from unittest.mock import patch
 import click
 import pytest
 
-from kstrl.serve import RunOutcome, serve_cycle, subprocess_factory_runner
+from kstrl.serve import (
+    RunOutcome,
+    ServeConfig,
+    serve_cycle,
+    subprocess_factory_runner,
+)
+from kstrl.workqueue import Queue, QueueConfig
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
 # --------------------------------------------------------------------------
@@ -86,6 +100,67 @@ with open(os.environ["SEAM_RECORD"], "w") as handle:
 sys.stdout.write(os.environ.get("SEAM_STDOUT", ""))
 sys.exit(int(os.environ.get("SEAM_EXIT", "0")))
 """
+
+#: Stands in for ``/usr/bin/caffeinate``, and works on any platform.
+#:
+#: The real one execs its utility in place (measured; see
+#: ``test_the_factory_still_runs_correctly_under_real_caffeinate``), so
+#: this does too - otherwise the pid assertions would diverge from
+#: production for reasons unrelated to the code under test. It drops the
+#: leading ``-i`` exactly as the real one consumes its own flags, and
+#: touches a marker first so its PRESENCE in the chain is observable.
+#: Without that marker the wrapper is undetectable: exec-in-place leaves
+#: the pid, the argv and the exit status all identical.
+_FAKE_CAFFEINATE = """#!/bin/sh
+: > "$SEAM_CAFFEINATE_MARKER"
+shift
+exec "$@"
+"""
+
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.write_text(body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return path
+
+
+def _install_stub_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *,
+    exit_code: int = 0, stdout: str = "",
+) -> Path:
+    """Replace ``sys.executable`` with the recorder; return the record path."""
+    interpreter = _write_executable(
+        tmp_path / "stub_interpreter", _STUB_INTERPRETER,
+    )
+    record = tmp_path / "exec_record.json"
+    monkeypatch.setenv("SEAM_RECORD", str(record))
+    monkeypatch.setenv("SEAM_EXIT", str(exit_code))
+    monkeypatch.setenv("SEAM_STDOUT", stdout)
+    monkeypatch.setattr(sys, "executable", str(interpreter))
+    return record
+
+
+def _install_fake_caffeinate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Put a fake ``caffeinate`` on PATH and make the platform look like
+    macOS; return the marker path it touches when it runs.
+
+    PATH rather than patching ``shutil.which``, so the real lookup inside
+    ``caffeinate_prefix`` is the thing being exercised. ``sys.platform``
+    has to be patched because that prefix is macOS-only by design and all
+    four CI jobs are ubuntu-latest - without it this wiring would be
+    untested everywhere it actually runs. Verified load-bearing: set the
+    patch to ``"linux"`` and both caffeinate tests fail.
+    """
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir(exist_ok=True)
+    _write_executable(bindir / "caffeinate", _FAKE_CAFFEINATE)
+    marker = tmp_path / "caffeinate_ran"
+    monkeypatch.setenv("SEAM_CAFFEINATE_MARKER", str(marker))
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    return marker
 
 
 @dataclass(frozen=True)
@@ -120,24 +195,15 @@ def _exec_real_runner(
     decides - which module, which flags, which cwd, which env - is left
     to the shipping code and read back out of the child.
     """
-    interpreter = tmp_path / "stub_interpreter"
-    interpreter.write_text(_STUB_INTERPRETER, encoding="utf-8")
-    interpreter.chmod(
-        interpreter.stat().st_mode
-        | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    record = _install_stub_interpreter(
+        tmp_path, monkeypatch, exit_code=exit_code, stdout=stdout,
     )
-    record = tmp_path / "exec_record.json"
     root_dir = tmp_path / "root"
     root_dir.mkdir(exist_ok=True)
     # `--spec` is a click Path(exists=True), so the CLI-acceptance test
     # downstream needs this to be a real file.
     spec_path = tmp_path / "spec.md"
     spec_path.write_text("# Spec\n\nDo the thing.\n", encoding="utf-8")
-
-    monkeypatch.setenv("SEAM_RECORD", str(record))
-    monkeypatch.setenv("SEAM_EXIT", str(exit_code))
-    monkeypatch.setenv("SEAM_STDOUT", stdout)
-    monkeypatch.setattr(sys, "executable", str(interpreter))
 
     outcome = subprocess_factory_runner(
         root_dir=root_dir,
@@ -274,10 +340,53 @@ class TestTheRealRunnerExecsItsArgv:
         assert outcome.returncode == -1
         assert outcome.launch_error
 
+    def test_the_runner_actually_wraps_the_child_in_caffeinate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Runs on every platform, because this wiring is invisible.
+
+        Review finding on #208, and sharper than it first looks: deleting
+        ``*caffeinate_prefix(caffeinate)`` from the runner's command
+        passes the entire suite - all 3140 tests - on macOS as well as on
+        CI's ubuntu. Exec-in-place is why. The wrapper leaves the pid, the
+        argv and the exit status untouched, so no assertion over the
+        child's observable state can detect its absence. The only way to
+        see it is to make the wrapper itself report, which is what the
+        fake on PATH does.
+
+        Skipping this on non-darwin would put it back where it started:
+        all four CI jobs are ubuntu-latest.
+        """
+        marker = _install_fake_caffeinate(tmp_path, monkeypatch)
+        outcome, ran = _exec_real_runner(
+            tmp_path, monkeypatch, caffeinate=True, exit_code=5,
+        )
+        assert marker.exists(), (
+            "caffeinate was not in the child's exec chain, so runs are no "
+            "longer holding the idle-sleep assertion"
+        )
+        assert ran.argv[:3] == ("-m", "kstrl", "factory"), (
+            "the wrapper mangled the factory's argv"
+        )
+        assert outcome.returncode == 5, (
+            "the wrapper swallowed the factory's exit status; the "
+            "classifier reads it"
+        )
+
+    def test_caffeinate_is_omitted_when_it_is_turned_off(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The control for the test above. Without it, a runner that
+        wrapped unconditionally would look correct."""
+        marker = _install_fake_caffeinate(tmp_path, monkeypatch)
+        _, ran = _exec_real_runner(tmp_path, monkeypatch, caffeinate=False)
+        assert not marker.exists(), "caffeinate = false still wrapped the run"
+        assert ran.argv[:3] == ("-m", "kstrl", "factory")
+
     @pytest.mark.skipif(
         sys.platform != "darwin", reason="caffeinate is macOS-only"
     )
-    def test_the_factory_still_runs_correctly_under_caffeinate(
+    def test_the_factory_still_runs_correctly_under_real_caffeinate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The wrapper must not disturb the argv, the exit code, or the
@@ -372,6 +481,105 @@ class TestTheArgvIsAcceptedByTheRealCli:
         _, ran = _exec_real_runner(tmp_path, monkeypatch)
         with pytest.raises(click.NoSuchOption):
             self._parse(ran.argv + ("--flag-that-does-not-exist",))
+
+
+class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
+    """Closes the last stub in the chain: ``_default_runner``.
+
+    Review finding on #208. The tests above call
+    ``subprocess_factory_runner`` directly, and the composition tests
+    inject a recorder, so ``_default_runner`` - the adapter that binds
+    ``cfg.caffeinate`` and forwards the other five arguments - sat
+    between two tested halves and was executed by nothing. It had zero
+    references anywhere in ``tests/``. Confirmed by mutation: making it
+    forward a hardcoded wrong ``project_name`` passed all 3140 tests.
+
+    These call ``serve_cycle`` with NO ``runner=`` at all. Only
+    ``sys.executable`` is replaced, so the whole path - claim, gate
+    resolution, ``_default_runner``, ``subprocess_factory_runner``,
+    ``run_supervised`` - runs as shipped.
+    """
+
+    @staticmethod
+    def _argv_from(record: Path) -> list[str]:
+        assert record.exists(), (
+            "no factory was launched, so the cycle never reached the "
+            "default runner"
+        )
+        raw: dict[str, Any] = json.loads(record.read_text(encoding="utf-8"))
+        return list(raw["argv"])
+
+    def _run_cycle(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        caffeinate: bool,
+        project_name: str = "widget-svc",
+    ) -> list[str]:
+        record = _install_stub_interpreter(tmp_path, monkeypatch)
+        queue = Queue(tmp_path, QueueConfig())
+        queue.add(
+            "# Spec\n\nDo the thing.\n",
+            title="local work",
+            project_name=project_name,
+        )
+        serve_cycle(
+            tmp_path,
+            config=ServeConfig(
+                caffeinate=caffeinate, factory_timeout_seconds=60.0,
+            ),
+        )
+        return self._argv_from(record)
+
+    def test_the_cycle_forwards_the_items_project_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The exact mutation that survived the first round of this PR."""
+        argv = self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
+        assert argv[:3] == ["-m", "kstrl", "factory"]
+        assert argv[argv.index("--project-name") + 1] == "widget-svc"
+
+    def test_the_cycle_points_the_factory_at_the_queued_spec(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        argv = self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
+        spec = Path(argv[argv.index("--spec") + 1])
+        assert spec.name == "spec.md"
+        assert tmp_path in spec.parents, (
+            f"the factory was pointed outside the queue root: {spec}"
+        )
+        assert Path(argv[argv.index("--root") + 1]) == tmp_path
+
+    def test_the_cycle_carries_the_merge_gate_into_the_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A queued item defaults to STOP_AT_PR, so the launched command
+        must carry the gate ON. This is the flag whose rename nothing
+        else in the suite can see."""
+        argv = self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
+        assert "--pause-before-pr-merge" in argv
+        assert "--no-pause-before-pr-merge" not in argv
+
+    def test_serve_caffeinate_true_reaches_the_launched_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``_default_runner`` is the ONLY place ``cfg.caffeinate`` is
+        read, so nothing else can catch it being dropped or inverted."""
+        marker = _install_fake_caffeinate(tmp_path, monkeypatch)
+        self._run_cycle(tmp_path, monkeypatch, caffeinate=True)
+        assert marker.exists(), (
+            "serve.caffeinate = true did not reach the launched command"
+        )
+
+    def test_serve_caffeinate_false_reaches_the_launched_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        marker = _install_fake_caffeinate(tmp_path, monkeypatch)
+        self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
+        assert not marker.exists(), (
+            "serve.caffeinate = false still wrapped the launched command"
+        )
 
 
 # --------------------------------------------------------------------------
