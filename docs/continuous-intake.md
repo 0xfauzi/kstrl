@@ -359,11 +359,45 @@ and exiting nonzero.
   suspended machine. **If you plan to run this on a laptop, close the lid
   mid-run once and confirm the cycle finishes on wake and the calendar
   job fires.**
-- **Automated coverage of a real factory run.** The end-to-end path IS
-  verified by hand (see above), but every daemon test in the suite uses a
-  stub runner, deliberately: a suite that spawned real runs would cost
-  dollars per assertion. So a regression in the serve-to-factory seam
-  would not be caught by CI - only by another live run.
+- **Automated coverage of a real factory run.** Still true, and still
+  deliberate: a suite that spawned real runs would cost dollars per
+  assertion, so no test runs a factory. The end-to-end path above is
+  verified by hand only.
+
+  Narrowed since (#205, `tests/test_serve_seam.py`): the *launch* half no
+  longer depends on that hand check. `subprocess_factory_runner` is now
+  executed for real against a stub interpreter - only `sys.executable` is
+  replaced, so the argv, the cwd, the `KSTRL_NO_TUI` env, the caffeinate
+  wrapping, the process-group spawn and the `RunOutcome` mapping are all
+  shipping code - and the argv it builds is then parsed by the real
+  `ks factory` Click command, so a flag renamed on either side fails a
+  test instead of the next unattended run. A further set drives
+  `serve_cycle` with no injected runner at all, which is the only path
+  that executes `_default_runner`.
+
+  Measured by mutation, each of these passed the whole suite before those
+  tests existed:
+
+  | Mutation | Suite before |
+  |---|---|
+  | Rename the merge-gate flag in the runner | 3,125 pass |
+  | `_default_runner` forwards a wrong `project_name` | 3,140 pass |
+  | Drop `caffeinate_prefix` from the runner's command | 3,140 pass |
+  | `_default_runner` ignores `serve.caffeinate` | 3,140 pass |
+
+  The caffeinate ones are worth knowing about: `caffeinate -i` **execs in
+  place** (measured, macOS 25.5), so the wrapper leaves the child's pid,
+  argv and exit status all identical and its absence is invisible from
+  the outside. The tests use a fake `caffeinate` on `PATH` that touches a
+  marker before exec'ing, which is the only way the wiring is observable
+  at all - and they patch `sys.platform` so they run on CI's ubuntu
+  rather than skipping there, which is where a macOS-gated test would
+  have been useless.
+
+  What remains uncovered is everything *below* `ks factory`'s argument
+  parsing: no component is built, no review runs, and the classification
+  of a real run's on-disk artifacts is still exercised only through stub
+  runners. A regression there is still caught only by a live run.
 - **Rate-limit behaviour under sustained polling.** One call per poll
   interval is ~60/hour against a 5,000/hour budget, so this is expected to
   be a non-issue, but it has not been driven to a limit.
