@@ -3287,7 +3287,7 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     state = AutonomyState.load(root_dir)
     policy_enabled = PolicyConfig.load(root_dir).enabled
     level, clamps = resolve_runtime_level(
-        state, config, policy_enabled=policy_enabled,
+        state, config, policy_enabled=policy_enabled, root_dir=root_dir,
     )
 
     ui_impl.section("Autonomy")
@@ -3351,8 +3351,10 @@ def autonomy_promote(
     """Raise the autonomy level by one. Requires a human ack."""
     from kstrl.autonomy import (
         AutonomyError,
+        AutonomyLevel,
         AutonomyState,
         commit_transition,
+        control_relocation_error,
         promotion_authority_error,
     )
 
@@ -3367,6 +3369,11 @@ def autonomy_promote(
         ui_impl.err(f"Promotion refused: {authority_error}")
         sys.exit(1)
     state = AutonomyState.load(root_dir)
+    target = AutonomyLevel(min(int(state.autonomy_level) + 1, int(AutonomyLevel.L4_DEPLOY)))
+    relocation_error = control_relocation_error(root_dir, target_level=target)
+    if relocation_error is not None:
+        ui_impl.err(f"Promotion refused: {relocation_error}")
+        sys.exit(1)
     try:
         record = state.promote(actor=actor, ack=ack, force=force)
     except AutonomyError as exc:

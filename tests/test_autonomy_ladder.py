@@ -573,42 +573,49 @@ class TestFactoryWiring:
 class TestEnvelopeCeiling:
     """L3 is *Enveloped* auto-merge: no envelope, no auto-merge."""
 
-    def test_l3_clamps_to_l2_without_policy_envelope(self) -> None:
+    def test_l3_clamps_to_l2_without_policy_envelope(
+        self, tmp_path: Path,
+    ) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True), policy_enabled=False,
+            state, AutonomyConfig(enabled=True),
+            policy_enabled=False, root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L2_GATED_MERGE
         assert any("requires the R8.1 policy envelope" in n for n in notes)
 
-    def test_l4_clamps_to_l2_without_policy_envelope(self) -> None:
+    def test_l4_clamps_to_l2_without_policy_envelope(
+        self, tmp_path: Path,
+    ) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, _ = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True), policy_enabled=False,
+            state, AutonomyConfig(enabled=True),
+            policy_enabled=False, root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L2_GATED_MERGE
 
-    def test_l3_allowed_with_envelope(self) -> None:
+    def test_l3_allowed_with_envelope(self, tmp_path: Path) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True), policy_enabled=True,
+            state, AutonomyConfig(enabled=True),
+            policy_enabled=True, root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L3_ENVELOPED_AUTO
         assert notes == []
 
-    def test_lowest_ceiling_wins(self) -> None:
+    def test_lowest_ceiling_wins(self, tmp_path: Path) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, notes = resolve_runtime_level(
             state, AutonomyConfig(enabled=True, max_level=3),
-            policy_enabled=False,
+            policy_enabled=False, root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L2_GATED_MERGE   # envelope beats max_level
         assert len(notes) == 2
@@ -808,10 +815,19 @@ class TestPromotionAuthority:
 
     def test_ladder_state_is_enforcement_machinery(self) -> None:
         # The obvious way around the TTY gate is to write the level
-        # straight to disk; R8.1 must halt on that.
+        # straight to disk; R8.1 must halt on that. Legacy in-tree control
+        # paths stay halted after R8.9 relocated the live copies to XDG.
         from kstrl.policy import PolicyConfig, evaluate_policy
 
-        for path in (".kstrl/autonomy.json", "kstrl/autonomy.py"):
+        for path in (
+            ".kstrl/autonomy.json",
+            ".kstrl/inbox.jsonl",
+            ".kstrl/queue/spend.json",
+            ".kstrl/queue/pause.json",
+            ".kstrl/queue/github_processed.json",
+            "kstrl/autonomy.py",
+            "kstrl/statedir.py",
+        ):
             result = evaluate_policy(
                 [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
             )

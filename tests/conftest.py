@@ -108,11 +108,19 @@ def isolate_kstrl_state(
     Ambient env is cleared too, so a dev machine exporting FACTORY_* /
     KSTRL_* values cannot alter from_env/load tests.
 
+    R8.9: ``XDG_STATE_HOME`` is pointed at a *sibling* of ``tmp_path`` so
+    control-plane files land outside any repo root that uses ``tmp_path``
+    itself - otherwise ``control_is_external`` would falsely fail and L3
+    clamps would fire in unrelated tests.
+
     This redirect is convenience; ``guard_repo_kstrl_state`` is the
     enforcement.
     """
     monkeypatch.chdir(tmp_path)
     _clear_kstrl_env(monkeypatch)
+    xdg = tmp_path.parent / f"{tmp_path.name}.xdg-state"
+    xdg.mkdir(exist_ok=True)
+    monkeypatch.setenv("XDG_STATE_HOME", str(xdg))
     return tmp_path
 
 

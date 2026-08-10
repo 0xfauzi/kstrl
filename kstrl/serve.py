@@ -68,7 +68,13 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
-from kstrl.statedir import state_dir
+from kstrl.statedir import (
+    CONTROL_SPEND,
+    control_file,
+    control_lock,
+    ensure_control_state,
+    state_dir,
+)
 from kstrl.workqueue import (
     ItemSource,
     ItemState,
@@ -83,7 +89,6 @@ from kstrl.workqueue import (
 )
 
 SERVE_LOCK_FILENAME = "serve.lock"
-SPEND_FILENAME = "spend.json"
 
 #: Substrings the factory prints on each of its two exit-2 refusals.
 #: Matching output is EVIDENCE; a pre-launch lock probe is inference and
@@ -488,7 +493,7 @@ class ServeState:
 
 
 class SpendLedger:
-    """Atomic store for :class:`ServeState` under ``.kstrl/queue/``.
+    """Atomic store for :class:`ServeState` in the XDG control directory.
 
     Rewritten whole on every update rather than appended: the only
     questions asked of it are "how much today", "how many poisons in a
@@ -501,7 +506,7 @@ class SpendLedger:
 
     @property
     def path(self) -> Path:
-        return queue_root(self.root_dir) / SPEND_FILENAME
+        return control_file(self.root_dir, CONTROL_SPEND)
 
     def read_state(self, today: str | None = None) -> ServeState:
         """Load state, rolling the spend over on a new local day.
@@ -512,6 +517,7 @@ class SpendLedger:
         marker: a file we cannot parse is not evidence that spending is
         safe.
         """
+        ensure_control_state(self.root_dir)
         stamp = today or _local_today()
         try:
             raw = self.path.read_text(encoding="utf-8")
@@ -550,11 +556,14 @@ class SpendLedger:
     def _write(self, state: ServeState) -> None:
         from kstrl.workqueue import atomic_write
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(
-            self.path,
-            json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
-        )
+        ensure_control_state(self.root_dir)
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with control_lock(self.root_dir):
+            atomic_write(
+                path,
+                json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            )
 
     def charge(
         self,
@@ -1121,7 +1130,8 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
 
     policy = PolicyConfig.load(root_dir)
     level, clamps = resolve_runtime_level(
-        AutonomyState.load(root_dir), config, policy_enabled=policy.enabled,
+        AutonomyState.load(root_dir), config,
+        policy_enabled=policy.enabled, root_dir=root_dir,
     )
     bundle = flag_bundle_for(level)
     notes = list(clamps)

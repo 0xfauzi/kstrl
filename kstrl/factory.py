@@ -2375,6 +2375,7 @@ def _run_factory_locked(
         autonomy_level, clamps = resolve_runtime_level(
             autonomy_state, autonomy_config,
             policy_enabled=policy_config.enabled,
+            root_dir=root_dir,
         )
         bundle = flag_bundle_for(autonomy_level)
         overrides = manual_override_notes(

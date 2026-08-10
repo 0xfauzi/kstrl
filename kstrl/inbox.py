@@ -8,10 +8,10 @@ demotion lives in the evolution journal, a budget overrun lives in a log
 line. Each is discoverable only if you already know to look for it, which
 is the opposite of what "humans handle exceptions" requires.
 
-This module is the thin substrate: an append-only ``.kstrl/inbox.jsonl``
-plus the fold that turns it into a current view. Deliberately small - the
-value is in the emitters that feed it and the actions that resolve it,
-not in the store.
+This module is the thin substrate: an append-only inbox log (XDG control
+dir under R8.9; legacy path ``.kstrl/inbox.jsonl``) plus the fold that
+turns it into a current view. Deliberately small - the value is in the
+emitters that feed it and the actions that resolve it, not in the store.
 
 **Append-only, never rewritten.** Every emission and every decision is one
 appended line; the current state of an item is the fold of its lines in
@@ -44,7 +44,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-INBOX_FILENAME = ".kstrl/inbox.jsonl"
+from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
+
 INBOX_SCHEMA_VERSION = 1
 
 
@@ -363,7 +364,7 @@ class InboxScan:
 
 
 class Inbox:
-    """Append-only store over ``.kstrl/inbox.jsonl``.
+    """Append-only store over the XDG control-dir inbox log.
 
     Reads fold the log into current items; writes append one line. No
     method rewrites history - ``compact`` exists but writes a fresh file
@@ -376,7 +377,7 @@ class Inbox:
 
     @property
     def path(self) -> Path:
-        return self.root_dir / INBOX_FILENAME
+        return control_file(self.root_dir, CONTROL_INBOX)
 
     # -- reading -----------------------------------------------------------
     def scan(self) -> InboxScan:
@@ -392,6 +393,7 @@ class Inbox:
         so collapsing it to ``skipped=1`` would re-admit under any cap
         greater than one.
         """
+        ensure_control_state(self.root_dir)
         try:
             exists = self.path.exists()
         except OSError:
@@ -501,11 +503,14 @@ class Inbox:
     # -- writing -----------------------------------------------------------
     def _append(self, item: InboxItem) -> None:
         """Append one line, creating the file atomically on first write."""
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_control_state(self.root_dir)
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()}
         line = json.dumps(payload, separators=(",", ":"), default=str) + "\n"
-        with open(self.path, "a", encoding="utf-8") as handle:
-            handle.write(line)
+        with control_lock(self.root_dir):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line)
 
     def add(
         self,
@@ -621,26 +626,30 @@ class Inbox:
         the manifest pattern.
         """
         items = self.items()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(self.path.parent), suffix=".tmp", prefix=".inbox-",
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                for item in items:
-                    payload = {
-                        "schema_version": INBOX_SCHEMA_VERSION, **item.to_dict(),
-                    }
-                    handle.write(
-                        json.dumps(payload, separators=(",", ":"), default=str) + "\n"
-                    )
-            os.replace(tmp_path, str(self.path))
-        except BaseException:
+        ensure_control_state(self.root_dir)
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with control_lock(self.root_dir):
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(path.parent), suffix=".tmp", prefix=".inbox-",
+            )
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    for item in items:
+                        payload = {
+                            "schema_version": INBOX_SCHEMA_VERSION, **item.to_dict(),
+                        }
+                        handle.write(
+                            json.dumps(payload, separators=(",", ":"), default=str)
+                            + "\n"
+                        )
+                os.replace(tmp_path, str(path))
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         return len(items)
 
 

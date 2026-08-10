@@ -32,6 +32,7 @@ Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 | `KSTRL_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `KSTRL_ASCII` | bool | false | ASCII-only UI |
+| `XDG_STATE_HOME` | path | `~/.local/state` | Base for R8.9 control state (`$XDG_STATE_HOME/kstrl/<repo-id>/`: autonomy, inbox, spend, pause, GitHub processed ledger). Must stay outside the repo tree for L3+ |
 
 ## TimeoutConfig (`[timeout]`)
 

@@ -18,9 +18,12 @@ Three invariants carry the trust:
    named actor, an ack, AND an interactive terminal - a signal an
    unattended agent subprocess does not have (``--actor``/``--ack`` are
    just strings any caller could pass, so they prove nothing alone). The
-   boundary is real but not absolute: an agent with shell access could
-   still write ``.kstrl/autonomy.json`` directly, which is why that file
-   and this module are in the R8.1 enforcement-machinery halt set.
+   live state file lives outside the agent-reachable tree (XDG control
+   dir, R8.9); the legacy in-tree path and this module remain in the
+   R8.1 enforcement-machinery halt set so a diff cannot rewrite either.
+   L3+ additionally refuses to proceed while control state still
+   resolves in-tree (migration incomplete or ``XDG_STATE_HOME`` under
+   the repo).
 2. **Fast down, slow up.** Demotion is automatic and immediate on a trigger;
    re-promotion is locked for a cool-down period afterwards.
 3. **The flag bundle is derived, never stored.** It is computed from the
@@ -52,10 +55,17 @@ from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.statedir import (
+    CONTROL_AUTONOMY,
+    control_file,
+    control_is_external,
+    control_lock,
+    ensure_control_state,
+)
+
 if TYPE_CHECKING:
     from kstrl.events import EventBus
 
-STATE_FILENAME = ".kstrl/autonomy.json"
 STATE_SCHEMA_VERSION = 1
 
 
@@ -306,7 +316,7 @@ class AutonomyState:
     # -- persistence -------------------------------------------------------
     @classmethod
     def path_for(cls, root_dir: Path) -> Path:
-        return root_dir / STATE_FILENAME
+        return control_file(root_dir, CONTROL_AUTONOMY)
 
     @classmethod
     def load(cls, root_dir: Path) -> AutonomyState:
@@ -323,6 +333,7 @@ class AutonomyState:
         The rejection is warned about rather than silent (mirroring
         ``knowledge.read_facts``): losing an earned level deserves a note.
         """
+        ensure_control_state(root_dir)
         path = cls.path_for(root_dir)
         if not path.exists():
             return cls()
@@ -367,6 +378,7 @@ class AutonomyState:
 
     def save(self, root_dir: Path) -> None:
         """Atomic write (mkstemp + os.replace), mirroring manifest.py."""
+        ensure_control_state(root_dir)
         path = self.path_for(root_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -381,20 +393,21 @@ class AutonomyState:
             "last_promoted_by": self.last_promoted_by,
             "history": [asdict(h) for h in self.history],
         }
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), suffix=".tmp", prefix=".autonomy-",
-        )
-        try:
-            with os.fdopen(fd, "w") as handle:
-                json.dump(payload, handle, indent=2)
-                handle.write("\n")
-            os.replace(tmp_path, str(path))
-        except BaseException:
+        with control_lock(root_dir):
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(path.parent), suffix=".tmp", prefix=".autonomy-",
+            )
             try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+                with os.fdopen(fd, "w") as handle:
+                    json.dump(payload, handle, indent=2)
+                    handle.write("\n")
+                os.replace(tmp_path, str(path))
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
     # -- transitions -------------------------------------------------------
     def _reset_level_counters(self) -> None:
@@ -657,14 +670,18 @@ def envelope_ceiling(policy_enabled: bool) -> AutonomyLevel:
 
 
 def resolve_runtime_level(
-    state: AutonomyState, config: AutonomyConfig, *, policy_enabled: bool,
+    state: AutonomyState,
+    config: AutonomyConfig,
+    *,
+    policy_enabled: bool,
+    root_dir: Path,
 ) -> tuple[AutonomyLevel, list[str]]:
     """The level a run may actually use, plus why it was clamped.
 
-    Two independent ceilings apply, and the LOWEST wins: the operator's
-    ``max_level`` and the envelope ceiling above. Returned rather than
-    raised so the run can proceed at the safe level while saying loudly
-    what it withheld.
+    Independent ceilings apply, and the LOWEST wins: the operator's
+    ``max_level``, the envelope ceiling, and (R8.9) the control-state
+    relocation gate. Returned rather than raised so the run can proceed
+    at the safe level while saying loudly what it withheld.
     """
     notes: list[str] = []
     level = state.autonomy_level
@@ -682,7 +699,35 @@ def resolve_runtime_level(
             "to auto-merge inside"
         )
         level = ceiling
+    ensure_control_state(root_dir)
+    if (
+        int(level) >= int(AutonomyLevel.L3_ENVELOPED_AUTO)
+        and not control_is_external(root_dir)
+    ):
+        notes.append(
+            "clamped to L2 Gated-merge: L3+ requires control state outside "
+            "the agent-reachable tree (R8.9); leftover `.kstrl/` control "
+            "files or an XDG_STATE_HOME under the repo block unattended "
+            "auto-merge"
+        )
+        level = AutonomyLevel.L2_GATED_MERGE
     return level, notes
+
+
+def control_relocation_error(
+    root_dir: Path, *, target_level: AutonomyLevel,
+) -> str | None:
+    """Why L3+ is refused for control-state placement, or None if allowed."""
+    if int(target_level) < int(AutonomyLevel.L3_ENVELOPED_AUTO):
+        return None
+    ensure_control_state(root_dir)
+    if control_is_external(root_dir):
+        return None
+    return (
+        "L3+ requires control state outside the agent-reachable tree "
+        "(R8.9). Finish migrating leftover `.kstrl/` control files, or "
+        "point XDG_STATE_HOME outside the repo, then retry."
+    )
 
 
 def promotion_authority_error(*, force: bool) -> str | None:
@@ -691,11 +736,10 @@ def promotion_authority_error(*, force: bool) -> str | None:
     ``--actor``/``--ack`` are strings any caller can supply, so on their
     own they prove nothing about who is asking: an unattended agent can
     pass ``--actor human``. The out-of-band signal is a controlling TTY -
-    an interactive terminal the agent's subprocess does not have. This is
-    a real boundary, not a complete one: an agent with shell access could
-    still edit ``.kstrl/autonomy.json`` directly, which is why that file
-    is in the R8.1 enforcement-machinery halt set. Stated plainly rather
-    than overclaimed.
+    an interactive terminal the agent's subprocess does not have. Live
+    autonomy state lives in the XDG control dir (R8.9); the legacy
+    in-tree path remains in the R8.1 enforcement-machinery halt set so a
+    diff cannot rewrite it. Stated plainly rather than overclaimed.
     """
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         detail = "forced promotions bypass evidence and " if force else ""

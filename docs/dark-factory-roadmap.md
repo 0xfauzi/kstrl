@@ -1285,40 +1285,33 @@ PR carrying a reproducing test.
 
 ## R8.9 Control-state relocation (M) - [#194](https://github.com/0xfauzi/kstrl/issues/194)
 
-Status: `[ ]` - Added 2026-08-03. Depends on: none; BLOCKS enabling
-`[autonomy]` at L3+ and unattended `ks serve` with the ladder enabled
+Status: `[x]` - Shipped. Control-plane files resolve under
+`${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/` via
+`kstrl/statedir.py` (`control_dir`, `migrate_control_state`,
+`control_lock`). Live copies of `autonomy.json`, `inbox.jsonl`,
+`spend.json`, `pause.json`, and `github_processed.json` leave the
+agent-reachable tree; locks, queue items, events, knowledge, and
+worktrees stay in-tree under `.kstrl/`.
 
-**Why.** Every durable state surface lives inside the repo tree
-(`.kstrl/`), and the R8.1 halt set protects diffs, not shell activity: an
-engineer agent in a worktree under `.kstrl/worktrees/` can reach
-`autonomy.json`, `queue/spend.json`, `queue/pause.json`, and
-`inbox.jsonl` with ordinary shell access. `autonomy.py`'s own docstring
-concedes the boundary is "real but not absolute". Unattended operation
-(launchd, R8.6 PR 4) turns that from a theoretical concern into the live
-trust boundary: the ladder's level, the spend ledger, the pause marker,
-and the record of human approvals are all editable by the thing they
-govern.
+**Repo id.** Prefer a hash of the normalized `origin` remote URL so
+clones of the same project share one control dir (one autonomy level,
+one daily spend ledger). No origin → hash of the resolved absolute path
+(checkout-local). Documented caveat: do not run two `ks serve` daemons
+against a shared-origin ledger concurrently without holding
+`control.lock`.
 
-**Design.** Control state moves to `~/.local/state/kstrl/<repo-id>/`
-(XDG): `autonomy.json`, the spend ledger, the queue pause marker;
-evaluate the inbox decision lines and the processed-ids ledger. Locks
-stay in-tree - flock must live near the resource it guards. Events,
-evidence artifacts, worktrees, and knowledge stay in-tree deliberately:
-they are the audit record, not the control plane. `statedir.py` grows the
-split resolution plus a one-time migration with a back-compat read,
-mirroring the `.ralph` -> `.kstrl` pattern. `workqueue.py` already
-anticipates a global queue in a forward-compat comment.
+**Migration.** First control read/write moves any legacy in-tree files
+into XDG with a `DeprecationWarning` and writes
+`.kstrl/control_relocated` for operators. Legacy paths remain in
+`ENFORCEMENT_MACHINERY_PATHS` so a diff recreating them still halts.
 
-**Failure modes.** Two checkouts of one repo sharing a state dir (the
-repo-id derivation must be stable and documented); state dir missing
-while a queue is live (fail closed: missing control state reads as
-PAUSED, never as empty-and-running); the legacy in-tree paths must remain
-in the halt set so a diff touching them still trips enforcement.
+**L3+ gate.** `resolve_runtime_level` and `ks autonomy promote` refuse
+L3+ while control state is not external (``XDG_STATE_HOME`` under the
+repo, inaccessible control dir, or leftover legacy files after a failed
+migrate). Fail-closed pause: inaccessible control dir reads as PAUSED.
 
-**Done when:** the control files resolve outside the tree; a migration
-test moves legacy in-tree state once and warns; a diff touching the
-legacy paths still trips the halt set; enabling `[autonomy]` at L3+
-refuses to proceed while control state resolves in-tree.
+Depends on: none; BLOCKS enabling `[autonomy]` at L3+ and unattended
+`ks serve` with the ladder enabled until control state is external.
 
 ## R8.10 Repo readiness: `ks doctor` (M) - [#198](https://github.com/0xfauzi/kstrl/issues/198)
 
