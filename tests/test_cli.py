@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
+from kstrl.cli import _run_structural_override_notices, cli
+from kstrl.factory import FactoryConfig
+from tests.spine_utils import git as spine_git
 
 
 class TestCliHelp:
@@ -173,6 +175,138 @@ class TestCliValidation:
         )
         assert result.exit_code == 0
         assert (feature_dir / "understand.md").exists()
+
+
+class TestRunStructuralOverrideNotices:
+    """Issue #207: `ks run` must say when it overrides configured knobs.
+
+    `ks run` forces structural fields (max_parallel, use_worktrees,
+    single_pr, create_prs); a startup notice fires when the resolved
+    config set one to a non-default value - and stays silent otherwise,
+    so the notice does not become background noise. The merge-gate
+    warning itself is NOT emitted here: the autonomy ladder can flip
+    pause_before_pr_merge inside run_factory, so the authoritative check
+    is factory.merge_gate_unreachable_warning after autonomy resolution
+    (review P1 on PR #211); its e2e coverage is below and its unit
+    coverage is in test_factory.py.
+    """
+
+    def test_no_notices_for_default_config(self) -> None:
+        assert _run_structural_override_notices(FactoryConfig()) == []
+
+    def test_pause_before_pr_merge_not_handled_pre_resolution(self) -> None:
+        """The gate flag resolves only after the autonomy ladder runs, so
+        the pre-resolution notices deliberately ignore it (review P1)."""
+        assert _run_structural_override_notices(
+            FactoryConfig(pause_before_pr_merge=True)
+        ) == []
+
+    def test_non_default_structural_field_is_named(self) -> None:
+        notices = _run_structural_override_notices(
+            FactoryConfig(max_parallel=8, single_pr=True)
+        )
+        assert any("max_parallel = 8" in n for n in notices)
+        assert any("single_pr = true" in n for n in notices)
+        assert len(notices) == 2
+
+    def test_default_valued_fields_stay_silent(self) -> None:
+        """create_prs defaults to True and is forced to False on every
+        `ks run`; warning about the default would fire unconditionally."""
+        assert _run_structural_override_notices(
+            FactoryConfig(create_prs=True, use_worktrees=True)
+        ) == []
+
+    def _scaffold_project(self, tmp_path: Path, toml_body: str = "") -> Path:
+        """A real git repo shaped like a kstrl project: the run must be
+        able to finish GREEN (the diff phase runs `git diff` against the
+        base branch), so the e2e tests can assert exit_code == 0 rather
+        than only grepping output (review P2)."""
+        project = tmp_path / "project"
+        kstrl_dir = project / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
+            '{"branchName": "test", "userStories": []}'
+        )
+        if toml_body:
+            (project / "kstrl.toml").write_text(toml_body)
+        spine_git("init", "-q", "-b", "main", cwd=project)
+        spine_git("config", "user.email", "cli@test", cwd=project)
+        spine_git("config", "user.name", "CLI Test", cwd=project)
+        spine_git("add", "-A", cwd=project)
+        spine_git("commit", "-q", "-m", "init", cwd=project)
+        return project
+
+    def _invoke_run(self, project: Path, max_iterations: str = "1") -> Result:
+        runner = CliRunner()
+        return runner.invoke(
+            cli,
+            [
+                "run",
+                max_iterations,
+                "--root", str(project),
+                "--agent-cmd", "printf '<promise>COMPLETE</promise>\\n'",
+                "--sleep", "0",
+                "--no-verify",
+                "--ui", "plain",
+                "--no-color",
+            ],
+        )
+
+    def test_run_emits_notice_when_toml_sets_merge_gate(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        # review_mode=skip keeps the run LLM-free: without it the review
+        # phase auto-detects a real agent CLI and makes a paid call.
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
+        monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
+        project = self._scaffold_project(
+            tmp_path,
+            '[factory]\npause_before_pr_merge = true\nreview_mode = "skip"\n',
+        )
+        result = self._invoke_run(project)
+        assert result.exit_code == 0, result.output
+        assert "pause_before_pr_merge" in result.output
+        assert "merge gate" in result.output
+
+    def test_run_stays_silent_when_merge_gate_unset(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
+        monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
+        project = self._scaffold_project(
+            tmp_path, '[factory]\nreview_mode = "skip"\n'
+        )
+        result = self._invoke_run(project)
+        assert result.exit_code == 0, result.output
+        assert "pause_before_pr_merge" not in result.output
+
+    def test_run_warns_when_autonomy_ladder_flips_gate_on(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Review P1 regression: with [autonomy] enabled and NO factory
+        flag set, the L1 bundle flips pause_before_pr_merge on inside
+        run_factory - after the CLI-level notices already ran. The
+        post-resolution warning must still fire.
+
+        Runs 0 iterations: the L1 bundle also forces review_mode=hard,
+        so a green run would need a real reviewer LLM call. The engineer
+        therefore fails deterministically (exit 1); the warning is
+        emitted before execution, so it is asserted alongside the exit
+        code rather than instead of it.
+        """
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
+        monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
+        project = self._scaffold_project(
+            tmp_path, "[autonomy]\nenabled = true\n"
+        )
+        result = self._invoke_run(project, max_iterations="0")
+        assert result.exit_code == 1, result.output
+        assert "Autonomy" in result.output
+        assert "pause_before_pr_merge is on but create_prs is off" in (
+            result.output
+        )
+        assert "merge gate can never run" in result.output
 
 
 class TestDecomposeBlockerOutput:
