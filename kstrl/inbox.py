@@ -328,6 +328,40 @@ class InboxConfig:
         )
 
 
+@dataclass(frozen=True)
+class InboxScan:
+    """One pass over ``.kstrl/inbox.jsonl``.
+
+    ``unreadable`` means the gate has no positive evidence the backlog
+    is under its cap - admission must refuse regardless of
+    ``open_item_cap``. Display callers ignore the flag and treat the
+    (empty) records as a clear inbox, same as the pre-#190 fold.
+    """
+
+    records: tuple[dict[str, Any], ...] = ()
+    skipped_lines: int = 0
+    unreadable: bool = False
+
+    def folded_items(self) -> list[InboxItem]:
+        folded: dict[str, InboxItem] = {}
+        for record in self.records:
+            item = InboxItem.from_dict(record)
+            if item is None:
+                continue
+            folded[item.id] = item
+        return list(folded.values())
+
+    def open_count(self) -> int:
+        return sum(1 for item in self.folded_items() if item.is_open)
+
+    def unparseable_count(self) -> int:
+        """Lines the display fold would skip: torn JSON, non-dicts, and
+        dicts ``InboxItem.from_dict`` cannot rebuild."""
+        return self.skipped_lines + sum(
+            1 for record in self.records if InboxItem.from_dict(record) is None
+        )
+
+
 class Inbox:
     """Append-only store over ``.kstrl/inbox.jsonl``.
 
@@ -345,24 +379,35 @@ class Inbox:
         return self.root_dir / INBOX_FILENAME
 
     # -- reading -----------------------------------------------------------
-    def _scan(self) -> tuple[list[dict[str, Any]], int]:
-        """Parse the log: (readable records, skipped-line count).
+    def scan(self) -> InboxScan:
+        """One pass over the log: readable records + skip count + readability.
 
         Tolerant by design for the DISPLAY path: a torn tail must not
-        make the whole backlog unreadable. The skip count exists because
-        that tolerance must not leak into safety gates (#190) - see
-        ``unparseable_line_count``. An existing-but-unreadable file
-        counts as one skip for the same reason: the gate has no positive
-        evidence the backlog is clear.
+        make the whole backlog unreadable. Safety gates (#190) must not
+        sit on that tolerance - they consume this snapshot once and treat
+        ``unreadable`` or every skipped line as open capacity. An
+        existing-but-unreadable file (OSError on exists/read, or a
+        UnicodeDecodeError on a torn multibyte write) is its own state:
+        the gate has no positive evidence the backlog is under the cap,
+        so collapsing it to ``skipped=1`` would re-admit under any cap
+        greater than one.
         """
-        if not self.path.exists():
-            return [], 0
+        try:
+            exists = self.path.exists()
+        except OSError:
+            return InboxScan(unreadable=True)
+        if not exists:
+            return InboxScan()
+        try:
+            raw = self.path.read_bytes()
+        except OSError:
+            return InboxScan(unreadable=True)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return InboxScan(unreadable=True)
         records: list[dict[str, Any]] = []
         skipped = 0
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except OSError:
-            return [], 1
         for line in text.splitlines():
             line = line.strip()
             if not line:
@@ -376,24 +421,19 @@ class Inbox:
                 records.append(record)
             else:
                 skipped += 1
-        return records, skipped
+        return InboxScan(records=tuple(records), skipped_lines=skipped)
 
     def _read_lines(self) -> list[dict[str, Any]]:
-        return self._scan()[0]
+        return list(self.scan().records)
 
     def unparseable_line_count(self) -> int:
         """Nonempty log lines the display fold would skip (#190).
 
-        A skipped EMISSION line undercounts open items, so a capacity
-        gate sitting on the tolerant fold fails open. Gate consumers add
-        this count to the open total, treating every line that MIGHT be
-        an open item as one (fail closed). Counts torn JSON, non-dict
-        lines, and dicts ``InboxItem.from_dict`` cannot rebuild.
+        Prefer ``scan()`` when open and unparseable counts must come from
+        the same snapshot (the serve admission gate). This helper remains
+        for callers that only need the skip side.
         """
-        records, skipped = self._scan()
-        return skipped + sum(
-            1 for record in records if InboxItem.from_dict(record) is None
-        )
+        return self.scan().unparseable_count()
 
     def _folded(self) -> list[InboxItem]:
         """Latest state per id, in the order the ids first appeared.

@@ -279,6 +279,53 @@ class TestUnparseableLineCount:
         assert box.unparseable_line_count() == 0
         assert box.open_items() == [item]
 
+    def test_read_oserror_is_unreadable_not_one_skip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Whole-file read failure is not 'one garbled line' - the gate
+        has no positive evidence the backlog is under the cap (#190 P1)."""
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        real_read_bytes = Path.read_bytes
+
+        def flaky_read(self: Path) -> bytes:
+            if self == box.path:
+                raise OSError("EIO")
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", flaky_read)
+        scan = box.scan()
+        assert scan.unreadable is True
+        assert box.items() == []          # display stays tolerant
+
+    def test_exists_oserror_is_unreadable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        box = _box(tmp_path)
+        real_exists = Path.exists
+
+        def flaky_exists(self: Path) -> bool:
+            if self == box.path:
+                raise OSError("EACCES")
+            return real_exists(self)
+
+        monkeypatch.setattr(Path, "exists", flaky_exists)
+        assert box.scan().unreadable is True
+        assert box.items() == []
+
+    def test_invalid_utf8_is_unreadable_and_display_tolerant(
+        self, tmp_path: Path,
+    ) -> None:
+        """A write torn inside a multibyte character must not raise out of
+        the fold or the gate (#190 P1). Whole-file decode failure is the
+        same fail-closed state as OSError - replacement-decoding the
+        damaged line as one skip would still admit under a cap > 1."""
+        box = _box(tmp_path)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_bytes(b"\xff\n")
+        assert box.scan().unreadable is True
+        assert box.items() == []          # no UnicodeDecodeError escape
+
 
 class TestConfig:
     def test_enabled_by_default(self) -> None:

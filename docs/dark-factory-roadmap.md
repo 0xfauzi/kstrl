@@ -690,9 +690,12 @@ cap originally failed OPEN, because the inbox fold skips unparseable lines
 by design, so a torn emission line undercounted open items and admitted
 work past the cap. Fixed fail-closed for
 [#190](https://github.com/0xfauzi/kstrl/issues/190): `check_inbox_cap`
-adds `Inbox.unparseable_line_count()` to the open total, so every line
-that MIGHT be an open item counts as one; the tolerant fold is unchanged
-for the `ks inbox` display path.
+takes one `Inbox.scan()` snapshot and adds `unparseable_count()` to the
+open total, so every line that MIGHT be an open item counts as one; a
+whole-file read/decode failure is its own `unreadable` state and refuses
+regardless of the configured cap (collapsing it to one skip would
+re-admit under any cap > 1). The tolerant fold is unchanged for the
+`ks inbox` display path.
 
 **GitHub intake (PR 3).** The trigger is the LABEL, not the issue, and
 that is the entire access-control story: applying a label needs write

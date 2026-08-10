@@ -889,6 +889,99 @@ class TestInboxCapGate:
         assert not admission.allowed
         assert box.open_items() == []
 
+    def test_unreadable_inbox_refuses_regardless_of_cap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Review P1: collapsing a whole-file read failure to one skipped
+        line admitted under the default cap of 50. Unreadable is its own
+        state - deny independently of open_item_cap."""
+        box = self._inbox(tmp_path, cap=50)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        real_read_bytes = Path.read_bytes
+
+        def flaky_read(self: Path) -> bytes:
+            if self == box.path:
+                raise OSError("EIO")
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", flaky_read)
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unreadable" in admission.reason
+
+    def test_invalid_utf8_refuses_admission(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review P1: ``read_text`` raised UnicodeDecodeError on a torn
+        multibyte write, escaping the gate entirely."""
+        box = self._inbox(tmp_path, cap=50)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_bytes(b"\xff\n")
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unreadable" in admission.reason
+
+    def test_gate_uses_one_scan_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Review P1: unparseable_line_count() and open_items() each
+        scanned the log. A torn append between those calls produced
+        garbled=0 then open=1, so at cap 2 the gate admitted. One
+        snapshot keeps the counts consistent; the gate must not re-scan.
+        """
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "torn-between-scans", "kind": "halted_r\n')
+
+        scans = 0
+        real_scan = Inbox.scan
+
+        def counted_scan(self: Inbox) -> object:
+            nonlocal scans
+            scans += 1
+            return real_scan(self)
+
+        monkeypatch.setattr(Inbox, "scan", counted_scan)
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert scans == 1
+
+    def test_interleaved_append_cannot_split_gate_counts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Deterministic reproduction of the dual-scan race: after the
+        first scan returns, inject a torn line. A second scan would see
+        a different world; the gate must decide from the first snapshot
+        alone (and therefore must not call scan again).
+        """
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        # File currently: 1 open. Cap 2. A torn line mid-gate would tip
+        # a dual-scan world into open=1 + garbled=0 (admit) if unparseable
+        # ran first on the clean file, then open_items ran after inject.
+
+        scans = 0
+        real_scan = Inbox.scan
+
+        def inject_after_first(self: Inbox) -> object:
+            nonlocal scans
+            scans += 1
+            snap = real_scan(self)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write('{"id": "injected-after-scan", "kind": "h\n')
+            return snap
+
+        monkeypatch.setattr(Inbox, "scan", inject_after_first)
+        admission = check_inbox_cap(tmp_path)
+        # Snapshot was clean (1 open, 0 garbled) → under cap → admit.
+        # The inject is visible to the NEXT cycle, not this one.
+        assert admission.allowed
+        assert scans == 1
+        # And the next evaluation sees the torn line and refuses.
+        monkeypatch.setattr(Inbox, "scan", real_scan)
+        assert not check_inbox_cap(tmp_path).allowed
+
 
 # --------------------------------------------------------------------------
 # The lease reaper
