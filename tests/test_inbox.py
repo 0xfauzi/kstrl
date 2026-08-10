@@ -241,6 +241,92 @@ class TestCapacityAndNotification:
         assert first.priority is Priority.HIGH
 
 
+class TestUnparseableLineCount:
+    """Issue #190: the fold tolerates garbled lines for DISPLAY; a safety
+    gate must not sit on that tolerance. ``unparseable_line_count`` is the
+    fail-closed signal the serve admission cap adds to the open total.
+    """
+
+    def test_missing_and_clean_logs_count_zero(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        assert box.unparseable_line_count() == 0    # no file yet
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        assert box.unparseable_line_count() == 0    # every line parses
+
+    def test_torn_json_line_counts(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "torn-tail", "kind": "halted_r\n')
+        assert box.unparseable_line_count() == 1
+        # the tolerant display fold is unchanged: still one readable item
+        assert len(box.items()) == 1
+
+    def test_non_dict_and_idless_lines_count(self, tmp_path: Path) -> None:
+        """json-decodable is not enough: a non-dict line and a dict the
+        fold cannot rebuild (no id) are equally invisible open items."""
+        box = _box(tmp_path)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_text('[1, 2]\n{"title": "no id"}\n', encoding="utf-8")
+        assert box.unparseable_line_count() == 2
+        assert box.items() == []
+
+    def test_blank_lines_do_not_count(self, tmp_path: Path) -> None:
+        box = _box(tmp_path)
+        item = box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write("\n\n")
+        assert box.unparseable_line_count() == 0
+        assert box.open_items() == [item]
+
+    def test_read_oserror_is_unreadable_not_one_skip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Whole-file read failure is not 'one garbled line' - the gate
+        has no positive evidence the backlog is under the cap (#190 P1)."""
+        box = _box(tmp_path)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        real_read_bytes = Path.read_bytes
+
+        def flaky_read(self: Path) -> bytes:
+            if self == box.path:
+                raise OSError("EIO")
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", flaky_read)
+        scan = box.scan()
+        assert scan.unreadable is True
+        assert box.items() == []          # display stays tolerant
+
+    def test_exists_oserror_is_unreadable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        box = _box(tmp_path)
+        real_exists = Path.exists
+
+        def flaky_exists(self: Path) -> bool:
+            if self == box.path:
+                raise OSError("EACCES")
+            return real_exists(self)
+
+        monkeypatch.setattr(Path, "exists", flaky_exists)
+        assert box.scan().unreadable is True
+        assert box.items() == []
+
+    def test_invalid_utf8_is_unreadable_and_display_tolerant(
+        self, tmp_path: Path,
+    ) -> None:
+        """A write torn inside a multibyte character must not raise out of
+        the fold or the gate (#190 P1). Whole-file decode failure is the
+        same fail-closed state as OSError - replacement-decoding the
+        damaged line as one skip would still admit under a cap > 1."""
+        box = _box(tmp_path)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_bytes(b"\xff\n")
+        assert box.scan().unreadable is True
+        assert box.items() == []          # no UnicodeDecodeError escape
+
+
 class TestConfig:
     def test_enabled_by_default(self) -> None:
         assert InboxConfig().enabled is True

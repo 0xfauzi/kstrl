@@ -1530,20 +1530,50 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     R8.6 consults before admitting more queue work"; this is that
     consultation. Producing more decisions for a human who is already
     behind is how an inbox becomes ignored.
+
+    Unparseable inbox lines count as OPEN here (#190). The fold skips
+    them by design so one torn write cannot hide the backlog from `ks
+    inbox`, but a skipped emission line undercounts open items and a cap
+    sitting on that tolerant count admits work past N - a safety gate
+    failing open. Only this gate pays the stricter price; the display
+    path keeps the tolerant fold.
+
+    Open and unparseable counts come from ONE ``Inbox.scan()`` snapshot
+    so a concurrent torn append cannot split them into an admitting
+    world. A whole-file read/decode failure is its own state: refuse
+    regardless of the configured cap - collapsing it to one skipped
+    line would re-admit under any cap greater than one.
     """
     from kstrl.inbox import Inbox, InboxConfig
 
     config = InboxConfig.load(root_dir)
     if not config.enabled or config.open_item_cap <= 0:
         return Admission(allowed=True)
-    box = Inbox(root_dir, config)
-    if not box.over_cap():
+    scan = Inbox(root_dir, config).scan()
+    if scan.unreadable:
+        return Admission(
+            allowed=False,
+            reason=(
+                "inbox is unreadable (.kstrl/inbox.jsonl could not be "
+                "read or decoded); refusing admission until the log is "
+                "inspectable - the open-item cap fails closed, #190"
+            ),
+        )
+    open_count = scan.open_count()
+    garbled = scan.unparseable_count()
+    if open_count + garbled < config.open_item_cap:
         return Admission(allowed=True)
+    detail = (
+        f" ({garbled} unparseable inbox line(s) counted as open - the cap "
+        "fails closed, #190; inspect .kstrl/inbox.jsonl to clear them)"
+        if garbled
+        else ""
+    )
     return Admission(
         allowed=False,
         reason=(
             f"inbox has reached its open-item cap ({config.open_item_cap}); "
-            "triage before queueing more work"
+            f"triage before queueing more work{detail}"
         ),
     )
 

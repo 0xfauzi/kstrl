@@ -328,6 +328,40 @@ class InboxConfig:
         )
 
 
+@dataclass(frozen=True)
+class InboxScan:
+    """One pass over ``.kstrl/inbox.jsonl``.
+
+    ``unreadable`` means the gate has no positive evidence the backlog
+    is under its cap - admission must refuse regardless of
+    ``open_item_cap``. Display callers ignore the flag and treat the
+    (empty) records as a clear inbox, same as the pre-#190 fold.
+    """
+
+    records: tuple[dict[str, Any], ...] = ()
+    skipped_lines: int = 0
+    unreadable: bool = False
+
+    def folded_items(self) -> list[InboxItem]:
+        folded: dict[str, InboxItem] = {}
+        for record in self.records:
+            item = InboxItem.from_dict(record)
+            if item is None:
+                continue
+            folded[item.id] = item
+        return list(folded.values())
+
+    def open_count(self) -> int:
+        return sum(1 for item in self.folded_items() if item.is_open)
+
+    def unparseable_count(self) -> int:
+        """Lines the display fold would skip: torn JSON, non-dicts, and
+        dicts ``InboxItem.from_dict`` cannot rebuild."""
+        return self.skipped_lines + sum(
+            1 for record in self.records if InboxItem.from_dict(record) is None
+        )
+
+
 class Inbox:
     """Append-only store over ``.kstrl/inbox.jsonl``.
 
@@ -345,14 +379,35 @@ class Inbox:
         return self.root_dir / INBOX_FILENAME
 
     # -- reading -----------------------------------------------------------
-    def _read_lines(self) -> list[dict[str, Any]]:
-        if not self.path.exists():
-            return []
-        records: list[dict[str, Any]] = []
+    def scan(self) -> InboxScan:
+        """One pass over the log: readable records + skip count + readability.
+
+        Tolerant by design for the DISPLAY path: a torn tail must not
+        make the whole backlog unreadable. Safety gates (#190) must not
+        sit on that tolerance - they consume this snapshot once and treat
+        ``unreadable`` or every skipped line as open capacity. An
+        existing-but-unreadable file (OSError on exists/read, or a
+        UnicodeDecodeError on a torn multibyte write) is its own state:
+        the gate has no positive evidence the backlog is under the cap,
+        so collapsing it to ``skipped=1`` would re-admit under any cap
+        greater than one.
+        """
         try:
-            text = self.path.read_text(encoding="utf-8")
+            exists = self.path.exists()
         except OSError:
-            return []
+            return InboxScan(unreadable=True)
+        if not exists:
+            return InboxScan()
+        try:
+            raw = self.path.read_bytes()
+        except OSError:
+            return InboxScan(unreadable=True)
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return InboxScan(unreadable=True)
+        records: list[dict[str, Any]] = []
+        skipped = 0
         for line in text.splitlines():
             line = line.strip()
             if not line:
@@ -360,10 +415,25 @@ class Inbox:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
-                continue          # tolerate a torn tail; skip, never raise
+                skipped += 1      # tolerate a torn tail; skip, never raise
+                continue
             if isinstance(record, dict):
                 records.append(record)
-        return records
+            else:
+                skipped += 1
+        return InboxScan(records=tuple(records), skipped_lines=skipped)
+
+    def _read_lines(self) -> list[dict[str, Any]]:
+        return list(self.scan().records)
+
+    def unparseable_line_count(self) -> int:
+        """Nonempty log lines the display fold would skip (#190).
+
+        Prefer ``scan()`` when open and unparseable counts must come from
+        the same snapshot (the serve admission gate). This helper remains
+        for callers that only need the skip side.
+        """
+        return self.scan().unparseable_count()
 
     def _folded(self) -> list[InboxItem]:
         """Latest state per id, in the order the ids first appeared.

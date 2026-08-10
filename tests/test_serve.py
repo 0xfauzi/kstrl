@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kstrl.findings import Finding
+from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
@@ -38,6 +39,7 @@ from kstrl.serve import (
     caffeinate_prefix,
     check_budget,
     check_cost_coverage,
+    check_inbox_cap,
     check_poison_breaker,
     classify_run,
     consecutive_poison_count,
@@ -828,6 +830,157 @@ class TestPoisonBreaker:
         ledger.path.write_text("{corrupt")
         with pytest.raises(ServeStateError):
             check_poison_breaker(ledger, ServeConfig())
+
+
+# --------------------------------------------------------------------------
+# The inbox open-item cap
+# --------------------------------------------------------------------------
+
+
+class TestInboxCapGate:
+    """Issue #190: the open-item cap must fail CLOSED on garbled lines.
+
+    The inbox fold skips unparseable lines by design (a torn tail must
+    not make the backlog invisible), but a skipped emission line
+    undercounts open items, so a cap sitting on the tolerant fold admits
+    work past N. The gate therefore counts every unparseable line as an
+    open item; the tolerant display path is untouched.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in ("KSTRL_INBOX_ENABLED", "KSTRL_INBOX_OPEN_CAP"):
+            monkeypatch.delenv(var, raising=False)
+
+    def _inbox(self, tmp_path: Path, cap: int) -> Inbox:
+        (tmp_path / "kstrl.toml").write_text(
+            f"[inbox]\nopen_item_cap = {cap}\n"
+        )
+        return Inbox(tmp_path, InboxConfig.load(tmp_path))
+
+    def test_open_items_below_the_cap_admit(self, tmp_path: Path) -> None:
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        assert check_inbox_cap(tmp_path).allowed
+
+    def test_a_garbled_line_counts_toward_the_cap(
+        self, tmp_path: Path,
+    ) -> None:
+        """Same backlog as above plus one torn line: admission refused."""
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "torn-emission", "kind": "halted_r\n')
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unparseable" in admission.reason
+        # the display fold stays tolerant: the torn line is invisible there
+        assert len(box.open_items()) == 1
+
+    def test_garbled_lines_alone_can_fill_the_cap(
+        self, tmp_path: Path,
+    ) -> None:
+        """No readable open items at all - the fold reads an empty inbox -
+        yet the gate must refuse: every torn line MIGHT be an open item."""
+        box = self._inbox(tmp_path, cap=1)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_text("{not json\n", encoding="utf-8")
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert box.open_items() == []
+
+    def test_unreadable_inbox_refuses_regardless_of_cap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Review P1: collapsing a whole-file read failure to one skipped
+        line admitted under the default cap of 50. Unreadable is its own
+        state - deny independently of open_item_cap."""
+        box = self._inbox(tmp_path, cap=50)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        real_read_bytes = Path.read_bytes
+
+        def flaky_read(self: Path) -> bytes:
+            if self == box.path:
+                raise OSError("EIO")
+            return real_read_bytes(self)
+
+        monkeypatch.setattr(Path, "read_bytes", flaky_read)
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unreadable" in admission.reason
+
+    def test_invalid_utf8_refuses_admission(
+        self, tmp_path: Path,
+    ) -> None:
+        """Review P1: ``read_text`` raised UnicodeDecodeError on a torn
+        multibyte write, escaping the gate entirely."""
+        box = self._inbox(tmp_path, cap=50)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_bytes(b"\xff\n")
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unreadable" in admission.reason
+
+    def test_gate_uses_one_scan_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Review P1: unparseable_line_count() and open_items() each
+        scanned the log. A torn append between those calls produced
+        garbled=0 then open=1, so at cap 2 the gate admitted. One
+        snapshot keeps the counts consistent; the gate must not re-scan.
+        """
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "torn-between-scans", "kind": "halted_r\n')
+
+        scans = 0
+        real_scan = Inbox.scan
+
+        def counted_scan(self: Inbox) -> object:
+            nonlocal scans
+            scans += 1
+            return real_scan(self)
+
+        monkeypatch.setattr(Inbox, "scan", counted_scan)
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert scans == 1
+
+    def test_interleaved_append_cannot_split_gate_counts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Deterministic reproduction of the dual-scan race: after the
+        first scan returns, inject a torn line. A second scan would see
+        a different world; the gate must decide from the first snapshot
+        alone (and therefore must not call scan again).
+        """
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        # File currently: 1 open. Cap 2. A torn line mid-gate would tip
+        # a dual-scan world into open=1 + garbled=0 (admit) if unparseable
+        # ran first on the clean file, then open_items ran after inject.
+
+        scans = 0
+        real_scan = Inbox.scan
+
+        def inject_after_first(self: Inbox) -> object:
+            nonlocal scans
+            scans += 1
+            snap = real_scan(self)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write('{"id": "injected-after-scan", "kind": "h\n')
+            return snap
+
+        monkeypatch.setattr(Inbox, "scan", inject_after_first)
+        admission = check_inbox_cap(tmp_path)
+        # Snapshot was clean (1 open, 0 garbled) → under cap → admit.
+        # The inject is visible to the NEXT cycle, not this one.
+        assert admission.allowed
+        assert scans == 1
+        # And the next evaluation sees the torn line and refuses.
+        monkeypatch.setattr(Inbox, "scan", real_scan)
+        assert not check_inbox_cap(tmp_path).allowed
 
 
 # --------------------------------------------------------------------------
