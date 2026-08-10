@@ -458,12 +458,12 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
     that ``ks run`` forces to a different value - an unset knob stays
     silent, so the notices never become background noise.
 
-    ``pause_before_pr_merge`` is not forced itself, but the merge gate is
-    reachable only when ``create_prs`` is on (pipeline gates the checkpoint
-    on that flag), so forcing ``create_prs = False`` silently disables it.
-    A governance control must not fail open quietly, hence its dedicated
-    note - phrased as "not applicable" rather than "overridden", because
-    there genuinely is no PR to gate.
+    ``pause_before_pr_merge`` is deliberately NOT handled here. The
+    autonomy ladder resolves inside ``run_factory`` and its L1/L2 bundle
+    can flip the gate on when no config flag ever set it, so any check at
+    this point sees a stale value. The authoritative warning is
+    ``factory.merge_gate_unreachable_warning``, emitted after autonomy
+    resolution - the one point that sees the final flag on every path.
     """
     defaults = FactoryConfig()
     notices: list[str] = []
@@ -477,12 +477,6 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
             f"[factory] {field_name} = {_toml_literal(configured)} does not "
             f"apply to `ks run` ({reason}); using "
             f"{_toml_literal(forced_value)}"
-        )
-    if loaded.pause_before_pr_merge:
-        notices.append(
-            "[factory] pause_before_pr_merge = true has no effect under "
-            "`ks run`: no PR is created, so the merge gate is not "
-            "applicable. Use `ks factory` to honour the merge gate."
         )
     return notices
 
@@ -686,8 +680,9 @@ def run(
     # context, not checks).
     factory_cfg = FactoryConfig.load(root_dir)
     # Issue #207: say which configured knobs the forcing below overrides,
-    # BEFORE mutating the config, so the operator learns at startup that
-    # (in particular) the pause_before_pr_merge gate will not run.
+    # BEFORE mutating the config. The merge-gate warning itself is emitted
+    # later, by run_factory after autonomy resolution (see
+    # factory.merge_gate_unreachable_warning).
     for notice in _run_structural_override_notices(factory_cfg):
         ui_impl.warn(notice)
     factory_cfg.max_parallel = 1

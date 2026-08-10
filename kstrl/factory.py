@@ -387,6 +387,39 @@ class FactoryConfig:
         return config
 
 
+def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None:
+    """Warning when the merge gate is on but can never run, else None.
+
+    The pipeline reaches ``_phase_checkpoint`` only when ``create_prs`` is
+    on AND ``single_pr`` is off, so a config whose FINAL resolved values
+    have the gate on while the checkpoint is unreachable is a governance
+    control failing open (#207). The flag can arrive in that state three
+    ways: set explicitly (kstrl.toml / env) under `ks run`, which forces
+    ``create_prs = False``; flipped on by the L1/L2 autonomy bundle AFTER
+    any command-level notice already ran; or combined with ``single_pr``
+    mode, whose aggregate PR is created without a checkpoint. Called from
+    ``run_factory`` after autonomy resolution - the one point that sees
+    the final values on every path - so all three cases warn.
+    """
+    if not config.pause_before_pr_merge:
+        return None
+    if not config.create_prs:
+        return (
+            "pause_before_pr_merge is on but create_prs is off: no PR is "
+            "created, so the merge gate can never run. The gate is "
+            "honoured only by PR-creating invocations (`ks factory` / "
+            "`ks serve`), not `ks run`."
+        )
+    if config.single_pr:
+        return (
+            "pause_before_pr_merge is on but single_pr mode creates one "
+            "aggregate PR without a per-component checkpoint, so the "
+            "merge gate never runs. Disable single_pr to honour the "
+            "merge gate."
+        )
+    return None
+
+
 # R7.1: cross-model review rotation. Self-preference bias means a
 # same-family reviewer systematically misses the bug classes its own
 # family produces, so when no explicit reviewer config is given the
@@ -2373,6 +2406,14 @@ def _run_factory_locked(
             ui.warn(f"  Manual override ignored: {note}")
         # The pipeline must see the clamped envelope, not the raw config.
         factory_config.policy_config = policy_config
+
+    # Issue #207 (review P1): checked AFTER autonomy resolution, because
+    # the L1/L2 bundle can flip pause_before_pr_merge on when no config
+    # flag ever set it - any earlier check misses that path and the gate
+    # would be reported ON while _phase_checkpoint stays unreachable.
+    gate_warning = merge_gate_unreachable_warning(factory_config)
+    if gate_warning is not None:
+        ui.warn(gate_warning)
 
     manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)

@@ -12,6 +12,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
+    merge_gate_unreachable_warning,
     run_factory,
 )
 from kstrl.knowledge import Fact, write_facts
@@ -97,6 +98,48 @@ class TestFactoryConfig:
         config = FactoryConfig.from_env()
         assert config.max_parallel == 8
         assert config.max_retries == 5
+
+
+class TestMergeGateUnreachableWarning:
+    """Issue #207 (PR #211 review P1/P3): warn when the FINAL resolved
+    config has the merge gate on while _phase_checkpoint is unreachable.
+
+    Checked post-autonomy-resolution in run_factory, because the L1/L2
+    bundle can flip pause_before_pr_merge on when no config flag set it.
+    """
+
+    def test_silent_when_gate_off(self) -> None:
+        assert merge_gate_unreachable_warning(FactoryConfig()) is None
+        assert merge_gate_unreachable_warning(
+            FactoryConfig(create_prs=False)
+        ) is None
+
+    def test_silent_when_gate_reachable(self) -> None:
+        assert merge_gate_unreachable_warning(
+            FactoryConfig(pause_before_pr_merge=True, create_prs=True)
+        ) is None
+
+    def test_warns_when_prs_disabled(self) -> None:
+        warning = merge_gate_unreachable_warning(
+            FactoryConfig(pause_before_pr_merge=True, create_prs=False)
+        )
+        assert warning is not None
+        assert "pause_before_pr_merge" in warning
+        assert "create_prs" in warning
+        assert "merge gate can never run" in warning
+
+    def test_warns_in_single_pr_mode(self) -> None:
+        """Review P3: single_pr mode creates one aggregate PR via
+        create_single_pr with no checkpoint, so the gate is equally
+        unreachable even though create_prs is on."""
+        warning = merge_gate_unreachable_warning(
+            FactoryConfig(
+                pause_before_pr_merge=True, create_prs=True, single_pr=True,
+            )
+        )
+        assert warning is not None
+        assert "single_pr" in warning
+        assert "merge gate never runs" in warning
 
 
 class TestRunFactoryDAGValidation:
