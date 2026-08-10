@@ -121,6 +121,9 @@ def isolate_kstrl_state(
     xdg = tmp_path.parent / f"{tmp_path.name}.xdg-state"
     xdg.mkdir(exist_ok=True)
     monkeypatch.setenv("XDG_STATE_HOME", str(xdg))
+    from kstrl.statedir import clear_xdg_state_home_cache
+
+    clear_xdg_state_home_cache()
     return tmp_path
 
 

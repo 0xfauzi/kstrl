@@ -26,6 +26,15 @@ from kstrl.statedir import (
 from kstrl.workqueue import Queue
 
 
+@pytest.fixture(autouse=True)
+def _clear_xdg_cache() -> None:
+    from kstrl.statedir import clear_xdg_state_home_cache
+
+    clear_xdg_state_home_cache()
+    yield
+    clear_xdg_state_home_cache()
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
@@ -50,6 +59,30 @@ class TestNormalizeRemoteUrl:
         assert (
             normalize_remote_url("ssh://git@github.com/Org/Repo.git")
             == "github.com/org/repo"
+        )
+
+    def test_git_suffix_casefold(self) -> None:
+        assert (
+            normalize_remote_url("https://github.com/Org/Repo.GIT")
+            == "github.com/org/repo"
+        )
+
+    def test_strips_userinfo(self) -> None:
+        assert (
+            normalize_remote_url("https://user:token@github.com/Org/Repo.git")
+            == "github.com/org/repo"
+        )
+
+    def test_strips_default_https_port(self) -> None:
+        assert (
+            normalize_remote_url("https://github.com:443/Org/Repo.git")
+            == "github.com/org/repo"
+        )
+
+    def test_keeps_nondefault_port(self) -> None:
+        assert (
+            normalize_remote_url("https://git.example.com:8443/Org/Repo.git")
+            == "git.example.com:8443/org/repo"
         )
 
 
@@ -78,7 +111,7 @@ class TestRepoId:
 
 class TestControlDir:
     def test_honors_xdg_state_home(self, repo: Path) -> None:
-        xdg = Path(os.environ["XDG_STATE_HOME"])
+        xdg = Path(os.environ["XDG_STATE_HOME"]).resolve()
         with patch("kstrl.statedir._origin_url", return_value=None):
             target = control_dir(repo)
         assert target.is_relative_to(xdg)
@@ -159,8 +192,8 @@ class TestPauseFailClosed:
         with patch("kstrl.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
             monkeypatch.setattr(
-                "kstrl.workqueue.control_dir_accessible",
-                lambda _root: False,
+                "kstrl.workqueue.control_untrusted_reason",
+                lambda _root: "control state directory inaccessible",
             )
             queue = Queue(repo)
             state = queue.pause_state()
@@ -256,3 +289,174 @@ class TestLegacyHaltPaths:
         }
         for path in expected:
             assert path in ENFORCEMENT_MACHINERY_PATHS
+
+
+class TestReviewFailClosed:
+    """Regressions for the adversarial review on PR #213."""
+
+    def test_failed_migrate_keeps_pause_and_spend_closed(
+        self, repo: Path,
+    ) -> None:
+        from kstrl.serve import ServeStateError, SpendLedger
+        from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            legacy = legacy_control_paths(repo)
+            legacy[CONTROL_PAUSE].parent.mkdir(parents=True, exist_ok=True)
+            legacy[CONTROL_PAUSE].write_text(
+                json.dumps({"paused": True, "reason": "budget", "since": ""}),
+                encoding="utf-8",
+            )
+            legacy[CONTROL_SPEND].write_text(
+                json.dumps({
+                    "spend": {
+                        "date": "2099-01-01",
+                        "spent_usd": 12.5,
+                        "runs": 1,
+                        "covered_calls": 1,
+                        "total_calls": 1,
+                        "unmetered_phases": [],
+                    },
+                    "consecutive_poison": 0,
+                    "cost_coverage_seen": True,
+                }),
+                encoding="utf-8",
+            )
+
+            with patch(
+                "kstrl.statedir._move_control_file",
+                side_effect=OSError(18, "Cross-device link"),
+            ):
+                ensure_control_state(repo)
+                assert legacy[CONTROL_PAUSE].exists()
+                assert legacy[CONTROL_SPEND].exists()
+                queue = Queue(repo)
+                assert queue.pause_state().paused is True
+                assert "legacy" in queue.pause_state().reason
+                with pytest.raises(ServeStateError, match="legacy"):
+                    SpendLedger(repo).read_state("2099-01-01")
+
+    def test_relative_xdg_survives_chdir(
+        self, repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from kstrl.statedir import clear_xdg_state_home_cache
+
+        rel = Path("rel-xdg-state")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("XDG_STATE_HOME", str(rel))
+        clear_xdg_state_home_cache()
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            queue = Queue(repo)
+            queue.pause(reason="budget")
+            assert queue.is_paused()
+            work = tmp_path / "workdir"
+            work.mkdir()
+            monkeypatch.chdir(work)
+            assert queue.is_paused()
+
+    def test_dual_state_fail_closes_pause_and_spend(self, repo: Path) -> None:
+        from kstrl.serve import ServeStateError, SpendLedger
+        from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND, control_file
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            ensure_control_state(repo)
+            control_file(repo, CONTROL_PAUSE).write_text(
+                json.dumps({"paused": False, "reason": "", "since": ""}),
+                encoding="utf-8",
+            )
+            control_file(repo, CONTROL_SPEND).write_text(
+                json.dumps({
+                    "spend": {
+                        "date": "2099-01-01",
+                        "spent_usd": 1.0,
+                        "runs": 1,
+                        "covered_calls": 1,
+                        "total_calls": 1,
+                        "unmetered_phases": [],
+                    },
+                    "consecutive_poison": 0,
+                    "cost_coverage_seen": True,
+                }),
+                encoding="utf-8",
+            )
+            legacy = legacy_control_paths(repo)
+            legacy[CONTROL_PAUSE].parent.mkdir(parents=True, exist_ok=True)
+            legacy[CONTROL_PAUSE].write_text(
+                json.dumps({"paused": True, "reason": "legacy", "since": ""}),
+                encoding="utf-8",
+            )
+            legacy[CONTROL_SPEND].write_text(
+                json.dumps({
+                    "spend": {
+                        "date": "2099-01-01",
+                        "spent_usd": 99.0,
+                        "runs": 1,
+                        "covered_calls": 1,
+                        "total_calls": 1,
+                        "unmetered_phases": [],
+                    },
+                    "consecutive_poison": 0,
+                    "cost_coverage_seen": True,
+                }),
+                encoding="utf-8",
+            )
+            with pytest.warns(UserWarning, match="dual-state"):
+                migrate_control_state(repo)
+            assert Queue(repo).pause_state().paused is True
+            with pytest.raises(ServeStateError, match="legacy"):
+                SpendLedger(repo).read_state("2099-01-01")
+
+    def test_symlink_control_file_not_external(self, repo: Path) -> None:
+        from kstrl.statedir import CONTROL_AUTONOMY, control_file
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            ensure_control_state(repo)
+            target = repo / "evil-autonomy.json"
+            target.write_text("{}\n", encoding="utf-8")
+            path = control_file(repo, CONTROL_AUTONOMY)
+            path.symlink_to(target)
+            assert control_is_external(repo) is False
+            assert Queue(repo).pause_state().paused is True
+
+    def test_control_lock_raises_when_mkdir_fails(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from kstrl.statedir import ControlUnavailableError, control_lock
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            ensure_control_state(repo)
+
+            def boom(self: Path, *args: object, **kwargs: object) -> None:
+                raise OSError("permission denied")
+
+            monkeypatch.setattr(Path, "mkdir", boom)
+            with pytest.raises(ControlUnavailableError):
+                with control_lock(repo):
+                    pass
+
+    def test_exdev_migrate_succeeds_via_copy(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from kstrl.statedir import CONTROL_PAUSE, control_file
+
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            legacy = legacy_control_paths(repo)
+            legacy[CONTROL_PAUSE].parent.mkdir(parents=True, exist_ok=True)
+            legacy[CONTROL_PAUSE].write_text(
+                json.dumps({"paused": True, "reason": "x", "since": ""}),
+                encoding="utf-8",
+            )
+
+            real_replace = os.replace
+
+            def replace_exdev(src: str | os.PathLike[str], dst: str | os.PathLike[str]) -> None:
+                raise OSError(18, "Cross-device link")
+
+            monkeypatch.setattr(os, "replace", replace_exdev)
+            with pytest.warns(DeprecationWarning, match="relocated"):
+                moved = migrate_control_state(repo)
+            assert CONTROL_PAUSE in moved
+            assert not legacy[CONTROL_PAUSE].exists()
+            assert control_file(repo, CONTROL_PAUSE).exists()
+            # restore for other tests in-process (monkeypatch undoes)
+            _ = real_replace

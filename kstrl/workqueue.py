@@ -77,9 +77,9 @@ from typing import IO, Any
 
 from kstrl.statedir import (
     CONTROL_PAUSE,
-    control_dir_accessible,
     control_file,
     control_lock,
+    control_untrusted_reason,
     ensure_control_state,
     state_dir,
 )
@@ -1242,11 +1242,9 @@ class Queue:
 
     def pause_state(self) -> PauseState:
         ensure_control_state(self.root_dir)
-        if not control_dir_accessible(self.root_dir):
-            return PauseState(
-                paused=True,
-                reason="control state directory inaccessible",
-            )
+        untrusted = control_untrusted_reason(self.root_dir)
+        if untrusted is not None:
+            return PauseState(paused=True, reason=untrusted)
         try:
             raw = self.pause_path.read_text(encoding="utf-8")
         except FileNotFoundError:

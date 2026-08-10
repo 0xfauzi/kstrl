@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import warnings
 from collections.abc import Iterator
@@ -30,6 +31,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
+from urllib.parse import urlsplit
 
 STATE_DIR_NAME = ".kstrl"
 CONTROL_APP_NAME = "kstrl"
@@ -66,13 +68,14 @@ def _utc_now_iso() -> str:
 def normalize_remote_url(url: str) -> str:
     """Canonicalize a git remote URL for stable hashing.
 
-    Strips trailing ``.git``, lowercases, and maps ``git@host:path`` /
-    ``ssh://git@host/path`` forms to ``host/path``.
+    Casefolds first, strips userinfo and default ports, maps
+    ``git@host:path`` / ``ssh://`` forms to ``host/path``, and strips a
+    trailing ``.git`` (any case).
     """
     raw = url.strip()
     if not raw:
         return ""
-    value = raw
+    value = raw.casefold()
     if value.startswith("git@"):
         # git@github.com:org/repo.git -> github.com/org/repo
         rest = value[len("git@"):]
@@ -80,15 +83,16 @@ def normalize_remote_url(url: str) -> str:
             host, path = rest.split(":", 1)
             value = f"{host}/{path}"
     elif "://" in value:
-        # https://github.com/org/repo.git or ssh://git@github.com/org/repo
-        _, _, remainder = value.partition("://")
-        if remainder.startswith("git@"):
-            remainder = remainder[len("git@"):]
-        value = remainder
+        parts = urlsplit(value)
+        host = parts.hostname or ""
+        if parts.port and parts.port not in (80, 443, 22):
+            host = f"{host}:{parts.port}"
+        path = parts.path.lstrip("/")
+        value = f"{host}/{path}" if path else host
     value = value.rstrip("/")
     if value.endswith(".git"):
         value = value[: -len(".git")]
-    return value.lower()
+    return value
 
 
 def _origin_url(root_dir: Path) -> str | None:
@@ -137,12 +141,36 @@ def repo_id(root_dir: Path) -> str:
     return f"{_slug_from_identity(identity)}-{digest}"
 
 
+_resolved_xdg_home: Path | None = None
+_resolved_xdg_raw: str | None = None
+
+
 def xdg_state_home() -> Path:
-    """XDG state home, overridable via ``XDG_STATE_HOME``."""
+    """XDG state home, overridable via ``XDG_STATE_HOME``.
+
+    Overrides are expanded and resolved so a relative value cannot drift
+    with ``chdir`` (pause/spend paths must stay absolute). The first
+    resolution of a given override string is cached for the process so
+    ``XDG_STATE_HOME=rel`` set once keeps pointing at the same directory
+    after later ``chdir`` calls.
+    """
+    global _resolved_xdg_home, _resolved_xdg_raw
     override = os.environ.get("XDG_STATE_HOME", "").strip()
-    if override:
-        return Path(override).expanduser()
-    return Path.home() / ".local" / "state"
+    if not override:
+        return (Path.home() / ".local" / "state").resolve()
+    if _resolved_xdg_home is not None and _resolved_xdg_raw == override:
+        return _resolved_xdg_home
+    resolved = Path(override).expanduser().resolve()
+    _resolved_xdg_home = resolved
+    _resolved_xdg_raw = override
+    return resolved
+
+
+def clear_xdg_state_home_cache() -> None:
+    """Test helper: drop the cached ``XDG_STATE_HOME`` resolution."""
+    global _resolved_xdg_home, _resolved_xdg_raw
+    _resolved_xdg_home = None
+    _resolved_xdg_raw = None
 
 
 def control_dir(root_dir: Path) -> Path:
@@ -177,6 +205,43 @@ def _is_under(path: Path, root: Path) -> bool:
         return False
 
 
+def legacy_control_remaining(root_dir: Path) -> tuple[str, ...]:
+    """Filenames still present at legacy in-tree locations.
+
+    Any leftover means migration is incomplete or dual-state: live XDG
+    readers must fail closed rather than treat missing XDG as first-run.
+    """
+    remaining: list[str] = []
+    for name, path in legacy_control_paths(root_dir).items():
+        try:
+            if path.exists() or path.is_symlink():
+                remaining.append(name)
+        except OSError:
+            remaining.append(name)
+    return tuple(remaining)
+
+
+def _control_files_compromised(root_dir: Path) -> str | None:
+    """Why live control files are untrustworthy, or None if plain files."""
+    try:
+        cdir = control_dir(root_dir).resolve()
+    except OSError as exc:
+        return f"control directory unresolvable: {exc}"
+    for name in CONTROL_FILENAMES:
+        path = cdir / name
+        try:
+            if path.is_symlink():
+                return f"control file {name} is a symlink"
+            if not path.exists():
+                continue
+            resolved = path.resolve()
+            if not _is_under(resolved, cdir):
+                return f"control file {name} resolves outside the control directory"
+        except OSError as exc:
+            return f"control file {name} unreadable: {exc}"
+    return None
+
+
 def control_dir_accessible(root_dir: Path) -> bool:
     """Whether the control directory can be created and listed.
 
@@ -193,28 +258,36 @@ def control_dir_accessible(root_dir: Path) -> bool:
         return False
 
 
+def control_untrusted_reason(root_dir: Path) -> str | None:
+    """Why the control plane must fail closed, or None if usable."""
+    if not control_dir_accessible(root_dir):
+        return "control state directory inaccessible"
+    try:
+        if _is_under(control_dir(root_dir), root_dir):
+            return "XDG_STATE_HOME resolves under the repository tree"
+    except OSError as exc:
+        return f"control directory unresolvable: {exc}"
+    remaining = legacy_control_remaining(root_dir)
+    if remaining:
+        return (
+            "legacy in-tree control files remain after migration "
+            f"({', '.join(remaining)}); refuse to treat empty XDG as first-run"
+        )
+    compromised = _control_files_compromised(root_dir)
+    if compromised is not None:
+        return compromised
+    return None
+
+
 def control_is_external(root_dir: Path) -> bool:
     """True when live control state is outside the agent-reachable tree.
 
     False when the control dir resolves under ``root_dir`` (mis-set
-    ``XDG_STATE_HOME``), when the control dir is inaccessible, or when
-    any legacy in-tree control file still exists (migration incomplete -
-    an agent can still edit the leftover).
+    ``XDG_STATE_HOME``), when the control dir is inaccessible, when any
+    legacy in-tree control file still exists, or when a control file is a
+    symlink / resolves outside the control dir.
     """
-    if not control_dir_accessible(root_dir):
-        return False
-    try:
-        if _is_under(control_dir(root_dir), root_dir):
-            return False
-    except OSError:
-        return False
-    for legacy in legacy_control_paths(root_dir).values():
-        try:
-            if legacy.exists():
-                return False
-        except OSError:
-            return False
-    return True
+    return control_untrusted_reason(root_dir) is None
 
 
 def _write_relocated_marker(root_dir: Path, *, moved: list[str]) -> None:
@@ -236,11 +309,27 @@ def _write_relocated_marker(root_dir: Path, *, moved: list[str]) -> None:
         pass
 
 
+def _move_control_file(src: Path, dst: Path) -> None:
+    """Move ``src`` to ``dst``, including across devices (EXDEV)."""
+    try:
+        os.replace(src, dst)
+        return
+    except OSError:
+        pass
+    # Cross-device or other replace failure: copy then unlink. If unlink
+    # fails, legacy remains and consumers fail closed via
+    # ``legacy_control_remaining``.
+    shutil.copy2(src, dst)
+    src.unlink()
+
+
 def migrate_control_state(root_dir: Path) -> list[str]:
     """Move legacy in-tree control files into the XDG control dir once.
 
-    Returns the list of filenames moved. Idempotent: a second call is a
-    no-op when targets already exist or legacy files are gone.
+    Returns the list of filenames moved. When both XDG and legacy copies
+    exist (dual-state), the legacy file is left in place so
+    ``legacy_control_remaining`` keeps pause/spend fail-closed until an
+    operator reconciles. Idempotent when only XDG exists.
     """
     if not control_dir_accessible(root_dir):
         return []
@@ -251,13 +340,25 @@ def migrate_control_state(root_dir: Path) -> list[str]:
         src = legacy[name]
         dst = target_root / name
         try:
-            if dst.exists() or not src.exists():
-                continue
+            src_present = src.exists() or src.is_symlink()
+            dst_present = dst.exists() or dst.is_symlink()
         except OSError:
+            continue
+        if not src_present:
+            continue
+        if dst_present:
+            # Dual-state: do not silently prefer XDG. Leave legacy so
+            # fail-closed readers refuse until the leftover is removed.
+            warnings.warn(
+                f"kstrl: dual-state control file {name}: both {src} and "
+                f"{dst} exist; leaving legacy in place so pause/spend "
+                "fail closed until reconciled (R8.9)",
+                stacklevel=2,
+            )
             continue
         try:
             dst.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(src, dst)
+            _move_control_file(src, dst)
         except OSError as exc:
             warnings.warn(
                 f"kstrl: failed to migrate control file {src} -> {dst}: {exc}",
@@ -299,21 +400,30 @@ def control_lock(root_dir: Path, *, blocking: bool = True) -> Iterator[None]:
     two checkouts sharing an origin cannot corrupt the shared ledger.
     POSIX ``fcntl`` only; without it we degrade to no exclusion (same
     pattern as ``queue_lock`` / factory lock).
+
+    Fails closed if the control directory cannot be created: yielding
+    without a lock would silently disable exclusion while writers proceed.
     """
     ensure_control_state(root_dir)
     lock_path = control_dir(root_dir) / CONTROL_LOCK_FILENAME
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        yield
-        return
+    except OSError as exc:
+        raise ControlUnavailableError(
+            f"control state directory unavailable ({lock_path.parent}): {exc}"
+        ) from exc
     try:
         import fcntl
     except ImportError:
         yield
         return
 
-    handle: IO[str] = open(lock_path, "a+")
+    try:
+        handle: IO[str] = open(lock_path, "a+")
+    except OSError as exc:
+        raise ControlUnavailableError(
+            f"cannot open control lock {lock_path}: {exc}"
+        ) from exc
     try:
         flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
         try:
@@ -332,3 +442,7 @@ def control_lock(root_dir: Path, *, blocking: bool = True) -> Iterator[None]:
 
 class ControlLockedError(RuntimeError):
     """Another process holds ``control.lock``."""
+
+
+class ControlUnavailableError(RuntimeError):
+    """Control state directory cannot be created or locked."""
