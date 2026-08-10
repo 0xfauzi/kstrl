@@ -428,6 +428,65 @@ def cli(ctx: click.Context) -> None:
     ctx.exit(2)
 
 
+# Issue #207: `ks run` forces these FactoryConfig fields because it is by
+# definition a local, single-component, no-PR invocation. When the resolved
+# config (kstrl.toml + env) set one of them to a non-default value, the
+# operator must be told the knob does not apply - a silent override of a
+# configured knob is exactly the fail-open-and-quiet behaviour R8.3
+# corrected on the factory path. Field name -> (forced value, why the
+# configured value does not apply).
+_RUN_FORCED_STRUCTURAL_FIELDS: tuple[tuple[str, object, str], ...] = (
+    ("max_parallel", 1, "ks run executes a single component"),
+    ("use_worktrees", False, "ks run works directly in the repo checkout"),
+    ("single_pr", False, "ks run creates no PRs"),
+    ("create_prs", False, "ks run creates no PRs"),
+)
+
+
+def _toml_literal(value: object) -> str:
+    """Render a Python value the way the operator wrote it in kstrl.toml."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
+    """Notices for structural config that `ks run` is about to force.
+
+    Compares the resolved config against the dataclass defaults so a notice
+    fires only when the operator (kstrl.toml or env) actually set a knob
+    that ``ks run`` forces to a different value - an unset knob stays
+    silent, so the notices never become background noise.
+
+    ``pause_before_pr_merge`` is not forced itself, but the merge gate is
+    reachable only when ``create_prs`` is on (pipeline gates the checkpoint
+    on that flag), so forcing ``create_prs = False`` silently disables it.
+    A governance control must not fail open quietly, hence its dedicated
+    note - phrased as "not applicable" rather than "overridden", because
+    there genuinely is no PR to gate.
+    """
+    defaults = FactoryConfig()
+    notices: list[str] = []
+    for field_name, forced_value, reason in _RUN_FORCED_STRUCTURAL_FIELDS:
+        configured = getattr(loaded, field_name)
+        if configured == forced_value:
+            continue
+        if configured == getattr(defaults, field_name):
+            continue
+        notices.append(
+            f"[factory] {field_name} = {_toml_literal(configured)} does not "
+            f"apply to `ks run` ({reason}); using "
+            f"{_toml_literal(forced_value)}"
+        )
+    if loaded.pause_before_pr_merge:
+        notices.append(
+            "[factory] pause_before_pr_merge = true has no effect under "
+            "`ks run`: no PR is created, so the merge gate is not "
+            "applicable. Use `ks factory` to honour the merge gate."
+        )
+    return notices
+
+
 @cli.command()
 @click.argument("max_iterations", type=int, default=10)
 @click.option(
@@ -626,6 +685,11 @@ def run(
     # ran anyway. Feedforward is independent of --no-verify (it builds
     # context, not checks).
     factory_cfg = FactoryConfig.load(root_dir)
+    # Issue #207: say which configured knobs the forcing below overrides,
+    # BEFORE mutating the config, so the operator learns at startup that
+    # (in particular) the pause_before_pr_merge gate will not run.
+    for notice in _run_structural_override_notices(factory_cfg):
+        ui_impl.warn(notice)
     factory_cfg.max_parallel = 1
     factory_cfg.use_worktrees = False
     factory_cfg.single_pr = False

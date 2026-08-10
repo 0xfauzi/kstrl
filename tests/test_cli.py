@@ -6,7 +6,8 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from kstrl.cli import cli
+from kstrl.cli import _run_structural_override_notices, cli
+from kstrl.factory import FactoryConfig
 
 
 class TestCliHelp:
@@ -173,6 +174,92 @@ class TestCliValidation:
         )
         assert result.exit_code == 0
         assert (feature_dir / "understand.md").exists()
+
+
+class TestRunStructuralOverrideNotices:
+    """Issue #207: `ks run` must say when it overrides configured knobs.
+
+    `ks run` forces create_prs=False (among other structural fields), which
+    makes the pause_before_pr_merge merge gate unreachable. The fix emits a
+    startup notice when the resolved config set such a knob to a
+    non-default value - and stays silent otherwise, so the notice does not
+    become background noise.
+    """
+
+    def test_no_notices_for_default_config(self) -> None:
+        assert _run_structural_override_notices(FactoryConfig()) == []
+
+    def test_pause_before_pr_merge_gets_honesty_note(self) -> None:
+        notices = _run_structural_override_notices(
+            FactoryConfig(pause_before_pr_merge=True)
+        )
+        assert len(notices) == 1
+        assert "pause_before_pr_merge" in notices[0]
+        assert "no PR is created" in notices[0]
+        assert "ks factory" in notices[0]
+
+    def test_non_default_structural_field_is_named(self) -> None:
+        notices = _run_structural_override_notices(
+            FactoryConfig(max_parallel=8, single_pr=True)
+        )
+        assert any("max_parallel = 8" in n for n in notices)
+        assert any("single_pr = true" in n for n in notices)
+        assert len(notices) == 2
+
+    def test_default_valued_fields_stay_silent(self) -> None:
+        """create_prs defaults to True and is forced to False on every
+        `ks run`; warning about the default would fire unconditionally."""
+        assert _run_structural_override_notices(
+            FactoryConfig(create_prs=True, use_worktrees=True)
+        ) == []
+
+    def _scaffold_project(self, tmp_path: Path, toml_body: str = "") -> Path:
+        project = tmp_path / "project"
+        kstrl_dir = project / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        (kstrl_dir / "prompt.md").write_text("test prompt")
+        (kstrl_dir / "prd.json").write_text(
+            '{"branchName": "test", "userStories": []}'
+        )
+        if toml_body:
+            (project / "kstrl.toml").write_text(toml_body)
+        return project
+
+    def _invoke_run(self, project: Path) -> str:
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "run",
+                "0",
+                "--root", str(project),
+                "--agent-cmd", "printf '<promise>COMPLETE</promise>\\n'",
+                "--sleep", "0",
+                "--no-verify",
+                "--ui", "plain",
+                "--no-color",
+            ],
+        )
+        return result.output or ""
+
+    def test_run_emits_notice_when_toml_sets_merge_gate(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
+        project = self._scaffold_project(
+            tmp_path, "[factory]\npause_before_pr_merge = true\n"
+        )
+        output = self._invoke_run(project)
+        assert "pause_before_pr_merge" in output
+        assert "merge gate" in output
+
+    def test_run_stays_silent_when_merge_gate_unset(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
+        project = self._scaffold_project(tmp_path)
+        output = self._invoke_run(project)
+        assert "pause_before_pr_merge" not in output
 
 
 class TestDecomposeBlockerOutput:

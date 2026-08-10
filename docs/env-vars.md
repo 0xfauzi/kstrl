@@ -65,6 +65,8 @@ All values are seconds; 0 or less disables that limit.
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 
+Which commands honour the merge gate (#207): `pause_before_pr_merge` applies only to commands that create PRs - `ks factory`, and `ks serve` (which passes the gate decision through to its `ks factory` invocations). `ks run` is a local, single-component, no-PR invocation: it forces `create_prs = false`, so the merge gate is not applicable there. When the resolved config sets `pause_before_pr_merge = true` anyway, `ks run` prints a startup notice saying the gate does not apply (it does not silently ignore it).
+
 ### The two run-level ceilings: `max_total_tokens` and `max_cost_usd` (R8)
 
 Both are configurable, both may be set at once, and whichever is reached first
