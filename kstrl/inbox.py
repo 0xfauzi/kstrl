@@ -345,14 +345,24 @@ class Inbox:
         return self.root_dir / INBOX_FILENAME
 
     # -- reading -----------------------------------------------------------
-    def _read_lines(self) -> list[dict[str, Any]]:
+    def _scan(self) -> tuple[list[dict[str, Any]], int]:
+        """Parse the log: (readable records, skipped-line count).
+
+        Tolerant by design for the DISPLAY path: a torn tail must not
+        make the whole backlog unreadable. The skip count exists because
+        that tolerance must not leak into safety gates (#190) - see
+        ``unparseable_line_count``. An existing-but-unreadable file
+        counts as one skip for the same reason: the gate has no positive
+        evidence the backlog is clear.
+        """
         if not self.path.exists():
-            return []
+            return [], 0
         records: list[dict[str, Any]] = []
+        skipped = 0
         try:
             text = self.path.read_text(encoding="utf-8")
         except OSError:
-            return []
+            return [], 1
         for line in text.splitlines():
             line = line.strip()
             if not line:
@@ -360,10 +370,30 @@ class Inbox:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
-                continue          # tolerate a torn tail; skip, never raise
+                skipped += 1      # tolerate a torn tail; skip, never raise
+                continue
             if isinstance(record, dict):
                 records.append(record)
-        return records
+            else:
+                skipped += 1
+        return records, skipped
+
+    def _read_lines(self) -> list[dict[str, Any]]:
+        return self._scan()[0]
+
+    def unparseable_line_count(self) -> int:
+        """Nonempty log lines the display fold would skip (#190).
+
+        A skipped EMISSION line undercounts open items, so a capacity
+        gate sitting on the tolerant fold fails open. Gate consumers add
+        this count to the open total, treating every line that MIGHT be
+        an open item as one (fail closed). Counts torn JSON, non-dict
+        lines, and dicts ``InboxItem.from_dict`` cannot rebuild.
+        """
+        records, skipped = self._scan()
+        return skipped + sum(
+            1 for record in records if InboxItem.from_dict(record) is None
+        )
 
     def _folded(self) -> list[InboxItem]:
         """Latest state per id, in the order the ids first appeared.

@@ -1530,6 +1530,13 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     R8.6 consults before admitting more queue work"; this is that
     consultation. Producing more decisions for a human who is already
     behind is how an inbox becomes ignored.
+
+    Unparseable inbox lines count as OPEN here (#190). The fold skips
+    them by design so one torn write cannot hide the backlog from `ks
+    inbox`, but a skipped emission line undercounts open items and a cap
+    sitting on that tolerant count admits work past N - a safety gate
+    failing open. Only this gate pays the stricter price; the display
+    path keeps the tolerant fold.
     """
     from kstrl.inbox import Inbox, InboxConfig
 
@@ -1537,13 +1544,20 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     if not config.enabled or config.open_item_cap <= 0:
         return Admission(allowed=True)
     box = Inbox(root_dir, config)
-    if not box.over_cap():
+    garbled = box.unparseable_line_count()
+    if len(box.open_items()) + garbled < config.open_item_cap:
         return Admission(allowed=True)
+    detail = (
+        f" ({garbled} unparseable inbox line(s) counted as open - the cap "
+        "fails closed, #190; inspect .kstrl/inbox.jsonl to clear them)"
+        if garbled
+        else ""
+    )
     return Admission(
         allowed=False,
         reason=(
             f"inbox has reached its open-item cap ({config.open_item_cap}); "
-            "triage before queueing more work"
+            f"triage before queueing more work{detail}"
         ),
     )
 

@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kstrl.findings import Finding
+from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
@@ -38,6 +39,7 @@ from kstrl.serve import (
     caffeinate_prefix,
     check_budget,
     check_cost_coverage,
+    check_inbox_cap,
     check_poison_breaker,
     classify_run,
     consecutive_poison_count,
@@ -828,6 +830,64 @@ class TestPoisonBreaker:
         ledger.path.write_text("{corrupt")
         with pytest.raises(ServeStateError):
             check_poison_breaker(ledger, ServeConfig())
+
+
+# --------------------------------------------------------------------------
+# The inbox open-item cap
+# --------------------------------------------------------------------------
+
+
+class TestInboxCapGate:
+    """Issue #190: the open-item cap must fail CLOSED on garbled lines.
+
+    The inbox fold skips unparseable lines by design (a torn tail must
+    not make the backlog invisible), but a skipped emission line
+    undercounts open items, so a cap sitting on the tolerant fold admits
+    work past N. The gate therefore counts every unparseable line as an
+    open item; the tolerant display path is untouched.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _clean_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for var in ("KSTRL_INBOX_ENABLED", "KSTRL_INBOX_OPEN_CAP"):
+            monkeypatch.delenv(var, raising=False)
+
+    def _inbox(self, tmp_path: Path, cap: int) -> Inbox:
+        (tmp_path / "kstrl.toml").write_text(
+            f"[inbox]\nopen_item_cap = {cap}\n"
+        )
+        return Inbox(tmp_path, InboxConfig.load(tmp_path))
+
+    def test_open_items_below_the_cap_admit(self, tmp_path: Path) -> None:
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        assert check_inbox_cap(tmp_path).allowed
+
+    def test_a_garbled_line_counts_toward_the_cap(
+        self, tmp_path: Path,
+    ) -> None:
+        """Same backlog as above plus one torn line: admission refused."""
+        box = self._inbox(tmp_path, cap=2)
+        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
+        with box.path.open("a", encoding="utf-8") as handle:
+            handle.write('{"id": "torn-emission", "kind": "halted_r\n')
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert "unparseable" in admission.reason
+        # the display fold stays tolerant: the torn line is invisible there
+        assert len(box.open_items()) == 1
+
+    def test_garbled_lines_alone_can_fill_the_cap(
+        self, tmp_path: Path,
+    ) -> None:
+        """No readable open items at all - the fold reads an empty inbox -
+        yet the gate must refuse: every torn line MIGHT be an open item."""
+        box = self._inbox(tmp_path, cap=1)
+        box.path.parent.mkdir(parents=True, exist_ok=True)
+        box.path.write_text("{not json\n", encoding="utf-8")
+        admission = check_inbox_cap(tmp_path)
+        assert not admission.allowed
+        assert box.open_items() == []
 
 
 # --------------------------------------------------------------------------
