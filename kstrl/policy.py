@@ -58,12 +58,20 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/guards.py",
     "**/kstrl/fixtures.py",
     "**/kstrl/autonomy.py",
-    # R8.2 ladder state. Editing it IS editing the factory's own
-    # permissions, so it belongs to the enforcement surface: the CLI
-    # promotion path demands an interactive terminal, and this closes the
-    # obvious way around that (write the level straight to disk).
+    "**/kstrl/statedir.py",
+    # R8.2 / R8.9 control-plane state. Live copies live under XDG
+    # (outside the tree); these legacy in-tree paths stay in the halt
+    # set so a diff cannot recreate agent-editable control files.
     "**/.kstrl/autonomy.json",
     ".kstrl/autonomy.json",
+    "**/.kstrl/inbox.jsonl",
+    ".kstrl/inbox.jsonl",
+    "**/.kstrl/queue/spend.json",
+    ".kstrl/queue/spend.json",
+    "**/.kstrl/queue/pause.json",
+    ".kstrl/queue/pause.json",
+    "**/.kstrl/queue/github_processed.json",
+    ".kstrl/queue/github_processed.json",
 )
 
 # Conservative default deny-list written by ``ks init``. Repo-owned: each

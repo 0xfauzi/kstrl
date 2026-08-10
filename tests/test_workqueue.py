@@ -797,6 +797,7 @@ class TestPause:
         """Fail closed: never resume unattended spend on a corrupt file."""
         queue = _queue(tmp_path)
         queue.ensure_dirs()
+        queue.pause_path.parent.mkdir(parents=True, exist_ok=True)
         queue.pause_path.write_text("{not json")
         assert queue.is_paused()
         assert "unreadable" in queue.pause_state().reason
@@ -806,6 +807,7 @@ class TestPause:
     ) -> None:
         queue = _queue(tmp_path)
         queue.ensure_dirs()
+        queue.pause_path.parent.mkdir(parents=True, exist_ok=True)
         queue.pause_path.write_text("[]")
         assert queue.is_paused()
 

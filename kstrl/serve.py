@@ -68,7 +68,14 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
-from kstrl.statedir import state_dir
+from kstrl.statedir import (
+    CONTROL_SPEND,
+    control_file,
+    control_lock,
+    control_untrusted_reason,
+    ensure_control_state,
+    state_dir,
+)
 from kstrl.workqueue import (
     ItemSource,
     ItemState,
@@ -83,7 +90,6 @@ from kstrl.workqueue import (
 )
 
 SERVE_LOCK_FILENAME = "serve.lock"
-SPEND_FILENAME = "spend.json"
 
 #: Substrings the factory prints on each of its two exit-2 refusals.
 #: Matching output is EVIDENCE; a pre-launch lock probe is inference and
@@ -488,7 +494,7 @@ class ServeState:
 
 
 class SpendLedger:
-    """Atomic store for :class:`ServeState` under ``.kstrl/queue/``.
+    """Atomic store for :class:`ServeState` in the XDG control directory.
 
     Rewritten whole on every update rather than appended: the only
     questions asked of it are "how much today", "how many poisons in a
@@ -501,7 +507,7 @@ class SpendLedger:
 
     @property
     def path(self) -> Path:
-        return queue_root(self.root_dir) / SPEND_FILENAME
+        return control_file(self.root_dir, CONTROL_SPEND)
 
     def read_state(self, today: str | None = None) -> ServeState:
         """Load state, rolling the spend over on a new local day.
@@ -510,8 +516,18 @@ class SpendLedger:
         missing file, which is the genuine first-run case. Failing closed
         here is the same correction PR #185 F7 applied to the pause
         marker: a file we cannot parse is not evidence that spending is
-        safe.
+        safe. After a failed/partial migrate (legacy still present, or
+        control dir inaccessible), missing XDG is NOT first-run - raise
+        rather than zero the budget.
         """
+        ensure_control_state(self.root_dir)
+        untrusted = control_untrusted_reason(self.root_dir)
+        if untrusted is not None:
+            raise ServeStateError(
+                f"refusing to read the daemon spend ledger: {untrusted}. "
+                "Fix the control-state location or finish migrating "
+                "legacy `.kstrl/` control files before spending."
+            )
         stamp = today or _local_today()
         try:
             raw = self.path.read_text(encoding="utf-8")
@@ -547,14 +563,21 @@ class SpendLedger:
         """Today's spend. Raises ServeStateError like ``read_state``."""
         return self.read_state(today).spend
 
-    def _write(self, state: ServeState) -> None:
+    def _write_unlocked(self, state: ServeState) -> None:
+        """Atomic rewrite; caller must already hold ``control_lock``."""
         from kstrl.workqueue import atomic_write
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(
-            self.path,
+            path,
             json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
         )
+
+    def _write(self, state: ServeState) -> None:
+        ensure_control_state(self.root_dir)
+        with control_lock(self.root_dir):
+            self._write_unlocked(state)
 
     def charge(
         self,
@@ -572,38 +595,47 @@ class SpendLedger:
         for a launch that never reached an agent (#186 F9: a launch
         failure previously incremented ``runs`` and then tripped the
         coverage gate on the next cycle).
+
+        The full read-modify-write holds ``control_lock`` so two
+        origin-sharing checkouts cannot drop charges.
         """
         stamp = today or _local_today()
-        state = self.read_state(stamp)
-        current = state.spend
-        merged_phases = tuple(sorted(
-            set(current.unmetered_phases) | {p for p in unmetered_phases if p}
-        ))
-        spend = DailySpend(
-            date=stamp,
-            spent_usd=round(current.spent_usd + max(0.0, usd), 6),
-            runs=current.runs + (1 if metered_run else 0),
-            covered_calls=current.covered_calls + max(0, covered_calls),
-            total_calls=current.total_calls + max(0, total_calls),
-            unmetered_phases=merged_phases,
-        )
-        self._write(replace(
-            state,
-            spend=spend,
-            cost_coverage_seen=state.cost_coverage_seen or covered_calls > 0,
-        ))
-        return spend
+        ensure_control_state(self.root_dir)
+        with control_lock(self.root_dir):
+            state = self.read_state(stamp)
+            current = state.spend
+            merged_phases = tuple(sorted(
+                set(current.unmetered_phases) | {p for p in unmetered_phases if p}
+            ))
+            spend = DailySpend(
+                date=stamp,
+                spent_usd=round(current.spent_usd + max(0.0, usd), 6),
+                runs=current.runs + (1 if metered_run else 0),
+                covered_calls=current.covered_calls + max(0, covered_calls),
+                total_calls=current.total_calls + max(0, total_calls),
+                unmetered_phases=merged_phases,
+            )
+            self._write_unlocked(replace(
+                state,
+                spend=spend,
+                cost_coverage_seen=state.cost_coverage_seen or covered_calls > 0,
+            ))
+            return spend
 
     def record_terminal(self, *, poisoned: bool, today: str | None = None) -> int:
         """Update the authoritative poison streak; returns the new value."""
-        state = self.read_state(today)
-        streak = state.consecutive_poison + 1 if poisoned else 0
-        self._write(replace(state, consecutive_poison=streak))
-        return streak
+        ensure_control_state(self.root_dir)
+        with control_lock(self.root_dir):
+            state = self.read_state(today)
+            streak = state.consecutive_poison + 1 if poisoned else 0
+            self._write_unlocked(replace(state, consecutive_poison=streak))
+            return streak
 
     def reset_poison_streak(self, today: str | None = None) -> None:
-        state = self.read_state(today)
-        self._write(replace(state, consecutive_poison=0))
+        ensure_control_state(self.root_dir)
+        with control_lock(self.root_dir):
+            state = self.read_state(today)
+            self._write_unlocked(replace(state, consecutive_poison=0))
 
 
 @dataclass(frozen=True)
@@ -1121,7 +1153,8 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
 
     policy = PolicyConfig.load(root_dir)
     level, clamps = resolve_runtime_level(
-        AutonomyState.load(root_dir), config, policy_enabled=policy.enabled,
+        AutonomyState.load(root_dir), config,
+        policy_enabled=policy.enabled, root_dir=root_dir,
     )
     bundle = flag_bundle_for(level)
     notes = list(clamps)

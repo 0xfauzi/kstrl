@@ -31,7 +31,14 @@ ks queue show <id>
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
 moved between `queued/ leased/ running/ done/ failed/ poison/` by a single
 `os.replace`. The spec is **copied** at enqueue, so editing or deleting the
-original afterwards cannot change what runs.
+original afterwards cannot change what runs. Locks (`queue.lock`,
+`serve.lock`) stay beside the queue. The pause marker and spend ledger do
+**not**: under R8.9 they live in the XDG control directory
+(`${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`) so a worktree agent
+cannot edit them. First use migrates any legacy in-tree copies and writes
+`.kstrl/control_relocated` pointing at the new location. Clones that share
+the same `origin` remote share one control dir — do not run two `ks serve`
+daemons against that ledger at once.
 
 `ks queue pause` stops new work being claimed; it does not touch a run
 already in flight. `ks queue resume` re-opens intake.

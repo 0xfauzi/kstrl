@@ -25,8 +25,10 @@ is a DIRECTORY holding its spec file plus ``meta.json``::
       poison/   finished red and NOT eligible to retry
       .staging/ items being assembled; NEVER scanned
       journal.jsonl
-      pause.json    (absent = running)
       queue.lock    (short-lived per-transition mutex)
+
+Pause and spend ledgers live in the XDG control directory (R8.9), not
+under ``.kstrl/queue/``, so an agent in a worktree cannot edit them.
 
 The item is a directory rather than two sibling files so that one
 ``os.replace`` moves the spec and its sidecar together. Two sibling files
@@ -73,12 +75,18 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any
 
-from kstrl.statedir import state_dir
+from kstrl.statedir import (
+    CONTROL_PAUSE,
+    control_file,
+    control_lock,
+    control_untrusted_reason,
+    ensure_control_state,
+    state_dir,
+)
 
 QUEUE_DIR_NAME = "queue"
 META_FILENAME = "meta.json"
 JOURNAL_FILENAME = "journal.jsonl"
-PAUSE_FILENAME = "pause.json"
 LOCK_FILENAME = "queue.lock"
 QUEUE_SCHEMA_VERSION = 1
 
@@ -1230,9 +1238,13 @@ class Queue:
 
     @property
     def pause_path(self) -> Path:
-        return self.path / PAUSE_FILENAME
+        return control_file(self.root_dir, CONTROL_PAUSE)
 
     def pause_state(self) -> PauseState:
+        ensure_control_state(self.root_dir)
+        untrusted = control_untrusted_reason(self.root_dir)
+        if untrusted is not None:
+            return PauseState(paused=True, reason=untrusted)
         try:
             raw = self.pause_path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -1266,11 +1278,14 @@ class Queue:
             paused=True, reason=reason, since=_iso(_utc_now()),
             resume_after=resume_after,
         )
-        self.path.mkdir(parents=True, exist_ok=True)
-        atomic_write(
-            self.pause_path,
-            json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
-        )
+        ensure_control_state(self.root_dir)
+        path = self.pause_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with control_lock(self.root_dir):
+            atomic_write(
+                path,
+                json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            )
         self._journal(JournalEntry(
             ts=state.since, item_id="", from_state="", to_state="paused",
             reason=reason, actor=actor,
@@ -1280,11 +1295,14 @@ class Queue:
 
     def resume(self, *, actor: str = "") -> PauseState:
         state = PauseState()
-        self.path.mkdir(parents=True, exist_ok=True)
-        atomic_write(
-            self.pause_path,
-            json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
-        )
+        ensure_control_state(self.root_dir)
+        path = self.pause_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with control_lock(self.root_dir):
+            atomic_write(
+                path,
+                json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            )
         self._journal(JournalEntry(
             ts=_iso(_utc_now()), item_id="", from_state="paused",
             to_state="running", reason="resumed", actor=actor,

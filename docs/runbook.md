@@ -149,4 +149,9 @@ a run breaks, those files are the record; the TUI is only a view.
 - Per-run captures: `.kstrl/evolution.jsonl`, `.kstrl/experiments.tsv`
 - Run event stream + transcripts: `.kstrl/runs/<run_id>/`
 - Distillation debug dumps: `.kstrl/knowledge/<comp>/<run>/_distill_raw.txt` (on failure)
+- Control plane (R8.9): `${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`
+  (`autonomy.json`, `inbox.jsonl`, `spend.json`, `pause.json`,
+  `github_processed.json`). Marker `.kstrl/control_relocated` records where
+  legacy in-tree files were moved. L3+ autonomy refuses to proceed while
+  control state still resolves under the repo.
 - Phase F sample real-world run log: `docs/phase-f-run-log.md`

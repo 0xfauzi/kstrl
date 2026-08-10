@@ -64,16 +64,19 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.statedir import (
+    CONTROL_GITHUB_PROCESSED,
+    control_file,
+    control_lock,
+    ensure_control_state,
+)
 from kstrl.workqueue import (
     ItemSource,
     MergeDisposition,
     Queue,
     QueueError,
     QueueItem,
-    queue_root,
 )
-
-GITHUB_LEDGER_FILENAME = "github_processed.json"
 
 #: Cap on the spec text built from an issue. Generous for a real spec,
 #: bounded enough that a pathological body cannot become a pathological
@@ -462,9 +465,10 @@ class ProcessedLedger:
 
     @property
     def path(self) -> Path:
-        return queue_root(self.root_dir) / GITHUB_LEDGER_FILENAME
+        return control_file(self.root_dir, CONTROL_GITHUB_PROCESSED)
 
     def load(self) -> ProcessedLedger:
+        ensure_control_state(self.root_dir)
         try:
             raw = self.path.read_text(encoding="utf-8")
         except OSError:
@@ -505,14 +509,17 @@ class ProcessedLedger:
     def _write(self) -> None:
         from kstrl.workqueue import atomic_write
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(
-            self.path,
-            json.dumps(
-                {"version": 1, "processed": self._entries},
-                indent=2, ensure_ascii=False,
-            ) + "\n",
-        )
+        ensure_control_state(self.root_dir)
+        path = self.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with control_lock(self.root_dir):
+            atomic_write(
+                path,
+                json.dumps(
+                    {"version": 1, "processed": self._entries},
+                    indent=2, ensure_ascii=False,
+                ) + "\n",
+            )
 
 
 # ---------------------------------------------------------------------------
