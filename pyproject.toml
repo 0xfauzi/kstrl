@@ -46,7 +46,7 @@ dependencies = [
 # extra fails loudly with the install hint.
 [project.optional-dependencies]
 sdk = [
-    "claude-agent-sdk>=0.2.128,<0.3",
+    "claude-agent-sdk>=0.2.134,<0.3",
 ]
 
 [project.urls]
@@ -66,11 +66,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=6.0.0",
-    "ruff>=0.16.1",
+    "ruff>=0.16.2",
     "mypy>=2.3.0",
     # The sdk extra is part of the dev set so the R7.6 unit tests and
     # mypy always exercise the adapter+runner.
-    "claude-agent-sdk>=0.2.128,<0.3",
+    "claude-agent-sdk>=0.2.134,<0.3",
     "pytest-textual-snapshot>=1.0.0",
 ]
 
