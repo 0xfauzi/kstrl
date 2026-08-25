@@ -6,6 +6,9 @@
 # the system. This script is the one place that advance happens, so a git hook,
 # CI, and a person typing it by hand all do exactly the same thing.
 #
+# It also regenerates the two lesson figures under docs/atlas/ from the same
+# generator, so a figure can never lag the page it cites.
+#
 # Exit codes: 0 = atlas is current (refreshed or already fresh), 1 = it could
 # not be refreshed. Callers that must not fail a merge should ignore the code.
 set -uo pipefail
@@ -29,7 +32,8 @@ quiet=0
 [ "${1:-}" = "--quiet" ] && quiet=1
 say() { [ "$quiet" -eq 1 ] || printf '%s\n' "$*"; }
 
-if uv run python scripts/atlas/extract_atlas.py --check >/dev/null 2>&1; then
+if uv run python scripts/atlas/extract_atlas.py --check >/dev/null 2>&1 \
+   && uv run python scripts/atlas/render_html.py --check >/dev/null 2>&1; then
   say "atlas: already current"
   exit 0
 fi
@@ -39,11 +43,32 @@ if ! uv run python scripts/atlas/extract_atlas.py >/dev/null 2>&1; then
   echo "atlas: extract failed" >&2
   exit 1
 fi
+if ! uv run python scripts/atlas/check_layout.py; then
+  echo "atlas: layout check failed; fix logical_model.py or relations.py" >&2
+  exit 1
+fi
 if ! uv run python scripts/atlas/render_html.py >/dev/null 2>&1; then
   echo "atlas: render failed" >&2
   exit 1
 fi
 
-say "atlas: updated docs/atlas/atlas.json and docs/atlas/index.html"
+# The lesson figures committed beside the page: the plain system, and the
+# reach of the R10 control-loop plan (docs/control-loop-design.md).
+r10="ServeDaemon,GitHubIntake,FlowControl,Steering,PRD,RetryContext,EngineerLoop"
+r10="$r10,OperatorContext,Reviewer,Calibration,Sense,Pipeline,Dampener,AutonomyLadder"
+r10="$r10,SafeMode,HealthTrending"
+uv run python scripts/atlas/lesson_svg.py --mode system --interactive \
+  --out docs/atlas/system.html >/dev/null || {
+  echo "atlas: system figure failed" >&2
+  exit 1
+}
+uv run python scripts/atlas/lesson_svg.py --components "$r10" --interactive \
+  --caption "The system, with the components the R10 control-loop plan reaches as the figure. Drawn by scripts/atlas/schematic.py from docs/atlas/atlas.json." \
+  --out docs/atlas/r10-reach.html >/dev/null || {
+  echo "atlas: r10 figure failed" >&2
+  exit 1
+}
+
+say "atlas: updated docs/atlas/atlas.json, index.html, system.html, r10-reach.html"
 say "atlas: commit docs/atlas/ to record this state of the system"
 exit 0

@@ -1,0 +1,56 @@
+name: Atlas
+
+# The system atlas under docs/atlas is generated from the code and the
+# logical model. It is committed so the page can be served as-is and so the
+# diff between two commits of atlas.json records what changed about the
+# system. This job fails when the committed atlas no longer matches the tree
+# or the renderer; the fix is one command, named in the failure.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  atlas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: atlas.json matches the tree
+        run: |
+          uv run python scripts/atlas/extract_atlas.py --check || {
+            echo "::error title=Atlas is stale::docs/atlas/atlas.json no longer describes the tree. Run scripts/atlas/refresh.sh and commit docs/atlas/."
+            exit 1
+          }
+
+      - name: layout and meaning tables are consistent
+        run: |
+          uv run python scripts/atlas/check_layout.py || {
+            echo "::error title=Atlas layout::scripts/atlas/logical_model.py or relations.py contradicts itself; see the lines above."
+            exit 1
+          }
+
+      - name: index.html matches the renderer
+        run: |
+          uv run python scripts/atlas/render_html.py --check || {
+            echo "::error title=Atlas is stale::docs/atlas/index.html differs from what render_html.py renders. Run scripts/atlas/refresh.sh and commit docs/atlas/."
+            exit 1
+          }

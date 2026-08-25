@@ -509,6 +509,8 @@ The agent updates `passes` and `notes` as it works. kstrl reads these between it
 
 ## Architecture
 
+Explore the system atlas: https://0xfauzi.github.io/kstrl/atlas/ (source: docs/atlas, regenerated from the code by scripts/atlas)
+
 The detailed system tour - full pipeline diagram, iteration lifecycle, factory scheduling, the event-stream substrate, runtime state layout, and the fixtures sandbox - lives in [ARCHITECTURE.md](ARCHITECTURE.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 ## Development

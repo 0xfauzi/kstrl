@@ -354,8 +354,8 @@ COMPONENTS: list[dict[str, Any]] = [
     {
         "id": "AgentAdapter",
         "region": "build",
-        "does": "Shells out to claude-code, codex, the SDK or a custom command "
-        "through a deadline streamer; scrapes usage.",
+        "does": "Runs the coding agent's CLI, its SDK or a custom command as a "
+        "subprocess through a deadline streamer; scrapes usage.",
         "interface": "Agent.run(prompt, cwd, timeout) -> Iterator[str]",
         "implemented_by": _AGENT_MODULES,
         "entry": "Agent",
@@ -730,7 +730,7 @@ COMPONENTS: list[dict[str, Any]] = [
         "id": "CodingAgent",
         "region": None,
         "container": "agent_cli",
-        "does": "claude-code, codex, or a custom command.",
+        "does": "Whichever coding agent the project configures, or a custom command.",
         "interface": "external",
         "implemented_by": [],
         "entry": "",
@@ -978,7 +978,7 @@ GOVERNED_BY: dict[str, list[int]] = {
 
 # Card geometry the layout check shares with the schematic.
 CARD_W = 150
-CARD_H = {"component": 56, "store": 46, "actor": 38}
+CARD_H = {"component": 56, "store": 52, "actor": 44}
 
 
 def _box(c: dict[str, Any]) -> tuple[int, int, int, int]:
