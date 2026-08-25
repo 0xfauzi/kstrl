@@ -21,8 +21,8 @@ measures must not be the thing that acts". Control engineering has had that
 vocabulary for eighty years, has a name for every failure it prevents, and has
 already paid for the lessons in vehicles that crashed.
 
-This document adopts that frame, and adopts HumanLayer's method for running a
-loop rather than re-deriving one. It changes almost no names, adds no phases, and
+This document adopts that frame and a proven method for running a loop rather than
+re-deriving one. It changes almost no names, adds no phases, and
 edits no prompt body. The value is in the gaps the frame makes visible, not in
 the vocabulary.
 
@@ -284,8 +284,8 @@ exactly 1.00. The engineer emits the completion marker on its first iteration
 every time. So on this evidence the inner loop has never actually iterated, the
 `max_iterations = 10` ceiling has never engaged, and fixing an open loop that
 never runs twice would buy nothing today. This gap is real in structure and
-unproven in cost, which is why item 5.10 places it in HumanLayer's "ready to
-iterate faster" bucket rather than the first wave.
+unproven in cost, which is why item 5.10 places it in the "ready to iterate faster"
+bucket rather than the first wave.
 
 ### 3.3 The retry context is an integrator with no anti-windup
 
@@ -348,10 +348,10 @@ queue item per cycle (`serve.py:1875-1880`), and the inbox open-item cap of 50
 
 Nothing stops kstrl opening pull requests faster than a human reviews them.
 
-**HumanLayer's argument, in their words:** "Without bounding, a daily agent
-could generate 5+ unreviewed PRs in a week, creating review fatigue and merge
-conflicts." Their recommended default is one open PR per loop, with manual runs
-bypassing the bound.
+**The argument.** Without a bound, a loop that runs daily can generate several
+unreviewed pull requests in a week, which produces review fatigue and merge
+conflicts. The proven default is one open pull request per loop, with manual
+runs bypassing the bound.
 
 **The aerospace analogue.** This is the difference between a control system and
 an open-loop actuator command: if the loop produces output faster than the plant
@@ -499,12 +499,12 @@ An earlier draft of this document gated seven mechanisms behind "measure this
 number first". That was wrong, and it was wrong in a way worth naming, because
 the mistake is a common one.
 
-HumanLayer's method does not resolve an unknown threshold by measuring before
-building. It ships the mechanism in **advisory mode**, where it measures and
-reports but does not block, and graduates it to blocking once the operator
-trusts the signal. Their regression gate is described exactly this way: it is
-"advisory by default (never red-Xes a teammate's PR), with a documented path to
-graduate to blocking once the team trusts the signal."
+The method this document adopts does not resolve an unknown threshold by
+measuring before building. It ships the mechanism in **advisory mode**, where it
+measures and reports but does not block, and graduates it to blocking once the
+operator trusts the signal. A regression gate under this method is advisory by
+default, never failing a teammate's pull request, with a documented path to
+blocking once the team trusts the signal.
 
 That strictly dominates measure-then-build. It delivers the signal immediately,
 it produces the measurement as a byproduct of running rather than as a
@@ -531,11 +531,11 @@ at a working tree and read the result. Every sensor in kstrl is reachable only
 by starting a factory invocation, which needs a PRD, cuts a branch, creates a
 worktree, spends money on an agent, and takes minutes.
 
-HumanLayer treats this as a hard gate, not a nicety. Their Phase D says: run the
-sensor standalone and read its output, run the controller against that output,
-run the actuator on a selected target, and "only proceed to CI once each piece
-runs locally on its own. This keeps the loop debuggable and makes the workflow a
-thin orchestrator of things the user can already run."
+The method treats this as a hard gate, not a nicety: run the sensor standalone
+and read its output, run the controller against that output, run the actuator
+on a selected target, and only proceed to automation once each piece runs
+locally on its own. This keeps the loop debuggable and makes the workflow a thin
+orchestrator of things the operator can already run.
 
 kstrl inverted that order. It built the orchestrator first, and the components
 are now only reachable through it.
@@ -549,7 +549,7 @@ that makes the others cheap, and it goes first.
 
 ### 5.1 Make every component runnable standalone
 
-**HumanLayer Phase D. Adopted as a hard gate, exactly as they state it.**
+**Local first, adopted as a hard gate.**
 
 Add commands that run each loop component by hand against a working tree, with
 no PRD, no branch, no worktree, and no agent spend:
@@ -569,8 +569,8 @@ no PRD, no branch, no worktree, and no agent spend:
 **Why this is first.** It is the cheapest item, it unblocks the rest, and it is
 the one place where kstrl departs from a proven method for no stated reason.
 
-**Acceptance, in HumanLayer's own words:** the operator can run sensor,
-controller and actuator locally and independently. That is a checklist, not a
+**Acceptance:** the operator can run sensor, controller and actuator locally
+and independently. That is a checklist, not a
 number.
 
 ### 5.2 Set point: two sensors must agree
@@ -625,11 +625,11 @@ resolved list. Assert it in a test. No threshold involved.
 
 ### 5.4 Actuator: golden patterns before automation
 
-**HumanLayer Phase B4, and kstrl has only half of it.**
+**Golden patterns first, and kstrl has only half of it.**
 
-Their rule: "Before automating, establish what a good change looks like: ask the
-user whether existing patterns in the codebase should be followed, and inspect
-the code to find them. Capture these in the actuator skill."
+The rule: before automating, establish what a good change looks like. Ask the
+operator which existing patterns in the codebase should be followed, inspect the
+code to find them, and capture them where the actuator will read them.
 
 kstrl distils facts after the fact (`knowledge.py`) and computes structure ahead
 of time (`feedforward.py`). Neither is a curated statement of what a good change
@@ -643,13 +643,13 @@ joins several sources and will join one more.
 
 ### 5.5 Disturbance: add the dampener
 
-**HumanLayer's dampener, which kstrl does not have in any form.**
+**The dampener, which kstrl does not have in any form.**
 
-Their mechanism, precisely: run a full deterministic scan on the main branch,
+The mechanism, precisely: run a full deterministic scan on the main branch,
 sort the results deterministically, track the count in version control, and on
-every new pull request check whether the branch made it worse. In their words it
-is "a disturbance dampener, preventing teammates from undoing the loop's work
-while it runs."
+every new pull request check whether the branch made it worse. It is a
+disturbance dampener: it stops concurrent work from undoing the loop's progress
+while the loop runs.
 
 kstrl's disturbances are real and named: concurrent human commits, dependency
 bumps, a base branch that moves under a component. Nothing stops the measured
@@ -659,25 +659,24 @@ fixtures only and only inside a factory run.
 
 **Adopt:** `ks sense` writes a baseline to version control. A check on pull
 requests compares the branch's measurement against that baseline and reports
-newly introduced findings. **Advisory first**, exactly as HumanLayer ships it,
-with a documented path to blocking.
+newly introduced findings. **Advisory first**, with a documented path to
+blocking.
 
 This is the second reason 5.1 goes first: the dampener is the same sensor,
 pointed at a diff instead of a tree.
 
 ### 5.6 Flow control: one open pull request
 
-**HumanLayer's recommended default, adopted as the default.**
+**One open pull request, adopted as the default.**
 
 Scheduled and daemon-driven runs stop admitting new work when an open
 kstrl-authored pull request already exists. Manual invocations bypass the bound,
 because a human typing the command is the authorisation.
 
-Their rationale: "Without bounding, a daily agent could generate 5+ unreviewed
-PRs in a week, creating review fatigue and merge conflicts." Addy Osmani states
-the same constraint as a rule: "back pressure is the rule that you can only hand
-a loop as much autonomy as you can cheaply and reliably verify, and not one inch
-more."
+The rationale: without a bound, a daily loop can generate several unreviewed
+pull requests in a week, producing review fatigue and merge conflicts. Stated as
+a rule: a loop may be handed only as much autonomy as its output can be cheaply
+and reliably verified, and not one inch more.
 
 **The default is 1, and it is configurable.** The earlier draft wanted a month
 of review-throughput data before setting it. That was over-cautious for a value
@@ -687,13 +686,12 @@ chafes.
 
 ### 5.7 Memory: a standing feedback file
 
-**HumanLayer's memory file, adopted with their loading rule.**
+**A memory file, adopted with its loading rule.**
 
 A version-controlled markdown file loaded deterministically into the actuator's
-context **after the controller**, on every run. Their guidance on what belongs
-in it: "permanent scope exclusions, known false-positive areas, and reviewer
-feedback that should change future selections", and explicitly "not one-off
-instructions or single-run logs."
+context **after the controller**, on every run. What belongs in it: permanent
+scope exclusions, known false-positive areas, and reviewer feedback that should
+change future work. What does not: one-off instructions and single-run logs.
 
 kstrl has three weak versions of this already: the `## Agent Learnings` section
 of `CLAUDE.md`, per-directory `AGENTS.md` files, and `codebase_map.md`. What is
@@ -707,14 +705,14 @@ detail.
 
 ### 5.8 Steering: the `/iterate` channel, polled
 
-**HumanLayer's mechanism, adapted to kstrl's stated non-goal.**
+**A steering channel, adapted to kstrl's stated non-goal.**
 
 A maintainer comments on a pull request; the loop that created it picks the
 comment up, updates the pull request, and writes durable guidance into the
-memory file from 5.7. HumanLayer frames this correctly as the tuning mechanism:
-it is "how you tune the controller and skill over time."
+memory file from 5.7. This is the tuning mechanism: it is how the operator
+tunes the controller over time.
 
-kstrl cannot use their transport. Inbound HTTP is an explicit non-goal
+kstrl cannot use a webhook for this. Inbound HTTP is an explicit non-goal
 (`docs/dark-factory-roadmap.md:1383-1385`), and that decision is sound for a
 single-operator tool with no server.
 
@@ -754,10 +752,11 @@ means unbounded by default, so this is latent rather than active.
 
 ### 5.10 Ready to iterate faster
 
-**HumanLayer Phase H, and this is where the two speculative mechanisms belong.**
+**Ready to iterate faster, and this is where the two speculative mechanisms
+belong.**
 
-Their sequencing is explicit: only "once the loop is tuned and producing
-consistent, high-quality output" do you increase frequency, widen the batch, or
+The sequencing rule is explicit: only once the loop is tuned and producing
+consistent, high-quality output do you increase frequency, widen the batch, or
 run more cycles per invocation. That is the right home for the two items the
 earlier draft could not justify, and it is a better frame than "measure first",
 because it says what has to be true rather than what has to be counted.
@@ -881,10 +880,8 @@ substitution, and it is worth stating what each one becomes.
 | iterations per component | `experiments.tsv`, already written | gates only 5.10 |
 | latency cost of an inner-loop sensor | measured when 5.10 turns it on | gates only 5.10 |
 
-One gate survives, and it survives because HumanLayer put it there too: 5.10 is
-conditional on the loop being tuned and producing consistent output. That is not
-a measurement gate. It is a readiness gate, and their Phase H states it in the
-same terms.
+One gate survives: 5.10 is conditional on the loop being tuned and producing
+consistent output. That is not a measurement gate. It is a readiness gate.
 
 **The honest cost of advisory-first.** An advisory finding that nobody reads is
 worse than no finding, because it manufactures the appearance of a gate. kstrl
@@ -903,10 +900,10 @@ be inventing one, which is the failure this whole section replaces.
 
 ## 8. Sequencing
 
-HumanLayer's own phase order, applied to kstrl. Each ships before the next
+The method's own phase order, applied to kstrl. Each ships before the next
 starts, and every gate ships advisory unless it is mechanical and exact.
 
-| Order | Item | Their phase | Advisory first? | Touches a prompt? |
+| Order | Item | Method phase | Advisory first? | Touches a prompt? |
 |---|---|---|---|---|
 | 1 | 5.1 `ks sense` standalone | D, run locally first | n/a | no |
 | 2 | 5.3 level-triggered controller | B, controller | n/a, exact | no |
@@ -932,7 +929,7 @@ every later item is cheaper once the sensors run by hand, and because it is the
 one place kstrl departs from a proven method with no stated reason. Item 3 moved
 up because removing its supposed H3 cost made it cheap as well as important.
 Items 10 and 11 moved to the back, not because they need data first, but because
-HumanLayer's readiness rule puts them there.
+the readiness rule puts them there.
 
 ### What this does not change
 
@@ -968,11 +965,6 @@ Control theory and aerospace:
 
 Control loops in software:
 
-- HumanLayer `design-control-loop` skill, https://github.com/humanlayer/skills/tree/main/plugins/design-control-loop
-- Kyle Mistele, "Loop Engineering from First Principles", https://www.youtube.com/watch?v=xIt_mTQp6mY
-- Dex Horthy, "Why Software Factories Fail", https://github.com/humanlayer/advanced-context-engineering-for-coding-agents/blob/main/wsff.md
-- 12-Factor Agents, https://github.com/humanlayer/12-factor-agents
-- Context-efficient backpressure, https://www.humanlayer.dev/blog/context-efficient-backpressure
 - Kubernetes controllers, https://kubernetes.io/docs/concepts/architecture/controller/
 - Level-triggering and reconciliation, https://www.chainguard.dev/unchained/the-principle-of-reconciliation
 - HPA tolerance and stabilization window, https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
@@ -981,45 +973,14 @@ Control loops in software:
 - Addressing cascading failures, https://sre.google/sre-book/addressing-cascading-failures/
 - Hellerstein et al., *Feedback Control of Computing Systems*, https://onlinelibrary.wiley.com/doi/book/10.1002/047166880X
 - Western Electric rules and their false-alarm arithmetic, https://handwiki.org/wiki/Western_Electric_rules
-- Geoffrey Huntley, the Ralph technique, https://ghuntley.com/ralph/
-- Addy Osmani, "Software Factories, Light and Dark", https://addyosmani.com/blog/software-factories/
 - Goodhart's law in reinforcement learning, https://arxiv.org/pdf/2310.09144
 - GEPA, https://arxiv.org/abs/2507.19457
 - ACE, https://arxiv.org/abs/2510.04618
 
-### A note on where the name came from
+### Closing note
 
-Geoffrey Huntley's "Ralph" technique is `while :; do cat PROMPT.md | claude-code;
-done`, and this repository was called ralph before it was called kstrl. Kyle
-Mistele's talk sets control loops directly against it: "Control loops are the
-opposite of what I'm going to call a blind Ralph loop", because blind loops
-"produce 40,000-line PRs that no human can review".
-
-kstrl has spent its whole R-series moving away from that starting point, adding
-sensors, gates, envelopes, budgets and an autonomy ladder, without a word for
-what it was moving toward. This document supplies the word. Most of the work was
-already done.
-
----
-
-## Tracker
-
-Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/milestone/3), tracking issue [#235](https://github.com/0xfauzi/kstrl/issues/235). Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Tick the box in the same PR that lands the item (audit-trail doctrine).
-
-| Order | Item | Issue | Status |
-|---|---|---|---|
-| 1 | 5.1 `ks sense` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[ ]` |
-| 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[ ]` |
-| 3 | 5.2 set-point agreement | [#224](https://github.com/0xfauzi/kstrl/issues/224) | `[ ]` |
-| 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[ ]` |
-| 5 | 5.9 adversarial budget: hard mode halts | [#226](https://github.com/0xfauzi/kstrl/issues/226) | `[ ]` |
-| 6 | 5.5 dampener | [#227](https://github.com/0xfauzi/kstrl/issues/227) | `[ ]` |
-| 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[ ]` |
-| 8 | 5.4 golden patterns | [#229](https://github.com/0xfauzi/kstrl/issues/229) | `[ ]` |
-| 9 | 5.7 memory file | [#230](https://github.com/0xfauzi/kstrl/issues/230) | `[ ]` |
-| 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[ ]` |
-| 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[ ]` |
-| 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[ ]` |
-| 13 | section 4, reframe ARCHITECTURE.md | [#234](https://github.com/0xfauzi/kstrl/issues/234) | `[ ]` |
-
-Graduation follow-ups are listed on #235 and are filed only after the advisory item they depend on has produced output on real runs.
+kstrl began as a bare loop that re-ran a prompt until a condition held. It has
+spent its whole R-series moving away from that starting point, adding sensors,
+gates, envelopes, budgets and an autonomy ladder, without a word for what it was
+moving toward. This document supplies the word. Most of the work was already
+done.
