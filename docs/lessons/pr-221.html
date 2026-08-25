@@ -41,6 +41,8 @@ button{ font:inherit; color:inherit; }
 .nav a{ color:var(--ink-2); text-decoration:none; }
 .nav a:hover{ color:var(--accent); }
 main{ max-width:46rem; margin:0 auto; padding:2.6rem 1.4rem 6rem; }
+/* The system map needs the page's width, not the prose measure: break it out of the column, centred. */
+figure[data-generated="atlas"]{ position:relative; left:50%; transform:translateX(-50%); width:min(1280px, calc(100vw - 2.8rem)); box-sizing:border-box; }
 h1{ font-size:1.7rem; line-height:1.2; margin:0 0 .4rem; font-weight:600; letter-spacing:-.01em; }
 h2{ font-size:1.15rem; margin:3.2rem 0 .7rem; font-weight:600; letter-spacing:-.01em;
     border-top:1px solid var(--line); padding-top:1.1rem; }
