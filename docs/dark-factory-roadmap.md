@@ -475,7 +475,7 @@ MERGE_PENDING, evolve proposals, calibration captures - all scattered.
 
 **Verdict: build the inbox (thin), integrate ntfy.sh for push.** The inbox is
 `.kstrl/inbox.jsonl` + CLI verbs + a Textual screen in the home shell.
-HumanLayer-style approval SaaS is the wrong fit for local-first solo. ntfy.sh
+A hosted approval SaaS is the wrong fit for local-first solo. ntfy.sh
 is one HTTP POST through the existing notify hook, self-hostable, priority
 tiers; notification stays one-way (actions happen in `ks inbox`, which avoids
 running an inbound HTTP endpoint).
