@@ -54,3 +54,10 @@ jobs:
             echo "::error title=Atlas is stale::docs/atlas/index.html differs from what render_html.py renders. Run scripts/atlas/refresh.sh and commit docs/atlas/."
             exit 1
           }
+
+      - name: figures match the generator
+        run: |
+          uv run python scripts/atlas/figures.py --check || {
+            echo "::error title=Figures are stale::docs/atlas/figures/ differs from what figures.py generates. Run scripts/atlas/refresh.sh and commit docs/atlas/."
+            exit 1
+          }

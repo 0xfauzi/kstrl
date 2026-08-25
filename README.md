@@ -30,17 +30,13 @@ kstrl is designed as a loop that closes on evidence instead. The parts are delib
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
-```mermaid
-flowchart LR
-    Spec["Spec: what done means"] --> Context["Computed context<br/>(no LLM)"]
-    Context --> Agent["Implementing<br/>agent"]
-    Agent --> Measure["Independent measurement<br/>mechanical checks -> code review -> security review"]
-    Measure -->|"gap: parsed failures, fix hints"| Agent
-    Measure -->|"checks agree"| PR["PR + merge"]
-    PR --> Record["Event log + journal"]
-    Record -.->|"facts to later components"| Context
-    Measure -.->|"boundary conditions only"| You["You, on the loop"]
-```
+kstrl is those loops, nested. Read the figure from the inside out: the innermost band is the fastest and the only one with no sensor of its own; every band around it acts on what the one inside produced and measures it with something the agent did not write. The marker on each band says whether it closes today.
+
+![The loops kstrl is built as](docs/atlas/figures/loops.svg)
+
+This is the forward path through the whole system, generated from the code: every component, with the artifact on every edge, and the components the path does not touch dimmed. Open the image to read it at full size.
+
+![How a spec becomes a merged pull request](docs/atlas/figures/layer-work.svg)
 
 The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
 

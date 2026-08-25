@@ -237,6 +237,35 @@ def _svg_style(svg_id: str, t: dict[str, Any]) -> str:
     )
 
 
+def _static_style(svg_id: str, t: dict[str, Any]) -> str:
+    """The same class vocabulary as the interactive figure, frozen.
+
+    A static figure (an .svg a document embeds as an image) cannot run the
+    script, so what the script would set on a layer or a journey is set at
+    render time, and this stylesheet gives those classes the same look
+    without transitions, cursors or animation. Order matters: `hot` comes
+    after `planned` so a planned edge on a traced path is drawn at full
+    strength, dashed.
+    """
+    s = f"#{svg_id}"
+    return (
+        "<style>"
+        f"{s} .node.quiet{{opacity:.42}}"
+        f"{s} .node.planned{{opacity:.5}}"
+        f"{s} .node.planned.quiet{{opacity:.3}}"
+        f"{s} .node.meas .node__box{{stroke:{t['steel']};stroke-width:2.2}}"
+        f"{s} .node.acts .node__box{{stroke:{t['accent']};stroke-width:2.4}}"
+        f"{s} .node__ring{{display:none;fill:none;stroke:{t['steel']};stroke-width:1.6}}"
+        f"{s} .node.meas .node__ring{{display:inline}}"
+        f"{s} .flow.planned{{opacity:.35}}"
+        f"{s} .flowlbl.planned{{opacity:.5}}"
+        f"{s} .flow.off,{s} .flowlbl.off{{display:none}}"
+        f"{s} .flow.hot{{opacity:1;stroke-opacity:1;stroke-width:2.6}}"
+        f"{s} .flowlbl.hot{{opacity:1}}"
+        "</style>"
+    )
+
+
 def _defs(svg_id: str, t: dict[str, Any]) -> str:
     """Arrowheads: one per layer colour, plus the change-map colours.
 
@@ -268,6 +297,9 @@ def render(
     svg_id: str = "schematic",
     gained: dict[str, dict[str, int]] | None = None,
     hot_artifacts: set[str] | None = None,
+    layer: str = "",
+    journey: dict[str, Any] | None = None,
+    static: bool = False,
 ) -> tuple[str, str]:
     """(svg, json detail).
 
@@ -276,6 +308,16 @@ def render(
     the flow labels whose owning module redefined part of its surface; the
     change detector is the one place that computes it, so this only draws
     what it is told.
+
+    `layer` draws one layer the way the page's layer switch does: the other
+    layers' edges are off and the components they alone touch are quiet.
+    `journey` (one entry of relations.JOURNEYS) draws one journey the way
+    stepping through it does, all steps at once: only its edges are drawn,
+    each numbered with the steps that trace it, acting components in amber,
+    measuring components in steel, everything else quiet. Both set the same
+    classes the interactive script sets, so a static figure and the page
+    agree. `static` swaps the interactive stylesheet for one without
+    transitions, cursors or animation, for a figure embedded as an image.
 
     The detail JSON carries one record per component (what the focus panel
     shows) plus a `_meta` key: the layers, every edge with its verbs and its
@@ -403,6 +445,29 @@ def render(
     region_of = {c["id"]: c.get("region") or "" for c in COMPONENTS}
     region_boxes = {r["id"]: tuple(float(v) for v in r["box"]) for r in REGIONS}
     edges = [(src, dst) for src, dst, _art, _k in FLOWS]
+    edge_index = {(a, b): i for i, (a, b, _art, _k) in enumerate(FLOWS)}
+    # What a layer or a journey lights. `traced` maps an edge to the step
+    # numbers that trace it; `lit` is every component a journey names or
+    # its traced edges touch; `in_layer` every component the layer's edges
+    # touch. Mirrors paint() in the interactive script.
+    traced: dict[int, list[int]] = {}
+    acts_ids: set[str] = set()
+    meas_ids: set[str] = set()
+    lit: set[str] = set()
+    if journey:
+        for n, step in enumerate(journey["steps"], start=1):
+            e = edge_index.get(tuple(step["edge"]), -1)
+            if e >= 0:
+                traced.setdefault(e, []).append(n)
+                lit.update(FLOWS[e][:2])
+            acts_ids.update(step["acts"])
+            meas_ids.update(step["measures"])
+        lit |= acts_ids | meas_ids
+    in_layer: set[str] = set()
+    if layer:
+        for src, dst, _art, kind in FLOWS:
+            if layer_for((src, dst), kind) == layer:
+                in_layer.update((src, dst))
     routes = route_all(edges, boxes, actor_ids, blocks, region_boxes, region_of, CANVAS)
     widths = {i: len(FLOWS[i][2]) * LABEL_CHAR_W + 6 for i in routes}
     seats = place_labels(routes, widths, LABEL_H, obstacles, CANVAS)
@@ -414,25 +479,29 @@ def render(
     label_boxes: list[dict[str, Any]] = []
     layers_of: dict[int, str] = {}
     paths: dict[int, list[list[float]]] = {}
+    badges: list[str] = []
     for i, (src, dst, artifact, kind) in enumerate(FLOWS):
-        layer = layer_for((src, dst), kind)
-        layers_of[i] = layer
+        layer_ = layer_for((src, dst), kind)
+        layers_of[i] = layer_
         route = routes[i]
         paths[i] = [[round(x, 1), round(y, 1)] for x, y in route.points]
         if route.fallback:
             notes.append(f"{src} -> {dst}: {route.fallback}")
         art_hot = artifact in hot_artifacts
-        colour, marker = LAYER_COLOUR[layer], layer
+        colour, marker = LAYER_COLOUR[layer_], layer_
         if art_hot:
             colour, marker = T["change"], "change"
         ghost = states[src] == "planned" or states[dst] == "planned"
+        off = (layer and layer_ != layer) or (journey is not None and i not in traced)
+        hot = i in traced
         classes = f"flow {kind}" + (" planned" if ghost else "")
+        classes += (" off" if off else "") + (" hot" if hot else "")
         dash = ' stroke-dasharray="4 3"' if ghost else ""
         fid = f"{svg_id}-f{i}"
         flow_parts.append(
             f'<path id="{fid}" class="{classes}" data-edge="{i}" data-from="{esc(src)}" '
             f'data-to="{esc(dst)}" data-art="{esc(artifact)}" '
-            f'data-kind="{esc(kind)}" data-layer="{layer}" d="{path_d(route.points)}" '
+            f'data-kind="{esc(kind)}" data-layer="{layer_}" d="{path_d(route.points)}" '
             f'fill="none" stroke="{colour}" stroke-opacity="{0.95 if art_hot else 0.82}" '
             f'stroke-width="{1.8 if art_hot else 1.2}"{dash} stroke-linecap="round" '
             f'marker-end="url(#{svg_id}-m-{marker})"/>'
@@ -456,11 +525,24 @@ def render(
         )
         lx, ly = lbox[0] + lbox[2] / 2, lbox[1] + LABEL_H - 3
         label_parts[i] = (
-            f'<g class="flowlbl {kind}{" planned" if ghost else ""}" data-edge="{i}" '
-            f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layer}">'
+            f'<g class="flowlbl {kind}{" planned" if ghost else ""}'
+            f'{" off" if off else ""}{" hot" if hot else ""}" data-edge="{i}" '
+            f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layer_}">'
             + L(lx, ly, artifact, LABEL_PX, colour, "500", False, "middle", "", True)
             + "</g>"
         )
+        if hot:
+            # The step number sits just left of the edge's label, on the
+            # accent, so the path can be read in order without the page.
+            n = ",".join(str(k) for k in traced[i])
+            bx, by = lbox[0] - 11, lbox[1] + LABEL_H / 2
+            r = 8.5 + 3.2 * (len(n) - 1)
+            badges.append(
+                f'<g class="step" data-edge="{i}">'
+                f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{r:.1f}" fill="{T["accent"]}"/>'
+                + L(bx, by + 4, n, TEXT_PX, HALO, "700", True)
+                + "</g>"
+            )
 
     # ---- cards ------------------------------------------------------------
     detail: dict[str, Any] = {}
@@ -484,9 +566,15 @@ def render(
         rules = GOVERNED_BY.get(cid, [])
         state_class = state if kind != "actor" else "actor"
         plain = PLAIN.get(cid, "")
+        marks = ""
+        if journey is not None:
+            marks += (" acts" if cid in acts_ids else "") + (" meas" if cid in meas_ids else "")
+            marks += "" if cid in lit else " quiet"
+        elif layer and cid not in in_layer:
+            marks = " quiet"
 
         g: list[str] = [
-            f'<g class="node {state_class}'
+            f'<g class="node {state_class}{marks}'
             f'{f" node--{tier}" if change_mode else ""}" '
             f'data-id="{esc(cid)}" data-kind="{kind}" data-state="{state}" '
             f'data-region="{esc(c.get("region") or c.get("container") or "")}" '
@@ -592,7 +680,6 @@ def render(
                 "say": RELATIONS.get((src, dst), ""),
             }
         )
-    edge_index = {(a, b): i for i, (a, b, _art, _k) in enumerate(FLOWS)}
     journeys_meta = [
         {
             "id": j["id"],
@@ -653,7 +740,7 @@ def render(
         f'aria-label="System map. Fill is build state; every line is labelled with '
         f'what it carries and coloured by its layer.">',
         _defs(svg_id, T),
-        _svg_style(svg_id, T),
+        _static_style(svg_id, T) if static else _svg_style(svg_id, T),
     ]
     # Everything drawn sits in one group the script pans and zooms with a
     # transform; the viewBox never changes, so every coordinate read back from
@@ -666,6 +753,8 @@ def render(
     p.append(
         '<g data-layer="flow">' + "".join(label_parts[i] for i in sorted(label_parts)) + "</g>"
     )
+    if badges:
+        p.append(f'<g data-layer="steps">{"".join(badges)}</g>')
     p.append('<g data-layer="tags"></g>')
     p.append("</g>")
     # Text classes are known only once everything is drawn, so their style
