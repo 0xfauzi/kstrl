@@ -34,7 +34,7 @@ kstrl is those loops, nested. Read the figure from the inside out: the innermost
 
 ![The loops kstrl is built as](docs/atlas/figures/loops.svg)
 
-This is the forward path through the whole system, generated from the code: every component, with the artifact on every edge, and the components the path does not touch dimmed. Open the image to read it at full size.
+This is the forward path through the system, generated from the code: every component the path touches, in its region, with the artifact on every edge. What the path does not touch is not drawn; the [system map](docs/atlas/figures/system.svg) has everything.
 
 ![How a spec becomes a merged pull request](docs/atlas/figures/layer-work.svg)
 

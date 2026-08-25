@@ -4,51 +4,70 @@ README.md, ARCHITECTURE.md and the wiki embed pictures of the system as
 images. A hand-drawn picture drifts the moment a component moves, and it
 summarises to five boxes because a hand cannot keep sixty edges honest. So
 every figure here is drawn by the atlas's own generator from the atlas's own
-data, at the atlas's level of detail: every component of the layer it draws,
-the artifact on every edge, other components dimmed but present.
+data: the artifact on every edge, the build state in every card's fill.
 
 What is written to docs/atlas/figures/:
 
-    system.svg              the whole map, every layer in its colour
-    layer-<id>.svg          one layer: its edges only, its question as the
-                            title, components it does not touch dimmed
-    journey-<id>.svg        one journey: its edges numbered along the path,
-                            acting components in amber, measuring in steel,
-                            the steps listed under the map
+    system.svg              the whole map, every component, every layer in
+                            its colour, at the atlas's own scale
+    layer-<id>.svg          one layer, compact: only the components its
+                            edges touch, laid out as columns by region,
+                            its question as the title
+    journey-<id>.svg        one journey, compact: the components its steps
+                            act with, measure or trace, its edges numbered
+                            from the step's start, acting components in
+                            amber, measuring in steel, the steps listed
+                            under the map
     loops.svg               the seven loops of docs/control-loop-design.md
                             section 2 as nested bands, innermost fastest
+
+A compact figure exists because the whole atlas fitted to a 900px column
+puts an 11px card name at 4px. compact.py draws only what takes part, at
+13px names, on a canvas that follows the number of columns (at most 1398
+wide in the panel, so a name renders at 8px or more at 900px); more
+columns than fit wrap to a second row rather than shrink the type. Every
+compact figure is verified after it is drawn (compact.problems): each
+participant present, no edge through a card it does not connect, no label
+on a card, a strip, a badge or another label, nothing under 11px, and the
+name size at 900px. `--no-compact` draws a layer or a journey the old way,
+the whole atlas with the rest dimmed.
 
 Each figure is one self-contained .svg: no script, no external reference,
 system font stacks, and the atlas's dark panel drawn as the figure's own
 background so it reads the same on a light or a dark page. The map inside
-is schematic.render with `static`, `layer` or `journey` set; nothing here
-draws a card or an edge. The loops figure is the one drawing whose data
-the atlas does not carry: its table is small, below, and cites its source.
+is schematic.render or compact.render; nothing here draws a card or an
+edge. The loops figure is the one drawing whose data the atlas does not
+carry: its table is small, below, and cites its source.
 
 The caption baked into every figure names the atlas commit it was drawn
-from. `--check` regenerates in memory and fails when any committed figure
-differs, the same contract as render_html.py; refresh.sh and the atlas
-workflow run it.
+from. `--check` regenerates in memory, runs every figure's checks, and
+fails when any committed figure differs, the same contract as
+render_html.py; refresh.sh and the atlas workflow run it.
 
 Usage:
   uv run python scripts/atlas/figures.py [--out-dir docs/atlas/figures] [--scale N]
   uv run python scripts/atlas/figures.py --check
+  uv run python scripts/atlas/figures.py --no-compact
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import theme as theme_mod
+from compact import problems as compact_problems
+from compact import render as render_compact
 from logical_model import COMPONENTS, build_state, layout_problems
 from relations import JOURNEYS, LAYERS
 from schematic import esc, layer_rows, legend_rows, mix, wrap_words
@@ -69,6 +88,16 @@ SUB_PX = 28.0
 LEGEND_PX = 26.0
 STEP_PX = 26.0
 CAPTION_PX = 22.0
+# A compact panel is at most 1398 wide and shows at about 0.64 in a 900px
+# column, so its legend, steps and caption are set smaller than the full
+# map's to keep the same rendered size there.
+COMPACT_LEGEND_PX = 22.0
+COMPACT_STEP_PX = 22.0
+COMPACT_CAPTION_PX = 20.0
+# A compact map can be two columns wide; the panel round it is never
+# narrower than this, so the title, the legend and the caption have room,
+# and the map sits centred in what is left.
+COMPACT_MIN_W = 900.0
 # Width estimate per glyph, as a fraction of the font size, for wrapping
 # and right-alignment without a renderer.
 GLYPH = 0.52
@@ -242,12 +271,27 @@ def caption_for(atlas: dict[str, Any]) -> str:
     return f"Generated by {GENERATOR} from {ATLAS_PATH} at {commit}; do not edit by hand."
 
 
-def nest(map_svg: str, x: float, y: float) -> tuple[str, float, float]:
+def map_size(map_svg: str) -> tuple[float, float]:
+    """The map's own width and height, from its viewBox."""
+    m = re.match(r'<svg (?P<attrs>[^>]*)>', map_svg)
+    if not m:
+        raise ValueError("schematic did not return an <svg> root")
+    vb = re.search(r'viewBox="([^"]+)"', m.group("attrs"))
+    if not vb:
+        raise ValueError("schematic root lacks a viewBox")
+    _vx, _vy, vw, vh = (float(v) for v in vb.group(1).split())
+    return vw, vh
+
+
+def nest(map_svg: str, x: float, y: float, clip: bool = True) -> tuple[str, float, float]:
     """The map as a nested <svg> at (x, y), at 1:1; returns (svg, w, h).
 
     The renderer's root carries the page's attributes (a tab stop, an
     application role). Inside a figure it is a picture, so the root is
-    rebuilt with only its id and viewBox plus its place in the panel.
+    rebuilt with only its id and viewBox plus its place in the panel. A
+    nested svg clips to its viewport; with `clip` off it does not, for a
+    map whose label placer may seat a label a few units past the canvas
+    edge (the panel's margin has the room).
     """
     m = re.match(r'<svg (?P<attrs>[^>]*)>', map_svg)
     if not m:
@@ -257,10 +301,11 @@ def nest(map_svg: str, x: float, y: float) -> tuple[str, float, float]:
     sid = re.search(r'id="([^"]+)"', attrs)
     if not vb or not sid:
         raise ValueError("schematic root lacks viewBox or id")
-    _vx, _vy, vw, vh = (float(v) for v in vb.group(1).split())
+    vw, vh = map_size(map_svg)
+    overflow = "" if clip else ' overflow="visible"'
     head = (
         f'<svg id="{sid.group(1)}" x="{x:.1f}" y="{y:.1f}" width="{vw:.0f}" height="{vh:.0f}" '
-        f'viewBox="{vb.group(1)}">'
+        f'viewBox="{vb.group(1)}"{overflow}>'
     )
     return head + map_svg[m.end():], vw, vh
 
@@ -274,35 +319,63 @@ def panel(
     steps: list[str],
     scale: float,
     label: str,
+    legend_px: float = LEGEND_PX,
+    step_px: float = STEP_PX,
+    caption_px: float = CAPTION_PX,
+    min_width: float = 0.0,
+    wrap: bool = False,
 ) -> str:
-    """One figure: the panel, the title, the map, a legend, steps, the caption."""
+    """One figure: the panel, the title, the map, a legend, steps, the caption.
+
+    The panel is as wide as the map plus its margins, or `min_width` if
+    that is wider, and then the map sits centred. With `wrap`, the title,
+    the subtitle and the caption wrap to the panel instead of running
+    past it.
+    """
     t = theme_mod.get()
     c = Chrome(t)
     parts: list[str] = []
+    mw, mh = map_size(map_svg)
+    w = max(mw + 2 * MARGIN, min_width)
+
+    def lines_of(text: str, size: float, max_lines: int) -> list[str]:
+        if not wrap:
+            return [text]
+        return wrap_words(text, int((w - 2 * MARGIN) / (size * GLYPH)), max_lines)
+
     y = MARGIN + TITLE_PX
-    parts.append(c.text(MARGIN, y, title, TITLE_PX, t["ink"], "600"))
+    for k, line in enumerate(lines_of(title, TITLE_PX, 2)):
+        if k:
+            y += TITLE_PX + 6
+        parts.append(c.text(MARGIN, y, line, TITLE_PX, t["ink"], "600"))
     y += SUB_PX + 10
-    parts.append(c.text(MARGIN, y, sub, SUB_PX, t["ink_3"]))
+    for k, line in enumerate(lines_of(sub, SUB_PX, 3)):
+        if k:
+            y += SUB_PX + 6
+        parts.append(c.text(MARGIN, y, line, SUB_PX, t["ink_3"]))
     y += 18
-    body, mw, mh = nest(map_svg, MARGIN, y)
-    w = mw + 2 * MARGIN
+    body, _mw, _mh = nest(map_svg, MARGIN + (w - 2 * MARGIN - mw) / 2, y, clip=not wrap)
     parts.append(body)
-    y += mh + LEGEND_PX + 16
-    parts.append(legend(c, y))
+    y += mh + legend_px + 16
+    seg, y = legend(c, y, w)
+    parts.append(seg)
     if steps:
-        y += STEP_PX + 22
-        avail = int((w - 2 * MARGIN - 56) / (STEP_PX * GLYPH))
+        y += step_px + 22
+        avail = int((w - 2 * MARGIN - 56) / (step_px * GLYPH))
         for n, say in enumerate(steps, start=1):
-            lines = wrap_words(say, avail, 3)
-            parts.append(c.text(MARGIN + 30, y, f"{n}", STEP_PX, t["accent"], "700", True, "end"))
+            lines = wrap_words(say, avail, 4)
+            parts.append(c.text(MARGIN + 30, y, f"{n}", step_px, t["accent"], "700", True, "end"))
             for k, line in enumerate(lines):
-                parts.append(c.text(MARGIN + 46, y, line, STEP_PX, t["ink_2"]))
+                parts.append(c.text(MARGIN + 46, y, line, step_px, t["ink_2"]))
                 if k < len(lines) - 1:
-                    y += STEP_PX + 6
-            y += STEP_PX + 12
-        y -= STEP_PX + 12
-    y += CAPTION_PX + 34
-    parts.append(c.text(MARGIN, y, caption_for(atlas), CAPTION_PX, t["ink_3"]))
+                    y += step_px + 6
+            y += step_px + 12
+        y -= step_px + 12
+    y += caption_px + 34
+    for k, line in enumerate(lines_of(caption_for(atlas), caption_px, 2)):
+        if k:
+            y += caption_px + 6
+        parts.append(c.text(MARGIN, y, line, caption_px, t["ink_3"]))
     h = y + MARGIN - 6
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w * scale:.0f}" '
@@ -316,22 +389,53 @@ def panel(
     )
 
 
-Legend = Callable[[Chrome, float], str]
+# (chrome, y, panel width) -> (svg, the y of the legend's last line)
+Legend = Callable[[Chrome, float, float], tuple[str, float]]
 
 
 def _legend_line(
-    rows: list[tuple[str, str, str]], lines: list[tuple[str, str]], note: str
+    rows: list[tuple[str, str, str]],
+    lines: list[tuple[str, str]],
+    note: str,
+    size: float = LEGEND_PX,
+    wrap: bool = False,
 ) -> Legend:
-    """A legend row: swatches, then coloured lines, then a note, at the y given."""
+    """A legend row: swatches, then coloured lines, then a note, at the y given.
 
-    def draw(c: Chrome, y: float) -> str:
+    With `wrap`, a line entry or the note that would run past the panel's
+    right margin starts a new legend line instead.
+    """
+
+    def draw(c: Chrome, y: float, w: float) -> tuple[str, float]:
+        limit = w - MARGIN if wrap else math.inf
         x = MARGIN
-        out, x = swatch_legend(c, x, y, rows, LEGEND_PX)
-        more, x = line_legend(c, x + 6, y, lines, LEGEND_PX)
-        out += more
-        if note:
-            out += c.text(x + 6, y, note, LEGEND_PX, c.t["ink_3"])
-        return out
+        out = ""
+        for row in rows:
+            need = size * 1.1 + width_of(row[2], size)
+            if x > MARGIN and x + need > limit:
+                y += size + 12
+                x = MARGIN
+            seg, x = swatch_legend(c, x, y, [row], size)
+            out += seg
+        x += 6
+        for colour, label in lines:
+            need = size * 1.8 + width_of(label, size)
+            if x > MARGIN and x + need > limit:
+                y += size + 12
+                x = MARGIN
+            more, x = line_legend(c, x, y, [(colour, label)], size)
+            out += more
+        if note and wrap and x + 6 + width_of(note, size) > limit:
+            # The note takes lines of its own, wrapped to the panel.
+            if x > MARGIN:
+                y += size + 12
+            for k, line in enumerate(wrap_words(note, int((w - 2 * MARGIN) / (size * GLYPH)), 3)):
+                if k:
+                    y += size + 6
+                out += c.text(MARGIN, y, line, size, c.t["ink_3"])
+        elif note:
+            out += c.text(x + 6, y, note, size, c.t["ink_3"])
+        return out, y
 
     return draw
 
@@ -404,6 +508,94 @@ def journey_figure(atlas: dict[str, Any], journey: dict[str, Any], scale: float)
         scale,
         f"Journey: {journey['label']}",
     )
+
+
+@dataclass(frozen=True)
+class Figure:
+    """One figure's svg, what its own checks found, and its numbers."""
+
+    svg: str
+    problems: list[str] = field(default_factory=list)
+    stats: dict[str, Any] = field(default_factory=dict)
+
+
+def _panel_width(svg: str) -> float:
+    m = re.search(r'viewBox="0 0 ([0-9.]+) ([0-9.]+)"', svg)
+    if not m:
+        raise ValueError("figure root lacks a viewBox")
+    return float(m.group(1))
+
+
+def compact_layer_figure(atlas: dict[str, Any], layer: dict[str, str], scale: float) -> Figure:
+    """One layer, only the components its edges touch."""
+    t = theme_mod.get()
+    svg, meta = render_compact(atlas, layer=layer["id"])
+    legend = _legend_line(
+        legend_rows("system"),
+        [
+            (
+                t["layers"][layer["id"]],
+                f"{layer['label']} layer edges, labelled with what they carry",
+            )
+        ],
+        "only the components this layer touches are drawn",
+        COMPACT_LEGEND_PX,
+        wrap=True,
+    )
+    fig = panel(
+        atlas,
+        svg,
+        layer["question"],
+        f"The {layer['label']} layer: {layer['sub']}. Other layers' edges are not drawn.",
+        legend,
+        [],
+        scale,
+        f"{layer['label']} layer of the kstrl system map",
+        COMPACT_LEGEND_PX,
+        COMPACT_STEP_PX,
+        COMPACT_CAPTION_PX,
+        COMPACT_MIN_W,
+        wrap=True,
+    )
+    found, stats = compact_problems(meta, fig, _panel_width(fig))
+    return Figure(fig, found, stats)
+
+
+def compact_journey_figure(atlas: dict[str, Any], journey: dict[str, Any], scale: float) -> Figure:
+    """One journey, only the components its steps act with, measure or trace."""
+    t = theme_mod.get()
+    svg, meta = render_compact(atlas, journey=journey)
+    legend = _legend_line(
+        [
+            (t["raised"], t["accent"], "acts in this step"),
+            (t["raised"], t["steel"], "measures this step"),
+        ]
+        + legend_rows("system"),
+        [],
+        "the number at the start of an edge is the step that traces it; "
+        "a step nothing measures says so",
+        COMPACT_LEGEND_PX,
+        wrap=True,
+    )
+    steps = [str(s["say"]) for s in journey["steps"]]
+    fig = panel(
+        atlas,
+        svg,
+        str(journey["label"]),
+        "The path in order, all steps at once. Only the components and edges the journey "
+        "touches are drawn.",
+        legend,
+        steps,
+        scale,
+        f"Journey: {journey['label']}",
+        COMPACT_LEGEND_PX,
+        COMPACT_STEP_PX,
+        COMPACT_CAPTION_PX,
+        COMPACT_MIN_W,
+        wrap=True,
+    )
+    found, stats = compact_problems(meta, fig, _panel_width(fig))
+    return Figure(fig, found, stats)
 
 
 def loops_figure(atlas: dict[str, Any], scale: float) -> str:
@@ -561,15 +753,40 @@ def loops_figure(atlas: dict[str, Any], scale: float) -> str:
     )
 
 
-def all_figures(atlas: dict[str, Any], scale: float = 1.0) -> dict[str, str]:
+def all_figures(
+    atlas: dict[str, Any], scale: float = 1.0, compact: bool = True
+) -> dict[str, Figure]:
     """Every figure by file name, in the order they are written."""
-    out: dict[str, str] = {"system.svg": system_figure(atlas, scale)}
+    out: dict[str, Figure] = {"system.svg": Figure(system_figure(atlas, scale))}
     for layer in LAYERS:
-        out[f"layer-{layer['id']}.svg"] = layer_figure(atlas, layer, scale)
+        name = f"layer-{layer['id']}.svg"
+        if compact:
+            out[name] = compact_layer_figure(atlas, layer, scale)
+        else:
+            out[name] = Figure(layer_figure(atlas, layer, scale))
     for journey in JOURNEYS:
-        out[f"journey-{journey['id']}.svg"] = journey_figure(atlas, journey, scale)
-    out["loops.svg"] = loops_figure(atlas, scale)
+        name = f"journey-{journey['id']}.svg"
+        if compact:
+            out[name] = compact_journey_figure(atlas, journey, scale)
+        else:
+            out[name] = Figure(journey_figure(atlas, journey, scale))
+    out["loops.svg"] = Figure(loops_figure(atlas, scale))
     return out
+
+
+def describe(name: str, fig: Figure) -> str:
+    """One line of numbers for a compact figure; the name alone for the rest."""
+    s = fig.stats
+    if not s:
+        return name
+    w, h = s["canvas"]
+    return (
+        f"{name}: map {w:.0f} x {h:.0f} in {s['columns']} columns, {s['rows']} row"
+        f"{'s' if s['rows'] != 1 else ''}, {s['components']} components, {s['edges']} edges, "
+        f"{s['through_cards']} through a card, {s['across_regions']} across a region, "
+        f"{s['label_collisions']} label collisions, nothing under {s['min_px']:g}px, "
+        f"names {s['name_px_at_900']}px at 900px"
+    )
 
 
 def self_check(name: str, svg: str) -> list[str]:
@@ -602,6 +819,13 @@ def main() -> int:
         "image at its own size shows it that much larger.",
     )
     parser.add_argument(
+        "--compact",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="draw each layer and journey with only the components it touches (the "
+        "default); --no-compact draws the whole atlas with the rest dimmed",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="exit 1 when any committed figure differs from what would be generated",
@@ -615,10 +839,11 @@ def main() -> int:
         return 1
 
     atlas = json.loads(Path(args.atlas).read_text(encoding="utf-8"))
-    figures = all_figures(atlas, args.scale)
+    figures = all_figures(atlas, args.scale, args.compact)
     bad: list[str] = []
-    for name, svg in figures.items():
-        bad.extend(self_check(name, svg))
+    for name, fig in figures.items():
+        bad.extend(self_check(name, fig.svg))
+        bad.extend(f"{name}: {p}" for p in fig.problems)
     if bad:
         for line in bad:
             print(line, file=sys.stderr)
@@ -627,10 +852,10 @@ def main() -> int:
     out_dir = Path(args.out_dir)
     if args.check:
         stale: list[str] = []
-        for name, svg in figures.items():
+        for name, fig in figures.items():
             path = out_dir / name
             current = path.read_text(encoding="utf-8") if path.is_file() else ""
-            if current != svg:
+            if current != fig.svg:
                 stale.append(name)
         extra = sorted(p.name for p in out_dir.glob("*.svg") if p.name not in figures)
         if stale or extra:
@@ -643,14 +868,19 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+        for name, fig in figures.items():
+            if fig.stats:
+                print(f"  {describe(name, fig)}")
         print(f"{out_dir}: {len(figures)} figures current")
         return 0
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    for name, svg in figures.items():
+    for name, fig in figures.items():
         path = out_dir / name
-        path.write_text(svg, encoding="utf-8")
+        path.write_text(fig.svg, encoding="utf-8")
         print(f"wrote {path} ({path.stat().st_size / 1024:.0f} KB)")
+        if fig.stats:
+            print(f"  {describe(name, fig)}")
     return 0
 
 

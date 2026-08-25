@@ -141,9 +141,10 @@ fast sensor here is R10.12, gated on evidence that the loop actually iterates
 
 Look at what reaches `EngineerLoop`: the next failing story, the stall
 verdict, the scope verdict, and last attempt's failures. No sensor has an
-edge into the inner loop; the figure shows that by absence, and every
-measuring component on the map is dimmed because this layer never touches
-it.
+edge into the inner loop; the figure shows that by absence. Only the
+components this layer touches are drawn, and the two from the measure
+region that are (the findings store, the contract tester) feed the
+pipeline and the scheduler, never the loop.
 
 ![What comes back to the agent, and from where](docs/atlas/figures/layer-feedback.svg)
 
@@ -159,9 +160,10 @@ groups with deadline kills, so a hung grandchild dies with its parent).
 
 ## Factory mode
 
-The forward path, left to right: intake, plan, build, decide, measure, ship.
-Every component is drawn with the artifact on every edge; what the path does
-not touch is dimmed. The scheduler is where the parallelism lives: one
+The forward path, left to right: intake, plan, build, decide, ship. Every
+component the path touches is drawn in its region with the artifact on every
+edge; what the path does not touch is not drawn. The scheduler is where the
+parallelism lives: one
 worktree per ready component, and a component counts as complete only when
 its merge is confirmed. The contract tester's edge back into the scheduler
 belongs to the Feedback layer, so it is not drawn here.
@@ -194,8 +196,9 @@ across projects, is [docs/continuous-learning-design.md](docs/continuous-learnin
 
 Three edges are the whole learning layer today: facts from the distiller
 into later components' prompts, outcomes into the journal, and patterns from
-the journal into proposals. The playbook and the runtime signals are dashed
-because they are not built, and no edge leaves a proposal.
+the journal into proposals. No edge leaves a proposal. The playbook and the
+runtime signals have no edge yet, so they are not on this figure; on the
+atlas they are dashed because they are not built.
 
 ![What carries from one run to the next](docs/atlas/figures/layer-learn.svg)
 
