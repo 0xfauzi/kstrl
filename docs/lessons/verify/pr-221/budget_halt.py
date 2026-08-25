@@ -15,6 +15,8 @@ Sweeps cap x component count x mode, old rule and new rule side by side.
 
 from __future__ import annotations
 
+import json
+import sys
 from itertools import product
 
 
@@ -41,7 +43,20 @@ def run(cap: int, components: int, mode: str, new_rule: bool) -> list[str]:
     return out
 
 
+def sweep() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for cap, n, mode, new in product(range(0, 6), range(1, 7), ("hard", "advisory"), (False, True)):
+        out = run(cap, n, mode, new)
+        rows.append({"cap": cap, "n": n, "mode": mode, "new_rule": new, "outcome": out,
+                     "unreviewed": sum(1 for o in out if o.startswith("skipped")),
+                     "halted": sum(1 for o in out if o.startswith("HALTED"))})
+    return rows
+
+
 def main() -> None:
+    if "--json" in sys.argv:
+        json.dump(sweep(), sys.stdout)
+        return
     print("cap  n  mode      rule | outcome per component")
     unreviewed_merges_old = 0
     unreviewed_merges_new_hard = 0
