@@ -1,5 +1,5 @@
 {
- "built_at_commit": "72404e9eca6e60999ef8967fcdf38486f8f8c4d7",
+ "built_at_commit": "6259910c98448f99c25d473f2b4c4f8fd9e5b016",
  "components": {
   "kstrl": {
    "classes": [],
@@ -148,6 +148,7 @@
    ],
    "id": "kstrl.adequacy",
    "imported_by": [
+    "kstrl.cli",
     "kstrl.pipeline",
     "kstrl.verify"
    ],
@@ -1525,13 +1526,18 @@
   },
   "kstrl.cli": {
    "classes": [],
-   "constants": [],
+   "constants": [
+    {
+     "name": "SENSE_SCHEMA_VERSION",
+     "value": "1"
+    }
+   ],
    "docstring": "CLI entry point for kstrl.",
    "errors": [],
    "file": "kstrl/cli.py",
    "functions": [
     {
-     "doc": "kstrl - Agentic loop harness for AI-driven development.",
+     "doc": "kstrl - a software factory for AI coding agents.",
      "name": "cli",
      "signature": "def cli(ctx: click.Context) -> None"
     },
@@ -1584,6 +1590,11 @@
      "doc": "Show per-component status from the manifest + progress log.",
      "name": "status",
      "signature": "def status(root: Path | None, manifest_path: Path | None, progress_log_path: Path | None, watch: bool, interval: float, ui: str, no_color: bool, tui: bool | None) -> None"
+    },
+    {
+     "doc": "Run the mechanical sensors against a tree and print the measurement.",
+     "name": "sense",
+     "signature": "def sense(root: Path | None, tree_path: Path | None, base_branch: str | None, prd_path: Path | None, allowed_paths: tuple[str, ...], as_json: bool, ui: str, no_color: bool) -> None"
     },
     {
      "doc": "Retry a FAILED component from the factory manifest (R3.3).",
@@ -1723,6 +1734,7 @@
    ],
    "imports": [
     "kstrl",
+    "kstrl.adequacy",
     "kstrl.agents",
     "kstrl.agents.base",
     "kstrl.agents.logging",
@@ -1739,6 +1751,8 @@
     "kstrl.factory",
     "kstrl.feature_cmd",
     "kstrl.feedforward",
+    "kstrl.fixtures",
+    "kstrl.git",
     "kstrl.inbox",
     "kstrl.init_cmd",
     "kstrl.intake_github",
@@ -1770,10 +1784,10 @@
     "kstrl.verify",
     "kstrl.workqueue"
    ],
-   "loc": 4419,
+   "loc": 4660,
    "package": "kstrl",
    "plane": "core",
-   "sha": "8d071b2e8db3",
+   "sha": "20ab44a32d70",
    "tests": [
     "test_default_valued_fields_stay_silent",
     "test_feature_help",
@@ -1802,10 +1816,13 @@
     "test_a_delivered_result_wins_over_the_snapshot"
    ],
    "tests_primary": 19,
-   "tests_total": 584,
+   "tests_total": 600,
    "uses": {
     "kstrl": [
      "__version__"
+    ],
+    "kstrl.adequacy": [
+     "AdequacyConfig"
     ],
     "kstrl.agents": [
      "AGENT_TYPE_ALIASES",
@@ -1888,6 +1905,12 @@
     ],
     "kstrl.feedforward": [
      "FeedforwardConfig"
+    ],
+    "kstrl.fixtures": [
+     "FixturesConfig"
+    ],
+    "kstrl.git": [
+     "*"
     ],
     "kstrl.inbox": [
      "Inbox",
@@ -2014,7 +2037,8 @@
      "UI"
     ],
     "kstrl.verify": [
-     "VerifyConfig"
+     "VerifyConfig",
+     "run_mechanical_verification"
     ],
     "kstrl.workqueue": [
      "ItemState",
@@ -2470,20 +2494,20 @@
     "test_all_pass",
     "test_all_passing",
     "test_as_context_formatting",
+    "test_bad_patterns_writes_no_bytecode_beside_the_source",
     "test_block_with_three_bullets_passes",
     "test_clean_files",
     "test_custom_command_used",
+    "test_dead_code_default_still_fixes_and_commits",
+    "test_dead_code_read_only_never_fixes_stages_or_commits",
     "test_default_prompt_entry_format_counts_exact_bullets",
     "test_does_not_match_self_critique_in_prose",
     "test_empty_py_file",
     "test_empty_stories",
-    "test_entry_separator_terminates_bullet_count",
-    "test_excluded_from_verification_when_disabled",
-    "test_failing",
-    "test_failing_command"
+    "test_entry_separator_terminates_bullet_count"
    ],
    "tests_primary": 10,
-   "tests_total": 64,
+   "tests_total": 72,
    "uses": {}
   },
   "kstrl.contract": {
@@ -4035,6 +4059,7 @@
    ],
    "id": "kstrl.fixtures",
    "imported_by": [
+    "kstrl.cli",
     "kstrl.factory",
     "kstrl.pipeline",
     "kstrl.verify"
@@ -4044,10 +4069,10 @@
     "kstrl.prd",
     "kstrl.verify"
    ],
-   "loc": 786,
+   "loc": 792,
    "package": "kstrl",
    "plane": "core",
-   "sha": "8e8994e5be73",
+   "sha": "80ae13f099df",
    "tests": [
     "test_bad_cli_entries_rejected",
     "test_check_fixtures_empty",
@@ -4076,7 +4101,7 @@
     "test_module_side_effects_cannot_touch_harness"
    ],
    "tests_primary": 47,
-   "tests_total": 137,
+   "tests_total": 199,
    "uses": {
     "kstrl.config": [
      "_parse_bool",
@@ -4272,6 +4297,7 @@
    ],
    "id": "kstrl.git",
    "imported_by": [
+    "kstrl.cli",
     "kstrl.contract",
     "kstrl.factory",
     "kstrl.guards",
@@ -11976,17 +12002,17 @@
     {
      "doc": "Run mutation testing on changed files using mutmut.",
      "name": "check_mutation_score",
-     "signature": "def check_mutation_score(cwd: Path, base_branch: str, threshold: float=50.0, timeout: float=600.0) -> CheckResult"
+     "signature": "def check_mutation_score(cwd: Path, base_branch: str, threshold: float=50.0, timeout: float=600.0, read_only: bool=False) -> CheckResult"
     },
     {
      "doc": "Remove dead code with ruff auto-fix, then detect remaining dead code with vulture.",
      "name": "check_dead_code",
-     "signature": "def check_dead_code(cwd: Path, base_branch: str, command: str | None=None, timeout: float=300.0) -> CheckResult"
+     "signature": "def check_dead_code(cwd: Path, base_branch: str, command: str | None=None, timeout: float=300.0, read_only: bool=False) -> CheckResult"
     },
     {
      "doc": "Run all mechanical checks. All checks run even if earlier ones fail.",
      "name": "run_mechanical_verification",
-     "signature": "def run_mechanical_verification(worktree_path: Path, prd_path: Path, base_branch: str, allowed_paths: list[str] | None, config: VerifyConfig, allowed_paths_error: str | None=None, fixtures_config: FixturesConfig | None=None, policy_config: PolicyConfig | None=None, adequacy_config: AdequacyConfig | None=None, autonomy_level: int=0, component_id: str | None=None) -> VerificationResult"
+     "signature": "def run_mechanical_verification(worktree_path: Path, prd_path: Path | None, base_branch: str, allowed_paths: list[str] | None, config: VerifyConfig, allowed_paths_error: str | None=None, fixtures_config: FixturesConfig | None=None, policy_config: PolicyConfig | None=None, adequacy_config: AdequacyConfig | None=None, autonomy_level: int=0, component_id: str | None=None, read_only: bool=False) -> VerificationResult"
     }
    ],
    "id": "kstrl.verify",
@@ -12014,18 +12040,21 @@
     "kstrl.policy",
     "kstrl.prd"
    ],
-   "loc": 1475,
+   "loc": 1585,
    "package": "kstrl",
    "plane": "core",
-   "sha": "b4fe71e12ad5",
+   "sha": "67a091bf08eb",
    "tests": [
     "test_all_in_scope",
     "test_all_pass",
     "test_all_passing",
     "test_as_context_formatting",
+    "test_bad_patterns_writes_no_bytecode_beside_the_source",
     "test_block_with_three_bullets_passes",
     "test_clean_files",
     "test_custom_command_used",
+    "test_dead_code_default_still_fixes_and_commits",
+    "test_dead_code_read_only_never_fixes_stages_or_commits",
     "test_default_prompt_entry_format_counts_exact_bullets",
     "test_does_not_match_self_critique_in_prose",
     "test_empty_py_file",
@@ -12040,13 +12069,10 @@
     "test_fuzz_corpus_of_rejected_lines",
     "test_h2_style_heading_recognized",
     "test_included_in_verification_when_enabled",
-    "test_invalid_prd",
-    "test_latest_iteration_block_used",
-    "test_malformed_pyproject_falls_back_to_dot",
-    "test_missing_block_in_latest_iteration_fails"
+    "test_invalid_prd"
    ],
-   "tests_primary": 54,
-   "tests_total": 1150,
+   "tests_primary": 62,
+   "tests_total": 1158,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig",
@@ -12520,6 +12546,10 @@
   {
    "level": "3",
    "title": "Closing note"
+  },
+  {
+   "level": "2",
+   "title": "Tracker"
   }
  ],
  "version": 1
