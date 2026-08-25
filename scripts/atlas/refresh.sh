@@ -7,7 +7,8 @@
 # CI, and a person typing it by hand all do exactly the same thing.
 #
 # It also regenerates the two lesson figures under docs/atlas/ from the same
-# generator, so a figure can never lag the page it cites.
+# generator, so a figure can never lag the page it cites, and the lessons
+# index under docs/lessons/ from the register, so the index cannot drift.
 #
 # Exit codes: 0 = atlas is current (refreshed or already fresh), 1 = it could
 # not be refreshed. Callers that must not fail a merge should ignore the code.
@@ -33,7 +34,8 @@ quiet=0
 say() { [ "$quiet" -eq 1 ] || printf '%s\n' "$*"; }
 
 if uv run python scripts/atlas/extract_atlas.py --check >/dev/null 2>&1 \
-   && uv run python scripts/atlas/render_html.py --check >/dev/null 2>&1; then
+   && uv run python scripts/atlas/render_html.py --check >/dev/null 2>&1 \
+   && uv run python scripts/atlas/lessons_index.py --check >/dev/null 2>&1; then
   say "atlas: already current"
   exit 0
 fi
@@ -69,6 +71,13 @@ uv run python scripts/atlas/lesson_svg.py --components "$r10" --interactive \
   exit 1
 }
 
+# The lessons index, one card per register entry.
+uv run python scripts/atlas/lessons_index.py >/dev/null || {
+  echo "atlas: lessons index failed" >&2
+  exit 1
+}
+
 say "atlas: updated docs/atlas/atlas.json, index.html, system.html, r10-reach.html"
-say "atlas: commit docs/atlas/ to record this state of the system"
+say "atlas: updated docs/lessons/index.html from the register"
+say "atlas: commit docs/atlas/ and docs/lessons/index.html to record this state of the system"
 exit 0

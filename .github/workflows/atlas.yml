@@ -54,3 +54,10 @@ jobs:
             echo "::error title=Atlas is stale::docs/atlas/index.html differs from what render_html.py renders. Run scripts/atlas/refresh.sh and commit docs/atlas/."
             exit 1
           }
+
+      - name: lessons index matches the register
+        run: |
+          uv run python scripts/atlas/lessons_index.py --check || {
+            echo "::error title=Lessons index is stale::docs/lessons/index.html differs from what lessons_index.py renders from docs/lessons/register.md. Run scripts/atlas/refresh.sh and commit docs/lessons/index.html."
+            exit 1
+          }

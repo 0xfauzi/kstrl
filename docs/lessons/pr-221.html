@@ -5,116 +5,160 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR 221 kstrl as a control loop: the system after R10</title>
 <style>
+/* The atlas's identity, token for token: scripts/atlas/theme.py. A lesson is
+   the same instrument as the map it embeds, so it commits to the same single
+   dark ground; there is no light theme to swap to. Colour carries meaning or
+   is absent: amber is the element that acts or is selected, steel is what
+   measures, the seven layer hues belong to edges of the map, good and bad
+   are verdicts, and nothing else is coloured. */
 :root{
-  --ink:#17191d; --dim:#5c626d; --rule:#d8d5cc; --page:#fbfaf7;
-  --hi:#8a4b1f; --ok:#1f5e3a; --no:#8f2020; --panel:#f3f1ea; --act:#2a5bd7; --meas:#9a6b12;
+  color-scheme:dark;
+  --bg:#161310; --surface:#1E1A15; --raised:#27221A; --line:#2E2820; --line-2:#4A4237;
+  --ink:#ECE5D8; --ink-2:#C4B9A4; --ink-3:#A2967F;
+  --accent:#E5A84F; --accent-soft:#E5A84F2E; --steel:#82A7BA;
+  --good:#8FC470; --warn:#D9B036; --bad:#E26D5A; --violet:#B48EC9;
+  --l-work:#D9CDB2; --l-measure:#82A7BA; --l-feedback:#E39A86; --l-operator:#DD9BBD;
+  --l-trust:#B48EC9; --l-learn:#86C9A9; --l-record:#B7C27C;
+  --fs:ui-sans-serif,system-ui,-apple-system,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --fm:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
 }
-@media (prefers-color-scheme: dark){
-  :root{ --ink:#e6e4de; --dim:#9aa0ab; --rule:#33373f; --page:#14161a;
-         --hi:#e2a35f; --ok:#7fc79b; --no:#f0908a; --panel:#1c1f25; --act:#6b9bff; --meas:#e0a94a; }
-}
-html{ background:var(--page); }
+*{ box-sizing:border-box; }
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+html{ background:var(--bg); }
 body{
-  margin:0 auto; padding:3.2rem 1.4rem 6rem; max-width:44rem;
-  background:var(--page); color:var(--ink);
-  font:17px/1.62 Palatino,"Palatino Linotype",Georgia,serif;
-  -webkit-text-size-adjust:100%;
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.6 var(--fs); -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
 }
-h1{ font-size:1.72rem; line-height:1.2; margin:0 0 .3rem; font-weight:600; letter-spacing:-.01em;}
-h2{ font-size:1.16rem; margin:3.2rem 0 .7rem; font-weight:600;
-    border-top:1px solid var(--rule); padding-top:1.1rem; }
-h3{ font-size:1.02rem; margin:2.4rem 0 .5rem; font-weight:600; color:var(--hi); }
+button{ font:inherit; color:inherit; }
+/* masthead: the atlas's bar, with the brand chip naming what kind of page this is */
+.bar{ padding:.9rem 1.4rem .7rem; border-bottom:1px solid var(--line); background:var(--surface);
+      display:flex; flex-wrap:wrap; align-items:baseline; gap:.3rem 1.4rem; }
+.brand{ margin:0; font-family:var(--fm); font-size:17px; font-weight:600; letter-spacing:-.01em; }
+.brand span{ color:var(--accent); font-weight:400; }
+.meta{ margin:0; font-size:12.5px; color:var(--ink-3); max-width:60rem; }
+.meta code{ color:var(--ink-2); background:none; padding:0; }
+.nav{ margin-left:auto; display:flex; gap:.9rem; font-size:12.5px; }
+.nav a{ color:var(--ink-2); text-decoration:none; }
+.nav a:hover{ color:var(--accent); }
+main{ max-width:46rem; margin:0 auto; padding:2.6rem 1.4rem 6rem; }
+h1{ font-size:1.7rem; line-height:1.2; margin:0 0 .4rem; font-weight:600; letter-spacing:-.01em; }
+h2{ font-size:1.15rem; margin:3.2rem 0 .7rem; font-weight:600; letter-spacing:-.01em;
+    border-top:1px solid var(--line); padding-top:1.1rem; }
+h3{ font-size:1rem; margin:2.4rem 0 .5rem; font-weight:600; color:var(--ink); }
 p{ margin:0 0 .85rem; }
 ul,ol{ margin:0 0 .9rem; padding-left:1.3rem; }
 li{ margin:.28rem 0; }
-code{ font:.86em ui-monospace,"SF Mono",Menlo,monospace; background:var(--panel);
-      padding:.08em .3em; border-radius:3px; }
-a{ color:inherit; text-decoration:underline; text-decoration-color:var(--rule);
-   text-underline-offset:2px; }
-.lede{ color:var(--dim); font-size:.94rem; margin:0 0 2.2rem; }
-table{ border-collapse:collapse; width:100%; margin:0 0 1.2rem; font-size:.9rem; }
-th,td{ text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--rule);
-       vertical-align:top; }
-th{ font-weight:600; font-size:.8rem; letter-spacing:.03em; text-transform:uppercase;
-    color:var(--dim); border-bottom-width:1.5px; }
+code{ font-family:var(--fm); font-size:.88em; color:var(--ink-2); background:var(--raised);
+      padding:.08em .32em; border-radius:3px; }
+a{ color:var(--accent); text-decoration:none; }
+a:hover{ text-decoration:underline; }
+.lede{ color:var(--ink-3); font-size:.95rem; margin:0 0 2.2rem; }
+.lede code{ color:var(--ink-2); }
+table{ border-collapse:collapse; width:100%; margin:0 0 1.2rem; font-size:.86rem; }
+th,td{ text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--line); vertical-align:top; }
+th{ font-family:var(--fm); font-weight:600; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--ink-3); border-bottom-color:var(--line-2); }
 figure{ margin:2rem 0; }
-figcaption{ font-size:.82rem; line-height:1.5; color:var(--dim); margin-top:.6rem; }
-.w{ background:var(--panel); border:1px solid var(--rule); border-radius:7px;
+figcaption{ font-size:.82rem; line-height:1.5; color:var(--ink-3); margin-top:.6rem; }
+/* widget panels: the atlas panel ground, a raised edge, monospace for the controls */
+.w{ background:var(--surface); border:1px solid var(--raised); border-radius:8px;
     padding:1rem 1.1rem 1.1rem; }
 .w .row{ display:flex; flex-wrap:wrap; gap:.55rem 1.1rem; align-items:center;
-         margin-bottom:.6rem; font:13px/1.4 ui-monospace,Menlo,monospace; }
+         margin-bottom:.6rem; font:12.5px/1.4 var(--fm); color:var(--ink-2); }
 .w ul.row{ list-style:none; padding-left:0; margin:0 0 .6rem; }
 .w ul.row li{ margin:0; }
 .w label{ display:inline-flex; align-items:center; gap:.45rem; }
-.w select,.w button{ font:13px ui-monospace,Menlo,monospace; padding:.22rem .45rem;
-  border:1px solid var(--rule); border-radius:4px; background:var(--page);
-  color:var(--ink); }
-.w input[type=range]{ width:7rem; }
-.w button{ cursor:pointer; }
-.w button.on{ border-color:var(--hi); color:var(--hi); font-weight:700; }
-.out{ font:13px/1.7 ui-monospace,Menlo,monospace; margin:.7rem 0 0;
-      border-top:1px solid var(--rule); padding-top:.7rem; white-space:pre-wrap;
-      word-break:break-word; }
-.yes{ color:var(--ok); font-weight:700; }
-.no{ color:var(--no); font-weight:700; }
-.mv{ color:var(--hi); font-weight:700; }
-.try{ font-size:.85rem; color:var(--dim); margin:.55rem 0 0; }
+.w .row code{ background:none; padding:0; color:var(--ink-2); font-size:1em; }
+.w select,.maptools select{ font:12.5px var(--fm); color:var(--ink); background:var(--raised);
+  border:1px solid var(--line-2); border-radius:4px; min-height:26px; padding:0 .45rem; }
+.w input[type=range]{ width:7rem; accent-color:var(--accent); }
+.w input[type=checkbox]{ accent-color:var(--accent); }
+.w button,.maptools button{ appearance:none; font:12px var(--fm); color:var(--ink-2);
+  background:var(--raised); border:1px solid var(--line); border-radius:4px;
+  min-height:26px; padding:0 .6rem; cursor:pointer; }
+.w button:hover,.maptools button:hover{ color:var(--accent); border-color:var(--accent); }
+.w button.on,.maptools button.on{ color:var(--ink); border-color:var(--accent);
+  box-shadow:inset 0 -2px 0 var(--accent); }
+.w .row a{ font-size:12px; }
+/* verdict lines */
+.out{ font:12.5px/1.7 var(--fm); color:var(--ink); margin:.7rem 0 0;
+      border-top:1px solid var(--line); padding-top:.7rem; white-space:pre-wrap; word-break:break-word; }
+.out code{ background:none; padding:0; font-size:1em; }
+.yes{ color:var(--good); font-weight:700; }
+.no{ color:var(--bad); font-weight:700; }
+.mv{ color:var(--accent); font-weight:700; }
+.try{ font-size:.88rem; color:var(--ink-3); margin:.55rem 0 0; }
 .try b{ color:var(--ink); font-weight:600; }
-.u{ font-size:.78rem; color:var(--no); letter-spacing:.03em; text-transform:uppercase; }
-.q{ background:var(--panel); border:1px solid var(--rule); border-radius:7px;
+.u{ font-family:var(--fm); font-size:11px; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--warn); padding:.05rem .4rem; border:1px dashed var(--line-2); border-radius:3px;
+    white-space:nowrap; }
+/* the quiz */
+.q{ background:var(--surface); border:1px solid var(--raised); border-radius:8px;
     padding:.9rem 1.1rem; margin:1rem 0; }
 .q ul{ list-style:none; padding-left:0; margin:.4rem 0 0; }
-.q li{ margin:.2rem 0; }
-.q button{ font:12px ui-monospace,Menlo,monospace; padding:.15rem .5rem; margin:.2rem 0;
-  border:1px solid var(--rule); border-radius:4px; background:var(--page);
-  color:var(--ink); cursor:pointer; text-align:left; }
-.q .answer{ font-size:.9rem; margin:.45rem 0 .2rem; display:none; color:var(--dim); }
-.d{ width:100%; height:auto; }
-.d text{ font:11px ui-monospace,Menlo,monospace; fill:var(--ink); }
-.d .sub{ font-size:9.5px; fill:var(--dim); }
-.d rect{ fill:none; stroke:var(--ink); stroke-width:1.2; }
-.d .soft{ stroke:var(--dim); stroke-dasharray:4 3; }
-.d .planned{ stroke:var(--act); stroke-dasharray:4 3; }
-.d .plannedt{ fill:var(--act); }
-.d .hit rect{ stroke:var(--no); stroke-width:2.2; }
-.d .hit text{ fill:var(--no); font-weight:700; }
-.d .pass rect{ stroke:var(--ok); }
+.q li{ margin:.25rem 0; }
+.q button{ appearance:none; font:13.5px/1.4 var(--fs); color:var(--ink-2); text-align:left;
+  background:var(--raised); border:1px solid var(--line); border-radius:4px;
+  min-height:26px; padding:.25rem .6rem; cursor:pointer; }
+.q button:hover{ color:var(--ink); border-color:var(--accent); }
+.q .answer{ font-family:var(--fm); font-size:12.5px; line-height:1.6; margin:.55rem 0 .2rem;
+  display:none; color:var(--ink-2); border-left:3px solid var(--accent); padding:.35rem .7rem;
+  background:var(--raised); border-radius:0 6px 6px 0; }
+/* the hand-drawn figures: ink lines, amber for what acts, steel for what measures */
+.d{ width:100%; height:auto; display:block; }
+.d text{ font:11px var(--fm); fill:var(--ink); }
+.d .sub{ font-size:9.5px; fill:var(--ink-3); }
+.d rect{ fill:none; stroke:var(--ink); stroke-width:1.1; }
+.d .soft{ stroke:var(--line-2); stroke-dasharray:4 3; }
+.d .planned{ stroke:var(--ink-3); stroke-dasharray:4 3; }
+.d .plannedt{ fill:var(--ink-3); }
+.d .hit rect{ stroke:var(--accent); stroke-width:2.2; }
+.d .hit text{ fill:var(--accent); font-weight:700; }
+.d .pass rect{ stroke:var(--good); stroke-width:1.8; }
 .d .off{ opacity:.25; }
-.d .cur rect{ fill:var(--page); stroke:var(--no); stroke-width:1.8; }
-.d .nrm rect{ fill:var(--page); stroke:var(--meas); stroke-width:1.8; }
-.d .res rect{ fill:var(--page); stroke:var(--dim); stroke-dasharray:3 3; }
-.d line,.d path,.d polyline{ stroke:var(--dim); stroke-width:1.1; fill:none; }
-.d marker path{ fill:var(--dim); stroke:none; }
-.d .qline{ stroke:var(--no); stroke-width:1.6; stroke-dasharray:6 3; }
-.d .rung{ fill:var(--panel); }
-.d .earned rect{ stroke:var(--act); stroke-width:2.2; }
-.d .runtime rect{ fill:var(--page); stroke:var(--ok); stroke-width:2.2; }
+.d .cur rect{ fill:var(--bg); stroke:var(--accent); stroke-width:1.8; }
+.d .nrm rect{ fill:var(--bg); stroke:var(--steel); stroke-width:1.8; }
+#w6-svg .nrm rect{ stroke:var(--accent); }
+.d .res rect{ fill:var(--bg); stroke:var(--ink-3); stroke-dasharray:3 3; }
+.d line,.d path,.d polyline{ stroke:var(--ink-3); stroke-width:1.1; fill:none; }
+.d marker path{ fill:var(--ink-3); stroke:none; }
+.d .qline{ stroke:var(--accent); stroke-width:1.6; stroke-dasharray:6 3; }
+.d .rung{ fill:var(--raised); }
+.d .earned rect{ stroke:var(--accent); stroke-width:2.2; }
+.d .runtime rect{ fill:var(--bg); stroke:var(--good); stroke-width:2.2; }
 /* The generated map: two extra states this page adds by class on the root. */
 .maptools{ display:flex; flex-wrap:wrap; gap:.5rem 1rem; align-items:center; margin:0 0 .6rem;
-           font:13px/1.4 ui-monospace,Menlo,monospace; }
-.maptools button{ font:13px ui-monospace,Menlo,monospace; padding:.25rem .6rem; cursor:pointer;
-  border:1px solid var(--rule); border-radius:4px; background:var(--page); color:var(--ink); }
-.maptools button.on{ border-color:var(--hi); color:var(--hi); font-weight:700; }
+           font:12.5px/1.4 var(--fm); color:var(--ink-3); }
 label:has(input[data-endstate]){ display:none; }
 #lessonmap.today .node.planned{ opacity:.22; }
 #lessonmap.today .flow.planned{ opacity:.1; }
 #lessonmap.today .flowlbl.planned{ opacity:.15; }
 #lessonmap.today .node--moved > text:last-of-type{ display:none; }
 #lessonmap.today .node--moved .node__box{ stroke-width:1.1; }
-#lessonmap.today .node--moved.built .node__box{ stroke:#16704F; }
-#lessonmap.today .node--moved.partial .node__box{ stroke:#7A8B83; }
-#lessonmap.today .node--moved.planned .node__box{ stroke:#AAB1BD; }
-#lessonmap .node.walk .node__box{ stroke:#2A5BD7; stroke-width:2.8; }
-#lessonmap .node.walk-m .node__box{ stroke:#9A6B12; stroke-width:2.8; }
-#lessonmap .flow.walk{ stroke:#2A5BD7; stroke-opacity:1; stroke-width:2.4; }
+#lessonmap.today .node--moved.built .node__box{ stroke:#8A7D63; }
+#lessonmap.today .node--moved.partial .node__box{ stroke:#D9B036; }
+#lessonmap.today .node--moved.planned .node__box{ stroke:#4A4237; }
+#lessonmap .node.walk .node__box{ stroke:var(--accent); stroke-width:2.8; }
+#lessonmap .node.walk-m .node__box{ stroke:var(--steel); stroke-width:2.8; }
+#lessonmap .flow.walk{ stroke:var(--accent); stroke-opacity:1; stroke-width:2.4; }
 #lessonmap .flowlbl.walk{ opacity:1; }
-#lessonmap .node.loop .node__box{ stroke:#6B3FC4; stroke-width:2.6; }
+#lessonmap .node.loop .node__box{ stroke:var(--accent); stroke-width:2.6; }
 .steps{ display:flex; flex-wrap:wrap; gap:.3rem; margin:.4rem 0 .6rem; }
 .steps button{ min-width:2rem; }
-@media print{ body{ max-width:none; } .w,.q{ break-inside:avoid; } .maptools{ display:none; } }
+@media (max-width:640px){ .nav{ margin-left:0; } }
+@media (prefers-reduced-motion:reduce){ *{ transition:none!important; animation:none!important; } }
+@media print{ main{ max-width:none; } .w,.q{ break-inside:avoid; } .maptools,.nav{ display:none; } }
 </style>
 </head>
 <body>
+<header class="bar">
+<p class="brand">kstrl <span>lesson</span></p>
+<p class="meta">PR 221, range <code>94fdbbd..79196de</code>, merged into <code>main</code> as
+<code>72404e9</code>. Taught on the day it landed and kept as it was; the register under
+<code>docs/lessons/</code> records what it taught.</p>
+<nav class="nav"><a href="index.html">Lessons</a><a href="../atlas/index.html">Atlas</a><a href="register.md">Register</a></nav>
+</header>
+<main>
 
 <h1>Six loops, one map: what kstrl becomes after R10</h1>
 
@@ -816,8 +860,8 @@ set point is <code>passes flag (a claim)</code>, from
 
 <h2>4. Walk one spec through it</h2>
 
-<p>The same map, one step at a time. Each step lights the components that act (blue) and the
-component that measures the step (amber). Where nothing measures a step, the step says so;
+<p>The same map, one step at a time. Each step lights the components that act (amber) and the
+component that measures the step (steel). Where nothing measures a step, the step says so;
 those are the open loops.</p>
 
 <figure class="w">
@@ -829,7 +873,7 @@ those are the open loops.</p>
 </div>
 <div class="steps" id="walk-strip"></div>
 <div class="out" id="walk-out">Press Next.</div>
-<p class="try"><b>Try this.</b> Step to "the engineer builds one story" and look for an amber
+<p class="try"><b>Try this.</b> Step to "the engineer builds one story" and look for a steel
 card: only the breaker and the path guard measure anything, and neither reads the code, so the
 fast loop is open. Then step to "release" and "runtime signals": nothing lights but a ghost,
 because the operate loop is not built.</p>
@@ -1359,6 +1403,7 @@ for it. The design supplies the word.</p>
 <p>Anything here that did not land, ask your teacher. The map, the walk and every widget
 answer to a script in <code>docs/lessons/verify/pr-221/</code>; if a claim and a script
 disagree, the script is the one to read first.</p>
+</main>
 
 <script>
 (function(){
@@ -1905,7 +1950,7 @@ function w4(){
 // 5.5
 var w5s = R.newLadder(), w5last = "fresh state: L1, nothing earned";
 function w5draw(earned, runtime){
-  var s = '<text x="6" y="14" class="sub">THE LADDER: EARNED LEVEL (BLUE) AND THE LEVEL A RUN MAY USE (GREEN)</text>';
+  var s = '<text x="6" y="14" class="sub">THE LADDER: EARNED LEVEL (AMBER) AND THE LEVEL A RUN MAY USE (GREEN)</text>';
   for(var l = 1; l <= 4; l++){
     var x = 6 + (l - 1) * 163;
     var cls = (l === runtime ? "runtime" : "") + (l === earned ? " earned" : "");

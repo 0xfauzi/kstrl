@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>kstrl lessons</title>
+<style>
+:root{color-scheme:dark;--bg:#161310;--surface:#1E1A15;--raised:#27221A;--line:#2E2820;--line-2:#4A4237;--ink:#ECE5D8;--ink-2:#C4B9A4;--ink-3:#A2967F;--accent:#E5A84F;--accent-soft:#E5A84F2E;--steel:#82A7BA;--good:#8FC470;--warn:#D9B036;--bad:#E26D5A;--violet:#B48EC9;--fs:ui-sans-serif,system-ui,-apple-system,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--fm:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;--l-work:#D9CDB2;--l-measure:#82A7BA;--l-feedback:#E39A86;--l-operator:#DD9BBD;--l-trust:#B48EC9;--l-learn:#86C9A9;--l-record:#B7C27C;}
+*{box-sizing:border-box}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--fs);font-size:15px;
+line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:var(--fm);font-size:.92em;color:var(--ink-2)}
+.bar{padding:.9rem 1.4rem .7rem;border-bottom:1px solid var(--line);background:var(--surface);
+display:flex;flex-wrap:wrap;align-items:baseline;gap:.3rem 1.4rem}
+.brand{margin:0;font-family:var(--fm);font-size:17px;font-weight:600;letter-spacing:-.01em}
+.brand span{color:var(--accent);font-weight:400}
+.meta{margin:0;font-size:12.5px;color:var(--ink-3);max-width:60rem}
+.nav{margin-left:auto;display:flex;gap:.9rem;font-size:12.5px}
+.nav a{color:var(--ink-2)}
+.nav a:hover{color:var(--accent);text-decoration:none}
+main{max-width:46rem;margin:0 auto;padding:2.6rem 1.4rem 5rem}
+h1{font-size:1.7rem;line-height:1.2;margin:0 0 .4rem;font-weight:600;letter-spacing:-.01em}
+.lede{margin:0 0 2rem;color:var(--ink-3);font-size:.95rem;max-width:40rem}
+.card{display:block;background:var(--surface);border:1px solid var(--raised);border-radius:8px;
+padding:1rem 1.1rem 1.05rem;margin:0 0 .8rem;color:inherit}
+.card:hover{border-color:var(--accent);text-decoration:none}
+.card__t{display:block;font-size:1.05rem;font-weight:600;color:var(--ink);margin:0 0 .3rem;
+letter-spacing:-.01em}
+.card__m{display:flex;flex-wrap:wrap;gap:.3rem .9rem;margin:0 0 .5rem;font-family:var(--fm);
+font-size:11px;letter-spacing:.05em;color:var(--ink-3)}
+.card__m code{color:var(--ink-2);font-size:inherit}
+.card__s{display:block;font-size:14px;color:var(--ink-2);margin:0}
+.card__s code{background:var(--raised);padding:.05em .3em;border-radius:3px}
+.empty{color:var(--ink-3);font-size:14px}
+.foot{margin-top:2.4rem;padding-top:1rem;border-top:1px solid var(--line);font-size:12px;
+color:var(--ink-3)}
+.foot a{color:var(--ink-2)}
+.foot a:hover{color:var(--accent)}
+</style>
+</head><body>
+<header class="bar">
+<p class="brand">kstrl <span>lessons</span></p>
+<p class="meta">What each merged change taught, as pages you can operate: one lesson. Generated from <code>docs/lessons/register.md</code>.</p>
+<nav class="nav"><a href="../atlas/index.html">Atlas</a><a href="register.md">Register</a></nav>
+</header>
+<main>
+<h1>Lessons</h1>
+<p class="lede">A lesson is a change taught as a page you can operate, kept as it was on the day it landed.</p>
+<a class="card" href="pr-221.html">
+<span class="card__t">PR 221: kstrl as a control loop, and the end state it defines</span>
+<span class="card__m"><span><code>pr-221.html</code></span><span>range <code>94fdbbd..79196de</code></span></span>
+<span class="card__s">What the lesson taught. The end architecture as one clickable map: the atlas's own drawing of kstrl with the components the R10 plan reaches marked, a TODAY and END STATE toggle, a per-component panel, and a thirteen-step walk of one spec from labelled issue to journal that lights, on the same drawing, which component acts and which component measures each step.</span>
+</a>
+<p class="foot">Every lesson embeds the <a href="../atlas/index.html">system atlas</a> and marks where its change landed. The record of what each one taught, and the vocabulary they share, is <a href="register.md">register.md</a>.</p>
+</main></body></html>
