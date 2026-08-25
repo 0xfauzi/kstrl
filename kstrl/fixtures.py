@@ -375,7 +375,13 @@ def run_function_fixture(
             message=f"Fixture spec is not JSON-serializable: {exc}",
         )
 
-    argv = [sys.executable, "-c", _FUNCTION_FIXTURE_RUNNER, spec_json]
+    # -B: the runner imports the project's module, and CPython would
+    # write a __pycache__ beside it. A fixture is a measurement, and
+    # `ks sense` (R10.1) promises to leave the tree it measures alone;
+    # the cache would never be reused anyway, since the process exits.
+    argv = [
+        sys.executable, "-B", "-c", _FUNCTION_FIXTURE_RUNNER, spec_json,
+    ]
     try:
         result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:

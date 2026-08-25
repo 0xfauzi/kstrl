@@ -51,6 +51,10 @@ $EDITOR scripts/kstrl/prd.json     # define what to build (user stories + accept
 ks run 25                          # let the agent work for up to 25 iterations
 ```
 
+`ks sense` runs the mechanical sensors (tests, typecheck, lint, diff scope, bad patterns) against any tree by hand, with no PRD, branch, worktree or agent spend; `ks sense --json` prints the same measurement as one JSON document for scripts.
+It is the standalone entry point to the checks the factory runs in Phase 1, so a threshold can be measured before it is automated.
+The measurement is read-only: it runs against your live checkout, so it never edits, stages, commits or leaves bytecode behind, and it exits 2 rather than reporting a pass when git cannot produce the diff against `--base`.
+
 Every long-running command opens its live dashboard on a terminal automatically (`--no-tui` opts out), and bare `ks` opens a home shell with a run browser and command launcher; `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI (and opens the dashboard when you run it interactively).
 
 You need at least one AI coding agent CLI:
@@ -238,6 +242,7 @@ ks queue show ITEM_ID           Show one item in full, with its transition histo
 ks queue sync                   Pull labelled GitHub issues into the queue (R8.6).
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
+ks sense                        Run the mechanical sensors against a tree and print the measurement.
 ks serve                        Drain the continuous-intake queue (R8.6).
 ks status                       Show per-component status from the manifest + progress log.
 ks understand [MAX_ITERATIONS]  Run codebase understanding loop (read-only mode).
