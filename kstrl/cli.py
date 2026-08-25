@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig
@@ -110,6 +110,28 @@ def _console_ui(
 
 def _use_cli_value(ctx: click.Context, name: str) -> bool:
     return ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
+
+
+def _detect_base_branch(cwd: Path) -> str:
+    """Base branch of the repo at ``cwd``: ``origin/HEAD``'s target, else main.
+
+    Shared by ``ks run`` (manifest base) and ``ks sense`` (diff base).
+    Any failure to ask git - no repo, no remote, git missing, timeout -
+    falls back to ``main``; the caller can always override with a flag.
+    """
+    import subprocess as _sp
+
+    try:
+        head_ref = _sp.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        if head_ref.returncode == 0:
+            # "refs/remotes/origin/main" -> "main"
+            return head_ref.stdout.strip().rsplit("/", 1)[-1]
+    except Exception:
+        pass
+    return "main"
 
 
 # Accepted spellings for the agent type across the config surface.
@@ -644,18 +666,7 @@ def run(
     effective_branch = config.kstrl_branch or prd_branch or "kstrl/run"
 
     # Detect base branch from git
-    detected_base = "main"
-    try:
-        import subprocess as _sp
-        head_ref = _sp.run(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            cwd=root_dir, capture_output=True, text=True, timeout=5,
-        )
-        if head_ref.returncode == 0:
-            # "refs/remotes/origin/main" -> "main"
-            detected_base = head_ref.stdout.strip().rsplit("/", 1)[-1]
-    except Exception:
-        pass
+    detected_base = _detect_base_branch(root_dir)
 
     # Build single-component manifest from PRD
     rel_prd = str(config.prd_file)
@@ -2874,6 +2885,185 @@ def status(
             _time.sleep(max(0.5, interval))
     except KeyboardInterrupt:
         sys.exit(0)
+
+
+SENSE_SCHEMA_VERSION = 1
+
+
+def _sense_error(message: str, as_json: bool) -> NoReturn:
+    """Exit 2: the measurement itself could not run.
+
+    One ``error:`` line on stderr always; with ``--json`` a one-key
+    document on stdout so a pipe reading stdout sees the failure too.
+    """
+    click.echo(f"error: {message}", err=True)
+    if as_json:
+        click.echo(json.dumps(
+            {"schema_version": SENSE_SCHEMA_VERSION, "error": message},
+        ))
+    sys.exit(2)
+
+
+@cli.command()
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root; kstrl.toml is read from here "
+         "(defaults to current directory)",
+)
+@click.option(
+    "--path",
+    "tree_path",
+    type=click.Path(path_type=Path),
+    help="Tree to measure: a worktree, a checkout, any directory "
+         "(defaults to --root)",
+)
+@click.option(
+    "--base",
+    "base_branch",
+    type=str,
+    default=None,
+    help="Base branch for the diff-scope and bad-pattern checks "
+         "(default: the branch origin/HEAD points at, else main)",
+)
+@click.option(
+    "--prd",
+    "prd_path",
+    type=click.Path(path_type=Path),
+    help="PRD file; when given, the prd_stories check and the "
+         "approved-fixtures oracle also run",
+)
+@click.option(
+    "--allowed-path",
+    "allowed_paths",
+    multiple=True,
+    help="Glob the diff must stay inside (repeatable); when absent "
+         "diff-scope reports no scope constraints",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the measurement as one JSON document instead of a table",
+)
+@click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+def sense(
+    root: Path | None,
+    tree_path: Path | None,
+    base_branch: str | None,
+    prd_path: Path | None,
+    allowed_paths: tuple[str, ...],
+    as_json: bool,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Run the mechanical sensors against a tree and print the measurement.
+
+    R10.1: the same checks Phase 1 runs inside the factory (test suite,
+    typecheck, linter, diff scope, bad patterns, plus any opt-in
+    policy / adequacy / dead-code / mutation checks from kstrl.toml),
+    run by hand with no PRD, no branch, no worktree and no agent spend.
+    Nothing is written to .kstrl/ or anywhere else; only the configured
+    test / typecheck / lint commands touch the tree (their own caches).
+
+    Exit 0 when every check passed, 1 when any failed, 2 when the
+    measurement itself could not run (missing path, bad kstrl.toml).
+    """
+    root_dir = root.resolve() if root else Path.cwd()
+    path = tree_path.resolve() if tree_path else root_dir
+
+    if not root_dir.is_dir():
+        _sense_error(f"root is not a directory: {root_dir}", as_json)
+    if not path.is_dir():
+        _sense_error(f"path is not a directory: {path}", as_json)
+
+    from kstrl.adequacy import AdequacyConfig
+    from kstrl.fixtures import FixturesConfig
+    from kstrl.policy import PolicyConfig
+    from kstrl.verify import VerifyConfig, run_mechanical_verification
+
+    try:
+        verify_cfg = VerifyConfig.load(root_dir)
+        policy_cfg = PolicyConfig.load(root_dir)
+        adequacy_cfg = AdequacyConfig.load(root_dir)
+        fixtures_cfg = (
+            FixturesConfig.load(root_dir) if prd_path is not None else None
+        )
+    except (OSError, ValueError) as exc:
+        # ValueError covers malformed TOML (load_toml_section) and the
+        # loaders' own validation errors (PolicyConfigError is one).
+        _sense_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
+
+    base = base_branch or _detect_base_branch(path)
+
+    result = run_mechanical_verification(
+        worktree_path=path,
+        prd_path=prd_path.resolve() if prd_path is not None else None,
+        base_branch=base,
+        allowed_paths=list(allowed_paths) or None,
+        config=verify_cfg,
+        policy_config=policy_cfg,
+        adequacy_config=adequacy_cfg,
+        fixtures_config=fixtures_cfg,
+        autonomy_level=0,
+        component_id=None,
+    )
+
+    if as_json:
+        document: dict[str, Any] = {
+            "schema_version": SENSE_SCHEMA_VERSION,
+            "path": str(path),
+            "base_branch": base,
+            "passed": result.passed,
+            "checks": [
+                {
+                    "name": check.name,
+                    "passed": check.passed,
+                    "message": check.message,
+                    "details": list(check.details),
+                    "duration_seconds": check.duration_seconds,
+                    "findings": [f.to_dict() for f in check.findings],
+                }
+                for check in result.checks
+            ],
+        }
+        click.echo(json.dumps(document, indent=2))
+        sys.exit(0 if result.passed else 1)
+
+    force_rich = os.environ.get("GUM_FORCE") == "1"
+    ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
+    ui_impl.section("ks sense")
+    ui_impl.kv("Path", str(path))
+    ui_impl.kv("Base branch", base)
+    ui_impl.info("")
+    name_width = max((len(c.name) for c in result.checks), default=0)
+    for check in result.checks:
+        verdict = "pass" if check.passed else "FAIL"
+        ui_impl.info(
+            f"  {check.name.ljust(name_width)}  {verdict}  "
+            f"{check.message}  ({check.duration_seconds:.2f}s)"
+        )
+        if not check.passed:
+            for detail in check.details:
+                for line in detail.splitlines():
+                    ui_impl.info(f"      {line}")
+    ui_impl.info("")
+    failed = sum(1 for c in result.checks if not c.passed)
+    if result.passed:
+        ui_impl.ok("sense: PASS")
+        sys.exit(0)
+    ui_impl.err(f"sense: FAIL ({failed} of {len(result.checks)} checks failed)")
+    sys.exit(1)
 
 
 @cli.command()

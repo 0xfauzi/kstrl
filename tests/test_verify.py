@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
     CheckResult,
     VerificationResult,
@@ -808,3 +809,68 @@ class TestCheckDeadCode:
             result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
 
         assert not any(c.name == "dead_code" for c in result.checks)
+
+
+class TestRunMechanicalVerificationWithoutPrd:
+    """R10.1: ``prd_path=None`` skips exactly the PRD-dependent checks."""
+
+    @staticmethod
+    def _config() -> VerifyConfig:
+        return VerifyConfig(
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
+        )
+
+    def test_run_mechanical_verification_without_prd(self, tmp_path: Path) -> None:
+        prd = tmp_path / "prd.json"
+        prd.write_text(json.dumps({
+            "branchName": "test",
+            "userStories": [
+                {
+                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
+                    "priority": 1, "passes": True, "notes": "",
+                }
+            ],
+        }))
+        fixtures = FixturesConfig(enabled=True)
+
+        with_prd = run_mechanical_verification(
+            tmp_path, prd, "main", None, self._config(), fixtures_config=fixtures,
+        )
+        without_prd = run_mechanical_verification(
+            tmp_path, None, "main", None, self._config(), fixtures_config=fixtures,
+        )
+
+        # The Path call keeps its full list, PRD-dependent checks included.
+        assert [c.name for c in with_prd.checks] == [
+            "prd_stories", "test_suite", "typecheck", "linter", "fixtures",
+        ]
+        # None drops exactly prd_stories and fixtures; nothing else moves.
+        assert [c.name for c in without_prd.checks] == [
+            "test_suite", "typecheck", "linter",
+        ]
+        assert without_prd.passed is True
+
+    def test_without_prd_self_critique_needs_an_explicit_progress_path(
+        self, tmp_path: Path,
+    ) -> None:
+        """No PRD means no sibling log to derive: the check is skipped,
+        unless [verify] progress_file_path names the log explicitly."""
+        config = self._config()
+        config.require_self_critique = True
+
+        result = run_mechanical_verification(tmp_path, None, "main", None, config)
+        assert not any(c.name == "self_critique" for c in result.checks)
+
+        config.progress_file_path = "progress.txt"
+        result = run_mechanical_verification(tmp_path, None, "main", None, config)
+        critique = [c for c in result.checks if c.name == "self_critique"]
+        assert len(critique) == 1
+        # The configured file is absent, so the check fails closed
+        # against tmp_path/progress.txt rather than being skipped.
+        assert critique[0].passed is False
+        assert "Could not read progress file" in critique[0].message

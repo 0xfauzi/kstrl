@@ -1374,7 +1374,7 @@ def check_dead_code(
 
 def run_mechanical_verification(
     worktree_path: Path,
-    prd_path: Path,
+    prd_path: Path | None,
     base_branch: str,
     allowed_paths: list[str] | None,
     config: VerifyConfig,
@@ -1387,6 +1387,13 @@ def run_mechanical_verification(
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
 
+    ``prd_path=None`` (R10.1, ``ks sense``) skips the PRD-dependent
+    checks: ``prd_stories``, the approved-fixtures oracle (fixtures are
+    declared in the PRD), and ``self_critique`` unless
+    ``config.progress_file_path`` names the log explicitly (with no PRD
+    there is no sibling to derive it from). Every other check runs
+    exactly as it does with a real path.
+
     ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
     the approved-fixtures oracle runs against the PRD's ``fixtures``
     entries - sandboxed subprocess execution lives in
@@ -1395,7 +1402,8 @@ def run_mechanical_verification(
     """
     checks: list[CheckResult] = []
 
-    checks.append(check_prd_stories(prd_path))
+    if prd_path is not None:
+        checks.append(check_prd_stories(prd_path))
 
     checks.append(check_test_suite(
         worktree_path, config.test_command, config.subprocess_timeout,
@@ -1453,15 +1461,26 @@ def run_mechanical_verification(
         # the harness's own path confusion. An explicit config wins.
         # prd_path is worktree-absolute at the factory call site, so the
         # derived sibling is too; the join is a no-op for an absolute
-        # path and still anchors a relative one.
-        progress_path = worktree_path / component_progress_path(
-            prd_path, config.progress_file_path,
-        )
-        checks.append(check_self_critique(
-            progress_path, config.self_critique_min_bullets,
-        ))
+        # path and still anchors a relative one. With neither a PRD nor
+        # an explicit path there is no log to read, so the check is
+        # skipped rather than run against a path that cannot exist.
+        progress_path: Path | None = None
+        if config.progress_file_path is not None:
+            progress_path = worktree_path / Path(config.progress_file_path)
+        elif prd_path is not None:
+            progress_path = worktree_path / component_progress_path(
+                prd_path, None,
+            )
+        if progress_path is not None:
+            checks.append(check_self_critique(
+                progress_path, config.self_critique_min_bullets,
+            ))
 
-    if fixtures_config is not None and fixtures_config.enabled:
+    if (
+        prd_path is not None
+        and fixtures_config is not None
+        and fixtures_config.enabled
+    ):
         # Imported lazily: fixtures.py imports CheckResult/run_scrubbed
         # from this module, so a module-level import would be a cycle.
         from kstrl.fixtures import check_fixtures_from_prd
