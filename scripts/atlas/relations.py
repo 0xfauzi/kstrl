@@ -44,6 +44,7 @@ PLAIN: dict[str, str] = {
     "PathGuard": "the scope fence",
     "OperatorContext": "your standing instructions",
     "MechanicalVerifier": "the checks that need no model",
+    "FailureParsers": "tool output turned into targets",
     "Reviewer": "the second opinion",
     "SecurityReviewer": "the security opinion",
     "ContractTester": "the integration check",
@@ -55,6 +56,8 @@ PLAIN: dict[str, str] = {
     "Sense": "run any check by hand",
     "Pipeline": "the decision per component",
     "Scheduler": "the decision per run",
+    "HumanCheckpoint": "the pause before a merge",
+    "Configuration": "the settings every loop runs on",
     "Worktrees": "one working copy per component",
     "PullRequests": "the merge",
     "Distiller": "what was learned about the artifact",
@@ -166,6 +169,8 @@ LAYER_OVERRIDES: dict[tuple[str, str], str] = {
     ("Inbox", "ServeDaemon"): "operator",
     ("GitHubIssues", "GitHubIntake"): "operator",
     ("PullRequests", "GitHubPRs"): "operator",
+    ("HumanCheckpoint", "Operator"): "operator",
+    ("Operator", "Configuration"): "operator",
 }
 
 # ---------------------------------------------------------------------------
@@ -234,6 +239,10 @@ RELATIONS: dict[tuple[str, str], str] = {
         "Input and output pairs approved in the PRD are run sandboxed, outside the tree the agent can write, so a gamed test file cannot deselect them.",
     ("MechanicalVerifier", "Findings"):
         "Every failed check becomes a typed finding with a file, a line and a fix hint; a check that could not run leaves a finding saying so.",
+    ("MechanicalVerifier", "FailureParsers"):
+        "Each failed check's stdout and stderr go to the parsers, which recover the file, the line and the message and attach a hint.",
+    ("FailureParsers", "Findings"):
+        "A parsed failure becomes a typed finding with a location and a suggestion; unparseable output still becomes a finding, without them.",
     ("Reviewer", "Findings"):
         "Each acceptance criterion gets a verdict, and each concern beyond the criteria (scope creep, weak tests, dead code) becomes a finding.",
     ("SecurityReviewer", "Findings"):
@@ -256,6 +265,18 @@ RELATIONS: dict[tuple[str, str], str] = {
         "A failing tier is attributed to the most recently merged component, which the scheduler resets and re-runs against the fresh base.",
     ("Pipeline", "Inbox"):
         "A merge you asked to approve, a policy exception, a budget overrun: the pipeline parks the decision for you instead of taking it.",
+    ("Pipeline", "HumanCheckpoint"):
+        "When pause_before_pr_merge is on, the pipeline stops before the merge and hands the checkpoint the diff excerpt, both finding streams and what the attempt cost.",
+    ("HumanCheckpoint", "Operator"):
+        "You approve, reject (which fails the component and skips its dependents) or spend a retry; unattended, the decision waits in the inbox.",
+    ("HumanCheckpoint", "Inbox"):
+        "With no terminal attached, the checkpoint parks the merge as an inbox item instead of proceeding; nothing merges past a parked decision.",
+    ("Configuration", "Scheduler"):
+        "The run reads its parallelism, retry budget, ceilings and timeouts from the resolved configuration at start; issue #192 makes that a single read so mid-run edits cannot diverge from the recorded policy hash.",
+    ("Configuration", "EngineerLoop"):
+        "The inner loop's iteration cap, its pause between iterations and the paths of the prompt, PRD and progress files come from the configuration.",
+    ("Operator", "Configuration"):
+        "You turn the gains between runs: kstrl.toml, KSTRL_* variables and command flags, in that precedence from lowest to highest.",
     ("Scheduler", "AutonomyLadder"):
         "After a run, its outcome (decisive or not, merged components, violations) is folded into the evidence the ladder promotes or demotes on.",
     ("AutonomyLadder", "Pipeline"):
@@ -363,6 +384,8 @@ JOURNEYS: list[dict[str, object]] = [
              "say": "You write the spec and, when the planner halts on a blocker, you fix the spec; there is no override flag."},
             {"acts": ["Dashboard", "Operator"], "measures": [], "edge": ("Dashboard", "Operator"),
              "say": "You watch the board, drill into a component, and read the findings beside the transcript."},
+            {"acts": ["Pipeline", "HumanCheckpoint"], "measures": [], "edge": ("HumanCheckpoint", "Operator"),
+             "say": "With the checkpoint on, the factory stops before each merge and shows you the diff, the findings and the cost; you approve, reject or spend a retry."},
             {"acts": ["Pipeline", "Inbox", "Operator"], "measures": [], "edge": ("Operator", "Inbox"),
              "say": "Decisions the factory may not take alone wait for you in one place; you approve, reject, retry or snooze."},
             {"acts": ["Operator", "AutonomyLadder"], "measures": [], "edge": ("Operator", "AutonomyLadder"),
@@ -435,6 +458,14 @@ VERB_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
     ("EventBus", "Reducer"): ("is folded by", "folds"),
     ("Reducer", "Dashboard"): ("drives", "renders"),
     ("EventBus", "LinearMirror"): ("mirrors to", "mirrors"),
+    ("Pipeline", "HumanCheckpoint"): ("pauses for", "holds"),
+    ("HumanCheckpoint", "Operator"): ("asks", "decides at"),
+    ("HumanCheckpoint", "Inbox"): ("parks in", "holds for"),
+    ("MechanicalVerifier", "FailureParsers"): ("hands output to", "parses for"),
+    ("FailureParsers", "Findings"): ("shapes into", "is shaped by"),
+    ("Configuration", "Scheduler"): ("sets the gains for", "reads gains from"),
+    ("Configuration", "EngineerLoop"): ("bounds", "is bounded by"),
+    ("Operator", "Configuration"): ("tunes", "is tuned by"),
 }
 
 

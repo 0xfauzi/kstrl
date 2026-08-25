@@ -59,5 +59,9 @@ jobs:
         run: |
           uv run python scripts/atlas/figures.py --check || {
             echo "::error title=Figures are stale::docs/atlas/figures/ differs from what figures.py generates. Run scripts/atlas/refresh.sh and commit docs/atlas/."
+      - name: lessons index matches the register
+        run: |
+          uv run python scripts/atlas/lessons_index.py --check || {
+            echo "::error title=Lessons index is stale::docs/lessons/index.html differs from what lessons_index.py renders from docs/lessons/register.md. Run scripts/atlas/refresh.sh and commit docs/lessons/index.html."
             exit 1
           }

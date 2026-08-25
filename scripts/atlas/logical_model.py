@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-CANVAS = (2278, 978)
+CANVAS = (2278, 1070)
 
 # The canvas is a grid of card columns 190 apart (150 card, 40 gutter) and
 # card rows 92 apart (56 card, 36 gutter). Every card sits on it, so every
@@ -58,8 +58,9 @@ ROW: dict[str, int] = {
     "r3": 294,
     "r4": 386,
     "r5": 478,
-    "l1": 650,
-    "l2": 742,
+    "r6": 570,
+    "l1": 742,
+    "l2": 834,
 }
 
 # Hard boundaries. Nesting is by containment in the coordinates, not a tree.
@@ -75,7 +76,7 @@ CONTAINERS: list[dict[str, Any]] = [
         "id": "factory",
         "label": "FACTORY PROCESS",
         "sub": "one process; every decision is code",
-        "box": (216, 16, 1846, 814),
+        "box": (216, 16, 1846, 906),
         "tone": "server",
     },
     {
@@ -89,21 +90,21 @@ CONTAINERS: list[dict[str, Any]] = [
         "id": "control_dir",
         "label": "CONTROL DIRECTORY",
         "sub": "XDG state outside the tree; the governor the agent cannot edit",
-        "box": (2080, 616, 182, 100),
+        "box": (2080, 708, 182, 100),
         "tone": "isolated",
     },
     {
         "id": "agent_cli",
         "label": "AGENT CLI",
         "sub": "subprocess in its own process group; killed on deadline",
-        "box": (848, 846, 182, 116),
+        "box": (848, 938, 182, 116),
         "tone": "isolated",
     },
     {
         "id": "worktree",
         "label": "WORKTREE",
         "sub": "the only tree the agent may write",
-        "box": (1046, 846, 178, 116),
+        "box": (1046, 938, 178, 116),
         "tone": "isolated",
     },
 ]
@@ -118,12 +119,12 @@ REGIONS: list[dict[str, Any]] = [
     {"id": "intake", "label": "INTAKE", "box": (234, 76, 380, 380)},
     {"id": "plan", "label": "PLAN", "box": (634, 76, 190, 288)},
     {"id": "build", "label": "BUILD", "box": (844, 76, 380, 380)},
-    {"id": "decide", "label": "DECIDE", "box": (1244, 168, 190, 196)},
-    {"id": "measure", "label": "MEASURE", "box": (1454, 76, 380, 472)},
+    {"id": "decide", "label": "DECIDE", "box": (1244, 76, 190, 380)},
+    {"id": "measure", "label": "MEASURE", "box": (1454, 76, 380, 564)},
     {"id": "ship", "label": "SHIP", "box": (1854, 76, 190, 472)},
-    {"id": "observe", "label": "OBSERVE", "box": (234, 616, 570, 196)},
-    {"id": "learn", "label": "LEARN", "box": (1034, 616, 380, 196)},
-    {"id": "trust", "label": "TRUST", "box": (1454, 616, 570, 196)},
+    {"id": "observe", "label": "OBSERVE", "box": (234, 708, 570, 196)},
+    {"id": "learn", "label": "LEARN", "box": (1034, 708, 380, 196)},
+    {"id": "trust", "label": "TRUST", "box": (1454, 708, 570, 196)},
 ]
 
 # Component id mapped to its place on the grid and how it is drawn:
@@ -154,12 +155,17 @@ _PLACE: dict[str, tuple[str, str, str]] = {
     "EngineerLoop": ("c5", "r3", "component"),
     "AgentAdapter": ("c4", "r4", "component"),
     "Breaker": ("c5", "r4", "component"),
-    # decide
+    # decide: the configuration on top, read once at run start by the
+    # scheduler under it; the checkpoint under the pipeline, the last stop
+    # before a merge
+    "Configuration": ("c6", "r1", "store"),
     "Scheduler": ("c6", "r2", "component"),
     "Pipeline": ("c6", "r3", "component"),
+    "HumanCheckpoint": ("c6", "r4", "component"),
     # measure: the three sensors the pipeline submits to stacked beside it,
-    # findings level with the pipeline on the far side of them; the two
-    # sensors that report to the ladder on the bottom row, above it
+    # findings level with the pipeline on the far side of them with the
+    # parsers directly under them; the two sensors that report to the ladder
+    # on the bottom row, above it
     "SecurityReviewer": ("c7", "r1", "component"),
     "ContractTester": ("c8", "r1", "component"),
     "Reviewer": ("c7", "r2", "component"),
@@ -167,9 +173,10 @@ _PLACE: dict[str, tuple[str, str, str]] = {
     "MechanicalVerifier": ("c7", "r3", "component"),
     "Findings": ("c8", "r3", "store"),
     "AdequacyGate": ("c7", "r4", "component"),
-    "FixturesOracle": ("c8", "r4", "component"),
-    "Calibration": ("c7", "r5", "component"),
-    "PolicyEnvelope": ("c8", "r5", "component"),
+    "FailureParsers": ("c8", "r4", "component"),
+    "FixturesOracle": ("c8", "r5", "component"),
+    "Calibration": ("c7", "r6", "component"),
+    "PolicyEnvelope": ("c8", "r6", "component"),
     # ship
     "PullRequests": ("c9", "r1", "component"),
     "Distiller": ("c9", "r2", "component"),
@@ -201,7 +208,7 @@ _PLACE: dict[str, tuple[str, str, str]] = {
 _ACTORS: dict[str, tuple[int, int]] = {
     "GitHubIssues": (32, 74),
     "GitHubPRs": (32, 130),
-    "CodingAgent": (864, 904),
+    "CodingAgent": (864, 996),
     "Operator": (2096, 74),
 }
 
@@ -259,6 +266,26 @@ _AGENT_MODULES = [
     "kstrl.agents.logging",
     "kstrl.agents.proc",
     "kstrl.agents.sdk_runner",
+]
+
+# The command tree and everything that only exists to serve it: the package
+# root and its entry point, the init and feature subcommands, and the
+# terminal output layer (plain and rich) the commands print through.
+_CLI_MODULES = [
+    "kstrl",
+    "kstrl.__main__",
+    "kstrl.cli",
+    "kstrl.init_cmd",
+    "kstrl.init_wizard",
+    "kstrl.feature_cmd",
+    "kstrl.output",
+    "kstrl.render",
+    "kstrl.ui",
+    "kstrl.ui.base",
+    "kstrl.ui.plain",
+    "kstrl.ui.rich_ui",
+    "kstrl.ui.animated_art",
+    "kstrl.ui.bridge",
 ]
 
 # Each record: id, region (None for an actor), does, interface, implemented_by,
@@ -438,8 +465,18 @@ COMPONENTS: list[dict[str, Any]] = [
         "policy, adequacy, dead code, mutation, fixtures; all checks run even "
         "if earlier ones fail.",
         "interface": "run_mechanical_verification(...) -> VerificationResult",
-        "implemented_by": ["kstrl.verify"],
+        "implemented_by": ["kstrl.verify", "kstrl.commandrun"],
         "entry": "run_mechanical_verification",
+    },
+    {
+        "id": "FailureParsers",
+        "region": "measure",
+        "does": "Turns raw pytest, mypy and ruff output into structured failures "
+        "with file, line, source context and a fix hint, so the agent is "
+        "handed a target rather than a wall of stderr.",
+        "interface": "parse_* functions -> structured failures",
+        "implemented_by": ["kstrl.parsers"],
+        "entry": "parse_pytest_output",
     },
     {
         "id": "Reviewer",
@@ -492,7 +529,7 @@ COMPONENTS: list[dict[str, Any]] = [
         "does": "Declarative merge guardrails on the diff and lockfile; "
         "enforcement-machinery paths halt at every level.",
         "interface": "evaluate_policy(...) -> PolicyEvaluation",
-        "implemented_by": ["kstrl.policy"],
+        "implemented_by": ["kstrl.policy", "kstrl.licensing"],
         "entry": "evaluate_policy",
     },
     {
@@ -530,7 +567,7 @@ COMPONENTS: list[dict[str, Any]] = [
         "distill, checkpoint, PR; decides retry, fail, or complete; owns the "
         "adversarial budget.",
         "interface": "ComponentPipeline.process_result",
-        "implemented_by": ["kstrl.pipeline"],
+        "implemented_by": ["kstrl.pipeline", "kstrl.retry_plan"],
         "entry": "ComponentPipeline",
     },
     {
@@ -539,8 +576,30 @@ COMPONENTS: list[dict[str, Any]] = [
         "does": "Schedules ready components into worktrees under max_parallel, "
         "runs contract testing, resets breakers, records autonomy outcomes.",
         "interface": "run_factory(...) -> FactoryResult",
-        "implemented_by": ["kstrl.factory"],
+        "implemented_by": ["kstrl.factory", "kstrl.shutdown", "kstrl.launch", "kstrl.runid"],
         "entry": "run_factory",
+    },
+    {
+        "id": "HumanCheckpoint",
+        "region": "decide",
+        "does": "The optional pause before a merge: shows the diff excerpt, both "
+        "finding streams and the attempt's cost, and waits for approve, reject "
+        "or retry; unattended, it parks the decision in the inbox instead of "
+        "proceeding.",
+        "interface": "CheckpointContext / the E6 checkpoint UI",
+        "implemented_by": ["kstrl.interaction"],
+        "entry": "CheckpointContext",
+    },
+    {
+        "id": "Configuration",
+        "region": "decide",
+        "does": "Every gain the loops run on: kstrl.toml sections, environment "
+        "overrides and CLI flags resolved once per process with env over toml "
+        "over defaults; per-phase timeouts; the resolved values reported with "
+        "provenance.",
+        "interface": "KstrlConfig / TimeoutConfig / <Section>Config.load(root)",
+        "implemented_by": ["kstrl.config", "kstrl.timeout", "kstrl.config_report"],
+        "entry": "KstrlConfig",
     },
     # ---- SHIP ------------------------------------------------------------
     {
@@ -733,7 +792,7 @@ COMPONENTS: list[dict[str, Any]] = [
         "does": "The ks command tree: run, factory, decompose, serve, status, "
         "dash, autonomy, inbox, queue, evolve.",
         "interface": "cli",
-        "implemented_by": ["kstrl.cli"],
+        "implemented_by": _CLI_MODULES,
         "entry": "cli",
     },
     # ---- actors, outside the factory ------------------------------------
@@ -799,8 +858,10 @@ FLOWS: list[tuple[str, str, str, str]] = [
     ("Operator", "Architect", "spec", "plan"),
     ("Architect", "Manifest", "component DAG", "plan"),
     ("Architect", "PRD", "stories + criteria", "plan"),
+    ("Configuration", "Scheduler", "resolved config + timeouts", "decide"),
     ("Manifest", "Scheduler", "ready components", "decide"),
     ("Scheduler", "Worktrees", "worktree per component", "ship"),
+    ("Configuration", "EngineerLoop", "max_iterations, sleep, prompt paths", "build"),
     ("Feedforward", "EngineerLoop", "computed context", "build"),
     ("KnowledgeInjector", "EngineerLoop", "facts", "build"),
     ("RetryContext", "EngineerLoop", "failures from last attempt", "build"),
@@ -819,6 +880,8 @@ FLOWS: list[tuple[str, str, str, str]] = [
     ("AdequacyGate", "MechanicalVerifier", "adequacy findings", "measure"),
     ("FixturesOracle", "MechanicalVerifier", "fixture results", "measure"),
     ("MechanicalVerifier", "Findings", "check results", "measure"),
+    ("MechanicalVerifier", "FailureParsers", "raw tool output", "measure"),
+    ("FailureParsers", "Findings", "structured failures", "measure"),
     ("Reviewer", "Findings", "criterion verdicts + concerns", "measure"),
     ("SecurityReviewer", "Findings", "vulnerability findings", "measure"),
     ("Findings", "Pipeline", "the error signal", "decide"),
@@ -830,6 +893,10 @@ FLOWS: list[tuple[str, str, str, str]] = [
     ("PullRequests", "ContractTester", "merged tiers", "measure"),
     ("ContractTester", "Scheduler", "breaker component to reset", "decide"),
     ("Pipeline", "Inbox", "checkpoint / policy exception / budget overrun", "trust"),
+    ("Pipeline", "HumanCheckpoint", "diff, findings, cost", "trust"),
+    ("HumanCheckpoint", "Operator", "approve / reject / retry", "trust"),
+    ("HumanCheckpoint", "Inbox", "parked merge gate", "trust"),
+    ("Operator", "Configuration", "kstrl.toml, env, flags", "decide"),
     ("Scheduler", "AutonomyLadder", "run outcome", "trust"),
     ("AutonomyLadder", "Pipeline", "flag bundle (withhold only)", "trust"),
     ("PolicyEnvelope", "AutonomyLadder", "violation -> demotion", "trust"),
@@ -936,9 +1003,12 @@ SPEC_ANCHOR: dict[str, str] = {
     "AdequacyGate": "ARCHITECTURE.md: The pipeline",
     "PolicyEnvelope": "ARCHITECTURE.md: The pipeline",
     "Findings": "ARCHITECTURE.md: The pipeline",
+    "FailureParsers": "ARCHITECTURE.md: The iteration loop",
     "Calibration": "docs/adversarial-design.md",
     "Sense": "control-loop-design 5.1",
     "Pipeline": "ARCHITECTURE.md: The pipeline",
+    "HumanCheckpoint": "ARCHITECTURE.md: The pipeline",
+    "Configuration": "ARCHITECTURE.md: The iteration loop",
     "Scheduler": "ARCHITECTURE.md: Factory mode",
     "Worktrees": "ARCHITECTURE.md: Factory mode",
     "PullRequests": "ARCHITECTURE.md: The pipeline",
@@ -1020,6 +1090,9 @@ GOVERNED_BY: dict[str, list[int]] = {
     "OperatorContext": [9],
     "Steering": [9],
     "HealthTrending": [8],
+    "HumanCheckpoint": [4, 7, 9],
+    "FailureParsers": [6, 12],
+    "Configuration": [8, 15],
 }
 
 # Card geometry the layout check shares with the schematic.

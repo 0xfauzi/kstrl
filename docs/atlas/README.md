@@ -111,9 +111,14 @@ region they neither start nor end in, and lists every offender with the
 router's reason; both must be zero), the labels (every edge label seated
 clear of cards and other labels), the meaning tables (every flow has a
 layer and a sentence, every component a plain word, every journey step a
-real edge), and the relationship wheel of every component (labels inside
-the drawing and off each other). Fix a failure by moving cards in
-`logical_model.py` or correcting `relations.py`, not by shrinking text.
+real edge), the relationship wheel of every component (labels inside
+the drawing and off each other), and coverage (every module in
+`atlas.json` is named by exactly one component's `implemented_by`, or by
+the pinned set in `SHARED_MODULES` where one file hosts several logical
+parts; it prints `coverage: N/N modules mapped` and lists any module the
+map does not draw). Fix a failure by moving cards in `logical_model.py` or
+correcting `relations.py`, not by shrinking text; fix a coverage failure by
+giving the module a component, not by adding it to `COVERAGE_IGNORE`.
 
 ## Citing the atlas from a lesson
 
