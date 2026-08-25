@@ -430,11 +430,16 @@ CORNER_CLEAR = 12.0
 ARROW_CLEAR = 16.0
 PORT_CLEAR = 6.0
 BESIDE = 4.0
+# A step badge on the line is 8.5 in radius; a label beside the line clears
+# it at this much further out.
+BADGE_CLEAR = 10.0
 # A short edge between two cards in one row cannot carry its label on the
 # line; the label sits in the row gutter above or below instead, aligned to
 # the edge: 38 clears a component card (28 half-height, 3 margin, half a
-# label), 51 is the second lane in a 36-unit gutter.
-GUTTER_OFFSETS = (-38.0, 38.0, -51.0, 51.0)
+# label), 51 is the second lane in a 36-unit gutter. The rest are for a
+# port off the card's centre line (8 or 16 from it) over a 28-unit gutter:
+# 30 and 46 seat a label from a port 8 off centre, 26 and 54 one 16 off.
+GUTTER_OFFSETS = (-38.0, 38.0, -51.0, 51.0, -30.0, 30.0, -46.0, 46.0, -26.0, 26.0, -54.0, 54.0)
 # Where along a segment a label may sit, as a fraction of the free run:
 # the middle first, then outward in both directions.
 T_ORDER = (0.5, *(v for k in range(1, 11) for v in (0.5 - k * 0.05, 0.5 + k * 0.05)))
@@ -498,6 +503,20 @@ def label_candidates(
                 cx = mid + (t - 0.5) * span
                 for off in GUTTER_OFFSETS:
                     box = (cx - lw / 2, y0 + off - lh / 2, lw, lh)
+                    if keep(box):
+                        out.append((k, k == longest, box))
+        else:
+            # Beside a vertical run too short to hold the label along it:
+            # in the gap the run crosses, just right of the line and then
+            # just left, centred on the run and then stepped along it; then
+            # a badge's width further out, for a run that carries one.
+            mid = (y0 + y1) / 2
+            span = max(0.0, lengths[k] - 12)
+            near, far = lw / 2 + BESIDE, lw / 2 + BESIDE + BADGE_CLEAR
+            for t in T_ORDER:
+                cy = mid + (t - 0.5) * span
+                for off in (near, -near, far, -far):
+                    box = (x0 + off - lw / 2, cy - lh / 2, lw, lh)
                     if keep(box):
                         out.append((k, k == longest, box))
     return out

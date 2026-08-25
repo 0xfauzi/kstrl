@@ -25,6 +25,12 @@ What is checked, in order:
     coverage ...... every module the extractor found is drawn by exactly one
                     component (or by the pinned set in SHARED_MODULES), so the
                     map cannot quietly leave part of the package undrawn
+    figures ....... every compact layer and journey figure (figures.py):
+                    every participant drawn, no edge through a card it does
+                    not connect, no label on a card, a strip, a badge or
+                    another label, nothing below 11px, and card names at
+                    8px or more when the panel fits a 900px column; the
+                    numbers are printed per figure
 
 Exit 0 when clean, 1 with one line per problem.
 
@@ -42,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from figures import all_figures, describe
 from logical_model import COMPONENTS, FLOWS, REGIONS, layout_problems
 from relations import (
     JOURNEYS,
@@ -327,6 +334,18 @@ def check_wheels(edges: list[dict[str, str]]) -> list[str]:
     return out
 
 
+def check_figures(atlas: dict[str, object]) -> tuple[list[str], list[str]]:
+    """(problems, one line of numbers per compact figure)."""
+    out: list[str] = []
+    lines: list[str] = []
+    for name, fig in all_figures(atlas).items():
+        if not fig.stats:
+            continue
+        lines.append(describe(name, fig))
+        out += [f"figure {name}: {p}" for p in fig.problems]
+    return out, lines
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--atlas", default="docs/atlas/atlas.json")
@@ -339,6 +358,7 @@ def main() -> int:
     problems += coverage_problems
     through = across = 0
     notes: list[str] = []
+    figure_lines: list[str] = []
     if not problems:
         svg, detail = render_schematic(atlas)
         meta = json.loads(detail)["_meta"]
@@ -348,6 +368,8 @@ def main() -> int:
         problems += check_type_size(svg)
         problems += check_wheels(meta["edges"])
         notes = [n for n in meta.get("notes", []) if "shorter segment" in n]
+        figure_problems, figure_lines = check_figures(atlas)
+        problems += figure_problems
     print(
         f"atlas routes: {through} edge{'s' if through != 1 else ''} through a card "
         f"they do not connect, {across} across a region they neither start nor end in"
@@ -355,6 +377,8 @@ def main() -> int:
     for line in notes:
         print(f"  note: {line}")
     print(f"coverage: {mapped}/{total} modules mapped")
+    for line in figure_lines:
+        print(f"  figure {line}")
     if problems:
         print(f"atlas layout: {len(problems)} problem{'s' if len(problems) != 1 else ''}")
         for line in problems:

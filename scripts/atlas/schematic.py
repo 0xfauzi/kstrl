@@ -237,6 +237,35 @@ def _svg_style(svg_id: str, t: dict[str, Any]) -> str:
     )
 
 
+def _static_style(svg_id: str, t: dict[str, Any]) -> str:
+    """The same class vocabulary as the interactive figure, frozen.
+
+    A static figure (an .svg a document embeds as an image) cannot run the
+    script, so what the script would set on a layer or a journey is set at
+    render time, and this stylesheet gives those classes the same look
+    without transitions, cursors or animation. Order matters: `hot` comes
+    after `planned` so a planned edge on a traced path is drawn at full
+    strength, dashed.
+    """
+    s = f"#{svg_id}"
+    return (
+        "<style>"
+        f"{s} .node.quiet{{opacity:.42}}"
+        f"{s} .node.planned{{opacity:.5}}"
+        f"{s} .node.planned.quiet{{opacity:.3}}"
+        f"{s} .node.meas .node__box{{stroke:{t['steel']};stroke-width:2.2}}"
+        f"{s} .node.acts .node__box{{stroke:{t['accent']};stroke-width:2.4}}"
+        f"{s} .node__ring{{display:none;fill:none;stroke:{t['steel']};stroke-width:1.6}}"
+        f"{s} .node.meas .node__ring{{display:inline}}"
+        f"{s} .flow.planned{{opacity:.35}}"
+        f"{s} .flowlbl.planned{{opacity:.5}}"
+        f"{s} .flow.off,{s} .flowlbl.off{{display:none}}"
+        f"{s} .flow.hot{{opacity:1;stroke-opacity:1;stroke-width:2.6}}"
+        f"{s} .flowlbl.hot{{opacity:1}}"
+        "</style>"
+    )
+
+
 def _defs(svg_id: str, t: dict[str, Any]) -> str:
     """Arrowheads: one per layer colour, plus the change-map colours.
 
@@ -259,6 +288,190 @@ def _defs(svg_id: str, t: dict[str, Any]) -> str:
     return "".join(out)
 
 
+class TextStyles:
+    """Text styling deduplicated into classes.
+
+    240 text elements each carrying a full font stack tripled the size of
+    the figure for no information, and a lesson embeds the figure whole.
+    Every distinct (size, colour, weight, face, anchor, spacing, halo) gets
+    one class; `css()` emits them, scoped to the figure's id. Nothing may be
+    set below `floor` (11px on the atlas), and the assertion is the check.
+    """
+
+    def __init__(self, svg_id: str, t: dict[str, Any], floor: float = TEXT_PX) -> None:
+        self.svg_id = svg_id
+        self.t = t
+        self.floor = floor
+        self.styles: dict[tuple[float, str, str, bool, str, str, bool], str] = {}
+
+    def __call__(
+        self,
+        px: float,
+        py: float,
+        text: str,
+        size: float,
+        colour: str,
+        weight: str = "500",
+        mono: bool = False,
+        anchor: str = "middle",
+        spacing: str = "",
+        halo: bool = False,
+    ) -> str:
+        assert size >= self.floor, f"text below {self.floor}px: {text!r} at {size}"
+        key = (size, colour, weight, mono, anchor, spacing, halo)
+        cls = self.styles.setdefault(key, f"t{len(self.styles)}")
+        return f'<text x="{px:.1f}" y="{py:.1f}" class="{cls}">{esc(text)}</text>'
+
+    def css(self) -> str:
+        rules: list[str] = []
+        for (size, colour, weight, mono, anchor, spacing, halo), cls in self.styles.items():
+            family = self.t["font_mono"] if mono else self.t["font_ui"]
+            rule = (
+                f"font-family:{family};font-size:{size}px;font-weight:{weight};"
+                f"fill:{colour};text-anchor:{anchor}"
+            )
+            if spacing:
+                rule += f";letter-spacing:{spacing}"
+            if halo:
+                rule += (
+                    f";paint-order:stroke;stroke:{self.t['bg']};stroke-width:4;"
+                    "stroke-linejoin:round"
+                )
+            rules.append(f"#{self.svg_id} .{cls}{{{rule}}}")
+        return "<style>" + "".join(rules) + "</style>"
+
+
+def card_svg(
+    L: TextStyles,
+    T: dict[str, Any],
+    cid: str,
+    kind: str,
+    state: str,
+    box: Box,
+    fill: str,
+    stroke: str,
+    classes: str,
+    region: str,
+    state_label: str,
+    plain: str,
+    stroke_width: float = 1.1,
+    name_px: float = NAME_PX,
+    text_px: float = TEXT_PX,
+) -> str:
+    """One card, open: the group, its box, its name and its plain word.
+
+    The caller closes the group, so a change map can add its delta bar
+    first. `classes` follows `node ` on the group (the build state, then
+    any of quiet, acts, meas, node--moved). A store is the same card with a
+    rule under its head: flat convention for a thing that holds rows rather
+    than does work. How many plain-word lines fit is derived from the card,
+    never assumed.
+    """
+    x, y, w, h = box
+    dashes = ' stroke-dasharray="4 3"' if state == "planned" or kind == "actor" else ""
+    g = [
+        f'<g class="node {classes}" '
+        f'data-id="{esc(cid)}" data-kind="{kind}" data-state="{state}" '
+        f'data-region="{esc(region)}" '
+        f'role="button" '
+        f'tabindex="0" aria-label="{esc(cid)}, {esc(plain)}, {esc(state_label)}">'
+        f'<rect class="node__box" x="{x}" y="{y}" width="{w}" height="{h}" '
+        f'rx="{RADIUS}" fill="{fill}" stroke="{stroke}" '
+        f'stroke-width="{stroke_width}"'
+        f"{dashes}/>"
+        f'<rect class="node__ring" x="{x + 3}" y="{y + 3}" width="{w - 6}" '
+        f'height="{h - 6}" rx="{RADIUS - 1}"/>'
+    ]
+    name_ink = T["ink"] if state != "planned" else T["ink_2"]
+    g.append(L(x + w / 2, y + 17, cid, name_px, name_ink, "600", True))
+    if kind == "store":
+        g.append(
+            f'<line x1="{x + 1}" y1="{y + 23}" x2="{x + w - 1}" y2="{y + 23}" '
+            f'stroke="{stroke}" stroke-opacity=".45" stroke-width="1"/>'
+        )
+    first = y + (36 if kind == "store" else 32)
+    room = int((y + h - 4 - first) // 12) + 1
+    plain_lines = wrap_words(plain, PLAIN_CHARS, max(1, room))
+    g.append(
+        '<g data-layer="job">'
+        + "".join(
+            L(x + w / 2, first + k * 12, line, text_px, T["ink_3"], "400")
+            for k, line in enumerate(plain_lines)
+        )
+        + "</g>"
+    )
+    return "".join(g)
+
+
+def flow_svg(
+    svg_id: str,
+    i: int,
+    src: str,
+    dst: str,
+    artifact: str,
+    kind: str,
+    layer_: str,
+    points: list[tuple[float, float]],
+    colour: str,
+    marker: str,
+    ghost: bool,
+    off: bool,
+    hot: bool,
+    art_hot: bool = False,
+) -> str:
+    """One routed flow as a path: dashed when planned, hidden when off."""
+    classes = f"flow {kind}" + (" planned" if ghost else "")
+    classes += (" off" if off else "") + (" hot" if hot else "")
+    dash = ' stroke-dasharray="4 3"' if ghost else ""
+    return (
+        f'<path id="{svg_id}-f{i}" class="{classes}" data-edge="{i}" data-from="{esc(src)}" '
+        f'data-to="{esc(dst)}" data-art="{esc(artifact)}" '
+        f'data-kind="{esc(kind)}" data-layer="{layer_}" d="{path_d(points)}" '
+        f'fill="none" stroke="{colour}" stroke-opacity="{0.95 if art_hot else 0.82}" '
+        f'stroke-width="{1.8 if art_hot else 1.2}"{dash} stroke-linecap="round" '
+        f'marker-end="url(#{svg_id}-m-{marker})"/>'
+    )
+
+
+def label_svg(
+    L: TextStyles,
+    i: int,
+    src: str,
+    dst: str,
+    kind: str,
+    layer_: str,
+    artifact: str,
+    box: Box,
+    colour: str,
+    ghost: bool,
+    off: bool,
+    hot: bool,
+    label_px: float = LABEL_PX,
+) -> str:
+    """The artifact on a flow, haloed, centred in the box the placer chose."""
+    lx, ly = box[0] + box[2] / 2, box[1] + box[3] - 3
+    return (
+        f'<g class="flowlbl {kind}{" planned" if ghost else ""}'
+        f'{" off" if off else ""}{" hot" if hot else ""}" data-edge="{i}" '
+        f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layer_}">'
+        + L(lx, ly, artifact, label_px, colour, "500", False, "middle", "", True)
+        + "</g>"
+    )
+
+
+def badge_svg(
+    L: TextStyles, T: dict[str, Any], i: int, n: str, bx: float, by: float
+) -> str:
+    """A journey step number in a filled accent circle, centred at (bx, by)."""
+    r = 8.5 + 3.2 * (len(n) - 1)
+    return (
+        f'<g class="step" data-edge="{i}">'
+        f'<circle cx="{bx:.1f}" cy="{by:.1f}" r="{r:.1f}" fill="{T["accent"]}"/>'
+        + L(bx, by + 4, n, TEXT_PX, T["bg"], "700", True)
+        + "</g>"
+    )
+
+
 def render(
     atlas: dict[str, Any],
     changed: set[str] | None = None,
@@ -268,6 +481,9 @@ def render(
     svg_id: str = "schematic",
     gained: dict[str, dict[str, int]] | None = None,
     hot_artifacts: set[str] | None = None,
+    layer: str = "",
+    journey: dict[str, Any] | None = None,
+    static: bool = False,
 ) -> tuple[str, str]:
     """(svg, json detail).
 
@@ -276,6 +492,16 @@ def render(
     the flow labels whose owning module redefined part of its surface; the
     change detector is the one place that computes it, so this only draws
     what it is told.
+
+    `layer` draws one layer the way the page's layer switch does: the other
+    layers' edges are off and the components they alone touch are quiet.
+    `journey` (one entry of relations.JOURNEYS) draws one journey the way
+    stepping through it does, all steps at once: only its edges are drawn,
+    each numbered with the steps that trace it, acting components in amber,
+    measuring components in steel, everything else quiet. Both set the same
+    classes the interactive script sets, so a static figure and the page
+    agree. `static` swaps the interactive stylesheet for one without
+    transitions, cursors or animation, for a figure embedded as an image.
 
     The detail JSON carries one record per component (what the focus panel
     shows) plus a `_meta` key: the layers, every edge with its verbs and its
@@ -290,47 +516,13 @@ def render(
     change_mode = mode == "change"
 
     T = theme_mod.get()
-    INK, INK_2, INK_3 = T["ink"], T["ink_2"], T["ink_3"]
+    INK_3 = T["ink_3"]
     HALO = T["bg"]
     GHOST_FILL, GHOST_STROKE = T["ghost"]
     LAYER_COLOUR: dict[str, str] = T["layers"]
 
-    # Text styling is deduplicated into classes: 240 text elements each
-    # carrying a full font stack tripled the size of the figure for no
-    # information. A lesson embeds this whole.
-    text_styles: dict[tuple[float, str, str, bool, str, str, bool], str] = {}
-
-    def L(
-        px: float,
-        py: float,
-        text: str,
-        size: float,
-        colour: str,
-        weight: str = "500",
-        mono: bool = False,
-        anchor: str = "middle",
-        spacing: str = "",
-        halo: bool = False,
-    ) -> str:
-        assert size >= TEXT_PX, f"text below {TEXT_PX}px: {text!r} at {size}"
-        key = (size, colour, weight, mono, anchor, spacing, halo)
-        cls = text_styles.setdefault(key, f"t{len(text_styles)}")
-        return f'<text x="{px:.1f}" y="{py:.1f}" class="{cls}">{esc(text)}</text>'
-
-    def text_css() -> str:
-        rules: list[str] = []
-        for (size, colour, weight, mono, anchor, spacing, halo), cls in text_styles.items():
-            family = T["font_mono"] if mono else T["font_ui"]
-            rule = (
-                f"font-family:{family};font-size:{size}px;font-weight:{weight};"
-                f"fill:{colour};text-anchor:{anchor}"
-            )
-            if spacing:
-                rule += f";letter-spacing:{spacing}"
-            if halo:
-                rule += f";paint-order:stroke;stroke:{HALO};stroke-width:4;stroke-linejoin:round"
-            rules.append(f"#{svg_id} .{cls}{{{rule}}}")
-        return "<style>" + "".join(rules) + "</style>"
+    L = TextStyles(svg_id, T)
+    text_css = L.css
 
     states = {c["id"]: build_state(c, atlas) for c in COMPONENTS}
 
@@ -403,6 +595,29 @@ def render(
     region_of = {c["id"]: c.get("region") or "" for c in COMPONENTS}
     region_boxes = {r["id"]: tuple(float(v) for v in r["box"]) for r in REGIONS}
     edges = [(src, dst) for src, dst, _art, _k in FLOWS]
+    edge_index = {(a, b): i for i, (a, b, _art, _k) in enumerate(FLOWS)}
+    # What a layer or a journey lights. `traced` maps an edge to the step
+    # numbers that trace it; `lit` is every component a journey names or
+    # its traced edges touch; `in_layer` every component the layer's edges
+    # touch. Mirrors paint() in the interactive script.
+    traced: dict[int, list[int]] = {}
+    acts_ids: set[str] = set()
+    meas_ids: set[str] = set()
+    lit: set[str] = set()
+    if journey:
+        for n, step in enumerate(journey["steps"], start=1):
+            e = edge_index.get(tuple(step["edge"]), -1)
+            if e >= 0:
+                traced.setdefault(e, []).append(n)
+                lit.update(FLOWS[e][:2])
+            acts_ids.update(step["acts"])
+            meas_ids.update(step["measures"])
+        lit |= acts_ids | meas_ids
+    in_layer: set[str] = set()
+    if layer:
+        for src, dst, _art, kind in FLOWS:
+            if layer_for((src, dst), kind) == layer:
+                in_layer.update((src, dst))
     routes = route_all(edges, boxes, actor_ids, blocks, region_boxes, region_of, CANVAS)
     widths = {i: len(FLOWS[i][2]) * LABEL_CHAR_W + 6 for i in routes}
     seats = place_labels(routes, widths, LABEL_H, obstacles, CANVAS)
@@ -414,28 +629,26 @@ def render(
     label_boxes: list[dict[str, Any]] = []
     layers_of: dict[int, str] = {}
     paths: dict[int, list[list[float]]] = {}
+    badges: list[str] = []
     for i, (src, dst, artifact, kind) in enumerate(FLOWS):
-        layer = layer_for((src, dst), kind)
-        layers_of[i] = layer
+        layer_ = layer_for((src, dst), kind)
+        layers_of[i] = layer_
         route = routes[i]
         paths[i] = [[round(x, 1), round(y, 1)] for x, y in route.points]
         if route.fallback:
             notes.append(f"{src} -> {dst}: {route.fallback}")
         art_hot = artifact in hot_artifacts
-        colour, marker = LAYER_COLOUR[layer], layer
+        colour, marker = LAYER_COLOUR[layer_], layer_
         if art_hot:
             colour, marker = T["change"], "change"
         ghost = states[src] == "planned" or states[dst] == "planned"
-        classes = f"flow {kind}" + (" planned" if ghost else "")
-        dash = ' stroke-dasharray="4 3"' if ghost else ""
-        fid = f"{svg_id}-f{i}"
+        off = (layer and layer_ != layer) or (journey is not None and i not in traced)
+        hot = i in traced
         flow_parts.append(
-            f'<path id="{fid}" class="{classes}" data-edge="{i}" data-from="{esc(src)}" '
-            f'data-to="{esc(dst)}" data-art="{esc(artifact)}" '
-            f'data-kind="{esc(kind)}" data-layer="{layer}" d="{path_d(route.points)}" '
-            f'fill="none" stroke="{colour}" stroke-opacity="{0.95 if art_hot else 0.82}" '
-            f'stroke-width="{1.8 if art_hot else 1.2}"{dash} stroke-linecap="round" '
-            f'marker-end="url(#{svg_id}-m-{marker})"/>'
+            flow_svg(
+                svg_id, i, src, dst, artifact, kind, layer_, route.points, colour, marker,
+                ghost=ghost, off=bool(off), hot=hot, art_hot=art_hot,
+            )
         )
         seat = seats[i]
         if seat.cost > 0:
@@ -454,13 +667,16 @@ def render(
                 "segment": seat.segment,
             }
         )
-        lx, ly = lbox[0] + lbox[2] / 2, lbox[1] + LABEL_H - 3
-        label_parts[i] = (
-            f'<g class="flowlbl {kind}{" planned" if ghost else ""}" data-edge="{i}" '
-            f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layer}">'
-            + L(lx, ly, artifact, LABEL_PX, colour, "500", False, "middle", "", True)
-            + "</g>"
+        label_parts[i] = label_svg(
+            L, i, src, dst, kind, layer_, artifact, lbox, colour,
+            ghost=ghost, off=bool(off), hot=hot,
         )
+        if hot:
+            # The step number sits just left of the edge's label, on the
+            # accent, so the path can be read in order without the page.
+            n = ",".join(str(k) for k in traced[i])
+            bx, by = lbox[0] - 11, lbox[1] + LABEL_H / 2
+            badges.append(badge_svg(L, T, i, n, bx, by))
 
     # ---- cards ------------------------------------------------------------
     detail: dict[str, Any] = {}
@@ -484,46 +700,23 @@ def render(
         rules = GOVERNED_BY.get(cid, [])
         state_class = state if kind != "actor" else "actor"
         plain = PLAIN.get(cid, "")
+        marks = ""
+        if journey is not None:
+            marks += (" acts" if cid in acts_ids else "") + (" meas" if cid in meas_ids else "")
+            marks += "" if cid in lit else " quiet"
+        elif layer and cid not in in_layer:
+            marks = " quiet"
 
         g: list[str] = [
-            f'<g class="node {state_class}'
-            f'{f" node--{tier}" if change_mode else ""}" '
-            f'data-id="{esc(cid)}" data-kind="{kind}" data-state="{state}" '
-            f'data-region="{esc(c.get("region") or c.get("container") or "")}" '
-            f'role="button" '
-            f'tabindex="0" aria-label="{esc(cid)}, {esc(plain)}, {esc(state_label)}">'
+            card_svg(
+                L, T, cid, kind, state, boxes[cid], fill, stroke,
+                classes=f"{state_class}{marks}" + (f" node--{tier}" if change_mode else ""),
+                region=c.get("region") or c.get("container") or "",
+                state_label=state_label,
+                plain=plain,
+                stroke_width=1.6 if change_mode and (moved or near) else 1.1,
+            )
         ]
-        dashes = ' stroke-dasharray="4 3"' if state == "planned" or kind == "actor" else ""
-        g.append(
-            f'<rect class="node__box" x="{x}" y="{y}" width="{w}" height="{h}" '
-            f'rx="{RADIUS}" fill="{fill}" stroke="{stroke}" '
-            f'stroke-width="{1.6 if change_mode and (moved or near) else 1.1}"'
-            f"{dashes}/>"
-            f'<rect class="node__ring" x="{x + 3}" y="{y + 3}" width="{w - 6}" '
-            f'height="{h - 6}" rx="{RADIUS - 1}"/>'
-        )
-        name_ink = INK if state != "planned" else INK_2
-        g.append(L(x + w / 2, y + 17, cid, NAME_PX, name_ink, "600", True))
-        # A store is the same card with a rule under its head: flat convention
-        # for a thing that holds rows rather than does work.
-        if kind == "store":
-            g.append(
-                f'<line x1="{x + 1}" y1="{y + 23}" x2="{x + w - 1}" y2="{y + 23}" '
-                f'stroke="{stroke}" stroke-opacity=".45" stroke-width="1"/>'
-            )
-        # The plain word under the code name. How many lines fit is derived
-        # from the card, never assumed.
-        first = y + (36 if kind == "store" else 32)
-        room = int((y + h - 4 - first) // 12) + 1
-        plain_lines = wrap_words(plain, PLAIN_CHARS, max(1, room))
-        g.append(
-            '<g data-layer="job">'
-            + "".join(
-                L(x + w / 2, first + k * 12, line, TEXT_PX, INK_3, "400")
-                for k, line in enumerate(plain_lines)
-            )
-            + "</g>"
-        )
 
         delta = gained.get(cid, {}) if change_mode and moved else {}
         if delta:
@@ -592,7 +785,6 @@ def render(
                 "say": RELATIONS.get((src, dst), ""),
             }
         )
-    edge_index = {(a, b): i for i, (a, b, _art, _k) in enumerate(FLOWS)}
     journeys_meta = [
         {
             "id": j["id"],
@@ -653,7 +845,7 @@ def render(
         f'aria-label="System map. Fill is build state; every line is labelled with '
         f'what it carries and coloured by its layer.">',
         _defs(svg_id, T),
-        _svg_style(svg_id, T),
+        _static_style(svg_id, T) if static else _svg_style(svg_id, T),
     ]
     # Everything drawn sits in one group the script pans and zooms with a
     # transform; the viewBox never changes, so every coordinate read back from
@@ -666,6 +858,8 @@ def render(
     p.append(
         '<g data-layer="flow">' + "".join(label_parts[i] for i in sorted(label_parts)) + "</g>"
     )
+    if badges:
+        p.append(f'<g data-layer="steps">{"".join(badges)}</g>')
     p.append('<g data-layer="tags"></g>')
     p.append("</g>")
     # Text classes are known only once everything is drawn, so their style
