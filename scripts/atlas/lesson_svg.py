@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import change as change_mod
 import theme as theme_mod
-from logical_model import COMPONENTS, layout_problems
+from logical_model import CANVAS, COMPONENTS, layout_problems
 from schematic import interactive_script, layer_rows, legend_rows, panel_css
 from schematic import render as render_schematic
 
@@ -100,13 +100,16 @@ def figure(
             "})();</script>"
         )
     # Legend labels and node names are generated, so a prose linter should
-    # skip the figure rather than judge text nobody wrote by hand.
+    # skip the figure rather than judge text nobody wrote by hand. The figure
+    # is never shown narrower than it is drawn (11px stays 11px); a lesson
+    # column narrower than that scrolls it sideways.
+    min_w = CANVAS[0] + 52
     return (
         f'<figure data-generated="atlas" '
         f'style="margin:2.4em 0;padding:1.1em 1.1em .9em;'
         f"background:{t['bg']};border:1px solid {t['line']};border-radius:8px;"
         f'overflow-x:auto;color:{t["ink_2"]};font-family:{t["font_ui"]}">'
-        f'<div style="min-width:640px">{svg}</div>'
+        f'<div style="min-width:{min_w}px">{svg}</div>'
         f'<div style="margin-top:.9em;font-size:.78rem;line-height:1.9;'
         f'color:{t["ink_3"]}">{swatches}{controls}</div>'
         f"{panel}"

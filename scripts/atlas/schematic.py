@@ -20,11 +20,13 @@ root (`endstate`) rather than two drawings that could disagree. Every node
 carries `data-id` and a class for its build state; every edge carries its
 artifact as visible text and its layer as `data-layer`.
 
-Edge labels are placed by a collision pass, not by hand: each label tries a
-run of positions along its own curve and takes the first that touches no card
-and no other label. What could not be placed cleanly is reported in the detail
-JSON under `_meta.collisions`, so a crowded layout fails loudly instead of
-quietly drawing text over text.
+Edges are Manhattan paths routed by route.py through the gutters between
+cards: never through a card they do not connect, never through a region they
+neither start nor end in. Each label sits on the longest segment of its own
+path, or in the gutter beside a run too short to hold it. What could not be
+placed cleanly is reported in the detail JSON under `_meta.collisions`, and
+any route that had to break a rule under `_meta.notes`, so a crowded layout
+fails loudly instead of quietly drawing text over text.
 
 Positions come from logical_model, so the same system always draws the same
 figure and a moved card means the architecture moved. Meaning (layers, the
@@ -37,7 +39,6 @@ from __future__ import annotations
 
 import html
 import json
-import math
 import re
 from typing import Any
 
@@ -54,6 +55,7 @@ from logical_model import (
     build_state,
 )
 from relations import JOURNEYS, LAYERS, PLAIN, RELATIONS, layer_for, verb_for
+from route import path_d, place_labels, route_all
 
 CARD_W = 150.0
 CARD_H = 56.0
@@ -72,12 +74,6 @@ LABEL_H = 13.0
 LABEL_GAP = 2.0
 # A plain word wraps to the card: 140 units of inner width at 11px sans.
 PLAIN_CHARS = 26
-# Where along its curve a label may sit, in order of preference, and how far
-# it may step off the line. Mid-curve first, then outwards.
-LABEL_T = (0.5, *(v for k in range(1, 25) for v in (0.5 - k * 0.02, 0.5 + k * 0.02)))
-# 38 clears a component card beside a short edge (28 half-height, 3 margin,
-# half a label); 51 is the second lane in a 36-unit row gutter.
-LABEL_OFFSETS = (0.0, 12.0, -12.0, 24.0, -24.0, 38.0, -38.0, 51.0, -51.0)
 
 ISSUE_URL = "https://github.com/0xfauzi/kstrl/issues/{n}"
 
@@ -130,40 +126,10 @@ def mix(a: str, b: str, t: float) -> str:
     return f"#{r:02X}{g:02X}{bl:02X}"
 
 
-def _edges(a: Box, b: Box) -> tuple[float, float, float, float]:
-    """Where a line leaves a and enters b: the nearer sides of each."""
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    acx, acy = ax + aw / 2, ay + ah / 2
-    bcx, bcy = bx + bw / 2, by + bh / 2
-    if abs(bcx - acx) > abs(bcy - acy) * 1.15:
-        if bcx > acx:
-            return ax + aw, acy, bx, bcy
-        return ax, acy, bx + bw, bcy
-    if bcy > acy:
-        return acx, ay + ah, bcx, by
-    return acx, ay, bcx, by + bh
 
 
-def _bezier(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-    t: float,
-) -> tuple[float, float]:
-    u = 1 - t
-    x = u**3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t**3 * p3[0]
-    y = u**3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t**3 * p3[1]
-    return x, y
 
 
-def _overlap_area(a: Box, b: Box) -> float:
-    ax, ay, aw, ah = a
-    bx, by, bw, bh = b
-    w = min(ax + aw, bx + bw) - max(ax, bx)
-    h = min(ay + ah, by + bh) - max(ay, by)
-    return w * h if w > 0 and h > 0 else 0.0
 
 
 def lives_in(modules: list[str]) -> str:
@@ -369,6 +335,10 @@ def render(
     # ---- ground: boundaries, then the bands -------------------------------
     floor: list[str] = []
     obstacles: list[tuple[str, Box]] = []
+    # What a route may not cross besides a card: every header, and any
+    # container that holds no card (the worktree, the control directory).
+    blocks: list[Box] = []
+    occupied = {c.get("container") for c in COMPONENTS if c.get("container")}
     for box in CONTAINERS:
         x, y, w, h = box["box"]
         stroke, fill = T["container"][box["tone"]]
@@ -384,7 +354,16 @@ def render(
                 for k, line in enumerate(sub_lines)
             )
         )
-        obstacles.append((f"{box['id']} header", (x + 8, y + 6, w - 16, 30 + 12 * len(sub_lines))))
+        # The header obstacle is the text, not the whole top edge of the box:
+        # the factory's spans the canvas, and a wall that wide would close
+        # the corridor every long edge runs along.
+        text_w = max([len(box["label"]) * 7.6] + [len(line) * 5.6 for line in sub_lines]) + 8
+        header: Box = (x + 8, y + 6, min(w - 16, text_w), 30 + 12 * len(sub_lines))
+        obstacles.append((f"{box['id']} header", header))
+        blocks.append(header)
+        if box["id"] not in occupied and box["id"] != "factory":
+            blocks.append((float(x), float(y), float(w), float(h)))
+            obstacles.append((box["id"], (float(x), float(y), float(w), float(h))))
 
     zones: list[str] = []
     for i, region in enumerate(REGIONS, start=1):
@@ -401,45 +380,37 @@ def render(
             )
         )
         obstacles.append((f"{region['id']} header", (x + 6, y + 5, 150, 24)))
+        blocks.append((x + 6, y + 5, 150, 24))
     for cid, (x, y, w, h) in boxes.items():
         obstacles.append((cid, (x - 3, y - 3, w + 6, h + 6)))
 
     # ---- flows ------------------------------------------------------------
-    reverse = {(a, b) for a, b, _art, _k in FLOWS} & {(b, a) for a, b, _art, _k in FLOWS}
+    # Every flow is a Manhattan path through the gutters, routed by route.py
+    # against the card boxes, the headers and the region boxes; the drawing
+    # here only paints what the router returns and reports what it could
+    # not do.
+    actor_ids = {c["id"] for c in COMPONENTS if c["kind"] == "actor"}
+    region_of = {c["id"]: c.get("region") or "" for c in COMPONENTS}
+    region_boxes = {r["id"]: tuple(float(v) for v in r["box"]) for r in REGIONS}
+    edges = [(src, dst) for src, dst, _art, _k in FLOWS]
+    routes = route_all(edges, boxes, actor_ids, blocks, region_boxes, region_of, CANVAS)
+    widths = {i: len(FLOWS[i][2]) * LABEL_CHAR_W + 6 for i in routes}
+    seats = place_labels(routes, widths, LABEL_H, obstacles, CANVAS)
+
     flow_parts: list[str] = []
     label_parts: dict[int, str] = {}
     collisions: list[str] = []
+    notes: list[str] = []
     label_boxes: list[dict[str, Any]] = []
-    width_px, height_px = CANVAS
     layers_of: dict[int, str] = {}
-    geometry: dict[int, tuple[tuple[float, float], ...]] = {}
+    paths: dict[int, list[list[float]]] = {}
     for i, (src, dst, artifact, kind) in enumerate(FLOWS):
-        if src not in boxes or dst not in boxes:
-            continue
         layer = layer_for((src, dst), kind)
         layers_of[i] = layer
-        sx, sy, ex, ey = _edges(boxes[src], boxes[dst])
-        if (src, dst) in reverse:
-            # Two flows between the same pair, one each way: shift both a few
-            # units off the shared centre line so neither hides the other.
-            dxn, dyn = ex - sx, ey - sy
-            norm = math.hypot(dxn, dyn) or 1.0
-            side = 6.0 if src < dst else -6.0
-            px_, py_ = -dyn / norm * side, dxn / norm * side
-            sx, sy, ex, ey = sx + px_, sy + py_, ex + px_, ey + py_
-        dx = max(26.0, abs(ex - sx) * 0.42)
-        dy = max(20.0, abs(ey - sy) * 0.38)
-        if abs(ex - sx) > abs(ey - sy):
-            c1 = (sx + dx if ex >= sx else sx - dx, sy)
-            c2 = (ex - dx if ex >= sx else ex + dx, ey)
-        else:
-            c1 = (sx, sy + dy if ey >= sy else sy - dy)
-            c2 = (ex, ey - dy if ey >= sy else ey + dy)
-        path = (
-            f"M {sx:.1f} {sy:.1f} C {c1[0]:.1f} {c1[1]:.1f}, "
-            f"{c2[0]:.1f} {c2[1]:.1f}, {ex:.1f} {ey:.1f}"
-        )
-        geometry[i] = ((sx, sy), c1, c2, (ex, ey))
+        route = routes[i]
+        paths[i] = [[round(x, 1), round(y, 1)] for x, y in route.points]
+        if route.fallback:
+            notes.append(f"{src} -> {dst}: {route.fallback}")
         art_hot = artifact in hot_artifacts
         colour, marker = LAYER_COLOUR[layer], layer
         if art_hot:
@@ -451,109 +422,32 @@ def render(
         flow_parts.append(
             f'<path id="{fid}" class="{classes}" data-edge="{i}" data-from="{esc(src)}" '
             f'data-to="{esc(dst)}" data-art="{esc(artifact)}" '
-            f'data-kind="{esc(kind)}" data-layer="{layer}" d="{path}" fill="none" '
-            f'stroke="{colour}" stroke-opacity="{0.95 if art_hot else 0.82}" '
-            f'stroke-width="{1.8 if art_hot else 1.2}"{dash} '
+            f'data-kind="{esc(kind)}" data-layer="{layer}" d="{path_d(route.points)}" '
+            f'fill="none" stroke="{colour}" stroke-opacity="{0.95 if art_hot else 0.82}" '
+            f'stroke-width="{1.8 if art_hot else 1.2}"{dash} stroke-linecap="round" '
             f'marker-end="url(#{svg_id}-m-{marker})"/>'
         )
-
-    # Labels second, shortest edge first: a short edge has the fewest places
-    # its label can go, so it chooses before a long edge takes them.
-    def _length(i: int) -> float:
-        (sx, sy), _c1, _c2, (ex, ey) = geometry[i]
-        return math.hypot(ex - sx, ey - sy)
-
-    def _candidates(i: int) -> list[tuple[float, Box]]:
-        """Every place this label may sit, in preference order, each with its
-        overlap against the fixed obstacles (cards and headers)."""
-        (sx, sy), c1, c2, (ex, ey) = geometry[i]
-        lw = len(FLOWS[i][2]) * LABEL_CHAR_W + 6
-        out: list[tuple[float, Box]] = []
-        for t in LABEL_T:
-            bx, by = _bezier((sx, sy), c1, c2, (ex, ey), t)
-            ax_, ay_ = _bezier((sx, sy), c1, c2, (ex, ey), min(1.0, t + 0.02))
-            tx, ty = ax_ - bx, ay_ - by
-            tn = math.hypot(tx, ty) or 1.0
-            nx, ny = -ty / tn, tx / tn
-            for off in LABEL_OFFSETS:
-                cx, cy = bx + nx * off, by + ny * off
-                lbox: Box = (cx - lw / 2, cy - LABEL_H / 2, lw, LABEL_H)
-                if lbox[0] < 0 or lbox[1] < 0:
-                    continue
-                if lbox[0] + lw > width_px or lbox[1] + LABEL_H > height_px:
-                    continue
-                out.append((sum(_overlap_area(lbox, ob) for _n, ob in obstacles), lbox))
-        return out
-
-    placed: dict[int, Box] = {}
-
-    def _pad(b: Box) -> Box:
-        g = LABEL_GAP
-        return (b[0] - g, b[1] - g, b[2] + 2 * g, b[3] + 2 * g)
-
-    def _best(i: int, cands: list[tuple[float, Box]]) -> tuple[float, Box]:
-        best: tuple[float, Box] | None = None
-        for fixed, lbox in cands:
-            cost = fixed + sum(
-                _overlap_area(_pad(lbox), other) for j, other in placed.items() if j != i
-            )
-            if best is None or cost < best[0]:
-                best = (cost, lbox)
-            if cost == 0:
-                break
-        assert best is not None
-        return best
-
-    all_cands = {i: _candidates(i) for i in geometry}
-    for i in sorted(geometry, key=_length):
-        cost, lbox = _best(i, all_cands[i])
-        if cost > 0:
-            blockers = [j for j, other in placed.items() if _overlap_area(_pad(lbox), other)]
-            for j in blockers:
-                original = placed.pop(j)
-                found = False
-                for fixed_j, alt in all_cands[j][:400]:
-                    if fixed_j > 0:
-                        continue
-                    if any(_overlap_area(_pad(alt), o) for k, o in placed.items() if k != i):
-                        continue
-                    placed[j] = alt
-                    cost_i, lbox_i = _best(i, all_cands[i])
-                    if cost_i == 0:
-                        cost, lbox, found = cost_i, lbox_i, True
-                        break
-                    placed.pop(j)
-                if found:
-                    break
-                placed[j] = original
-        placed[i] = lbox
-        if cost > 0:
-            named = [(n, ob) for n, ob in obstacles] + [
-                (f"label '{FLOWS[j][2]}'", ob) for j, ob in placed.items() if j != i
-            ]
-            hits = [n for n, ob in named if _overlap_area(lbox, ob)]
+        seat = seats[i]
+        if seat.cost > 0:
             collisions.append(
-                f"'{FLOWS[i][2]}' ({FLOWS[i][0]} -> {FLOWS[i][1]}) overlaps {', '.join(hits[:3])}"
+                f"'{artifact}' ({src} -> {dst}) overlaps {', '.join(seat.hits[:3])}"
             )
-
-    for i, lbox in placed.items():
-        src, dst, artifact, kind = FLOWS[i]
-        art_hot = artifact in hot_artifacts
-        colour = T["change"] if art_hot else LAYER_COLOUR[layers_of[i]]
-        ghost = states[src] == "planned" or states[dst] == "planned"
-        lw = lbox[2]
+        if not seat.on_longest:
+            notes.append(f"'{artifact}' ({src} -> {dst}) sits on a shorter segment")
+        lbox = seat.box
         label_boxes.append(
             {
                 "from": src,
                 "to": dst,
                 "artifact": artifact,
                 "box": [round(v, 1) for v in lbox],
+                "segment": seat.segment,
             }
         )
-        lx, ly = lbox[0] + lw / 2, lbox[1] + LABEL_H - 3
+        lx, ly = lbox[0] + lbox[2] / 2, lbox[1] + LABEL_H - 3
         label_parts[i] = (
             f'<g class="flowlbl {kind}{" planned" if ghost else ""}" data-edge="{i}" '
-            f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layers_of[i]}">'
+            f'data-from="{esc(src)}" data-to="{esc(dst)}" data-layer="{layer}">'
             + L(lx, ly, artifact, LABEL_PX, colour, "500", False, "middle", "", True)
             + "</g>"
         )
@@ -732,8 +626,10 @@ def render(
             "kinds": FLOW_KINDS,
             "states": {s: sum(1 for v in states.values() if v == s) for s in states.values()},
             "collisions": collisions,
+            "notes": notes,
             "labels": label_boxes,
             "cards": {cid: list(box) for cid, box in boxes.items()},
+            "paths": paths,
         }
     }
 
@@ -848,6 +744,7 @@ def interactive_script(svg_id: str, panel_id: str, detail_json: str) -> str:
     meta = dict(parsed.get("_meta") or {})
     meta.pop("labels", None)
     meta.pop("cards", None)
+    meta.pop("paths", None)
     parsed["_meta"] = meta
     data = json.dumps(parsed, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     t = theme_mod.get()

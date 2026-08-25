@@ -1,12 +1,16 @@
 """Render the system atlas as one page that teaches the system in layers.
 
-The page is the map. Above it, a layer switch (one map, seven readings), a
-today/end-state toggle, and the journeys a reader can step through. Beside
-it, the focus panel: click a component and the panel leads with its plain
+The page is the map, at full width and never below its drawn size: 11px in
+the figure is 11px on screen, and a window narrower than the figure scrolls
+it sideways rather than shrinking it. Above it, a layer switch (one map,
+seven readings), a today/end-state toggle, the journeys a reader can step
+through, and a slim strip carrying the active layer's question and its
+components. Click a component and the focus panel opens as a drawer over the
+map, docked on the side away from the component: it leads with the plain
 word, draws the relationship wheel, and reads the sentence for whichever
-spoke the reader touches. Below it, a one-line index of every component by
-region and the invariants. Nothing about the code is shown beyond the single
-"lives in" line; the counts stay in atlas.json for the change detector.
+spoke the reader touches. Below the map, a one-line index of every component
+by region and the invariants. Nothing about the code is shown beyond the
+single "lives in" line; the counts stay in atlas.json for the change detector.
 
 Every picture comes from schematic.py, every sentence from relations.py, and
 the page is self-contained: no fonts, scripts or images are fetched.
@@ -29,7 +33,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import change as change_mod
 import theme as theme_mod
-from logical_model import COMPONENTS, FLOWS, GOVERNED_BY, INVARIANTS, REGIONS, layout_problems
+from logical_model import (
+    CANVAS,
+    COMPONENTS,
+    FLOWS,
+    GOVERNED_BY,
+    INVARIANTS,
+    REGIONS,
+    layout_problems,
+)
 from relations import JOURNEYS, LAYERS, PLAIN
 from schematic import interactive_script, layer_rows, legend_rows, panel_css
 from schematic import render as render_schematic
@@ -79,7 +91,10 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append('<html lang="en"><head><meta charset="utf-8">')
     o.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
     o.append("<title>kstrl system atlas</title>")
-    o.append(f"<style>{CSS.format(ROOT=':root{' + theme_mod.css_vars(T) + '}')}")
+    # The figure's drawn width, in CSS pixels: the viewBox plus the pad the
+    # schematic adds on each side. The map is never shown narrower than this.
+    min_w = CANVAS[0] + 52
+    o.append(f"<style>{CSS.format(ROOT=':root{' + theme_mod.css_vars(T) + '}', MINW=min_w)}")
     o.append(f"{panel_css()}</style></head><body>")
 
     # ---------------- header ----------------
@@ -134,7 +149,6 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
         "All</button>"
     )
     o.append("</div></div>")
-    o.append('<p class="question" id="question"></p>')
     o.append('<div class="ctl ctl--row">')
     o.append('<div class="ctl"><span class="ctl__k">Show</span>')
     o.append('<div class="seg" role="group" aria-label="Build state">')
@@ -159,10 +173,22 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append("</div></div>")
     o.append("</div>")  # controls
 
+    # The slim strip above the map: the active layer's question and the
+    # components it touches, or the steps of the journey in progress.
+    o.append('<div class="lstrip" id="lstrip" aria-live="polite"></div>')
+
     # ---------------- the map ----------------
-    o.append('<div class="mapwrap">')
-    o.append('<div class="mapcol">')
+    o.append('<div class="mapwrap" id="mapwrap">')
     o.append(f'<div class="stage" id="stage">{system_svg}</div>')
+    o.append('<aside class="drawer" id="drawer" data-dock="right" hidden>')
+    o.append('<div class="drawer__in">')
+    o.append(
+        '<button type="button" class="drawer__x" id="drawerclose" '
+        'aria-label="Close the panel">Close</button>'
+    )
+    o.append('<div class="atlas-panel" id="panel" aria-live="polite"></div>')
+    o.append("</div></aside>")
+    o.append("</div>")  # mapwrap
     o.append('<div class="strip" id="strip" hidden><span class="strip__n" id="stripn"></span>')
     o.append('<span class="strip__say" id="stripsay"></span>')
     o.append('<span class="strip__meas" id="stripmeas"></span></div>')
@@ -189,11 +215,9 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
         '<p class="key">Fill is build state, derived: a component is built when the entry '
         "named in the model exists in the modules named. Every line carries what it moves "
         "and is coloured by the layer it belongs to. Click a component; press Escape to "
-        "clear; arrow keys step a journey.</p>"
+        "clear; arrow keys step a journey. The map is drawn at its own size: a narrower "
+        "window scrolls it sideways.</p>"
     )
-    o.append("</div>")  # mapcol
-    o.append('<aside class="atlas-panel side" id="panel" aria-live="polite"></aside>')
-    o.append("</div>")  # mapwrap
     o.append("</section>")
 
     # ---------------- index by region ----------------
@@ -271,10 +295,10 @@ background:var(--surface);display:flex;flex-wrap:wrap;align-items:baseline;gap:.
 .nav{{margin-left:auto;display:flex;gap:.9rem;font-size:12.5px}}
 .nav a{{color:var(--ink-2);text-decoration:none}}
 .nav a:hover{{color:var(--accent)}}
-.main{{padding:.8rem 1.4rem 3rem;max-width:1560px;margin:0 auto}}
+.main{{padding:.8rem 1.4rem 3rem}}
 h2{{font-size:15px;font-weight:600;margin:1.8rem 0 .5rem;letter-spacing:-.01em}}
 h2 span{{color:var(--ink-3);font-weight:400;font-size:12.5px;margin-left:.6rem}}
-.controls{{display:flex;flex-direction:column;gap:.45rem;margin:.4rem 0 .6rem}}
+.controls{{display:flex;flex-direction:column;gap:.45rem;margin:.4rem 0 .5rem}}
 .ctl{{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .7rem}}
 .ctl--row{{gap:.5rem 1.6rem}}
 .ctl__k{{font-family:var(--fm);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
@@ -289,7 +313,6 @@ display:inline-flex;align-items:center;gap:.45rem}}
 .seg__b:hover{{color:var(--ink);background:var(--raised)}}
 .seg__b[aria-pressed="true"]{{color:var(--ink);background:var(--raised);
 box-shadow:inset 0 -2px 0 var(--c,var(--accent))}}
-.question{{margin:0;font-size:14.5px;color:var(--ink);padding-left:4.3rem}}
 select#journey{{font:inherit;font-size:12.5px;color:var(--ink);background:var(--surface);
 border:1px solid var(--line-2);border-radius:6px;min-height:30px;padding:0 .5rem;
 max-width:22rem}}
@@ -299,12 +322,46 @@ min-height:30px;padding:0 .7rem;font-size:12.5px;color:var(--ink-2);cursor:point
 .jb:disabled{{opacity:.4;cursor:default}}
 .jcount{{font-family:var(--fm);font-size:11.5px;color:var(--ink-3);min-width:3.2rem;
 text-align:center}}
-.mapwrap{{display:grid;grid-template-columns:minmax(0,1fr) 25rem;gap:1rem;align-items:start}}
-.mapcol{{min-width:0}}
+/* the slim strip above the map: the layer's question and its components */
+.lstrip{{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem .9rem;margin:0 0 .6rem;
+padding:.5rem .8rem;background:var(--surface);border:1px solid var(--line);border-radius:6px;
+font-size:13px;min-height:2.6rem}}
+.lstrip__l{{font-family:var(--fm);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+color:var(--ink-3);display:inline-flex;align-items:center;gap:.5rem;white-space:nowrap}}
+.lstrip__l i{{width:16px;height:3px;border-radius:2px;background:var(--c,var(--ink-3))}}
+.lstrip__q{{font-size:14.5px;color:var(--ink);font-weight:600;line-height:1.3}}
+.lstrip__s{{color:var(--ink-3)}}
+.lstrip__row{{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center}}
+.lstrip__row button{{appearance:none;background:var(--raised);border:1px solid var(--line);
+border-radius:4px;min-height:24px;padding:0 .45rem;font-family:var(--fm);font-size:11px;
+color:var(--ink-2);cursor:pointer}}
+.lstrip__row button:hover{{color:var(--accent);border-color:var(--accent)}}
+.lstrip__row button.on{{color:var(--ink);border-color:var(--accent);
+box-shadow:inset 0 -2px 0 var(--accent)}}
+.lstrip__row button b{{font-weight:600;margin-right:.35em;color:var(--ink-3)}}
+.lstrip__row button.on b{{color:var(--accent)}}
+.lstrip__row button i{{font-style:normal;color:var(--ink-3);margin:0 .3em}}
+/* the map: full width, never narrower than it is drawn */
+.mapwrap{{position:relative}}
 .stage{{background:var(--surface);border:1px solid var(--line);border-radius:8px;
 padding:.4rem;overflow:auto}}
-.stage svg{{width:100%;height:auto;display:block}}
-.side{{position:sticky;top:.8rem;max-height:calc(100vh - 1.6rem);overflow-y:auto}}
+.stage svg{{width:100%;min-width:{MINW}px;height:auto;display:block}}
+/* the focus panel: a drawer over the map, docked away from the selection */
+.drawer{{position:absolute;top:0;bottom:0;width:380px;max-width:calc(100% - 2rem);
+z-index:2;pointer-events:none}}
+.drawer[data-dock="right"]{{right:.6rem}}
+.drawer[data-dock="left"]{{left:.6rem}}
+.drawer[hidden]{{display:none}}
+.drawer__in{{position:sticky;top:.8rem;pointer-events:auto;max-height:calc(100vh - 1.6rem);
+overflow-y:auto;border-radius:8px;box-shadow:0 12px 34px rgba(0,0,0,.55),0 0 0 1px var(--line-2)}}
+.drawer__in .atlas-panel{{border-radius:0 0 8px 8px;border-top:0}}
+.drawer__x{{appearance:none;width:100%;display:flex;align-items:center;justify-content:flex-end;
+gap:.5rem;min-height:30px;padding:0 .8rem;background:var(--raised);border:0;
+border-bottom:1px solid var(--line);border-radius:8px 8px 0 0;font-family:var(--fm);
+font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);cursor:pointer}}
+.drawer__x::after{{content:"\\00d7";font-size:16px;line-height:1;color:var(--ink-2)}}
+.drawer__x:hover{{color:var(--ink)}}
+.drawer__x:hover::after{{color:var(--accent)}}
 .strip{{display:flex;flex-wrap:wrap;align-items:baseline;gap:.3rem 1rem;margin:.6rem 0 0;
 padding:.6rem .9rem;background:var(--raised);border-radius:6px;
 border-left:3px solid var(--accent);font-size:13.5px;color:var(--ink)}}
@@ -351,38 +408,9 @@ font-family:var(--fm);font-size:11px;color:var(--ink-3);cursor:pointer}}
 .gv:hover{{color:var(--accent)}}
 .foot{{padding:1rem 1.4rem 2rem;font-size:11.5px;color:var(--ink-3);
 border-top:1px solid var(--line)}}
-.empty{{font-size:13px}}
-.empty__l{{font-family:var(--fm);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-color:var(--ink-3);margin:0 0 .2rem;display:flex;align-items:center;gap:.5rem}}
-.empty__l i{{width:16px;height:3px;border-radius:2px;background:var(--c,var(--ink-3))}}
-.empty__q{{margin:0 0 .2rem;font-size:15px;color:var(--ink);font-weight:600;line-height:1.3}}
-.empty__s{{margin:0 0 .7rem;color:var(--ink-3)}}
-.empty__row{{display:flex;flex-wrap:wrap;gap:.3rem}}
-.empty__row button{{appearance:none;background:var(--raised);border:1px solid var(--line);
-border-radius:4px;min-height:24px;padding:0 .45rem;font-family:var(--fm);font-size:11px;
-color:var(--ink-2);cursor:pointer}}
-.empty__row button:hover{{color:var(--accent);border-color:var(--accent)}}
-.jlist{{margin:0;padding:0;list-style:none}}
-.jlist li{{display:flex;gap:.6rem;align-items:baseline;padding:.3rem .4rem;min-height:24px;
-border-left:3px solid transparent;cursor:pointer;font-size:12.5px;color:var(--ink-3)}}
-.jlist li:hover{{background:var(--raised)}}
-.jlist li.on{{border-left-color:var(--accent);background:var(--raised);color:var(--ink)}}
-.jlist__n{{font-family:var(--fm);font-size:11px;min-width:1.4em;text-align:right;color:var(--ink-3)}}
-.jlist li.on .jlist__n{{color:var(--accent)}}
-.jlist__e b{{font-family:var(--fm);font-weight:600;font-size:11.5px}}
-.jlist__e i{{font-style:normal;color:var(--ink-3)}}
-.empty__all{{margin:0;padding:0;list-style:none}}
-.empty__all li{{display:flex;gap:.6rem;align-items:baseline;padding:.3rem 0;
-border-bottom:1px solid var(--line);cursor:pointer}}
-.empty__all li:last-child{{border-bottom:0}}
-.empty__all li:hover b{{color:var(--accent)}}
-.empty__all i{{width:14px;height:3px;flex:none;border-radius:2px;position:relative;top:-3px}}
-.empty__all b{{font-weight:600;color:var(--ink);white-space:nowrap;font-size:12.5px}}
-.empty__all span{{color:var(--ink-3);font-size:12.5px}}
-@media (max-width:68rem){{
-.mapwrap{{grid-template-columns:1fr}}
-.side{{position:static;max-height:none}}
-.question{{padding-left:0}}
+@media (max-width:1000px){{
+.drawer{{position:static;width:auto;max-width:none;margin:.6rem 0 0;pointer-events:auto}}
+.drawer__in{{position:static;max-height:none;box-shadow:0 0 0 1px var(--line-2)}}
 }}
 @media (prefers-reduced-motion:reduce){{*{{transition:none!important;animation:none!important}}}}
 """
@@ -393,65 +421,67 @@ JS = r"""
   if(!svg || !svg.atlas){ return; }
   var A = svg.atlas;
   var panel = document.getElementById('panel');
-  var question = document.getElementById('question');
+  var drawer = document.getElementById('drawer');
+  var stage = document.getElementById('stage');
+  var lstrip = document.getElementById('lstrip');
   var LAY = {};
   A.layers.forEach(function(l){ LAY[l.id] = l; });
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function all(sel, root){
+    return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
-  // ---- the empty panel: the active layer, and what it touches ----------
-  function emptyPanel(){
-    if(!panel || A.state.focus || A.state.journey){ return; }
-    var L = A.state.layer, h = '<div class="empty">';
+  // ---- the strip above the map: the active layer and what it touches ----
+  function layerStrip(){
+    if(!lstrip || cur.j >= 0){ return; }
+    var L = A.state.layer, h = '';
     if(L === 'all'){
-      h += '<p class="empty__l">Seven layers</p><ul class="empty__all">';
+      h += '<span class="lstrip__l">All layers</span>';
+      h += '<span class="lstrip__q">Every flow at once, each in the colour of its layer.</span>';
+      h += '<span class="lstrip__row">';
       A.layers.forEach(function(l){
-        h += '<li data-pick="' + esc(l.id) + '"><i style="background:' + l.colour + '"></i>'
-           + '<div><b>' + esc(l.label) + '</b> <span>' + esc(l.question) + '</span></div></li>';
+        h += '<button type="button" data-pick="' + esc(l.id) + '" title="' + esc(l.question)
+           + '" style="border-bottom:2px solid ' + l.colour + '">' + esc(l.label) + '</button>';
       });
-      h += '</ul>';
+      h += '</span>';
     } else {
       var l = LAY[L], ids = {}, list = [];
       A.edges.forEach(function(e){
         if(e.layer === L){ ids[e.from] = true; ids[e.to] = true; } });
       Object.keys(A.detail).forEach(function(id){
         if(id !== '_meta' && ids[id]){ list.push(id); } });
-      h += '<p class="empty__l" style="--c:' + l.colour + '"><i></i>' + esc(l.label)
-         + ' layer</p>';
-      h += '<p class="empty__q">' + esc(l.question) + '</p>';
-      h += '<p class="empty__s">' + esc(l.sub) + '. ' + list.length
-         + ' components; click one.</p>';
-      h += '<div class="empty__row">';
+      h += '<span class="lstrip__l" style="--c:' + l.colour + '"><i></i>' + esc(l.label)
+         + ' layer</span>';
+      h += '<span class="lstrip__q">' + esc(l.question) + '</span>';
+      h += '<span class="lstrip__s">' + esc(l.sub) + '. ' + list.length
+         + ' components; click one.</span>';
+      h += '<span class="lstrip__row">';
       list.forEach(function(id){
         h += '<button type="button" data-go="' + esc(id) + '">' + esc(id) + '</button>'; });
-      h += '</div>';
+      h += '</span>';
     }
-    panel.innerHTML = h + '</div>';
-    Array.prototype.slice.call(panel.querySelectorAll('[data-go]')).forEach(function(b){
+    lstrip.innerHTML = h;
+    all('[data-go]', lstrip).forEach(function(b){
       b.addEventListener('click', function(){ A.select(b.dataset.go); });
     });
-    Array.prototype.slice.call(panel.querySelectorAll('[data-pick]')).forEach(function(li){
-      li.addEventListener('click', function(){ setLayer(li.dataset.pick); });
+    all('[data-pick]', lstrip).forEach(function(b){
+      b.addEventListener('click', function(){ setLayer(b.dataset.pick); });
     });
   }
 
   // ---- layer switch -----------------------------------------------------
-  var layerBtns = Array.prototype.slice.call(document.querySelectorAll('[data-layer-btn]'));
+  var layerBtns = all('[data-layer-btn]');
   function setLayer(id){
     A.setLayer(id);
     layerBtns.forEach(function(b){
       b.setAttribute('aria-pressed', b.dataset.layerBtn === id ? 'true' : 'false'); });
-    if(question){
-      question.textContent = id === 'all' ? 'Every flow at once, each in the colour of its layer.'
-        : (LAY[id] ? LAY[id].question : '');
-    }
-    emptyPanel();
+    layerStrip();
   }
   layerBtns.forEach(function(b){
     b.addEventListener('click', function(){ setLayer(b.dataset.layerBtn); }); });
 
   // ---- today / end state -----------------------------------------------
-  var stateBtns = Array.prototype.slice.call(document.querySelectorAll('[data-endstate]'));
+  var stateBtns = all('[data-endstate]');
   stateBtns.forEach(function(b){
     b.addEventListener('click', function(){
       var on = b.dataset.endstate === '1';
@@ -462,6 +492,41 @@ JS = r"""
     });
   });
 
+  // ---- the drawer: opens on selection, docks away from the node ---------
+  function nodeBox(id){
+    var r = svg.querySelector('.node[data-id="' + id + '"] .node__box');
+    return r ? {el:r, x:+r.getAttribute('x'), w:+r.getAttribute('width')} : null;
+  }
+  function openDrawer(id){
+    if(!drawer){ return; }
+    var n = nodeBox(id), vb = svg.viewBox.baseVal;
+    var frac = n ? (n.x + n.w / 2 - vb.x) / vb.width : 0;
+    drawer.dataset.dock = frac > 0.6 ? 'left' : 'right';
+    drawer.hidden = false;
+    reveal(n);
+  }
+  function closeDrawer(){ if(drawer){ drawer.hidden = true; } }
+  function reveal(n){
+    // The drawer covers one side of the stage: scroll the stage so the
+    // selected card sits in the part it leaves visible, and the page so
+    // the card is on screen.
+    if(!n || !stage){ return; }
+    var r = n.el.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    var over = window.innerWidth > 1000 && drawer && !drawer.hidden;
+    var overlay = over ? drawer.offsetWidth + 12 : 0;
+    var lo = drawer.dataset.dock === 'left' ? overlay : 0;
+    var hi = stage.clientWidth - (drawer.dataset.dock === 'right' ? overlay : 0);
+    var left = r.left - s.left, right = left + r.width;
+    if(left < lo + 8 || right > hi - 8){
+      stage.scrollLeft += (left + r.width / 2) - (lo + hi) / 2;
+    }
+    if(r.top < 80 || r.bottom > window.innerHeight - 40){
+      window.scrollBy({top:r.top - Math.max(120, window.innerHeight * 0.3)});
+    }
+  }
+  var closeBtn = document.getElementById('drawerclose');
+  if(closeBtn){ closeBtn.addEventListener('click', function(){ A.clear(); }); }
+
   // ---- journeys ---------------------------------------------------------
   var sel = document.getElementById('journey');
   var prev = document.getElementById('jprev'), next = document.getElementById('jnext');
@@ -470,24 +535,21 @@ JS = r"""
   var stripN = document.getElementById('stripn'), stripSay = document.getElementById('stripsay');
   var stripMeas = document.getElementById('stripmeas');
   var cur = {j:-1, s:0};
-  function journeyPanel(j){
-    // The panel during a journey: every step as the edge it traces, the
-    // current one lit, each one a jump. The sentence lives in the strip.
-    if(!panel){ return; }
-    var h = '<div class="empty"><p class="empty__l"><i style="background:var(--accent)"></i>'
-          + 'journey</p><p class="empty__q">' + esc(j.label) + '</p><ol class="jlist">';
+  function journeyStrip(j){
+    // The strip during a journey: every step as the edge it traces, the
+    // current one lit, each one a jump. The sentence lives under the map.
+    if(!lstrip){ return; }
+    var h = '<span class="lstrip__l" style="--c:var(--accent)"><i></i>journey</span>'
+          + '<span class="lstrip__q">' + esc(j.label) + '</span><span class="lstrip__row">';
     j.steps.forEach(function(s, k){
       var e = A.edges[s.edge] || {from:'', to:'', art:''};
-      h += '<li class="' + (k === cur.s ? 'on' : '') + '" data-step="' + k + '" tabindex="0">'
-         + '<span class="jlist__n">' + (k + 1) + '</span>'
-         + '<span class="jlist__e"><b>' + esc(e.from) + '</b> <i>' + esc(e.art) + '</i> <b>'
-         + esc(e.to) + '</b></span></li>';
+      h += '<button type="button" class="' + (k === cur.s ? 'on' : '') + '" data-step="' + k
+         + '" title="' + esc(e.art) + '"><b>' + (k + 1) + '</b>' + esc(e.from) + '<i>to</i>'
+         + esc(e.to) + '</button>';
     });
-    panel.innerHTML = h + '</ol></div>';
-    Array.prototype.slice.call(panel.querySelectorAll('[data-step]')).forEach(function(li){
-      function go(){ cur.s = +li.dataset.step; showStep(); }
-      li.addEventListener('click', go);
-      li.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ go(); } });
+    lstrip.innerHTML = h + '</span>';
+    all('[data-step]', lstrip).forEach(function(b){
+      b.addEventListener('click', function(){ cur.s = +b.dataset.step; showStep(); });
     });
   }
   function showStep(){
@@ -495,7 +557,8 @@ JS = r"""
     if(!j){ return; }
     var step = j.steps[cur.s];
     A.setJourney(step);
-    journeyPanel(j);
+    closeDrawer();
+    journeyStrip(j);
     if(strip){
       strip.hidden = false;
       stripN.textContent = (cur.s + 1) + ' / ' + j.steps.length;
@@ -514,6 +577,7 @@ JS = r"""
     if(count){ count.textContent = ''; }
     prev.disabled = true; next.disabled = true;
     if(sel){ sel.value = ''; }
+    layerStrip();
   }
   function startJourney(k){
     cur.j = k; cur.s = 0;
@@ -521,7 +585,7 @@ JS = r"""
     document.getElementById('map').scrollIntoView({block:'start'});
   }
   if(sel){ sel.addEventListener('change', function(){
-    if(sel.value === ''){ endJourney(); A.setJourney(null); emptyPanel(); }
+    if(sel.value === ''){ endJourney(); A.setJourney(null); }
     else { startJourney(+sel.value); }
   }); }
   function stepBy(d){
@@ -552,21 +616,25 @@ JS = r"""
   svg.addEventListener('atlas:select', function(e){
     if(cur.j >= 0){ endJourney(); }
     var id = e.detail.id;
+    openDrawer(id);
     if(location.hash !== '#' + id){ history.replaceState(null, '', '#' + id); }
   });
   svg.addEventListener('atlas:clear', function(){
+    closeDrawer();
     if(location.hash){ history.replaceState(null, '', location.pathname + location.search); }
-    emptyPanel();
   });
-  var goers = document.querySelectorAll('.ix[data-go], .gv[data-go]');
-  Array.prototype.slice.call(goers).forEach(function(b){
+  all('.ix[data-go], .gv[data-go]').forEach(function(b){
     b.addEventListener('click', function(){
       A.select(b.dataset.go);
       document.getElementById('map').scrollIntoView({behavior:'smooth', block:'start'});
     });
   });
+  window.addEventListener('resize', function(){
+    if(A.state.focus){ reveal(nodeBox(A.state.focus)); }
+  });
 
   setLayer('work');
+  if(A.state.focus){ openDrawer(A.state.focus); }
 })();
 """
 

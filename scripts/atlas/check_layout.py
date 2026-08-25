@@ -9,6 +9,10 @@ What is checked, in order:
 
     placement ..... every card inside its band, no two cards overlapping,
                     every flow naming known components (logical_model)
+    routes ........ every edge an orthogonal path that passes through no
+                    card it does not connect and crosses no region box it
+                    neither starts nor ends in (both counted, each offender
+                    listed with the router's reason)
     labels ........ every edge label seated without touching a card, a
                     header or another label (the schematic's collision pass,
                     re-verified from the boxes it reports)
@@ -35,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from logical_model import COMPONENTS, FLOWS, layout_problems
+from logical_model import COMPONENTS, FLOWS, REGIONS, layout_problems
 from relations import (
     JOURNEYS,
     LAYER_OVERRIDES,
@@ -70,6 +74,64 @@ def check_labels(meta: dict[str, object]) -> list[str]:
             if _overlap(lb, tuple(other["box"])):  # type: ignore[arg-type]
                 out.append(f"label '{lab['artifact']}' touches label '{other['artifact']}'")
     return out
+
+
+def _seg_hits(a: list[float], b: list[float], box: Box) -> bool:
+    """Does the axis-aligned segment a-b cross the interior of box?"""
+    bx, by, bw, bh = box
+    (x0, y0), (x1, y1) = a, b
+    if abs(y0 - y1) < 1e-6:
+        if not (by < y0 < by + bh):
+            return False
+        return min(x0, x1) < bx + bw and max(x0, x1) > bx
+    if not (bx < x0 < bx + bw):
+        return False
+    return min(y0, y1) < by + bh and max(y0, y1) > by
+
+
+def check_routes(meta: dict[str, object]) -> tuple[list[str], int, int]:
+    """(problems, edges through a foreign card, edges across a foreign region).
+
+    A segment is judged against the exact card box (the router keeps a
+    margin, so a touch here is a real pass-through) and against every
+    region box other than the two the edge belongs to. An edge is counted
+    once per offence, and listed with the router's own reason when it had
+    to fall back.
+    """
+    out: list[str] = []
+    paths: dict[str, list[list[float]]] = meta.get("paths", {})  # type: ignore[assignment]
+    cards: dict[str, list[float]] = meta.get("cards", {})  # type: ignore[assignment]
+    notes: list[str] = meta.get("notes", [])  # type: ignore[assignment]
+    region_of = {c["id"]: c.get("region") or "" for c in COMPONENTS}
+    regions = {r["id"]: tuple(float(v) for v in r["box"]) for r in REGIONS}
+    through = 0
+    across = 0
+    for i, (src, dst, art, _kind) in enumerate(FLOWS):
+        pts = paths.get(str(i)) or paths.get(i)  # type: ignore[call-overload]
+        if not pts:
+            out.append(f"route: {src} -> {dst} ('{art}') has no path")
+            continue
+        segs = list(zip(pts, pts[1:], strict=False))
+        hit_cards = sorted(
+            cid
+            for cid, box in cards.items()
+            if cid not in (src, dst) and any(_seg_hits(a, b, tuple(box)) for a, b in segs)  # type: ignore[arg-type]
+        )
+        hit_regions = sorted(
+            rid
+            for rid, box in regions.items()
+            if rid not in (region_of[src], region_of[dst])
+            and any(_seg_hits(a, b, box) for a, b in segs)
+        )
+        why = next((n for n in notes if n.startswith(f"{src} -> {dst}:")), "")
+        reason = f" ({why.split(': ', 1)[1]})" if why else ""
+        if hit_cards:
+            through += 1
+            out.append(f"route: {src} -> {dst} passes through {', '.join(hit_cards)}{reason}")
+        if hit_regions:
+            across += 1
+            out.append(f"route: {src} -> {dst} crosses region {', '.join(hit_regions)}{reason}")
+    return out, through, across
 
 
 def check_type_size(svg: str) -> list[str]:
@@ -218,21 +280,32 @@ def main() -> int:
 
     problems = [f"placement: {p}" for p in layout_problems()]
     problems += check_meaning()
+    through = across = 0
+    notes: list[str] = []
     if not problems:
         atlas = json.loads(Path(args.atlas).read_text(encoding="utf-8"))
         svg, detail = render_schematic(atlas)
         meta = json.loads(detail)["_meta"]
+        route_problems, through, across = check_routes(meta)
+        problems += route_problems
         problems += check_labels(meta)
         problems += check_type_size(svg)
         problems += check_wheels(meta["edges"])
+        notes = [n for n in meta.get("notes", []) if "shorter segment" in n]
+    print(
+        f"atlas routes: {through} edge{'s' if through != 1 else ''} through a card "
+        f"they do not connect, {across} across a region they neither start nor end in"
+    )
+    for line in notes:
+        print(f"  note: {line}")
     if problems:
         print(f"atlas layout: {len(problems)} problem{'s' if len(problems) != 1 else ''}")
         for line in problems:
             print(f"  {line}")
         return 1
     print(
-        f"atlas layout: clean ({len(COMPONENTS)} cards, {len(FLOWS)} labelled edges, "
-        f"{len(COMPONENTS)} wheels, nothing below {TEXT_PX:g}px)"
+        f"atlas layout: clean ({len(COMPONENTS)} cards, {len(FLOWS)} orthogonal labelled "
+        f"edges, {len(COMPONENTS)} wheels, nothing below {TEXT_PX:g}px)"
     )
     return 0
 

@@ -12,15 +12,29 @@ Measurement, Feedback, You (the operator's channels), Trust, Learning and
 Record. Each layer answers one question, printed under the switch. "All"
 shows every flow in the colour of its layer.
 
+The map is drawn at its own size and never shrunk: 11px in the figure is
+11px on screen, and a window narrower than the figure scrolls it sideways.
+The forward path reads left to right across the upper band (intake, plan,
+build, decide, measure, ship: decide sits between build and measure because
+the pipeline is the hub both sides report to); trust, learning and
+observation sit in a lower band under it; the agent's own process and tree
+sit below the factory, under build. Every edge is a right-angled path
+through the gutters between cards, routed so it passes through no card it
+does not connect and no region it neither starts nor ends in, with its
+label on its longest run. Above the map a slim strip carries the active
+layer's question and the components it touches.
+
 Click a component. Everything but the component and its neighbours dims,
 each connected edge thickens in its layer's colour with its label, and each
 neighbour is tagged with the verb that relates it, read from the clicked
-component ("measures", "feeds back to", "governs"). Beside the map the
-focus panel leads with the plain word for the component, then draws the
-relationship wheel: the component at the centre, one spoke per flow,
-spokes grouped by layer, each carrying an arrowhead for direction and its
-verb. Hover or tap a spoke (or a neighbour on the map) to read the one
-sentence that says what the relationship is; click a spoke to move to that
+component ("measures", "feeds back to", "governs"). The focus panel opens
+as a drawer over the map, docked on the side away from the component
+(Close, or Escape, shuts it; on a window under 1000px it sits under the map
+instead). It leads with the plain word for the component, then draws the
+relationship wheel: the component at the centre, one spoke per flow, spokes
+grouped by layer, each carrying an arrowhead for direction and its verb.
+Hover or tap a spoke (or a neighbour on the map) to read the one sentence
+that says what the relationship is; click a spoke to move to that
 neighbour. Under the wheel: build state, the invariants the component
 serves, and the file it lives in. The URL hash tracks the selection, so
 `index.html#EngineerLoop` opens focused.
@@ -47,8 +61,11 @@ lesson.
 `scripts/atlas/schematic.py` draws the model as one SVG and carries the
 focus interaction as one script, and every picture of the system comes from
 that one generator, so no figure can drift from the atlas it cites.
-`scripts/atlas/theme.py` is the one table of colours, kstrl's own from
-`DESIGN.md`.
+`scripts/atlas/route.py` routes every flow orthogonally through the gutters
+of the card grid (lanes derived from the card positions, a shortest-first
+Dijkstra with costs for bends, shared lanes and shared ports) and seats
+each label on its path. `scripts/atlas/theme.py` is the one table of
+colours, kstrl's own from `DESIGN.md`.
 
 ## Build state is derived
 
@@ -80,12 +97,15 @@ the three checks on every pull request and push to main:
     uv run python scripts/atlas/render_html.py --check
 
 `check_layout.py` verifies the hand-placed layout (every card in its band,
-no overlaps, every edge label seated clear of cards and other labels,
-nothing set below 11px), the meaning tables (every flow has a layer and a
-sentence, every component a plain word, every journey step a real edge),
-and the relationship wheel of every component (labels inside the drawing
-and off each other). Fix a failure by moving cards in `logical_model.py` or
-correcting `relations.py`, not by shrinking text.
+no overlaps, nothing set below 11px), the routing (it prints two counts,
+edges that pass through a card they do not connect and edges that cross a
+region they neither start nor end in, and lists every offender with the
+router's reason; both must be zero), the labels (every edge label seated
+clear of cards and other labels), the meaning tables (every flow has a
+layer and a sentence, every component a plain word, every journey step a
+real edge), and the relationship wheel of every component (labels inside
+the drawing and off each other). Fix a failure by moving cards in
+`logical_model.py` or correcting `relations.py`, not by shrinking text.
 
 ## Citing the atlas from a lesson
 
