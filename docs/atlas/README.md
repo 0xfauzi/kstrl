@@ -12,8 +12,12 @@ Measurement, Feedback, You (the operator's channels), Trust, Learning and
 Record. Each layer answers one question, printed under the switch. "All"
 shows every flow in the colour of its layer.
 
-The map is drawn at its own size and never shrunk: 11px in the figure is
-11px on screen, and a window narrower than the figure scrolls it sideways.
+The map opens at Fit: the whole map across the window, scaled down (about
+0.6 on a 1440px window). Scroll or pinch to zoom about the pointer, drag to
+pan; the Fit and 100% buttons are the two named views and + and - step the
+zoom by 1.25 between 0.4 and 2.5. Text is drawn at 11px and never smaller;
+at Fit it is small, and zoom brings it back. Double-click a region's name
+to frame that region. Print renders at Fit.
 The forward path reads left to right across the upper band (intake, plan,
 build, decide, measure, ship: decide sits between build and measure because
 the pipeline is the hub both sides report to); trust, learning and
@@ -24,13 +28,16 @@ does not connect and no region it neither starts nor ends in, with its
 label on its longest run. Above the map a slim strip carries the active
 layer's question and the components it touches.
 
-Click a component. Everything but the component and its neighbours dims,
+Click a component. The view frames the component and every neighbour at
+the largest zoom that shows them all (capped at 1.4), everything else dims,
 each connected edge thickens in its layer's colour with its label, and each
 neighbour is tagged with the verb that relates it, read from the clicked
 component ("measures", "feeds back to", "governs"). The focus panel opens
-as a drawer over the map, docked on the side away from the component
-(Close, or Escape, shuts it; on a window under 1000px it sits under the map
-instead). It leads with the plain word for the component, then draws the
+as a drawer over the map, docked on the side away from the component, and
+the neighbourhood is framed into the part of the map the drawer leaves
+(Close shuts it and leaves the view; Escape shuts it and returns the view
+to where it was before the selection; on a window under 1000px the drawer
+sits under the map instead). It leads with the plain word for the component, then draws the
 relationship wheel: the component at the centre, one spoke per flow, spokes
 grouped by layer, each carrying an arrowhead for direction and its verb.
 Hover or tap a spoke (or a neighbour on the map) to read the one sentence
@@ -39,10 +46,11 @@ neighbour. Under the wheel: build state, the invariants the component
 serves, and the file it lives in. The URL hash tracks the selection, so
 `index.html#EngineerLoop` opens focused.
 
-Journeys step through the map one edge at a time: the acting components
-light in amber, the measuring components in steel, and the strip under the
-map says what happens. A step nothing measures says so; that absence is the
-lesson.
+Journeys step through the map one edge at a time: each step frames its
+acting and measuring components and the edge it traces, the acting
+components light in amber, the measuring components in steel, and the strip
+under the map says what happens. A step nothing measures says so; that
+absence is the lesson.
 
 ## Three sources, kept apart
 
@@ -126,6 +134,7 @@ The first marks what a git range changed; the second marks what a plan
 reaches without consulting git. `--mode system` draws the plain figure.
 `--interactive` adds the same focus interaction the atlas page has (dim,
 thick edges with labels, verb tags, the wheel in a panel under the figure)
-as a self-contained fragment. Paste the whole `<figure>` into the lesson.
+and the same pan and zoom (Fit by default, wheel, pinch, drag, selection
+framing) as a self-contained fragment. Paste the whole `<figure>` into the lesson.
 `system.html` and `r10-reach.html` here are the two figures the control-loop
 design cites.

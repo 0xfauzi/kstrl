@@ -221,7 +221,15 @@ def _svg_style(svg_id: str, t: dict[str, Any]) -> str:
         f"{s} .vtag rect{{stroke-width:1}}"
         f"{s} .vtag text{{font-family:{t['font_ui']};font-size:{TEXT_PX}px;"
         "font-weight:500;text-anchor:middle}"
+        # The figure fills its column; the drawing pans and zooms inside it
+        # on the .view group, so the element itself never scrolls. touch-action
+        # none hands one-finger drags and pinches to the script.
+        f"{s}{{width:100%;height:auto;display:block;overflow:hidden;touch-action:none;"
+        "cursor:grab}"
+        f"{s}.panning{{cursor:grabbing}}"
+        f"{s} .zone__h{{cursor:zoom-in;-webkit-user-select:none;user-select:none}}"
         "@keyframes atlasflow{to{stroke-dashoffset:-14}}"
+        f"@media print{{{s} .view{{transform:none!important}}}}"
         "@media (prefers-reduced-motion:reduce){"
         f"{s} .flow.hot{{animation:none;stroke-dasharray:none}}"
         f"{s} .node,{s} .flow,{s} .flowlbl{{transition:none}}}}"
@@ -372,12 +380,14 @@ def render(
             f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="5" fill="none" '
             f'stroke="{T["region"]}" stroke-opacity=".28" stroke-width="1" '
             f'stroke-dasharray="3 4"/>'
+            f'<g class="zone__h" data-zone="{esc(region["id"])}">'
             f'<circle cx="{x + 17:.0f}" cy="{y + 16:.0f}" r="8.5" fill="{HALO}" '
             f'stroke="{T["region"]}" stroke-opacity=".5"/>'
             + L(x + 17, y + 20, str(i), TEXT_PX, T["region"], "600", True)
             + L(
                 x + 31, y + 20, region["label"], TEXT_PX, T["region"], "600", True, "start", ".13em"
             )
+            + "</g>"
         )
         obstacles.append((f"{region['id']} header", (x + 6, y + 5, 150, 24)))
         blocks.append((x + 6, y + 5, 150, 24))
@@ -611,6 +621,7 @@ def render(
                 {
                     "id": r["id"],
                     "label": r["label"],
+                    "box": [float(v) for v in r["box"]],
                     "ids": [c["id"] for c in COMPONENTS if c.get("region") == r["id"]],
                 }
                 for r in REGIONS
@@ -644,6 +655,10 @@ def render(
         _defs(svg_id, T),
         _svg_style(svg_id, T),
     ]
+    # Everything drawn sits in one group the script pans and zooms with a
+    # transform; the viewBox never changes, so every coordinate read back from
+    # the figure (card boxes, edge paths) stays in drawing units.
+    p.append('<g class="view">')
     p.extend(floor)
     p.append(f'<g data-layer="zones">{"".join(zones)}</g>')
     p.append(f'<g data-layer="flow">{"".join(flow_parts)}</g>')
@@ -652,6 +667,7 @@ def render(
         '<g data-layer="flow">' + "".join(label_parts[i] for i in sorted(label_parts)) + "</g>"
     )
     p.append('<g data-layer="tags"></g>')
+    p.append("</g>")
     # Text classes are known only once everything is drawn, so their style
     # block goes in last; the renderer does not care where a style sits.
     p.append(text_css())
@@ -731,9 +747,13 @@ def interactive_script(svg_id: str, panel_id: str, detail_json: str) -> str:
     Clicking a component (or pressing Enter on it) dims everything but the
     component and its neighbours, thickens each connected edge in its
     layer's colour, tags each neighbour with the verb that relates it, and
-    draws the relationship wheel in the panel. The same script serves the
-    atlas page and a lesson figure, so the two cannot behave differently.
-    The page adds layer and journey controls on top through `svg.atlas`.
+    draws the relationship wheel in the panel. It also owns the viewport:
+    wheel and pinch zoom about the pointer, drag pans, a selection or a
+    journey step frames its neighbourhood, a double-click on a region label
+    frames the region, and `svg.atlas.view` exposes fit, 100%, step and
+    back. The same script serves the atlas page and a lesson figure, so the
+    two cannot behave differently. The page adds layer and journey controls
+    on top through `svg.atlas`.
 
     The detail JSON is inlined; `</` is broken up so no artifact label can
     close the script early.
@@ -797,9 +817,10 @@ function mix(a, b, t){
 var nodes = Array.prototype.slice.call(svg.querySelectorAll('.node'));
 var flows = Array.prototype.slice.call(svg.querySelectorAll('.flow'));
 var labels = Array.prototype.slice.call(svg.querySelectorAll('.flowlbl'));
-var nodeOf = {}, labelOf = {};
+var nodeOf = {}, labelOf = {}, flowOf = {};
 nodes.forEach(function(n){ nodeOf[n.dataset.id] = n; });
 labels.forEach(function(l){ labelOf[l.dataset.edge] = l; });
+flows.forEach(function(p){ flowOf[p.dataset.edge] = p; });
 var tags = svg.querySelector('[data-layer="tags"]');
 var state = {focus:'', layer:'all', journey:null, endstate:false, peek:-1};
 
@@ -817,6 +838,228 @@ function el(name, attrs, text){
   if(text !== undefined){ e.textContent = text; }
   return e;
 }
+
+// ---- the viewport ---------------------------------------------------------
+// The drawing sits in <g class="view" transform="translate(tx ty) scale(k)">.
+// (tx, ty, k) are in viewBox units, so a drawing point p lands at k*p + t in
+// the viewBox and every box or path read from the figure stays in drawing
+// units. `base` is the CSS pixels the browser gives one viewBox unit; the
+// zoom the reader sees is base*k, and Fit (the whole map across the column)
+// is k = 1, t = 0. Wheel and pinch zoom about the pointer, a drag pans, a
+// selection or a journey step frames its neighbourhood, and Escape (in the
+// page around this script) returns to the view before the framing began.
+var view = svg.querySelector('.view');
+var VB = svg.viewBox.baseVal;
+var ZMIN = 0.4, ZMAX = 2.5, ZCAP = 1.4, FRAME_PAD = 28, ANIM_MS = 320;
+var cur = {k:1, tx:0, ty:0};   // what is drawn now, mid-animation included
+var goal = {k:1, tx:0, ty:0};  // where the view is heading
+var saved = null;              // the view before the current framing chain
+var framed = false;            // the view on screen is one a frame() set
+var anim = 0, booted = false, dragged = false;
+function base(){ var m = svg.getScreenCTM(); return m && m.a ? m.a : 1; }
+function reduced(){
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function isFit(v){
+  v = v || goal;
+  return Math.abs(v.k - 1) < 1e-3 && Math.abs(v.tx) < 0.5 && Math.abs(v.ty) < 0.5;
+}
+function centre(){ return {x:VB.x + VB.width / 2, y:VB.y + VB.height / 2}; }
+function toVb(clientX, clientY){
+  // A client point in viewBox units.
+  var m = svg.getScreenCTM();
+  if(!m){ return centre(); }
+  var q = new DOMPoint(clientX, clientY).matrixTransform(m.inverse());
+  return {x:q.x, y:q.y};
+}
+function clampView(v){
+  // The zoom stays between ZMIN and ZMAX (Fit is always allowed, even on a
+  // column so narrow that Fit is under ZMIN), and a fifth of the viewport
+  // always holds drawing, so the map cannot be dragged out of sight.
+  var b = base(), lo = Math.min(ZMIN, b) / b, hi = ZMAX / b;
+  var k = Math.min(hi, Math.max(lo, v.k));
+  var mx = VB.width * 0.2, my = VB.height * 0.2;
+  var tx = Math.min(VB.x + VB.width - mx - k * VB.x,
+    Math.max(VB.x + mx - k * (VB.x + VB.width), v.tx));
+  var ty = Math.min(VB.y + VB.height - my - k * VB.y,
+    Math.max(VB.y + my - k * (VB.y + VB.height), v.ty));
+  return {k:k, tx:tx, ty:ty};
+}
+function apply(v){
+  cur = v;
+  if(view){
+    view.setAttribute('transform', 'translate(' + v.tx.toFixed(2) + ' ' + v.ty.toFixed(2)
+      + ') scale(' + v.k.toFixed(4) + ')');
+  }
+  svg.dispatchEvent(new CustomEvent('atlas:view',
+    {detail:{zoom:base() * v.k, fit:isFit(v)}, bubbles:true}));
+}
+function setView(v, instant){
+  goal = clampView(v);
+  if(anim){ cancelAnimationFrame(anim); anim = 0; }
+  if(instant || !booted || reduced()){ apply(goal); return; }
+  var from = cur, to = goal, t0 = 0;
+  function tick(now){
+    if(!t0){ t0 = now; }
+    var u = Math.min(1, (now - t0) / ANIM_MS);
+    var e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+    apply({k:from.k + (to.k - from.k) * e, tx:from.tx + (to.tx - from.tx) * e,
+      ty:from.ty + (to.ty - from.ty) * e});
+    anim = u < 1 ? requestAnimationFrame(tick) : 0;
+  }
+  anim = requestAnimationFrame(tick);
+}
+function userView(v, instant){
+  // The reader moved the view: it is theirs now, and there is nothing to
+  // go back to until the next framing.
+  framed = false; saved = null;
+  setView(v, instant);
+}
+function zoomAt(f, cx, cy, instant){
+  // Zoom by f about the viewBox point (cx, cy): the drawing point under it
+  // stays under it, even when the zoom is clamped.
+  var k = clampView({k:goal.k * f, tx:goal.tx, ty:goal.ty}).k, g = k / goal.k;
+  userView({k:k, tx:cx - g * (cx - goal.tx), ty:cy - g * (cy - goal.ty)}, instant);
+}
+function frameRect(r, inset, instant){
+  // Fit the drawing rect r into the viewport minus inset {left, right, top,
+  // bottom} CSS pixels, at the largest zoom that shows all of it, capped at
+  // ZCAP. The first framing in a chain remembers the view it left.
+  inset = inset || {};
+  var b = base();
+  var il = (inset.left || 0) / b, ir = (inset.right || 0) / b;
+  var it = (inset.top || 0) / b, ib = (inset.bottom || 0) / b;
+  var aw = Math.max(40, VB.width - il - ir), ah = Math.max(40, VB.height - it - ib);
+  var k = Math.min(ZCAP / b, aw / r.w, ah / r.h);
+  var cx = VB.x + il + aw / 2, cy = VB.y + it + ah / 2;
+  if(!framed){ saved = goal; framed = true; }
+  setView({k:k, tx:cx - k * (r.x + r.w / 2), ty:cy - k * (r.y + r.h / 2)}, instant);
+}
+function unionBox(ids, edgeIdx){
+  // The rect around some cards and the edges between them, in drawing units.
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  function add(x, y, w, h){
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
+  }
+  ids.forEach(function(id){
+    if(nodeOf[id]){ var b = boxOf(nodeOf[id]); add(b.x, b.y, b.w, b.h); } });
+  (edgeIdx || []).forEach(function(i){
+    var p = flowOf[i];
+    if(!p || !p.getBBox){ return; }
+    var bb = p.getBBox();
+    if(bb.width || bb.height){ add(bb.x, bb.y, bb.width, bb.height); }
+  });
+  if(x0 === Infinity){ return null; }
+  return {x:x0 - FRAME_PAD, y:y0 - FRAME_PAD, w:x1 - x0 + 2 * FRAME_PAD, h:y1 - y0 + 2 * FRAME_PAD};
+}
+function frameFocus(inset, instant){
+  // The selected component, every neighbour, and the edges between them.
+  var f = state.focus;
+  if(!f || !DETAIL[f]){ return; }
+  var ids = [f], edges = DETAIL[f].edges || [];
+  edges.forEach(function(i){ ids.push(EDGES[i].from); ids.push(EDGES[i].to); });
+  var r = unionBox(ids, edges);
+  if(r){ frameRect(r, inset, instant); }
+}
+function frameJourney(step, instant){
+  // The step's acting and measuring components and the edge it traces.
+  var ids = (step.acts || []).concat(step.measures || []), edges = [];
+  if(step.edge >= 0 && EDGES[step.edge]){
+    ids.push(EDGES[step.edge].from); ids.push(EDGES[step.edge].to); edges.push(step.edge);
+  }
+  var r = unionBox(ids, edges);
+  if(r){ frameRect(r, null, instant); }
+}
+function frameRegion(id){
+  var box = null;
+  (META.regions || []).forEach(function(z){ if(z.id === id && z.box){ box = z.box; } });
+  if(!box){ return; }
+  frameRect({x:box[0] - 12, y:box[1] - 12, w:box[2] + 24, h:box[3] + 24}, null);
+}
+function back(){
+  // The view before the framing chain began; nothing if the reader has
+  // moved the view since.
+  if(!saved){ return; }
+  var v = saved;
+  saved = null; framed = false;
+  setView(v);
+}
+function fracOf(id){
+  // Where the card's centre sits across the viewport, 0 to 1, once the view
+  // arrives. The page docks its drawer on the other side.
+  var n = nodeOf[id];
+  if(!n){ return 0.5; }
+  var b = boxOf(n);
+  return (goal.k * (b.x + b.w / 2) + goal.tx - VB.x) / VB.width;
+}
+
+// Wheel (and trackpad pinch, which arrives as ctrl+wheel) zooms about the
+// pointer. A drag pans; under 4px of movement it is a click and the cards
+// keep it. Two touches pinch.
+svg.addEventListener('wheel', function(e){
+  e.preventDefault();
+  var d = e.deltaY;
+  if(e.deltaMode === 1){ d *= 16; } else if(e.deltaMode === 2){ d *= 400; }
+  var f = Math.max(0.5, Math.min(2, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0022))));
+  var c = toVb(e.clientX, e.clientY);
+  zoomAt(f, c.x, c.y, true);
+}, {passive:false});
+var ptrs = {}, drag = null, pinch = null;
+function ptrList(){ return Object.keys(ptrs).map(function(k){ return ptrs[k]; }); }
+function dist(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
+function startDrag(p){ drag = {x:p.x, y:p.y, tx:goal.tx, ty:goal.ty, moved:false}; }
+svg.addEventListener('pointerdown', function(e){
+  if(e.pointerType === 'mouse' && e.button !== 0){ return; }
+  dragged = false;
+  ptrs[e.pointerId] = {x:e.clientX, y:e.clientY};
+  var list = ptrList();
+  if(list.length === 1){ pinch = null; startDrag(list[0]); }
+  else if(list.length === 2){
+    drag = null;
+    var m = toVb((list[0].x + list[1].x) / 2, (list[0].y + list[1].y) / 2);
+    pinch = {d:dist(list[0], list[1]), k:goal.k,
+      px:(m.x - goal.tx) / goal.k, py:(m.y - goal.ty) / goal.k};
+  }
+});
+svg.addEventListener('pointermove', function(e){
+  if(!ptrs[e.pointerId]){ return; }
+  ptrs[e.pointerId] = {x:e.clientX, y:e.clientY};
+  var list = ptrList();
+  if(pinch && list.length >= 2){
+    var m = toVb((list[0].x + list[1].x) / 2, (list[0].y + list[1].y) / 2);
+    var k = clampView({k:pinch.k * dist(list[0], list[1]) / pinch.d, tx:0, ty:0}).k;
+    dragged = true;
+    userView({k:k, tx:m.x - k * pinch.px, ty:m.y - k * pinch.py}, true);
+  } else if(drag){
+    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if(!drag.moved){
+      if(Math.hypot(dx, dy) < 4){ return; }
+      drag.moved = true;
+      svg.classList.add('panning');
+      if(svg.setPointerCapture){ try { svg.setPointerCapture(e.pointerId); } catch(_x){} }
+    }
+    var b = base();
+    userView({k:goal.k, tx:drag.tx + dx / b, ty:drag.ty + dy / b}, true);
+  }
+});
+function endPointer(e){
+  if(!ptrs[e.pointerId]){ return; }
+  delete ptrs[e.pointerId];
+  if(drag && drag.moved){ dragged = true; }
+  drag = null; pinch = null;
+  svg.classList.remove('panning');
+  var list = ptrList();
+  if(list.length === 1){ startDrag(list[0]); drag.moved = true; }
+}
+svg.addEventListener('pointerup', endPointer);
+svg.addEventListener('pointercancel', endPointer);
+// A click that ends a drag is not a click: nothing under the pointer hears it.
+svg.addEventListener('click', function(e){
+  if(dragged){ dragged = false; e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+Array.prototype.slice.call(svg.querySelectorAll('[data-zone]')).forEach(function(z){
+  z.addEventListener('dblclick', function(e){ e.preventDefault(); frameRegion(z.dataset.zone); });
+});
 
 function paint(){
   var f = state.focus, j = state.journey, L = state.layer;
@@ -1078,6 +1321,7 @@ function select(cid){
   if(!d){ return; }
   state.focus = cid; state.journey = null; state.peek = -1;
   paint();
+  frameFocus(null, !booted);
   if(panel){
     panel.innerHTML = describe(d);
     panel.classList.add('on');
@@ -1129,7 +1373,19 @@ svg.atlas = {
     state.focus = '';
     state.journey = step;
     paint();
+    if(step){ frameJourney(step, !booted); }
     if(panel && step){ panel.innerHTML = ''; panel.classList.remove('on'); }
+  },
+  view: {
+    fit: function(){ userView({k:1, tx:0, ty:0}); },
+    actual: function(){ var c = centre(); zoomAt(1 / (base() * goal.k), c.x, c.y); },
+    zoomBy: function(f){ var c = centre(); zoomAt(f, c.x, c.y); },
+    zoom: function(){ return base() * goal.k; },
+    isFit: function(){ return isFit(); },
+    frameFocus: frameFocus,
+    frameRegion: frameRegion,
+    fracOf: fracOf,
+    back: back
   },
   edges: EDGES,
   layers: LAYERS,
@@ -1144,4 +1400,5 @@ function openHash(){
 }
 window.addEventListener('hashchange', openHash);
 openHash();
+booted = true;
 """

@@ -1,8 +1,9 @@
 """Render the system atlas as one page that teaches the system in layers.
 
-The page is the map, at full width and never below its drawn size: 11px in
-the figure is 11px on screen, and a window narrower than the figure scrolls
-it sideways rather than shrinking it. Above it, a layer switch (one map,
+The page is the map, at full width. It opens at Fit (the whole map across
+the column) and the reader zooms with the wheel, a pinch, or the Fit / 100%
+/ + / - controls, and pans by dragging; selecting a component frames it and
+its neighbours, and Escape returns the view. Above it, a layer switch (one map,
 seven readings), a today/end-state toggle, the journeys a reader can step
 through, and a slim strip carrying the active layer's question and its
 components. Click a component and the focus panel opens as a drawer over the
@@ -34,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import change as change_mod
 import theme as theme_mod
 from logical_model import (
-    CANVAS,
     COMPONENTS,
     FLOWS,
     GOVERNED_BY,
@@ -91,10 +91,7 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append('<html lang="en"><head><meta charset="utf-8">')
     o.append('<meta name="viewport" content="width=device-width,initial-scale=1">')
     o.append("<title>kstrl system atlas</title>")
-    # The figure's drawn width, in CSS pixels: the viewBox plus the pad the
-    # schematic adds on each side. The map is never shown narrower than this.
-    min_w = CANVAS[0] + 52
-    o.append(f"<style>{CSS.format(ROOT=':root{' + theme_mod.css_vars(T) + '}', MINW=min_w)}")
+    o.append(f"<style>{CSS.format(ROOT=':root{' + theme_mod.css_vars(T) + '}')}")
     o.append(f"{panel_css()}</style></head><body>")
 
     # ---------------- header ----------------
@@ -158,6 +155,18 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
         '<button type="button" class="seg__b" data-endstate="1" aria-pressed="false">'
         "End state</button></div></div>"
     )
+    o.append('<div class="ctl"><span class="ctl__k">Zoom</span>')
+    o.append('<div class="seg" role="group" aria-label="Zoom">')
+    o.append(
+        '<button type="button" class="seg__b" data-zoom="fit" aria-pressed="true">Fit</button>'
+        '<button type="button" class="seg__b" data-zoom="actual" aria-pressed="false">'
+        "100%</button>"
+        '<button type="button" class="seg__b seg__b--step" data-zoom="in" '
+        'aria-label="Zoom in">+</button>'
+        '<button type="button" class="seg__b seg__b--step" data-zoom="out" '
+        'aria-label="Zoom out">-</button></div>'
+        '<span class="zpct" id="zpct" aria-live="off" title="zoom"></span></div>'
+    )
     o.append('<div class="ctl"><span class="ctl__k">Journey</span>')
     o.append('<select id="journey" aria-label="Journey"><option value="">none</option>')
     for k, j in enumerate(JOURNEYS):
@@ -189,6 +198,10 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append('<div class="atlas-panel" id="panel" aria-live="polite"></div>')
     o.append("</div></aside>")
     o.append("</div>")  # mapwrap
+    o.append(
+        '<p class="hint">Scroll to zoom, drag to pan, click a component to frame it, '
+        "Escape to go back.</p>"
+    )
     o.append('<div class="strip" id="strip" hidden><span class="strip__n" id="stripn"></span>')
     o.append('<span class="strip__say" id="stripsay"></span>')
     o.append('<span class="strip__meas" id="stripmeas"></span></div>')
@@ -215,8 +228,9 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
         '<p class="key">Fill is build state, derived: a component is built when the entry '
         "named in the model exists in the modules named. Every line carries what it moves "
         "and is coloured by the layer it belongs to. Click a component; press Escape to "
-        "clear; arrow keys step a journey. The map is drawn at its own size: a narrower "
-        "window scrolls it sideways.</p>"
+        "clear it and return the view; arrow keys step a journey; double-click a region's "
+        "name to frame the region. Text is drawn at 11px and never smaller: at Fit it "
+        "is scaled down, and zoom brings it back.</p>"
     )
     o.append("</section>")
 
@@ -341,11 +355,13 @@ box-shadow:inset 0 -2px 0 var(--accent)}}
 .lstrip__row button b{{font-weight:600;margin-right:.35em;color:var(--ink-3)}}
 .lstrip__row button.on b{{color:var(--accent)}}
 .lstrip__row button i{{font-style:normal;color:var(--ink-3);margin:0 .3em}}
-/* the map: full width, never narrower than it is drawn */
+.seg__b--step{{min-width:2.2rem;justify-content:center;font-family:var(--fm);font-size:14px}}
+.zpct{{font-family:var(--fm);font-size:11.5px;color:var(--ink-3);min-width:2.8rem}}
+/* the map: full width; the drawing pans and zooms inside the stage */
 .mapwrap{{position:relative}}
 .stage{{background:var(--surface);border:1px solid var(--line);border-radius:8px;
-padding:.4rem;overflow:auto}}
-.stage svg{{width:100%;min-width:{MINW}px;height:auto;display:block}}
+padding:.4rem;overflow:hidden}}
+.hint{{margin:.4rem 0 0;font-size:12px;color:var(--ink-3)}}
 /* the focus panel: a drawer over the map, docked away from the selection */
 .drawer{{position:absolute;top:0;bottom:0;width:380px;max-width:calc(100% - 2rem);
 z-index:2;pointer-events:none}}
@@ -493,39 +509,48 @@ JS = r"""
   });
 
   // ---- the drawer: opens on selection, docks away from the node ---------
-  function nodeBox(id){
-    var r = svg.querySelector('.node[data-id="' + id + '"] .node__box');
-    return r ? {el:r, x:+r.getAttribute('x'), w:+r.getAttribute('width')} : null;
-  }
-  function openDrawer(id){
+  function openDrawer(id, instant){
+    // The figure has already framed the neighbourhood; the card's position
+    // in that view picks the side. The drawer then covers that side of the
+    // stage, so the neighbourhood is framed again into the part it leaves.
     if(!drawer){ return; }
-    var n = nodeBox(id), vb = svg.viewBox.baseVal;
-    var frac = n ? (n.x + n.w / 2 - vb.x) / vb.width : 0;
-    drawer.dataset.dock = frac > 0.6 ? 'left' : 'right';
+    drawer.dataset.dock = A.view.fracOf(id) > 0.6 ? 'left' : 'right';
     drawer.hidden = false;
-    reveal(n);
+    var over = window.innerWidth > 1000 ? drawer.offsetWidth + 12 : 0;
+    A.view.frameFocus(drawer.dataset.dock === 'left' ? {left:over} : {right:over}, instant);
+    reveal();
   }
   function closeDrawer(){ if(drawer){ drawer.hidden = true; } }
-  function reveal(n){
-    // The drawer covers one side of the stage: scroll the stage so the
-    // selected card sits in the part it leaves visible, and the page so
-    // the card is on screen.
-    if(!n || !stage){ return; }
-    var r = n.el.getBoundingClientRect(), s = stage.getBoundingClientRect();
-    var over = window.innerWidth > 1000 && drawer && !drawer.hidden;
-    var overlay = over ? drawer.offsetWidth + 12 : 0;
-    var lo = drawer.dataset.dock === 'left' ? overlay : 0;
-    var hi = stage.clientWidth - (drawer.dataset.dock === 'right' ? overlay : 0);
-    var left = r.left - s.left, right = left + r.width;
-    if(left < lo + 8 || right > hi - 8){
-      stage.scrollLeft += (left + r.width / 2) - (lo + hi) / 2;
-    }
-    if(r.top < 80 || r.bottom > window.innerHeight - 40){
-      window.scrollBy({top:r.top - Math.max(120, window.innerHeight * 0.3)});
+  function reveal(){
+    // The page scrolls so the map is on screen; the map itself has moved.
+    if(!stage){ return; }
+    var s = stage.getBoundingClientRect();
+    if(s.top < 0 || s.top > window.innerHeight - 200){
+      document.getElementById('map').scrollIntoView({block:'start'});
     }
   }
   var closeBtn = document.getElementById('drawerclose');
   if(closeBtn){ closeBtn.addEventListener('click', function(){ A.clear(); }); }
+
+  // ---- zoom: Fit and 100% are the named states; + and - step by 1.25 ----
+  var zoomBtns = all('[data-zoom]'), zpct = document.getElementById('zpct');
+  zoomBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      var z = b.dataset.zoom;
+      if(z === 'fit'){ A.view.fit(); }
+      else if(z === 'actual'){ A.view.actual(); }
+      else { A.view.zoomBy(z === 'in' ? 1.25 : 1 / 1.25); }
+    });
+  });
+  function showZoom(zoom, fit){
+    zoomBtns.forEach(function(b){
+      if(b.dataset.zoom === 'fit'){ b.setAttribute('aria-pressed', fit ? 'true' : 'false'); }
+      if(b.dataset.zoom === 'actual'){
+        b.setAttribute('aria-pressed', Math.abs(zoom - 1) < 0.01 ? 'true' : 'false'); }
+    });
+    if(zpct){ zpct.textContent = Math.round(zoom * 100) + '%'; }
+  }
+  svg.addEventListener('atlas:view', function(e){ showZoom(e.detail.zoom, e.detail.fit); });
 
   // ---- journeys ---------------------------------------------------------
   var sel = document.getElementById('journey');
@@ -606,6 +631,7 @@ JS = r"""
     if(e.key === 'Escape'){
       if(cur.j >= 0){ endJourney(); }
       A.clear();
+      A.view.back();
       e.preventDefault();
     } else if(e.key === 'ArrowRight' || e.key === 'ArrowLeft'){
       if(cur.j >= 0 && stepBy(e.key === 'ArrowRight' ? 1 : -1)){ e.preventDefault(); }
@@ -629,12 +655,11 @@ JS = r"""
       document.getElementById('map').scrollIntoView({behavior:'smooth', block:'start'});
     });
   });
-  window.addEventListener('resize', function(){
-    if(A.state.focus){ reveal(nodeBox(A.state.focus)); }
-  });
+  window.addEventListener('resize', function(){ showZoom(A.view.zoom(), A.view.isFit()); });
 
   setLayer('work');
-  if(A.state.focus){ openDrawer(A.state.focus); }
+  showZoom(A.view.zoom(), A.view.isFit());
+  if(A.state.focus){ openDrawer(A.state.focus, true); }
 })();
 """
 
