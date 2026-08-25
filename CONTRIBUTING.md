@@ -9,12 +9,16 @@ trustworthy, so they are requirements, not suggestions.
 - **Report a bug** or **request a feature** through the issue templates.
 - **Ask a question** or **float an idea** in
   [Discussions](https://github.com/0xfauzi/kstrl/discussions).
-- **Pick up roadmap work**: the current cycle is the Dark Factory roadmap
-  ([`docs/dark-factory-roadmap.md`](docs/dark-factory-roadmap.md), tracking
-  issue [#156](https://github.com/0xfauzi/kstrl/issues/156)). Wave-1 items
-  (policy envelope, health trending, autonomy ladder, exception inbox) are the
-  most self-contained entry points. Comment on an issue before starting so work
-  is not duplicated.
+- **Pick up roadmap work**: three cycles are open. The current one is the
+  control-loop cycle ([`docs/control-loop-design.md`](docs/control-loop-design.md),
+  tracking issue [#235](https://github.com/0xfauzi/kstrl/issues/235)), whose
+  issues are written to be picked up cold: each states the change, the tests
+  to write by name, and the acceptance conditions. The Dark Factory cycle
+  ([`docs/dark-factory-roadmap.md`](docs/dark-factory-roadmap.md), [#156](https://github.com/0xfauzi/kstrl/issues/156))
+  holds the release stage and runtime feedback; continuous learning is
+  [#217](https://github.com/0xfauzi/kstrl/issues/217). Comment on an issue
+  before starting so work is not duplicated. To understand the system first,
+  read the atlas ([docs/atlas](docs/atlas)) and the lessons ([docs/lessons](docs/lessons)).
 - **Report a security vulnerability**: do *not* open a public issue. See
   [SECURITY.md](SECURITY.md).
 

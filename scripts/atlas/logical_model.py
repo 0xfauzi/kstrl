@@ -29,7 +29,38 @@ from __future__ import annotations
 
 from typing import Any
 
-CANVAS = (1340, 1600)
+CANVAS = (2278, 978)
+
+# The canvas is a grid of card columns 190 apart (150 card, 40 gutter) and
+# card rows 92 apart (56 card, 36 gutter). Every card sits on it, so every
+# gutter is a straight corridor an orthogonal edge can run down, and a lane
+# in one gutter lines up with the same gutter one band lower. The forward
+# path reads left to right across the upper band; the bands that govern,
+# remember and observe it sit in a lower band; the agent's own process and
+# tree sit below the factory, under BUILD, so the adapter's two edges drop
+# straight down to them.
+COL: dict[str, int] = {
+    "c0": 32,  # github, outside the factory
+    "c1": 254,
+    "c2": 444,
+    "c3": 654,
+    "c4": 864,
+    "c5": 1054,
+    "c6": 1264,
+    "c7": 1474,
+    "c8": 1664,
+    "c9": 1854,
+    "c10": 2096,  # operator, outside the factory
+}
+ROW: dict[str, int] = {
+    "r1": 110,
+    "r2": 202,
+    "r3": 294,
+    "r4": 386,
+    "r5": 478,
+    "l1": 650,
+    "l2": 742,
+}
 
 # Hard boundaries. Nesting is by containment in the coordinates, not a tree.
 CONTAINERS: list[dict[str, Any]] = [
@@ -37,130 +68,141 @@ CONTAINERS: list[dict[str, Any]] = [
         "id": "github",
         "label": "GITHUB",
         "sub": "issues in, pull requests out, polled never pushed",
-        "box": (24, 24, 220, 164),
+        "box": (16, 16, 182, 172),
         "tone": "host",
-    },
-    {
-        "id": "agent_cli",
-        "label": "AGENT CLI",
-        "sub": "subprocess in its own process group; killed on deadline",
-        "box": (24, 586, 220, 110),
-        "tone": "isolated",
-    },
-    {
-        "id": "worktree",
-        "label": "WORKTREE",
-        "sub": "the only tree the agent may write",
-        "box": (24, 1352, 220, 198),
-        "tone": "isolated",
     },
     {
         "id": "factory",
         "label": "FACTORY PROCESS",
         "sub": "one process; every decision is code",
-        "box": (262, 24, 816, 1544),
+        "box": (216, 16, 1846, 814),
         "tone": "server",
     },
     {
         "id": "operator",
         "label": "OPERATOR",
         "sub": "one person, on the loop",
-        "box": (1096, 24, 220, 100),
+        "box": (2080, 16, 182, 116),
         "tone": "host",
     },
     {
         "id": "control_dir",
         "label": "CONTROL DIRECTORY",
         "sub": "XDG state outside the tree; the governor the agent cannot edit",
-        "box": (1096, 260, 220, 100),
+        "box": (2080, 616, 182, 100),
+        "tone": "isolated",
+    },
+    {
+        "id": "agent_cli",
+        "label": "AGENT CLI",
+        "sub": "subprocess in its own process group; killed on deadline",
+        "box": (848, 846, 182, 116),
+        "tone": "isolated",
+    },
+    {
+        "id": "worktree",
+        "label": "WORKTREE",
+        "sub": "the only tree the agent may write",
+        "box": (1046, 846, 178, 116),
         "tone": "isolated",
     },
 ]
 
-# Soft bands inside the factory. The main column reads top to bottom as the
-# path one unit of work takes; the side column holds the bands that watch,
-# govern and remember that path.
+# Soft bands inside the factory. The upper band reads left to right as the
+# path one unit of work takes, DECIDE between BUILD and MEASURE because the
+# pipeline is the hub both sides report to. The lower band holds the bands
+# that govern, remember and observe that path. Each box is 20 wider than its
+# cards on each side and 34 taller above them: room for a lane past a card
+# inside its own band.
 REGIONS: list[dict[str, Any]] = [
-    {"id": "intake", "label": "INTAKE", "box": (280, 68, 562, 290)},
-    {"id": "plan", "label": "PLAN", "box": (280, 380, 562, 106)},
-    {"id": "build", "label": "BUILD", "box": (280, 508, 562, 290)},
-    {"id": "measure", "label": "MEASURE", "box": (280, 820, 562, 382)},
-    {"id": "decide", "label": "DECIDE", "box": (280, 1224, 562, 106)},
-    {"id": "ship", "label": "SHIP", "box": (280, 1352, 562, 198)},
-    {"id": "trust", "label": "TRUST", "box": (860, 68, 200, 474)},
-    {"id": "learn", "label": "LEARN", "box": (860, 572, 200, 382)},
-    {"id": "observe", "label": "OBSERVE", "box": (860, 984, 200, 566)},
+    {"id": "intake", "label": "INTAKE", "box": (234, 76, 380, 380)},
+    {"id": "plan", "label": "PLAN", "box": (634, 76, 190, 288)},
+    {"id": "build", "label": "BUILD", "box": (844, 76, 380, 380)},
+    {"id": "decide", "label": "DECIDE", "box": (1244, 168, 190, 196)},
+    {"id": "measure", "label": "MEASURE", "box": (1454, 76, 380, 472)},
+    {"id": "ship", "label": "SHIP", "box": (1854, 76, 190, 472)},
+    {"id": "observe", "label": "OBSERVE", "box": (234, 616, 570, 196)},
+    {"id": "learn", "label": "LEARN", "box": (1034, 616, 380, 196)},
+    {"id": "trust", "label": "TRUST", "box": (1454, 616, 570, 196)},
 ]
 
-# Component id mapped to its place on the canvas and how it is drawn:
-# x, y in SVG units, then component, store or actor. Columns are 190 apart
-# and rows 92, which leaves a 40 by 36 gutter: two lanes of 11px edge labels
-# beside a short edge without touching either card.
-_PLACE: dict[str, tuple[int, int, str]] = {
-    # intake
-    "GitHubIntake": (296, 102, "component"),
-    "WorkQueue": (486, 102, "store"),
-    "FlowControl": (676, 102, "component"),
-    "SpendLedger": (296, 194, "store"),
-    "ServeDaemon": (486, 194, "component"),
-    "Inbox": (676, 194, "store"),
-    "Steering": (296, 286, "component"),
-    # plan
-    "PRD": (296, 414, "store"),
-    "Manifest": (486, 414, "store"),
-    "Architect": (676, 414, "component"),
-    # build
-    "Feedforward": (296, 542, "component"),
-    "KnowledgeInjector": (486, 542, "component"),
-    "RetryContext": (676, 542, "store"),
-    "AgentAdapter": (296, 634, "component"),
-    "EngineerLoop": (486, 634, "component"),
-    "PathGuard": (676, 634, "component"),
-    "Breaker": (296, 726, "component"),
-    "OperatorContext": (486, 726, "component"),
-    # measure
-    "PolicyEnvelope": (296, 854, "component"),
-    "AdequacyGate": (486, 854, "component"),
-    "FixturesOracle": (676, 854, "component"),
-    "MechanicalVerifier": (296, 946, "component"),
-    "Reviewer": (486, 946, "component"),
-    "SecurityReviewer": (676, 946, "component"),
-    "Sense": (296, 1038, "component"),
-    "Findings": (486, 1038, "store"),
-    "Calibration": (676, 1038, "component"),
-    "ContractTester": (296, 1130, "component"),
+# Component id mapped to its place on the grid and how it is drawn:
+# column, row, then component, store or actor.
+_PLACE: dict[str, tuple[str, str, str]] = {
+    # intake: the daemon top right so its run leaves by the top corridor;
+    # the inbox under it, on the right, where the operator and the pipeline
+    # reach it
+    "WorkQueue": ("c1", "r1", "store"),
+    "ServeDaemon": ("c2", "r1", "component"),
+    "GitHubIntake": ("c1", "r2", "component"),
+    "Inbox": ("c2", "r2", "store"),
+    "SpendLedger": ("c1", "r3", "store"),
+    "FlowControl": ("c2", "r3", "component"),
+    "Steering": ("c1", "r4", "component"),
+    # plan: the manifest top so it reaches the scheduler over BUILD; the PRD
+    # level with the engineer loop
+    "Manifest": ("c3", "r1", "store"),
+    "Architect": ("c3", "r2", "component"),
+    "PRD": ("c3", "r3", "store"),
+    # build: the loop on the right, level with the pipeline; the adapter
+    # bottom left, straight above the agent's process
+    "Feedforward": ("c4", "r1", "component"),
+    "OperatorContext": ("c5", "r1", "component"),
+    "KnowledgeInjector": ("c4", "r2", "component"),
+    "RetryContext": ("c5", "r2", "store"),
+    "PathGuard": ("c4", "r3", "component"),
+    "EngineerLoop": ("c5", "r3", "component"),
+    "AgentAdapter": ("c4", "r4", "component"),
+    "Breaker": ("c5", "r4", "component"),
     # decide
-    "Pipeline": (486, 1258, "component"),
-    "Scheduler": (676, 1258, "component"),
+    "Scheduler": ("c6", "r2", "component"),
+    "Pipeline": ("c6", "r3", "component"),
+    # measure: the three sensors the pipeline submits to stacked beside it,
+    # findings level with the pipeline on the far side of them; the two
+    # sensors that report to the ladder on the bottom row, above it
+    "SecurityReviewer": ("c7", "r1", "component"),
+    "ContractTester": ("c8", "r1", "component"),
+    "Reviewer": ("c7", "r2", "component"),
+    "Sense": ("c8", "r2", "component"),
+    "MechanicalVerifier": ("c7", "r3", "component"),
+    "Findings": ("c8", "r3", "store"),
+    "AdequacyGate": ("c7", "r4", "component"),
+    "FixturesOracle": ("c8", "r4", "component"),
+    "Calibration": ("c7", "r5", "component"),
+    "PolicyEnvelope": ("c8", "r5", "component"),
     # ship
-    "Worktrees": (296, 1386, "component"),
-    "PullRequests": (486, 1386, "component"),
-    "Distiller": (676, 1386, "component"),
-    "Dampener": (486, 1478, "component"),
-    "ReleaseStage": (676, 1478, "component"),
-    # trust
-    "AutonomyLadder": (885, 102, "component"),
-    "Replay": (885, 194, "component"),
-    "StateDir": (885, 286, "store"),
-    "SafeMode": (885, 378, "component"),
-    "HealthTrending": (885, 470, "component"),
-    # learn
-    "EvolutionJournal": (885, 606, "store"),
-    "Proposals": (885, 698, "component"),
-    "Playbook": (885, 790, "store"),
-    "RuntimeSignals": (885, 882, "component"),
-    # observe
-    "EventBus": (885, 1018, "component"),
-    "Reducer": (885, 1110, "component"),
-    "Dashboard": (885, 1202, "component"),
-    "CLI": (885, 1294, "component"),
-    "ProgressLog": (885, 1386, "store"),
-    "LinearMirror": (885, 1478, "component"),
-    # actors, outside the factory
-    "GitHubIssues": (44, 82, "actor"),
-    "GitHubPRs": (44, 134, "actor"),
-    "CodingAgent": (44, 643, "actor"),
-    "Operator": (1131, 68, "actor"),
+    "PullRequests": ("c9", "r1", "component"),
+    "Distiller": ("c9", "r2", "component"),
+    "Worktrees": ("c9", "r3", "component"),
+    "Dampener": ("c9", "r4", "component"),
+    "ReleaseStage": ("c9", "r5", "component"),
+    # observe: the bus top right, nearest the decisions that feed it
+    "Dashboard": ("c1", "l1", "component"),
+    "Reducer": ("c2", "l1", "component"),
+    "EventBus": ("c3", "l1", "component"),
+    "ProgressLog": ("c1", "l2", "store"),
+    "CLI": ("c2", "l2", "component"),
+    "LinearMirror": ("c3", "l2", "component"),
+    # learn: the journal top right, under the scheduler, beside the ladder
+    "Proposals": ("c5", "l1", "component"),
+    "EvolutionJournal": ("c6", "l1", "store"),
+    "Playbook": ("c5", "l2", "store"),
+    "RuntimeSignals": ("c6", "l2", "component"),
+    # trust: the ladder top left, under the sensors that demote it; its
+    # files directly under it
+    "AutonomyLadder": ("c7", "l1", "component"),
+    "Replay": ("c8", "l1", "component"),
+    "SafeMode": ("c9", "l1", "component"),
+    "StateDir": ("c7", "l2", "store"),
+    "HealthTrending": ("c8", "l2", "component"),
+}
+
+# Actors sit inside their containers at fixed coordinates.
+_ACTORS: dict[str, tuple[int, int]] = {
+    "GitHubIssues": (32, 74),
+    "GitHubPRs": (32, 130),
+    "CodingAgent": (864, 904),
+    "Operator": (2096, 74),
 }
 
 _TUI_MODULES = [
@@ -354,8 +396,8 @@ COMPONENTS: list[dict[str, Any]] = [
     {
         "id": "AgentAdapter",
         "region": "build",
-        "does": "Shells out to claude-code, codex, the SDK or a custom command "
-        "through a deadline streamer; scrapes usage.",
+        "does": "Runs the coding agent's CLI, its SDK or a custom command as a "
+        "subprocess through a deadline streamer; scrapes usage.",
         "interface": "Agent.run(prompt, cwd, timeout) -> Iterator[str]",
         "implemented_by": _AGENT_MODULES,
         "entry": "Agent",
@@ -730,7 +772,7 @@ COMPONENTS: list[dict[str, Any]] = [
         "id": "CodingAgent",
         "region": None,
         "container": "agent_cli",
-        "does": "claude-code, codex, or a custom command.",
+        "does": "Whichever coding agent the project configures, or a custom command.",
         "interface": "external",
         "implemented_by": [],
         "entry": "",
@@ -739,8 +781,12 @@ COMPONENTS: list[dict[str, Any]] = [
 ]
 
 for _c in COMPONENTS:
-    _x, _y, _kind = _PLACE[_c["id"]]
-    _c["x"], _c["y"], _c["kind"] = _x, _y, _kind
+    if _c["id"] in _ACTORS:
+        _c["x"], _c["y"] = _ACTORS[_c["id"]]
+        _c["kind"] = "actor"
+    else:
+        _col, _row, _kind = _PLACE[_c["id"]]
+        _c["x"], _c["y"], _c["kind"] = COL[_col], ROW[_row], _kind
 
 # (from, to, artifact carried, dataflow)
 FLOWS: list[tuple[str, str, str, str]] = [
@@ -978,7 +1024,7 @@ GOVERNED_BY: dict[str, list[int]] = {
 
 # Card geometry the layout check shares with the schematic.
 CARD_W = 150
-CARD_H = {"component": 56, "store": 46, "actor": 38}
+CARD_H = {"component": 56, "store": 52, "actor": 44}
 
 
 def _box(c: dict[str, Any]) -> tuple[int, int, int, int]:
