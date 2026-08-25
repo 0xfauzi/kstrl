@@ -14,26 +14,35 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-kstrl (pronounced "kestrel") is a harness for AI coding agents. Like the bird, it hunts by hovering: it holds position over your codebase, watches everything the agent does, and strikes precisely when something is wrong. You hand it a feature spec and walk away. It steers the agent with codebase context, verifies the output with structured checks, retries with actionable feedback, and learns from its mistakes across runs.
+kstrl (pronounced "kestrel") is a software factory for AI coding agents. Like the bird, it hunts by hovering: it holds position over your codebase, watches everything the agent does, and strikes precisely when something is wrong. You hand it a spec and walk away. It gives the agent the context it needs before it starts, measures what the agent produced with checks the agent did not write, feeds the gap back as the next instruction, and stops only when independent checks agree the work is done.
 
-The problem it solves: AI coding agents are powerful, but they work on a single prompt at a time. If the agent doesn't finish in one shot, you're back to manually re-prompting, checking progress, and deciding what to try next. And even when the agent says "done," there's no guarantee the code actually works. kstrl automates the outer loop - iteration, verification, and improvement - so the agent produces working code, not just code that claims to work. And because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
+The problem it solves: a coding agent is powerful and it is also the least reliable witness to its own work. Left alone, it works on one prompt at a time, decides for itself when it is finished, and reports success in the same voice whether the code works or not. kstrl is built on one rule: **nothing the agent says about its own output is the final word.** Every claim is measured by something else, the measurement decides what happens next, and the whole thing runs without you until it reaches a decision only you can make. Because walk-away automation is only trustworthy when you can see what it did, every run streams a typed event log you can watch live in a terminal dashboard, attach to from another terminal, or replay after the fact.
 
 ## What makes kstrl different
 
-Most agent wrappers are retry loops: run the agent, check if it's done, retry if not. kstrl applies harness engineering - a combination of feedforward controls (steer the agent before it acts) and feedback sensors (verify after it acts) to systematically increase confidence in agent output.
+Most agent wrappers are retry loops: run the agent, ask it whether it is done, run it again if not. The agent is both the worker and the judge, so the loop closes on its own opinion of itself.
+
+kstrl is designed as a loop that closes on evidence instead. The parts are deliberate, and each exists to answer one question:
+
+- **What should the agent know before it starts?** Computed context: the module map, public interfaces, dependency graph and conventions, extracted from the tree without a model call. The agent learns the codebase's rules up front rather than from a linter on iteration three.
+- **How do we know what it actually did?** Independent measurement: mechanical checks, then a reviewer from a different model family judging every acceptance criterion, then a security reviewer. None of these read the agent's description of its work; they read the diff.
+- **What happens when the measurement disagrees?** The gap becomes the next instruction: parsed failures with file, line, source context and a fix hint, not raw tool output. The agent tries again against a smaller, sharper target.
+- **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
+- **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
 ```mermaid
 flowchart LR
-    Spec["Feature spec"] --> Context["Computed context<br/>(no LLM)"]
+    Spec["Spec: what done means"] --> Context["Computed context<br/>(no LLM)"]
     Context --> Agent["Implementing<br/>agent"]
-    Agent --> Gauntlet["Adversarial gauntlet<br/>mechanical checks -> code review -> security review"]
-    Gauntlet -->|"fail: structured feedback"| Agent
-    Gauntlet -->|pass| PR["PR + merge"]
-    PR --> Learn["Evolution journal"]
-    Learn -.->|"harness improvements"| Context
+    Agent --> Measure["Independent measurement<br/>mechanical checks -> code review -> security review"]
+    Measure -->|"gap: parsed failures, fix hints"| Agent
+    Measure -->|"checks agree"| PR["PR + merge"]
+    PR --> Record["Event log + journal"]
+    Record -.->|"facts to later components"| Context
+    Measure -.->|"boundary conditions only"| You["You, on the loop"]
 ```
 
-The gauntlet is the point: independent adversarial reviewers whose job is to distrust the implementing agent - and a harness that distrusts the reviewers too (empty, partial, or oversized reviews fail closed). The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
 
 **Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
@@ -79,9 +88,9 @@ There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that 
 
 kstrl statically analyzes the codebase - module map, public interfaces, dependency graph, active conventions - and injects it into the prompt. No LLM calls, no token cost. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
 
-### After the agent acts: the gauntlet
+### After the agent acts: independent measurement
 
-When the agent signals completion, kstrl doesn't just trust it. Every run goes through mechanical verification:
+When the agent signals completion, kstrl treats that as a claim and measures the work with checks the agent did not write:
 
 - **Mechanical checks** (fast, computational): tests, typecheck, lint, no changes outside allowed paths, no leaked secrets.
 - **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.
@@ -99,20 +108,18 @@ When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It
     hint: Type mismatch in argument - convert or check the value before passing it.
 ```
 
-### Continuous learning - the harness improves itself
+### Learning across runs: what closes today, and what is planned
 
-After each factory run, kstrl records structured failure signatures to an evolution journal. Over multiple runs, it identifies recurring patterns and proposes harness improvements - as markdown files for human review, never silent self-modification.
+After each component, a distiller writes durable facts about what was built, and later components receive those facts in their context. That loop is closed and its uptake is measured (as a lower bound) on every run.
 
-
+After each factory run, kstrl also records structured failure signatures, costs and finding categories to an evolution journal, and `ks evolve` turns recurring patterns into proposals written as markdown for you to read.
 
 ```bash
 ks evolve              # analyze recent runs, find patterns
 ks evolve --status     # show experiment trends (retry rate over time)
 ```
 
-If the agent keeps triggering the same linter rule across components, `ks evolve` proposes adding a convention to CLAUDE.md. If typecheck failures recur on Optional types, it proposes a mypy config change. Proposals are written as markdown files for human review.
-
-This is the meta-loop: kstrl doesn't just retry - it learns what causes failures and updates its own controls to prevent them.
+Be clear about what that is today: a record and a proposal, not a closed loop. Nothing reads a proposal back into the next run, and nothing yet checks whether an applied proposal helped. The design that closes it, with attribution (a lesson that keeps failing to prevent the failure it targets retires itself) and a shared playbook across every project you run, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md), tracked as R9. Until it lands, this README does not claim the harness improves itself.
 
 ## Factory mode - parallel multi-component execution
 
@@ -195,6 +202,12 @@ enabled = true
 
 Three fixture types: `cli` (run a command, check output), `function` (import and call, check return), `file` (check existence and content). Fixture definitions are LLM-emitted and therefore treated as untrusted: commands run without a shell in a scrubbed environment, functions run in a sandboxed subprocess, and file paths cannot escape the worktree - the full security treatment and the snapshot-regression mechanism are in [ARCHITECTURE.md](ARCHITECTURE.md#the-fixtures-sandbox). See the `[fixtures]` keys in the configuration reference below.
 
+## Where you stand
+
+kstrl is built for one person running it unattended, and it is designed around the difference between being in the loop and being on it. In the loop, you are a required step and nothing proceeds without you. On the loop, the factory runs itself and comes to you only at boundaries it cannot judge, while you adjust how it behaves between runs.
+
+Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a standing feedback file the agent always reads last and a way for your pull-request comments to reach the next run.
+
 ## Why not just use Claude Code directly?
 
 You can, and for small tasks you should. kstrl is for when you want to:
@@ -205,7 +218,7 @@ You can, and for small tasks you should. kstrl is for when you want to:
 - **Give the agent context** - feedforward injection means fewer wasted iterations discovering the codebase
 - **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
 - **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
-- **Improve over time** - the evolution journal tracks patterns so the same mistakes don't keep recurring
+- **Carry knowledge forward** - facts distilled from each component reach the next one, and the journal records every failure signature for the learning work that follows
 - **Red-team the spec before building** - the architect pass halts on blocker-severity spec ambiguities instead of guessing
 
 ## CLI reference
@@ -508,7 +521,7 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 }
 ```
 
-The agent updates `passes` and `notes` as it works. kstrl reads these between iterations to decide whether to continue. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify.
+The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the set point every check measures against.
 
 `allowedPaths` is optional for a hand-written PRD (it feeds the Phase 1 diff-scope check); the architect is required to emit it for every decomposed component.
 
@@ -523,7 +536,7 @@ git clone https://github.com/0xfauzi/kstrl.git
 cd kstrl
 uv sync
 uv tool install -e .
-uv run pytest tests/           # 1777 tests collected at the time of writing (2026-07)
+uv run pytest tests/           # 3200 passed, 28 skipped at the time of writing (2026-08)
 uv run mypy kstrl/ --strict
 uv run ruff check kstrl/ tests/
 ```
