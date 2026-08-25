@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR 221: kstrl as a control loop</title>
+<style>
+  :root {
+    --ink: #1c1c1c; --muted: #5a5a5a; --line: #cfcfcf; --paper: #fffdf8;
+    --panel: #f5f2ea; --ok: #2f6f3e; --bad: #a33a2a; --warn: #8a6d1f; --accent: #2d4f7c;
+  }
+  html { background: var(--paper); }
+  body {
+    margin: 0 auto; padding: 2rem 1.25rem 4rem; max-width: 72ch; color: var(--ink);
+    font: 17px/1.55 Georgia, "Times New Roman", serif; background: var(--paper);
+  }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .4rem; }
+  h2 { font-size: 1.35rem; margin: 3rem 0 .8rem; border-bottom: 1px solid var(--line); padding-bottom: .25rem; }
+  h3 { font-size: 1.12rem; margin: 2.2rem 0 .6rem; }
+  p { margin: 0 0 1rem; }
+  code, pre { font: 14px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+  code { background: var(--panel); padding: 0 .25em; border-radius: 3px; }
+  pre { background: var(--panel); padding: .8rem 1rem; overflow-x: auto; border-radius: 6px; }
+  blockquote { margin: 1rem 0; padding: .4rem 1rem; border-left: 3px solid var(--accent); color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 1.2rem; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; background: var(--panel); }
+  figure { margin: 1.5rem 0 2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  figcaption { font-size: 14.5px; color: var(--muted); margin-top: .8rem; line-height: 1.45; }
+  figure .controls { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem 1.2rem; font-size: 15px; margin-bottom: .8rem; }
+  figure .controls label { display: block; }
+  figure .controls input[type=range] { width: 100%; }
+  figure .out { font-size: 15px; padding: .6rem .8rem; border-radius: 6px; background: var(--panel); min-height: 2.4rem; }
+  figure .out .num { font: 600 15px ui-monospace, Menlo, monospace; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  button { font: inherit; font-size: 15px; padding: .35rem .8rem; border: 1px solid var(--accent); background: #fff; color: var(--accent); border-radius: 5px; cursor: pointer; }
+  button:hover { background: var(--panel); }
+  .how { font: 600 11px/1 ui-monospace, Menlo, monospace; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: var(--muted); padding: .18em .4em; border-radius: 3px; vertical-align: middle; }
+  .how.m { background: var(--ok); } .how.r { background: var(--accent); } .how.j { background: var(--warn); } .how.u { background: var(--bad); }
+  .lede { font-size: 1.05rem; color: var(--muted); margin-bottom: 1.6rem; }
+  .meta { font-size: 14px; color: var(--muted); border: 1px solid var(--line); padding: .6rem .9rem; border-radius: 6px; margin-bottom: 2rem; }
+  .meta code { background: transparent; padding: 0; }
+  svg text { font: 12.5px ui-monospace, Menlo, monospace; fill: var(--ink); }
+  svg .t { font: 600 13px Georgia, serif; }
+  svg .s { font-size: 11px; fill: var(--muted); }
+  ol.quiz { padding-left: 1.2rem; }
+  ol.quiz > li { margin-bottom: 1.4rem; }
+  ol.quiz ul { list-style: none; padding-left: 0; margin: .4rem 0; }
+  ol.quiz ul li { margin: .2rem 0; }
+  .answer { display: none; margin-top: .5rem; padding: .5rem .8rem; background: var(--panel); border-radius: 6px; font-size: 15px; }
+  .answer.show { display: block; }
+  .deadend { border-left: 3px solid var(--bad); padding: .1rem 1rem; margin: 1.2rem 0; background: #fff8f6; }
+  .deadend p:first-child { margin-top: .6rem; }
+  @media print {
+    body { max-width: none; font-size: 11.5pt; }
+    figure { break-inside: avoid; }
+    button { display: none; }
+    .answer { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<h1>PR 221: kstrl as a control loop</h1>
+<p class="lede">What kstrl becomes once the thirteen issues this document filed are built, taught to the person who built the rest of it.</p>
+
+<div class="meta">
+  Subject: <code>0xfauzi/kstrl</code> pull request 221, merged into <code>main</code> as <code>72404e9</code>, head <code>79196de</code>. Two files: <code>docs/control-loop-design.md</code> added (986 lines), one phrase in <code>docs/dark-factory-roadmap.md</code> changed. No code moved. The plan it filed is the R10 milestone: tracking issue #235 and items #222 to #234.<br>
+  How to read the marks: <span class="how m">measured</span> I ran the command and read the output. <span class="how r">reasoned</span> I worked it out and did not run it. <span class="how j">judgement</span> a reasonable person could differ. <span class="how u">unconfirmed</span> the document claims it and I could not check.
+</div>
+
+<h2>Where this sits</h2>
+
+<p>A story in a kstrl PRD is done when its <code>passes</code> flag is true. Today the only thing that ever sets that flag is the engineer agent, the same agent that wrote the code. Phase 1 then reads the flag back and fails the component if any story is still false. Nothing in <code>kstrl/</code> writes it. <span class="how m">measured</span> There are six occurrences of <code>.passes</code> in the package and every one is a read, a validation, or the serialiser.</p>
+
+<p>That is one defect. The design says it is also a symptom, and the symptom is the interesting part. kstrl is described everywhere as a pipeline of phases, and a pipeline has no word for the rule that the thing measuring must not be the thing acting. So the defect had nowhere to be seen from. The document supplies a frame in which it is the first thing you see, then files a plan of thirteen issues in that frame.</p>
+
+<p>The pull request itself changes no behaviour. So everything from the vocabulary table onward describes kstrl as the plan leaves it, and each claim carries a mark saying whether I checked it against the code on <code>72404e9</code>, or reasoned it from the issue text, or could not check at all.</p>
+
+<h3>Start with a room</h3>
+
+<p>You want the room at 20 degrees. A thermometer says it is 17. The gap of three is the only number anything acts on. A box decides what to do about the gap and turns the boiler on. Someone opens a window, which the box did not command and cannot prevent.</p>
+
+<p>Now the names, one each. The 20 is the <strong>set point</strong>. The thermometer is the <strong>sensor</strong>. The gap is the <strong>error</strong>. The box is the <strong>controller</strong>, and the boiler is the <strong>actuator</strong>. The window is a <strong>disturbance</strong>.</p>
+
+<p>One property makes this a loop rather than a script: the sensor is independent of the actuator. Suppose the boiler could report the temperature. It would report 20, always, because 20 is what it was asked for. The loop would be perfectly stable and the room would be freezing. In kstrl the boiler is the engineer agent, and <code>passes: true</code> is the temperature it reports.</p>
+
+<h3>The words this lesson uses</h3>
+
+<p>Each word below is used the same way in the prose, the captions and the widgets. The design document defines seventeen; these are the ones the plan actually turns into code.</p>
+
+<table>
+  <tr><th>word</th><th>what it is in kstrl</th></tr>
+  <tr><td>set point</td><td>the state a run steers toward: per story the acceptance criteria and the <code>passes</code> flag, per component the PRD, per merge the policy envelope and the adequacy gate</td></tr>
+  <tr><td>sensor</td><td>anything that measures the tree independently of the agent that changed it: mechanical verification, the reviewer, the security reviewer, contract tests, fixtures, calibration</td></tr>
+  <tr><td>error signal</td><td>the typed <code>Finding</code> and the failure signature <code>check:code</code></td></tr>
+  <tr><td>controller</td><td>the code that turns findings into the next action: <code>process_result</code>, the scheduler, the autonomy ladder</td></tr>
+  <tr><td>actuator</td><td>the engineer agent</td></tr>
+  <tr><td>disturbance</td><td>a change kstrl did not command: model non-determinism, a git or GitHub transport failure, the base branch moving</td></tr>
+  <tr><td>windup</td><td>error that keeps accumulating while nothing discharges it, so the controller acts on a debt no longer owed</td></tr>
+  <tr><td>level-triggered</td><td>acting on what is failing now rather than on the history of what failed</td></tr>
+  <tr><td>advisory first</td><td>a gate ships measuring and reporting without blocking, and moves to blocking when the operator has read its output on real runs</td></tr>
+  <tr><td>flow control</td><td>a bound on work in flight, here open pull requests, so the loop cannot outrun its reviewer</td></tr>
+  <tr><td>dampener</td><td>a stored baseline of findings plus a report of what a branch added, so concurrent work cannot quietly undo the loop's progress</td></tr>
+  <tr><td>safe mode</td><td>one named predicate over the degraded states that already exist, so an operator can ask one question</td></tr>
+  <tr><td>golden patterns</td><td>an operator-written file saying what a good change looks like here, loaded into the engineer's prompt</td></tr>
+  <tr><td>memory file</td><td>an operator-written file of standing corrections, loaded after the retry context so it frames the controller's output</td></tr>
+  <tr><td>human on the loop</td><td>the loop runs itself and the human intervenes on exception; the roadmap's own phrase is "over the loop"</td></tr>
+</table>
+
+<h3>The whole job in one picture</h3>
+
+<p>kstrl is six loops running at different rates, and the phase chain quoted in every document is one tick of the middle two. The picture below is the design's table from section 2, with the R10 items placed on the loop each one touches. <span class="how m">measured</span> Every <code>file:line</code> in it resolves on <code>72404e9</code>; I read each one.</p>
+
+<figure>
+<svg viewBox="0 0 760 540" width="100%" role="img" aria-label="Seven nested loops of kstrl with the R10 items placed on each">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5a5a5a"/></marker>
+  </defs>
+  <text x="10" y="18" class="s">rate and loop</text>
+  <text x="205" y="18" class="s">actuator, then sensor</text>
+  <text x="560" y="18" class="s">R10 items on this loop</text>
+
+  <g>
+    <rect x="10" y="28" width="740" height="60" rx="8" fill="#fbeeee" stroke="#a33a2a"/>
+    <text x="20" y="50" class="t">1 implement</text>
+    <text x="20" y="70" class="s">seconds to minutes; open</text>
+    <text x="205" y="50">engineer agent, loop.py:608</text>
+    <text x="205" y="70">sensor: none (prompt sent unchanged each iteration)</text>
+    <text x="560" y="50">R10.12 #233, last, behind</text>
+    <text x="560" y="70">an entry criterion</text>
+  </g>
+  <g>
+    <rect x="10" y="96" width="740" height="60" rx="8" fill="#fdf6e6" stroke="#8a6d1f"/>
+    <text x="20" y="118" class="t">2 accept</text>
+    <text x="20" y="138" class="s">minutes; closed, winds up</text>
+    <text x="205" y="118">retry with context, pipeline.py:1126</text>
+    <text x="205" y="138">verify + review + security</text>
+    <text x="560" y="118">R10.2 #223  R10.3 #224</text>
+    <text x="560" y="138">R10.5 #226  R10.8  R10.9</text>
+  </g>
+  <g>
+    <rect x="10" y="164" width="740" height="60" rx="8" fill="#eef6ee" stroke="#2f6f3e"/>
+    <text x="20" y="186" class="t">3 integrate</text>
+    <text x="20" y="206" class="s">tens of minutes; closed</text>
+    <text x="205" y="186">schedule, merge, reset breaker, factory.py:3075</text>
+    <text x="205" y="206">contract tests</text>
+    <text x="560" y="186">R10.6 #227 dampener,</text>
+    <text x="560" y="206">on every pull request</text>
+  </g>
+  <g>
+    <rect x="10" y="232" width="740" height="60" rx="8" fill="#eef6ee" stroke="#2f6f3e"/>
+    <text x="20" y="254" class="t">4 intake</text>
+    <text x="20" y="274" class="s">hours; closed</text>
+    <text x="205" y="254">queue admission, serve.py:2419</text>
+    <text x="205" y="274">queue state, spend, inbox</text>
+    <text x="560" y="254">R10.4 #225  R10.7 #228</text>
+    <text x="560" y="274">R10.10 #231 steering</text>
+  </g>
+  <g>
+    <rect x="10" y="300" width="740" height="60" rx="8" fill="#fdf6e6" stroke="#8a6d1f"/>
+    <text x="20" y="322" class="t">5 trust</text>
+    <text x="20" y="342" class="s">days; closed, two inputs unwired</text>
+    <text x="205" y="322">autonomy level change, factory.py:1965</text>
+    <text x="205" y="342">run outcomes; only POLICY_VIOLATION fires</text>
+    <text x="560" y="322">R10.11 #232 wires</text>
+    <text x="560" y="342">calibration, seams health</text>
+  </g>
+  <g>
+    <rect x="10" y="368" width="740" height="60" rx="8" fill="#fbeeee" stroke="#a33a2a"/>
+    <text x="20" y="390" class="t">6 learn</text>
+    <text x="20" y="410" class="s">weeks; open</text>
+    <text x="205" y="390">playbook and prompt edits</text>
+    <text x="205" y="410">attribution, calibration (nothing reads proposals back)</text>
+    <text x="560" y="390">not R10: R9 #217</text>
+  </g>
+  <g>
+    <rect x="10" y="436" width="740" height="60" rx="8" fill="#f3f3f3" stroke="#9a9a9a" stroke-dasharray="6 4"/>
+    <text x="20" y="458" class="t">7 operate</text>
+    <text x="20" y="478" class="s">not built</text>
+    <text x="205" y="458">release driver</text>
+    <text x="205" y="478">runtime error rates against an SLO</text>
+    <text x="560" y="458">not R10: R8.7 #154,</text>
+    <text x="560" y="478">R8.8 #155</text>
+  </g>
+  <g>
+    <rect x="10" y="506" width="740" height="28" rx="8" fill="#e8eef7" stroke="#2d4f7c"/>
+    <text x="20" y="525" class="t">outside every loop: ks sense, R10.1 #222</text>
+    <text x="330" y="525">the mechanical sensors, run by hand against any tree, no PRD, no branch, no agent spend</text>
+  </g>
+</svg>
+<figcaption>Drawn by hand from the table in section 2 of the design. No generator in the repository emits the loop nest, so this picture can drift when a loop moves and nothing will announce it. Red loops are open (no independent sensor), amber loops are closed but flawed, green loops are closed. The <code>file:line</code> values were read on <code>72404e9</code>.</figcaption>
+</figure>
+
+<p>The next figure is the one picture here that cannot drift, because the repository generated it. The modules the plan reaches import each other like this.</p>
+
+<figure data-generated>
+<pre>autonomy -> evolution
+autonomy -> statedir
+autonomy_replay -> autonomy
+breaker -> verify
+cli -> autonomy
+cli -> autonomy_replay
+cli -> breaker
+cli -> evolution
+cli -> factory
+cli -> feedforward
+cli -> inbox
+cli -> init_cmd
+cli -> intake_github
+cli -> loop
+cli -> prd
+cli -> serve
+cli -> verify
+cli -> workqueue
+evolution -> factory
+evolution -> findings
+evolution -> verify
+factory -> autonomy
+factory -> breaker
+factory -> context
+factory -> evolution
+factory -> feedforward
+factory -> findings
+factory -> inbox
+factory -> knowledge
+factory -> loop
+factory -> pipeline
+factory -> pr
+factory -> prd
+factory -> review
+factory -> statedir
+factory -> verify
+inbox -> statedir
+init_cmd -> prd
+intake_github -> statedir
+intake_github -> workqueue
+loop -> breaker
+loop -> init_cmd
+loop -> prd
+pipeline -> autonomy
+pipeline -> context
+pipeline -> evolution
+pipeline -> factory
+pipeline -> findings
+pipeline -> inbox
+pipeline -> knowledge
+pipeline -> loop
+pipeline -> pr
+pipeline -> prd
+pipeline -> review
+pipeline -> verify
+pr -> findings
+review -> findings
+review -> prd
+review -> verify
+serve -> autonomy
+serve -> inbox
+serve -> intake_github
+serve -> statedir
+serve -> workqueue
+verify -> findings
+verify -> prd
+workqueue -> statedir</pre>
+<figcaption>Generated on 72404e9 by kstrl's own Phase 0 code: kstrl.feedforward.build_dependency_graph(Path(".")), filtered to edges whose both ends are modules an R10 issue names (cli, verify, context, pipeline, factory, serve, review, findings, autonomy, autonomy_replay, calibration, statedir, workqueue, pr, intake_github, loop, breaker, init_cmd, prd, evolution, inbox, knowledge, feedforward). Sixty-seven edges. Notice that verify imports nothing from the loop machinery: it depends only on findings and prd, which is what makes a standalone ks sense a wrapper rather than a refactor. calibration appears in no edge at all: it imports nothing from the package and nothing in the package imports it. #232 changes that by making its compare entry point call the autonomy module's demotion applier and the inbox, which will be its first edges.</figcaption>
+</figure>
+
+<h2>Why it was built this way</h2>
+
+<h3>Why is a hand-run sensor the first item, ahead of the headline defect?</h3>
+
+<p>Every threshold in kstrl is a placeholder. The autonomy module says so in its own docstring. <span class="how m">measured</span> <code>autonomy.py:38</code> reads "Every threshold in this module is an UNMEASURED PLACEHOLDER". The design's diagnosis of why is short: you cannot cheaply measure a sensor you cannot run. Press the button and count.</p>
+
+<figure>
+<p><button id="w4-btn1">Which ks commands can measure a tree?</button> <button id="w4-btn2">Where is the sensor actually called?</button></p>
+<div class="out" id="w4-out">Press the first button.</div>
+<figcaption>Data: the command list from <code>uv run ks --help</code> on <code>72404e9</code>. Whether a command reaches the sensors was reasoned from each command's help text; whether any does so standalone was measured by grepping <code>kstrl/</code> for callers of <code>run_mechanical_verification</code>. The design says fourteen commands. The help output lists fifteen. The zero is the claim that matters, and it holds either way. Try this: press the first button and find the five that reach the sensors at all, then press the second and see that the single call site is inside the pipeline, behind a PRD, a branch, a worktree and paid agent time.</figcaption>
+</figure>
+
+<p>So <code>ks sense</code> (#222) wraps <code>run_mechanical_verification</code>, which already takes a path and returns a <code>VerificationResult</code>. The issue changes one signature, <code>prd_path: Path | None</code>, skips the two PRD-dependent checks when it is absent, and adds a command with a <code>--json</code> form. It writes nothing. The dampener (#227) is the same command pointed at a baseline, and the inner-loop sensor (#233) is the same function called between iterations, which is why the design calls this the item that makes the others cheap.</p>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> An earlier draft of the same document had a section 7 that gated seven mechanisms behind "measure this number first": how often the reviewer disagrees with the done flag, how much stale text attempt 3 carries, review throughput to set a WIP bound, and four more. The draft that merged calls that wrong in its own section 5.0, and the evidence that killed it is the button above. Every one of those measurements needed a factory run to collect, so measure-first delayed both the value and the data. <span class="how m">measured</span> The only caller of the sensor is <code>pipeline.py:2201</code>. kstrl built the orchestrator first, and the components are now reachable only through it.</p>
+</div>
+
+<h3>Why must the reviewer confirm the engineer's <code>passes: true</code>?</h3>
+
+<p>Phase 1 runs <code>check_prd_stories</code> first in its chain. It re-reads the PRD the agent just wrote and fails if any story is still false. <span class="how m">measured</span> <code>verify.py:526</code> and <code>verify.py:1398</code>. Phase 2's reviewer already emits a verdict per acceptance criterion, and already computes which stories it covered. <span class="how m">measured</span> <code>review.py:65</code> and <code>review.py:547</code>. The second sensor exists and is not consulted. Set the two sensors against each other below.</p>
+
+<figure>
+<div class="controls">
+  <label><input type="checkbox" id="w1-flag" checked> engineer wrote <code>passes: true</code></label>
+  <label><input type="checkbox" id="w1-covered" checked> reviewer covered this story</label>
+  <label>criterion A verdict <select id="w1-a"><option>pass</option><option>fail</option><option>advisory</option></select></label>
+  <label>criterion B verdict <select id="w1-b"><option>pass</option><option>fail</option><option>advisory</option></select></label>
+  <label><input type="checkbox" id="w1-infra"> review did not run (infrastructure error)</label>
+</div>
+<div class="out" id="w1-out"></div>
+<figcaption>The rule is issue #224: a story's verdict is fail if any criterion fails, else advisory if any is advisory, else pass; a story with no criterion verdict was not covered. One finding per story the engineer marked done that the reviewer did not mark pass. Story and criteria are invented; the rule is the issue's. Try this: set both criteria to pass and untick "reviewer covered this story": the old check still passes and the new rule files a finding that says not covered. Then tick "review did not run": every finding disappears, because no measurement is not agreement, it is no measurement.</figcaption>
+</figure>
+
+<p>Two things about the end state are easy to miss. First, <code>check_prd_stories</code> stays. It still catches an agent that emitted COMPLETE with a story left false; what changes is that the flag stops being the sole authority. Second, in blocking mode the harness itself becomes the first writer of <code>passes</code> in kstrl's history: it reverts the story to false, appends a <code>notes</code> line beginning "reverted by reviewer", and saves the PRD, so the engineer's own step 7 ("pick the highest priority story where passes is false") picks the story up again. <span class="how r">reasoned</span> From issue #224 section 5; no code exists yet.</p>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> The earlier draft put this fix near the bottom of the list, because it believed the engineer prompt's step 14 would become misleading and so the change crossed the H3 boundary: version bump, hash update, calibration re-run and human review in one PR. The merged draft re-read step 14. <span class="how m">measured</span> <code>init_cmd.py:81</code> says "set that story's passes to true", and that instruction stays exactly correct under the new rule. The flag was always a claim; the harness just starts treating it as one. Removing the supposed prompt cost moved the item from expensive-and-important to cheap-and-important, and from fourth to third in the order.</p>
+<p>The evidence that it costs something is the one part I cannot confirm. <span class="how u">unconfirmed</span> The design counts <code>review:prd_criterion</code> as the most frequent failure signature in this repository's journal, five of seventeen, across five runs on one trivial project. The journal is gitignored and not in the tree I was given. The design itself calls the number a hint rather than a rate.</p>
+</div>
+
+<h3>Why does attempt 3's prompt list only what is failing now?</h3>
+
+<p>The retry context is four lists whose only mutators append. <span class="how m">measured</span> <code>context.py:33</code> to <code>:45</code>; there is no clear, dedup or expiry anywhere in the file. It is serialised on retry and appended to at nine call sites, and its renderer ends with the line "Fix ALL issues listed above before completing." So on attempt 3 the agent is handed attempt 1's failures, which it may have fixed on attempt 2, unmarked, with an instruction to fix them all. That is windup. Choose where each attempt failed and watch the buckets.</p>
+
+<figure>
+<div class="controls">
+  <label>attempt 1 failed at <select id="w2-a1"><option value="verification">verification</option><option value="engineer">engineer</option><option value="review">review</option><option value="security">security</option><option value="contract">contract</option></select></label>
+  <label>attempt 2 failed at <select id="w2-a2"><option value="none">(did not happen)</option><option value="engineer">engineer</option><option value="verification">verification</option><option value="review" selected>review</option><option value="security">security</option><option value="contract">contract</option></select></label>
+  <label>attempt 3 failed at <select id="w2-a3"><option value="none" selected>(did not happen)</option><option value="engineer">engineer</option><option value="verification">verification</option><option value="review">review</option><option value="security">security</option><option value="contract">contract</option></select></label>
+  <label>attempt 4 failed at <select id="w2-a4"><option value="none" selected>(did not happen)</option><option value="engineer">engineer</option><option value="verification">verification</option><option value="review">review</option><option value="security">security</option><option value="contract">contract</option></select></label>
+</div>
+<div class="out" id="w2-out"></div>
+<figcaption>The rule is issue #223. Phases rank engineer 0, verification 1, review 2, security 3, contract 4. N is the latest attempt and Q the rank of its failing phase. Earlier entries ranked above Q were not re-measured, because attempt N stopped before those sensors ran; earlier entries ranked at or below Q are resolved or superseded and are not rendered. Failure texts are invented. Try this: set attempt 1 to review and attempt 2 to verification: the review finding moves to "not re-measured", because review never ran in attempt 2. Then set attempts 1 to 4 all to verification: the current section holds one entry however many attempts you add, while the old rendering grows by one each time.</figcaption>
+</figure>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> The obvious fix is to clear the context at the start of every attempt, which the manifest already does for a sibling field. <span class="how m">measured</span> <code>pipeline.py:1035</code> sets <code>comp.review_findings = ""</code> in <code>begin_attempt</code>. Clearing throws away the entries whose sensors did not run in the latest attempt: an attempt that dies in verification never reaches review, so last attempt's review findings are neither fixed nor refuted. The rank rule exists to keep exactly those, and it is what the second "try this" move shows.</p>
+<p>Running the rule outside the page turned up a seam. Issue #223 says a legacy entry loaded from today's JSON, tagged attempt 0, "always renders under Not re-measured". The rank rule as written puts such an entry under resolved whenever the later failure ranks at or above the entry's phase; my sweep hit that in three of five cases. <span class="how m">measured</span> <code>docs/lessons/verify/pr-221/retry_context_rank.py</code>. Whoever builds #223 needs a special case for attempt 0, and the issue's test 6 will fail without it.</p>
+</div>
+
+<h3>Why does every new gate ship advisory, and who is allowed to make it block?</h3>
+
+<p>kstrl already has a doctrine for this and wrote it down once. <span class="how m">measured</span> <code>findings.py:178</code>: an adequacy finding defaults to advisory because "a gate that blocks on an invented number teaches people to switch gates off". The design applies that tier to every gate it adds instead of ad hoc. The rule for who may tighten a gate is already in the code too, at <code>adequacy.py:721</code>, and #224 copies it for the set-point gate. Drag the ladder.</p>
+
+<figure>
+<div class="controls">
+  <label>config <code>[factory] setpoint_agreement</code> <select id="w3-mode"><option>advisory</option><option>block</option></select></label>
+  <label>resolved autonomy level: <span class="num" id="w3-lvl-show">L0</span><input type="range" id="w3-lvl" min="0" max="4" value="0"></label>
+</div>
+<div class="out" id="w3-out"></div>
+<figcaption>The rule is <code>layer0_blocks</code> at <code>adequacy.py:721</code>, mirrored by issue #224's <code>setpoint_blocks</code>: the gate blocks when the config says block or the resolved level is 1 or higher. Level 0 means the ladder is off. Try this: leave the config on advisory and drag the level from 0 to 1: the gate starts blocking without anyone touching the config. Then set the config to block and drag the level back to 0: it stays blocking. Autonomy may tighten a gate and never loosen one.</figcaption>
+</figure>
+
+<p>What graduation requires is stated once so that it is not improvised later: the operator has seen the gate's output on real runs and can name what it caught and what it flagged wrongly. That is a judgement and it is deliberately the operator's. No issue in the milestone encodes a number in its place. The honest cost, which the design names, is that an advisory finding nobody reads manufactures the appearance of a gate; the antidote is that advisory output lands in the same <code>Finding</code> stream as <code>phase_skipped</code>, on the PR body and in the journal, so it is at least seen where the other findings are seen.</p>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> Measure first. It sounds like the epistemology rule in this repository's own instructions, and the earlier draft followed it into seven blocked items. The trap is that "measure before building" and "never invent a number" are different rules. The second one survives: no threshold is chosen to make a feature shippable. The first one died, because a gate in advisory mode produces the measurement as a byproduct of running, and a gate that waits for the measurement produces nothing. <span class="how j">judgement</span> Whether "the operator can name what it caught" is a strong enough graduation test is the one place I would push back; it is the operator's call by design, and on a one-operator tool that is defensible.</p>
+</div>
+
+<h3>Why does the daemon stop at one open pull request, and why is <code>ks factory</code> exempt?</h3>
+
+<p>Nothing bounds pull requests in flight. <span class="how m">measured</span> Grepping <code>kstrl/</code> for <code>max_open</code>, <code>open_prs</code>, <code>wip_</code>, <code>work_in_progress</code> and <code>concurrent_pr</code> returns nothing. The bounds that exist are <code>max_parallel = 4</code>, one queue item per daemon cycle, and an inbox cap of 50, and none of them is about output. A loop that runs daily can open several unreviewed pull requests in a week, and then the reviewer is the thing that saturates. Sweep the gate.</p>
+
+<figure>
+<div class="controls">
+  <label>invocation <select id="w5-inv"><option>ks serve</option><option>ks factory</option></select></label>
+  <label><input type="checkbox" id="w5-create" checked> <code>[factory] create_prs</code></label>
+  <label><code>max_open_prs</code>: <span class="num" id="w5-bound-show">1</span><input type="range" id="w5-bound" min="0" max="3" value="1"></label>
+  <label>open kstrl pull requests: <span class="num" id="w5-open-show">0</span><input type="range" id="w5-open" min="0" max="4" value="0"></label>
+  <label><input type="checkbox" id="w5-ghfail"> the <code>gh pr list</code> call failed</label>
+</div>
+<div class="out" id="w5-out"></div>
+<figcaption>The rule is <code>check_open_pr_bound</code> from issue #228, the last gate in <code>serve_cycle</code> so that a GitHub call happens only after the cheaper local gates admit. A kstrl-authored pull request is one whose body carries the footer kstrl already writes at <code>pr.py:555</code>. Try this: set open to 1 with the bound at 1: refused, as a wait rather than a pause, so the next cycle re-checks. Switch the invocation to ks factory: admitted, because a human typing the command is the authorisation. Then tick "the gh call failed": refused again. An unknown number of open pull requests is not zero.</figcaption>
+</figure>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> The earlier draft wanted a month of review-throughput data before choosing the bound. The merged draft ships it at 1 and calls the earlier caution over-cautious for a value that is one line of config, reversible in seconds, and carries a default from a team running the same bound in production. <span class="how u">unconfirmed</span> That last clause is the design's claim about its source; the source is not named on <code>main</code> and I did not check it. The second dead end is the one the widget's last move shows: treating a failed count as zero. The issue writes the opposite into the docstring, and the daemon waits.</p>
+</div>
+
+<h3>Why halt when the review budget runs out, instead of merging on the cheap checks?</h3>
+
+<p>Today the pipeline already holds both answers. <span class="how m">measured</span> In hard mode with an unchunked review and <code>max_adversarial_calls</code> exhausted, <code>pipeline.py:2465</code> to <code>:2478</code> downgrades the review to SKIP, warns, and lets the component proceed on mechanical checks alone. A few lines later, <code>:2479</code> to <code>:2500</code>, the chunked path refuses with an <code>infrastructure_error</code> finding. Same budget, same mode, two verdicts. Run components through the cap.</p>
+
+<figure>
+<div class="controls">
+  <label><code>max_adversarial_calls</code> (0 is unbounded): <span class="num" id="w6-cap-show">1</span><input type="range" id="w6-cap" min="0" max="3" value="1"></label>
+  <label>components in the run: <span class="num" id="w6-n-show">2</span><input type="range" id="w6-n" min="1" max="4" value="2"></label>
+  <label>review mode <select id="w6-mode"><option>hard</option><option>advisory</option></select></label>
+  <label>rule <select id="w6-rule"><option value="new">after #226</option><option value="old">today (72404e9)</option></select></label>
+</div>
+<div class="out" id="w6-out"></div>
+<figcaption>Each review that runs consumes one call. Security review has the same shape at <code>pipeline.py:2696</code> and is left out: one rule per widget. Try this: cap 1, two components, hard mode, rule after #226: the second component halts with an infrastructure finding and check <code>adversarial_budget</code>. Flip the rule to today: it merges unreviewed, with <code>phase_skipped</code> recorded. Then drag the cap to 0: identical under both rules, which is the default and why the design calls this defect latent.</figcaption>
+</figure>
+
+<div class="deadend">
+<p><strong>The dead end.</strong> Keep the downgrade because it is loud. It is loud: the warning prints and <code>phase_skipped</code> is recorded, so <code>len(findings) == 0</code> still means every phase ran. The design accepts both qualifications and still calls this a priority inversion, because under budget pressure the harness sheds the sensor that does most of the catching. <span class="how u">unconfirmed</span> "Most" rests on the journal count, fourteen of seventeen signatures from the reviewer, which I could not open. What I can confirm is the shape: the chunked path already fails closed, so #226 makes the unchunked path match it and leaves advisory mode alone. The changelog entry is to be marked breaking for anyone who set a cap and relied on merges past it.</p>
+</div>
+
+<h2>Making the next change here</h2>
+
+<p>The plan is thirteen issues in a fixed order. Each ships and has its advisory output read before the next starts. The order is the method's own phase order, with the local-first item pulled to the front.</p>
+
+<table>
+  <tr><th>order</th><th>issue</th><th>what it adds</th><th>depends on</th><th>advisory first?</th></tr>
+  <tr><td>1</td><td>#222 R10.1</td><td><code>ks sense</code>, the sensors by hand, <code>--json</code></td><td>nothing</td><td>n/a</td></tr>
+  <tr><td>2</td><td>#223 R10.2</td><td>level-triggered retry context</td><td>nothing</td><td>exact, no gate</td></tr>
+  <tr><td>3</td><td>#224 R10.3</td><td>set-point agreement</td><td>#223 should land first</td><td>yes</td></tr>
+  <tr><td>4</td><td>#225 R10.4</td><td><code>kstrl/safemode.py</code>, one predicate, shown by <code>ks status</code></td><td>nothing</td><td>n/a, a read</td></tr>
+  <tr><td>5</td><td>#226 R10.5</td><td>hard mode halts on an exhausted budget</td><td>nothing</td><td>n/a</td></tr>
+  <tr><td>6</td><td>#227 R10.6</td><td>baseline in version control, advisory PR regression report</td><td>#222</td><td>yes</td></tr>
+  <tr><td>7</td><td>#228 R10.7</td><td><code>[serve] max_open_prs</code>, default 1</td><td>nothing</td><td>n/a</td></tr>
+  <tr><td>8</td><td>#229 R10.8</td><td>golden patterns file and a shared operator-file loader</td><td>nothing</td><td>n/a</td></tr>
+  <tr><td>9</td><td>#230 R10.9</td><td>memory file, loaded last in the prefix</td><td>#229</td><td>n/a</td></tr>
+  <tr><td>10</td><td>#231 R10.10</td><td>polled <code>/memory</code> and <code>/iterate</code> comments, two PRs</td><td>#228, #230</td><td>n/a</td></tr>
+  <tr><td>11</td><td>#232 R10.11</td><td>calibration regression fires; a seam for health</td><td>#151 for the health half</td><td>yes</td></tr>
+  <tr><td>12</td><td>#233 R10.12</td><td>inner-loop sensor and convergence check</td><td>#222, #223, and an entry criterion</td><td>yes, and blocked</td></tr>
+  <tr><td>13</td><td>#234 R10.13</td><td>ARCHITECTURE.md opens with the loop nest; glossary</td><td>nothing</td><td>n/a</td></tr>
+</table>
+
+<p>Four rules bind every item, and the issues repeat them verbatim. No item edits an adversarial prompt body, so H2 and H3 are not engaged anywhere in the cycle. No item adds a phase (roadmap doctrine 5) or renames an existing enum or module (doctrine 6). Every done claim states what was run versus what was assumed (H4). And new code takes loop names, while nothing that exists is renamed. <span class="how m">measured</span> Each of the thirteen issue bodies carries the same ground-rules block.</p>
+
+<p>Where the new context goes matters more than it looks, because the design's memory-file rule is an ordering rule. After #229 and #230 the engineer's prefix is assembled in this order, and the memory block is deliberately last so that standing corrections frame the retry context rather than being shadowed by it.</p>
+
+<figure>
+<svg viewBox="0 0 760 150" width="100%" role="img" aria-label="Order of the engineer prompt after R10.8 and R10.9">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#5a5a5a"/></marker>
+  </defs>
+  <text x="10" y="18" class="s">context_prefix, factory.py:1439 parts list</text>
+  <rect x="10" y="28" width="118" height="44" rx="6" fill="#eef6ee" stroke="#2f6f3e"/><text x="18" y="46">knowledge</text><text x="18" y="62" class="s">exists</text>
+  <rect x="140" y="28" width="118" height="44" rx="6" fill="#e8eef7" stroke="#2d4f7c"/><text x="148" y="46">golden patterns</text><text x="148" y="62" class="s">R10.8 #229</text>
+  <rect x="270" y="28" width="118" height="44" rx="6" fill="#eef6ee" stroke="#2f6f3e"/><text x="278" y="46">feedforward</text><text x="278" y="62" class="s">exists, Phase 0</text>
+  <rect x="400" y="28" width="118" height="44" rx="6" fill="#fdf6e6" stroke="#8a6d1f"/><text x="408" y="46">retry context</text><text x="408" y="62" class="s">controller output</text>
+  <rect x="530" y="28" width="118" height="44" rx="6" fill="#e8eef7" stroke="#2d4f7c"/><text x="538" y="46">memory</text><text x="538" y="62" class="s">R10.9 #230, last</text>
+  <line x1="128" y1="50" x2="138" y2="50" stroke="#5a5a5a" marker-end="url(#arr2)"/>
+  <line x1="258" y1="50" x2="268" y2="50" stroke="#5a5a5a" marker-end="url(#arr2)"/>
+  <line x1="388" y1="50" x2="398" y2="50" stroke="#5a5a5a" marker-end="url(#arr2)"/>
+  <line x1="518" y1="50" x2="528" y2="50" stroke="#5a5a5a" marker-end="url(#arr2)"/>
+  <text x="10" y="102" class="s">then, loop.py:529 to :541, prepended in this order</text>
+  <rect x="10" y="110" width="250" height="30" rx="6" fill="#f3f3f3" stroke="#9a9a9a"/><text x="18" y="130">CLAUDE.md, headed Project Context</text>
+  <rect x="272" y="110" width="220" height="30" rx="6" fill="#f3f3f3" stroke="#9a9a9a"/><text x="280" y="130">the templated prompt.md</text>
+  <line x1="260" y1="125" x2="270" y2="125" stroke="#5a5a5a" marker-end="url(#arr2)"/>
+</svg>
+<figcaption>Drawn by hand from <code>factory.py:1439</code> to <code>:1448</code> and <code>loop.py:529</code> to <code>:541</code> on <code>72404e9</code>, with the two planned blocks inserted where issues #229 and #230 say. Blue blocks are planned. The prefix goes in front of everything, so today <code>CLAUDE.md</code> sits between the retry context and the instructions; that is the position the memory file is meant to hold instead.</figcaption>
+</figure>
+
+<p>Three things will bite whoever picks up the first issue, and none is visible from the diff.</p>
+
+<p>The tracker the issues point at does not exist on <code>main</code>. Every issue ends with "tick its box in the tracker section of <code>docs/control-loop-design.md</code>", and #234 asks the implementer to confirm that section is present and current. <span class="how m">measured</span> Commit <code>1a40f0e</code> added a <code>## Tracker</code> heading with fourteen issue links; the PR's last commit <code>79196de</code> removed all of them along with the vendor references, and the merged file contains no occurrence of the string R10. The status line still reads "proposed", and section 8 still says the work "should be filed as R8 items". The PR body's checklist says the tracker section was added. It was, and then it was deleted before merge. Restore it in the first R10 PR or the audit-trail doctrine has nowhere to write.</p>
+
+<p>The line numbers were cited against <code>94fdbbd</code>. <span class="how m">measured</span> <code>git diff --stat 94fdbbd 72404e9 -- kstrl/</code> is empty, so every citation still resolves on the merge commit, and each issue says the numbers will drift. Two minor misses exist today: the design's <code>pipeline.py:1170</code> for the context serialisation is at <code>:1174</code>, and the per-project <code>scripts/kstrl/prompt.md:52</code> it cites is gitignored, so only the harness default at <code>init_cmd.py:81</code> can be checked.</p>
+
+<p>Doctrine 6 has one deliberate exception in the plan. #232 adds <code>HEALTH_BREACH</code> to the inbox's <code>ItemKind</code>, and argues from that enum's own docstring that a kind may be added when its emitter is added in the same change. A reviewer of that PR should decide whether that reading holds, because the tracking issue's summary says no enum changes anywhere.</p>
+
+<h3>What this change deletes</h3>
+
+<p>In code, nothing; the PR is a document. In the document's own terms it deletes three things. It deletes measure-first as a gate, replacing seven measurement prerequisites with advisory mechanisms that produce the measurement by running. It deletes, by way of #223, the line "Fix ALL issues listed above before completing", which is the sentence that turns accumulated history into an instruction. And it deletes the assumption that fixing the done flag needs a prompt edit, which is what made the fix look expensive. The last commit also deleted a hundred lines of the document itself, and the tracker went with them.</p>
+
+<h2>What would make it wrong</h2>
+
+<p>Commit to an answer before you press reveal. Nothing here is recorded.</p>
+
+<ol class="quiz">
+  <li>
+    <p>#224 has landed with its default configuration and the autonomy ladder off. The engineer marked story B <code>passes: true</code> and the reviewer did not cover story B. What happens to the component?</p>
+    <ul>
+      <li><label><input type="radio" name="q1" value="a"> It fails and retries with the disagreement in its context.</label></li>
+      <li><label><input type="radio" name="q1" value="b"> A <code>setpoint_disagreement</code> finding is recorded and the component proceeds.</label></li>
+      <li><label><input type="radio" name="q1" value="c"> The PRD flag is reverted to false and the component proceeds.</label></li>
+    </ul>
+    <button data-reveal="a1">Reveal</button>
+    <div class="answer" id="a1">b. Advisory is the default and level 0 means the ladder is off, so the gate records only. Reverting the flag happens only in blocking mode, and blocking mode also retries. If you chose a, you have the graduated behaviour, which is the operator's decision to switch on, not the default.</div>
+  </li>
+  <li>
+    <p>Attempt 1 failed review on criterion X. Attempt 2 failed verification on a typecheck error. What does attempt 3's prompt say about criterion X?</p>
+    <ul>
+      <li><label><input type="radio" name="q2" value="a"> Nothing; it was resolved.</label></li>
+      <li><label><input type="radio" name="q2" value="b"> It is listed under "not re-measured since attempt 1".</label></li>
+      <li><label><input type="radio" name="q2" value="c"> It is listed under current failures beside the typecheck error.</label></li>
+    </ul>
+    <button data-reveal="a2">Reveal</button>
+    <div class="answer" id="a2">b. Review ranks 2 and verification ranks 1. Attempt 2 stopped at verification, so review never ran, so criterion X has no fresh reading. The prompt renders it in full under a heading that says so and tells the agent to re-check it rather than assume it still applies.</div>
+  </li>
+  <li>
+    <p>The daemon's <code>max_open_prs</code> is 1 and the <code>gh pr list</code> call fails with a network error. Does the daemon admit the next queue item?</p>
+    <ul>
+      <li><label><input type="radio" name="q3" value="a"> Yes; a failed count is treated as zero open pull requests.</label></li>
+      <li><label><input type="radio" name="q3" value="b"> No; it refuses and pauses the queue until a human intervenes.</label></li>
+      <li><label><input type="radio" name="q3" value="c"> No; it refuses as a wait and re-checks next cycle.</label></li>
+    </ul>
+    <button data-reveal="a3">Reveal</button>
+    <div class="answer" id="a3">c. An unknown number of open pull requests is not zero, so admission is refused, and because nothing is known to be wrong with the queue, the refusal is a wait with an empty pause reason. The poison breaker is the gate that pauses; this one never does.</div>
+  </li>
+  <li>
+    <p>Which R10 item requires a prompt version bump, a snapshot hash update and a calibration re-run under H3?</p>
+    <ul>
+      <li><label><input type="radio" name="q4" value="a"> #224, because the engineer's step 14 changes meaning.</label></li>
+      <li><label><input type="radio" name="q4" value="b"> #229, because golden patterns are injected into the engineer prompt.</label></li>
+      <li><label><input type="radio" name="q4" value="c"> None of the thirteen.</label></li>
+    </ul>
+    <button data-reveal="a4">Reveal</button>
+    <div class="answer" id="a4">c. H3 gates edits to a prompt body. Injecting a file into the prefix edits no body, and #224 reads a verdict the reviewer already emits. The design still recommends running calibration after #224 lands, because a new blocking condition near the reviewer is worth checking against the fixtures, but H2 does not demand it.</div>
+  </li>
+  <li>
+    <p>The plan's own weakest point: which single fact, if it stays true on real projects, makes #233 a waste of a build?</p>
+    <ul>
+      <li><label><input type="radio" name="q5" value="a"> Review throughput stays under one pull request a day.</label></li>
+      <li><label><input type="radio" name="q5" value="b"> The engineer completes on its first iteration every time, so the inner loop never runs twice.</label></li>
+      <li><label><input type="radio" name="q5" value="c"> The reviewer keeps disagreeing with the done flag.</label></li>
+    </ul>
+    <button data-reveal="a5">Reveal</button>
+    <div class="answer" id="a5">b. The inner-loop sensor instruments a loop that, on the five recorded runs, has iterated exactly once every time (unconfirmed here; the run data is gitignored). That is why #233 carries an entry criterion instead of an order number: a majority of the last ten runs above 1.00 iterations, across at least two projects. Build it before that and you are building for a problem that cannot be shown to exist.</div>
+  </li>
+</ol>
+
+<p>One more thing would make the whole design wrong rather than one item: if the reviewer's per-criterion verdicts are noisy, requiring agreement amplifies the noise into retries. The check for that already exists and is the calibration suite, which is why the design asks for a calibration run after #224 even though no rule demands it. <span class="how j">judgement</span> I would treat that run as part of #224's acceptance rather than a courtesy.</p>
+
+<blockquote>kstrl began as a bare loop that re-ran a prompt until a condition held. It has spent its whole R-series moving away from that starting point, adding sensors, gates, envelopes, budgets and an autonomy ladder, without a word for what it was moving toward. This document supplies the word. Most of the work was already done.</blockquote>
+
+<p>That is the design's closing note, and after reading the thirteen issues against the code I think it is accurate. The frame is mostly a name for what the R-series already built. The three defects it makes visible were there all along.</p>
+
+<script>
+(function () {
+  // Widget 4: which command can measure a tree. Data from `uv run ks --help` on 72404e9.
+  var commands = [
+    ["autonomy", false], ["config", false], ["dash", false], ["decompose", false],
+    ["evolve", false], ["factory", true], ["feature", true], ["inbox", false],
+    ["init", false], ["queue", false], ["retry", true], ["run", true],
+    ["serve", true], ["status", false], ["understand", false]
+  ];
+  var out = document.getElementById("w4-out");
+  document.getElementById("w4-btn1").addEventListener("click", function () {
+    var reach = commands.filter(function (c) { return c[1]; }).map(function (c) { return c[0]; });
+    var html = "<span class='num'>" + commands.length + "</span> commands. ";
+    html += "<span class='num'>" + reach.length + "</span> reach the mechanical sensors, all through a factory invocation: " + reach.join(", ") + ". ";
+    html += "<span class='num bad'>0</span> run a sensor standalone against a tree. There is no ks verify and no ks review.";
+    out.innerHTML = html;
+  });
+  document.getElementById("w4-btn2").addEventListener("click", function () {
+    out.innerHTML = "One call site under kstrl/: <span class='num'>kstrl/pipeline.py:2201</span>, inside the component pipeline. Reaching it needs a PRD, a branch, a worktree, and paid agent time. Zero call sites in kstrl/cli.py.";
+  });
+})();
+
+(function () {
+  // Widget 1: two sensors must agree. Rule from issue #224.
+  var ids = ["w1-flag", "w1-covered", "w1-a", "w1-b", "w1-infra"];
+  function storyVerdict(criteria) {
+    if (criteria.length === 0) return null;
+    if (criteria.indexOf("fail") >= 0) return "fail";
+    if (criteria.indexOf("advisory") >= 0) return "advisory";
+    return "pass";
+  }
+  function render() {
+    var flag = document.getElementById("w1-flag").checked;
+    var covered = document.getElementById("w1-covered").checked;
+    var infra = document.getElementById("w1-infra").checked;
+    var criteria = covered ? [document.getElementById("w1-a").value, document.getElementById("w1-b").value] : [];
+    var oldVerdict = flag ? "<span class='ok'>pass</span>" : "<span class='bad'>FAIL</span> (story not marked passing)";
+    var verdict = storyVerdict(criteria);
+    var newVerdict;
+    if (infra) {
+      newVerdict = "no finding. The review did not run: no measurement, so no disagreement.";
+    } else if (!flag) {
+      newVerdict = "no finding. The engineer did not claim the story.";
+    } else if (verdict === "pass") {
+      newVerdict = "<span class='ok'>agree</span>: no finding.";
+    } else {
+      newVerdict = "<span class='bad'>FINDING setpoint_disagreement</span>: story marked passes=true by the engineer but the reviewer's verdict is <span class='num'>" + (verdict === null ? "not covered" : verdict) + "</span>.";
+    }
+    document.getElementById("w1-out").innerHTML =
+      "old check_prd_stories: " + oldVerdict + "<br>" +
+      "reviewer's story verdict: <span class='num'>" + (verdict === null ? "absent" : verdict) + "</span><br>" +
+      "new setpoint_disagreements: " + newVerdict;
+  }
+  ids.forEach(function (id) { document.getElementById(id).addEventListener("change", render); });
+  render();
+})();
+
+(function () {
+  // Widget 2: level-triggered retry context. Rule from issue #223.
+  var RANK = { engineer: 0, verification: 1, review: 2, security: 3, contract: 4 };
+  var TEXT = { engineer: "guard: path outside allowed_paths", verification: "linter: E501 line too long", review: "criterion X unmet", security: "hardcoded_secret in config.py", contract: "contract test test_api_roundtrip failed" };
+  var ids = ["w2-a1", "w2-a2", "w2-a3", "w2-a4"];
+  function render() {
+    var entries = [];
+    for (var i = 0; i < ids.length; i++) {
+      var phase = document.getElementById(ids[i]).value;
+      if (phase === "none") break;
+      entries.push({ attempt: i + 1, phase: phase, text: TEXT[phase] + " (a" + (i + 1) + ")" });
+    }
+    var n = 0, q = 0;
+    entries.forEach(function (e) { if (e.attempt > n) n = e.attempt; });
+    entries.forEach(function (e) { if (e.attempt === n && RANK[e.phase] > q) q = RANK[e.phase]; });
+    var cur = [], nrm = [], res = [];
+    entries.forEach(function (e) {
+      if (e.attempt === n) cur.push(e);
+      else if (RANK[e.phase] > q) nrm.push(e);
+      else res.push(e);
+    });
+    function list(arr, cls) {
+      return arr.length ? "<ul style='margin:.2rem 0 .4rem 1rem;padding:0'>" + arr.map(function (e) { return "<li class='" + cls + "'>" + e.text + "</li>"; }).join("") + "</ul>" : " <span class='num'>(none)</span><br>";
+    }
+    var html = "<strong>Prompt for attempt " + (n + 1) + ", new rule</strong><br>";
+    html += "Current failures (measured in attempt " + n + ", Q = " + q + "):" + list(cur, "bad");
+    html += "Not re-measured:" + list(nrm, "warn");
+    html += "Resolved or superseded: <span class='num'>" + res.length + "</span> omitted" + (res.length ? " (" + res.map(function (e) { return e.phase; }).join(", ") + ")" : "") + "<br>";
+    html += "closing line: Fix the current failures. Re-check the not-re-measured items yourself.<br><br>";
+    html += "<strong>Old rendering</strong>: <span class='num'>" + entries.length + "</span> entries in full, then Fix ALL issues listed above before completing.";
+    document.getElementById("w2-out").innerHTML = html;
+  }
+  ids.forEach(function (id) { document.getElementById(id).addEventListener("change", render); });
+  render();
+})();
+
+(function () {
+  // Widget 3: advisory first, who may tighten. Rule mirrors adequacy.layer0_blocks.
+  function blocks(mode, level) { return mode === "block" || level >= 1; }
+  function render() {
+    var mode = document.getElementById("w3-mode").value;
+    var level = parseInt(document.getElementById("w3-lvl").value, 10);
+    document.getElementById("w3-lvl-show").textContent = "L" + level + (level === 0 ? " (ladder off)" : "");
+    var b = blocks(mode, level);
+    document.getElementById("w3-out").innerHTML = b
+      ? "<span class='bad'>blocks</span>: <span class='num'>" + mode + " at L" + level + "</span>. A disagreeing story is reverted to passes=false with a notes line, and the component retries with failed_check setpoint."
+      : "<span class='ok'>records only</span>: <span class='num'>" + mode + " at L" + level + "</span>. The finding lands on the PR body and in the journal, and the component proceeds exactly as today.";
+  }
+  document.getElementById("w3-mode").addEventListener("change", render);
+  document.getElementById("w3-lvl").addEventListener("input", render);
+  render();
+})();
+
+(function () {
+  // Widget 5: the open-PR bound. Rule from issue #228.
+  function gate(bound, open, create) {
+    if (bound === 0) return { ok: true, why: "open-PR bound disabled", gh: false };
+    if (!create) return { ok: true, why: "open-PR bound not applicable (create_prs = false)", gh: false };
+    if (open === null) return { ok: false, why: "cannot count open kstrl PRs: gh failed", wait: true, gh: true };
+    if (open < bound) return { ok: true, why: open + " of " + bound + " kstrl PRs open", gh: true };
+    return { ok: false, why: open + " kstrl PR(s) open (bound " + bound + "); waiting for review", wait: true, gh: true };
+  }
+  function render() {
+    var inv = document.getElementById("w5-inv").value;
+    var bound = parseInt(document.getElementById("w5-bound").value, 10);
+    var open = parseInt(document.getElementById("w5-open").value, 10);
+    var create = document.getElementById("w5-create").checked;
+    var ghfail = document.getElementById("w5-ghfail").checked;
+    document.getElementById("w5-bound-show").textContent = bound === 0 ? "0 (disabled)" : String(bound);
+    document.getElementById("w5-open-show").textContent = String(open);
+    var html;
+    if (inv !== "ks serve") {
+      html = "<span class='ok'>admitted</span>: " + inv + " is a manual invocation and never calls this gate. The human typing the command is the authorisation.";
+    } else {
+      var a = gate(bound, ghfail ? null : open, create);
+      html = (a.ok ? "<span class='ok'>admitted</span>" : "<span class='bad'>refused</span>") + ": " + a.why + ".";
+      if (!a.ok) html += " This is a <span class='num'>wait</span>, not a pause: pause_reason stays empty and the next cycle re-checks.";
+      html += "<br>gh pr list called: <span class='num'>" + (a.gh ? "yes" : "no") + "</span>";
+    }
+    document.getElementById("w5-out").innerHTML = html;
+  }
+  ["w5-inv", "w5-create", "w5-ghfail"].forEach(function (id) { document.getElementById(id).addEventListener("change", render); });
+  ["w5-bound", "w5-open"].forEach(function (id) { document.getElementById(id).addEventListener("input", render); });
+  render();
+})();
+
+(function () {
+  // Widget 6: budget exhaustion. Old rule pipeline.py:2465-2478; new rule issue #226.
+  function run(cap, n, mode, isNew) {
+    var used = 0, out = [];
+    for (var i = 0; i < n; i++) {
+      var exhausted = cap > 0 && used >= cap;
+      if (mode === "advisory") {
+        if (exhausted) out.push({ k: "skip", t: "skipped, merged on mechanical checks, phase_skipped recorded" });
+        else { used += 1; out.push({ k: "rev", t: "reviewed" }); }
+        continue;
+      }
+      if (!exhausted) { used += 1; out.push({ k: "rev", t: "reviewed" }); }
+      else if (isNew) out.push({ k: "halt", t: "HALTED: infrastructure_error, check adversarial_budget" });
+      else out.push({ k: "skip", t: "skipped, merged on mechanical checks, phase_skipped recorded" });
+    }
+    return out;
+  }
+  function render() {
+    var cap = parseInt(document.getElementById("w6-cap").value, 10);
+    var n = parseInt(document.getElementById("w6-n").value, 10);
+    var mode = document.getElementById("w6-mode").value;
+    var isNew = document.getElementById("w6-rule").value === "new";
+    document.getElementById("w6-cap-show").textContent = cap === 0 ? "0 (unbounded)" : String(cap);
+    document.getElementById("w6-n-show").textContent = String(n);
+    var res = run(cap, n, mode, isNew);
+    var merged = res.filter(function (r) { return r.k === "skip"; }).length;
+    var html = res.map(function (r, i) {
+      var cls = r.k === "rev" ? "ok" : (r.k === "halt" ? "bad" : "warn");
+      return "component " + (i + 1) + ": <span class='" + cls + "'>" + r.t + "</span>";
+    }).join("<br>");
+    html += "<br>merged without review: <span class='num'>" + merged + "</span> of " + n;
+    document.getElementById("w6-out").innerHTML = html;
+  }
+  ["w6-mode", "w6-rule"].forEach(function (id) { document.getElementById(id).addEventListener("change", render); });
+  ["w6-cap", "w6-n"].forEach(function (id) { document.getElementById(id).addEventListener("input", render); });
+  render();
+})();
+
+(function () {
+  // Quiz reveals.
+  var buttons = document.querySelectorAll("button[data-reveal]");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function (ev) {
+      var id = ev.currentTarget.getAttribute("data-reveal");
+      document.getElementById(id).classList.add("show");
+    });
+  }
+})();
+</script>
+</body>
+</html>
