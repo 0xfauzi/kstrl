@@ -13,7 +13,47 @@ diagrams and mechanics. Companion docs:
 - [docs/linear-integration.md](docs/linear-integration.md) - the optional
   Linear mirror
 
-## The pipeline
+**See it before you read it.** The live system atlas at
+<https://0xfauzi.github.io/kstrl/atlas/> is generated from this code: every
+component, what it does, what flows between them and in which direction,
+which parts are built and which are planned, in layers you can switch
+between. Click any component to see what it is to its neighbours. This
+document is the prose companion to that map; when they disagree, the map is
+regenerated from the code and this file is what needs fixing.
+
+## The loops
+
+kstrl is a software factory built as a control loop, and it is easier to read
+as several loops nested inside each other than as one pipeline. Each loop has
+a target it steers toward, something that acts, something that measures the
+result independently of the thing that acted, and a clock. The phase chain in
+the next section is what happens inside one tick of the two middle loops.
+
+| Rate | Loop | What acts | What measures | What it steers toward |
+|---|---|---|---|---|
+| seconds | implement | the engineer agent | nothing yet (the breaker and the scope fence watch it, neither reads the code) | one story's acceptance criteria |
+| minutes | accept | a retry with a structured context | mechanical verification, the reviewer, the security reviewer | the component's PRD |
+| tens of minutes | integrate | scheduling and merging | contract tests | the manifest satisfied |
+| hours | intake | queue admission | queue state, spend, the inbox cap | the queue drained within bounds |
+| days | trust | the autonomy level | run outcomes, calibration | the autonomy the evidence supports |
+| weeks | learn | facts, proposals | fact utilisation | the harness's own detection rates |
+| days | operate (planned: R8.7, R8.8) | the release driver | runtime errors, health probes | the shipped service's objectives |
+
+The rule that holds every loop together: **what acts never measures its own
+result.** The engineer sets a story's `passes` flag; that is a claim, and the
+reviewer's per-criterion verdict is the measurement (the R10 cycle makes the
+two agree before a story counts as done). A reviewer's own claim to have
+searched thoroughly is shown and never gates; calibration against planted
+bugs is what says a reviewer works. A skipped phase leaves a finding saying
+so, which is why an empty findings list means every check ran and found
+nothing.
+
+Which loops are closed today, which wind up, and which are open, with the
+code cited line by line, is in
+[docs/control-loop-design.md](docs/control-loop-design.md). The plan that
+closes the rest is the R10 milestone.
+
+## The pipeline: one tick of the accept and integrate loops
 
 Every component - whether from `ks run` (single component) or a factory
 run (many) - moves through the same phase chain:
@@ -92,7 +132,14 @@ raw stderr.
 
 ## The iteration loop
 
-Inside one component's execution:
+Inside one component's execution. Note what this loop does not have: the
+prompt is assembled once, before the `for` loop (`kstrl/loop.py`), and the
+same string is sent on every iteration. Information crosses an iteration
+boundary only through the files the agent itself writes (the PRD, the
+progress log, the codebase map). Nothing measures the tree between
+iterations; every sensor sits one loop up, in the phase chain above. Adding a
+fast sensor here is R10.12, gated on evidence that the loop actually iterates
+(in the recorded runs so far it completes on iteration one).
 
 ```mermaid
 flowchart TD
@@ -171,6 +218,14 @@ merge-gated: a component is COMPLETED only when its PR actually merged
 MERGE_PENDING without scheduling dependents past it.
 
 ## The learning loop
+
+What is drawn below is the intended shape. Today it is open at the last edge:
+proposals are written and nothing reads them back into a run, and no
+mechanism yet checks whether an applied proposal helped. The one learning
+path that is closed is the per-component knowledge layer (distill facts,
+inject them into later components, measure their uptake as a lower bound).
+The design that closes the rest, with attribution and a playbook shared
+across projects, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md) (R9).
 
 ```mermaid
 flowchart LR
@@ -266,3 +321,28 @@ fails or its output changes. If a change is intentional, delete
 `.kstrl/snapshots/<component>.json` to reset the baseline. Snapshots
 resolve against the repo root, not the worktree, so they survive
 worktree recreation between runs.
+
+## Glossary
+
+The words this document and the atlas use, defined once, with the kstrl noun
+each maps to.
+
+| Word | Meaning here |
+|---|---|
+| plant | the thing being changed: the target repository, and after release, the running service |
+| set point | the state a loop steers toward: acceptance criteria, the policy envelope, the adequacy floor |
+| sensor | anything that measures the plant independently of the agent that changed it |
+| measurement versus claim | a claim is what the agent says about its work (the `passes` flag, the completion marker); a measurement is what a sensor reads from the diff. Claims are rendered; measurements gate |
+| finding | the typed record every sensor emits when the work misses the set point; the error signal |
+| controller | the code that turns findings into the next action: retry, halt, merge, demote |
+| actuator | the engineer agent; later, the release driver |
+| feedforward | context computed from the tree and given to the agent before it acts (Phase 0) |
+| disturbance | change the loop did not command: model non-determinism, transport failures, a moving base branch |
+| retry context | the parsed failures handed to the next attempt |
+| breaker | the stall detector: halts a component after N iterations with an unchanged diff and test signature |
+| policy envelope | the written merge rules enforced on the diff and lockfile; enforcement-machinery paths halt at every level |
+| autonomy ladder | L1 to L4; promotion needs evidence plus a human acknowledgement; demotion is automatic; the permission bundle can only withhold |
+| control directory | the factory's own state, kept outside the repository so the agent cannot edit its governor |
+| inbox | every decision waiting for a human, in one place |
+| advisory first | a gate ships measuring without blocking and graduates on the operator's judgement after real runs |
+| on the loop | where the operator stands: the system runs itself, the operator intervenes on exception and adjusts between runs |
