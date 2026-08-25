@@ -225,3 +225,143 @@ def test_sense_help_lists_every_option() -> None:
         "--json", "--ui", "--no-color",
     ):
         assert option in result.output
+
+
+# --- Read-only contract (R10.1 review, P1) ------------------------------
+#
+# `ks sense` measures the operator's LIVE checkout, not a worktree kstrl
+# owns. Before the fix, `[verify] dead_code_cleanup = true` made it run
+# `ruff --fix`, `git add -A` and `git commit`: HEAD moved and an
+# unrelated untracked file was swept into a commit nobody asked for.
+
+
+def _dead_code_repo(tmp_path: Path) -> Path:
+    """Repo on a feature branch whose diff carries an unused import.
+
+    The unused import is ruff F401 - exactly what the factory's
+    dead-code phase auto-removes and commits. `unrelated.txt` is the
+    bystander a `git add -A` would have swept in.
+    """
+    root = _make_repo(tmp_path)
+    (root / "kstrl.toml").write_text(
+        _kstrl_toml() + "dead_code_cleanup = true\n"
+    )
+    git("commit", "-q", "-am", "enable dead code cleanup", cwd=root)
+    git("checkout", "-q", "-b", "feature", cwd=root)
+    (root / "src" / "b.py").write_text("import os\n\n\ndef b() -> int:\n    return 2\n")
+    git("add", "-A", cwd=root)
+    git("commit", "-q", "-m", "add b", cwd=root)
+    (root / "unrelated.txt").write_text("bystander\n")
+    return root
+
+
+def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
+    root = _dead_code_repo(tmp_path)
+    head_before = git("rev-parse", "HEAD", cwd=root)
+    log_before = git("log", "--oneline", cwd=root)
+    status_before = git("status", "--porcelain", cwd=root)
+    b_before = (root / "src" / "b.py").read_text()
+
+    result, document = _sense_json(root)
+
+    assert result.exit_code in (0, 1), result.output
+    assert git("rev-parse", "HEAD", cwd=root) == head_before
+    assert git("log", "--oneline", cwd=root) == log_before
+    # The bystander is still untracked, and still the only change.
+    assert git("status", "--porcelain", cwd=root) == status_before
+    assert "unrelated.txt" in status_before
+    assert (root / "src" / "b.py").read_text() == b_before
+    # The dead-code sensor reported rather than removed. Its verdict is
+    # left open on purpose: whether vulture is installed in the running
+    # environment decides that, and this test is about the tree, not the
+    # verdict.
+    dead_code = _check(document, "dead_code")
+    assert "not removed" in dead_code["message"] or "Skipped" in dead_code["message"]
+
+
+def test_sense_leaves_no_bytecode_or_lint_cache(tmp_path: Path) -> None:
+    root = _dead_code_repo(tmp_path)
+
+    result, _document = _sense_json(root)
+
+    assert result.exit_code in (0, 1), result.output
+    assert list(root.rglob("__pycache__")) == []
+    assert not (root / ".ruff_cache").exists()
+
+
+# --- Git preflight (R10.1 review, P1) -----------------------------------
+#
+# The diff-consuming checks read git through the LENIENT helpers, which
+# map a bad ref or a missing repository onto an EMPTY file list. Before
+# the fix, an unreachable base made diff_scope report "0 files, all
+# within scope" and bad_patterns "scanned 0 Python files", and the
+# command exited 0 having measured nothing.
+
+
+def _diverged_repo(tmp_path: Path, base: str = "main") -> Path:
+    """Repo whose feature branch carries a change away from ``base``."""
+    root = _make_repo(tmp_path)
+    git("branch", "-m", "main", base, cwd=root)
+    git("checkout", "-q", "-b", "feature", cwd=root)
+    (root / "src" / "a.py").write_text("def a() -> int:\n    return 2\n")
+    git("commit", "-q", "-am", "change a", cwd=root)
+    return root
+
+
+def test_sense_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
+    root = _diverged_repo(tmp_path)
+
+    result = _invoke("--root", str(root), "--json", "--base", "no-such-branch")
+
+    assert result.exit_code == 2
+    assert result.stderr.startswith("error:")
+    document = json.loads(result.stdout)
+    assert "no-such-branch" in document["error"]
+    assert "from --base" in document["error"]
+    # No verdict was invented for a diff git could not produce.
+    assert "passed" not in document
+    assert "checks" not in document
+
+
+def test_sense_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
+    """No origin and no `main`: detection falls back to a branch that
+    does not exist, and the fallback must not read as a clean diff."""
+    root = _diverged_repo(tmp_path, base="trunk")
+
+    result = _invoke("--root", str(root), "--json")
+
+    assert result.exit_code == 2
+    document = json.loads(result.stdout)
+    assert "'main'" in document["error"]
+    assert "--base" in document["error"]
+
+
+def test_sense_exit_2_outside_a_git_repository(tmp_path: Path) -> None:
+    root = tmp_path / "plain"
+    root.mkdir()
+    (root / "kstrl.toml").write_text(_kstrl_toml())
+
+    result = _invoke("--root", str(root), "--json")
+
+    assert result.exit_code == 2
+    assert "cannot measure the diff" in json.loads(result.stdout)["error"]
+
+
+def test_sense_runs_without_git_when_no_check_reads_the_diff(
+    tmp_path: Path,
+) -> None:
+    """The preflight guards the diff-based checks, not the command: turn
+    them all off and a plain directory is measurable again."""
+    root = tmp_path / "plain"
+    root.mkdir()
+    (root / "kstrl.toml").write_text(
+        _kstrl_toml()
+        + "check_diff_scope = false\ncheck_bad_patterns = false\n"
+    )
+
+    result, document = _sense_json(root)
+
+    assert result.exit_code == 0, result.output
+    assert document["passed"] is True
+    names = {c["name"] for c in document["checks"]}
+    assert names == {"test_suite", "typecheck", "linter"}

@@ -7,6 +7,7 @@ import py_compile
 import re
 import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -807,36 +808,51 @@ def check_diff_scope(
 
 
 def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
-    """Scan changed files for obvious problems."""
+    """Scan changed files for obvious problems.
+
+    The scan reads the tree and writes nothing into it. The syntax
+    check earns that: ``py_compile.compile`` defaults its output to
+    ``<dir>/__pycache__/<name>.pyc`` NEXT TO the source, so scanning
+    used to leave bytecode behind - noise in the factory's own diff,
+    and a write ``ks sense`` (R10.1) promises never to make. Directing
+    ``cfile`` at a throwaway directory keeps the ``PyCompileError``
+    type and message byte-identical; only the destination moves.
+    """
     start = time.monotonic()
     issues: list[str] = []
 
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py")]
 
-    for rel_path in py_files:
-        full_path = cwd / rel_path
-        if not full_path.exists():
-            continue
+    with tempfile.TemporaryDirectory(prefix="kstrl-bytecode-") as bytecode_dir:
+        # One reused destination: the content is never read back, only
+        # the compile's success or failure is.
+        cfile = os.path.join(bytecode_dir, "scan.pyc")
+        for rel_path in py_files:
+            full_path = cwd / rel_path
+            if not full_path.exists():
+                continue
 
-        # Empty file check
-        content = full_path.read_text()
-        if not content.strip():
-            issues.append(f"{rel_path}: empty file")
-            continue
+            # Empty file check
+            content = full_path.read_text()
+            if not content.strip():
+                issues.append(f"{rel_path}: empty file")
+                continue
 
-        # Syntax check
-        try:
-            py_compile.compile(str(full_path), doraise=True)
-        except py_compile.PyCompileError as exc:
-            issues.append(f"{rel_path}: syntax error - {exc}")
-            continue
+            # Syntax check
+            try:
+                py_compile.compile(str(full_path), cfile=cfile, doraise=True)
+            except py_compile.PyCompileError as exc:
+                issues.append(f"{rel_path}: syntax error - {exc}")
+                continue
 
-        # Secret patterns
-        for pattern in SECRET_PATTERNS:
-            if pattern.search(content):
-                issues.append(f"{rel_path}: possible secret/credential detected")
-                break
+            # Secret patterns
+            for pattern in SECRET_PATTERNS:
+                if pattern.search(content):
+                    issues.append(
+                        f"{rel_path}: possible secret/credential detected"
+                    )
+                    break
 
     if issues:
         return CheckResult(
@@ -1138,16 +1154,34 @@ def check_mutation_score(
     base_branch: str,
     threshold: float = 50.0,
     timeout: float = 600.0,
+    read_only: bool = False,
 ) -> CheckResult:
     """Run mutation testing on changed files using mutmut.
 
     Only mutates Python files changed relative to base_branch.
     Returns FAIL if mutation score is below threshold.
     Requires mutmut to be installed (pip install mutmut).
+
+    ``read_only=True`` (``ks sense``, R10.1) skips the check outright:
+    mutmut works by rewriting the source files it mutates, so there is
+    no read-only way to run it. The skip is recorded as a passing check
+    naming the reason rather than dropped, so the measurement says what
+    it did not measure.
     """
     import shutil
 
     start = time.monotonic()
+
+    if read_only:
+        return CheckResult(
+            name="mutation_testing",
+            passed=True,
+            message=(
+                "Skipped: mutation testing rewrites the files it mutates "
+                "and cannot run read-only"
+            ),
+            duration_seconds=time.monotonic() - start,
+        )
 
     if not shutil.which("mutmut"):
         return CheckResult(
@@ -1250,6 +1284,7 @@ def check_dead_code(
     base_branch: str,
     command: str | None = None,
     timeout: float = 300.0,
+    read_only: bool = False,
 ) -> CheckResult:
     """Remove dead code with ruff auto-fix, then detect remaining dead code with vulture.
 
@@ -1262,30 +1297,65 @@ def check_dead_code(
     If ruff fixes anything, those fixes are committed automatically so the worktree
     stays clean for subsequent checks. Vulture findings (if any) are reported as
     failures for the agent to fix on retry.
+
+    ``read_only=True`` (``ks sense``, R10.1) is the whole reason this
+    function takes a flag. Phase 1 inside the factory owns its worktree,
+    so editing and committing there is free; ``ks sense`` runs against
+    the operator's live checkout, where a ``git add -A`` sweeps in every
+    unrelated untracked file and the commit moves their HEAD. Read-only
+    therefore runs the SAME rule set with ``--no-fix`` (and ``--no-cache``,
+    so not even ``.ruff_cache`` appears) and reports what the factory
+    WOULD have removed instead of removing it. Nothing is edited, staged
+    or committed.
+
+    One divergence worth naming: the factory deletes the ruff-fixable
+    subset before vulture looks, so vulture sees a cleaner tree than
+    read-only does. A tree whose only dead code is ruff-fixable can
+    therefore fail here and pass inside the factory. That is the tree
+    being reported honestly, not a bug - but it is a difference.
+
+    A user-supplied ``command`` is run as given in both modes. It is the
+    operator's own program, in the same category as ``test_command``;
+    kstrl suppresses only its OWN writes.
     """
     import shutil
 
     start = time.monotonic()
 
-    # --- Phase A: ruff auto-fix for unused imports/variables ---
-    ruff_cmd = "ruff check --fix --select F401,F811,F841 ."
+    # --- Phase A: unused imports/variables (ruff F401,F811,F841) ---
+    if read_only:
+        # --no-fix is explicit rather than implied by omitting --fix: a
+        # project can set `fix = true` under [tool.ruff], which turns a
+        # bare `ruff check` into a fixing run.
+        ruff_cmd = "ruff check --no-fix --no-cache --select F401,F811,F841 ."
+    else:
+        ruff_cmd = "ruff check --fix --select F401,F811,F841 ."
     ruff_fixed_count = 0
+    ruff_pending_count = 0
 
     if shutil.which("ruff"):
         try:
             ruff_result = run_scrubbed(ruff_cmd, cwd=cwd, timeout=timeout)
-            # Count fixes from ruff output (lines like "Found X errors (Y fixed, ...)")
-            for line in (ruff_result.stdout + ruff_result.stderr).splitlines():
-                if "fixed" in line.lower():
-                    import re as _re
-                    match = _re.search(r"(\d+)\s+fix", line.lower())
-                    if match:
-                        ruff_fixed_count = int(match.group(1))
+            output = ruff_result.stdout + ruff_result.stderr
+            if read_only:
+                # Nothing was fixed, so count what ruff reported instead:
+                # "Found N errors."
+                found = re.search(r"Found (\d+) error", output)
+                if found:
+                    ruff_pending_count = int(found.group(1))
+            else:
+                # Count fixes from ruff output (lines like "Found X errors (Y fixed, ...)")
+                for line in output.splitlines():
+                    if "fixed" in line.lower():
+                        match = re.search(r"(\d+)\s+fix", line.lower())
+                        if match:
+                            ruff_fixed_count = int(match.group(1))
         except subprocess.TimeoutExpired:
             pass  # Non-fatal: continue to vulture
 
-        # If ruff made changes, stage and commit them
-        if ruff_fixed_count > 0:
+        # If ruff made changes, stage and commit them. `not read_only` is
+        # belt over braces: --no-fix already keeps the count at zero.
+        if not read_only and ruff_fixed_count > 0:
             try:
                 # Stage all changes ruff made
                 run_scrubbed("git add -A", cwd=cwd, timeout=30)
@@ -1296,6 +1366,15 @@ def check_dead_code(
             except subprocess.TimeoutExpired:
                 pass  # Non-fatal
 
+    # One phrase for every message below, so the read-only wording cannot
+    # drift from the auto-fix wording.
+    ruff_note = (
+        f"ruff reports {ruff_pending_count} auto-removable, not removed"
+        if read_only
+        else f"ruff auto-fixed {ruff_fixed_count}"
+    )
+    ruff_touched = bool(ruff_fixed_count or ruff_pending_count)
+
     # --- Phase B: vulture or custom dead code detection ---
     if command:
         # User-provided dead code detection command
@@ -1305,7 +1384,7 @@ def check_dead_code(
         changed = git.get_diff_names(base_branch, cwd)
         py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
         if not py_files:
-            msg = f"No dead code issues (ruff auto-fixed {ruff_fixed_count})"
+            msg = f"No dead code issues ({ruff_note})"
             return CheckResult(
                 name="dead_code",
                 passed=True,
@@ -1315,11 +1394,11 @@ def check_dead_code(
         detect_cmd = f"vulture {' '.join(py_files)} --min-confidence 80"
     else:
         # Neither vulture nor custom command available
-        if ruff_fixed_count > 0:
+        if ruff_touched:
             return CheckResult(
                 name="dead_code",
                 passed=True,
-                message=f"ruff auto-fixed {ruff_fixed_count} issues (vulture not installed)",
+                message=f"{ruff_note}; vulture not installed",
                 duration_seconds=time.monotonic() - start,
             )
         return CheckResult(
@@ -1351,7 +1430,7 @@ def check_dead_code(
             and "__all__" not in line
         ]
         if real_issues:
-            prefix = f"ruff auto-fixed {ruff_fixed_count}, " if ruff_fixed_count else ""
+            prefix = f"{ruff_note}; " if ruff_touched else ""
             return CheckResult(
                 name="dead_code",
                 passed=False,
@@ -1361,13 +1440,13 @@ def check_dead_code(
             )
 
     msg_parts: list[str] = []
-    if ruff_fixed_count:
-        msg_parts.append(f"ruff auto-fixed {ruff_fixed_count}")
+    if ruff_touched:
+        msg_parts.append(ruff_note)
     msg_parts.append("no remaining dead code")
     return CheckResult(
         name="dead_code",
         passed=True,
-        message=", ".join(msg_parts),
+        message="; ".join(msg_parts),
         duration_seconds=time.monotonic() - start,
     )
 
@@ -1384,6 +1463,7 @@ def run_mechanical_verification(
     adequacy_config: AdequacyConfig | None = None,
     autonomy_level: int = 0,
     component_id: str | None = None,
+    read_only: bool = False,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
 
@@ -1399,6 +1479,15 @@ def run_mechanical_verification(
     entries - sandboxed subprocess execution lives in
     ``kstrl.fixtures``. ``component_id`` keys the fixture snapshot
     used for regression detection; None disables snapshotting only.
+
+    ``read_only=True`` (``ks sense``, R10.1) forbids the two checks that
+    change the tree they measure: ``dead_code`` drops its ruff auto-fix
+    and the ``git add -A`` / ``git commit`` that followed it, and
+    ``mutation_testing`` is skipped because mutmut works by rewriting
+    source. What remains still shells out to the project's OWN
+    configured test / typecheck / lint (and fixture) commands, which
+    are the operator's programs and write their own caches; kstrl
+    suppresses only kstrl's writes.
     """
     checks: list[CheckResult] = []
 
@@ -1445,12 +1534,14 @@ def run_mechanical_verification(
         checks.append(check_dead_code(
             worktree_path, base_branch,
             config.dead_code_command, config.subprocess_timeout,
+            read_only=read_only,
         ))
 
     if config.mutation_testing:
         checks.append(check_mutation_score(
             worktree_path, base_branch,
             config.mutation_threshold, config.mutation_timeout,
+            read_only=read_only,
         ))
 
     if config.require_self_critique:

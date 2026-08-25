@@ -2973,11 +2973,22 @@ def sense(
     typecheck, linter, diff scope, bad patterns, plus any opt-in
     policy / adequacy / dead-code / mutation checks from kstrl.toml),
     run by hand with no PRD, no branch, no worktree and no agent spend.
-    Nothing is written to .kstrl/ or anywhere else; only the configured
-    test / typecheck / lint commands touch the tree (their own caches).
+
+    The measurement is read-only. It runs against your live checkout,
+    not a worktree kstrl owns, so it writes nothing to .kstrl/ and never
+    edits, stages, commits or leaves bytecode: the dead-code check
+    reports what it would remove instead of removing it, and mutation
+    testing is skipped because mutmut works by rewriting source. The
+    exception is the project's OWN configured test / typecheck / lint
+    commands, which are your programs and write their own caches.
+
+    Most checks read `git diff <base>...HEAD`, so the tree must be a git
+    repository with a reachable base unless every diff-based check is
+    turned off in kstrl.toml.
 
     Exit 0 when every check passed, 1 when any failed, 2 when the
-    measurement itself could not run (missing path, bad kstrl.toml).
+    measurement itself could not run (missing path, bad kstrl.toml, or
+    git cannot produce the diff).
     """
     root_dir = root.resolve() if root else Path.cwd()
     path = tree_path.resolve() if tree_path else root_dir
@@ -3006,6 +3017,41 @@ def sense(
 
     base = base_branch or _detect_base_branch(path)
 
+    # Every check below that consumes the diff reads it through the
+    # LENIENT git helpers, which map a bad ref, a missing base or a
+    # non-repository onto an EMPTY file list - indistinguishable from
+    # "nothing changed". diff_scope then reports "0 files, all within
+    # scope", bad_patterns "scanned 0 Python files", and `ks sense`
+    # exits 0 having measured nothing. mutation_testing is deliberately
+    # absent from this list: sense skips that check outright (read-only),
+    # so its diff read never happens and demanding a base for it would
+    # be a false exit 2.
+    needs_diff = (
+        verify_cfg.check_diff_scope
+        or verify_cfg.check_bad_patterns
+        or verify_cfg.dead_code_cleanup
+        or policy_cfg.enabled
+        or adequacy_cfg.enabled
+    )
+    if needs_diff:
+        # Ask git the same question once, strictly, before any check
+        # runs. Cannot-measure is exit 2; it is never a pass.
+        from kstrl import git as _git
+
+        try:
+            _git.get_diff_names(base, path, strict=True)
+        except _git.GitDiffError as exc:
+            origin = (
+                "from --base"
+                if base_branch
+                else "auto-detected; name the right one with --base"
+            )
+            _sense_error(
+                f"git cannot measure the diff against {base!r} "
+                f"({origin}): {exc}",
+                as_json,
+            )
+
     result = run_mechanical_verification(
         worktree_path=path,
         prd_path=prd_path.resolve() if prd_path is not None else None,
@@ -3017,6 +3063,7 @@ def sense(
         fixtures_config=fixtures_cfg,
         autonomy_level=0,
         component_id=None,
+        read_only=True,
     )
 
     if as_json:

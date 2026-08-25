@@ -19,7 +19,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   or agent spend. `--json` emits one machine-readable document; exit 0 on
   pass, 1 on any failed check, 2 when the measurement could not run.
   `run_mechanical_verification` now accepts `prd_path=None` and skips only
-  the PRD-dependent checks (R10.1, #222).
+  the PRD-dependent checks, and `read_only=True` to measure a tree without
+  changing it. Because `ks sense` runs against your live checkout rather
+  than a worktree kstrl owns, the measurement never edits, stages, commits
+  or leaves bytecode: the dead-code check reports what it would remove
+  instead of removing it, and mutation testing is skipped because mutmut
+  works by rewriting source. A base branch git cannot resolve is exit 2,
+  never a pass on an empty diff (R10.1, #222).
 
 ### Removed
 

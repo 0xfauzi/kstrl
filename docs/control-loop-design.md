@@ -557,8 +557,16 @@ no PRD, no branch, no worktree, and no agent spend:
 - **`ks sense`** runs the mechanical sensors against the current tree and prints
   the measurement: which checks pass, which fail, and the structured findings.
   `run_mechanical_verification` (`verify.py:1375`) already takes a path and
-  returns a `VerificationResult`. This is a command wrapper over a function that
-  already exists.
+  returns a `VerificationResult`. This was written up as a command wrapper over
+  a function that already exists, and that premise was wrong: the verifier was
+  built for a worktree the factory owns and disposes of, so it felt free to edit
+  and commit. `check_dead_code` ran `ruff --fix`, `git add -A` and `git commit`;
+  `check_bad_patterns` left `__pycache__` beside every file it scanned. Pointed
+  at the operator's live checkout those are destructive, so the sensor needs a
+  read-only mode, not just a wrapper. Its diff reads need the same care: the
+  lenient git helpers map an unresolvable base onto an empty file list, which
+  reads as a clean tree, so a standalone sensor must preflight the diff and
+  report could-not-measure rather than pass.
 - **`ks sense --review`** runs the adversarial sensors over a diff. This one
   costs an LLM call, so it is opt-in and reports its cost, but it makes the
   reviewer inspectable without a factory run.
