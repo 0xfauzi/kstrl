@@ -22,6 +22,9 @@ What is checked, in order:
                     every verb override a real edge
     wheel ......... for every component, the relationship wheel's name labels
                     stay inside the drawing and off each other and the centre
+    coverage ...... every module the extractor found is drawn by exactly one
+                    component (or by the pinned set in SHARED_MODULES), so the
+                    map cannot quietly leave part of the package undrawn
 
 Exit 0 when clean, 1 with one line per problem.
 
@@ -256,6 +259,57 @@ def wheel_boxes(cid: str, edges: list[dict[str, str]]) -> tuple[Box, list[tuple[
     return centre, boxes
 
 
+# ---- coverage ----------------------------------------------------------------
+# `implemented_by` names modules exactly (the TUI and agent packages are
+# enumerated module by module, not by prefix), so a module is covered when
+# some component lists its dotted name. A module listed by nothing is a part
+# of the system the map does not draw; a module listed by two components is a
+# part drawn twice. Both fail here.
+
+# Modules the check may skip, each with the one-line reason. Empty is the
+# goal; an entry here is a debt, not a convention.
+COVERAGE_IGNORE: dict[str, str] = {}
+
+# Modules that host more than one logical component. The set of claimants is
+# pinned so an accidental second claim on any other module still fails, and
+# so a claim added to or dropped from one of these is a visible change.
+SHARED_MODULES: dict[str, frozenset[str]] = {
+    "kstrl.serve": frozenset({"ServeDaemon", "SpendLedger", "FlowControl"}),
+    "kstrl.intake_github": frozenset({"GitHubIntake", "Steering"}),
+    "kstrl.knowledge": frozenset({"KnowledgeInjector", "Distiller"}),
+    "kstrl.cli": frozenset({"CLI", "Sense", "Dampener"}),
+}
+
+
+def check_coverage(atlas: dict[str, object]) -> tuple[list[str], int, int]:
+    """(problems, modules mapped, modules in the atlas)."""
+    out: list[str] = []
+    modules = sorted(atlas.get("components", {}))  # type: ignore[call-overload]
+    claimed: dict[str, list[str]] = {}
+    for c in COMPONENTS:
+        for m in c.get("implemented_by") or []:
+            claimed.setdefault(m, []).append(c["id"])
+    for m in modules:
+        if m not in claimed and m not in COVERAGE_IGNORE:
+            out.append(f"coverage: {m} is drawn by no component")
+    for m, owners in sorted(claimed.items()):
+        if len(owners) > 1 and set(owners) != set(SHARED_MODULES.get(m, ())):
+            out.append(f"coverage: {m} is claimed by {', '.join(owners)}")
+    for m, allowed in SHARED_MODULES.items():
+        if set(claimed.get(m, [])) != allowed:
+            out.append(
+                f"coverage: SHARED_MODULES pins {m} to {', '.join(sorted(allowed))} "
+                f"but the model claims it for {', '.join(claimed.get(m, [])) or 'nothing'}"
+            )
+    for m in COVERAGE_IGNORE:
+        if m in claimed:
+            out.append(f"coverage: COVERAGE_IGNORE lists {m}, which a component already draws")
+        if m not in modules:
+            out.append(f"coverage: COVERAGE_IGNORE lists {m}, which the atlas does not have")
+    mapped = sum(1 for m in modules if m in claimed)
+    return out, mapped, len(modules)
+
+
 def check_wheels(edges: list[dict[str, str]]) -> list[str]:
     out: list[str] = []
     for c in COMPONENTS:
@@ -278,12 +332,14 @@ def main() -> int:
     parser.add_argument("--atlas", default="docs/atlas/atlas.json")
     args = parser.parse_args()
 
+    atlas = json.loads(Path(args.atlas).read_text(encoding="utf-8"))
     problems = [f"placement: {p}" for p in layout_problems()]
     problems += check_meaning()
+    coverage_problems, mapped, total = check_coverage(atlas)
+    problems += coverage_problems
     through = across = 0
     notes: list[str] = []
     if not problems:
-        atlas = json.loads(Path(args.atlas).read_text(encoding="utf-8"))
         svg, detail = render_schematic(atlas)
         meta = json.loads(detail)["_meta"]
         route_problems, through, across = check_routes(meta)
@@ -298,6 +354,7 @@ def main() -> int:
     )
     for line in notes:
         print(f"  note: {line}")
+    print(f"coverage: {mapped}/{total} modules mapped")
     if problems:
         print(f"atlas layout: {len(problems)} problem{'s' if len(problems) != 1 else ''}")
         for line in problems:
