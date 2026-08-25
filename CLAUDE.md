@@ -3,7 +3,7 @@
 ## Project Overview
 
 - **Language**: Python (FastAPI / pytest / uv toolchain)
-- **Project**: kstrl - an adversarial coding-agent harness
+- **Project**: kstrl - a software factory for AI coding agents, built as a loop that closes on independent measurement rather than on the agent's own report
 - **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
 
 ## Verification commands

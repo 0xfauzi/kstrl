@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
     CheckResult,
     VerificationResult,
@@ -808,3 +810,222 @@ class TestCheckDeadCode:
             result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
 
         assert not any(c.name == "dead_code" for c in result.checks)
+
+
+class TestRunMechanicalVerificationWithoutPrd:
+    """R10.1: ``prd_path=None`` skips exactly the PRD-dependent checks."""
+
+    @staticmethod
+    def _config() -> VerifyConfig:
+        return VerifyConfig(
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
+        )
+
+    def test_run_mechanical_verification_without_prd(self, tmp_path: Path) -> None:
+        prd = tmp_path / "prd.json"
+        prd.write_text(json.dumps({
+            "branchName": "test",
+            "userStories": [
+                {
+                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
+                    "priority": 1, "passes": True, "notes": "",
+                }
+            ],
+        }))
+        fixtures = FixturesConfig(enabled=True)
+
+        with_prd = run_mechanical_verification(
+            tmp_path, prd, "main", None, self._config(), fixtures_config=fixtures,
+        )
+        without_prd = run_mechanical_verification(
+            tmp_path, None, "main", None, self._config(), fixtures_config=fixtures,
+        )
+
+        # The Path call keeps its full list, PRD-dependent checks included.
+        assert [c.name for c in with_prd.checks] == [
+            "prd_stories", "test_suite", "typecheck", "linter", "fixtures",
+        ]
+        # None drops exactly prd_stories and fixtures; nothing else moves.
+        assert [c.name for c in without_prd.checks] == [
+            "test_suite", "typecheck", "linter",
+        ]
+        assert without_prd.passed is True
+
+    def test_without_prd_self_critique_needs_an_explicit_progress_path(
+        self, tmp_path: Path,
+    ) -> None:
+        """No PRD means no sibling log to derive: the check is skipped,
+        unless [verify] progress_file_path names the log explicitly."""
+        config = self._config()
+        config.require_self_critique = True
+
+        result = run_mechanical_verification(tmp_path, None, "main", None, config)
+        assert not any(c.name == "self_critique" for c in result.checks)
+
+        config.progress_file_path = "progress.txt"
+        result = run_mechanical_verification(tmp_path, None, "main", None, config)
+        critique = [c for c in result.checks if c.name == "self_critique"]
+        assert len(critique) == 1
+        # The configured file is absent, so the check fails closed
+        # against tmp_path/progress.txt rather than being skipped.
+        assert critique[0].passed is False
+        assert "Could not read progress file" in critique[0].message
+
+
+class TestReadOnlyVerification:
+    """R10.1 review (P1): ``read_only=True`` measures without changing.
+
+    The factory owns the worktree it verifies, so editing and committing
+    there is free. ``ks sense`` runs against the operator's live
+    checkout, where ``ruff --fix`` rewrites their files, ``git add -A``
+    sweeps in every unrelated untracked file, and the commit moves their
+    HEAD.
+    """
+
+    @staticmethod
+    def _which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in ("ruff", "vulture") else None
+
+    def test_dead_code_read_only_never_fixes_stages_or_commits(
+        self, tmp_path: Path,
+    ) -> None:
+        import subprocess as sp
+
+        calls: list[str] = []
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            calls.append(cmd)
+            if "ruff check" in cmd:
+                return sp.CompletedProcess(cmd, 1, "Found 3 errors.\n", "")
+            return sp.CompletedProcess(cmd, 0, "", "")  # vulture: clean
+
+        with (
+            patch("shutil.which", side_effect=self._which),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+        ):
+            result = check_dead_code(tmp_path, "main", read_only=True)
+
+        ruff_calls = [c for c in calls if "ruff check" in c]
+        assert len(ruff_calls) == 1
+        # --no-fix is explicit, not merely implied by omitting --fix: a
+        # project can set `fix = true` under [tool.ruff].
+        assert "--no-fix" in ruff_calls[0]
+        assert "--fix " not in ruff_calls[0]
+        # --no-cache: not even .ruff_cache appears in the measured tree.
+        assert "--no-cache" in ruff_calls[0]
+        assert not any("git add" in c for c in calls)
+        assert not any("git commit" in c for c in calls)
+        assert result.passed is True
+        assert "3 auto-removable, not removed" in result.message
+
+    def test_dead_code_default_still_fixes_and_commits(
+        self, tmp_path: Path,
+    ) -> None:
+        """The factory path is untouched: no existing caller passes the flag."""
+        import subprocess as sp
+
+        calls: list[str] = []
+
+        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
+            calls.append(cmd)
+            if "ruff check --fix" in cmd:
+                return sp.CompletedProcess(
+                    cmd, 0, "Found 3 errors (2 fixed, 1 remaining).", "",
+                )
+            return sp.CompletedProcess(cmd, 0, "", "")
+
+        with (
+            patch("shutil.which", side_effect=self._which),
+            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+        ):
+            result = check_dead_code(tmp_path, "main")
+
+        assert any("ruff check --fix" in c for c in calls)
+        assert any("git add -A" in c for c in calls)
+        assert any("git commit" in c for c in calls)
+        assert "auto-fixed 2" in result.message
+
+    def test_mutation_read_only_skips_without_running_mutmut(
+        self, tmp_path: Path,
+    ) -> None:
+        """mutmut works by rewriting the source it mutates: there is no
+        read-only way to run it, so the check is skipped and says so."""
+        with (
+            patch("shutil.which", side_effect=self._which),
+            patch("kstrl.verify.run_scrubbed") as mock_run,
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+        ):
+            result = check_mutation_score(tmp_path, "main", read_only=True)
+
+        mock_run.assert_not_called()
+        assert result.passed is True
+        assert "Skipped" in result.message
+        assert "read-only" in result.message
+
+    def test_bad_patterns_writes_no_bytecode_beside_the_source(
+        self, tmp_path: Path,
+    ) -> None:
+        """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
+        the file it compiles; scanning must not leave that behind."""
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "ok.py").write_text("x = 1\n")
+        (src / "broken.py").write_text("def f(\n")
+
+        with patch(
+            "kstrl.verify.git.get_diff_names",
+            return_value=["src/ok.py", "src/broken.py"],
+        ):
+            result = check_bad_patterns(tmp_path, "main")
+
+        # The syntax error is still reported: only the destination moved.
+        assert result.passed is False
+        assert any("syntax error" in d for d in result.details)
+        assert list(tmp_path.rglob("__pycache__")) == []
+        assert list(tmp_path.rglob("*.pyc")) == []
+
+    @staticmethod
+    def _forwarded_read_only(
+        tmp_path: Path, **kwargs: bool,
+    ) -> tuple[bool, bool]:
+        """``(dead_code, mutation)`` read_only as actually forwarded."""
+        config = VerifyConfig(dead_code_cleanup=True, mutation_testing=True)
+        with ExitStack() as stack:
+            for name in (
+                "check_test_suite", "check_typecheck", "check_linter",
+                "check_diff_scope", "check_bad_patterns",
+            ):
+                stack.enter_context(patch(
+                    f"kstrl.verify.{name}",
+                    return_value=CheckResult(name.removeprefix("check_"), True),
+                ))
+            dc = stack.enter_context(patch(
+                "kstrl.verify.check_dead_code",
+                return_value=CheckResult("dead_code", True),
+            ))
+            ms = stack.enter_context(patch(
+                "kstrl.verify.check_mutation_score",
+                return_value=CheckResult("mutation_testing", True),
+            ))
+            run_mechanical_verification(
+                tmp_path, None, "main", None, config, **kwargs,
+            )
+            return (
+                bool(dc.call_args.kwargs["read_only"]),
+                bool(ms.call_args.kwargs["read_only"]),
+            )
+
+    def test_verification_defaults_to_writable(self, tmp_path: Path) -> None:
+        """No existing caller passes the flag, so the factory path must
+        keep auto-fixing and mutating exactly as it did."""
+        assert self._forwarded_read_only(tmp_path) == (False, False)
+
+    def test_verification_forwards_read_only(self, tmp_path: Path) -> None:
+        assert self._forwarded_read_only(tmp_path, read_only=True) == (True, True)
