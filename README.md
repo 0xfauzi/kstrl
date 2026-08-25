@@ -84,9 +84,9 @@ There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that 
 
 kstrl statically analyzes the codebase - module map, public interfaces, dependency graph, active conventions - and injects it into the prompt. No LLM calls, no token cost. The agent knows "this project uses httpx, not requests" before it starts, instead of learning it from a linter failure on iteration 3.
 
-### After the agent acts: the gauntlet
+### After the agent acts: independent measurement
 
-When the agent signals completion, kstrl doesn't just trust it. Every run goes through mechanical verification:
+When the agent signals completion, kstrl treats that as a claim and measures the work with checks the agent did not write:
 
 - **Mechanical checks** (fast, computational): tests, typecheck, lint, no changes outside allowed paths, no leaked secrets.
 - **Adversarial review** (LLM): an independent reviewer checks the diff against the acceptance criteria, then a security reviewer hunts vulnerabilities - in `hard` mode their failures block.

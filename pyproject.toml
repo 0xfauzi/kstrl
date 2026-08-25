@@ -1,7 +1,7 @@
 [project]
 name = "kstrl"
 version = "0.2.0"
-description = "Lightweight agentic loop harness for autonomous AI-driven development."
+description = "A software factory for AI coding agents: measures what the agent built with checks it did not write, feeds the gap back, and stops only when independent checks agree."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

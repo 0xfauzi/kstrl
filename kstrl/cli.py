@@ -410,7 +410,11 @@ class _KstrlGroup(click.Group):
 @click.version_option(version=__version__)
 @click.pass_context
 def cli(ctx: click.Context) -> None:
-    """kstrl - Agentic loop harness for AI-driven development."""
+    """kstrl - a software factory for AI coding agents.
+
+    Hand it a spec. It plans, builds, measures the result with checks the
+    agent did not write, feeds the gap back, and stops only when independent
+    checks agree. Every run is recorded; boundary decisions come to you."""
     if ctx.invoked_subcommand is not None:
         return
     # Bare `ks` on a TTY opens the home shell (D1 user decision);
