@@ -44,7 +44,7 @@ flowchart LR
 
 The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
 
-**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
+**Documentation**: the [live system atlas](https://0xfauzi.github.io/kstrl/atlas/) is the map, generated from the code; [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
 ## Quick start
 
@@ -527,9 +527,9 @@ The agent updates `passes` and `notes` as it works, and kstrl reads them between
 
 ## Architecture
 
-Explore the system atlas: https://0xfauzi.github.io/kstrl/atlas/ (source: docs/atlas, regenerated from the code by scripts/atlas)
+Start with the **live system atlas**: <https://0xfauzi.github.io/kstrl/atlas/>. It is generated from this code, not drawn by hand: every component, what it does, what flows between them, which parts are built and which are planned, in layers you can switch between (how a spec becomes a merged PR; who measures what; what feeds back to the agent; where you stand; how autonomy is earned and lost). Click a component to see what it is to its neighbours.
 
-The detailed system tour - full pipeline diagram, iteration lifecycle, factory scheduling, the event-stream substrate, runtime state layout, and the fixtures sandbox - lives in [ARCHITECTURE.md](ARCHITECTURE.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
+Then [ARCHITECTURE.md](ARCHITECTURE.md), which opens with the loops kstrl is built as and their clock rates, and treats the phase chain as one tick of the middle two. The reasoning behind the loop, with what closes today and what each cycle closes next, is [docs/control-loop-design.md](docs/control-loop-design.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 ## Development
 
