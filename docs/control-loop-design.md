@@ -1,6 +1,6 @@
 # Control loop design: remodelling kstrl as a control system
 
-Status: proposed. Companion to
+Status: adopted as the R10 cycle (tracker at the end of this document). Companion to
 [dark-factory-roadmap.md](dark-factory-roadmap.md) and
 [continuous-learning-design.md](continuous-learning-design.md). This document
 does not supersede either; it supplies the frame both were reaching for.
@@ -208,8 +208,9 @@ today is feedback-dominant." A `[sensors]` config section was proposed there at
 "**Industrial control room.** Calm, dense, precise."
 
 The words with zero occurrences anywhere in the repository are: set point,
-actuator, disturbance, saturation, deadband, error signal, and safe mode.
-`oscillat*` appears once, in a roadmap risk note.
+actuator, disturbance, saturation, deadband, and error signal. "Safe mode"
+occurs once, inside a test fixture's metadata. `oscillat*` appears twice: a
+roadmap risk note and a comment in `git.py`.
 
 ---
 
@@ -525,7 +526,7 @@ applied consistently instead of ad hoc.
 There is a reason kstrl's thresholds are all placeholders, and it is not
 negligence. **You cannot cheaply measure a sensor you cannot run.**
 
-`ks --help` lists fourteen commands. Not one of them runs a sensor on its own.
+`ks --help` lists fifteen commands. Not one of them runs a sensor on its own.
 There is no `ks verify`, no `ks review`, no way to point mechanical verification
 at a working tree and read the result. Every sensor in kstrl is reachable only
 by starting a factory invocation, which needs a PRD, cuts a branch, creates a
@@ -946,8 +947,8 @@ roadmap item IDs, the `[breaker]` config section, and every prompt body.
 
 ### Relationship to the existing roadmap
 
-This is new work and should be filed as R8 items under the existing tracker
-convention rather than as a parallel scheme. R8.4 stays R8.4. Item 5.8 consumes
+This is new work, filed as the R10 cycle under the existing tracker
+convention (each cycle has its own R number and milestone). R8.4 stays R8.4. Item 5.8 consumes
 the global playbook that
 [continuous-learning-design.md](continuous-learning-design.md) phase 2 builds
 and should land after it. The operate loop named in section 2 is R8.7 plus R8.8
@@ -992,3 +993,27 @@ spent its whole R-series moving away from that starting point, adding sensors,
 gates, envelopes, budgets and an autonomy ladder, without a word for what it was
 moving toward. This document supplies the word. Most of the work was already
 done.
+
+---
+
+## Tracker
+
+Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/milestone/3), tracking issue [#235](https://github.com/0xfauzi/kstrl/issues/235). Status legend: `[ ]` pending, `[~]` in progress, `[x]` done. Tick the box in the same PR that lands the item (audit-trail doctrine).
+
+| Order | Item | Issue | Status |
+|---|---|---|---|
+| 1 | 5.1 `ks sense` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[~]` PR #237 open |
+| 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[ ]` |
+| 3 | 5.2 set-point agreement | [#224](https://github.com/0xfauzi/kstrl/issues/224) | `[ ]` |
+| 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[ ]` |
+| 5 | 5.9 adversarial budget: hard mode halts | [#226](https://github.com/0xfauzi/kstrl/issues/226) | `[ ]` |
+| 6 | 5.5 dampener | [#227](https://github.com/0xfauzi/kstrl/issues/227) | `[ ]` |
+| 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[ ]` |
+| 8 | 5.4 golden patterns | [#229](https://github.com/0xfauzi/kstrl/issues/229) | `[ ]` |
+| 9 | 5.7 memory file | [#230](https://github.com/0xfauzi/kstrl/issues/230) | `[ ]` |
+| 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[ ]` |
+| 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[ ]` |
+| 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[ ]` |
+| 13 | section 4, reframe ARCHITECTURE.md | [#234](https://github.com/0xfauzi/kstrl/issues/234) | `[ ]` |
+
+Graduation follow-ups are listed on #235 and are filed only after the advisory item they depend on has produced output on real runs. The lesson that teaches this document is `docs/lessons/pr-221.html`.
