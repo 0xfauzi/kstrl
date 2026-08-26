@@ -119,7 +119,7 @@ class TestRetryContextPropagation:
         # reverted base-branch content, failing again).
         attempt2 = (cap_dir / "attempt2.prompt").read_text()
         assert "PREVIOUS ATTEMPT CONTEXT" in attempt2
-        assert "## Current failures (measured in attempt 1, verification)" in attempt2
+        assert "## Current failures (measured in attempt 1, engineer)" in attempt2
         assert "diff_scope: FAIL" in attempt2
         assert "Base branch: main" in attempt2
         assert "Allowed paths (complete list): src/" in attempt2
@@ -152,9 +152,10 @@ class TestRetryContextPropagation:
         and fails the linter instead. Attempt 3's prompt must carry
         attempt 2's failure and NOT attempt 1's: the old renderer put
         both under "Fix ALL issues listed above", so the agent was told
-        to re-fix a violation it had already fixed. Both failures are
-        verification-phase, so attempt 1's is superseded, not merely
-        un-re-measured.
+        to re-fix a violation it had already fixed. Attempt 1's scope
+        violation is caught by the in-loop guard, which ranks as
+        engineer; Phase 1 running in attempt 2 proves the engineer loop
+        finished, so it is retired rather than merely un-re-measured.
         """
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
@@ -239,8 +240,11 @@ class TestRetryContextPropagation:
         assert "diff_scope" not in attempt3
         assert "evil.txt" not in attempt3
         assert "## Not re-measured" not in attempt3
+        # The scope violation was caught by the in-loop guard, which
+        # ranks as engineer; Phase 1 running in attempt 2 proves the
+        # engineer loop finished, so it is safely retired.
         assert (
-            "1 earlier finding(s) from verification passed or were "
+            "1 earlier finding(s) from engineer passed or were "
             "re-measured in attempt 2 and are omitted." in attempt3
         )
         assert "Fix ALL issues listed above" not in attempt3

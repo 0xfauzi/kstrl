@@ -1,5 +1,5 @@
 {
- "built_at_commit": "8910652e6018cedd1420790cebdd77b5044f784c",
+ "built_at_commit": "09fabb3f718fbd86940028bb716fb2b0d4f37169",
  "components": {
   "kstrl": {
    "classes": [],
@@ -2520,16 +2520,16 @@
     "test_from_json_empty",
     "test_from_json_empty_object",
     "test_history_keeps_the_error_when_the_attempt_had_no_entry",
+    "test_in_loop_guard_does_not_retire_a_phase_one_failure",
     "test_json_round_trip_preserves_attempt_and_phase",
     "test_json_roundtrip",
     "test_legacy_entry_never_resolves",
     "test_legacy_json_loads_as_not_remeasured",
     "test_legacy_record_history_falls_back_to_position",
-    "test_not_remeasured_when_earlier_phase_fails",
-    "test_resolved_when_later_phase_fails"
+    "test_not_remeasured_when_earlier_phase_fails"
    ],
-   "tests_primary": 31,
-   "tests_total": 93,
+   "tests_primary": 34,
+   "tests_total": 96,
    "uses": {}
   },
   "kstrl.contract": {
@@ -6395,10 +6395,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3354,
+   "loc": 3364,
    "package": "kstrl",
    "plane": "core",
-   "sha": "2f6cbb229e6d",
+   "sha": "ea9bdb6cffd2",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",

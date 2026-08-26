@@ -373,6 +373,46 @@ class TestIterationContext:
         assert "boom" not in text
         assert "1 earlier finding(s) from diff" in section(text, RESOLVED)
 
+    def test_in_loop_guard_does_not_retire_a_phase_one_failure(self) -> None:
+        """The in-loop diff-scope guard fires inside the engineer loop,
+        before Phase 1 runs. Its text matches Phase 1's diff_scope token
+        on purpose, but it must not rank as verification: Phase 1
+        produced no reading in that attempt, so an earlier attempt's test
+        failure is un-re-measured, not superseded."""
+        ctx = IterationContext()
+        ctx.add_verification_failure("- test_suite: FAIL - 2 errors", attempt=1)
+        ctx.add_engineer_failure("diff_scope: FAIL - evil.txt", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "diff_scope: FAIL" in section(text, CURRENT)
+        assert "test_suite: FAIL" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
+    def test_phase_one_does_retire_an_earlier_guard_trip(self) -> None:
+        """The reverse holds: Phase 1 running at all proves the engineer
+        loop finished, so the guard cannot have fired."""
+        ctx = IterationContext()
+        ctx.add_engineer_failure("diff_scope: FAIL - evil.txt", attempt=1)
+        ctx.add_verification_failure("- linter: FAIL - E501", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "evil.txt" not in text
+        assert "1 earlier finding(s) from engineer" in section(text, RESOLVED)
+
+    def test_unsplittable_diff_does_not_retire_a_review_finding(self) -> None:
+        """Failing to split an oversized diff happens while preparing the
+        diff FOR the reviewer, so the reviewer never ran."""
+        ctx = IterationContext()
+        ctx.add_review_finding("criterion X", attempt=1, phase="review")
+        ctx.add_verification_failure(
+            "The diff is too large to review", attempt=2, phase="diff",
+        )
+
+        text = ctx.format_for_prompt()
+        assert "too large to review" in section(text, CURRENT)
+        assert "criterion X" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
     def test_engineer_failure_helper_ranks_as_engineer(self) -> None:
         ctx = IterationContext()
         ctx.add_engineer_failure("guard tripped", attempt=1)

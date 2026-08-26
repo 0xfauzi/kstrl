@@ -1899,7 +1899,14 @@ class ComponentPipeline:
                 # working no matter which layer caught the violation. A
                 # second wording for one failure is how a mislabel
                 # becomes a divergence (R7.1 / #179).
-                ctx.add_verification_failure(
+                # R10.2: the engineer rank, not verification. The
+                # failure text deliberately matches Phase 1's diff_scope
+                # token (above), but the RANK answers a different
+                # question: did Phase 1 produce a reading this attempt?
+                # It did not, the guard fired inside the engineer loop
+                # first. Ranking this as verification retired an earlier
+                # attempt's real Phase 1 failure as re-measured.
+                ctx.add_engineer_failure(
                     f"diff_scope: FAIL - {detail}",
                     attempt=comp.retries + 1,
                 )
@@ -2442,7 +2449,10 @@ class ComponentPipeline:
                     f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
                     "KB review cap; whole files may exceed it, since "
                     "oversized files are chunked on hunk boundaries.",
-                    attempt=comp.retries + 1, phase="review",
+                    # R10.2: the diff rank. This fires while preparing
+                    # the diff for the reviewer, inside _phase_diff, so
+                    # the reviewer produced no reading this attempt.
+                    attempt=comp.retries + 1, phase="diff",
                 )
                 return DiffPhaseResult(
                     diff=shared_diff,
