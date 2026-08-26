@@ -15,6 +15,7 @@ lives (``_recording_hooks``).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -406,8 +407,14 @@ def _review_hook(result: ReviewResult) -> dict[str, Any]:
 
 
 def _drive(
-    tmp_path: Path, *, review: ReviewResult, prd: PRD, **config: Any,
+    tmp_path: Path, *, review: ReviewResult, prd: PRD,
+    before_run: Callable[[], None] | None = None, **config: Any,
 ) -> tuple[Any, Component, Transition | None, Path]:
+    """``before_run`` runs after the PRD is on disk and before the phase
+    chain does, which is the only window in which a test can break the
+    write the pipeline is about to attempt without breaking its own
+    setup.
+    """
     comp = _component("comp-a")
     pipeline, manifest, _, _ = _make_pipeline(
         tmp_path,
@@ -418,6 +425,8 @@ def _drive(
     prd_path = _write_prd(tmp_path, comp, prd)
     live = manifest.get_component("comp-a")
     assert live is not None
+    if before_run is not None:
+        before_run()
     pipeline.begin_attempt(live)
     outcome = pipeline.process_result("comp-a", _success("comp-a"))
     return pipeline, live, (outcome.transition if outcome else None), prd_path
@@ -507,6 +516,35 @@ class TestPipelineWiring:
             review_mode="skip", setpoint_agreement="block",
         )
         assert _setpoint_findings(comp) == []
+
+    def test_unwritable_prd_fails_the_component_without_aborting_the_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """factory.py calls process_result without a try, so an
+        exception escaping the phase chain would take the whole run
+        down, not just this component. A save that cannot be written
+        degrades to an infrastructure finding, the component still
+        fails, and the retry text stops claiming a revert that did not
+        happen."""
+        def _boom(self: PRD, path: Path) -> None:
+            raise OSError("read-only file system")
+
+        pipeline, comp, transition, _ = _drive(
+            tmp_path,
+            review=_review(_criterion("B", "fail", "b-crit")),
+            prd=_prd(_story("B", passes=True)),
+            before_run=lambda: monkeypatch.setattr(PRD, "save", _boom),
+            review_mode="advisory", setpoint_agreement="block",
+        )
+        assert transition == Transition.RETRYING
+        assert comp.failed_check == "setpoint"
+        assert any(
+            f.is_infrastructure_error
+            and "Set-point revert could not be written" in f.explanation
+            for f in comp.findings
+        )
+        ctx = pipeline.component_contexts["comp-a"]
+        assert "could NOT be reset automatically" in ctx
 
     def test_unreadable_prd_records_but_does_not_block(
         self, tmp_path: Path,

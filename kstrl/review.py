@@ -445,21 +445,30 @@ def setpoint_disagreements(
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 
 
-def setpoint_retry_context(disagreements: list[Finding]) -> str:
+def setpoint_retry_context(
+    disagreements: list[Finding], *, reverted: bool = True,
+) -> str:
     """R10.3: the set-point findings as text for the engineer's retry.
 
-    Says what the harness did (reset the flag) as well as what it found,
-    because the agent will otherwise re-read a PRD it does not expect to
-    have changed under it.
+    Says what the harness did as well as what it found, because the
+    agent will otherwise re-read a PRD it does not expect to have
+    changed under it. ``reverted=False`` when the rewritten PRD could
+    not be saved: the agent is then asked to reset the flags itself,
+    rather than being told about a change that did not happen.
     """
     if not disagreements:
         return ""
+    did = (
+        "Their `passes` flags have been reset to false in the PRD."
+        if reverted else
+        "Their `passes` flags could NOT be reset automatically: set each "
+        "one back to false yourself before doing anything else."
+    )
     lines = [
         "Set-point disagreement: you marked the stories below done, but "
-        "the reviewer did not confirm them. Their `passes` flags have "
-        "been reset to false in the PRD. Implement each one properly "
-        "and set the flag again only once its acceptance criteria are "
-        "genuinely met.",
+        f"the reviewer did not confirm them. {did} Implement each one "
+        "properly and set the flag again only once its acceptance "
+        "criteria are genuinely met.",
     ]
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")

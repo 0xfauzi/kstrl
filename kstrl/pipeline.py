@@ -2750,10 +2750,32 @@ class ComponentPipeline:
                 setpoint_prd, review_result, disagreements,
                 attempt=comp.retries + 1,
             )
-            setpoint_prd.save(prd_path)
+            saved = True
+            try:
+                setpoint_prd.save(prd_path)
+            except OSError as exc:
+                # process_result is not wrapped by its caller
+                # (factory.py, the scheduler loop), so an exception
+                # escaping here would abort the whole run and take every
+                # other component's work with it. Degrade to a
+                # per-component infrastructure finding, the same way a
+                # reviewer crash does. The component still fails: the
+                # disagreement is real whether or not the file could be
+                # rewritten. What changes is the retry text, which must
+                # not claim a revert that did not happen.
+                saved = False
+                self._add_findings(comp, [Finding.infrastructure_error(
+                    phase="review",
+                    explanation=(
+                        "Set-point revert could not be written to "
+                        f"{comp.prd_path}: {exc}"
+                    ),
+                )])
             self.ui.warn(
                 f"  Phase 2 FAILED for {comp.id}: set-point disagreement "
-                f"on {len(reverted)} story(ies); passes reverted in the PRD"
+                f"on {len(reverted)} story(ies)"
+                + ("; passes reverted in the PRD" if saved
+                   else "; PRD could not be rewritten")
             )
             return self._setpoint_failure(
                 comp, comp_result, review_result,
@@ -2761,7 +2783,9 @@ class ComponentPipeline:
                     f"Set-point disagreement: {len(reverted)} story(ies) "
                     "claimed done but not confirmed by review"
                 ),
-                retry_text=setpoint_retry_context(disagreements),
+                retry_text=setpoint_retry_context(
+                    disagreements, reverted=saved,
+                ),
             )
 
         self.ui.ok(f"  Phase 2 passed for {comp.id}")
