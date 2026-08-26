@@ -349,6 +349,15 @@ class ReviewResult:
         passed the part of this story it looked at". It is a count, not
         a match: pairing reviewer text to PRD text would be matching by
         criterion text, which this module refuses to do.
+
+        What a count therefore cannot catch, stated so nobody reads more
+        into it than it carries: a reviewer that returns the right
+        NUMBER of criteria while substituting one the PRD never asked
+        for still satisfies this check, because two distinct texts came
+        back for two acceptance criteria. Closing that would need text
+        matching. The count catches the failure mode that actually
+        occurs, a reviewer judging fewer criteria than the story has,
+        and is silent about the one it cannot see.
         """
         return len({cr.criterion for cr in self.criteria_for(story_id)})
 
