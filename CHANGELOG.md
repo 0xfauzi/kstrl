@@ -13,6 +13,20 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- Set-point agreement: a story counts as done only when the reviewer's
+  per-story verdicts confirm the engineer's `passes: true`. The engineer
+  agent was the only writer of that flag, so the thing doing the work
+  also filed the report on it; the reviewer's verdicts were already
+  being produced and thrown away at parse time. `[factory]
+  setpoint_agreement` (`advisory` by default, or `block`) decides what
+  happens on a disagreement: advisory records a `setpoint_disagreement`
+  finding on the pull request and in the journal and lets the component
+  proceed, while block also resets `passes` to false in the PRD with a
+  note saying why and retries the story. The autonomy ladder forces
+  blocking from L1 upward and can never turn it off. No prompt body
+  changed: the engineer is still told to set the flag, the flag has just
+  stopped being the sole authority (R10.3, #224).
+
 - `ks sense`: run the mechanical sensors (test suite, typecheck, linter,
   diff scope, bad patterns, plus any opt-in policy / adequacy / dead-code /
   mutation checks) against any tree by hand, with no PRD, branch, worktree

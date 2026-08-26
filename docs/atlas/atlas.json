@@ -1,5 +1,5 @@
 {
- "built_at_commit": "5e0b877df296724432c65d737b9fee0e4c12db23",
+ "built_at_commit": "407dc93a11a7c4f6e33a6a325ccea0fee02124b4",
  "components": {
   "kstrl": {
    "classes": [],
@@ -3334,7 +3334,7 @@
     "test_signatures_from_findings"
    ],
    "tests_primary": 29,
-   "tests_total": 167,
+   "tests_total": 204,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -3382,7 +3382,12 @@
      "name": "FactoryResult"
     }
    ],
-   "constants": [],
+   "constants": [
+    {
+     "name": "VALID_SETPOINT_AGREEMENT",
+     "value": "('advisory', 'block')"
+    }
+   ],
    "docstring": "Factory orchestrator - parallel component execution with 3-phase verification.",
    "errors": [
     {
@@ -3432,6 +3437,7 @@
     "kstrl.evolution",
     "kstrl.launch",
     "kstrl.pipeline",
+    "kstrl.review",
     "kstrl.tui.bridge",
     "kstrl.tui.embed",
     "kstrl.tui.session"
@@ -3474,10 +3480,10 @@
     "kstrl.ui.plain",
     "kstrl.verify"
    ],
-   "loc": 3408,
+   "loc": 3457,
    "package": "kstrl",
    "plane": "core",
-   "sha": "56d6c647a6b9",
+   "sha": "2458db4eb807",
    "tests": [
     "test_component_failure_cascades",
     "test_crash_recovery_resets_running",
@@ -3506,7 +3512,7 @@
     "test_a_disabled_ceiling_is_never_blamed"
    ],
    "tests_primary": 15,
-   "tests_total": 1167,
+   "tests_total": 1203,
    "uses": {
     "kstrl.agents": [
      "ClaudeCodeAgent",
@@ -3922,6 +3928,10 @@
      "value": "'adequacy_'"
     },
     {
+     "name": "SETPOINT_DISAGREEMENT_CATEGORY",
+     "value": "'setpoint_disagreement'"
+    },
+    {
      "name": "ATTEMPT_TAG_PREFIX",
      "value": "'attempt:'"
     },
@@ -3978,10 +3988,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 407,
+   "loc": 414,
    "package": "kstrl",
    "plane": "core",
-   "sha": "322f9be0e089",
+   "sha": "65ecf2dc992a",
    "tests": [
     "test_clean_review_has_no_infrastructure_finding",
     "test_concerns_typed",
@@ -4010,7 +4020,7 @@
     "test_unknown_category_still_serializes"
    ],
    "tests_primary": 25,
-   "tests_total": 590,
+   "tests_total": 626,
    "uses": {}
   },
   "kstrl.fixtures": {
@@ -5923,7 +5933,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1609,
+   "tests_total": 1645,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6396,10 +6406,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3363,
+   "loc": 3493,
    "package": "kstrl",
    "plane": "core",
-   "sha": "05e990b57eed",
+   "sha": "d65a331fc40f",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -6428,7 +6438,7 @@
     "test_nothing_recorded_when_knowledge_disabled"
    ],
    "tests_primary": 56,
-   "tests_total": 347,
+   "tests_total": 384,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig"
@@ -6474,6 +6484,7 @@
      "ADEQUACY_CATEGORY_PREFIX",
      "Finding",
      "POLICY_CATEGORY_PREFIX",
+     "SETPOINT_DISAGREEMENT_CATEGORY",
      "finding_model",
      "tag_finding_with_attempt"
     ],
@@ -6526,7 +6537,11 @@
     ],
     "kstrl.review": [
      "ReviewMode",
-     "ReviewResult"
+     "ReviewResult",
+     "revert_unconfirmed_stories",
+     "setpoint_blocks",
+     "setpoint_disagreements",
+     "setpoint_retry_context"
     ],
     "kstrl.security": [
      "SecurityMode",
@@ -6761,10 +6776,10 @@
     "kstrl.manifest",
     "kstrl.ui.base"
    ],
-   "loc": 743,
+   "loc": 759,
    "package": "kstrl",
    "plane": "core",
-   "sha": "2b8774a72501",
+   "sha": "806c11a68fdc",
    "tests": [
     "test_body_contains_attribution",
     "test_body_contains_dependencies_with_links",
@@ -6776,7 +6791,9 @@
     "test_gh_not_in_path",
     "test_accepted",
     "test_added_line_is_referenced_end_to_end",
+    "test_advisory_finding_produces_no_signature",
     "test_advisory_mode_crash_completes_with_infra_finding",
+    "test_advisory_mode_records_and_proceeds",
     "test_advisory_security_crash_leaves_infra_finding",
     "test_advisory_verdict_stays_valid",
     "test_agent_crash_never_raises",
@@ -6786,16 +6803,15 @@
     "test_bad_branch_name_rejected",
     "test_bad_branch_rejected",
     "test_bad_id_rejected",
-    "test_branch_carries_lowercase_identifier_token",
-    "test_budget_exceeded_maps_to_comment",
-    "test_budget_exhaustion_emits_finding_and_journal_event",
-    "test_checkout_and_create_branch_from",
-    "test_checkpoint_reject_fails_component"
+    "test_block_mode_leaves_an_agreeing_run_alone",
+    "test_block_mode_reverts_and_retries",
+    "test_blocking_finding_produces_the_journal_signature"
    ],
    "tests_primary": 8,
-   "tests_total": 218,
+   "tests_total": 255,
    "uses": {
     "kstrl.findings": [
+     "SETPOINT_DISAGREEMENT_CATEGORY",
      "render_findings_markdown"
     ],
     "kstrl.git": [
@@ -6847,10 +6863,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 381,
+   "loc": 404,
    "package": "kstrl",
    "plane": "core",
-   "sha": "9fb37741119f",
+   "sha": "6147d6545911",
    "tests": [
     "test_a_committed_edit_to_a_tracked_file_is_rolled_back",
     "test_a_committed_in_scope_edit_is_not_a_violation",
@@ -6860,6 +6876,8 @@
     "test_a_legacy_prd_falls_back_to_the_run_wide_flag",
     "test_a_prd_that_is_a_directory_falls_back",
     "test_absent_is_valid",
+    "test_advisory_finding_produces_no_signature",
+    "test_advisory_mode_records_and_proceeds",
     "test_allowed_paths_empty_rejected",
     "test_allowed_paths_must_be_array",
     "test_allowed_paths_non_string_item_rejected",
@@ -6874,12 +6892,10 @@
     "test_artifact_written_on_success",
     "test_attribute_assignment_is_honored",
     "test_auto_run_skips_the_gate",
-    "test_bad_cli_entries_rejected",
-    "test_both_set_differently_warns_and_overrides_neither",
-    "test_check_fixtures_empty"
+    "test_bad_cli_entries_rejected"
    ],
    "tests_primary": 0,
-   "tests_total": 155,
+   "tests_total": 191,
    "uses": {}
   },
   "kstrl.proposals": {
@@ -7287,6 +7303,8 @@
       "def concern_advisory_count(self) -> int",
       "def fail_count(self) -> int",
       "def advisory_count(self) -> int",
+      "def story_verdicts(self) -> dict[str, str]",
+      "def non_pass_criteria(self, story_id: str) -> list[CriterionReview]",
       "def as_findings(self) -> list[Finding]"
      ],
      "name": "ReviewResult"
@@ -7314,6 +7332,31 @@
    "errors": [],
    "file": "kstrl/review.py",
    "functions": [
+    {
+     "doc": "The comparison form of a story id: stripped and lowercased.",
+     "name": "normalize_story_id",
+     "signature": "def normalize_story_id(value: str) -> str"
+    },
+    {
+     "doc": "R10.3: one Finding per story where the two sensors disagree.",
+     "name": "setpoint_disagreements",
+     "signature": "def setpoint_disagreements(prd: PRD, review: ReviewResult, *, severity: str) -> list[Finding]"
+    },
+    {
+     "doc": "R10.3: the set-point findings as text for the engineer's retry.",
+     "name": "setpoint_retry_context",
+     "signature": "def setpoint_retry_context(disagreements: list[Finding]) -> str"
+    },
+    {
+     "doc": "R10.3: reset ``passes`` on every story in *disagreements*.",
+     "name": "revert_unconfirmed_stories",
+     "signature": "def revert_unconfirmed_stories(prd: PRD, review: ReviewResult, disagreements: list[Finding], *, attempt: int) -> list[str]"
+    },
+    {
+     "doc": "Whether a set-point disagreement should FAIL the component.",
+     "name": "setpoint_blocks",
+     "signature": "def setpoint_blocks(config: FactoryConfig, autonomy_level: int) -> bool"
+    },
     {
      "doc": "Assemble the full reviewer prompt.",
      "name": "build_review_prompt",
@@ -7348,16 +7391,17 @@
    "imports": [
     "kstrl.agents.base",
     "kstrl.decompose",
+    "kstrl.factory",
     "kstrl.findings",
     "kstrl.git",
     "kstrl.prd",
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 895,
+   "loc": 1128,
    "package": "kstrl",
    "plane": "core",
-   "sha": "b522e7bc0627",
+   "sha": "a48ac5276e54",
    "tests": [
     "test_advisory_concerns_do_not_block",
     "test_advisory_mode_downgrades_concern_failures",
@@ -7386,7 +7430,7 @@
     "test_a_copied_config_keeps_the_log_inside_component_scope"
    ],
    "tests_primary": 19,
-   "tests_total": 760,
+   "tests_total": 797,
    "uses": {
     "kstrl.agents.base": [
      "Agent"
@@ -7398,8 +7442,12 @@
      "collect_agent_output",
      "generate_data_delimiter"
     ],
+    "kstrl.factory": [
+     "FactoryConfig"
+    ],
     "kstrl.findings": [
      "Finding",
+     "SETPOINT_DISAGREEMENT_CATEGORY",
      "dump_raw_debug",
      "tag_finding_with_model"
     ],

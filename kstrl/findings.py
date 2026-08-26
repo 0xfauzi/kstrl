@@ -31,6 +31,13 @@ POLICY_CATEGORY_PREFIX = "policy_"
 # so no model tag - the gate, not an LLM, decided.
 ADEQUACY_CATEGORY_PREFIX = "adequacy_"
 
+# R10.3: one story the engineer marked passes=true that the reviewer did
+# not independently mark pass. The comparison is mechanical, but the
+# evidence is an LLM's verdict, so unlike the policy and adequacy
+# families these findings DO carry a model tag: which reviewer
+# disagreed is the fact worth attributing.
+SETPOINT_DISAGREEMENT_CATEGORY = "setpoint_disagreement"
+
 # R3.3: every finding the factory records is tagged with the attempt
 # that produced it, so the journal can distinguish superseded findings
 # (an attempt that was retried) from the shipped attempt's findings.

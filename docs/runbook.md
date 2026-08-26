@@ -39,6 +39,22 @@ Manual options:
 
 If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (timeout, API outage, parse error). Same retry path, but check API health.
 
+## Phase 2: set-point disagreement
+
+**Symptom**: `Phase 2 FAILED for <comp_id>: set-point disagreement on N story(ies); passes reverted in the PRD`, with `failed_check = setpoint`.
+
+A story is marked done when the engineer agent sets `passes: true` in the PRD. That is the agent that did the work reporting on the work, so it is a claim rather than a measurement. R10.3 checks the claim against the reviewer's per-story verdicts, which are an independent reading. This fires when the engineer said done and the reviewer did not confirm it - because it judged a criterion unmet, raised an advisory on one, or never covered the story at all.
+
+**Diagnose**:
+
+- Look for `setpoint_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
+- The PRD itself carries the audit trail: each reverted story gains a `reverted by reviewer (attempt N): <criterion>` note.
+- "not covered" in the explanation means something different from a failed criterion. The reviewer returned no verdict for that story at all, which is usually a story the diff did not touch.
+
+**Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
+
+If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
+
 ## Phase 2.5: security review failed (hard mode)
 
 **Symptom**: `Phase 2.5 FAILED for <comp_id>: N critical, M high`
