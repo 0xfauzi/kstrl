@@ -1,5 +1,5 @@
 {
- "built_at_commit": "daa51ac507726f8c8b1fa7b7c3bd4dcf1b5513ca",
+ "built_at_commit": "5e0b877df296724432c65d737b9fee0e4c12db23",
  "components": {
   "kstrl": {
    "classes": [],
@@ -2464,6 +2464,7 @@
       "def add_iteration(self, record: IterationRecord) -> None",
       "def add_review_finding(self, finding: str, *, attempt: int, phase: str, infrastructure: bool=False) -> None",
       "def add_engineer_failure(self, failure: str, *, attempt: int) -> None",
+      "def add_checkpoint_request(self, request: str, *, attempt: int) -> None",
       "def add_verification_failure(self, failure: str, *, attempt: int, phase: str='verification', infrastructure: bool=False) -> None",
       "def add_contract_failure(self, failure: str, *, attempt: int) -> None",
       "def format_for_prompt(self) -> str",
@@ -2497,15 +2498,16 @@
     "kstrl.pipeline"
    ],
    "imports": [],
-   "loc": 435,
+   "loc": 445,
    "package": "kstrl",
    "plane": "core",
-   "sha": "ed7fde4e365c",
+   "sha": "5207b1eb37d2",
    "tests": [
     "test_a_real_reading_still_supersedes_after_a_crash",
     "test_add_empty_string_ignored",
     "test_add_iteration",
     "test_add_review_finding",
+    "test_checkpoint_request_retires_what_it_got_past",
     "test_cleared_skippable_finding_is_shown_not_dropped",
     "test_closing_instruction_changed",
     "test_crashed_sensor_does_not_supersede_a_real_finding",
@@ -2516,6 +2518,7 @@
     "test_diff_failure_is_not_superseded_by_verification",
     "test_diff_failure_is_retired_once_review_runs",
     "test_empty_context",
+    "test_engineer_crash_does_not_retire_a_checkpoint_request",
     "test_engineer_failure_helper_ranks_as_engineer",
     "test_engineer_only_attempt_retires_nothing",
     "test_every_entry_lands_in_exactly_one_bucket",
@@ -2524,12 +2527,10 @@
     "test_format_for_prompt_with_failures",
     "test_from_json_empty",
     "test_from_json_empty_object",
-    "test_history_keeps_the_error_when_the_attempt_had_no_entry",
-    "test_in_loop_guard_does_not_retire_a_phase_one_failure",
-    "test_infrastructure_flag_survives_the_json_round_trip"
+    "test_history_keeps_the_error_when_the_attempt_had_no_entry"
    ],
-   "tests_primary": 40,
-   "tests_total": 102,
+   "tests_primary": 42,
+   "tests_total": 104,
    "uses": {}
   },
   "kstrl.contract": {
@@ -6395,10 +6396,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3368,
+   "loc": 3363,
    "package": "kstrl",
    "plane": "core",
-   "sha": "451144b0c1b1",
+   "sha": "05e990b57eed",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",

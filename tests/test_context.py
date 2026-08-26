@@ -517,6 +517,37 @@ class TestIterationContext:
         )
         assert legacy.entries[0].infrastructure is False
 
+    def test_engineer_crash_does_not_retire_a_checkpoint_request(self) -> None:
+        """A human asked for changes at the checkpoint in attempt 1, and
+        attempt 2's engineer loop died before reaching any gate. The
+        operator's direction is still outstanding.
+
+        At the engineer rank both entries would sit at rank 0 and the
+        second would supersede the first, dropping the human's request.
+        """
+        ctx = IterationContext()
+        ctx.add_checkpoint_request(
+            "Human reviewer requested changes at PR checkpoint", attempt=1,
+        )
+        ctx.add_engineer_failure("agent exited non-zero", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "agent exited non-zero" in section(text, CURRENT)
+        assert "Human reviewer requested changes" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
+    def test_checkpoint_request_retires_what_it_got_past(self) -> None:
+        """Reaching the checkpoint proves every gate passed."""
+        ctx = IterationContext()
+        ctx.add_verification_failure("linter: E501", attempt=1)
+        ctx.add_checkpoint_request("please rename the endpoint", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "please rename the endpoint" in section(text, CURRENT)
+        assert "E501" not in text
+        assert "1 earlier finding(s) from verification" in section(text, RESOLVED)
+        assert ctx.review_findings == ["please rename the endpoint"]
+
     def test_closing_instruction_changed(self) -> None:
         ctx = IterationContext()
         ctx.add_verification_failure("E501", attempt=1)
@@ -546,8 +577,8 @@ class TestIterationContext:
 
 
 class TestBucketRuleSweep:
-    """Every failure sequence of one to four attempts over the five
-    phases, with and without a legacy entry: 1560 cases.
+    """Every failure sequence of one to four attempts over the seven
+    phases, with and without a legacy entry: 5600 cases.
 
     The invariants are the ones the widget behind issue #223
     (``docs/lessons/verify/pr-221/retry_context_rank.py``) established
@@ -595,7 +626,7 @@ class TestBucketRuleSweep:
                             rank < q and e.phase not in SKIPPABLE_PHASES
                         )
                     cases += 1
-        assert cases == 3108
+        assert cases == 5600
 
     def test_current_section_does_not_grow_with_repeated_failures(self) -> None:
         sizes = []

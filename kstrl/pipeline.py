@@ -2052,12 +2052,7 @@ class ComponentPipeline:
                 ctx = IterationContext.from_json(
                     comp_result.context_json or "{}",
                 )
-                # R10.2: the engineer rank, even though the
-                # checkpoint sits after every sensor. Ranking it below
-                # the findings it follows makes earlier findings render
-                # as un-re-measured rather than resolved, which is the
-                # conservative side when a human asks for changes.
-                ctx.add_engineer_failure(
+                ctx.add_checkpoint_request(
                     "Human reviewer requested changes at PR checkpoint",
                     attempt=comp.retries + 1,
                 )

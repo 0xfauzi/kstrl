@@ -25,10 +25,14 @@ from typing import Any
 # attempt, so the older reading is stale" from "this sensor never ran in
 # the latest attempt, so its older reading still stands".
 #
-# "engineer" covers everything the engineer loop and the PR flow raise
-# before Phase 1 measures anything: guard violations that abort the
-# loop, breaker trips, merge-conflict restarts, and human retry requests
-# at the E6 checkpoint.
+# "engineer" covers what the engineer loop raises before Phase 1
+# measures anything: guard violations that abort the loop, breaker trips,
+# and the loop's own failures. "pr" is the far end, after every sensor
+# has passed: a human asking for changes at the E6 checkpoint. It ranks
+# above contract because reaching the checkpoint proves every gate
+# passed, and because an operator's direction must not be retired by an
+# engineer-loop failure in the next attempt (which the engineer rank
+# would have allowed: two entries at the same rank supersede).
 PHASE_RANK: dict[str, int] = {
     "engineer": 0,
     "verification": 1,
@@ -36,6 +40,7 @@ PHASE_RANK: dict[str, int] = {
     "review": 3,
     "security": 4,
     "contract": 5,
+    "pr": 6,
 }
 
 #: Phases whose having run in an attempt cannot be inferred from a
@@ -76,7 +81,7 @@ LEGACY_ATTEMPT = 0
 #: E6 checkpoint screen reads CheckpointContext.review_findings, a
 #: different type. They exist so the pre-R10.2 shape still reads back.
 _VIEW_PHASES: dict[str, tuple[str, ...]] = {
-    "review_findings": ("engineer", "review", "security"),
+    "review_findings": ("engineer", "review", "security", "pr"),
     "verification_failures": ("verification", "diff"),
     "contract_failures": ("contract",),
 }
@@ -183,6 +188,11 @@ class IterationContext:
 
     def add_engineer_failure(self, failure: str, *, attempt: int) -> None:
         self._add(failure, attempt, "engineer")
+
+    def add_checkpoint_request(self, request: str, *, attempt: int) -> None:
+        """A human asking for changes at the E6 checkpoint. Not a sensor
+        reading: it is retired only by another checkpoint decision."""
+        self._add(request, attempt, "pr")
 
     def add_verification_failure(
         self, failure: str, *, attempt: int, phase: str = "verification",
