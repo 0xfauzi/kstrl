@@ -323,6 +323,35 @@ class ReviewResult:
             worst[key] = max(worst.get(key, rank), rank)
         return {key: _RANK_VERDICT[rank] for key, rank in worst.items()}
 
+    def criteria_for(self, story_id: str) -> list[CriterionReview]:
+        """Every criterion verdict the reviewer returned for *story_id*.
+
+        Order is the reviewer's own. Matching is by normalised id and
+        never by criterion text, the rule ``parse_review_output`` has
+        followed since R1.1.
+        """
+        key = normalize_story_id(story_id)
+        return [
+            cr for cr in self.criteria
+            if normalize_story_id(cr.story_id) == key
+        ]
+
+    def judged_criterion_count(self, story_id: str) -> int:
+        """How many DISTINCT criteria the reviewer judged for a story.
+
+        Distinct by criterion text, because a chunked hard-mode review
+        merges the passes of several chunks and the same criterion can
+        come back more than once (``merge_review_results``). Counting
+        raw entries there would report a story as fully judged on one
+        criterion judged twice.
+
+        Used to tell "the reviewer passed this story" from "the reviewer
+        passed the part of this story it looked at". It is a count, not
+        a match: pairing reviewer text to PRD text would be matching by
+        criterion text, which this module refuses to do.
+        """
+        return len({cr.criterion for cr in self.criteria_for(story_id)})
+
     def non_pass_criteria(self, story_id: str) -> list[CriterionReview]:
         """Every criterion for *story_id* the reviewer did not pass.
 
@@ -330,11 +359,9 @@ class ReviewResult:
         suggestion text and for the note written into a reverted PRD
         story, so both read the same evidence.
         """
-        key = normalize_story_id(story_id)
         return [
-            cr for cr in self.criteria
-            if normalize_story_id(cr.story_id) == key
-            and cr.verdict != ReviewVerdict.PASS.value
+            cr for cr in self.criteria_for(story_id)
+            if cr.verdict != ReviewVerdict.PASS.value
         ]
 
     def as_findings(self) -> list[Finding]:
@@ -403,7 +430,15 @@ def setpoint_disagreements(
     a second, independent reading of the same question. This returns one
     finding for every story the engineer marked done that the reviewer
     did not independently mark pass, whether the reviewer marked it fail,
-    marked it advisory, or never covered it at all.
+    marked it advisory, never covered it at all, or passed only some of
+    its acceptance criteria.
+
+    That last case is the one the coverage gate in ``parse_review_output``
+    does not catch: it checks that every STORY got a verdict, not that
+    every CRITERION did. A reviewer that returns one passing criterion
+    for a two-criterion story reads as a clean pass there, so the claim
+    would be confirmed on half the evidence. Confirmation here needs both
+    a pass and a verdict per acceptance criterion.
 
     Returns ``[]`` when ``review.infrastructure_error`` is set. The
     reviewer crashed or returned unparseable output, so there is no
@@ -428,19 +463,45 @@ def setpoint_disagreements(
         if story.passes is not True:
             continue
         verdict = verdicts.get(normalize_story_id(story.id))
-        if verdict == ReviewVerdict.PASS.value:
+        judged = review.judged_criterion_count(story.id)
+        expected = len(story.acceptance_criteria)
+        if verdict == ReviewVerdict.PASS.value and judged >= expected:
             continue
         unmet = review.non_pass_criteria(story.id)
+        # The suggestion carries the reviewer's own criterion texts when
+        # it judged any of them unmet. When it judged none unmet but did
+        # not judge them all, there is no criterion text to hand over,
+        # so the suggestion says what is missing instead. A story with
+        # no verdict at all needs neither: the explanation already says
+        # "not covered" and repeating the count adds nothing.
+        gap = ""
+        if verdict is None:
+            reads = "not covered"
+        elif verdict != ReviewVerdict.PASS.value:
+            reads = verdict
+        else:
+            # Every verdict returned was a pass, but not every
+            # acceptance criterion got one. "The reviewer passed this
+            # story" and "the reviewer passed the part of it that it
+            # looked at" are different facts, and only the first
+            # confirms the engineer's claim.
+            reads = (
+                f"pass on only {judged} of {expected} acceptance criteria"
+            )
+            gap = (
+                f"The reviewer returned {judged} verdict(s) for "
+                f"{expected} acceptance criteria, so the story is "
+                "unconfirmed rather than judged unmet."
+            )
         out.append(Finding.from_review_concern(
             category=SETPOINT_DISAGREEMENT_CATEGORY,
             severity=severity,
             location=story.id,
             explanation=(
                 f"Story {story.id} is marked passes=true by the engineer "
-                f"but the reviewer's verdict is "
-                f"{verdict or 'not covered'}"
+                f"but the reviewer's verdict is {reads}"
             ),
-            suggestion="; ".join(cr.criterion for cr in unmet),
+            suggestion="; ".join(cr.criterion for cr in unmet) or gap,
         ))
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 

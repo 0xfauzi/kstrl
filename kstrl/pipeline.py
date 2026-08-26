@@ -2745,6 +2745,44 @@ class ComponentPipeline:
         # R10.3: the review itself passed. It can still have declined to
         # confirm a story the engineer marked done, and in blocking mode
         # that is a failure of the component, not a footnote on a pass.
+        if (
+            blocking
+            and review_result.infrastructure_error
+            and setpoint_prd is not None
+            and any(st.passes for st in setpoint_prd.user_stories)
+        ):
+            # Halt over heroics. In ADVISORY review mode a crashed or
+            # unparseable reviewer yields passed=True with
+            # infrastructure_error=True (the crash handler above sets
+            # `passed=review_mode != HARD`), so the failure path above
+            # does not fire. setpoint_disagreements correctly returns
+            # nothing - absence of a reading is not disagreement - but
+            # in BLOCKING mode "the second sensor never reported" must
+            # not be spent as "the second sensor confirmed". A story
+            # still claims done and nothing independent has checked it.
+            #
+            # Nothing is reverted here: no evidence points at any
+            # particular story, and retrying is what a reviewer outage
+            # calls for. The outage itself is already in the findings
+            # via ReviewResult.as_findings.
+            self.ui.warn(
+                f"  Phase 2 FAILED for {comp.id}: set-point agreement "
+                "cannot be confirmed, the reviewer did not report"
+            )
+            return self._setpoint_failure(
+                comp, comp_result, review_result,
+                error=(
+                    "Set-point disagreement: the reviewer produced no "
+                    "usable verdict, so no story claimed done is confirmed"
+                ),
+                retry_text=(
+                    "The reviewer did not produce a usable verdict this "
+                    "attempt, so no story you marked done has been "
+                    "independently confirmed. Nothing in the PRD was "
+                    "changed. Re-run and make sure the work still stands "
+                    "on its own evidence."
+                ),
+            )
         if blocking and disagreements and setpoint_prd is not None:
             reverted = revert_unconfirmed_stories(
                 setpoint_prd, review_result, disagreements,

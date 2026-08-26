@@ -49,9 +49,15 @@ A story is marked done when the engineer agent sets `passes: true` in the PRD. T
 
 - Look for `setpoint_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
 - The PRD itself carries the audit trail: each reverted story gains a `reverted by reviewer (attempt N): <criterion>` note.
-- "not covered" in the explanation means something different from a failed criterion. The reviewer returned no verdict for that story at all, which is usually a story the diff did not touch.
+- The explanation says how the claim failed to be confirmed, and the three readings mean different things. A verdict of `fail` or `advisory` means the reviewer looked and was not satisfied. "not covered" means it returned no verdict for that story at all, usually a story the diff did not touch. "pass on only N of M acceptance criteria" means it passed everything it judged but did not judge everything: the story is unconfirmed rather than judged unmet, and the reviewer's coverage is what to look at first.
+
+**Symptom, second form**: `Phase 2 FAILED for <comp_id>: set-point agreement cannot be confirmed, the reviewer did not report`.
+
+In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `setpoint_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. Check reviewer API health, as for any `infrastructure_error`, and re-run.
 
 **Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
+
+If `setpoint_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
 
 If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
 

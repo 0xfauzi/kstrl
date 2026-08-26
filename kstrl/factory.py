@@ -339,6 +339,17 @@ class FactoryConfig:
             keep_worktrees_on_failure=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
+            # R10.3: unlike review_mode next door, this key HAS an env
+            # var, so from_env must read it. `ks factory` uses from_env
+            # as the environment-only baseline that _collect_toml_notes
+            # diffs against, and a field missing here is reported to the
+            # operator as "from kstrl.toml" when it came from the
+            # environment - a false provenance claim in the one place
+            # they look to find out where a setting came from.
+            setpoint_agreement=_validate_setpoint_agreement(
+                os.environ.get("KSTRL_FACTORY_SETPOINT_AGREEMENT", "advisory"),
+                "KSTRL_FACTORY_SETPOINT_AGREEMENT",
+            ),
         )
 
     @classmethod
@@ -465,6 +476,34 @@ def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None:
             "aggregate PR without a per-component checkpoint, so the "
             "merge gate never runs. Disable single_pr to honour the "
             "merge gate."
+        )
+    return None
+
+
+def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
+    """Warning when the set-point gate is on but can never run, else None.
+
+    ``setpoint_agreement = "block"`` asks the harness to fail a component
+    whose story the reviewer did not confirm, and `review_mode = "skip"`
+    means no reviewer runs, so there is never a verdict to confirm with.
+    `_phase_review` returns before the set-point check on that path, so
+    the gate is not merely lenient, it is absent. Same shape and same
+    reason as ``merge_gate_unreachable_warning``: a governance control
+    silently failing open is worse than one that was never configured,
+    because the operator believes it is on.
+
+    Called from ``run_factory`` after autonomy resolution, because the
+    L1/L2 bundle forces ``review_mode`` to hard and can therefore make a
+    config that looked unreachable reachable.
+    """
+    if config.setpoint_agreement != "block":
+        return None
+    if config.review_mode == ReviewMode.SKIP.value:
+        return (
+            "setpoint_agreement is 'block' but review_mode is 'skip': no "
+            "reviewer runs, so no story can be confirmed and the "
+            "set-point gate never fires. Set review_mode to 'advisory' "
+            "or 'hard' to honour it."
         )
     return None
 
@@ -2464,6 +2503,12 @@ def _run_factory_locked(
     gate_warning = merge_gate_unreachable_warning(factory_config)
     if gate_warning is not None:
         ui.warn(gate_warning)
+    # R10.3: same timing, same reason - the L1/L2 bundle forces
+    # review_mode to hard above, so a set-point gate that looked
+    # unreachable before autonomy resolved may be reachable now.
+    setpoint_warning = setpoint_gate_unreachable_warning(factory_config)
+    if setpoint_warning is not None:
+        ui.warn(setpoint_warning)
 
     manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)

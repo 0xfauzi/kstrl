@@ -22,7 +22,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   happens on a disagreement: advisory records a `setpoint_disagreement`
   finding on the pull request and in the journal and lets the component
   proceed, while block also resets `passes` to false in the PRD with a
-  note saying why and retries the story. The autonomy ladder forces
+  note saying why and retries the story. Confirmation needs a pass on
+  every acceptance criterion, not just on the ones the reviewer chose to
+  judge: the existing coverage gate checks that every story got a
+  verdict, never that every criterion did. In blocking mode a reviewer
+  that crashed or returned nothing usable also fails the component,
+  because a sensor that did not report has not confirmed anything. The autonomy ladder forces
   blocking from L1 upward and can never turn it off. No prompt body
   changed: the engineer is still told to set the flag, the flag has just
   stopped being the sole authority (R10.3, #224).

@@ -1,5 +1,5 @@
 {
- "built_at_commit": "7807a7c8023eadf64f5500c91c34983ee8e2c3d0",
+ "built_at_commit": "c720528213d4a3f49d1339bbb19fb07525b90cf4",
  "components": {
   "kstrl": {
    "classes": [],
@@ -1816,7 +1816,7 @@
     "test_a_delivered_result_wins_over_the_snapshot"
    ],
    "tests_primary": 19,
-   "tests_total": 600,
+   "tests_total": 657,
    "uses": {
     "kstrl": [
      "__version__"
@@ -3334,7 +3334,7 @@
     "test_signatures_from_findings"
    ],
    "tests_primary": 29,
-   "tests_total": 210,
+   "tests_total": 225,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -3419,6 +3419,11 @@
      "signature": "def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None"
     },
     {
+     "doc": "Warning when the set-point gate is on but can never run, else None.",
+     "name": "setpoint_gate_unreachable_warning",
+     "signature": "def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None"
+    },
+    {
      "doc": "Resolve which agent reviews this run's diffs (R7.1).",
      "name": "resolve_adversarial_selection",
      "signature": "def resolve_adversarial_selection(phase: str, *, explicit_cmd: str | None, explicit_type: str | None, explicit_model: str | None, fallback_cmd: str | None, fallback_type: str | None, fallback_model: str | None, fallback_reasoning: str | None, engineer_cmd: str | None, engineer_type: str | None, claude_available: bool | None=None, codex_available: bool | None=None) -> AdversarialAgentSelection"
@@ -3480,10 +3485,10 @@
     "kstrl.ui.plain",
     "kstrl.verify"
    ],
-   "loc": 3457,
+   "loc": 3502,
    "package": "kstrl",
    "plane": "core",
-   "sha": "2458db4eb807",
+   "sha": "d5333c45e0ff",
    "tests": [
     "test_component_failure_cascades",
     "test_crash_recovery_resets_running",
@@ -3512,7 +3517,7 @@
     "test_a_disabled_ceiling_is_never_blamed"
    ],
    "tests_primary": 15,
-   "tests_total": 1209,
+   "tests_total": 1224,
    "uses": {
     "kstrl.agents": [
      "ClaudeCodeAgent",
@@ -4020,7 +4025,7 @@
     "test_unknown_category_still_serializes"
    ],
    "tests_primary": 25,
-   "tests_total": 632,
+   "tests_total": 647,
    "uses": {}
   },
   "kstrl.fixtures": {
@@ -5933,7 +5938,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1651,
+   "tests_total": 1666,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6406,10 +6411,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3517,
+   "loc": 3555,
    "package": "kstrl",
    "plane": "core",
-   "sha": "25929f99b225",
+   "sha": "0538fea0ed9b",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -6438,7 +6443,7 @@
     "test_nothing_recorded_when_knowledge_disabled"
    ],
    "tests_primary": 56,
-   "tests_total": 390,
+   "tests_total": 405,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig"
@@ -6789,10 +6794,13 @@
     "test_gh_authenticated",
     "test_gh_not_authenticated",
     "test_gh_not_in_path",
+    "test_a_failed_criterion_still_reads_as_the_verdict",
     "test_accepted",
     "test_added_line_is_referenced_end_to_end",
     "test_advisory_finding_produces_no_signature",
     "test_advisory_mode_crash_completes_with_infra_finding",
+    "test_advisory_mode_does_not_fail_on_a_silent_reviewer",
+    "test_advisory_mode_never_warns",
     "test_advisory_mode_records_and_proceeds",
     "test_advisory_security_crash_leaves_infra_finding",
     "test_advisory_verdict_stays_valid",
@@ -6802,13 +6810,10 @@
     "test_bad_base_branch_rejected",
     "test_bad_branch_name_rejected",
     "test_bad_branch_rejected",
-    "test_bad_id_rejected",
-    "test_block_mode_leaves_an_agreeing_run_alone",
-    "test_block_mode_reverts_and_retries",
-    "test_blocking_finding_produces_the_journal_signature"
+    "test_bad_id_rejected"
    ],
    "tests_primary": 8,
-   "tests_total": 261,
+   "tests_total": 276,
    "uses": {
     "kstrl.findings": [
      "SETPOINT_DISAGREEMENT_CATEGORY",
@@ -6873,10 +6878,13 @@
     "test_a_committed_new_file_is_removed",
     "test_a_committed_out_of_scope_edit_is_caught",
     "test_a_copied_config_keeps_the_log_inside_component_scope",
+    "test_a_failed_criterion_still_reads_as_the_verdict",
     "test_a_legacy_prd_falls_back_to_the_run_wide_flag",
     "test_a_prd_that_is_a_directory_falls_back",
     "test_absent_is_valid",
     "test_advisory_finding_produces_no_signature",
+    "test_advisory_mode_does_not_fail_on_a_silent_reviewer",
+    "test_advisory_mode_never_warns",
     "test_advisory_mode_records_and_proceeds",
     "test_allowed_paths_empty_rejected",
     "test_allowed_paths_must_be_array",
@@ -6889,13 +6897,10 @@
     "test_array_of_strings_is_valid",
     "test_artifact_written_on_clean_audit",
     "test_artifact_written_on_halt",
-    "test_artifact_written_on_success",
-    "test_attribute_assignment_is_honored",
-    "test_auto_run_skips_the_gate",
-    "test_bad_cli_entries_rejected"
+    "test_artifact_written_on_success"
    ],
    "tests_primary": 0,
-   "tests_total": 197,
+   "tests_total": 212,
    "uses": {}
   },
   "kstrl.proposals": {
@@ -7304,6 +7309,8 @@
       "def fail_count(self) -> int",
       "def advisory_count(self) -> int",
       "def story_verdicts(self) -> dict[str, str]",
+      "def criteria_for(self, story_id: str) -> list[CriterionReview]",
+      "def judged_criterion_count(self, story_id: str) -> int",
       "def non_pass_criteria(self, story_id: str) -> list[CriterionReview]",
       "def as_findings(self) -> list[Finding]"
      ],
@@ -7398,10 +7405,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 1158,
+   "loc": 1219,
    "package": "kstrl",
    "plane": "core",
-   "sha": "6ed57522e6a6",
+   "sha": "8ddcd627c434",
    "tests": [
     "test_advisory_concerns_do_not_block",
     "test_advisory_mode_downgrades_concern_failures",
@@ -7430,7 +7437,7 @@
     "test_a_copied_config_keeps_the_log_inside_component_scope"
    ],
    "tests_primary": 19,
-   "tests_total": 803,
+   "tests_total": 818,
    "uses": {
     "kstrl.agents.base": [
      "Agent"

@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from kstrl.evolution import signatures_from_findings
-from kstrl.factory import FactoryConfig
+from kstrl.factory import FactoryConfig, setpoint_gate_unreachable_warning
 from kstrl.findings import SETPOINT_DISAGREEMENT_CATEGORY, Finding, finding_model
 from kstrl.manifest import Component
 from kstrl.pipeline import Transition
@@ -242,6 +242,71 @@ class TestSetpointDisagreements:
         review = _review(model="codex (gpt-5)")
         found = setpoint_disagreements(prd, review, severity="advisory")
         assert finding_model(found[0]) == "codex (gpt-5)"
+
+
+class TestCriterionCoverage:
+    """Round-1 review, P1: a pass on half the criteria is not a pass.
+
+    ``parse_review_output``'s coverage gate checks that every STORY got
+    a verdict, never that every CRITERION did, so a reviewer returning
+    one passing criterion for a two-criterion story reads as a clean
+    pass there. Confirming the engineer's claim on that would be
+    confirming it on half the evidence.
+    """
+
+    def test_partial_criteria_do_not_confirm_a_story(self) -> None:
+        prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
+        review = _review(_criterion("A", "pass", "crit A"))
+        found = setpoint_disagreements(prd, review, severity="advisory")
+        assert [f.location for f in found] == ["A"]
+        assert "1 of 2 acceptance criteria" in found[0].explanation
+        assert "unconfirmed rather than judged unmet" in found[0].suggestion
+
+    def test_the_existing_coverage_gate_does_not_catch_this(self) -> None:
+        """The hole this closes is real, not hypothetical."""
+        raw = json.dumps({
+            "stories": [{"storyId": "A", "criteria": [
+                {"criterion": "crit A", "verdict": "pass",
+                 "explanation": "ok", "suggestion": ""},
+            ]}],
+            "concerns": [], "overallNotes": "",
+        })
+        parsed = parse_review_output(raw, ["A"])
+        assert parsed.infrastructure_error is False
+        assert parsed.story_verdicts() == {"a": "pass"}
+
+    def test_full_criteria_all_passing_do_confirm(self) -> None:
+        prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
+        review = _review(
+            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "crit B"),
+        )
+        assert setpoint_disagreements(prd, review, severity="advisory") == []
+
+    def test_duplicate_criteria_across_chunks_are_counted_once(self) -> None:
+        """A chunked review merges passes, so the same criterion can come
+        back twice. Counting raw entries would call a two-criterion story
+        fully judged on one criterion judged twice."""
+        prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
+        review = _review(
+            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "crit A"),
+        )
+        assert review.judged_criterion_count("A") == 1
+        assert len(setpoint_disagreements(prd, review, severity="advisory")) == 1
+
+    def test_extra_verdicts_do_not_create_a_disagreement(self) -> None:
+        prd = _prd(_story("A", passes=True, criteria=["crit A"]))
+        review = _review(
+            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "extra"),
+        )
+        assert setpoint_disagreements(prd, review, severity="advisory") == []
+
+    def test_a_failed_criterion_still_reads_as_the_verdict(self) -> None:
+        """Incomplete coverage must not mask a judged failure."""
+        prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
+        review = _review(_criterion("A", "fail", "crit A"))
+        found = setpoint_disagreements(prd, review, severity="fail")
+        assert "verdict is fail" in found[0].explanation
+        assert found[0].suggestion == "crit A"
 
 
 class TestSetpointBlocks:
@@ -605,6 +670,56 @@ class TestPipelineWiring:
         ctx = pipeline.component_contexts["comp-a"]
         assert "could NOT be reset automatically" in ctx
 
+    def test_blocking_mode_fails_when_the_reviewer_never_reported(
+        self, tmp_path: Path,
+    ) -> None:
+        """Round-1 review, P2. In advisory review mode a crashed reviewer
+        yields passed=True with infrastructure_error=True, so the review
+        failure path does not fire. setpoint_disagreements correctly
+        returns nothing, but in blocking mode "the second sensor never
+        reported" must not be spent as "the second sensor confirmed"."""
+        _, comp, transition, prd_path = _drive(
+            tmp_path,
+            review=ReviewResult(
+                passed=True, mode="advisory", infrastructure_error=True,
+                overall_notes="Review agent crashed: boom",
+            ),
+            prd=_prd(_story("A", passes=True)),
+            review_mode="advisory", setpoint_agreement="block",
+        )
+        assert transition == Transition.RETRYING
+        assert comp.failed_check == "setpoint"
+        assert _setpoint_findings(comp) == []
+        # Nothing points at a particular story, so nothing is reverted.
+        assert PRD.load(prd_path).user_stories[0].passes is True
+
+    def test_advisory_mode_does_not_fail_on_a_silent_reviewer(
+        self, tmp_path: Path,
+    ) -> None:
+        _, comp, transition, _ = _drive(
+            tmp_path,
+            review=ReviewResult(
+                passed=True, mode="advisory", infrastructure_error=True,
+            ),
+            prd=_prd(_story("A", passes=True)),
+            review_mode="advisory", setpoint_agreement="advisory",
+        )
+        assert transition != Transition.RETRYING
+
+    def test_no_claimed_story_means_nothing_to_confirm(
+        self, tmp_path: Path,
+    ) -> None:
+        """A silent reviewer only blocks when a claim is outstanding."""
+        _, comp, transition, _ = _drive(
+            tmp_path,
+            review=ReviewResult(
+                passed=True, mode="advisory", infrastructure_error=True,
+            ),
+            prd=_prd(_story("A", passes=False)),
+            review_mode="advisory", setpoint_agreement="block",
+        )
+        assert transition != Transition.RETRYING
+
     def test_unreadable_prd_records_but_does_not_block(
         self, tmp_path: Path,
     ) -> None:
@@ -685,3 +800,61 @@ class TestConfig:
     def test_invalid_constructor_value_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="setpoint_agreement"):
             FactoryConfig(setpoint_agreement="warn")
+
+    def test_from_env_reads_the_env_var(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round-1 review, P3. Unlike review_mode next door, this key has
+        an env var, so from_env must read it."""
+        monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "block")
+        assert FactoryConfig.from_env().setpoint_agreement == "block"
+
+    def test_from_env_rejects_an_invalid_value(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "warn")
+        with pytest.raises(ValueError, match="(?i)setpoint_agreement"):
+            FactoryConfig.from_env()
+
+    def test_env_value_is_not_reported_as_coming_from_toml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`ks factory` diffs load() against from_env() to tell the
+        operator where a setting came from. A field missing from
+        from_env is announced as "from kstrl.toml" when it came from the
+        environment, in the one place they look to find out."""
+        from kstrl.cli import _collect_toml_notes
+
+        monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "block")
+        notes: list[str] = []
+        _collect_toml_notes(
+            notes, "factory", FactoryConfig.load(tmp_path),
+            FactoryConfig.from_env(), set(),
+        )
+        assert not [n for n in notes if "setpoint_agreement" in n]
+
+
+class TestUnreachableGate:
+    """A governance control that cannot fire must say so at startup.
+
+    Same shape and same reason as ``merge_gate_unreachable_warning``:
+    believing a gate is on is worse than knowing it is off.
+    """
+
+    def test_block_with_review_skipped_warns(self) -> None:
+        warning = setpoint_gate_unreachable_warning(
+            FactoryConfig(setpoint_agreement="block", review_mode="skip"),
+        )
+        assert warning is not None
+        assert "never fires" in warning
+
+    def test_block_with_a_reviewer_running_is_silent(self) -> None:
+        for mode in ("hard", "advisory"):
+            assert setpoint_gate_unreachable_warning(
+                FactoryConfig(setpoint_agreement="block", review_mode=mode),
+            ) is None
+
+    def test_advisory_mode_never_warns(self) -> None:
+        assert setpoint_gate_unreachable_warning(
+            FactoryConfig(review_mode="skip"),
+        ) is None
