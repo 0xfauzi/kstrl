@@ -221,7 +221,7 @@ class TestCheckDiffScope:
 
         verification = VerificationResult(passed=False, checks=[result])
         ctx = IterationContext()
-        ctx.add_verification_failure(verification.as_context())
+        ctx.add_verification_failure(verification.as_context(), attempt=1)
         prompt_text = ctx.format_for_prompt()
 
         assert "Base branch: main" in prompt_text

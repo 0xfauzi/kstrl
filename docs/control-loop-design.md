@@ -1003,7 +1003,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | Order | Item | Issue | Status |
 |---|---|---|---|
 | 1 | 5.1 `ks sense` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[x]` merged in #237 |
-| 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[ ]` |
+| 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[x]` |
 | 3 | 5.2 set-point agreement | [#224](https://github.com/0xfauzi/kstrl/issues/224) | `[ ]` |
 | 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[ ]` |
 | 5 | 5.9 adversarial budget: hard mode halts | [#226](https://github.com/0xfauzi/kstrl/issues/226) | `[ ]` |

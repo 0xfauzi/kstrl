@@ -15,7 +15,11 @@ Recovery procedures for the failure modes that actually happen during factory ru
 - `dead_code` / `mutation`: the optional advanced checks failed.
 - `self_critique`: the engineer prompt's self-critique block is missing, too short, or filled with placeholder content.
 
-**Resolve**: the agent retries automatically up to `FactoryConfig.max_retries` (default 3). After that the component is marked FAILED and cascade-skips dependents. Manual options:
+**Resolve**: the agent retries automatically up to `FactoryConfig.max_retries` (default 3). After that the component is marked FAILED and cascade-skips dependents.
+
+The retry prompt shows the failures measured in the most recent attempt first, under `## Current failures`, because those are the ones still happening; findings from an earlier attempt whose gate never ran again are listed separately under `## Not re-measured`, and the retry prompt tells the agent to re-check them rather than assume they still apply. Findings that a later attempt re-measured or got past are replaced by a one-line count under `## Resolved or superseded`, so reading the prompt and not finding an old failure means it was cleared, not lost.
+
+Manual options:
 
 1. Edit the PRD to clarify the story; re-run.
 2. Increase `--max-retries`.

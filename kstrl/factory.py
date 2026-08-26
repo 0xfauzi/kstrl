@@ -3138,7 +3138,15 @@ def _run_factory_locked(
                 ctx = IterationContext.from_json(
                     component_contexts.get(cr.breaker, "{}")
                 )
-                ctx.add_contract_failure(cr.test_output[:500])
+                # breaker.retries was already incremented above, so it
+                # now names the attempt whose contract test failed, not
+                # the next one. (Issue #223's table says retries + 1;
+                # that holds at the pipeline sites, where the increment
+                # happens inside retry_or_fail AFTER the entry is
+                # recorded. Here it would be off by one.)
+                ctx.add_contract_failure(
+                    cr.test_output[:500], attempt=breaker.retries,
+                )
                 component_contexts[cr.breaker] = ctx.to_json()
                 manifest.save(manifest_path)
                 any_breaker_reset = True

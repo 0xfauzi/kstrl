@@ -1569,6 +1569,7 @@ class ComponentPipeline:
         ctx.add_iteration(IterationRecord(
             iteration=comp_result.iterations,
             success=False,
+            attempt=comp.retries + 1,
             error=(
                 "The previous attempt's PR hit a merge conflict with the "
                 "base branch; this attempt starts from the freshly merged "
@@ -1872,6 +1873,7 @@ class ComponentPipeline:
             ctx.add_iteration(IterationRecord(
                 iteration=comp_result.iterations,
                 success=False,
+                attempt=comp.retries + 1,
                 error=comp_result.error,
             ))
             if comp_result.guard_violations:
@@ -1897,7 +1899,10 @@ class ComponentPipeline:
                 # working no matter which layer caught the violation. A
                 # second wording for one failure is how a mislabel
                 # becomes a divergence (R7.1 / #179).
-                ctx.add_verification_failure(f"diff_scope: FAIL - {detail}")
+                ctx.add_verification_failure(
+                    f"diff_scope: FAIL - {detail}",
+                    attempt=comp.retries + 1,
+                )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
                         comp, "Mechanical verification failed", ctx.to_json(),
@@ -2033,8 +2038,14 @@ class ComponentPipeline:
                 ctx = IterationContext.from_json(
                     comp_result.context_json or "{}",
                 )
+                # R10.2: the engineer rank, even though the
+                # checkpoint sits after every sensor. Ranking it below
+                # the findings it follows makes earlier findings render
+                # as un-re-measured rather than resolved, which is the
+                # conservative side when a human asks for changes.
                 ctx.add_review_finding(
                     "Human reviewer requested changes at PR checkpoint",
+                    attempt=comp.retries + 1, phase="engineer",
                 )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
@@ -2291,7 +2302,9 @@ class ComponentPipeline:
             ctx = IterationContext.from_json(
                 comp_result.context_json or "{}",
             )
-            ctx.add_verification_failure(verification.as_context())
+            ctx.add_verification_failure(
+                verification.as_context(), attempt=comp.retries + 1,
+            )
             # R6.1: carry the parser's structured codes (ruff rule,
             # mypy error code, pytest exception type) into the
             # journal instead of the flattened string.
@@ -2343,7 +2356,8 @@ class ComponentPipeline:
             self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
-                f"git diff against {self.manifest.base_branch} failed: {exc}"
+                f"git diff against {self.manifest.base_branch} failed: {exc}",
+                attempt=comp.retries + 1,
             )
             return DiffPhaseResult(failure=PhaseFailure(
                 action=FailureAction.RETRY_OR_FAIL,
@@ -2420,7 +2434,8 @@ class ComponentPipeline:
                     "individual hunk fits the "
                     f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
                     "KB review cap; whole files may exceed it, since "
-                    "oversized files are chunked on hunk boundaries."
+                    "oversized files are chunked on hunk boundaries.",
+                    attempt=comp.retries + 1, phase="review",
                 )
                 return DiffPhaseResult(
                     diff=shared_diff,
@@ -2633,7 +2648,10 @@ class ComponentPipeline:
                 f"{review_result.fail_count} failures"
             )
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_review_finding(review_result.as_retry_context())
+            ctx.add_review_finding(
+                review_result.as_retry_context(),
+                attempt=comp.retries + 1, phase="review",
+            )
             # R6.1: journal the finding categories that failed the
             # gate ("review:scope_creep", "review:prd_criterion",
             # "review:infrastructure"), not the flattened reason.
@@ -2889,7 +2907,8 @@ class ComponentPipeline:
                 ctx.add_review_finding(
                     sec_result.as_retry_context()
                     or "Security review infrastructure error: "
-                    + sec_result.overall_notes
+                    + sec_result.overall_notes,
+                    attempt=comp.retries + 1, phase="security",
                 )
                 # R6.1: journal the vuln categories that failed the
                 # gate ("security:injection", ...), not the reason.
