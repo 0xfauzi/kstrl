@@ -36,7 +36,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   ever accumulated was re-rendered on every retry under "Fix ALL issues listed
   above before completing", so an agent on attempt 3 was told to fix attempt
   1's failures whether or not attempt 2 had already fixed them. Each failure
-  now records the attempt it was measured in and the phase that measured it;
+  now records the attempt it was measured in and the phase that measured it.
+  A finding is only retired when that is observed (the same phase produced a
+  fresh reading) or safely inferred (a phase that always runs once its
+  predecessor passes). Review and security are excluded from the inference
+  because an exhausted `max_adversarial_calls` budget downgrades them to skip
+  mid-run, so a later failure does not prove the reviewer ran.
   `IterationContext.from_json` still reads contexts serialised in the old
   shape, and those undated findings always render as un-re-measured
   (R10.2, #223).

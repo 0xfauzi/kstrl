@@ -1909,9 +1909,16 @@ class ComponentPipeline:
                         phase="verify", check="diff_scope",
                     ),
                 )
+            # R10.2: without an entry this attempt would carry no
+            # dated evidence, and the renderer would present an older
+            # attempt's finding as the current one. The guard branch
+            # above already records its own entry, so only the plain
+            # loop failure needs this.
+            error = comp_result.error or "Unknown error"
+            ctx.add_engineer_failure(error, attempt=comp.retries + 1)
             return PipelineOutcome(
                 transition=self.retry_or_fail(
-                    comp, comp_result.error or "Unknown error", ctx.to_json(),
+                    comp, error, ctx.to_json(),
                     phase="engineer", check="loop",
                 ),
             )
@@ -2043,9 +2050,9 @@ class ComponentPipeline:
                 # the findings it follows makes earlier findings render
                 # as un-re-measured rather than resolved, which is the
                 # conservative side when a human asks for changes.
-                ctx.add_review_finding(
+                ctx.add_engineer_failure(
                     "Human reviewer requested changes at PR checkpoint",
-                    attempt=comp.retries + 1, phase="engineer",
+                    attempt=comp.retries + 1,
                 )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
@@ -2357,7 +2364,7 @@ class ComponentPipeline:
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
                 f"git diff against {self.manifest.base_branch} failed: {exc}",
-                attempt=comp.retries + 1,
+                attempt=comp.retries + 1, phase="diff",
             )
             return DiffPhaseResult(failure=PhaseFailure(
                 action=FailureAction.RETRY_OR_FAIL,

@@ -7,6 +7,7 @@ from itertools import product
 
 from kstrl.context import (
     PHASE_RANK,
+    SKIPPABLE_PHASES,
     FailureEntry,
     IterationContext,
     IterationRecord,
@@ -285,6 +286,99 @@ class TestIterationContext:
             ctx.format_for_prompt(), HISTORY,
         )
 
+    def test_skippable_phase_is_not_retired_by_a_later_gate(self) -> None:
+        """A review finding survives a later contract failure.
+
+        Ranking review below contract would normally mean "review ran in
+        attempt 2 and passed". It does not: `_phase_review` downgrades to
+        SKIP when the adversarial LLM budget runs out and lets the
+        component proceed to contract testing, so the reviewer may never
+        have seen attempt 2 at all.
+        """
+        ctx = IterationContext()
+        ctx.add_review_finding("criterion X", attempt=1, phase="review")
+        ctx.add_contract_failure("tier 0 broke", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "tier 0 broke" in section(text, CURRENT)
+        assert "criterion X" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
+    def test_skippable_phase_is_still_superseded_by_itself(self) -> None:
+        """Retiring a review finding because review ran AGAIN is observed,
+        not inferred, so the skippable rule does not block it."""
+        ctx = IterationContext()
+        ctx.add_review_finding("criterion X", attempt=1, phase="review")
+        ctx.add_review_finding("criterion Y", attempt=2, phase="review")
+
+        text = ctx.format_for_prompt()
+        assert section(text, CURRENT) == "criterion Y"
+        assert "criterion X" not in text
+        assert "1 earlier finding(s) from review" in section(text, RESOLVED)
+
+    def test_security_is_skippable_too(self) -> None:
+        ctx = IterationContext()
+        ctx.add_review_finding("sql injection", attempt=1, phase="security")
+        ctx.add_contract_failure("tier 0 broke", attempt=2)
+        assert "sql injection" in section(
+            ctx.format_for_prompt(), NOT_REMEASURED,
+        )
+
+    def test_engineer_only_attempt_retires_nothing(self) -> None:
+        """An attempt that never got past the engineer loop records an
+        IterationRecord and no entry. No sensor ran, so nothing earlier
+        may be retired, and nothing earlier may be shown as current."""
+        ctx = IterationContext()
+        ctx.add_verification_failure("linter: E501", attempt=1)
+        ctx.add_iteration(IterationRecord(
+            4, False, "agent stalled: no file changed", attempt=2,
+        ))
+
+        text = ctx.format_for_prompt()
+        assert "Attempt 3" in text
+        assert section(text, CURRENT) == ""
+        assert "E501" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+        assert "agent stalled" in section(text, HISTORY)
+
+    def test_diff_failure_is_not_superseded_by_verification(self) -> None:
+        """The diff fetch is its own sensor. Verification failing in
+        attempt 2 means the diff was never fetched again, so the old diff
+        failure is un-re-measured rather than superseded."""
+        ctx = IterationContext()
+        ctx.add_verification_failure(
+            "git diff against main failed: boom", attempt=1, phase="diff",
+        )
+        ctx.add_verification_failure("linter: E501", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "E501" in section(text, CURRENT)
+        assert "git diff against main failed" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+        # It still reads back through the pre-R10.2 view it used to fill.
+        assert ctx.verification_failures == [
+            "git diff against main failed: boom", "linter: E501",
+        ]
+
+    def test_diff_failure_is_retired_once_review_runs(self) -> None:
+        """Review failing in attempt 2 does prove the diff was fetched:
+        review cannot run without it, and diff is not skippable."""
+        ctx = IterationContext()
+        ctx.add_verification_failure(
+            "git diff failed: boom", attempt=1, phase="diff",
+        )
+        ctx.add_review_finding("criterion X", attempt=2, phase="review")
+
+        text = ctx.format_for_prompt()
+        assert "boom" not in text
+        assert "1 earlier finding(s) from diff" in section(text, RESOLVED)
+
+    def test_engineer_failure_helper_ranks_as_engineer(self) -> None:
+        ctx = IterationContext()
+        ctx.add_engineer_failure("guard tripped", attempt=1)
+        assert ctx.entries[0].phase == "engineer"
+        assert ctx.review_findings == ["guard tripped"]
+
     def test_closing_instruction_changed(self) -> None:
         ctx = IterationContext()
         ctx.add_verification_failure("E501", attempt=1)
@@ -347,14 +441,23 @@ class TestBucketRuleSweep:
                     q = PHASE_RANK[sequence[-1]]
                     assert [e.attempt for e in b.current] == [n]
                     for e in b.not_remeasured:
+                        rank = PHASE_RANK[e.phase]
                         assert e.attempt == 0 or (
-                            e.attempt < n and PHASE_RANK[e.phase] > q
+                            e.attempt < n and (
+                                rank > q
+                                or (rank < q and e.phase in SKIPPABLE_PHASES)
+                            )
                         )
                     for e in b.resolved:
+                        rank = PHASE_RANK[e.phase]
                         assert 0 < e.attempt < n
-                        assert PHASE_RANK[e.phase] <= q
+                        # Retired only when observed (same phase re-ran)
+                        # or safely inferred (a phase that always runs).
+                        assert rank == q or (
+                            rank < q and e.phase not in SKIPPABLE_PHASES
+                        )
                     cases += 1
-        assert cases == 1560
+        assert cases == 3108
 
     def test_current_section_does_not_grow_with_repeated_failures(self) -> None:
         sizes = []

@@ -32,10 +32,24 @@ from typing import Any
 PHASE_RANK: dict[str, int] = {
     "engineer": 0,
     "verification": 1,
-    "review": 2,
-    "security": 3,
-    "contract": 4,
+    "diff": 2,
+    "review": 3,
+    "security": 4,
+    "contract": 5,
 }
+
+#: Phases whose having run in an attempt cannot be inferred from a
+#: higher-ranked failure in that attempt.
+#:
+#: The rank rule reads "an entry ranked below Q means that phase ran in
+#: attempt N and passed, or Q would be lower". That holds only for a
+#: phase that always runs once its predecessor passes. Review and
+#: security do not: `_phase_review` and `_phase_security` downgrade to
+#: SKIP when the adversarial LLM budget runs out and let the component
+#: carry on, so a later contract failure does not prove the reviewer
+#: ran. Entries from these phases are only ever retired by a fresh
+#: reading from the same phase, which is observed rather than inferred.
+SKIPPABLE_PHASES: frozenset[str] = frozenset({"review", "security"})
 
 #: Attempt number carried by entries recovered from a context serialised
 #: before entries existed. Their real age is unknown.
@@ -45,7 +59,7 @@ LEGACY_ATTEMPT = 0
 #: list each phase's text landed in before R10.2.
 _VIEW_PHASES: dict[str, tuple[str, ...]] = {
     "review_findings": ("engineer", "review", "security"),
-    "verification_failures": ("verification",),
+    "verification_failures": ("verification", "diff"),
     "contract_failures": ("contract",),
 }
 
@@ -137,8 +151,18 @@ class IterationContext:
         checkpoint call sites all route their text through here."""
         self._add(finding, attempt, phase)
 
-    def add_verification_failure(self, failure: str, *, attempt: int) -> None:
-        self._add(failure, attempt, "verification")
+    def add_engineer_failure(self, failure: str, *, attempt: int) -> None:
+        self._add(failure, attempt, "engineer")
+
+    def add_verification_failure(
+        self, failure: str, *, attempt: int, phase: str = "verification",
+    ) -> None:
+        """``phase`` is "diff" at the one site where the diff fetch
+        fails: that failure used to land in ``verification_failures``,
+        and the derived view keeps it there, but it must rank as its own
+        sensor or a later verification failure would retire it as though
+        the diff had been fetched again."""
+        self._add(failure, attempt, phase)
 
     def add_contract_failure(self, failure: str, *, attempt: int) -> None:
         self._add(failure, attempt, "contract")
@@ -170,30 +194,35 @@ class IterationContext:
     def _buckets(self) -> _Buckets:
         """Sort the entries into current, not re-measured, and resolved.
 
-        Let ``N`` be the latest attempt with any entry and ``Q`` the rank
-        of the highest-ranked phase with an entry from ``N`` (an attempt
-        stops at its first failing gate, so in practice that is the gate
-        that fired; the max is the safe general form).
+        Let ``N`` be the latest attempt any evidence came from and ``Q``
+        the rank of the highest-ranked phase with an entry from ``N`` (an
+        attempt stops at its first failing gate, so in practice that is
+        the gate that fired; the max is the safe general form).
 
         - attempt ``N``: current, rendered in full.
         - rank above ``Q``: that sensor never ran in attempt ``N``, so
           its reading is un-re-measured, not stale. Rendered in full.
-        - rank at or below ``Q``: rank below ``Q`` means the phase ran in
-          attempt ``N`` and passed, or ``Q`` would be lower; rank equal
-          to ``Q`` means the same sensor produced a fresh reading that
-          supersedes the old one. Counted, not rendered.
+        - rank equal to ``Q``: the same sensor produced a fresh reading
+          that supersedes the old one. Observed, so it holds even for a
+          skippable phase. Counted, not rendered.
+        - rank below ``Q``: the phase ran in attempt ``N`` and passed, or
+          ``Q`` would be lower. That is an inference, and it is only
+          sound for a phase that always runs once its predecessor
+          passes, so ``SKIPPABLE_PHASES`` is excluded from it.
+
+        When attempt ``N`` produced no entry at all, ``Q`` sits below
+        every rank and nothing is retired: a plain engineer-loop failure
+        and a merge-conflict restart record an ``IterationRecord`` and no
+        entry, and no sensor ran in such an attempt.
         """
         current: list[FailureEntry] = []
         not_remeasured: list[FailureEntry] = []
         resolved: list[FailureEntry] = []
 
-        live = [e for e in self.entries if e.attempt > LEGACY_ATTEMPT]
-        if not live:
-            not_remeasured.extend(self.entries)
-            return _Buckets(current, not_remeasured, resolved, 0)
+        n = self._latest_attempt()
+        ranks = [PHASE_RANK[e.phase] for e in self.entries if e.attempt == n]
+        q = max(ranks) if ranks else -1
 
-        n = max(e.attempt for e in live)
-        q = max(PHASE_RANK[e.phase] for e in live if e.attempt == n)
         for entry in self.entries:
             if entry.attempt == LEGACY_ATTEMPT:
                 # Special-cased AHEAD of the rank comparison. The rank
@@ -207,6 +236,10 @@ class IterationContext:
             elif entry.attempt == n:
                 current.append(entry)
             elif PHASE_RANK[entry.phase] > q:
+                not_remeasured.append(entry)
+            elif PHASE_RANK[entry.phase] == q:
+                resolved.append(entry)
+            elif entry.phase in SKIPPABLE_PHASES:
                 not_remeasured.append(entry)
             else:
                 resolved.append(entry)
