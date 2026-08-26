@@ -113,11 +113,21 @@ class IterationRecord:
 @dataclass(frozen=True)
 class FailureEntry:
     """One sensor reading: a failure, the attempt it was measured in, and
-    the phase that measured it."""
+    the phase that measured it.
+
+    ``infrastructure`` marks an entry that records the sensor FAILING TO
+    RUN rather than a measurement: a crashed reviewer, a git diff that
+    could not be fetched, a diff that could not be split for review. The
+    codebase already draws this line with ``Finding.infrastructure_error``
+    (E9), and it matters here for the same reason: a crash is not a fresh
+    reading, so it must not supersede an earlier real finding from the
+    same phase.
+    """
 
     attempt: int
     phase: str
     text: str
+    infrastructure: bool = False
 
 
 @dataclass(frozen=True)
@@ -164,37 +174,45 @@ class IterationContext:
 
     def add_review_finding(
         self, finding: str, *, attempt: int, phase: str,
+        infrastructure: bool = False,
     ) -> None:
-        """``phase`` is explicit: the review, security, engineer-guard and
-        checkpoint call sites all route their text through here."""
-        self._add(finding, attempt, phase)
+        """``phase`` is explicit: the review and security call sites both
+        route their text through here. Pass ``infrastructure=True`` when
+        the reviewer crashed instead of reporting."""
+        self._add(finding, attempt, phase, infrastructure)
 
     def add_engineer_failure(self, failure: str, *, attempt: int) -> None:
         self._add(failure, attempt, "engineer")
 
     def add_verification_failure(
         self, failure: str, *, attempt: int, phase: str = "verification",
+        infrastructure: bool = False,
     ) -> None:
         """``phase`` is "diff" at the one site where the diff fetch
         fails: that failure used to land in ``verification_failures``,
         and the derived view keeps it there, but it must rank as its own
         sensor or a later verification failure would retire it as though
-        the diff had been fetched again."""
-        self._add(failure, attempt, phase)
+        the diff had been fetched again. Pass ``infrastructure=True``
+        when the phase could not run at all."""
+        self._add(failure, attempt, phase, infrastructure)
 
     def add_contract_failure(self, failure: str, *, attempt: int) -> None:
         self._add(failure, attempt, "contract")
 
-    def _add(self, text: str, attempt: int, phase: str) -> None:
+    def _add(
+        self, text: str, attempt: int, phase: str,
+        infrastructure: bool = False,
+    ) -> None:
         if not text:
             return
         if phase not in PHASE_RANK:
             raise ValueError(
                 f"unknown phase {phase!r}; expected one of {sorted(PHASE_RANK)}"
             )
-        self.entries.append(
-            FailureEntry(attempt=attempt, phase=phase, text=text),
-        )
+        self.entries.append(FailureEntry(
+            attempt=attempt, phase=phase, text=text,
+            infrastructure=infrastructure,
+        ))
 
     def _latest_attempt(self) -> int:
         """The latest attempt any evidence came from.
@@ -222,7 +240,9 @@ class IterationContext:
           its reading is un-re-measured, not stale. Rendered in full.
         - rank equal to ``Q``: the same sensor produced a fresh reading
           that supersedes the old one. Observed, so it holds even for a
-          skippable phase. Counted, not rendered.
+          skippable phase - but only when attempt ``N``'s entry at that
+          rank is a measurement. A sensor that crashed produced no
+          reading, so it retires nothing.
         - rank below ``Q``: the phase ran in attempt ``N`` and passed, or
           ``Q`` would be lower. That is an inference, and it is only
           sound for a phase that always runs once its predecessor
@@ -238,8 +258,15 @@ class IterationContext:
         resolved: list[FailureEntry] = []
 
         n = self._latest_attempt()
-        ranks = [PHASE_RANK[e.phase] for e in self.entries if e.attempt == n]
+        latest = [e for e in self.entries if e.attempt == n]
+        ranks = [PHASE_RANK[e.phase] for e in latest]
         q = max(ranks) if ranks else -1
+        # A crashed sensor proves the phases BEFORE it ran (the attempt
+        # got that far), but it is not a reading of its own phase, so it
+        # cannot supersede an earlier real finding there.
+        measured_ranks = {
+            PHASE_RANK[e.phase] for e in latest if not e.infrastructure
+        }
 
         for entry in self.entries:
             if entry.attempt == LEGACY_ATTEMPT:
@@ -256,7 +283,10 @@ class IterationContext:
             elif PHASE_RANK[entry.phase] > q:
                 not_remeasured.append(entry)
             elif PHASE_RANK[entry.phase] == q:
-                resolved.append(entry)
+                if q in measured_ranks:
+                    resolved.append(entry)
+                else:
+                    not_remeasured.append(entry)
             elif entry.phase in SKIPPABLE_PHASES:
                 not_remeasured.append(entry)
             else:
@@ -361,7 +391,12 @@ class IterationContext:
                 for r in self.records
             ],
             "entries": [
-                {"attempt": e.attempt, "phase": e.phase, "text": e.text}
+                {
+                    "attempt": e.attempt,
+                    "phase": e.phase,
+                    "text": e.text,
+                    "infrastructure": e.infrastructure,
+                }
                 for e in self.entries
             ],
         }
@@ -389,6 +424,7 @@ class IterationContext:
                     attempt=entry_data["attempt"],
                     phase=entry_data["phase"],
                     text=entry_data["text"],
+                    infrastructure=entry_data.get("infrastructure", False),
                 ))
             return ctx
         for list_name, phase in _LEGACY_LIST_PHASE.items():

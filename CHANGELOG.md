@@ -41,7 +41,10 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   fresh reading) or safely inferred (a phase that always runs once its
   predecessor passes). Review and security are excluded from the inference
   because an exhausted `max_adversarial_calls` budget downgrades them to skip
-  mid-run, so a later failure does not prove the reviewer ran.
+  mid-run, so a later failure does not prove the reviewer ran. A sensor that
+  crashed rather than reported retires nothing either: a crashed reviewer, an
+  unfetchable diff and an unsplittable diff are recorded as infrastructure
+  entries, the same line `Finding.infrastructure_error` already draws.
   `IterationContext.from_json` still reads contexts serialised in the old
   shape, and those undated findings always render as un-re-measured
   (R10.2, #223).

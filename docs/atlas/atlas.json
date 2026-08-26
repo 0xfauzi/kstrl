@@ -1,5 +1,5 @@
 {
- "built_at_commit": "1c7a12452e86722627a7919ab0ca39ae70eec1dd",
+ "built_at_commit": "daa51ac507726f8c8b1fa7b7c3bd4dcf1b5513ca",
  "components": {
   "kstrl": {
    "classes": [],
@@ -2462,9 +2462,9 @@
       "def verification_failures(self) -> list[str]",
       "def contract_failures(self) -> list[str]",
       "def add_iteration(self, record: IterationRecord) -> None",
-      "def add_review_finding(self, finding: str, *, attempt: int, phase: str) -> None",
+      "def add_review_finding(self, finding: str, *, attempt: int, phase: str, infrastructure: bool=False) -> None",
       "def add_engineer_failure(self, failure: str, *, attempt: int) -> None",
-      "def add_verification_failure(self, failure: str, *, attempt: int, phase: str='verification') -> None",
+      "def add_verification_failure(self, failure: str, *, attempt: int, phase: str='verification', infrastructure: bool=False) -> None",
       "def add_contract_failure(self, failure: str, *, attempt: int) -> None",
       "def format_for_prompt(self) -> str",
       "def to_json(self) -> str",
@@ -2497,16 +2497,19 @@
     "kstrl.pipeline"
    ],
    "imports": [],
-   "loc": 399,
+   "loc": 435,
    "package": "kstrl",
    "plane": "core",
-   "sha": "8ef8c6958d7b",
+   "sha": "ed7fde4e365c",
    "tests": [
+    "test_a_real_reading_still_supersedes_after_a_crash",
     "test_add_empty_string_ignored",
     "test_add_iteration",
     "test_add_review_finding",
     "test_cleared_skippable_finding_is_shown_not_dropped",
     "test_closing_instruction_changed",
+    "test_crashed_sensor_does_not_supersede_a_real_finding",
+    "test_crashed_sensor_still_retires_lower_ranked_phases",
     "test_current_section_does_not_grow_with_repeated_failures",
     "test_derived_views_group_by_sensor_phase",
     "test_derived_views_still_work",
@@ -2523,13 +2526,10 @@
     "test_from_json_empty_object",
     "test_history_keeps_the_error_when_the_attempt_had_no_entry",
     "test_in_loop_guard_does_not_retire_a_phase_one_failure",
-    "test_json_round_trip_preserves_attempt_and_phase",
-    "test_json_roundtrip",
-    "test_legacy_entry_never_resolves",
-    "test_legacy_json_loads_as_not_remeasured"
+    "test_infrastructure_flag_survives_the_json_round_trip"
    ],
-   "tests_primary": 36,
-   "tests_total": 98,
+   "tests_primary": 40,
+   "tests_total": 102,
    "uses": {}
   },
   "kstrl.contract": {
@@ -6395,10 +6395,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3364,
+   "loc": 3368,
    "package": "kstrl",
    "plane": "core",
-   "sha": "ea9bdb6cffd2",
+   "sha": "451144b0c1b1",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",

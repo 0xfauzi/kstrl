@@ -453,6 +453,70 @@ class TestIterationContext:
         assert ctx.review_findings == ["diff_scope: FAIL - evil.txt"]
         assert ctx.verification_failures == ["The diff is too large to review"]
 
+    def test_crashed_sensor_does_not_supersede_a_real_finding(self) -> None:
+        """A security review that CRASHED in attempt 2 is not a reading of
+        attempt 2, so attempt 1's high finding survives.
+
+        Without this, a crash would retire the finding, and if the
+        adversarial budget were then exhausted the security phase would
+        skip and attempt 3 would never see the vulnerability at all.
+        """
+        ctx = IterationContext()
+        ctx.add_review_finding("sql injection in /users", attempt=1, phase="security")
+        ctx.add_review_finding(
+            "Security review infrastructure error: model timed out",
+            attempt=2, phase="security", infrastructure=True,
+        )
+
+        text = ctx.format_for_prompt()
+        assert "infrastructure error" in section(text, CURRENT)
+        assert "sql injection in /users" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
+    def test_crashed_sensor_still_retires_lower_ranked_phases(self) -> None:
+        """Reaching the security phase at all proves verification ran and
+        passed, crash or no crash, so a verification finding is retired."""
+        ctx = IterationContext()
+        ctx.add_verification_failure("linter: E501", attempt=1)
+        ctx.add_review_finding(
+            "Security review crashed", attempt=2, phase="security",
+            infrastructure=True,
+        )
+
+        text = ctx.format_for_prompt()
+        assert "E501" not in text
+        assert "1 earlier finding(s) from verification" in section(text, RESOLVED)
+
+    def test_a_real_reading_still_supersedes_after_a_crash(self) -> None:
+        """The flag is per entry, not per phase: attempt 3 measuring for
+        real retires both the attempt-1 finding and the attempt-2 crash."""
+        ctx = IterationContext()
+        ctx.add_review_finding("sql injection", attempt=1, phase="security")
+        ctx.add_review_finding(
+            "crashed", attempt=2, phase="security", infrastructure=True,
+        )
+        ctx.add_review_finding("xss in /search", attempt=3, phase="security")
+
+        text = ctx.format_for_prompt()
+        assert section(text, CURRENT) == "xss in /search"
+        assert "sql injection" not in text
+        assert "2 earlier finding(s) from security" in section(text, RESOLVED)
+
+    def test_infrastructure_flag_survives_the_json_round_trip(self) -> None:
+        ctx = IterationContext()
+        ctx.add_verification_failure(
+            "git diff failed", attempt=1, phase="diff", infrastructure=True,
+        )
+        ctx.add_verification_failure("linter: E501", attempt=1)
+        restored = IterationContext.from_json(ctx.to_json())
+        assert [e.infrastructure for e in restored.entries] == [True, False]
+        # Entries written before the flag existed default to measured.
+        legacy = IterationContext.from_json(
+            '{"records": [], "entries": ['
+            '{"attempt": 1, "phase": "review", "text": "x"}]}'
+        )
+        assert legacy.entries[0].infrastructure is False
+
     def test_closing_instruction_changed(self) -> None:
         ctx = IterationContext()
         ctx.add_verification_failure("E501", attempt=1)

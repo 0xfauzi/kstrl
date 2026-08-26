@@ -2372,6 +2372,7 @@ class ComponentPipeline:
             ctx.add_verification_failure(
                 f"git diff against {self.manifest.base_branch} failed: {exc}",
                 attempt=comp.retries + 1, phase="diff",
+                infrastructure=True,
             )
             return DiffPhaseResult(failure=PhaseFailure(
                 action=FailureAction.RETRY_OR_FAIL,
@@ -2453,6 +2454,7 @@ class ComponentPipeline:
                     # the diff for the reviewer, inside _phase_diff, so
                     # the reviewer produced no reading this attempt.
                     attempt=comp.retries + 1, phase="diff",
+                    infrastructure=True,
                 )
                 return DiffPhaseResult(
                     diff=shared_diff,
@@ -2668,6 +2670,7 @@ class ComponentPipeline:
             ctx.add_review_finding(
                 review_result.as_retry_context(),
                 attempt=comp.retries + 1, phase="review",
+                infrastructure=review_result.infrastructure_error,
             )
             # R6.1: journal the finding categories that failed the
             # gate ("review:scope_creep", "review:prd_criterion",
@@ -2926,6 +2929,7 @@ class ComponentPipeline:
                     or "Security review infrastructure error: "
                     + sec_result.overall_notes,
                     attempt=comp.retries + 1, phase="security",
+                    infrastructure=sec_result.infrastructure_error,
                 )
                 # R6.1: journal the vuln categories that failed the
                 # gate ("security:injection", ...), not the reason.
