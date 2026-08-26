@@ -35,6 +35,7 @@ from kstrl.review import (
     revert_unconfirmed_stories,
     setpoint_blocks,
     setpoint_disagreements,
+    setpoint_retry_context,
 )
 from tests.test_pipeline import (
     _component,
@@ -301,6 +302,61 @@ class TestRevert:
         )
 
 
+class TestRetryContext:
+    """Measured on a real run: the criterion text alone did not help.
+
+    In block mode the reviewer's reasoning reaches the agent by no other
+    route, because ``as_retry_context`` is added only when the review
+    FAILED and a set-point block happens on a review that passed. A real
+    factory run retried with the criterion text only and repeated the
+    same defect; that is n=1 and not proof of causation, but handing the
+    agent evidence it otherwise never sees costs nothing.
+    """
+
+    def test_carries_the_reviewers_evidence_not_just_the_criterion(
+        self,
+    ) -> None:
+        prd = _prd(_story("A", passes=True))
+        review = _review(CriterionReview(
+            criterion="raises on names over 64 characters",
+            verdict="advisory",
+            explanation="__init__.py:7-11 strips before measuring",
+            suggestion="measure before stripping",
+            story_id="A",
+        ))
+        found = setpoint_disagreements(prd, review, severity="fail")
+        text = setpoint_retry_context(found, review)
+        assert "raises on names over 64 characters" in text
+        assert "__init__.py:7-11 strips before measuring" in text
+        assert "measure before stripping" in text
+
+    def test_says_the_flags_were_reset(self) -> None:
+        prd = _prd(_story("A", passes=True))
+        review = _review(_criterion("A", "fail"))
+        found = setpoint_disagreements(prd, review, severity="fail")
+        assert "have been reset to false" in setpoint_retry_context(
+            found, review,
+        )
+
+    def test_does_not_claim_a_revert_that_did_not_happen(self) -> None:
+        prd = _prd(_story("A", passes=True))
+        review = _review(_criterion("A", "fail"))
+        found = setpoint_disagreements(prd, review, severity="fail")
+        text = setpoint_retry_context(found, review, reverted=False)
+        assert "could NOT be reset automatically" in text
+        assert "have been reset to false" not in text
+
+    def test_uncovered_story_says_there_is_no_evidence(self) -> None:
+        prd = _prd(_story("A", passes=True))
+        review = _review()
+        found = setpoint_disagreements(prd, review, severity="fail")
+        text = setpoint_retry_context(found, review)
+        assert "no verdict for this story" in text
+
+    def test_empty_when_nothing_disagrees(self) -> None:
+        assert setpoint_retry_context([], _review()) == ""
+
+
 class TestPrdSave:
     def test_save_of_an_unchanged_prd_is_byte_identical(
         self, tmp_path: Path,
@@ -479,6 +535,9 @@ class TestPipelineWiring:
         ctx = pipeline.component_contexts["comp-a"]
         assert "Set-point disagreement" in ctx
         assert "b-crit" in ctx
+        # The reviewer's reasoning reaches the agent by no other route
+        # on this path, so it must be in the context.
+        assert "advisory because" in ctx
 
     def test_block_mode_leaves_an_agreeing_run_alone(
         self, tmp_path: Path,

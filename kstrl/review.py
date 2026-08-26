@@ -446,7 +446,8 @@ def setpoint_disagreements(
 
 
 def setpoint_retry_context(
-    disagreements: list[Finding], *, reverted: bool = True,
+    disagreements: list[Finding], review: ReviewResult,
+    *, reverted: bool = True,
 ) -> str:
     """R10.3: the set-point findings as text for the engineer's retry.
 
@@ -455,6 +456,14 @@ def setpoint_retry_context(
     changed under it. ``reverted=False`` when the rewritten PRD could
     not be saved: the agent is then asked to reset the flags itself,
     rather than being told about a change that did not happen.
+
+    It renders the reviewer's own explanation and suggestion per unmet
+    criterion, not just the criterion text. The criterion text alone
+    tells the agent nothing it did not already read in the PRD, and this
+    is the one retry path where the reviewer's reasoning does not reach
+    the agent by another route: ``as_retry_context`` is added only when
+    the review FAILED, and a set-point block happens on a review that
+    passed.
     """
     if not disagreements:
         return ""
@@ -472,8 +481,20 @@ def setpoint_retry_context(
     ]
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")
-        if finding.suggestion:
-            lines.append(f"  - Unmet criteria: {finding.suggestion}")
+        unmet = review.non_pass_criteria(finding.location)
+        if not unmet:
+            lines.append(
+                "  - The reviewer returned no verdict for this story, so "
+                "there is no criterion-level evidence to act on. Check "
+                "the story against its acceptance criteria yourself."
+            )
+            continue
+        for cr in unmet:
+            lines.append(f"  - [{cr.verdict}] {cr.criterion}")
+            if cr.explanation:
+                lines.append(f"    - Reviewer: {cr.explanation}")
+            if cr.suggestion:
+                lines.append(f"    - Suggestion: {cr.suggestion}")
     return "\n".join(lines)
 
 

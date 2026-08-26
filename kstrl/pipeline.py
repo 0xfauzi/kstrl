@@ -2784,7 +2784,7 @@ class ComponentPipeline:
                     "claimed done but not confirmed by review"
                 ),
                 retry_text=setpoint_retry_context(
-                    disagreements, reverted=saved,
+                    disagreements, review_result, reverted=saved,
                 ),
             )
 
