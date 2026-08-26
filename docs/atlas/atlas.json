@@ -1,5 +1,5 @@
 {
- "built_at_commit": "0f5e0f10f640c705643bde4c69087f73ba6aab09",
+ "built_at_commit": "88960dda9657dd42034b46d17090a2f1a4ae6701",
  "components": {
   "kstrl": {
    "classes": [],
@@ -6393,7 +6393,7 @@
    "loc": 3347,
    "package": "kstrl",
    "plane": "core",
-   "sha": "7977fd47b500",
+   "sha": "36e8ea70a90b",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
