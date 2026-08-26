@@ -1,5 +1,5 @@
 {
- "built_at_commit": "407dc93a11a7c4f6e33a6a325ccea0fee02124b4",
+ "built_at_commit": "dc23873444d0404abc47821a683b5402d0692d66",
  "components": {
   "kstrl": {
    "classes": [],
@@ -3334,7 +3334,7 @@
     "test_signatures_from_findings"
    ],
    "tests_primary": 29,
-   "tests_total": 204,
+   "tests_total": 205,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -3512,7 +3512,7 @@
     "test_a_disabled_ceiling_is_never_blamed"
    ],
    "tests_primary": 15,
-   "tests_total": 1203,
+   "tests_total": 1204,
    "uses": {
     "kstrl.agents": [
      "ClaudeCodeAgent",
@@ -4020,7 +4020,7 @@
     "test_unknown_category_still_serializes"
    ],
    "tests_primary": 25,
-   "tests_total": 626,
+   "tests_total": 627,
    "uses": {}
   },
   "kstrl.fixtures": {
@@ -5933,7 +5933,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1645,
+   "tests_total": 1646,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6406,10 +6406,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3493,
+   "loc": 3517,
    "package": "kstrl",
    "plane": "core",
-   "sha": "d65a331fc40f",
+   "sha": "8b7985f9c7dc",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -6438,7 +6438,7 @@
     "test_nothing_recorded_when_knowledge_disabled"
    ],
    "tests_primary": 56,
-   "tests_total": 384,
+   "tests_total": 385,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig"
@@ -6808,7 +6808,7 @@
     "test_blocking_finding_produces_the_journal_signature"
    ],
    "tests_primary": 8,
-   "tests_total": 255,
+   "tests_total": 256,
    "uses": {
     "kstrl.findings": [
      "SETPOINT_DISAGREEMENT_CATEGORY",
@@ -6895,7 +6895,7 @@
     "test_bad_cli_entries_rejected"
    ],
    "tests_primary": 0,
-   "tests_total": 191,
+   "tests_total": 192,
    "uses": {}
   },
   "kstrl.proposals": {
@@ -7345,7 +7345,7 @@
     {
      "doc": "R10.3: the set-point findings as text for the engineer's retry.",
      "name": "setpoint_retry_context",
-     "signature": "def setpoint_retry_context(disagreements: list[Finding]) -> str"
+     "signature": "def setpoint_retry_context(disagreements: list[Finding], *, reverted: bool=True) -> str"
     },
     {
      "doc": "R10.3: reset ``passes`` on every story in *disagreements*.",
@@ -7398,10 +7398,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 1128,
+   "loc": 1137,
    "package": "kstrl",
    "plane": "core",
-   "sha": "a48ac5276e54",
+   "sha": "45134bbf8812",
    "tests": [
     "test_advisory_concerns_do_not_block",
     "test_advisory_mode_downgrades_concern_failures",
@@ -7430,7 +7430,7 @@
     "test_a_copied_config_keeps_the_log_inside_component_scope"
    ],
    "tests_primary": 19,
-   "tests_total": 797,
+   "tests_total": 798,
    "uses": {
     "kstrl.agents.base": [
      "Agent"
