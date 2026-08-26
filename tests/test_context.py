@@ -419,6 +419,40 @@ class TestIterationContext:
         assert ctx.entries[0].phase == "engineer"
         assert ctx.review_findings == ["guard tripped"]
 
+    def test_cleared_skippable_finding_is_shown_not_dropped(self) -> None:
+        """The accepted cost of the skippable rule, pinned so it cannot
+        drift in silence.
+
+        Attempt 2 passes review and fails security. A passing review
+        records no entry, so attempt 1's review finding still renders as
+        un-re-measured even though the reviewer cleared it. That is a
+        bounded over-show, flagged to the agent as needing a re-check;
+        the alternative is dropping a live finding when the budget
+        skipped review instead. Issue #247 removes it by recording which
+        phases ran.
+        """
+        ctx = IterationContext()
+        ctx.add_review_finding("criterion X", attempt=1, phase="review")
+        ctx.add_review_finding("sql injection", attempt=2, phase="security")
+
+        text = ctx.format_for_prompt()
+        assert "sql injection" in section(text, CURRENT)
+        assert "criterion X" in section(text, NOT_REMEASURED)
+        assert "do not assume they still apply" in text
+
+    def test_derived_views_group_by_sensor_phase(self) -> None:
+        """The two texts that moved view when they were re-ranked."""
+        ctx = IterationContext()
+        ctx.add_engineer_failure("diff_scope: FAIL - evil.txt", attempt=1)
+        ctx.add_verification_failure(
+            "The diff is too large to review", attempt=1, phase="diff",
+        )
+        # Pre-R10.2 these were the other way round: the guard called
+        # add_verification_failure and the unsplittable diff called
+        # add_review_finding.
+        assert ctx.review_findings == ["diff_scope: FAIL - evil.txt"]
+        assert ctx.verification_failures == ["The diff is too large to review"]
+
     def test_closing_instruction_changed(self) -> None:
         ctx = IterationContext()
         ctx.add_verification_failure("E501", attempt=1)

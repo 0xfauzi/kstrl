@@ -1,5 +1,5 @@
 {
- "built_at_commit": "09fabb3f718fbd86940028bb716fb2b0d4f37169",
+ "built_at_commit": "1c7a12452e86722627a7919ab0ca39ae70eec1dd",
  "components": {
   "kstrl": {
    "classes": [],
@@ -2497,16 +2497,18 @@
     "kstrl.pipeline"
    ],
    "imports": [],
-   "loc": 381,
+   "loc": 399,
    "package": "kstrl",
    "plane": "core",
-   "sha": "5736f1dd3ff4",
+   "sha": "8ef8c6958d7b",
    "tests": [
     "test_add_empty_string_ignored",
     "test_add_iteration",
     "test_add_review_finding",
+    "test_cleared_skippable_finding_is_shown_not_dropped",
     "test_closing_instruction_changed",
     "test_current_section_does_not_grow_with_repeated_failures",
+    "test_derived_views_group_by_sensor_phase",
     "test_derived_views_still_work",
     "test_diff_failure_is_not_superseded_by_verification",
     "test_diff_failure_is_retired_once_review_runs",
@@ -2524,12 +2526,10 @@
     "test_json_round_trip_preserves_attempt_and_phase",
     "test_json_roundtrip",
     "test_legacy_entry_never_resolves",
-    "test_legacy_json_loads_as_not_remeasured",
-    "test_legacy_record_history_falls_back_to_position",
-    "test_not_remeasured_when_earlier_phase_fails"
+    "test_legacy_json_loads_as_not_remeasured"
    ],
-   "tests_primary": 34,
-   "tests_total": 96,
+   "tests_primary": 36,
+   "tests_total": 98,
    "uses": {}
   },
   "kstrl.contract": {

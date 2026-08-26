@@ -49,14 +49,32 @@ PHASE_RANK: dict[str, int] = {
 #: carry on, so a later contract failure does not prove the reviewer
 #: ran. Entries from these phases are only ever retired by a fresh
 #: reading from the same phase, which is observed rather than inferred.
+#:
+#: The cost, accepted deliberately: when the reviewer DID run in attempt
+#: N and passed, it records no entry, so an earlier review finding it
+#: cleared still renders under "Not re-measured". The agent is told to
+#: re-check it rather than that it is current, so the error is a bounded
+#: over-show. The alternative error is dropping a live finding in
+#: silence, which the halt-over-heroics doctrine rules out. Retiring on
+#: an observed pass needs the context to record which phases ran, and
+#: the context is only built on failure paths today; that is issue #247,
+#: and #226 removes the cause by making hard mode halt rather than skip.
 SKIPPABLE_PHASES: frozenset[str] = frozenset({"review", "security"})
 
 #: Attempt number carried by entries recovered from a context serialised
 #: before entries existed. Their real age is unknown.
 LEGACY_ATTEMPT = 0
 
-#: Which phases feed each backward-compatible string view. Mirrors the
-#: list each phase's text landed in before R10.2.
+#: Which phases feed each backward-compatible string view.
+#:
+#: The views group by sensor phase, which is close to but not identical
+#: to the list each text landed in before R10.2. Two texts moved,
+#: because ranking them by which sensor ran mattered more than the
+#: grouping of a shim: the in-loop diff-scope guard (verification ->
+#: engineer, so review_findings) and the unsplittable diff (review ->
+#: diff, so verification_failures). Nothing in kstrl reads these; the
+#: E6 checkpoint screen reads CheckpointContext.review_findings, a
+#: different type. They exist so the pre-R10.2 shape still reads back.
 _VIEW_PHASES: dict[str, tuple[str, ...]] = {
     "review_findings": ("engineer", "review", "security"),
     "verification_failures": ("verification", "diff"),
