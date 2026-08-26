@@ -203,7 +203,11 @@ class TestDiffScopeRetryContext:
         # assertion under test is the CONTENT of the retry prompt.
         assert "comp-a" in result.failed
         retry_prompt = dump.read_text()
-        assert "Verification Failures" in retry_prompt
+        # R10.2: one "## Current failures" section replaces the
+        # per-phase headings; the details themselves are unchanged.
+        # The in-loop guard fires before Phase 1, so it ranks as
+        # engineer even though its text matches Phase 1's diff_scope.
+        assert "## Current failures (measured in attempt 1, engineer)" in retry_prompt
         assert "Base branch: main" in retry_prompt
         assert "Allowed paths (complete list): src/, tests/" in retry_prompt
         assert "out_of_scope.py" in retry_prompt

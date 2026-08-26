@@ -1569,6 +1569,7 @@ class ComponentPipeline:
         ctx.add_iteration(IterationRecord(
             iteration=comp_result.iterations,
             success=False,
+            attempt=comp.retries + 1,
             error=(
                 "The previous attempt's PR hit a merge conflict with the "
                 "base branch; this attempt starts from the freshly merged "
@@ -1872,6 +1873,7 @@ class ComponentPipeline:
             ctx.add_iteration(IterationRecord(
                 iteration=comp_result.iterations,
                 success=False,
+                attempt=comp.retries + 1,
                 error=comp_result.error,
             ))
             if comp_result.guard_violations:
@@ -1897,16 +1899,33 @@ class ComponentPipeline:
                 # working no matter which layer caught the violation. A
                 # second wording for one failure is how a mislabel
                 # becomes a divergence (R7.1 / #179).
-                ctx.add_verification_failure(f"diff_scope: FAIL - {detail}")
+                # R10.2: the engineer rank, not verification. The
+                # failure text deliberately matches Phase 1's diff_scope
+                # token (above), but the RANK answers a different
+                # question: did Phase 1 produce a reading this attempt?
+                # It did not, the guard fired inside the engineer loop
+                # first. Ranking this as verification retired an earlier
+                # attempt's real Phase 1 failure as re-measured.
+                ctx.add_engineer_failure(
+                    f"diff_scope: FAIL - {detail}",
+                    attempt=comp.retries + 1,
+                )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
                         comp, "Mechanical verification failed", ctx.to_json(),
                         phase="verify", check="diff_scope",
                     ),
                 )
+            # R10.2: without an entry this attempt would carry no
+            # dated evidence, and the renderer would present an older
+            # attempt's finding as the current one. The guard branch
+            # above already records its own entry, so only the plain
+            # loop failure needs this.
+            error = comp_result.error or "Unknown error"
+            ctx.add_engineer_failure(error, attempt=comp.retries + 1)
             return PipelineOutcome(
                 transition=self.retry_or_fail(
-                    comp, comp_result.error or "Unknown error", ctx.to_json(),
+                    comp, error, ctx.to_json(),
                     phase="engineer", check="loop",
                 ),
             )
@@ -2033,8 +2052,9 @@ class ComponentPipeline:
                 ctx = IterationContext.from_json(
                     comp_result.context_json or "{}",
                 )
-                ctx.add_review_finding(
+                ctx.add_checkpoint_request(
                     "Human reviewer requested changes at PR checkpoint",
+                    attempt=comp.retries + 1,
                 )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
@@ -2291,7 +2311,9 @@ class ComponentPipeline:
             ctx = IterationContext.from_json(
                 comp_result.context_json or "{}",
             )
-            ctx.add_verification_failure(verification.as_context())
+            ctx.add_verification_failure(
+                verification.as_context(), attempt=comp.retries + 1,
+            )
             # R6.1: carry the parser's structured codes (ruff rule,
             # mypy error code, pytest exception type) into the
             # journal instead of the flattened string.
@@ -2343,7 +2365,9 @@ class ComponentPipeline:
             self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
-                f"git diff against {self.manifest.base_branch} failed: {exc}"
+                f"git diff against {self.manifest.base_branch} failed: {exc}",
+                attempt=comp.retries + 1, phase="diff",
+                infrastructure=True,
             )
             return DiffPhaseResult(failure=PhaseFailure(
                 action=FailureAction.RETRY_OR_FAIL,
@@ -2420,7 +2444,12 @@ class ComponentPipeline:
                     "individual hunk fits the "
                     f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
                     "KB review cap; whole files may exceed it, since "
-                    "oversized files are chunked on hunk boundaries."
+                    "oversized files are chunked on hunk boundaries.",
+                    # R10.2: the diff rank. This fires while preparing
+                    # the diff for the reviewer, inside _phase_diff, so
+                    # the reviewer produced no reading this attempt.
+                    attempt=comp.retries + 1, phase="diff",
+                    infrastructure=True,
                 )
                 return DiffPhaseResult(
                     diff=shared_diff,
@@ -2633,7 +2662,11 @@ class ComponentPipeline:
                 f"{review_result.fail_count} failures"
             )
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_review_finding(review_result.as_retry_context())
+            ctx.add_review_finding(
+                review_result.as_retry_context(),
+                attempt=comp.retries + 1, phase="review",
+                infrastructure=review_result.infrastructure_error,
+            )
             # R6.1: journal the finding categories that failed the
             # gate ("review:scope_creep", "review:prd_criterion",
             # "review:infrastructure"), not the flattened reason.
@@ -2889,7 +2922,9 @@ class ComponentPipeline:
                 ctx.add_review_finding(
                     sec_result.as_retry_context()
                     or "Security review infrastructure error: "
-                    + sec_result.overall_notes
+                    + sec_result.overall_notes,
+                    attempt=comp.retries + 1, phase="security",
+                    infrastructure=sec_result.infrastructure_error,
                 )
                 # R6.1: journal the vuln categories that failed the
                 # gate ("security:injection", ...), not the reason.

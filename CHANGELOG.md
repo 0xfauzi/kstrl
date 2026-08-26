@@ -27,6 +27,28 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   works by rewriting source. A base branch git cannot resolve is exit 2,
   never a pass on an empty diff (R10.1, #222).
 
+### Changed
+
+- The retry context handed to the engineer is now level-triggered: it renders
+  the failures measured in the latest attempt, lists earlier findings whose
+  sensor did not run again under "Not re-measured", and replaces the rest with
+  a count. Before this it was an integrator with no discharge - every failure
+  ever accumulated was re-rendered on every retry under "Fix ALL issues listed
+  above before completing", so an agent on attempt 3 was told to fix attempt
+  1's failures whether or not attempt 2 had already fixed them. Each failure
+  now records the attempt it was measured in and the phase that measured it.
+  A finding is only retired when that is observed (the same phase produced a
+  fresh reading) or safely inferred (a phase that always runs once its
+  predecessor passes). Review and security are excluded from the inference
+  because an exhausted `max_adversarial_calls` budget downgrades them to skip
+  mid-run, so a later failure does not prove the reviewer ran. A sensor that
+  crashed rather than reported retires nothing either: a crashed reviewer, an
+  unfetchable diff and an unsplittable diff are recorded as infrastructure
+  entries, the same line `Finding.infrastructure_error` already draws.
+  `IterationContext.from_json` still reads contexts serialised in the old
+  shape, and those undated findings always render as un-re-measured
+  (R10.2, #223).
+
 ### Removed
 
 - **Breaking:** the one-release compatibility layer for the pre-rename

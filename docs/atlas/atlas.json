@@ -1,5 +1,5 @@
 {
- "built_at_commit": "b93fbc32d6c67980d6389dd0530965876a74aa76",
+ "built_at_commit": "5e0b877df296724432c65d737b9fee0e4c12db23",
  "components": {
   "kstrl": {
    "classes": [],
@@ -2451,12 +2451,22 @@
      "name": "IterationRecord"
     },
     {
+     "doc": "One sensor reading: a failure, the attempt it was measured in, and",
+     "methods": [],
+     "name": "FailureEntry"
+    },
+    {
      "doc": "Accumulated context across retries for a component.",
      "methods": [
+      "def review_findings(self) -> list[str]",
+      "def verification_failures(self) -> list[str]",
+      "def contract_failures(self) -> list[str]",
       "def add_iteration(self, record: IterationRecord) -> None",
-      "def add_review_finding(self, finding: str) -> None",
-      "def add_verification_failure(self, failure: str) -> None",
-      "def add_contract_failure(self, failure: str) -> None",
+      "def add_review_finding(self, finding: str, *, attempt: int, phase: str, infrastructure: bool=False) -> None",
+      "def add_engineer_failure(self, failure: str, *, attempt: int) -> None",
+      "def add_checkpoint_request(self, request: str, *, attempt: int) -> None",
+      "def add_verification_failure(self, failure: str, *, attempt: int, phase: str='verification', infrastructure: bool=False) -> None",
+      "def add_contract_failure(self, failure: str, *, attempt: int) -> None",
       "def format_for_prompt(self) -> str",
       "def to_json(self) -> str",
       "def from_json(cls, data: str) -> IterationContext"
@@ -2464,7 +2474,20 @@
      "name": "IterationContext"
     }
    ],
-   "constants": [],
+   "constants": [
+    {
+     "name": "PHASE_RANK",
+     "value": "{'engineer': 0, 'verification': 1, 'diff': 2, 'review': 3, 'security': 4, 'contr"
+    },
+    {
+     "name": "SKIPPABLE_PHASES",
+     "value": "frozenset({'review', 'security'})"
+    },
+    {
+     "name": "LEGACY_ATTEMPT",
+     "value": "0"
+    }
+   ],
    "docstring": "Context accumulation for retry prompts.",
    "errors": [],
    "file": "kstrl/context.py",
@@ -2475,39 +2498,39 @@
     "kstrl.pipeline"
    ],
    "imports": [],
-   "loc": 127,
+   "loc": 445,
    "package": "kstrl",
    "plane": "core",
-   "sha": "21f22905606d",
+   "sha": "5207b1eb37d2",
    "tests": [
+    "test_a_real_reading_still_supersedes_after_a_crash",
     "test_add_empty_string_ignored",
     "test_add_iteration",
     "test_add_review_finding",
+    "test_checkpoint_request_retires_what_it_got_past",
+    "test_cleared_skippable_finding_is_shown_not_dropped",
+    "test_closing_instruction_changed",
+    "test_crashed_sensor_does_not_supersede_a_real_finding",
+    "test_crashed_sensor_still_retires_lower_ranked_phases",
+    "test_current_section_does_not_grow_with_repeated_failures",
+    "test_derived_views_group_by_sensor_phase",
+    "test_derived_views_still_work",
+    "test_diff_failure_is_not_superseded_by_verification",
+    "test_diff_failure_is_retired_once_review_runs",
     "test_empty_context",
+    "test_engineer_crash_does_not_retire_a_checkpoint_request",
+    "test_engineer_failure_helper_ranks_as_engineer",
+    "test_engineer_only_attempt_retires_nothing",
+    "test_every_entry_lands_in_exactly_one_bucket",
     "test_format_attempt_number_increments",
     "test_format_for_prompt_empty",
     "test_format_for_prompt_with_failures",
     "test_from_json_empty",
     "test_from_json_empty_object",
-    "test_json_roundtrip",
-    "test_all_in_scope",
-    "test_all_pass",
-    "test_all_passing",
-    "test_as_context_formatting",
-    "test_bad_patterns_writes_no_bytecode_beside_the_source",
-    "test_block_with_three_bullets_passes",
-    "test_clean_files",
-    "test_custom_command_used",
-    "test_dead_code_default_still_fixes_and_commits",
-    "test_dead_code_read_only_never_fixes_stages_or_commits",
-    "test_default_prompt_entry_format_counts_exact_bullets",
-    "test_does_not_match_self_critique_in_prose",
-    "test_empty_py_file",
-    "test_empty_stories",
-    "test_entry_separator_terminates_bullet_count"
+    "test_history_keeps_the_error_when_the_attempt_had_no_entry"
    ],
-   "tests_primary": 10,
-   "tests_total": 72,
+   "tests_primary": 42,
+   "tests_total": 104,
    "uses": {}
   },
   "kstrl.contract": {
@@ -3451,10 +3474,10 @@
     "kstrl.ui.plain",
     "kstrl.verify"
    ],
-   "loc": 3400,
+   "loc": 3408,
    "package": "kstrl",
    "plane": "core",
-   "sha": "82e090ba013b",
+   "sha": "56d6c647a6b9",
    "tests": [
     "test_component_failure_cascades",
     "test_crash_recovery_resets_running",
@@ -3483,7 +3506,7 @@
     "test_a_disabled_ceiling_is_never_blamed"
    ],
    "tests_primary": 15,
-   "tests_total": 1166,
+   "tests_total": 1167,
    "uses": {
     "kstrl.agents": [
      "ClaudeCodeAgent",
@@ -5900,7 +5923,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1608,
+   "tests_total": 1609,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6373,10 +6396,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3328,
+   "loc": 3363,
    "package": "kstrl",
    "plane": "core",
-   "sha": "81a506563ca2",
+   "sha": "05e990b57eed",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -11839,7 +11862,7 @@
     "test_a_reported_zero_token_count_is_not_rendered_as_silence"
    ],
    "tests_primary": 0,
-   "tests_total": 1106,
+   "tests_total": 1107,
    "uses": {}
   },
   "kstrl.ui.rich_ui": {
@@ -12072,7 +12095,7 @@
     "test_invalid_prd"
    ],
    "tests_primary": 62,
-   "tests_total": 1158,
+   "tests_total": 1159,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig",

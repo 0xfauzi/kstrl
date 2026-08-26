@@ -329,7 +329,10 @@ class TestContractBreakerRerun:
         # Retry-context propagation for contract failures: attempt 2's
         # prompt names the failing contract output.
         attempt2 = (cap_dir / "beta-attempt2.prompt").read_text()
-        assert "## Contract Test Failures" in attempt2
+        # R10.2: the contract failure is the current one, and it is
+        # dated to attempt 1 - the attempt whose contract test failed,
+        # not the retry it triggered.
+        assert "## Current failures (measured in attempt 1, contract)" in attempt2
         assert "integration broken: broken.txt present" in attempt2
         assert "PREVIOUS ATTEMPT CONTEXT" in attempt2
         attempt1 = (cap_dir / "beta-attempt1.prompt").read_text()
