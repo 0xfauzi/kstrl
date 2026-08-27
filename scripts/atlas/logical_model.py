@@ -237,6 +237,7 @@ _TUI_MODULES = [
     "kstrl.tui.screens.overview",
     "kstrl.tui.screens.quit",
     "kstrl.tui.screens.retry",
+    "kstrl.tui.screens.safemode",
     "kstrl.tui.session",
     "kstrl.tui.state",
     "kstrl.tui.tail",
@@ -253,6 +254,7 @@ _TUI_MODULES = [
     "kstrl.tui.widgets.header",
     "kstrl.tui.widgets.phase_timeline",
     "kstrl.tui.widgets.run_table",
+    "kstrl.tui.widgets.safe_mode_chip",
     "kstrl.tui.widgets.transcript",
 ]
 

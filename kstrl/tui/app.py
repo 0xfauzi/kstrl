@@ -31,8 +31,9 @@ from kstrl.interaction import (
     PromptRequest,
     QueueInteractionChannel,
 )
+from kstrl.safemode import RECOVERY, SafeModeReason
 from kstrl.tui.bridge import OrchestratorHandle
-from kstrl.tui.messages import StateChanged
+from kstrl.tui.messages import SafeModeChecked, StateChanged
 from kstrl.tui.runcontext import RunContext
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
@@ -40,10 +41,16 @@ from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
+from kstrl.tui.screens.safemode import SafeModePanel
 from kstrl.tui.state import StateStore
 from kstrl.tui.theme import KSTRL_THEME
 
 DEFAULT_POLL_INTERVAL = 0.2  # measured, spike G1
+
+#: How often the dashboard re-evaluates safe mode. Slow on purpose: the
+#: four signals it reads change on operator time, not on run time, and
+#: the check reads a run's whole event stream.
+SAFE_MODE_INTERVAL_SECONDS = 5.0
 
 # Bottom-first initial screen stack; None = the default overview.
 ScreenStackFactory = Callable[[], list[Screen[None]]]
@@ -69,6 +76,7 @@ class KstrlTuiApp(App[int]):
         # toward home when there is anywhere to pop to. (Named
         # nav_back: Textual's App already owns an async action_back.)
         Binding("escape", "nav_back", show=False),
+        Binding("m", "safe_mode", "Safe mode"),
     ]
 
     def __init__(
@@ -85,6 +93,9 @@ class KstrlTuiApp(App[int]):
     ) -> None:
         super().__init__()
         self.root_dir = root_dir
+        #: None until the first background check reports. Distinct from
+        #: [] (checked, nominal), because those are different facts.
+        self._safe_mode_reasons: list[SafeModeReason] | None = None
         # Precomputed by run_home_shell BEFORE app.run() - the source
         # detection scrubs os.environ process-wide (see config_report).
         self.config_report = config_report
@@ -147,6 +158,14 @@ class KstrlTuiApp(App[int]):
             ))
         self.set_interval(self.poll_interval, self._poll)
         self.set_interval(1.0, self._tick_ages)
+        # Off the poll timer on purpose. safe_mode_reasons stats the
+        # control directory, loads the ladder, reads the pause marker
+        # and reads a run's whole events.jsonl; poll runs at 5Hz and a
+        # long stream would hitch every frame. Slow, and on a thread.
+        self.set_interval(
+            SAFE_MODE_INTERVAL_SECONDS, self._check_safe_mode,
+        )
+        self._check_safe_mode()
         if self.mode is Mode.HOME:
             self.set_interval(0.5, self._check_session)
         if self.mode is Mode.EMBEDDED:
@@ -163,6 +182,47 @@ class KstrlTuiApp(App[int]):
                     ),
                 )
         self._poll()  # catch-up fold before the first frame settles
+
+    # -- safe mode -----------------------------------------------------------
+
+    def _check_safe_mode(self) -> None:
+        """Evaluate the predicate on a thread and post the result."""
+        self.run_worker(
+            self._safe_mode_worker,
+            name="safe-mode",
+            group="safe-mode",
+            thread=True,
+            exclusive=True,
+        )
+
+    def _safe_mode_worker(self) -> None:
+        from kstrl.safemode import safe_mode_reasons
+
+        # safe_mode_reasons never raises by contract, but a worker that
+        # died would leave the chip reading "checking" forever, and a
+        # chip stuck on an intermediate state is the failure this whole
+        # feature exists to avoid. Belt and braces.
+        try:
+            reasons = safe_mode_reasons(self.root_dir)
+        except Exception as exc:  # noqa: BLE001 - see above
+            from kstrl.safemode import SafeModeReason
+
+            reasons = [SafeModeReason(
+                source="control_dir",
+                detail=f"could not evaluate safe mode: {exc}",
+                recovery=RECOVERY["control_dir"],
+            )]
+        self.post_message(SafeModeChecked(reasons))
+
+    def on_safe_mode_checked(self, message: SafeModeChecked) -> None:
+        self._safe_mode_reasons = message.reasons
+        for screen in self.screen_stack:
+            update = getattr(screen, "update_safe_mode", None)
+            if callable(update):
+                update(message.reasons)
+
+    def action_safe_mode(self) -> None:
+        self.push_screen(SafeModePanel(self._safe_mode_reasons))
 
     # -- data flow -----------------------------------------------------------
 

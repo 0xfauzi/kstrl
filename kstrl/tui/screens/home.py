@@ -22,6 +22,7 @@ from textual.widgets import DataTable, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
 from kstrl.config import resolve_config_file
+from kstrl.safemode import SafeModeReason
 from kstrl.tui import theme
 from kstrl.tui.home_data import (
     HomeStats,
@@ -34,6 +35,7 @@ from kstrl.tui.runs import RunRef, discover_runs
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import format_tokens
 from kstrl.tui.widgets.run_table import RunTable
+from kstrl.tui.widgets.safe_mode_chip import SafeModeChip
 
 HOME_POLL_INTERVAL = 2.0
 HOME_RUN_LIMIT = 15
@@ -155,6 +157,7 @@ class HomeScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="home-header"):
             yield Static(id="home-masthead")
+            yield SafeModeChip(id="safe-mode-chip")
             yield Static(id="home-stats")
         with Horizontal(id="home-columns"):
             with Vertical(id="home-runs-col"):
@@ -171,6 +174,14 @@ class HomeScreen(Screen[None]):
     @property
     def ready(self) -> bool:
         return next(iter(self.query(RunTable)), None) is not None
+
+    def update_safe_mode(
+        self, reasons: list[SafeModeReason] | None,
+    ) -> None:
+        """Duck-typed contract the app calls; ignored while unmounted."""
+        chip = next(iter(self.query(SafeModeChip)), None)
+        if chip is not None:
+            chip.update_reasons(reasons)
 
     def on_mount(self) -> None:
         root_dir = self._root_dir()

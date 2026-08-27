@@ -181,12 +181,27 @@ Two surfaces print it. `ks status` prints `safe mode: nominal` or
 `safe mode: <n> reason(s)` followed by one line per reason, and
 `ks serve --dry-run` prints the same block above its admission gates.
 
-One caveat worth knowing before you rely on it: on a terminal, `ks
-status` opens the dashboard instead of the plain report whenever a run
-directory exists, and **the dashboard does not show safe mode yet**. Ask
-with `ks status --no-tui` (or from a pipe, from CI, or with `--watch`),
-or with `ks serve --dry-run`. A masthead chip on the dashboard is the
-tracked follow-up.
+The dashboard shows it too. On a terminal `ks status` opens the
+dashboard rather than the plain report whenever a run directory exists,
+so `m` opens a safe-mode panel from any screen, and a warning banner
+appears under the run masthead the moment a signal goes degraded, naming
+the sources.
+
+The banner is hidden while everything is clear, and `m` is what makes
+that safe: the panel distinguishes the three states the banner cannot,
+telling "not checked yet" apart from "checked and clear" apart from a
+list of reasons. So an absent banner never has to carry a meaning on its
+own. On the home screen, where there is room, a chip in the masthead
+carries the same three states at a glance.
+
+The run masthead has no chip, and that was measured rather than chosen:
+at 120 columns the run header wants 41 cells and the cost meter 79, so
+the topbar is already over-subscribed and anything added there costs the
+run its own state label.
+
+The dashboard re-checks every few seconds on a background thread, not on
+its event poll: the predicate reads a run's whole event stream, and doing
+that at the poll rate would stutter the display.
 
 Safe mode itself refuses nothing. Each signal below already refuses
 where refusing is right, and the predicate only reads them, so leaving

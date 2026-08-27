@@ -101,6 +101,15 @@ DataTable {
     padding: 0 2;
 }
 
+#safe-mode-banner {
+    dock: top;
+    height: 1;
+    background: $warning 18%;
+    color: $warning;
+    text-style: bold;
+    padding: 0 2;
+}
+
 #checkpoint-banner {
     dock: top;
     height: 1;
@@ -283,8 +292,13 @@ CheckpointModal {
 
 #home-header {
     dock: top;
-    height: 2;
+    height: 3;
     background: $surface;
+}
+
+#home-header #safe-mode-chip {
+    height: 1;
+    padding: 0 1;
 }
 
 #home-masthead {

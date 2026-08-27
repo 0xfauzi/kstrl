@@ -8,6 +8,7 @@ from textual.message import Message
 
 if TYPE_CHECKING:
     from kstrl.reducer import RunState
+    from kstrl.safemode import SafeModeReason
     from kstrl.tui.home_data import HomeStats, RunSummary
 
 
@@ -19,6 +20,19 @@ class StateChanged(Message):
     def __init__(self, state: RunState) -> None:
         super().__init__()
         self.state = state
+
+
+class SafeModeChecked(Message):
+    """The background safe-mode check reported (R10.4 follow-up).
+
+    Carries the list rather than a count so the panel and the chip
+    render from ONE evaluation: two readers of the same predicate could
+    disagree about what the factory is doing right now.
+    """
+
+    def __init__(self, reasons: list[SafeModeReason]) -> None:
+        super().__init__()
+        self.reasons = reasons
 
 
 class SummariesReady(Message):
