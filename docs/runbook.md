@@ -266,9 +266,20 @@ choices; the third is worth acting on, because it means components
 merged on mechanical checks alone. See also
 [Adversarial budget exhausted mid-run](#adversarial-budget-exhausted-mid-run).
 
-This reason clears when the next run completes without skipping a phase.
-It reports the newest run only, so it is a statement about what just
-happened rather than a running tally.
+This reason clears when the next factory run **completes** without
+skipping a phase. A run that is still in flight does not clear it: a run
+writes its first event long before it reaches review, so treating "no
+skip recorded yet" as "no skip" would clear the verdict the moment the
+next run started. Runs of other kinds (`decompose`, `feature`,
+`understand`) never clear it either, because they have no phase chain
+and so finish clean by construction without ever asking the question.
+
+A separate detail line beginning `could not read run` means the question
+could not be answered rather than answered clean: the newest factory run
+left no event stream (`[factory] progress_log_enabled = false` writes
+accounting files and no events), or its `events.jsonl` could not be
+opened. When that happens the last finished run's verdict is still
+reported beside it.
 
 ## Where to find things
 

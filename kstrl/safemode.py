@@ -32,6 +32,16 @@ creates the XDG control directory and migrates any legacy in-tree control
 files. Every control-plane read in kstrl does that; this one is not
 special, and claiming it writes nothing would be false.
 
+**Absence of evidence is not evidence of absence.** Every reader here
+had to be written so that "I could not look" is distinguishable from
+"nothing is wrong". ``ev.read_events`` answers an unreadable file with an
+empty list; ``reducer._v2_run_dirs`` answers an unreadable ``runs/`` with
+an empty list; a run in flight has recorded no skip yet; a ``decompose``
+run has no phase chain and so finishes clean without ever asking. Each of
+those reads as nominal unless the reader is explicit about it, and each
+would be a fail-open on exactly the question this module exists to
+answer.
+
 **Two readers can return the same sentence.** ``Queue.pause_state``
 consults ``control_untrusted_reason`` itself and, when it is non-None,
 reports the queue as paused with that exact string. Printing it twice
@@ -46,6 +56,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+#: Run kind whose stream can carry a skipped adversarial gate. Only a
+#: factory run drives the phase chain that emits ``PhaseSkipped``.
+_SKIPPING_RUN_KIND = "factory"
+
+#: How far back to look for a finished run while a newer one is in
+#: flight. A backstop, not a policy: the factory lock means at most one
+#: run is live, so the second entry almost always settles it.
+_LOOKBACK_RUNS = 20
 
 #: Adversarial phases whose absence puts the factory in safe mode.
 #: ``verify`` is deliberately not here: a skipped mechanical verification
@@ -148,43 +167,86 @@ def _queue_reasons(root_dir: Path) -> list[SafeModeReason]:
     return [_reason("queue", pause.reason or "paused, no reason recorded")]
 
 
-def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
-    from kstrl import events as ev
-    from kstrl.reducer import latest_run_dir
+def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
+    """One run's skipped gates, and whether that run finished.
 
-    runs_root = root_dir / ".kstrl" / "runs"
-    if runs_root.exists() and not runs_root.is_dir():
-        # ``_v2_run_dirs`` swallows this into "no runs", which reads as
-        # "nothing was skipped" - a fail-open on a question about
-        # whether a gate ran.
+    Read from the raw stream rather than the reducer's fold, because
+    ``ComponentState.recent_findings`` is capped at 50 per component and
+    would lose a skip behind a noisy component.
+
+    A stream that cannot be read returns a reason and ``False``, never an
+    empty list: ``ev.read_events`` answers OSError with ``[]``, and an
+    empty list here would mean "nothing was skipped". ``False`` is also
+    right for the caller's look-back, since a run we could not read has
+    not answered the question either.
+    """
+    from kstrl import events as ev
+
+    events_path = run_dir / "events.jsonl"
+    try:
+        # A strict open. read_events swallows OSError into [].
+        with events_path.open("rb"):
+            pass
+    except FileNotFoundError:
         return [_reason(
             "adversarial_skipped",
-            f"could not read {runs_root}: not a directory",
-        )]
+            f"could not read run {run_dir.name}: no event stream "
+            "(is [factory] progress_log_enabled false?)",
+        )], False
+    except OSError as exc:
+        return [_reason(
+            "adversarial_skipped",
+            f"could not read run {run_dir.name}: {exc}",
+        )], False
 
-    run_dir = latest_run_dir(root_dir)
-    if run_dir is None:
-        return []
-
-    # Scanned from the raw stream rather than folded: ``PhaseSkipped`` has
-    # exactly one emitter and is never capped, while the reducer's
-    # ``recent_findings`` keeps only the last MAX_RECENT_FINDINGS per
-    # component and would lose the record behind a noisy component.
     skipped: dict[str, set[str]] = {phase: set() for phase in GATED_PHASES}
-    for event in ev.read_events(run_dir / "events.jsonl"):
-        if isinstance(event, ev.PhaseSkipped) and event.phase in skipped:
+    finished = False
+    for event in ev.read_events(events_path):
+        if isinstance(event, ev.RunCompleted):
+            finished = True
+        elif isinstance(event, ev.PhaseSkipped) and event.phase in skipped:
             skipped[event.phase].add(event.component)
 
-    reasons: list[SafeModeReason] = []
-    for phase in GATED_PHASES:
-        components = skipped[phase]
-        if not components:
-            continue
-        reasons.append(_reason(
+    reasons = [
+        _reason(
             "adversarial_skipped",
-            f"{phase} did not run for {len(components)} component(s) "
+            f"{phase} did not run for {len(skipped[phase])} component(s) "
             f"in run {run_dir.name}",
-        ))
+        )
+        for phase in GATED_PHASES if skipped[phase]
+    ]
+    return reasons, finished
+
+
+def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
+    from kstrl.reducer import run_dirs_newest_first
+    from kstrl.runid import run_kind
+
+    # Only a factory run drives the phase chain, so only a factory run
+    # can skip an adversarial gate. Without this filter a `ks decompose`
+    # started afterwards becomes "the newest run", finishes clean because
+    # it has no phases at all, and clears a factory run's skip.
+    runs = [
+        d for d in run_dirs_newest_first(root_dir)
+        if run_kind(d.name) == _SKIPPING_RUN_KIND
+    ][:_LOOKBACK_RUNS]
+    if not runs:
+        return []
+
+    reasons, finished = _report_for_run(runs[0])
+    if finished:
+        return reasons
+
+    # The newest run has not finished, and "no skip recorded yet" is not
+    # "no skip": run B writes its first event long before it reaches
+    # review, so reporting only B would clear run A's skip the moment B
+    # starts. The last run that DID finish holds the answer until a run
+    # finishes without skipping.
+    for older in runs[1:]:
+        older_reasons, older_finished = _report_for_run(older)
+        if older_finished:
+            reasons.extend(older_reasons)
+            break
     return reasons
 
 

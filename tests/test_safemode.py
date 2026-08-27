@@ -317,6 +317,136 @@ class TestAdversarialSkipped:
         assert safe_mode_reasons(tmp_path) == []
 
 
+def write_run(
+    root: Path, run_id: str, *, skips: tuple[str, ...] = (),
+    finished: bool = True, component: str = "comp-a",
+) -> None:
+    """A run stream with the given skipped phases, terminal or in flight."""
+    sink = ev.JsonlSink(root / ".kstrl" / "runs" / run_id / "events.jsonl")
+    try:
+        # Every real run opens with this, so an in-flight run always has
+        # a stream. Without it the sink never creates the file and the
+        # run would look like the progress-logging-disabled case.
+        sink.emit(ev.RunStarted(project="demo", components=1))
+        for phase in skips:
+            sink.emit(ev.PhaseSkipped(
+                component=component, phase=phase, reason="mode=skip",
+            ))
+        if finished:
+            sink.emit(ev.RunCompleted(completed=1, failed=0, skipped=0))
+    finally:
+        sink.close()
+
+
+class TestTheSkipVerdictIsNotClearedTooEarly:
+    """Round 1 review, three of four findings. "No skip recorded yet" is
+    not "no skip", and a signal that could not be read is not a clear
+    signal. Each test below fails on the pre-review implementation."""
+
+    def test_a_run_in_flight_does_not_clear_an_earlier_skip(
+        self, tmp_path: Path,
+    ) -> None:
+        """Run B writes its first event long before it reaches review, so
+        selecting B and finding no skip would clear A the moment B
+        starts - on the very question safe mode exists to answer."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa",
+                  skips=("review",), finished=True)
+        write_run(tmp_path, "factory-20260827-110000-bbbb", finished=False)
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 1
+        assert "factory-20260827-100000-aaaa" in details[0]
+
+    def test_a_finished_clean_run_does_clear_it(
+        self, tmp_path: Path,
+    ) -> None:
+        """The other half of the rule, and the runbook's wording."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa",
+                  skips=("review",), finished=True)
+        write_run(tmp_path, "factory-20260827-110000-bbbb", finished=True)
+
+        assert safe_mode_reasons(tmp_path) == []
+
+    def test_a_decompose_run_does_not_clear_a_factory_skip(
+        self, tmp_path: Path,
+    ) -> None:
+        """Only a factory run drives the phase chain. A decompose run has
+        no phases at all, so it finishes clean by construction and would
+        clear the verdict without ever having asked the question."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa",
+                  skips=("review",), finished=True)
+        write_run(tmp_path, "decompose-20260827-110000-bbbb", finished=True)
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 1
+        assert "factory-20260827-100000-aaaa" in details[0]
+
+    def test_an_in_flight_run_still_reports_its_own_skip(
+        self, tmp_path: Path,
+    ) -> None:
+        """A skip already recorded is a fact, finished or not."""
+        write_run(tmp_path, "factory-20260827-110000-bbbb",
+                  skips=("security",), finished=False)
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 1
+        assert details[0].startswith("security did not run")
+
+    def test_a_run_with_no_event_stream_is_a_reason(
+        self, tmp_path: Path,
+    ) -> None:
+        """[factory] progress_log_enabled = false creates the run dir and
+        writes no events. Falling back to the previous run would report a
+        stale verdict as current; reporting nominal would answer a
+        question we cannot see."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa", finished=True)
+        (tmp_path / ".kstrl" / "runs" / "factory-20260827-110000-bbbb"
+         ).mkdir(parents=True)
+
+        reasons = safe_mode_reasons(tmp_path)
+
+        assert [r.source for r in reasons] == ["adversarial_skipped"]
+        assert reasons[0].detail.startswith("could not read run")
+        assert "progress_log_enabled" in reasons[0].detail
+
+    def test_an_unreadable_event_stream_is_a_reason(
+        self, tmp_path: Path,
+    ) -> None:
+        """ev.read_events answers OSError with [], which reads as "no
+        skips". The predicate promises the opposite."""
+        write_run(tmp_path, "factory-20260827-110000-bbbb",
+                  skips=("review",), finished=True)
+        events = (tmp_path / ".kstrl" / "runs"
+                  / "factory-20260827-110000-bbbb" / "events.jsonl")
+        events.chmod(0o000)
+        try:
+            reasons = safe_mode_reasons(tmp_path)
+        finally:
+            events.chmod(0o644)
+
+        assert [r.source for r in reasons] == ["adversarial_skipped"]
+        assert reasons[0].detail.startswith("could not read run")
+
+    def test_an_unreadable_newest_run_still_reports_the_last_verdict(
+        self, tmp_path: Path,
+    ) -> None:
+        """A run we could not read has not answered either, so the last
+        finished run's verdict still stands beside the read failure."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa",
+                  skips=("review",), finished=True)
+        (tmp_path / ".kstrl" / "runs" / "factory-20260827-110000-bbbb"
+         ).mkdir(parents=True)
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 2
+        assert details[0].startswith("could not read run")
+        assert "factory-20260827-100000-aaaa" in details[1]
+
+
 def root_events(root: Path) -> Path:
     return root / ".kstrl" / "runs" / RUN_ID / "events.jsonl"
 

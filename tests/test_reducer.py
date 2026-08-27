@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from kstrl import events as ev
 from kstrl import reducer
 from kstrl.observability import ProgressLog, read_progress_events, summarize_events
@@ -403,36 +405,63 @@ class TestLoadRunState:
         assert source is None
         assert state.components == {}
 
-    def test_latest_run_dir_agrees_with_load_run_state(
+    def test_run_dirs_newest_first_orders_and_agrees_with_the_fold(
         self, tmp_path: Path,
     ) -> None:
-        """R10.4 exposed this resolution on its own so a caller can scan
-        a run's raw stream instead of folding it. The two must not be
-        able to disagree about WHICH run is newest."""
+        """R10.4 exposed this listing so a caller can scan a run's raw
+        stream instead of folding it. The two must not be able to
+        disagree about WHICH run is newest."""
         self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "older")
         self._write_v2(tmp_path, "factory-20260720-000009.000000-x", "newer")
 
-        run_dir = reducer.latest_run_dir(tmp_path)
+        dirs = reducer.run_dirs_newest_first(tmp_path)
         _, source = reducer.load_run_state(tmp_path)
 
-        assert run_dir is not None and source is not None
-        assert run_dir == source.parent
-        assert run_dir.name == "factory-20260720-000009.000000-x"
+        assert [d.name for d in dirs] == [
+            "factory-20260720-000009.000000-x",
+            "factory-20260720-000001.000000-x",
+        ]
+        assert source is not None and dirs[0] == source.parent
 
-    def test_latest_run_dir_is_none_without_runs(self, tmp_path: Path) -> None:
-        assert reducer.latest_run_dir(tmp_path) is None
-
-    def test_latest_run_dir_ignores_a_dir_without_events(
+    def test_run_dirs_newest_first_is_empty_without_runs(
         self, tmp_path: Path,
     ) -> None:
+        assert reducer.run_dirs_newest_first(tmp_path) == []
+
+    def test_run_dirs_newest_first_includes_a_run_with_no_events(
+        self, tmp_path: Path,
+    ) -> None:
+        """A run with [factory] progress_log_enabled = false writes its
+        accounting files and no events. Filtering it out would hide the
+        newest run behind an older one, and safe mode would report a
+        stale verdict as though it were current."""
         self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "real")
         (tmp_path / ".kstrl" / "runs" / "factory-20260720-000009.000000-x"
          ).mkdir(parents=True)
 
-        run_dir = reducer.latest_run_dir(tmp_path)
+        dirs = reducer.run_dirs_newest_first(tmp_path)
 
-        assert run_dir is not None
-        assert run_dir.name == "factory-20260720-000001.000000-x"
+        assert [d.name for d in dirs] == [
+            "factory-20260720-000009.000000-x",
+            "factory-20260720-000001.000000-x",
+        ]
+        # The fold still sees only the run that has a stream.
+        assert reducer._v2_run_dirs(tmp_path) == [
+            tmp_path / ".kstrl" / "runs" / "factory-20260720-000001.000000-x",
+        ]
+
+    def test_run_dirs_newest_first_does_not_swallow_a_read_error(
+        self, tmp_path: Path,
+    ) -> None:
+        """_v2_run_dirs answers an unreadable runs/ with "no runs", which
+        reads as "nothing was skipped". This listing must not."""
+        runs = tmp_path / ".kstrl" / "runs"
+        runs.parent.mkdir(parents=True, exist_ok=True)
+        runs.write_text("i am a file", encoding="utf-8")
+
+        with pytest.raises(OSError):
+            reducer.run_dirs_newest_first(tmp_path)
+        assert reducer._v2_run_dirs(tmp_path) == []   # unchanged contract
 
     def test_torn_tail_in_run_dir(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-000003.000000-x"
