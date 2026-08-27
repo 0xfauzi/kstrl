@@ -1,0 +1,281 @@
+# ONE config, copied verbatim into every Python repo here.
+#
+# It is a copy on purpose. pre-commit has no `extends`: config inheritance was
+# requested in issues 1308, 2337 and 3422 and declined, so a shared config is not
+# a thing that exists. A custom sharing mechanism was built and rejected: it works,
+# but it means every future reader has to learn a scheme that is not pre-commit.
+# Plain duplication uses nothing but stock pre-commit, and `diff` is how you check
+# two repos agree - a standard tool instead of a bespoke hook.
+#
+# The custom checks live in scripts/precommit/ as ordinary `repo: local` hooks.
+# That directory and this file are the unit you copy. Everything else a repo needs
+# to differ about (ruff rules, vulture paths, codespell vocabulary) belongs in that
+# repo's pyproject.toml, which is where those tools read their settings anyway.
+#
+# A few excludes below name paths that only exist in one repo (deckgen's captured
+# model output and reference corpora). They stay in every copy so the file is
+# BYTE-IDENTICAL everywhere; a path that does not exist costs nothing to exclude.
+
+repos:
+  # --- file hygiene ---------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Captured model output is evidence: reformatting it destroys the
+        # provenance a spike's findings rest on. Linted as evidence, never source.
+        exclude: &evidence ^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/
+      - id: end-of-file-fixer
+        exclude: *evidence
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        # uv.lock is a required commit artifact over 500 KB; uv-lock owns its
+        # integrity. The rest are irreplaceable measurement inputs: reference decks,
+        # source filings, and round-trip evidence that cost manual work to produce.
+        exclude: '^(uv\.lock$|experiments/walking-skeleton/out/(screenshots/|inserted-saved\.pptx$)|fixtures/corpus/|fixtures/sources/|experiments/E16/out/(probe\.pdf|probe-bold-powerpoint\.pdf|E17-results\.json)$)'
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        exclude: *evidence
+      - id: debug-statements
+      - id: detect-private-key
+        # A test that asserts a redactor strips private keys must contain one.
+        # The fixture IS the test; deleting the key deletes the subject.
+        exclude: '^tests/test_review_regressions\.py$'
+
+  # --- python ---------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      # Lint before format: --fix rewrites code, and formatting the result is the
+      # only order that converges in one pass.
+      # scripts/precommit/ is excluded because those files must stay BYTE-IDENTICAL
+      # across every repo, and each repo's ruff settings differ. Measured: running
+      # this hook under systemap's config reformatted two of them, which would make
+      # the copies diverge on first commit and defeat the whole point of copying.
+      # They are checked against ruff and both complexity gates before being copied.
+      - id: ruff-check
+        args: [--fix]
+        exclude: &vendored ^scripts/precommit/|^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/
+      - id: ruff-format
+        exclude: *vendored
+
+  # --- complexity: two gates answering two different questions --------------
+  #
+  # complexipy measures COGNITIVE complexity: how hard the code is to read,
+  # weighted by nesting. --staged diffs the git index against HEAD, so it fails
+  # only on a function this commit adds above 15 or worsens past it. A flat gate at
+  # 15 would block 38% of deckgen's source files, 71% of systemap's and 42% of
+  # ralph's on day one, which is a hook that gets --no-verify'd within a week.
+  #
+  # cyclomatic-ratchet (below, local) measures CYCLOMATIC complexity: independent
+  # paths through a function, roughly the tests branch coverage needs.
+  #
+  # Both are kept because they disagree where it matters. A flat 14-branch dispatch
+  # table measures cognitive 14 and cyclomatic 15: the first forgives it, the second
+  # does not, and each is right about its own question.
+  - repo: https://github.com/rohaquinlop/complexipy-pre-commit
+    rev: v7.0.1
+    hooks:
+      - id: complexipy
+        # --suggest-refactors is what makes a failure actionable rather than a bare
+        # exit 1: it names the function, the lines, the estimated reduction and the
+        # rule. Measured at 5 ms. An agent shown "exit code 1" silences the hook.
+        args: [--staged, --max-complexity-allowed, "15", --suggest-refactors, --color, "no"]
+        exclude: *evidence
+
+  # --- rot ------------------------------------------------------------------
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      # Vocabulary and skip lists live in [tool.codespell] in pyproject.toml.
+      # Every finding across three repos here was a false positive on first run:
+      # deliberate misspellings in tests asserting closest-match suggestions,
+      # fragments of regexes like propert(y|ies), and project names.
+      #
+      # The excludes are all evidence: captured model output quotes error strings
+      # containing model-authored typos, render-probe results quote raw tesseract
+      # OCR misreads (the misread IS the measurement), and E40's manual results
+      # quote source documents verbatim, truncated mid-word to fit a table.
+      - id: codespell
+        exclude: '^scripts/precommit/|^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/|^experiments/(E[0-9]+|render-probes)/results.*\.json$|^experiments/E40/manual-results\.md$'
+
+  - repo: https://github.com/jendrikseipp/vulture
+    rev: v2.16
+    hooks:
+      # Needs [tool.vulture] with `paths` in pyproject.toml. Without it vulture
+      # exits 2, which reads as a broken hook rather than a finding.
+      - id: vulture
+
+  # --- secrets --------------------------------------------------------------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # Scans the STAGED diff, so it stops a secret before it is committed.
+      # Deliberately not a history scan.
+      - id: gitleaks
+      # The same binary, the same rev, one shared hook environment, pointed at the
+      # tree instead of the staged diff, because the staged scan CANNOT work on a
+      # server: CI has a clean checkout with nothing staged. The one hook whose whole
+      # purpose is to run where --no-verify cannot reach was the one hook CI did not
+      # enforce.
+      #
+      # stages: [manual], so it never runs on a local commit: measured at 6.2s over
+      # 60 MB against the staged hook's milliseconds, and a developer already has the
+      # staged hook. The copy that counts is
+      # `pre-commit run --hook-stage manual gitleaks-tree --all-files` in CI.
+      - id: gitleaks
+        alias: gitleaks-tree
+        name: secrets anywhere in the checked-out tree
+        entry: gitleaks dir . --redact
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+        # Print the scan line even on a pass. Without this pre-commit reports
+        # "Passed" and nothing else, indistinguishable in a CI log from a silent
+        # "0 commits scanned" - the exact failure this hook was added to end.
+        verbose: true
+
+  # --- packaging ------------------------------------------------------------
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.29
+    hooks:
+      # Skips cleanly in a repo with no uv.lock.
+      - id: uv-lock
+
+  # --- shell ----------------------------------------------------------------
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      # shellcheck-py rather than koalaman/shellcheck-precommit: the latter is
+      # language: docker_image, which does not skip without docker, it FAILS.
+      - id: shellcheck
+
+  # --- CI workflows ---------------------------------------------------------
+  # All four skip cleanly in a repo with no .github/workflows.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      # A typo in a job key or a step id is not a YAML error, it is a workflow that
+      # silently does less. check-yaml catches none of it.
+      - id: actionlint
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.29.0
+    hooks:
+      # actionlint checks the workflow is correct; zizmor checks it is safe. No
+      # overlap. --offline is not the default: zizmor goes online whenever GH_TOKEN
+      # happens to be exported, which would make the hook behave differently for two
+      # people on the same commit.
+      - id: zizmor
+        args: [--no-progress, --offline]
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.0
+    hooks:
+      # actionlint knows expression types and shell; the schema knows which keys are
+      # allowed to exist at all. They disagree about what they catch.
+      - id: check-github-workflows
+      - id: check-dependabot
+      # A job with no timeout-minutes inherits GitHub's 6-hour default, so one hang
+      # bills six hours of a private repo's minutes.
+      - id: check-github-workflows-require-timeout
+
+  # --- our own checks -------------------------------------------------------
+  # Ordinary local hooks. The scripts sit in scripts/precommit/ and are copied
+  # alongside this file.
+  - repo: local
+    hooks:
+      # Cyclomatic complexity, ratcheted against HEAD. Limit 10, and the limit is
+      # the whole argument for this hook existing alongside complexipy: measured
+      # over 1814 paired functions against a cognitive gate of 15, a cyclomatic gate
+      # at 20 catches ZERO functions cognitive misses, at 15 it catches 4, at 10 it
+      # catches 64. Those 64 are wide flat branching, which cognitive deliberately
+      # forgives. 10 is also McCabe's own 1976 number.
+      #
+      # A script rather than ruff's C901 because ruff cannot compare a function
+      # against its own previous value. A flat C901 at 10 reports 264 existing
+      # functions across these repos, and `# noqa: C901` silences each one
+      # permanently, including when it later goes from 20 to 40.
+      #
+      # `diff-quality --violations=ruff.check` is the off-the-shelf version and does
+      # not work: it matches violations to changed LINES, and a C901 violation sits
+      # on the `def` line, so a function taken from 9 to 15 by editing its body was
+      # reported as "100% quality". Measured on a probe repo, not assumed.
+      #
+      # Needs uv on PATH; calls a pinned uvx ruff so the number is reproducible.
+      # Cost: 85 ms for a 3-file commit, 157 ms for 12.
+      - id: cyclomatic-ratchet
+        name: cyclomatic complexity does not grow
+        language: system
+        entry: python3 scripts/precommit/cyclomatic_ratchet.py
+        types: [python]
+        exclude: *evidence
+
+      # Stops a file GROWING TO more than 800 lines. Two cases fail: a file this
+      # commit adds already over the limit, and a file that was at or under it and
+      # is now over. Those are the moments a file becomes a problem.
+      #
+      # A file ALREADY over the limit is reported when it grows, not failed. That
+      # differs from the complexity gates on purpose: complexity is a property of
+      # one function, so freezing a bad one costs nothing because you can edit its
+      # neighbour. Length is a property of the whole file, so failing on growth
+      # would block every edit until somebody does a large refactor they did not
+      # come here to do. Measured across these repos: 135 Python files are already
+      # over 800 lines, 77 of them source. Freezing 135 files is how a hook gets
+      # --no-verify'd. FREEZE_OVERSIZE in the script flips this if you want it.
+      #
+      # Lines, not bytes: check-added-large-files caps bytes and only looks at
+      # files being ADDED, so a file growing past a megabyte one commit at a time
+      # is invisible to it. Neither hook covers what this one does.
+      #
+      # Python only. A generic length rule fires on lock files, JSON fixtures and
+      # generated output, where length is not a defect.
+      - id: file-length-ratchet
+        name: no file grows past 800 lines
+        language: system
+        entry: python3 scripts/precommit/file_length_ratchet.py
+        types: [python]
+        exclude: *vendored
+
+      - id: no-em-dash
+        name: forbid em dashes
+        language: pygrep
+        # U+2014's UTF-8 bytes. pygrep compiles a BYTES pattern and Python's re
+        # rejects \u escapes there ("bad escape \u"). Still escaped, so the hook does
+        # not match its own config.
+        entry: '\xe2\x80\x94'
+        types: [text]
+        # House style is ours to keep in our own prose. A source document's em dashes
+        # are part of the text a measurement is graded against.
+        exclude: '^(uv\.lock|experiments/(taste-spike|walking-skeleton)/out/|fixtures/sources/)'
+
+      # Parses with ast rather than grepping. The regex version of this rule claimed
+      # that requiring the CALL or the IMPORT meant prose could not trip it; measured
+      # across two repos that is false. After excluding tests it still reported six
+      # hits, and every one was a docstring or comment EXPLAINING mock behaviour, such
+      # as "coerces to 1 via MagicMock.__index__". ast never sees a comment, and a
+      # docstring is a string expression rather than a Name or an Import.
+      - id: no-mocks-in-production
+        name: mocks and stubs stay in tests
+        language: system
+        entry: python3 scripts/precommit/check_no_mocks.py
+        types: [python]
+        # Tests are supposed to mock. Without this it reported 493 hits in one repo
+        # and 344 in another, all of them tests doing their job.
+        exclude: '(^|/)tests?/|(^|/)test_[^/]*\.py$|_test\.py$|(^|/)conftest\.py$'
+
+      # Two files describing the same project to two different agents drift
+      # invisibly: both still read fine alone, but one agent ends up told about a
+      # section the other has never heard of. Compares heading structure.
+      # A CLAUDE.md containing only `@AGENTS.md` is an import, so there is one source
+      # of truth and it passes. Deliberate renames go in .agent-docs-aliases.json.
+      # A repo with no AGENTS.md passes silently.
+      - id: agent-docs-sync
+        name: AGENTS.md and CLAUDE.md have not drifted
+        language: system
+        entry: python3 scripts/precommit/check_agent_docs_sync.py
+        pass_filenames: false
+        files: (AGENTS|CLAUDE)\.md$

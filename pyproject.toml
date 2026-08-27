@@ -143,3 +143,18 @@ strict = true
 # factory's verify phase in lockstep -- no command-line override needed.
 # kstrl is the only Python package.
 files = ["kstrl"]
+
+[tool.vulture]
+# vulture exits 2 with no paths, which reads as a broken hook rather than a
+# finding, so this section is what makes the pre-commit hook usable at all.
+# min_confidence 80 keeps it to findings worth reading; a reviewed whitelist.py
+# goes in paths once one exists.
+min_confidence = 80
+paths = ['kstrl']
+
+[tool.codespell]
+# All verified false positives, not typos. critcial is a deliberately invalid
+# env value in a test asserting ValueError. Excetra is a project name.
+# unparseable and pre-empt are accepted spellings codespell dislikes.
+ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
+skip = "uv.lock,*/package-lock.json,.git"
