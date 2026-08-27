@@ -299,8 +299,10 @@ its own, and each did so without a shared name.
 
 `kstrl/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
 all four and returns a list of `SafeModeReason` (source, detail,
-recovery anchor); empty means nominal. `ks status` and `ks serve
---dry-run` print it.
+recovery anchor); empty means nominal. The plain `ks status` report and
+`ks serve --dry-run` print it. The dashboard does not show it yet: on a
+terminal `ks status` opens the dashboard when a run exists, so asking
+the question interactively means `ks status --no-tui`.
 
 The predicate changes no behaviour. It adds no gate, no pause and no
 halt, and it never refuses anything, because every signal it reads

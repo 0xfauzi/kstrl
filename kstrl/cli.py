@@ -2894,6 +2894,10 @@ def status(
             manifest = Manifest.load(manifest_file)
         except (OSError, ValueError) as exc:
             ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
+            # Same reason as the missing-manifest path above: the
+            # predicate does not read the manifest, so a broken one must
+            # not hide a paused queue.
+            _render_safe_mode(ui_impl, root_dir)
             return 1
 
         state, source_path = _load_state(manifest)

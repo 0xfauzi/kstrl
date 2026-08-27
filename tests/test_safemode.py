@@ -456,6 +456,129 @@ def root_events(root: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
+class TestRoundTwoFindings:
+    """Round 2 review. Two of these are defects that round 1's own fixes
+    introduced, which is why a single review round is not a review."""
+
+    def test_a_crashed_run_keeps_its_recorded_skip(
+        self, tmp_path: Path,
+    ) -> None:
+        """Completed-clean A, crashed B that DID skip review, clean
+        in-flight C. Walking back to A and reporting only A threw away
+        the one thing B actually recorded."""
+        write_run(tmp_path, "factory-20260827-100000-aaaa", finished=True)
+        write_run(tmp_path, "factory-20260827-110000-bbbb",
+                  skips=("review",), finished=False)
+        write_run(tmp_path, "factory-20260827-120000-cccc", finished=False)
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 1
+        assert details[0] == (
+            "review did not run for 1 component(s) in run "
+            "factory-20260827-110000-bbbb"
+        )
+
+    def test_a_torn_line_is_damage_not_a_clean_run(
+        self, tmp_path: Path,
+    ) -> None:
+        """ev.read_events drops unparseable lines silently, so a corrupt
+        phase_skipped followed by a valid factory_completed read as a
+        finished run with nothing skipped."""
+        write_run(tmp_path, "factory-20260827-110000-bbbb", finished=True)
+        events = (tmp_path / ".kstrl" / "runs"
+                  / "factory-20260827-110000-bbbb" / "events.jsonl")
+        lines = events.read_text(encoding="utf-8").splitlines()
+        lines.insert(1, '{"event": "phase_skipped", "phase": "rev')
+        events.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        reasons = safe_mode_reasons(tmp_path)
+
+        assert [r.source for r in reasons] == ["adversarial_skipped"]
+        assert "unparseable" in reasons[0].detail
+
+    def test_a_torn_final_line_is_normal(self, tmp_path: Path) -> None:
+        """A run being appended to right now has a half-written last
+        line. That is ordinary, not damage."""
+        write_run(tmp_path, "factory-20260827-110000-bbbb",
+                  skips=("review",), finished=False)
+        events = (tmp_path / ".kstrl" / "runs"
+                  / "factory-20260827-110000-bbbb" / "events.jsonl")
+        with events.open("a", encoding="utf-8") as handle:
+            handle.write('{"event": "iteration_star')
+
+        details = [r.detail for r in safe_mode_reasons(tmp_path)]
+
+        assert len(details) == 1
+        assert details[0].startswith("review did not run")
+
+    def test_an_exhausted_lookback_says_so(self, tmp_path: Path) -> None:
+        """A backstop that runs out must report that the search never
+        reached a verdict, not report nominal."""
+        write_run(tmp_path, "factory-20260827-000000-oldest",
+                  skips=("review",), finished=True)
+        for index in range(25):
+            write_run(
+                tmp_path, f"factory-20260827-1{index:05d}-crash",
+                finished=False,
+            )
+
+        reasons = safe_mode_reasons(tmp_path)
+
+        assert [r.source for r in reasons] == ["adversarial_skipped"]
+        assert reasons[0].detail.startswith("could not determine")
+
+    def test_a_short_history_of_unfinished_runs_is_not_indeterminate(
+        self, tmp_path: Path,
+    ) -> None:
+        """The other side of it: a first run still in flight has simply
+        produced no verdict yet, and that is nominal, not degraded."""
+        write_run(tmp_path, "factory-20260827-110000-bbbb", finished=False)
+
+        assert safe_mode_reasons(tmp_path) == []
+
+    def test_dedup_does_not_swallow_an_unrelated_source(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The rule exists for ONE aliasing: Queue.pause_state handing
+        back the control-dir verdict. Dropping every repeated detail
+        would let a pause reason delete an unrelated source."""
+        skip_detail = (
+            "review did not run for 1 component(s) in run "
+            "factory-20260827-110000-bbbb"
+        )
+        write_run(tmp_path, "factory-20260827-110000-bbbb",
+                  skips=("review",), finished=True)
+        Queue(tmp_path, QueueConfig()).pause(reason=skip_detail, actor="test")
+
+        reasons = safe_mode_reasons(tmp_path)
+
+        assert [r.source for r in reasons] == ["queue", "adversarial_skipped"]
+        assert reasons[1].recovery == RECOVERY["adversarial_skipped"]
+
+    def test_legacy_control_files_are_migrated_before_any_reader(
+        self, tmp_path: Path,
+    ) -> None:
+        """The control reader reported leftover legacy files as
+        untrusted, then the queue reader migrated them away through its
+        own ensure_control_state - leaving a reason whose recovery target
+        no longer existed by the time it was printed."""
+        from kstrl.statedir import CONTROL_PAUSE, legacy_control_paths
+
+        legacy = legacy_control_paths(tmp_path)[CONTROL_PAUSE]
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(
+            json.dumps({"paused": True, "reason": "legacy pause"}) + "\n",
+            encoding="utf-8",
+        )
+
+        reasons = safe_mode_reasons(tmp_path)
+
+        assert not legacy.exists()          # migrated before any reader ran
+        assert [r.source for r in reasons] == ["queue"]
+        assert reasons[0].detail == "legacy pause"
+
+
 class TestComposition:
     def test_multiple_reasons_are_reported_in_evaluation_order(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

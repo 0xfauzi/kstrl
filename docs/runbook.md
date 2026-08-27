@@ -175,10 +175,18 @@ a run breaks, those files are the record; the TUI is only a view.
 
 kstrl is in **safe mode** whenever any of the four signals below is
 degraded. It is one name for four states that already existed
-separately, and asking about it costs nothing: `ks status` prints
-`safe mode: nominal` or `safe mode: <n> reason(s)` followed by one line
-per reason, and `ks serve --dry-run` prints the same block above its
-admission gates.
+separately, and asking about it costs nothing.
+
+Two surfaces print it. `ks status` prints `safe mode: nominal` or
+`safe mode: <n> reason(s)` followed by one line per reason, and
+`ks serve --dry-run` prints the same block above its admission gates.
+
+One caveat worth knowing before you rely on it: on a terminal, `ks
+status` opens the dashboard instead of the plain report whenever a run
+directory exists, and **the dashboard does not show safe mode yet**. Ask
+with `ks status --no-tui` (or from a pipe, from CI, or with `--watch`),
+or with `ks serve --dry-run`. A masthead chip on the dashboard is the
+tracked follow-up.
 
 Safe mode itself refuses nothing. Each signal below already refuses
 where refusing is right, and the predicate only reads them, so leaving

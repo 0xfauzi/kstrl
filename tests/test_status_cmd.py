@@ -479,6 +479,24 @@ class TestSafeModeLine:
         assert "No manifest found" in output
         assert "[queue] poison breaker tripped" in output
 
+    def test_it_is_answerable_with_a_broken_manifest(
+        self, tmp_path: Path,
+    ) -> None:
+        """The predicate does not read the manifest, so a corrupt one
+        must not hide a paused queue either."""
+        from kstrl.workqueue import Queue, QueueConfig
+
+        manifest = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text("{ not json", encoding="utf-8")
+        Queue(tmp_path, QueueConfig()).pause(reason="paused", actor="test")
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+
+        assert exit_code == 1
+        assert "Failed to load manifest" in output
+        assert "[queue] paused" in output
+
     def test_the_line_carries_no_colour_codes(self, tmp_path: Path) -> None:
         from kstrl.workqueue import Queue, QueueConfig
 

@@ -23,8 +23,10 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   and a callout inside a pull request body. `safe_mode_reasons(root_dir)`
   reads all four and returns a source, a detail sentence taken verbatim
   from the existing signal, and the runbook anchor that recovers it;
-  `ks status` and `ks serve --dry-run` print `safe mode: nominal` or one
-  line per reason. It never raises: a signal that cannot be read is
+  the plain `ks status` report and `ks serve --dry-run` print
+  `safe mode: nominal` or one line per reason. The dashboard does not
+  show it yet, so on a terminal the question is asked with
+  `ks status --no-tui`. It never raises: a signal that cannot be read is
   itself a reason, because a reader that failed is not evidence that the
   signal is clear. No behaviour changed and no gate was added, since
   every signal it reads already refuses where refusing is right

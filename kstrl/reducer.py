@@ -564,12 +564,16 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
     must distinguish "no runs" from "could not look" wants
     :func:`run_dirs_newest_first` instead.
     """
+    from kstrl.runid import run_sort_key
+
     try:
-        newest_first = run_dirs_newest_first(root_dir)
-        return [
-            d for d in reversed(newest_first)
-            if (d / "events.jsonl").exists()
-        ]
+        return sorted(
+            (
+                d for d in _run_dirs_unsorted(root_dir)
+                if (d / "events.jsonl").exists()
+            ),
+            key=lambda d: run_sort_key(d.name),
+        )
     except OSError:
         return []
 
@@ -587,6 +591,21 @@ def read_run_dir(run_dir: Path) -> list[ev.Event]:
             events.extend(ev.read_events(comp_dir / "engineer.jsonl"))
     events.sort(key=_sort_key)
     return events
+
+
+def _run_dirs_unsorted(root_dir: Path) -> list[Path]:
+    """Run directories in filesystem order, unsorted.
+
+    Shared so the two orderings below cannot disagree about which
+    directories exist. Raises on an unreadable ``runs/``; a missing one
+    is not an error, it is "no runs".
+    """
+    from kstrl.statedir import state_dir
+
+    runs_root = state_dir(root_dir) / "runs"
+    if not runs_root.exists():
+        return []
+    return [d for d in runs_root.iterdir() if d.is_dir()]
 
 
 def run_dirs_newest_first(root_dir: Path) -> list[Path]:
@@ -610,13 +629,9 @@ def run_dirs_newest_first(root_dir: Path) -> list[Path]:
     component.
     """
     from kstrl.runid import run_sort_key
-    from kstrl.statedir import state_dir
 
-    runs_root = state_dir(root_dir) / "runs"
-    if not runs_root.exists():
-        return []
     return sorted(
-        (d for d in runs_root.iterdir() if d.is_dir()),
+        _run_dirs_unsorted(root_dir),
         key=lambda d: run_sort_key(d.name),
         reverse=True,
     )

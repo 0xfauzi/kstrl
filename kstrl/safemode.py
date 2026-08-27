@@ -184,9 +184,10 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
 
     events_path = run_dir / "events.jsonl"
     try:
-        # A strict open. read_events swallows OSError into [].
-        with events_path.open("rb"):
-            pass
+        # ONE strict snapshot. Opening to probe and then calling
+        # ``read_events`` would open twice: a stream deleted between the
+        # two opens comes back as [], which reads as "nothing skipped".
+        raw = events_path.read_bytes()
     except FileNotFoundError:
         return [_reason(
             "adversarial_skipped",
@@ -201,7 +202,19 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
 
     skipped: dict[str, set[str]] = {phase: set() for phase in GATED_PHASES}
     finished = False
-    for event in ev.read_events(events_path):
+    torn = 0
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+    for index, line in enumerate(lines):
+        event = ev.parse_event_line(line)
+        if event is None:
+            # ``read_events`` drops these silently, so a corrupt
+            # phase_skipped line followed by a valid factory_completed
+            # reads as a clean finished run. A torn LAST line is normal
+            # for a run being appended to right now; anything earlier is
+            # damage, and damage is not a clean sensor.
+            if line.strip() and index < len(lines) - 1:
+                torn += 1
+            continue
         if isinstance(event, ev.RunCompleted):
             finished = True
         elif isinstance(event, ev.PhaseSkipped) and event.phase in skipped:
@@ -215,6 +228,15 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
         )
         for phase in GATED_PHASES if skipped[phase]
     ]
+    if torn:
+        reasons.append(_reason(
+            "adversarial_skipped",
+            f"could not read run {run_dir.name}: {torn} unparseable "
+            "line(s) in the event stream, so a skipped phase could be "
+            "hidden in the damage",
+        ))
+        # Damaged, so it has not answered: the caller keeps looking back.
+        finished = False
     return reasons, finished
 
 
@@ -226,27 +248,39 @@ def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
     # can skip an adversarial gate. Without this filter a `ks decompose`
     # started afterwards becomes "the newest run", finishes clean because
     # it has no phases at all, and clears a factory run's skip.
-    runs = [
+    factory_runs = [
         d for d in run_dirs_newest_first(root_dir)
         if run_kind(d.name) == _SKIPPING_RUN_KIND
-    ][:_LOOKBACK_RUNS]
+    ]
+    runs = factory_runs[:_LOOKBACK_RUNS]
     if not runs:
         return []
 
-    reasons, finished = _report_for_run(runs[0])
-    if finished:
-        return reasons
-
-    # The newest run has not finished, and "no skip recorded yet" is not
+    # Walk back until a run has FINISHED. "No skip recorded yet" is not
     # "no skip": run B writes its first event long before it reaches
-    # review, so reporting only B would clear run A's skip the moment B
-    # starts. The last run that DID finish holds the answer until a run
-    # finishes without skipping.
-    for older in runs[1:]:
-        older_reasons, older_finished = _report_for_run(older)
-        if older_finished:
-            reasons.extend(older_reasons)
+    # review, so stopping at B would clear run A's skip the moment B
+    # started. Every run passed on the way contributes its own skips -
+    # a crashed run that did record one still recorded it, and dropping
+    # that was this loop's own bug in the previous round.
+    reasons: list[SafeModeReason] = []
+    settled = False
+    for run_dir in runs:
+        run_reasons, finished = _report_for_run(run_dir)
+        reasons.extend(run_reasons)
+        if finished:
+            settled = True
             break
+
+    if not settled and len(factory_runs) > len(runs):
+        # The walk hit the backstop with no finished run behind it, and
+        # there are older runs it did not open. Silence here would be a
+        # verdict the search never reached.
+        reasons.append(_reason(
+            "adversarial_skipped",
+            f"could not determine whether the adversarial gates ran: no "
+            f"finished factory run among the {_LOOKBACK_RUNS} most "
+            f"recent of {len(factory_runs)}",
+        ))
     return reasons
 
 
@@ -270,8 +304,22 @@ def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]:
     See the module docstring for what "read-only" means here and for why
     an exactly duplicated ``detail`` is dropped.
     """
+    try:
+        # Migrate FIRST, so every reader below sees the same control
+        # state. Without this the control reader reports leftover legacy
+        # files as untrusted and the queue reader then migrates them
+        # through its own ensure_control_state, leaving a reason whose
+        # recovery target no longer exists by the time it is printed.
+        from kstrl.statedir import ensure_control_state
+
+        ensure_control_state(root_dir)
+    except OSError:
+        # Not fatal: the control reader below reports an unusable
+        # control directory in its own words.
+        pass
+
     reasons: list[SafeModeReason] = []
-    seen: set[str] = set()
+    control_details: set[str] = set()
     for source, read in _READERS:
         try:
             found = read(root_dir)
@@ -279,9 +327,15 @@ def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]:
             found = [_reason(
                 source, f"could not read the {source} signal: {exc}",
             )]
+        if source == "control_dir":
+            control_details = {reason.detail for reason in found}
         for reason in found:
-            if reason.detail in seen:
+            # The ONE known aliasing, and only it: Queue.pause_state
+            # consults control_untrusted_reason itself and hands back
+            # that exact string. Dropping every repeated detail instead
+            # would let an operator's pause reason silently delete an
+            # unrelated source and its recovery anchor.
+            if source == "queue" and reason.detail in control_details:
                 continue
-            seen.add(reason.detail)
             reasons.append(reason)
     return reasons

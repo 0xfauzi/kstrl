@@ -450,6 +450,24 @@ class TestLoadRunState:
             tmp_path / ".kstrl" / "runs" / "factory-20260720-000001.000000-x",
         ]
 
+    def test_a_tie_resolves_the_same_way_it_did_before(
+        self, tmp_path: Path,
+    ) -> None:
+        """Two kinds can share a run_sort_key (same stamp, same nonce).
+        sorted(reverse=True) keeps ties in their original order, so
+        reversing that list FLIPS them - and load_run_state takes the
+        last element, so it would pick the other run. Pin the old order
+        rather than change working behaviour inside a refactor."""
+        self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "fac")
+        self._write_v2(tmp_path, "decompose-20260720-000001.000000-x", "dec")
+
+        ordered = reducer._v2_run_dirs(tmp_path)
+        listed = [
+            d for d in (tmp_path / ".kstrl" / "runs").iterdir() if d.is_dir()
+        ]
+
+        assert [d.name for d in ordered] == [d.name for d in listed]
+
     def test_run_dirs_newest_first_does_not_swallow_a_read_error(
         self, tmp_path: Path,
     ) -> None:
