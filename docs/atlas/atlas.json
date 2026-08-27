@@ -1,5 +1,5 @@
 {
- "built_at_commit": "6399ad86764d5dcb054b492ee661b5df245d5fe2",
+ "built_at_commit": "b73e3285dfdaadd8fa5ceaab842c2f6e045174c9",
  "components": {
   "kstrl": {
    "classes": [],
@@ -7638,7 +7638,7 @@
     "test_first_run_is_not_a_fallback"
    ],
    "tests_primary": 39,
-   "tests_total": 52,
+   "tests_total": 54,
    "uses": {
     "kstrl.autonomy": [
      "AutonomyConfig",
@@ -8768,7 +8768,7 @@
     "test_decompose_session_runs_end_to_end"
    ],
    "tests_primary": 0,
-   "tests_total": 145,
+   "tests_total": 147,
    "uses": {
     "kstrl.interaction": [
      "PromptKind",
@@ -10492,7 +10492,7 @@
     "test_empty_state_renders_guidance"
    ],
    "tests_primary": 0,
-   "tests_total": 104,
+   "tests_total": 106,
    "uses": {
     "kstrl.events": [
      "*"
@@ -10706,9 +10706,11 @@
     "test_escape_closes_the_panel",
     "test_the_banner_names_repeated_sources_once",
     "test_the_banner_names_the_sources",
+    "test_the_chip_reaches_the_home_masthead",
     "test_the_chip_reaches_the_run_masthead",
     "test_the_chip_stays_narrow_in_every_state",
     "test_the_clean_state_is_rendered_not_hidden",
+    "test_the_home_chip_is_rendered_while_clean",
     "test_the_interval_is_far_slower_than_the_poll",
     "test_the_key_opens_the_panel_with_the_reasons",
     "test_the_panel_separates_nominal_from_not_checked",
@@ -10716,7 +10718,7 @@
     "test_three_states_are_visually_distinct"
    ],
    "tests_primary": 0,
-   "tests_total": 13,
+   "tests_total": 15,
    "uses": {
     "kstrl.safemode": [
      "SafeModeReason"
@@ -11835,9 +11837,11 @@
     "test_escape_closes_the_panel",
     "test_the_banner_names_repeated_sources_once",
     "test_the_banner_names_the_sources",
+    "test_the_chip_reaches_the_home_masthead",
     "test_the_chip_reaches_the_run_masthead",
     "test_the_chip_stays_narrow_in_every_state",
     "test_the_clean_state_is_rendered_not_hidden",
+    "test_the_home_chip_is_rendered_while_clean",
     "test_the_interval_is_far_slower_than_the_poll",
     "test_the_key_opens_the_panel_with_the_reasons",
     "test_the_panel_separates_nominal_from_not_checked",
@@ -11845,7 +11849,7 @@
     "test_three_states_are_visually_distinct"
    ],
    "tests_primary": 0,
-   "tests_total": 13,
+   "tests_total": 15,
    "uses": {
     "kstrl.safemode": [
      "SafeModeReason"
@@ -12720,7 +12724,7 @@
     "test_an_unreadable_marker_file_reads_as_paused"
    ],
    "tests_primary": 91,
-   "tests_total": 571,
+   "tests_total": 573,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
