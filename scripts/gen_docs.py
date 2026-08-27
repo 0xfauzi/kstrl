@@ -207,7 +207,8 @@ def _section_specs() -> list[SectionSpec]:
             "factory", "Factory orchestration (Phase 0-3 pipeline)",
             identity_keys(FactoryConfig, [
                 "max_parallel", "max_retries", "retry_delay", "use_worktrees",
-                "single_pr", "create_prs", "review_mode", "merge_timeout",
+                "single_pr", "create_prs", "review_mode", "setpoint_agreement",
+                "merge_timeout",
                 "max_adversarial_calls", "max_total_tokens", "max_cost_usd",
                 "pause_before_pr_merge", "progress_log_enabled",
                 "keep_worktrees_on_failure",
@@ -403,6 +404,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "single_pr"): "one PR for the whole run instead of per-component",
     ("factory", "create_prs"): "push + merge PRs via gh",
     ("factory", "review_mode"): "hard | advisory | skip (Phase 2)",
+    ("factory", "setpoint_agreement"): (
+        "advisory | block: what to do when the reviewer does not confirm a "
+        "story the engineer marked passes=true (R10.3)"
+    ),
     ("factory", "merge_timeout"): "seconds to wait for PR merge confirmation",
     ("factory", "max_adversarial_calls"): "cap on review+security+distill LLM calls; 0 = unbounded",
     ("factory", "max_total_tokens"):
@@ -566,6 +571,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("agent", "budget_usd"): 123.5,
     ("agent", "reasoning_effort"): "high",
     ("factory", "review_mode"): "advisory",
+    ("factory", "setpoint_agreement"): "block",
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("policy", "license_unresolved"): "advisory",

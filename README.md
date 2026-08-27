@@ -321,6 +321,7 @@ use_worktrees = true               # isolate each component in .kstrl/worktrees/
 single_pr = false                  # one PR for the whole run instead of per-component
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
+setpoint_agreement = "advisory"    # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
 max_total_tokens = 0               # run-level token budget; 0 = unbounded. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)

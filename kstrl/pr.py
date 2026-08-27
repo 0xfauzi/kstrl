@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kstrl.findings import render_findings_markdown
+from kstrl.findings import (
+    SETPOINT_DISAGREEMENT_CATEGORY,
+    render_findings_markdown,
+)
 from kstrl.git import fetch_base_branch
 
 if TYPE_CHECKING:
@@ -529,12 +532,25 @@ def _generate_pr_body(
     # render_findings_markdown callouts for exactly the non-execution
     # subset (infra errors + deliberate skips); real findings stay with
     # the richer review_findings string above.
-    non_execution = [
+    #
+    # R10.3 adds set-point disagreements to the same callout set, for
+    # the opposite reason to the one that keeps criteria out of it. A
+    # criterion finding is excluded because its category is always
+    # "prd_criterion", which says less than the string above already
+    # does. A set-point finding has a category that means something and
+    # carries the story id in `location`, and the review_findings string
+    # cannot carry it at all: it renders criteria and concerns, and this
+    # is neither. Without this it would reach the manifest and the
+    # journal and be invisible on the pull request, which for an
+    # advisory-only gate is the same as not existing.
+    callouts = [
         f for f in component.findings
-        if f.is_infrastructure_error or f.is_phase_skip
+        if f.is_infrastructure_error
+        or f.is_phase_skip
+        or f.category == SETPOINT_DISAGREEMENT_CATEGORY
     ]
-    if non_execution:
-        lines.append(render_findings_markdown(non_execution).rstrip())
+    if callouts:
+        lines.append(render_findings_markdown(callouts).rstrip())
         lines.append("")
 
     # PRD reference

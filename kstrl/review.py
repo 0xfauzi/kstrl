@@ -17,12 +17,18 @@ from kstrl.decompose import (
     collect_agent_output,
     generate_data_delimiter,
 )
-from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
+from kstrl.findings import (
+    SETPOINT_DISAGREEMENT_CATEGORY,
+    Finding,
+    dump_raw_debug,
+    tag_finding_with_model,
+)
 from kstrl.prd import PRD
 from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
+    from kstrl.factory import FactoryConfig
     from kstrl.ui.base import UI
 
 
@@ -61,14 +67,46 @@ VALID_CRITERION_VERDICTS = frozenset({
 })
 
 
+# R10.3: story ids are compared case-insensitively after stripping.
+# parse_review_output's coverage gate has matched ids this way since
+# R1.1; the set-point check compares the same ids against the PRD, so
+# the rule lives in one place rather than being spelled out at each
+# comparison. Matching is by id and never by criterion text.
+def normalize_story_id(value: str) -> str:
+    """The comparison form of a story id: stripped and lowercased."""
+    return value.strip().lower()
+
+
+# R10.3: severity order for rolling a story's criterion verdicts up into
+# one story verdict. Fail dominates advisory dominates pass, so the
+# story's verdict is the worst any of its criteria received.
+_VERDICT_RANK: dict[str, int] = {
+    ReviewVerdict.PASS.value: 0,
+    ReviewVerdict.ADVISORY.value: 1,
+    ReviewVerdict.FAIL.value: 2,
+}
+_RANK_VERDICT: dict[int, str] = {v: k for k, v in _VERDICT_RANK.items()}
+
+
 @dataclass
 class CriterionReview:
-    """Review verdict for a single acceptance criterion."""
+    """Review verdict for a single acceptance criterion.
+
+    R10.3: ``story_id`` is the ``storyId`` the reviewer emitted for the
+    story this criterion belongs to, stripped but otherwise verbatim.
+    It is stored so the reviewer's verdicts can be compared against the
+    engineer's per-story ``passes`` flag (set-point agreement); before
+    R10.3 the parser read the id and discarded it. Normalisation for
+    comparison happens at lookup time, not here, so the raw value stays
+    inspectable. Empty when the reviewer omitted the id, in which case
+    the verdict cannot be attributed to a story.
+    """
 
     criterion: str
     verdict: str
     explanation: str
     suggestion: str = ""
+    story_id: str = ""
 
 
 @dataclass
@@ -244,6 +282,97 @@ class ReviewResult:
         fail_count docstring for the breakdown properties."""
         return self.criterion_advisory_count + self.concern_advisory_count
 
+    def story_verdicts(self) -> dict[str, str]:
+        """R10.3: per-story verdict derived from criterion verdicts.
+
+        "fail" if any criterion for the story is fail; else "advisory"
+        if any is advisory; else "pass". A story with no criterion
+        verdict is ABSENT from the dict rather than present with a
+        default - that absence is how "the reviewer did not cover this
+        story" is expressed, and it is a different fact from "the
+        reviewer looked and was unhappy".
+
+        Keys are normalised by ``normalize_story_id`` (stripped,
+        lowercased), matching how the coverage gate has compared ids
+        since R1.1. Look up with ``normalize_story_id(story.id)``, never
+        with the raw id, or a reviewer writing "us-001" for a PRD's
+        "US-001" reads as uncovered.
+
+        Criteria whose ``story_id`` is empty are ignored: a verdict that
+        names no story cannot be attributed to one.
+
+        A chunked hard-mode review merges the criteria of several passes
+        (``merge_review_results``), so two chunks can return different
+        verdicts for the same criterion. Fail dominating resolves that
+        toward the stricter reading, which is the same direction hard
+        mode already takes when it fails the merged result on any single
+        chunk's failure.
+        """
+        worst: dict[str, int] = {}
+        for cr in self.criteria:
+            key = normalize_story_id(cr.story_id)
+            # A verdict outside the whitelist is not a reading. The
+            # parser cannot produce one (an unrecognised verdict is an
+            # infrastructure error), so this only guards a
+            # hand-constructed result; skipping is the safe direction,
+            # because a story left with no reading at all reads as
+            # uncovered rather than as confirmed.
+            if not key or cr.verdict not in _VERDICT_RANK:
+                continue
+            rank = _VERDICT_RANK[cr.verdict]
+            worst[key] = max(worst.get(key, rank), rank)
+        return {key: _RANK_VERDICT[rank] for key, rank in worst.items()}
+
+    def criteria_for(self, story_id: str) -> list[CriterionReview]:
+        """Every criterion verdict the reviewer returned for *story_id*.
+
+        Order is the reviewer's own. Matching is by normalised id and
+        never by criterion text, the rule ``parse_review_output`` has
+        followed since R1.1.
+        """
+        key = normalize_story_id(story_id)
+        return [
+            cr for cr in self.criteria
+            if normalize_story_id(cr.story_id) == key
+        ]
+
+    def judged_criterion_count(self, story_id: str) -> int:
+        """How many DISTINCT criteria the reviewer judged for a story.
+
+        Distinct by criterion text, because a chunked hard-mode review
+        merges the passes of several chunks and the same criterion can
+        come back more than once (``merge_review_results``). Counting
+        raw entries there would report a story as fully judged on one
+        criterion judged twice.
+
+        Used to tell "the reviewer passed this story" from "the reviewer
+        passed the part of this story it looked at". It is a count, not
+        a match: pairing reviewer text to PRD text would be matching by
+        criterion text, which this module refuses to do.
+
+        What a count therefore cannot catch, stated so nobody reads more
+        into it than it carries: a reviewer that returns the right
+        NUMBER of criteria while substituting one the PRD never asked
+        for still satisfies this check, because two distinct texts came
+        back for two acceptance criteria. Closing that would need text
+        matching. The count catches the failure mode that actually
+        occurs, a reviewer judging fewer criteria than the story has,
+        and is silent about the one it cannot see.
+        """
+        return len({cr.criterion for cr in self.criteria_for(story_id)})
+
+    def non_pass_criteria(self, story_id: str) -> list[CriterionReview]:
+        """Every criterion for *story_id* the reviewer did not pass.
+
+        Order is the reviewer's own. Used for the set-point finding's
+        suggestion text and for the note written into a reverted PRD
+        story, so both read the same evidence.
+        """
+        return [
+            cr for cr in self.criteria_for(story_id)
+            if cr.verdict != ReviewVerdict.PASS.value
+        ]
+
     def as_findings(self) -> list[Finding]:
         """E3: typed representation of every non-PASS criterion + every
         concern. Used by factory to populate ``Component.findings``.
@@ -298,6 +427,218 @@ class ReviewResult:
         return [
             tag_finding_with_model(f, self.reviewer_model) for f in out
         ]
+
+
+def setpoint_disagreements(
+    prd: PRD, review: ReviewResult, *, severity: str,
+) -> list[Finding]:
+    """R10.3: one Finding per story where the two sensors disagree.
+
+    The engineer agent is the only writer of ``passes`` in the PRD: it
+    does the work and then files the report on the work. The reviewer is
+    a second, independent reading of the same question. This returns one
+    finding for every story the engineer marked done that the reviewer
+    did not independently mark pass, whether the reviewer marked it fail,
+    marked it advisory, never covered it at all, or passed only some of
+    its acceptance criteria.
+
+    That last case is the one the coverage gate in ``parse_review_output``
+    does not catch: it checks that every STORY got a verdict, not that
+    every CRITERION did. A reviewer that returns one passing criterion
+    for a two-criterion story reads as a clean pass there, so the claim
+    would be confirmed on half the evidence. Confirmation here needs both
+    a pass and a verdict per acceptance criterion.
+
+    Returns ``[]`` when ``review.infrastructure_error`` is set. The
+    reviewer crashed or returned unparseable output, so there is no
+    second reading; absence of a measurement is not disagreement, and
+    reporting it as one would manufacture findings out of an outage. The
+    outage itself is already recorded as an infrastructure finding by
+    ``as_findings``.
+
+    A story with ``passes`` false never produces a finding. The agent
+    made no claim about it, so there is nothing to disagree with.
+
+    Every finding is tagged with the reviewing model identity. The
+    comparison is mechanical, but the evidence is one model's verdict,
+    and R7.1 exists so a finding can be attributed to the family that
+    raised it.
+    """
+    if review.infrastructure_error:
+        return []
+    verdicts = review.story_verdicts()
+    out: list[Finding] = []
+    for story in prd.user_stories:
+        if story.passes is not True:
+            continue
+        verdict = verdicts.get(normalize_story_id(story.id))
+        judged = review.judged_criterion_count(story.id)
+        expected = len(story.acceptance_criteria)
+        if verdict == ReviewVerdict.PASS.value and judged >= expected:
+            continue
+        unmet = review.non_pass_criteria(story.id)
+        # The suggestion carries the reviewer's own criterion texts when
+        # it judged any of them unmet. When it judged none unmet but did
+        # not judge them all, there is no criterion text to hand over,
+        # so the suggestion says what is missing instead. A story with
+        # no verdict at all needs neither: the explanation already says
+        # "not covered" and repeating the count adds nothing.
+        gap = ""
+        if verdict is None:
+            reads = "not covered"
+        elif verdict != ReviewVerdict.PASS.value:
+            reads = verdict
+        else:
+            # Every verdict returned was a pass, but not every
+            # acceptance criterion got one. "The reviewer passed this
+            # story" and "the reviewer passed the part of it that it
+            # looked at" are different facts, and only the first
+            # confirms the engineer's claim.
+            reads = (
+                f"pass on only {judged} of {expected} acceptance criteria"
+            )
+            gap = (
+                f"The reviewer returned {judged} verdict(s) for "
+                f"{expected} acceptance criteria, so the story is "
+                "unconfirmed rather than judged unmet."
+            )
+        out.append(Finding.from_review_concern(
+            category=SETPOINT_DISAGREEMENT_CATEGORY,
+            severity=severity,
+            location=story.id,
+            explanation=(
+                f"Story {story.id} is marked passes=true by the engineer "
+                f"but the reviewer's verdict is {reads}"
+            ),
+            suggestion="; ".join(cr.criterion for cr in unmet) or gap,
+        ))
+    return [tag_finding_with_model(f, review.reviewer_model) for f in out]
+
+
+def setpoint_retry_context(
+    disagreements: list[Finding], review: ReviewResult,
+    *, reverted: bool = True,
+) -> str:
+    """R10.3: the set-point findings as text for the engineer's retry.
+
+    Says what the harness did as well as what it found, because the
+    agent will otherwise re-read a PRD it does not expect to have
+    changed under it. ``reverted=False`` when the rewritten PRD could
+    not be saved: the agent is then asked to reset the flags itself,
+    rather than being told about a change that did not happen.
+
+    It renders the reviewer's own explanation and suggestion per unmet
+    criterion, not just the criterion text. The criterion text alone
+    tells the agent nothing it did not already read in the PRD, and this
+    is the one retry path where the reviewer's reasoning does not reach
+    the agent by another route: ``as_retry_context`` is added only when
+    the review FAILED, and a set-point block happens on a review that
+    passed.
+    """
+    if not disagreements:
+        return ""
+    did = (
+        "Their `passes` flags have been reset to false in the PRD."
+        if reverted else
+        "Their `passes` flags could NOT be reset automatically: set each "
+        "one back to false yourself before doing anything else."
+    )
+    lines = [
+        "Set-point disagreement: you marked the stories below done, but "
+        f"the reviewer did not confirm them. {did} Implement each one "
+        "properly and set the flag again only once its acceptance "
+        "criteria are genuinely met.",
+    ]
+    for finding in disagreements:
+        lines.append(f"- {finding.explanation}")
+        judged = review.criteria_for(finding.location)
+        unmet = [
+            cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value
+        ]
+        if not unmet:
+            # Two different situations reach here and the agent must not
+            # be handed the wrong one. "Nothing was judged" and
+            # "everything judged passed, but not everything was judged"
+            # both leave `unmet` empty, and the second used to be
+            # described as the first - contradicting the finding printed
+            # directly above it, which had just said "pass on only 1 of 2".
+            lines.append(
+                "  - Every criterion the reviewer judged passed, but it "
+                "did not judge them all. Nothing here says the story is "
+                "wrong; it says the story is unconfirmed."
+                if judged else
+                "  - The reviewer returned no verdict for this story, so "
+                "there is no criterion-level evidence to act on. Check "
+                "the story against its acceptance criteria yourself."
+            )
+            continue
+        for cr in unmet:
+            lines.append(f"  - [{cr.verdict}] {cr.criterion}")
+            if cr.explanation:
+                lines.append(f"    - Reviewer: {cr.explanation}")
+            if cr.suggestion:
+                lines.append(f"    - Suggestion: {cr.suggestion}")
+    return "\n".join(lines)
+
+
+def revert_unconfirmed_stories(
+    prd: PRD, review: ReviewResult, disagreements: list[Finding],
+    *, attempt: int,
+) -> list[str]:
+    """R10.3: reset ``passes`` on every story in *disagreements*.
+
+    Mutates *prd* in place and returns the ids it reverted; the caller
+    saves. This is what makes the PRD, the record of what is done, agree
+    with the sensor rather than with the claim. It also feeds back into
+    the engineer's own story selection: the prompt tells it to pick the
+    highest-priority story where ``passes`` is false, so a reverted
+    story is picked up again on the next attempt without the retry text
+    having to name it.
+
+    Each revert leaves a note saying who reverted it, on which attempt,
+    and the first criterion the reviewer would not pass, so the PRD
+    carries the audit trail even if the findings are never read.
+    """
+    ids = [f.location for f in disagreements if f.location]
+    wanted = {normalize_story_id(i) for i in ids}
+    reverted: list[str] = []
+    for story in prd.user_stories:
+        if normalize_story_id(story.id) not in wanted:
+            continue
+        unmet = review.non_pass_criteria(story.id)
+        detail = (
+            unmet[0].criterion if unmet else "story not covered by review"
+        )
+        note = f"reverted by reviewer (attempt {attempt}): {detail}"
+        story.passes = False
+        story.notes = f"{story.notes}\n{note}" if story.notes else note
+        reverted.append(story.id)
+    return reverted
+
+
+def setpoint_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
+    """Whether a set-point disagreement should FAIL the component.
+
+    Mirrors ``adequacy.layer0_blocks``. The config can opt in early
+    (``[factory] setpoint_agreement = "block"`` with the ladder off), and
+    the autonomy ladder can force it on from L1 upward, but neither can
+    turn it off once the other wants it. Autonomy is allowed to tighten a
+    gate and never to loosen one.
+
+    The gate ships advisory so that its first output is a measurement
+    rather than a wall. Graduating the default to "block" is the
+    operator's judgement, made after reading real findings, and is
+    deliberately not encoded as a number here.
+    """
+    if config.setpoint_agreement == "block":
+        return True
+    # autonomy_level == 0 means the ladder is off, so only the explicit
+    # config opt-in above can block. With the ladder on, a run that has
+    # earned any autonomy at all should not be taking the agent's word
+    # for done: the whole point of the ladder is that less human
+    # attention is spent per run, which makes the second sensor matter
+    # more, not less.
+    return autonomy_level >= 1
 
 
 REVIEWER_PROMPT_VERSION = "1.2.0"
@@ -570,9 +911,14 @@ def parse_review_output(
                 verdict=verdict,
                 explanation=str(crit_data.get("explanation", "")),
                 suggestion=str(crit_data.get("suggestion", "")),
+                # R10.3: keep the story this verdict belongs to. The id
+                # was already read above and thrown away; the set-point
+                # check needs it to compare the reviewer's verdict
+                # against the engineer's passes flag per story.
+                story_id=story_id,
             ))
             if story_id:
-                covered_story_ids.add(story_id.lower())
+                covered_story_ids.add(normalize_story_id(story_id))
 
     if invalid_verdicts:
         return _infra(
@@ -585,7 +931,7 @@ def parse_review_output(
     if expected_story_ids:
         missing = [
             sid for sid in expected_story_ids
-            if sid.strip().lower() not in covered_story_ids
+            if normalize_story_id(sid) not in covered_story_ids
         ]
         if missing:
             return _infra(

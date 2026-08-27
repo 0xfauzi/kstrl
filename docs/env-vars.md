@@ -63,6 +63,7 @@ All values are seconds; 0 or less disables that limit.
 | `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
 | `KSTRL_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
+| `KSTRL_FACTORY_SETPOINT_AGREEMENT` | `advisory` \| `block` | advisory |
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
 

@@ -39,6 +39,32 @@ Manual options:
 
 If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (timeout, API outage, parse error). Same retry path, but check API health.
 
+## Phase 2: set-point disagreement
+
+**Symptom**: `Phase 2 FAILED for <comp_id>: set-point disagreement on N story(ies); passes reverted in the PRD`, with `failed_check = setpoint`.
+
+A story is marked done when the engineer agent sets `passes: true` in the PRD. That is the agent that did the work reporting on the work, so it is a claim rather than a measurement. R10.3 checks the claim against the reviewer's per-story verdicts, which are an independent reading. This fires when the engineer said done and the reviewer did not confirm it - because it judged a criterion unmet, raised an advisory on one, or never covered the story at all.
+
+**Diagnose**:
+
+- Look for `setpoint_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
+- The PRD itself carries the audit trail: each reverted story gains a `reverted by reviewer (attempt N): <criterion>` note.
+- The explanation says how the claim failed to be confirmed, and the three readings mean different things. A verdict of `fail` or `advisory` means the reviewer looked and was not satisfied. "not covered" means it returned no verdict for that story at all, usually a story the diff did not touch. "pass on only N of M acceptance criteria" means it passed everything it judged but did not judge everything: the story is unconfirmed rather than judged unmet, and the reviewer's coverage is what to look at first.
+
+**Symptom, second form**: `Phase 2 FAILED for <comp_id>: set-point agreement cannot be confirmed, the reviewer did not report`.
+
+In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `setpoint_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. The failure is recorded as `failed_check = infrastructure` and journalled as `review:infrastructure`, not as a disagreement, because no reviewer disagreed with anything. Check reviewer API health, as for any `infrastructure_error`, and re-run.
+
+**Symptom, third form**: `Phase 2 FAILED for <comp_id>: Set-point agreement cannot be confirmed: the reviewer never ran (adversarial LLM budget (N) exhausted) and a story is still marked passes=true`.
+
+The adversarial budget covers review, security and knowledge distillation together. When it runs out, Phase 2 downgrades to a skip, and in blocking mode a skipped reviewer cannot confirm anything. This does not retry, because retrying cannot recover budget: raise `max_adversarial_calls`, or accept the components already done and re-run the rest.
+
+**Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
+
+If `setpoint_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
+
+If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
+
 ## Phase 2.5: security review failed (hard mode)
 
 **Symptom**: `Phase 2.5 FAILED for <comp_id>: N critical, M high`

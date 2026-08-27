@@ -162,6 +162,29 @@ def validate_token_ceiling(value: int, source: str) -> int:
     return value
 
 
+#: R10.3: the two settings [factory] setpoint_agreement accepts.
+VALID_SETPOINT_AGREEMENT = ("advisory", "block")
+
+
+def _validate_setpoint_agreement(value: str, source: str) -> str:
+    """Reject an unrecognised set-point mode at load time.
+
+    ``review_mode`` next door is validated only when the pipeline builds
+    a ``ReviewMode`` from it, deep inside Phase 2, which turns a typo in
+    kstrl.toml into a crash several minutes and one agent run later.
+    This one fails where the value is read, in the shape
+    ``AdequacyConfig.__post_init__`` uses. Silently treating an
+    unrecognised value as "advisory" would be worse than either: the
+    operator would believe a gate was blocking when it was not.
+    """
+    if value not in VALID_SETPOINT_AGREEMENT:
+        raise ValueError(
+            f"invalid {source} {value!r}; expected "
+            + " or ".join(repr(v) for v in VALID_SETPOINT_AGREEMENT)
+        )
+    return value
+
+
 @dataclass
 class FactoryConfig:
     """Configuration for factory orchestration."""
@@ -183,6 +206,14 @@ class FactoryConfig:
     skip_verification: bool = False
     # Phase 2: reviewer agent
     review_mode: str = ReviewMode.HARD.value
+    # R10.3 set-point agreement: what to do when the engineer marked a
+    # story passes=true and the reviewer did not independently confirm
+    # it. "advisory" records a finding and lets the component proceed;
+    # "block" also reverts the flag in the PRD and retries the story.
+    # Ships advisory so the gate's first output is a measurement rather
+    # than a wall. The autonomy ladder can force blocking on from L1
+    # upward (see review.setpoint_blocks); it can never turn it off.
+    setpoint_agreement: str = "advisory"
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
@@ -272,6 +303,14 @@ class FactoryConfig:
     # + env. Opt-in ([policy].enabled = false): existing runs unchanged.
     policy_config: PolicyConfig | None = None
 
+    def __post_init__(self) -> None:
+        # R10.3: catch a bad set-point mode wherever the config is
+        # built, not only in load(). A FactoryConfig assembled from CLI
+        # flags or in a test goes through here too.
+        _validate_setpoint_agreement(
+            self.setpoint_agreement, "[factory] setpoint_agreement",
+        )
+
     @classmethod
     def from_env(cls) -> FactoryConfig:
         """Load factory config from environment variables."""
@@ -299,6 +338,17 @@ class FactoryConfig:
             ),
             keep_worktrees_on_failure=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
+            ),
+            # R10.3: unlike review_mode next door, this key HAS an env
+            # var, so from_env must read it. `ks factory` uses from_env
+            # as the environment-only baseline that _collect_toml_notes
+            # diffs against, and a field missing here is reported to the
+            # operator as "from kstrl.toml" when it came from the
+            # environment - a false provenance claim in the one place
+            # they look to find out where a setting came from.
+            setpoint_agreement=_validate_setpoint_agreement(
+                os.environ.get("KSTRL_FACTORY_SETPOINT_AGREEMENT", "advisory"),
+                "KSTRL_FACTORY_SETPOINT_AGREEMENT",
             ),
         )
 
@@ -328,6 +378,11 @@ class FactoryConfig:
             config.create_prs = bool(section["create_prs"])
         if "review_mode" in section:
             config.review_mode = str(section["review_mode"])
+        if "setpoint_agreement" in section:
+            config.setpoint_agreement = _validate_setpoint_agreement(
+                str(section["setpoint_agreement"]),
+                "[factory] setpoint_agreement",
+            )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
         # R2.2: the two safety knobs are reachable via toml (here), env
@@ -384,6 +439,11 @@ class FactoryConfig:
             config.keep_worktrees_on_failure = _parse_bool(
                 os.environ["KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
+        if "KSTRL_FACTORY_SETPOINT_AGREEMENT" in os.environ:
+            config.setpoint_agreement = _validate_setpoint_agreement(
+                os.environ["KSTRL_FACTORY_SETPOINT_AGREEMENT"],
+                "KSTRL_FACTORY_SETPOINT_AGREEMENT",
+            )
         return config
 
 
@@ -416,6 +476,34 @@ def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None:
             "aggregate PR without a per-component checkpoint, so the "
             "merge gate never runs. Disable single_pr to honour the "
             "merge gate."
+        )
+    return None
+
+
+def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
+    """Warning when the set-point gate is on but can never run, else None.
+
+    ``setpoint_agreement = "block"`` asks the harness to fail a component
+    whose story the reviewer did not confirm, and `review_mode = "skip"`
+    means no reviewer runs, so there is never a verdict to confirm with.
+    `_phase_review` returns before the set-point check on that path, so
+    the gate is not merely lenient, it is absent. Same shape and same
+    reason as ``merge_gate_unreachable_warning``: a governance control
+    silently failing open is worse than one that was never configured,
+    because the operator believes it is on.
+
+    Called from ``run_factory`` after autonomy resolution, because the
+    L1/L2 bundle forces ``review_mode`` to hard and can therefore make a
+    config that looked unreachable reachable.
+    """
+    if config.setpoint_agreement != "block":
+        return None
+    if config.review_mode == ReviewMode.SKIP.value:
+        return (
+            "setpoint_agreement is 'block' but review_mode is 'skip': no "
+            "reviewer runs, so no story can be confirmed and the "
+            "set-point gate never fires. Set review_mode to 'advisory' "
+            "or 'hard' to honour it."
         )
     return None
 
@@ -2415,6 +2503,12 @@ def _run_factory_locked(
     gate_warning = merge_gate_unreachable_warning(factory_config)
     if gate_warning is not None:
         ui.warn(gate_warning)
+    # R10.3: same timing, same reason - the L1/L2 bundle forces
+    # review_mode to hard above, so a set-point gate that looked
+    # unreachable before autonomy resolved may be reachable now.
+    setpoint_warning = setpoint_gate_unreachable_warning(factory_config)
+    if setpoint_warning is not None:
+        ui.warn(setpoint_warning)
 
     manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)
