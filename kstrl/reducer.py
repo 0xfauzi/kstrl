@@ -557,21 +557,25 @@ def _sort_key(event: ev.Event) -> tuple[float, str, int]:
 
 
 def _v2_run_dirs(root_dir: Path) -> list[Path]:
-    from kstrl.statedir import state_dir
+    """Run dirs that carry an event stream, oldest first (newest last).
 
-    runs_root = state_dir(root_dir) / "runs"
-    try:
-        candidates = [
-            d for d in runs_root.iterdir()
-            if (d / "events.jsonl").exists()
-        ]
-    except OSError:
-        return []
-    # Sort by the stamp after the kind prefix (kstrl.runid) so
-    # decompose-*/factory-* interleave chronologically; newest last.
+    Tolerant by contract: ``load_run_state`` answers an unreadable
+    ``runs/`` with "no runs" and falls back to the v1 log. A caller that
+    must distinguish "no runs" from "could not look" wants
+    :func:`run_dirs_newest_first` instead.
+    """
     from kstrl.runid import run_sort_key
 
-    return sorted(candidates, key=lambda d: run_sort_key(d.name))
+    try:
+        return sorted(
+            (
+                d for d in _run_dirs_unsorted(root_dir)
+                if (d / "events.jsonl").exists()
+            ),
+            key=lambda d: run_sort_key(d.name),
+        )
+    except OSError:
+        return []
 
 
 def read_run_dir(run_dir: Path) -> list[ev.Event]:
@@ -587,6 +591,50 @@ def read_run_dir(run_dir: Path) -> list[ev.Event]:
             events.extend(ev.read_events(comp_dir / "engineer.jsonl"))
     events.sort(key=_sort_key)
     return events
+
+
+def _run_dirs_unsorted(root_dir: Path) -> list[Path]:
+    """Run directories in filesystem order, unsorted.
+
+    Shared so the two orderings below cannot disagree about which
+    directories exist. Raises on an unreadable ``runs/``; a missing one
+    is not an error, it is "no runs".
+    """
+    from kstrl.statedir import state_dir
+
+    runs_root = state_dir(root_dir) / "runs"
+    if not runs_root.exists():
+        return []
+    return [d for d in runs_root.iterdir() if d.is_dir()]
+
+
+def run_dirs_newest_first(root_dir: Path) -> list[Path]:
+    """Every run directory under ``.kstrl/runs/``, newest first.
+
+    Differs from :func:`_v2_run_dirs` in the two ways a caller asking
+    "did a gate run" needs:
+
+    - it includes a run that left no ``events.jsonl``. A run with
+      ``[factory] progress_log_enabled = false`` writes its accounting
+      files and no events at all (``factory.py``, the ``usage_paths``
+      comment), so filtering on the stream would hide the newest run
+      behind an older one.
+    - it does not swallow a filesystem error. ``_v2_run_dirs`` answers
+      an unreadable ``runs/`` with an empty list, which reads as "no
+      runs" and therefore as "nothing was skipped".
+
+    ``safemode`` is that caller. It also cannot use the folded
+    ``ComponentState.recent_findings``, which is capped at
+    :data:`MAX_RECENT_FINDINGS` and would lose a skip behind a noisy
+    component.
+    """
+    from kstrl.runid import run_sort_key
+
+    return sorted(
+        _run_dirs_unsorted(root_dir),
+        key=lambda d: run_sort_key(d.name),
+        reverse=True,
+    )
 
 
 def load_run_state(

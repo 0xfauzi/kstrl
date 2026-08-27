@@ -171,6 +171,124 @@ transcripts), `components/<id>/{review,security,distill}.log` (phase
 transcripts), and `orchestrator.log` (embedded-mode narration). When
 a run breaks, those files are the record; the TUI is only a view.
 
+## Safe mode
+
+kstrl is in **safe mode** whenever any of the four signals below is
+degraded. It is one name for four states that already existed
+separately, and asking about it costs nothing.
+
+Two surfaces print it. `ks status` prints `safe mode: nominal` or
+`safe mode: <n> reason(s)` followed by one line per reason, and
+`ks serve --dry-run` prints the same block above its admission gates.
+
+One caveat worth knowing before you rely on it: on a terminal, `ks
+status` opens the dashboard instead of the plain report whenever a run
+directory exists, and **the dashboard does not show safe mode yet**. Ask
+with `ks status --no-tui` (or from a pipe, from CI, or with `--watch`),
+or with `ks serve --dry-run`. A masthead chip on the dashboard is the
+tracked follow-up.
+
+Safe mode itself refuses nothing. Each signal below already refuses
+where refusing is right, and the predicate only reads them, so leaving
+safe mode always means fixing the underlying signal rather than
+clearing a flag.
+
+A reason line looks like this:
+
+```
+  safe mode:      1 reason(s)
+  - [queue] daily budget exhausted (see docs/runbook.md#queue-paused)
+```
+
+The label in brackets is the source; the anchor at the end is the
+subsection to read here.
+
+### Control directory untrusted
+
+Live control state (`autonomy.json`, `pause.json`, `spend.json`,
+`inbox.jsonl`, `github_processed.json`) must sit outside the tree the
+agent can write to. When it does not, kstrl refuses to spend and treats
+the queue as paused, because a factory that can edit its own budget
+ledger is not bounded by it.
+
+The detail line is the reason verbatim: `XDG_STATE_HOME` resolving under
+the repository, legacy in-tree control files left behind by a partial
+migration, a control file that is a symlink or resolves outside the
+control directory, or a control directory that cannot be created or
+listed at all.
+
+To recover, point `XDG_STATE_HOME` outside the repository and finish the
+migration. See "Control plane (R8.9)" under
+[Where to find things](#where-to-find-things) for the exact layout, and
+note that L3+ autonomy refuses to run at all while this is unresolved.
+
+### Autonomy fell back or was clamped
+
+Two distinct things land here.
+
+**Fell back.** `AutonomyState.load` validates every field, not just the
+level. Any malformed field, history entry, or out-of-range level
+discards the whole record and returns a fresh L1 Supervised state,
+because the safe direction for unknown autonomy is the least autonomy.
+The earned level is lost. Restore `autonomy.json` from a backup if you
+have one, or re-earn the level; `ks autonomy status` shows what the next
+promotion needs.
+
+**Clamped.** The run is executing below the level the ladder awarded.
+Three independent ceilings can do this and the lowest wins: `[autonomy]
+max_level` in `kstrl.toml`, `[policy] enabled = false` (L3 is
+auto-merge inside the policy envelope, so with no envelope there is
+nothing to merge inside and L2 is the ceiling), and control state that
+still resolves under the repository (R8.9). The detail line names the
+ceiling that fired. Clamping does not consume the earned level: raise
+the ceiling and the level returns.
+
+This source is silent while `[autonomy] enabled` is false, which is the
+default. A ladder nobody switched on is not a ladder that fell down.
+
+### Queue paused
+
+`ks serve` admits no new work while the queue is paused. A pause is
+either deliberate (`ks queue pause`) or self-inflicted by the daemon:
+the daily budget stop sets tomorrow's local midnight as `resume_after`
+and clears itself, and the poison breaker pauses after consecutive
+poisoned items. Run `ks queue` to see the marker, and `ks queue resume`
+to lift a pause that no longer applies.
+
+An unreadable pause marker also reads as paused, and the detail line
+says so. That is deliberate: resuming unattended spending on the
+strength of a corrupt file is the one failure this marker exists to
+prevent. Repair or delete `pause.json` in the control directory.
+
+### An adversarial phase did not run
+
+Review or security did not execute for at least one component of the
+newest run. The count and the run id are in the detail line, and the
+per-component reason is in the pull request body and in that run's event
+stream (`.kstrl/runs/<run_id>/events.jsonl`, `phase_skipped` events).
+
+The usual causes are `mode = skip` in `[security]` or the review config,
+a security reviewer that was never configured, and the adversarial LLM
+budget (`max_adversarial_calls`) running out mid-run. The first two are
+choices; the third is worth acting on, because it means components
+merged on mechanical checks alone. See also
+[Adversarial budget exhausted mid-run](#adversarial-budget-exhausted-mid-run).
+
+This reason clears when the next factory run **completes** without
+skipping a phase. A run that is still in flight does not clear it: a run
+writes its first event long before it reaches review, so treating "no
+skip recorded yet" as "no skip" would clear the verdict the moment the
+next run started. Runs of other kinds (`decompose`, `feature`,
+`understand`) never clear it either, because they have no phase chain
+and so finish clean by construction without ever asking the question.
+
+A separate detail line beginning `could not read run` means the question
+could not be answered rather than answered clean: the newest factory run
+left no event stream (`[factory] progress_log_enabled = false` writes
+accounting files and no events), or its `events.jsonl` could not be
+opened. When that happens the last finished run's verdict is still
+reported beside it.
+
 ## Where to find things
 
 - Tracker for the hardening roadmap: `docs/adversarial-roadmap.md`

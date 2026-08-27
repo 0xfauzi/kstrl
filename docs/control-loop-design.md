@@ -1005,7 +1005,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | 1 | 5.1 `ks sense` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[x]` merged in #237 |
 | 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[x]` |
 | 3 | 5.2 set-point agreement | [#224](https://github.com/0xfauzi/kstrl/issues/224) | `[x]` |
-| 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[ ]` |
+| 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[x]` |
 | 5 | 5.9 adversarial budget: hard mode halts | [#226](https://github.com/0xfauzi/kstrl/issues/226) | `[ ]` |
 | 6 | 5.5 dampener | [#227](https://github.com/0xfauzi/kstrl/issues/227) | `[ ]` |
 | 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[ ]` |
@@ -1015,5 +1015,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[ ]` |
 | 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[ ]` |
 | 13 | section 4, reframe ARCHITECTURE.md | [#234](https://github.com/0xfauzi/kstrl/issues/234) | `[ ]` |
+
+Follow-up from R10.4, noted here because the issue put it out of scope: safe mode has no dashboard surface. On a terminal `ks status` opens the dashboard whenever a run directory exists, so the plain report that prints the safe-mode block is reached only with `--no-tui`, from a pipe, from CI, or with `--watch`. A masthead chip on the dashboard closes that gap; the predicate it needs now exists.
 
 Graduation follow-ups are listed on #235 and are filed only after the advisory item they depend on has produced output on real runs. The lesson that teaches this document is `docs/lessons/pr-221.html`.
