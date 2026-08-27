@@ -1,5 +1,5 @@
 {
- "built_at_commit": "9711ca3f183380873a4c14d3336ad677d3267939",
+ "built_at_commit": "c05139922931090775fc1720272bb93c9616fb19",
  "components": {
   "kstrl": {
    "classes": [],
@@ -1069,6 +1069,7 @@
     "kstrl.cli",
     "kstrl.factory",
     "kstrl.pipeline",
+    "kstrl.safemode",
     "kstrl.serve"
    ],
    "imports": [
@@ -1077,11 +1078,25 @@
     "kstrl.evolution",
     "kstrl.statedir"
    ],
-   "loc": 848,
+   "loc": 875,
    "package": "kstrl",
    "plane": "core",
-   "sha": "50f69b9b06f9",
+   "sha": "af1a631ea53a",
    "tests": [
+    "test_a_crashed_run_keeps_its_recorded_skip",
+    "test_a_decompose_run_does_not_clear_a_factory_skip",
+    "test_a_disabled_ladder_is_not_a_degraded_ladder",
+    "test_a_finished_clean_run_does_clear_it",
+    "test_a_lapsed_pause_is_not_a_reason",
+    "test_a_malformed_kstrl_toml_does_not_propagate",
+    "test_a_reader_that_raises_becomes_a_reason",
+    "test_a_run_in_flight_does_not_clear_an_earlier_skip",
+    "test_a_run_with_no_event_stream_is_a_reason",
+    "test_a_runs_path_that_is_a_file_becomes_a_reason",
+    "test_a_short_history_of_unfinished_runs_is_not_indeterminate",
+    "test_a_skipped_verify_is_not_a_safe_mode_reason",
+    "test_a_torn_final_line_is_normal",
+    "test_a_torn_line_is_damage_not_a_clean_run",
     "test_action_required_item_fires_its_own_command",
     "test_action_required_taxonomy",
     "test_add_and_list",
@@ -1091,25 +1106,11 @@
     "test_all_decided_falls_back_to_the_newest",
     "test_all_legacy_control_paths_in_machinery",
     "test_ambiguous_prefix_raises",
-    "test_blank_lines_do_not_count",
-    "test_blocked_without_evidence",
-    "test_blocking_adequacy_finding_emits_one_item",
-    "test_budget_halt_does_not_also_emit_halted_run",
-    "test_bundle_is_derived_not_stored",
-    "test_cannot_promote_beyond_l4",
-    "test_cannot_skip_levels",
-    "test_cap_zero_is_unbounded",
-    "test_clean_run_emits_nothing",
-    "test_commit_transition_emits_event_when_in_a_run",
-    "test_commit_transition_writes_journal",
-    "test_compact_preserves_state_and_shrinks_log",
-    "test_control_file_rejects_unknown",
-    "test_control_lock_raises_when_mkdir_fails",
-    "test_control_relocation_error_for_l3",
-    "test_cooldown_blocks_repromotion"
+    "test_an_exhausted_lookback_says_so",
+    "test_an_in_flight_run_still_reports_its_own_skip"
    ],
    "tests_primary": 0,
-   "tests_total": 164,
+   "tests_total": 203,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -1768,6 +1769,7 @@
     "kstrl.reducer",
     "kstrl.retry_plan",
     "kstrl.runid",
+    "kstrl.safemode",
     "kstrl.sandbox",
     "kstrl.security",
     "kstrl.serve",
@@ -1784,10 +1786,10 @@
     "kstrl.verify",
     "kstrl.workqueue"
    ],
-   "loc": 4660,
+   "loc": 4699,
    "package": "kstrl",
    "plane": "core",
-   "sha": "20ab44a32d70",
+   "sha": "bf070465b230",
    "tests": [
     "test_default_valued_fields_stay_silent",
     "test_feature_help",
@@ -1816,7 +1818,7 @@
     "test_a_delivered_result_wins_over_the_snapshot"
    ],
    "tests_primary": 19,
-   "tests_total": 662,
+   "tests_total": 670,
    "uses": {
     "kstrl": [
      "__version__"
@@ -1977,6 +1979,9 @@
     ],
     "kstrl.runid": [
      "mint_run_id"
+    ],
+    "kstrl.safemode": [
+     "safe_mode_reasons"
     ],
     "kstrl.sandbox": [
      "SandboxConfig"
@@ -3157,6 +3162,7 @@
     "kstrl.pipeline",
     "kstrl.reducer",
     "kstrl.render",
+    "kstrl.safemode",
     "kstrl.serve",
     "kstrl.tui.embed",
     "kstrl.tui.screens.overview",
@@ -3201,7 +3207,7 @@
     "test_sample_covers_registry"
    ],
    "tests_primary": 32,
-   "tests_total": 750,
+   "tests_total": 799,
    "uses": {
     "kstrl.observability": [
      "ProgressLog"
@@ -4025,7 +4031,7 @@
     "test_unknown_category_still_serializes"
    ],
    "tests_primary": 25,
-   "tests_total": 652,
+   "tests_total": 655,
    "uses": {}
   },
   "kstrl.fixtures": {
@@ -5022,7 +5028,7 @@
     "test_a_reaper_poison_still_reports"
    ],
    "tests_primary": 99,
-   "tests_total": 187,
+   "tests_total": 190,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -5938,7 +5944,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1671,
+   "tests_total": 1679,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6098,7 +6104,7 @@
     "test_a_committed_in_scope_edit_is_not_a_violation"
    ],
    "tests_primary": 22,
-   "tests_total": 603,
+   "tests_total": 613,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -6647,6 +6653,7 @@
     "kstrl.cli",
     "kstrl.factory",
     "kstrl.pipeline",
+    "kstrl.safemode",
     "kstrl.serve",
     "kstrl.verify"
    ],
@@ -7063,6 +7070,11 @@
      "signature": "def read_run_dir(run_dir: Path) -> list[ev.Event]"
     },
     {
+     "doc": "Every run directory under ``.kstrl/runs/``, newest first.",
+     "name": "run_dirs_newest_first",
+     "signature": "def run_dirs_newest_first(root_dir: Path) -> list[Path]"
+    },
+    {
      "doc": "Reconstruct run state from disk.",
      "name": "load_run_state",
      "signature": "def load_run_state(root_dir: Path, run_id: str='') -> tuple[RunState, Path | None]"
@@ -7071,6 +7083,7 @@
    "id": "kstrl.reducer",
    "imported_by": [
     "kstrl.cli",
+    "kstrl.safemode",
     "kstrl.serve",
     "kstrl.tui.home_data",
     "kstrl.tui.messages",
@@ -7093,13 +7106,14 @@
     "kstrl.runid",
     "kstrl.statedir"
    ],
-   "loc": 619,
+   "loc": 667,
    "package": "kstrl",
    "plane": "core",
-   "sha": "e11b9a950bf8",
+   "sha": "2b8194e2b88a",
    "tests": [
     "test_a_legacy_payloads_unreported_calls_still_mark_both_axes",
     "test_a_payload_predating_the_axis_fields_claims_nothing",
+    "test_a_tie_resolves_the_same_way_it_did_before",
     "test_adversarial_source_key_renamed",
     "test_artifacts_recorded_run_level_with_component",
     "test_axis_call_counts_reach_run_and_component_state",
@@ -7121,11 +7135,10 @@
     "test_lists_bounded_counts_complete",
     "test_merge_pending_v1_twin_does_not_regress_v2",
     "test_neither",
-    "test_newest_run_dir_selected",
-    "test_pr_states_and_checkpoint"
+    "test_newest_run_dir_selected"
    ],
-   "tests_primary": 34,
-   "tests_total": 314,
+   "tests_primary": 39,
+   "tests_total": 319,
    "uses": {
     "kstrl.agents.base": [
      "CEILING_AXES"
@@ -7506,6 +7519,7 @@
     "kstrl.commandrun",
     "kstrl.knowledge",
     "kstrl.reducer",
+    "kstrl.safemode",
     "kstrl.tui.runs",
     "kstrl.tui.session"
    ],
@@ -7544,6 +7558,108 @@
    "tests_primary": 13,
    "tests_total": 29,
    "uses": {}
+  },
+  "kstrl.safemode": {
+   "classes": [
+    {
+     "doc": "One degraded state the factory is currently in.",
+     "methods": [],
+     "name": "SafeModeReason"
+    }
+   ],
+   "constants": [
+    {
+     "name": "GATED_PHASES",
+     "value": "('review', 'security')"
+    },
+    {
+     "name": "RECOVERY",
+     "value": "{'control_dir': f'{_RUNBOOK}#control-directory-untrusted', 'autonomy': f'{_RUNBO"
+    }
+   ],
+   "docstring": "Safe mode: one name for the degraded states kstrl already enters.",
+   "errors": [],
+   "file": "kstrl/safemode.py",
+   "functions": [
+    {
+     "doc": "Every degraded state the factory is currently in. Empty is nominal.",
+     "name": "safe_mode_reasons",
+     "signature": "def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]"
+    }
+   ],
+   "id": "kstrl.safemode",
+   "imported_by": [
+    "kstrl.cli"
+   ],
+   "imports": [
+    "kstrl.autonomy",
+    "kstrl.events",
+    "kstrl.policy",
+    "kstrl.reducer",
+    "kstrl.runid",
+    "kstrl.statedir",
+    "kstrl.workqueue"
+   ],
+   "loc": 341,
+   "package": "kstrl",
+   "plane": "core",
+   "sha": "d9093ef1a3c6",
+   "tests": [
+    "test_a_crashed_run_keeps_its_recorded_skip",
+    "test_a_decompose_run_does_not_clear_a_factory_skip",
+    "test_a_disabled_ladder_is_not_a_degraded_ladder",
+    "test_a_finished_clean_run_does_clear_it",
+    "test_a_lapsed_pause_is_not_a_reason",
+    "test_a_malformed_kstrl_toml_does_not_propagate",
+    "test_a_reader_that_raises_becomes_a_reason",
+    "test_a_run_in_flight_does_not_clear_an_earlier_skip",
+    "test_a_run_with_no_event_stream_is_a_reason",
+    "test_a_runs_path_that_is_a_file_becomes_a_reason",
+    "test_a_short_history_of_unfinished_runs_is_not_indeterminate",
+    "test_a_skipped_verify_is_not_a_safe_mode_reason",
+    "test_a_torn_final_line_is_normal",
+    "test_a_torn_line_is_damage_not_a_clean_run",
+    "test_an_exhausted_lookback_says_so",
+    "test_an_in_flight_run_still_reports_its_own_skip",
+    "test_an_unreadable_event_stream_is_a_reason",
+    "test_an_unreadable_newest_run_still_reports_the_last_verdict",
+    "test_clamp_names_both_levels",
+    "test_dedup_does_not_swallow_an_unrelated_source",
+    "test_degraded_reason_is_never_written_to_disk",
+    "test_every_anchor_resolves_to_a_runbook_heading",
+    "test_every_reason_carries_its_own_recovery_anchor",
+    "test_fallback_is_reported",
+    "test_first_run_is_not_a_fallback"
+   ],
+   "tests_primary": 39,
+   "tests_total": 39,
+   "uses": {
+    "kstrl.autonomy": [
+     "AutonomyConfig",
+     "AutonomyState",
+     "resolve_runtime_level"
+    ],
+    "kstrl.events": [
+     "*"
+    ],
+    "kstrl.policy": [
+     "PolicyConfig"
+    ],
+    "kstrl.reducer": [
+     "run_dirs_newest_first"
+    ],
+    "kstrl.runid": [
+     "run_kind"
+    ],
+    "kstrl.statedir": [
+     "control_untrusted_reason",
+     "ensure_control_state"
+    ],
+    "kstrl.workqueue": [
+     "Queue",
+     "QueueConfig"
+    ]
+   }
   },
   "kstrl.sandbox": {
    "classes": [
@@ -8145,7 +8261,7 @@
     "test_a_genuine_infra_failure_still_retries"
    ],
    "tests_primary": 166,
-   "tests_total": 363,
+   "tests_total": 366,
    "uses": {
     "kstrl.autonomy": [
      "AutonomyConfig",
@@ -8412,6 +8528,7 @@
     "kstrl.inbox",
     "kstrl.intake_github",
     "kstrl.reducer",
+    "kstrl.safemode",
     "kstrl.serve",
     "kstrl.workqueue"
    ],
@@ -8448,7 +8565,7 @@
     "test_strips_default_https_port"
    ],
    "tests_primary": 28,
-   "tests_total": 28,
+   "tests_total": 67,
    "uses": {}
   },
   "kstrl.timeout": {
@@ -12374,6 +12491,7 @@
    "imported_by": [
     "kstrl.cli",
     "kstrl.intake_github",
+    "kstrl.safemode",
     "kstrl.serve"
    ],
    "imports": [
@@ -12412,7 +12530,7 @@
     "test_an_unreadable_marker_file_reads_as_paused"
    ],
    "tests_primary": 91,
-   "tests_total": 493,
+   "tests_total": 558,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
