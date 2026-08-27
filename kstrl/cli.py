@@ -2482,6 +2482,31 @@ def _age_label_epoch(ts: float) -> str:
     return f"{format_age(age)} ago"
 
 
+def _render_safe_mode(ui_impl: UI, root_dir: Path) -> None:
+    """Print the safe-mode block: nominal, or one line per reason.
+
+    Shared by `ks status` and `ks serve --dry-run` so the two surfaces
+    cannot word the same state differently. A REPORT, never a gate:
+    safe mode refuses nothing by itself, because every signal it reads
+    already refuses where refusing is right.
+
+    ``info`` rather than ``warn`` for the reason lines: PlainUI prefixes
+    warnings with "WARN: ", which would break the line format the
+    runbook documents.
+    """
+    from kstrl.safemode import safe_mode_reasons
+
+    reasons = safe_mode_reasons(root_dir)
+    if not reasons:
+        ui_impl.kv("safe mode", "nominal")
+        return
+    ui_impl.kv("safe mode", f"{len(reasons)} reason(s)")
+    for reason in reasons:
+        ui_impl.info(
+            f"  - [{reason.source}] {reason.detail} (see {reason.recovery})"
+        )
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -2537,6 +2562,9 @@ def _render_status(
                 # The ceiling's own words, uncovered magnitude in TOKENS.
                 if gap.detail:
                     ui_impl.kv("  coverage", gap.detail)
+
+    if root_dir is not None:
+        _render_safe_mode(ui_impl, root_dir)
 
     counts: dict[str, int] = {}
     for comp in manifest.components:
@@ -2854,6 +2882,12 @@ def status(
             ui_impl.info(
                 "Run `ks factory` or `ks run` first, or pass --manifest."
             )
+            # Safe mode does not depend on a manifest, and "nothing has
+            # run here" is exactly when an operator wants to know whether
+            # the factory is holding back. Withholding the answer on this
+            # path would make the question unaskable on a repo that has
+            # never completed a run - including this one (R10.4).
+            _render_safe_mode(ui_impl, root_dir)
             return 1
 
         try:
@@ -4506,6 +4540,7 @@ def serve(
         # same order, so "what would it do" cannot drift from "what it
         # does" without a test noticing.
         ui_impl.section("Serve dry run")
+        _render_safe_mode(ui_impl, root_dir)
         ui_impl.kv("queue", summarize(queue.counts()))
         pause = queue.pause_state()
         ui_impl.kv(

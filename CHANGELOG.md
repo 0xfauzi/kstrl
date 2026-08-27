@@ -13,6 +13,23 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- Safe mode: one name, and one question, for the four degraded states
+  kstrl already entered separately. An untrusted control directory stops
+  the daemon spending, a damaged `autonomy.json` falls back to L1
+  Supervised (or a ceiling clamps the run below the level it earned),
+  the queue pauses, and an adversarial phase can be skipped for a
+  component. Each was correct on its own and each spoke on a different
+  surface: a warning line at run start, `ks queue`, `ks serve` output,
+  and a callout inside a pull request body. `safe_mode_reasons(root_dir)`
+  reads all four and returns a source, a detail sentence taken verbatim
+  from the existing signal, and the runbook anchor that recovers it;
+  `ks status` and `ks serve --dry-run` print `safe mode: nominal` or one
+  line per reason. It never raises: a signal that cannot be read is
+  itself a reason, because a reader that failed is not evidence that the
+  signal is clear. No behaviour changed and no gate was added, since
+  every signal it reads already refuses where refusing is right
+  (R10.4, #225).
+
 - Set-point agreement: a story counts as done only when the reviewer's
   per-story verdicts confirm the engineer's `passes: true`. The engineer
   agent was the only writer of that flag, so the thing doing the work

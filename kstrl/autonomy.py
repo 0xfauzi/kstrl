@@ -143,13 +143,20 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
-def _warn_rejected_state(path: Path, reason: str) -> None:
-    warnings.warn(
+def _warn_rejected_state(path: Path, reason: str) -> str:
+    """Warn that a ladder state was rejected; return the same sentence.
+
+    Returned as well as warned so ``AutonomyState.load`` can put the
+    identical text on the transient ``degraded_reason`` field. One
+    string, two consumers: a second copy of the wording could drift from
+    the warning an operator actually sees.
+    """
+    message = (
         f"autonomy: rejected ladder state {path} ({reason}); "
-        "failing closed to L1 Supervised",
-        RuntimeWarning,
-        stacklevel=3,
+        "failing closed to L1 Supervised"
     )
+    warnings.warn(message, RuntimeWarning, stacklevel=3)
+    return message
 
 
 def _require_int(data: dict[str, Any], key: str, default: int) -> int:
@@ -305,6 +312,14 @@ class AutonomyState:
     cooldown_runs_remaining: int = 0
     last_promoted_by: str = ""
     history: list[Transition] = field(default_factory=list)
+    #: Why ``load`` discarded the stored record and fell back to a fresh
+    #: L1 state, or None when nothing was discarded. TRANSIENT: set by
+    #: ``load`` on its fail-closed paths, never parsed from disk, and
+    #: never written by ``save`` (whose payload is built key by key, not
+    #: from ``asdict``). It exists so ``safemode.safe_mode_reasons`` can
+    #: report the fallback without re-implementing the parser that
+    #: detected it.
+    degraded_reason: str | None = None
 
     @property
     def autonomy_level(self) -> AutonomyLevel:
@@ -332,6 +347,13 @@ class AutonomyState:
 
         The rejection is warned about rather than silent (mirroring
         ``knowledge.read_facts``): losing an earned level deserves a note.
+        It is also recorded on the returned state's transient
+        ``degraded_reason``, because a warning is only seen by whoever
+        was watching the terminal at the time, and ``ks status`` needs to
+        answer the question afterwards.
+
+        A missing file is NOT a fallback: that is first run, and
+        ``degraded_reason`` stays None.
         """
         ensure_control_state(root_dir)
         path = cls.path_for(root_dir)
@@ -340,11 +362,17 @@ class AutonomyState:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            _warn_rejected_state(path, f"unreadable: {exc}")
-            return cls()
+            return cls(
+                degraded_reason=_warn_rejected_state(
+                    path, f"unreadable: {exc}",
+                ),
+            )
         if not isinstance(data, dict):
-            _warn_rejected_state(path, "top-level value is not an object")
-            return cls()
+            return cls(
+                degraded_reason=_warn_rejected_state(
+                    path, "top-level value is not an object",
+                ),
+            )
         try:
             level = int(AutonomyLevel(_require_int(data, "level", 1)))
             history = _parse_history(data.get("history", []))
@@ -372,8 +400,7 @@ class AutonomyState:
                 history=history,
             )
         except (ValueError, TypeError) as exc:
-            _warn_rejected_state(path, str(exc))
-            return cls()
+            return cls(degraded_reason=_warn_rejected_state(path, str(exc)))
         return state
 
     def save(self, root_dir: Path) -> None:

@@ -89,6 +89,41 @@ class TestDryRun:
         for gate in ("poison breaker", "cost coverage", "budget", "inbox cap"):
             assert gate in result.output
 
+    def test_dry_run_reports_safe_mode_above_the_gates(
+        self, tmp_path: Path,
+    ) -> None:
+        """R10.4. Above the gates because it frames them: an operator
+        reading "budget: ok" while the queue is paused for an unreadable
+        control file has been told the truth and still misled."""
+        result = _invoke(["serve", "--dry-run"], tmp_path)
+
+        lines = result.output.splitlines()
+        safe = next(i for i, line in enumerate(lines) if "safe mode:" in line)
+        gate = next(i for i, line in enumerate(lines) if "gate budget" in line)
+        assert safe < gate
+        assert "nominal" in lines[safe]
+
+    def test_dry_run_names_a_safe_mode_reason(self, tmp_path: Path) -> None:
+        _queue(tmp_path).pause(reason="poison breaker tripped", actor="test")
+
+        result = _invoke(["serve", "--dry-run"], tmp_path)
+
+        assert "safe mode:" in result.output
+        assert "1 reason(s)" in result.output
+        assert "[queue] poison breaker tripped" in result.output
+
+    def test_safe_mode_blocks_nothing_by_itself(self, tmp_path: Path) -> None:
+        """It is a report, not a gate. Every signal it reads already
+        refuses where refusing is right, so the predicate adding a second
+        refusal would be a behaviour change this issue does not make."""
+        _queue(tmp_path).pause(reason="paused", actor="test")
+
+        result = _invoke(["serve", "--dry-run"], tmp_path)
+
+        assert result.exit_code == 0
+        for gate in ("poison breaker", "cost coverage", "budget", "inbox cap"):
+            assert f"gate {gate}: ok" in result.output
+
     def test_dry_run_reports_a_blocking_budget(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(
             "[serve]\ndaily_budget_usd = 5.0\nallow_uncovered_cost = true\n"

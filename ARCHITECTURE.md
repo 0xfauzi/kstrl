@@ -290,6 +290,24 @@ Everything lives under `.kstrl/` at the project root (gitignored):
 | `.kstrl/snapshots/` | Approved-fixture output snapshots |
 | `.kstrl/factory.lock` | Run-level flock: a second invocation on the same root refuses to start |
 
+## Safe mode
+
+kstrl degrades safely in four places: an untrusted control directory
+stops the daemon spending, a damaged `autonomy.json` falls back to L1,
+the queue pauses, and an adversarial phase can be skipped. Each acts on
+its own, and each did so without a shared name.
+
+`kstrl/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
+all four and returns a list of `SafeModeReason` (source, detail,
+recovery anchor); empty means nominal. `ks status` and `ks serve
+--dry-run` print it.
+
+The predicate changes no behaviour. It adds no gate, no pause and no
+halt, and it never refuses anything, because every signal it reads
+already refuses where refusing is right. It is a question with an
+answer, not a new control. Details and recovery steps are in
+[docs/runbook.md](docs/runbook.md#safe-mode).
+
 ## The fixtures sandbox
 
 Approved fixtures (README: "Approved fixtures") are the independent

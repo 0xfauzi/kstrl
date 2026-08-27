@@ -589,6 +589,20 @@ def read_run_dir(run_dir: Path) -> list[ev.Event]:
     return events
 
 
+def latest_run_dir(root_dir: Path) -> Path | None:
+    """The newest run directory under ``.kstrl/runs/``, or None.
+
+    The same resolution :func:`load_run_state` uses, exposed on its own
+    for callers that want to scan a run's raw event stream rather than
+    fold it. ``safemode`` is one: it asks whether an adversarial phase
+    was skipped, and the folded ``ComponentState.recent_findings`` is
+    capped at :data:`MAX_RECENT_FINDINGS`, so a component that recorded
+    more findings afterwards would lose the record.
+    """
+    run_dirs = _v2_run_dirs(root_dir)
+    return run_dirs[-1] if run_dirs else None
+
+
 def load_run_state(
     root_dir: Path, run_id: str = "",
 ) -> tuple[RunState, Path | None]:

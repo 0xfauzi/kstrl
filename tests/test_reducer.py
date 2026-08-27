@@ -403,6 +403,37 @@ class TestLoadRunState:
         assert source is None
         assert state.components == {}
 
+    def test_latest_run_dir_agrees_with_load_run_state(
+        self, tmp_path: Path,
+    ) -> None:
+        """R10.4 exposed this resolution on its own so a caller can scan
+        a run's raw stream instead of folding it. The two must not be
+        able to disagree about WHICH run is newest."""
+        self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "older")
+        self._write_v2(tmp_path, "factory-20260720-000009.000000-x", "newer")
+
+        run_dir = reducer.latest_run_dir(tmp_path)
+        _, source = reducer.load_run_state(tmp_path)
+
+        assert run_dir is not None and source is not None
+        assert run_dir == source.parent
+        assert run_dir.name == "factory-20260720-000009.000000-x"
+
+    def test_latest_run_dir_is_none_without_runs(self, tmp_path: Path) -> None:
+        assert reducer.latest_run_dir(tmp_path) is None
+
+    def test_latest_run_dir_ignores_a_dir_without_events(
+        self, tmp_path: Path,
+    ) -> None:
+        self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "real")
+        (tmp_path / ".kstrl" / "runs" / "factory-20260720-000009.000000-x"
+         ).mkdir(parents=True)
+
+        run_dir = reducer.latest_run_dir(tmp_path)
+
+        assert run_dir is not None
+        assert run_dir.name == "factory-20260720-000001.000000-x"
+
     def test_torn_tail_in_run_dir(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-000003.000000-x"
         self._write_v2(tmp_path, run_id, "proj")

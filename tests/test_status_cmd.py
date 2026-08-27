@@ -421,3 +421,77 @@ class TestStatusPerAxisCoverage:
         assert "1000+ tokens" not in output
         assert "$5.0000+" in output         # cost axis is not
         assert "cost coverage is PARTIAL" in output
+
+
+class TestSafeModeLine:
+    """R10.4: `ks status` answers "is the factory holding back, and why".
+
+    The plain report is the contract for pipes and CI, so this is where
+    the safe-mode block has to be legible without colour codes.
+    """
+
+    def test_nominal_root_says_nominal(self, tmp_path: Path) -> None:
+        _synthetic_manifest().save(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+        )
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+
+        assert exit_code == 0
+        assert "safe mode:" in output
+        assert "nominal" in output
+
+    def test_paused_queue_is_named_and_counted(self, tmp_path: Path) -> None:
+        from kstrl.workqueue import Queue, QueueConfig
+
+        _synthetic_manifest().save(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+        )
+        Queue(tmp_path, QueueConfig()).pause(
+            reason="daily budget exhausted", actor="test",
+        )
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+
+        assert exit_code == 0
+        assert "safe mode:" in output
+        assert "1 reason(s)" in output
+        assert "[queue] daily budget exhausted" in output
+        assert "docs/runbook.md#queue-paused" in output
+        assert "nominal" not in output
+
+    def test_it_is_answerable_without_a_manifest(
+        self, tmp_path: Path,
+    ) -> None:
+        """A repo that has never completed a run still has a control
+        directory, a ladder and a queue. Withholding the answer until a
+        manifest exists would make the question unaskable exactly when an
+        operator is asking why nothing has run."""
+        from kstrl.workqueue import Queue, QueueConfig
+
+        Queue(tmp_path, QueueConfig()).pause(
+            reason="poison breaker tripped", actor="test",
+        )
+
+        exit_code, output = _invoke_status("--root", str(tmp_path))
+
+        assert exit_code == 1          # the manifest really is missing
+        assert "No manifest found" in output
+        assert "[queue] poison breaker tripped" in output
+
+    def test_the_line_carries_no_colour_codes(self, tmp_path: Path) -> None:
+        from kstrl.workqueue import Queue, QueueConfig
+
+        _synthetic_manifest().save(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+        )
+        Queue(tmp_path, QueueConfig()).pause(reason="paused", actor="test")
+
+        _, output = _invoke_status("--root", str(tmp_path))
+
+        safe_lines = [
+            line for line in output.splitlines()
+            if "safe mode:" in line or "[queue]" in line
+        ]
+        assert len(safe_lines) == 2
+        assert not any("\x1b[" in line for line in safe_lines)
