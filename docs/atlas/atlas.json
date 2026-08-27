@@ -1,5 +1,5 @@
 {
- "built_at_commit": "252f77a4f0c437865f8fab7c38fe30806703648b",
+ "built_at_commit": "9711ca3f183380873a4c14d3336ad677d3267939",
  "components": {
   "kstrl": {
    "classes": [],
@@ -1816,7 +1816,7 @@
     "test_a_delivered_result_wins_over_the_snapshot"
    ],
    "tests_primary": 19,
-   "tests_total": 657,
+   "tests_total": 662,
    "uses": {
     "kstrl": [
      "__version__"
@@ -3334,7 +3334,7 @@
     "test_signatures_from_findings"
    ],
    "tests_primary": 29,
-   "tests_total": 225,
+   "tests_total": 230,
    "uses": {
     "kstrl.config": [
      "load_toml_section",
@@ -3517,7 +3517,7 @@
     "test_a_disabled_ceiling_is_never_blamed"
    ],
    "tests_primary": 15,
-   "tests_total": 1224,
+   "tests_total": 1229,
    "uses": {
     "kstrl.agents": [
      "ClaudeCodeAgent",
@@ -4025,7 +4025,7 @@
     "test_unknown_category_still_serializes"
    ],
    "tests_primary": 25,
-   "tests_total": 647,
+   "tests_total": 652,
    "uses": {}
   },
   "kstrl.fixtures": {
@@ -5938,7 +5938,7 @@
     "test_mixed_states"
    ],
    "tests_primary": 44,
-   "tests_total": 1666,
+   "tests_total": 1671,
    "uses": {
     "kstrl.findings": [
      "Finding"
@@ -6411,10 +6411,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3555,
+   "loc": 3628,
    "package": "kstrl",
    "plane": "core",
-   "sha": "0538fea0ed9b",
+   "sha": "f946270ab84c",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -6443,7 +6443,7 @@
     "test_nothing_recorded_when_knowledge_disabled"
    ],
    "tests_primary": 56,
-   "tests_total": 405,
+   "tests_total": 410,
    "uses": {
     "kstrl.adequacy": [
      "AdequacyConfig"
@@ -6813,7 +6813,7 @@
     "test_bad_id_rejected"
    ],
    "tests_primary": 8,
-   "tests_total": 276,
+   "tests_total": 281,
    "uses": {
     "kstrl.findings": [
      "SETPOINT_DISAGREEMENT_CATEGORY",
@@ -6900,7 +6900,7 @@
     "test_artifact_written_on_success"
    ],
    "tests_primary": 0,
-   "tests_total": 212,
+   "tests_total": 217,
    "uses": {}
   },
   "kstrl.proposals": {
@@ -7405,10 +7405,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 1228,
+   "loc": 1241,
    "package": "kstrl",
    "plane": "core",
-   "sha": "f296a393e73f",
+   "sha": "dd8598fac9f8",
    "tests": [
     "test_advisory_concerns_do_not_block",
     "test_advisory_mode_downgrades_concern_failures",
@@ -7437,7 +7437,7 @@
     "test_a_copied_config_keeps_the_log_inside_component_scope"
    ],
    "tests_primary": 19,
-   "tests_total": 818,
+   "tests_total": 823,
    "uses": {
     "kstrl.agents.base": [
      "Agent"

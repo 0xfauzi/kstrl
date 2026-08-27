@@ -551,9 +551,22 @@ def setpoint_retry_context(
     ]
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")
-        unmet = review.non_pass_criteria(finding.location)
+        judged = review.criteria_for(finding.location)
+        unmet = [
+            cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value
+        ]
         if not unmet:
+            # Two different situations reach here and the agent must not
+            # be handed the wrong one. "Nothing was judged" and
+            # "everything judged passed, but not everything was judged"
+            # both leave `unmet` empty, and the second used to be
+            # described as the first - contradicting the finding printed
+            # directly above it, which had just said "pass on only 1 of 2".
             lines.append(
+                "  - Every criterion the reviewer judged passed, but it "
+                "did not judge them all. Nothing here says the story is "
+                "wrong; it says the story is unconfirmed."
+                if judged else
                 "  - The reviewer returned no verdict for this story, so "
                 "there is no criterion-level evidence to act on. Check "
                 "the story against its acceptance criteria yourself."

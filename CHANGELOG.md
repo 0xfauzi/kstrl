@@ -26,8 +26,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   every acceptance criterion, not just on the ones the reviewer chose to
   judge: the existing coverage gate checks that every story got a
   verdict, never that every criterion did. In blocking mode a reviewer
-  that crashed or returned nothing usable also fails the component,
-  because a sensor that did not report has not confirmed anything. The autonomy ladder forces
+  that crashed, returned nothing usable, or never ran because the
+  adversarial budget was exhausted also fails the component, because a
+  sensor that did not report has not confirmed anything. An outage is
+  recorded as an infrastructure failure rather than as a disagreement,
+  so the retry context and the evolution journal do not report a
+  reviewer disagreeing when none reported. The autonomy ladder forces
   blocking from L1 upward and can never turn it off. No prompt body
   changed: the engineer is still told to set the flag, the flag has just
   stopped being the sole authority (R10.3, #224).

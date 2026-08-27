@@ -411,6 +411,20 @@ class TestRetryContext:
         assert "could NOT be reset automatically" in text
         assert "have been reset to false" not in text
 
+    def test_partial_coverage_is_not_described_as_no_verdict(self) -> None:
+        """Round-2 review, P3. A story where every judged criterion
+        passed but not every criterion was judged leaves `unmet` empty,
+        exactly like a story with no verdict at all. Saying "returned no
+        verdict" for the first contradicts the finding printed directly
+        above it, which had just said "pass on only 1 of 2"."""
+        prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
+        review = _review(_criterion("A", "pass", "crit A"))
+        found = setpoint_disagreements(prd, review, severity="fail")
+        text = setpoint_retry_context(found, review)
+        assert "pass on only 1 of 2" in text
+        assert "did not judge them all" in text
+        assert "returned no verdict" not in text
+
     def test_uncovered_story_says_there_is_no_evidence(self) -> None:
         prd = _prd(_story("A", passes=True))
         review = _review()
@@ -529,12 +543,13 @@ def _review_hook(result: ReviewResult) -> dict[str, Any]:
 
 def _drive(
     tmp_path: Path, *, review: ReviewResult, prd: PRD,
-    before_run: Callable[[], None] | None = None, **config: Any,
+    before_run: Callable[[Any], None] | None = None, **config: Any,
 ) -> tuple[Any, Component, Transition | None, Path]:
-    """``before_run`` runs after the PRD is on disk and before the phase
-    chain does, which is the only window in which a test can break the
-    write the pipeline is about to attempt without breaking its own
-    setup.
+    """``before_run`` receives the pipeline after the PRD is on disk and
+    before the phase chain runs. That is the only window in which a test
+    can break the write the pipeline is about to attempt without
+    breaking its own setup, or spend the adversarial budget the way a
+    real run spends it, through the counter rather than the config.
     """
     comp = _component("comp-a")
     pipeline, manifest, _, _ = _make_pipeline(
@@ -547,7 +562,7 @@ def _drive(
     live = manifest.get_component("comp-a")
     assert live is not None
     if before_run is not None:
-        before_run()
+        before_run(pipeline)
     pipeline.begin_attempt(live)
     outcome = pipeline.process_result("comp-a", _success("comp-a"))
     return pipeline, live, (outcome.transition if outcome else None), prd_path
@@ -657,7 +672,7 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(_criterion("B", "fail", "b-crit")),
             prd=_prd(_story("B", passes=True)),
-            before_run=lambda: monkeypatch.setattr(PRD, "save", _boom),
+            before_run=lambda _p: monkeypatch.setattr(PRD, "save", _boom),
             review_mode="advisory", setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
@@ -678,7 +693,7 @@ class TestPipelineWiring:
         failure path does not fire. setpoint_disagreements correctly
         returns nothing, but in blocking mode "the second sensor never
         reported" must not be spent as "the second sensor confirmed"."""
-        _, comp, transition, prd_path = _drive(
+        pipeline, comp, transition, prd_path = _drive(
             tmp_path,
             review=ReviewResult(
                 passed=True, mode="advisory", infrastructure_error=True,
@@ -688,10 +703,18 @@ class TestPipelineWiring:
             review_mode="advisory", setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
-        assert comp.failed_check == "setpoint"
         assert _setpoint_findings(comp) == []
         # Nothing points at a particular story, so nothing is reverted.
         assert PRD.load(prd_path).user_stories[0].passes is True
+        # An outage is not a measurement. R10.2 only lets a MEASURED
+        # entry retire its own phase, so recording this as one would let
+        # a crashed reviewer silently drop a real earlier finding, and
+        # journalling it as a disagreement would claim a reviewer
+        # disagreed when none reported.
+        assert comp.failed_check == "infrastructure"
+        ctx = json.loads(pipeline.component_contexts["comp-a"])
+        entries = [e for e in ctx["entries"] if e["phase"] == "review"]
+        assert entries and all(e["infrastructure"] for e in entries)
 
     def test_advisory_mode_does_not_fail_on_a_silent_reviewer(
         self, tmp_path: Path,
@@ -719,6 +742,70 @@ class TestPipelineWiring:
             review_mode="advisory", setpoint_agreement="block",
         )
         assert transition != Transition.RETRYING
+
+    def test_budget_exhaustion_fails_closed_in_block_mode(
+        self, tmp_path: Path,
+    ) -> None:
+        """Round-2 review, P1. An exhausted adversarial budget downgrades
+        review to SKIP and returns before the set-point gate, so the
+        component would complete with a story claiming done and only a
+        phase_skipped finding. That is the gate failing open at exactly
+        the moment the budget ran out."""
+        _, comp, transition, prd_path = _drive(
+            tmp_path,
+            review=_review(),
+            prd=_prd(_story("A", passes=True)),
+            review_mode="advisory", setpoint_agreement="block",
+            max_adversarial_calls=1,
+            before_run=lambda p: p.adversarial_budget_consume(),
+        )
+        assert transition == Transition.FAILED
+        assert comp.failed_phase == "review"
+        assert comp.failed_check == "setpoint"
+        # Retrying cannot recover budget, so it must not retry.
+        assert comp.retries == 0
+        assert PRD.load(prd_path).user_stories[0].passes is True
+
+    def test_budget_exhaustion_with_no_claim_completes(
+        self, tmp_path: Path,
+    ) -> None:
+        _, _, transition, _ = _drive(
+            tmp_path,
+            review=_review(),
+            prd=_prd(_story("A", passes=False)),
+            review_mode="advisory", setpoint_agreement="block",
+            max_adversarial_calls=1,
+            before_run=lambda p: p.adversarial_budget_consume(),
+        )
+        assert transition != Transition.FAILED
+
+    def test_budget_exhaustion_in_advisory_mode_completes(
+        self, tmp_path: Path,
+    ) -> None:
+        _, _, transition, _ = _drive(
+            tmp_path,
+            review=_review(),
+            prd=_prd(_story("A", passes=True)),
+            review_mode="advisory", setpoint_agreement="advisory",
+            max_adversarial_calls=1,
+            before_run=lambda p: p.adversarial_budget_consume(),
+        )
+        assert transition != Transition.FAILED
+
+    def test_explicit_skip_is_the_operators_choice_not_a_failure(
+        self, tmp_path: Path,
+    ) -> None:
+        """review_mode="skip" turns the reviewer off deliberately, and
+        run_factory warns at startup that the gate cannot fire. Failing
+        every component instead would make the warning a lie."""
+        _, comp, transition, _ = _drive(
+            tmp_path,
+            review=_review(),
+            prd=_prd(_story("A", passes=True)),
+            review_mode="skip", setpoint_agreement="block",
+        )
+        assert transition != Transition.FAILED
+        assert _setpoint_findings(comp) == []
 
     def test_unreadable_prd_records_but_does_not_block(
         self, tmp_path: Path,

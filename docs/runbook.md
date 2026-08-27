@@ -53,7 +53,11 @@ A story is marked done when the engineer agent sets `passes: true` in the PRD. T
 
 **Symptom, second form**: `Phase 2 FAILED for <comp_id>: set-point agreement cannot be confirmed, the reviewer did not report`.
 
-In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `setpoint_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. Check reviewer API health, as for any `infrastructure_error`, and re-run.
+In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `setpoint_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. The failure is recorded as `failed_check = infrastructure` and journalled as `review:infrastructure`, not as a disagreement, because no reviewer disagreed with anything. Check reviewer API health, as for any `infrastructure_error`, and re-run.
+
+**Symptom, third form**: `Phase 2 FAILED for <comp_id>: Set-point agreement cannot be confirmed: the reviewer never ran (adversarial LLM budget (N) exhausted) and a story is still marked passes=true`.
+
+The adversarial budget covers review, security and knowledge distillation together. When it runs out, Phase 2 downgrades to a skip, and in blocking mode a skipped reviewer cannot confirm anything. This does not retry, because retrying cannot recover budget: raise `max_adversarial_calls`, or accept the components already done and re-run the rest.
 
 **Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
 

@@ -2497,6 +2497,13 @@ class ComponentPipeline:
             review_mode == ReviewMode.HARD and review_chunks is not None
         )
         review_skip_reason: str | None = None
+        # R10.3: "the operator turned the reviewer off" and "the
+        # reviewer ran out of budget" are both SKIP, and the set-point
+        # gate has to tell them apart. The first is a choice, warned
+        # about at startup and then honoured. The second is the reviewer
+        # failing to run, which in blocking mode must not be spent as a
+        # confirmation.
+        budget_downgraded = False
         if review_mode == ReviewMode.SKIP:
             review_skip_reason = "review disabled (mode=skip)"
         elif not chunked_review and not self.adversarial_budget_ok():
@@ -2513,6 +2520,7 @@ class ComponentPipeline:
                 f"({self.factory_config.max_adversarial_calls}) exhausted"
             )
             review_mode = ReviewMode.SKIP
+            budget_downgraded = True
         if review_mode == ReviewMode.HARD and review_chunks is not None:
             remaining = self.adversarial_budget_remaining()
             if remaining is not None and remaining < len(review_chunks):
@@ -2549,6 +2557,41 @@ class ComponentPipeline:
             self._record_phase_skip(
                 comp, "review", review_skip_reason or "review skipped",
             )
+            # R10.3: this return is BEFORE the set-point gate, so a
+            # component whose reviewer never ran would otherwise
+            # complete with a story still claiming done and nothing
+            # having checked it - the gate failing open, silently, at
+            # exactly the moment the budget ran out. Only the budget
+            # downgrade fails here: an explicit review_mode = "skip"
+            # is the operator's decision, and run_factory already warns
+            # at startup that the gate cannot fire under it.
+            #
+            # FAIL, not RETRY_OR_FAIL: retrying cannot recover budget,
+            # so a retry would burn engineer iterations against a
+            # deterministic wall (the R1.4 chunk-budget precedent above).
+            if (
+                budget_downgraded
+                and self._setpoint_blocking()[0]
+                and self._has_unconfirmed_claim(comp, wt_path)
+            ):
+                error = (
+                    "Set-point agreement cannot be confirmed: the "
+                    "reviewer never ran (adversarial LLM budget "
+                    f"({self.factory_config.max_adversarial_calls}) "
+                    "exhausted) and a story is still marked passes=true"
+                )
+                self.ui.err(f"  Phase 2 FAILED for {comp.id}: {error}")
+                return ReviewPhaseResult(
+                    ran=False,
+                    skip_reason=review_skip_reason,
+                    failure=PhaseFailure(
+                        action=FailureAction.FAIL,
+                        error=error,
+                        phase="review",
+                        check="setpoint",
+                        signatures=["review:setpoint-budget-exhausted"],
+                    ),
+                )
             return ReviewPhaseResult(ran=False, skip_reason=review_skip_reason)
 
         from kstrl.agents import get_agent
@@ -2829,6 +2872,22 @@ class ComponentPipeline:
         self.ui.ok(f"  Phase 2 passed for {comp.id}")
         return ReviewPhaseResult(ran=True, result=review_result)
 
+    def _has_unconfirmed_claim(self, comp: Component, wt_path: Path) -> bool:
+        """R10.3: whether the PRD still claims a story is done.
+
+        Used on the skip path, where the reviewer never ran and there is
+        no ReviewResult to compare against. A PRD that cannot be read
+        answers False, for the same reason the main gate records but
+        does not block on one: an unreadable PRD holds no claim to
+        disagree with, and Phase 1's check_prd_stories fails on it
+        first.
+        """
+        try:
+            prd = PRD.load(wt_path / comp.prd_path)
+        except (OSError, ValueError):
+            return False
+        return any(story.passes for story in prd.user_stories)
+
     def _setpoint_blocking(self) -> tuple[bool, str]:
         """R10.3: whether a set-point disagreement fails the component,
         and the severity its findings carry.
@@ -2860,12 +2919,23 @@ class ComponentPipeline:
         site that builds an ``IterationContext`` on a review that
         PASSED. Every other site builds one only on a failure path,
         which is the asymmetry issue #247 is about. The entry is filed
-        under phase "review" so a later review reading retires it, and
-        it is not marked infrastructure: the reviewer did run.
+        under phase "review" so a later review reading retires it.
+
+        Two different failures route through here and they must not be
+        recorded as the same thing. A DISAGREEMENT is a measurement: the
+        reviewer ran, reported, and declined to confirm the claim. An
+        OUTAGE is the absence of one. R10.2 draws that line explicitly
+        (``FailureEntry.infrastructure``): only a measured entry retires
+        its own phase, because a crashed sensor that retired a real
+        earlier finding would silently drop it. Journalling an outage as
+        ``review:setpoint_disagreement`` would also tell the evolution
+        data that a reviewer disagreed when none reported.
         """
+        infrastructure = review_result.infrastructure_error
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         ctx.add_review_finding(
             retry_text, attempt=comp.retries + 1, phase="review",
+            infrastructure=infrastructure,
         )
         return ReviewPhaseResult(
             ran=True,
@@ -2874,13 +2944,16 @@ class ComponentPipeline:
                 action=FailureAction.RETRY_OR_FAIL,
                 error=error,
                 phase="review",
-                check="setpoint",
+                check="infrastructure" if infrastructure else "setpoint",
                 context_json=ctx.to_json(),
                 # R6.1: the journal signature. Not derived via
                 # signatures_from_findings, which only emits for
-                # severity fail/critical/high - true here, but the
-                # signature must not silently depend on that.
-                signatures=[f"review:{SETPOINT_DISAGREEMENT_CATEGORY}"],
+                # severity fail/critical/high - true for a disagreement,
+                # but the signature must not silently depend on that.
+                signatures=[
+                    "review:infrastructure" if infrastructure
+                    else f"review:{SETPOINT_DISAGREEMENT_CATEGORY}"
+                ],
             ),
         )
 
