@@ -5,7 +5,7 @@ its own code. This doc lists the cumulative set of PRs from the hardening
 cycle along with the exact `/code-review ultra` commands to invoke.
 
 `/code-review ultra` is the user-driven, multi-agent cloud-review path. It is
-billed and cannot be launched from inside the assistant turn — you (the user)
+billed and cannot be launched from inside the assistant turn. You (the user)
 must type the slash command yourself.
 
 ## Scope
@@ -58,10 +58,10 @@ you want to spot-check a single PR locally before opening it.
 | Phase | Focus |
 |---|---|
 | A | Prompt-injection sanitizer in `knowledge.py` (Phase A1 patterns + length cap); `fcntl.flock` correctness around worktree setup; 5MB stream cap not blocking legitimate large outputs; Self-Critique regex correctness against the fuzz corpus |
-| D | Fixture realism (planted bugs should be genuine, not contrived); calibration runner correctness — especially `must_detect` matching logic (the F5 baseline run found a `finding.evidence` bug in this) |
-| F | The `examples/file-upload-spec.md` spec is what the factory is graded against — its planted concerns should be defensible as real security/quality issues |
+| D | Fixture realism (planted bugs should be genuine, not contrived); calibration runner correctness - especially `must_detect` matching logic (the F5 baseline run found a `finding.evidence` bug in this) |
+| F | The `examples/file-upload-spec.md` spec is what the factory is graded against. Its planted concerns should be defensible as real security/quality issues |
 | B | TOML loader precedence (env > toml > defaults); enum validation in `__post_init__` happens for every config with enum-typed fields |
-| C | The pickling round-trip test — every config in `kstrl/*.py` should be picklable for ProcessPoolExecutor; the Windows skip markers should not silently hide bugs |
+| C | The pickling round-trip test: every config in `kstrl/*.py` should be picklable for ProcessPoolExecutor; the Windows skip markers should not silently hide bugs |
 | E | Confidence-tier rename (legacy alias should be removed eventually); HITL checkpoint's non-interactive fallback; security `infrastructure_error` flag downstream consumers |
 | G | Docs are accurate against code (especially `docs/env-vars.md`); no doc references undefined env vars |
 

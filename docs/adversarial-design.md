@@ -44,7 +44,7 @@ The fields are:
 
 When a role's result has `infrastructure_error=True` (timeout, parse failure, agent crash), `as_findings()` emits a single synthetic `Finding(phase=<role>, category="infrastructure_error", severity="critical")` with `is_infrastructure_error=True`. This guarantees:
 
-- `len(findings) == 0` always means "the role ran AND found nothing" — a verifiably clean review.
+- `len(findings) == 0` always means "the role ran AND found nothing": a verifiably clean review.
 - `[f for f in findings if not f.is_infrastructure_error]` filters to the verified subset.
 - A consumer that checks only `len(findings) > 0` to gate something will not accidentally pass an unverified component through.
 

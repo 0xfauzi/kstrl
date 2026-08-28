@@ -62,11 +62,11 @@ Done when: PR merged.
 
 PR: _pending push_
 
-- [x] F1 - `examples/file-upload-spec.md` — 4 functional + 5 non-functional requirements, 8 planted concerns spanning path traversal / content-type trust / 413 streaming / cursor probing / soft-delete cleanup / filename header / TOCTOU / alg=none
+- [x] F1 - `examples/file-upload-spec.md`: 4 functional + 5 non-functional requirements, 8 planted concerns spanning path traversal / content-type trust / 413 streaming / cursor probing / soft-delete cleanup / filename header / TOCTOU / alg=none
 - [~] F2 - Decompose phase only. Full implementation pass (Phase 1-3 across 6 components) skipped to bound LLM cost; documented in `docs/phase-f-run-log.md`. User can invoke when ready.
-- [x] F3 - Captured at `docs/phase-f-run-log.md` — architect found **7 of 8 planted spec issues (87.5%)** plus 4 extra defensible findings, zero hallucinated. Components decomposed: config, jwt-auth, metadata-db, upload-endpoint, download-endpoint, delete-endpoint.
+- [x] F3 - Captured at `docs/phase-f-run-log.md`: architect found **7 of 8 planted spec issues (87.5%)** plus 4 extra defensible findings, zero hallucinated. Components decomposed: config, jwt-auth, metadata-db, upload-endpoint, download-endpoint, delete-endpoint.
 - [x] F4 - Ultra-review command list shipped at `docs/f4-ultra-review-commands.md` listing PRs #35-#43 plus this deferred-follow-up PR. User invokes the commands; per H1 the assistant cannot.
-- [x] F5 - Calibration baseline captured 2026-05-27 against Haiku. Security 5/5, reviewer 3/3, architect 2/3 (one missed kind classification — see `docs/f5-calibration-baseline.md`). Surfaced a real bug in the calibration runner (used `finding.evidence` instead of `finding.location`); fix included.
+- [x] F5 - Calibration baseline captured 2026-05-27 against Haiku. Security 5/5, reviewer 3/3, architect 2/3 (one missed kind classification: see `docs/f5-calibration-baseline.md`). Surfaced a real bug in the calibration runner (used `finding.evidence` instead of `finding.location`); fix included.
 
 Status: All Phase F items now shipped or documented. F1+F3 done with Phase F validation. F2 partial (decompose only). F4 + F5 closed as deferred follow-ups.
 
