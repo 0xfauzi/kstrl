@@ -11,6 +11,14 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege, set once at the top so every job inherits it. Nothing here
+# writes to the repo: the jobs check out, run pytest and the lint gates, and
+# move coverage between jobs. actions/upload-artifact and download-artifact
+# authenticate with the Actions runtime token, not GITHUB_TOKEN, so read is
+# enough. A job that ever needs write asks for it in its own permissions block.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,10 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing in this workflow pushes. The spine tier's "origin" is a
+          # local bare repo under the test's tmp dir, so the checkout token
+          # has no job to do and does not belong in .git/config, where a
+          # later step or an uploaded artifact could read it back out.
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           version: latest
           enable-cache: true

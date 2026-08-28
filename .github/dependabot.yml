@@ -2,6 +2,12 @@ version: 2
 updates:
   - package-ecosystem: "uv"
     directory: "/"
+    # A fresh release is the window a compromised package is live in.
+    # Waiting 7 days lets a yanked or malicious version be pulled before
+    # Dependabot opens a PR proposing it. Matches the weekly schedule, so
+    # it costs no extra latency in practice.
+    cooldown:
+      default-days: 7
     schedule:
       interval: "weekly"
     groups:
@@ -13,6 +19,12 @@ updates:
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    # A fresh release is the window a compromised package is live in.
+    # Waiting 7 days lets a yanked or malicious version be pulled before
+    # Dependabot opens a PR proposing it. Matches the weekly schedule, so
+    # it costs no extra latency in practice.
+    cooldown:
+      default-days: 7
     schedule:
       interval: "weekly"
     groups:
