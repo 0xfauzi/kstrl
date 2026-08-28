@@ -187,11 +187,13 @@ so `f2` opens a safe-mode panel from any screen, and a warning banner
 appears under the run masthead the moment a signal goes degraded, naming
 the sources.
 
-A function key rather than a letter, and that is not cosmetic: Textual's
-text inputs consume printable keys before application bindings, so a
-letter key would silently type itself into the launch, config,
-decompose and init fields instead of opening the panel. The argument
-below only holds if the key always works.
+A function key rather than a letter, and a priority binding rather than
+an ordinary one. Neither is cosmetic. Textual's text inputs consume
+printable keys before application bindings, so a letter key would
+silently type itself into the launch, config, decompose and init fields;
+and an ordinary application binding never reaches a system modal such as
+the command palette. The argument below only holds if the key always
+works.
 
 The banner is hidden while everything is clear, and `f2` is what makes
 that safe: the panel distinguishes the three states the banner cannot,

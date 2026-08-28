@@ -88,11 +88,18 @@ class SafeModePanel(ModalScreen[None]):
                 )
 
     def on_mount(self) -> None:
-        # Replay the last completed check. The broadcast only reaches a
-        # panel that is open when a check LANDS; a panel opened after
-        # the last one finished would otherwise sit on whatever it was
-        # constructed with until the next interval.
-        self.update_safe_mode(getattr(self.app, "_safe_mode_reasons", None))
+        # Replay the last completed check ONLY when this panel has
+        # nothing of its own. The broadcast reaches a panel that is open
+        # when a check lands; one opened afterwards would otherwise sit
+        # on "not checked yet" until the next interval.
+        #
+        # Guarded, because an unconditional replay overwrote reasons the
+        # caller passed explicitly: a panel built with real findings
+        # would render the app's nominal state instead.
+        if self._panel_reasons is None:
+            cached = getattr(self.app, "_safe_mode_reasons", None)
+            if cached is not None:
+                self.update_safe_mode(cached)
 
     def update_safe_mode(
         self, reasons: list[SafeModeReason] | None,

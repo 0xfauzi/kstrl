@@ -76,7 +76,7 @@ class KstrlTuiApp(App[int]):
         # toward home when there is anywhere to pop to. (Named
         # nav_back: Textual's App already owns an async action_back.)
         Binding("escape", "nav_back", show=False),
-        Binding("f2", "safe_mode", "Safe mode"),
+        Binding("f2", "safe_mode", "Safe mode", priority=True),
     ]
 
     def __init__(
@@ -101,6 +101,7 @@ class KstrlTuiApp(App[int]):
         self._safe_mode_seq = 0
         self._safe_mode_seen_seq = 0
         self._safe_mode_running = False
+        self._safe_mode_rerun = False
         # Precomputed by run_home_shell BEFORE app.run() - the source
         # detection scrubs os.environ process-wide (see config_report).
         self.config_report = config_report
@@ -202,7 +203,12 @@ class KstrlTuiApp(App[int]):
         was started with.
         """
         if self._safe_mode_running:
+            # Not a no-op: the running check may already have sampled a
+            # signal that has since changed, and dropping this tick
+            # would leave that stale answer authoritative. Remember it.
+            self._safe_mode_rerun = True
             return
+        self._safe_mode_rerun = False
         self._safe_mode_running = True
         self._safe_mode_seq += 1
         seq = self._safe_mode_seq
@@ -239,6 +245,10 @@ class KstrlTuiApp(App[int]):
             return  # a superseded check finished late; its answer is stale
         self._safe_mode_seen_seq = message.seq
         self._safe_mode_reasons = message.reasons
+        if self._safe_mode_rerun:
+            # A tick was dropped while this check ran. Run it now rather
+            # than waiting a full interval on a possibly stale answer.
+            self.call_later(self._check_safe_mode)
         for screen in self.screen_stack:
             update = getattr(screen, "update_safe_mode", None)
             if callable(update):

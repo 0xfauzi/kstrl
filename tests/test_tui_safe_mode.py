@@ -321,31 +321,42 @@ class TestReviewFindings:
         assert len(set(rows)) == 3, f"widgets share a row: {rows}"
         assert rows == sorted(rows)
 
-    async def test_a_text_input_does_not_swallow_the_safe_mode_key(
+    async def test_a_focused_text_input_does_not_swallow_the_key(
         self, tmp_path: Path,
     ) -> None:
-        """P2. Textual's Input consumes printable keys BEFORE app
-        bindings, so `m` typed the letter into the field instead of
-        opening the panel. Hiding the banner while clear is only
-        defensible if the key always works."""
+        """P2, and the weak first attempt at this test. Asserting
+        `len(key) > 1` passed for "slash", which Textual emits as the
+        printable `/` that an Input consumes - the test permitted the
+        exact regression it named. So drive the real thing: focus an
+        Input, press the key, and check both that the panel opened and
+        that nothing was typed."""
         from textual.widgets import Input
 
         from kstrl.tui.app import KstrlTuiApp as App
+        from kstrl.tui.screens.safemode import SafeModePanel as Panel
 
-        binding_keys = {b.key for b in App.BINDINGS if hasattr(b, "key")}
-        safe_mode_keys = {
+        keys = [
             b.key for b in App.BINDINGS
             if getattr(b, "action", "") == "safe_mode"
-        }
+        ]
+        assert keys, "no safe-mode binding at all"
 
-        assert safe_mode_keys, "no safe-mode binding at all"
-        for key in safe_mode_keys:
-            assert len(key) > 1, (
-                f"{key!r} is a printable key; an Input will consume it "
-                "before the app binding runs"
-            )
-        assert "m" not in binding_keys or "m" not in safe_mode_keys
-        assert Input is not None  # the widget class this is about
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            probe = Input(id="probe-input")
+            await app.screen.mount(probe)
+            probe.focus()
+            await pilot.pause()
+            await pilot.press(keys[0])
+            await pilot.pause()
+            opened = isinstance(app.screen, Panel)
+            typed = probe.value
+
+        assert opened, f"{keys[0]!r} did not open the panel from an Input"
+        assert typed == "", f"{keys[0]!r} was typed into the field: {typed!r}"
 
     async def test_a_late_check_does_not_overwrite_a_newer_one(
         self, tmp_path: Path,
@@ -461,3 +472,109 @@ class TestReviewFindings:
 
         assert has_border, "no border, so border_title never renders"
         assert width < 120, "the dialog fills the whole screen"
+
+
+class TestGatingReviewFindings:
+    """The review of the fix itself. One of these is a defect the
+    previous round's own fix introduced, which is now the third time
+    that has happened on this repository."""
+
+    async def test_a_dropped_tick_reruns_instead_of_being_lost(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2, introduced by the previous round's in-flight guard.
+        safemode reads the queue BEFORE the expensive event stream, so a
+        check can sample a nominal queue, spend seconds on the stream,
+        and have that stale answer stay authoritative while the tick
+        that would have seen a new pause was simply dropped."""
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            for _ in range(40):
+                if app._safe_mode_reasons is not None:
+                    break
+                await pilot.pause(0.05)
+            # A check is in flight; a tick arrives and must not vanish.
+            app._safe_mode_running = True
+            app._check_safe_mode()
+            requested = app._safe_mode_rerun
+
+        assert requested, "the tick was dropped, not remembered"
+
+    async def test_the_binding_reaches_system_modals(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. Textual's command palette is a SystemModalScreen and
+        excludes non-priority app bindings, so the key did nothing there
+        while the runbook promised the panel from any screen."""
+        from kstrl.tui.app import KstrlTuiApp as App
+
+        safe_mode = [
+            b for b in App.BINDINGS
+            if getattr(b, "action", "") == "safe_mode"
+        ]
+
+        assert safe_mode
+        for binding in safe_mode:
+            assert getattr(binding, "priority", False), (
+                "a non-priority app binding is excluded from system "
+                "modal screens such as the command palette"
+            )
+
+    async def test_every_reason_is_reachable_in_a_short_terminal(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. The scroller laid out taller than the dialog, so the
+        dialog clipped the overflow while max_scroll_y stayed 0: the
+        extra reasons were invisible AND unreachable. Measured at 80x24
+        with four reasons before the fix: 15 content rows, 4 visible,
+        max_scroll_y 0."""
+        from kstrl.tui.screens.safemode import SafeModePanel as Panel
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+        reasons = [
+            _reason("queue", f"reason number {index}") for index in range(4)
+        ]
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause()
+            app.push_screen(Panel(reasons))
+            await pilot.pause()
+            await pilot.pause()
+            body = app.screen.query_one("#safemode-body")
+            scroll = app.screen.query_one("#safemode-scroll")
+            hidden = body.region.height - scroll.region.height
+            reachable = scroll.max_scroll_y
+
+        assert hidden > 0, "the fixture no longer overflows; widen it"
+        assert reachable >= hidden, (
+            f"{hidden} rows overflow but only {reachable} are scrollable"
+        )
+
+    async def test_an_explicit_panel_keeps_the_reasons_it_was_given(
+        self, tmp_path: Path,
+    ) -> None:
+        """Found while measuring the one above, not by the review. The
+        previous round's replay-on-mount was unconditional, so a panel
+        constructed with real findings rendered the app's nominal state
+        instead. It made the clipping measurement lie."""
+        from kstrl.tui.screens.safemode import SafeModePanel as Panel
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            for _ in range(40):
+                if app._safe_mode_reasons is not None:
+                    break
+                await pilot.pause(0.05)
+            assert app._safe_mode_reasons == []      # the app is nominal
+            app.push_screen(Panel([_reason("queue", "explicitly passed")]))
+            await pilot.pause()
+            body = str(app.screen.query_one("#safemode-body").render())
+
+        assert "explicitly passed" in body

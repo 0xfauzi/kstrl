@@ -1,5 +1,5 @@
 {
- "built_at_commit": "7359493334ba20f367d1c957444e6a8b1c975e3b",
+ "built_at_commit": "33abeb4990d0afa4d7813c2a7478f109c5b1c137",
  "components": {
   "kstrl": {
    "classes": [],
@@ -7638,7 +7638,7 @@
     "test_first_run_is_not_a_fallback"
    ],
    "tests_primary": 39,
-   "tests_total": 60,
+   "tests_total": 64,
    "uses": {
     "kstrl.autonomy": [
      "AutonomyConfig",
@@ -8736,17 +8736,19 @@
     "kstrl.tui.state",
     "kstrl.tui.theme"
    ],
-   "loc": 576,
+   "loc": 586,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "ba1e3b6e6752",
+   "sha": "ebd135edc19f",
    "tests": [
     "test_a_clean_root_hides_the_banner",
+    "test_a_dropped_tick_reruns_instead_of_being_lost",
+    "test_a_focused_text_input_does_not_swallow_the_key",
     "test_a_late_check_does_not_overwrite_a_newer_one",
     "test_a_screen_mounted_later_shows_the_active_warning",
-    "test_a_text_input_does_not_swallow_the_safe_mode_key",
     "test_a_tokenless_axis_marks_tokens_only",
     "test_a_worker_failure_does_not_strand_the_chip",
+    "test_an_explicit_panel_keeps_the_reasons_it_was_given",
     "test_apply_via_modal_mutates_and_stamps",
     "test_bad_directory_blocks_preview",
     "test_cancel_writes_nothing",
@@ -8763,12 +8765,10 @@
     "test_cost_meter_without_unreported",
     "test_counts_unapplied_only",
     "test_ctrl_c_bound_and_detaches",
-    "test_custom_stack_pushed_bottom_first",
-    "test_cycle_marks_members_not_raises",
-    "test_dash_command_opens_newest_run"
+    "test_custom_stack_pushed_bottom_first"
    ],
    "tests_primary": 0,
-   "tests_total": 153,
+   "tests_total": 157,
    "uses": {
     "kstrl.interaction": [
      "PromptKind",
@@ -9290,13 +9290,16 @@
    "sha": "298d49fe141c",
    "tests": [
     "test_a_clean_root_hides_the_banner",
+    "test_a_dropped_tick_reruns_instead_of_being_lost",
+    "test_a_focused_text_input_does_not_swallow_the_key",
     "test_a_late_check_does_not_overwrite_a_newer_one",
     "test_a_screen_mounted_later_shows_the_active_warning",
-    "test_a_text_input_does_not_swallow_the_safe_mode_key",
     "test_a_worker_failure_does_not_strand_the_chip",
+    "test_an_explicit_panel_keeps_the_reasons_it_was_given",
     "test_cells_fill_after_the_worker_lands",
     "test_counts_unapplied_only",
     "test_escape_closes_the_panel",
+    "test_every_reason_is_reachable_in_a_short_terminal",
     "test_factory_run_with_lower_bound_marker",
     "test_incomplete_stale_run",
     "test_moved_mtime_recomputes",
@@ -9304,19 +9307,16 @@
     "test_the_banner_names_repeated_sources_once",
     "test_the_banner_names_the_sources",
     "test_the_banners_do_not_overlap_each_other_or_the_topbar",
+    "test_the_binding_reaches_system_modals",
     "test_the_chip_reaches_the_home_masthead",
     "test_the_chip_reaches_the_run_masthead",
     "test_the_chip_stays_narrow_in_every_state",
     "test_the_clean_state_is_rendered_not_hidden",
     "test_the_home_chip_is_rendered_while_clean",
-    "test_the_interval_is_far_slower_than_the_poll",
-    "test_the_key_opens_the_panel_with_the_reasons",
-    "test_the_open_panel_updates_when_a_check_lands",
-    "test_the_panel_dialog_has_a_border_so_its_title_renders",
-    "test_the_panel_separates_nominal_from_not_checked"
+    "test_the_interval_is_far_slower_than_the_poll"
    ],
    "tests_primary": 0,
-   "tests_total": 29,
+   "tests_total": 33,
    "uses": {
     "kstrl.reducer": [
      "RunState"
@@ -10483,11 +10483,13 @@
    "sha": "0f53f0b794ad",
    "tests": [
     "test_a_clean_root_hides_the_banner",
+    "test_a_dropped_tick_reruns_instead_of_being_lost",
+    "test_a_focused_text_input_does_not_swallow_the_key",
     "test_a_late_check_does_not_overwrite_a_newer_one",
     "test_a_screen_mounted_later_shows_the_active_warning",
-    "test_a_text_input_does_not_swallow_the_safe_mode_key",
     "test_a_tokenless_axis_marks_tokens_only",
     "test_a_worker_failure_does_not_strand_the_chip",
+    "test_an_explicit_panel_keeps_the_reasons_it_was_given",
     "test_captured_hook_writes_nothing_to_terminal",
     "test_chain_and_diamond",
     "test_checkpoint_banner_in_dash_mode",
@@ -10504,12 +10506,10 @@
     "test_decompose_canonicalizes_agent_alias",
     "test_decompose_form_requires_spec_and_project",
     "test_decompose_session_runs_end_to_end",
-    "test_default_keeps_terminal_bell_path",
-    "test_detail_shows_timeline_findings_transcript",
-    "test_digit_hotkey_opens_matching_command"
+    "test_default_keeps_terminal_bell_path"
    ],
    "tests_primary": 0,
-   "tests_total": 112,
+   "tests_total": 116,
    "uses": {
     "kstrl.events": [
      "*"
@@ -10715,20 +10715,24 @@
     "kstrl.safemode",
     "kstrl.tui.theme"
    ],
-   "loc": 111,
+   "loc": 118,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "0e93e87f7e59",
+   "sha": "983b115ffa16",
    "tests": [
     "test_a_clean_root_hides_the_banner",
+    "test_a_dropped_tick_reruns_instead_of_being_lost",
+    "test_a_focused_text_input_does_not_swallow_the_key",
     "test_a_late_check_does_not_overwrite_a_newer_one",
     "test_a_screen_mounted_later_shows_the_active_warning",
-    "test_a_text_input_does_not_swallow_the_safe_mode_key",
     "test_a_worker_failure_does_not_strand_the_chip",
+    "test_an_explicit_panel_keeps_the_reasons_it_was_given",
     "test_escape_closes_the_panel",
+    "test_every_reason_is_reachable_in_a_short_terminal",
     "test_the_banner_names_repeated_sources_once",
     "test_the_banner_names_the_sources",
     "test_the_banners_do_not_overlap_each_other_or_the_topbar",
+    "test_the_binding_reaches_system_modals",
     "test_the_chip_reaches_the_home_masthead",
     "test_the_chip_reaches_the_run_masthead",
     "test_the_chip_stays_narrow_in_every_state",
@@ -10743,7 +10747,7 @@
     "test_three_states_are_visually_distinct"
    ],
    "tests_primary": 0,
-   "tests_total": 21,
+   "tests_total": 25,
    "uses": {
     "kstrl.safemode": [
      "SafeModeReason"
@@ -11858,14 +11862,18 @@
    "sha": "0cea28744c1d",
    "tests": [
     "test_a_clean_root_hides_the_banner",
+    "test_a_dropped_tick_reruns_instead_of_being_lost",
+    "test_a_focused_text_input_does_not_swallow_the_key",
     "test_a_late_check_does_not_overwrite_a_newer_one",
     "test_a_screen_mounted_later_shows_the_active_warning",
-    "test_a_text_input_does_not_swallow_the_safe_mode_key",
     "test_a_worker_failure_does_not_strand_the_chip",
+    "test_an_explicit_panel_keeps_the_reasons_it_was_given",
     "test_escape_closes_the_panel",
+    "test_every_reason_is_reachable_in_a_short_terminal",
     "test_the_banner_names_repeated_sources_once",
     "test_the_banner_names_the_sources",
     "test_the_banners_do_not_overlap_each_other_or_the_topbar",
+    "test_the_binding_reaches_system_modals",
     "test_the_chip_reaches_the_home_masthead",
     "test_the_chip_reaches_the_run_masthead",
     "test_the_chip_stays_narrow_in_every_state",
@@ -11880,7 +11888,7 @@
     "test_three_states_are_visually_distinct"
    ],
    "tests_primary": 0,
-   "tests_total": 21,
+   "tests_total": 25,
    "uses": {
     "kstrl.safemode": [
      "SafeModeReason"
@@ -12755,7 +12763,7 @@
     "test_an_unreadable_marker_file_reads_as_paused"
    ],
    "tests_primary": 91,
-   "tests_total": 579,
+   "tests_total": 583,
    "uses": {
     "kstrl.config": [
      "load_toml_section",

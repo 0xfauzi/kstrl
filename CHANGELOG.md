@@ -34,6 +34,21 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   finally has CSS, without which its border title never rendered and the
   dialog filled the screen (R10.4 follow-up).
 
+  A second review round on those fixes found four more, one of them a
+  defect the first round's own fix introduced: the in-flight guard
+  dropped a timer tick outright, and because the queue is sampled before
+  the expensive event-stream read, a check could sample a nominal queue,
+  spend seconds on the stream, and keep that stale answer authoritative
+  while the pause that arrived during the read was never sampled. A
+  dropped tick is now remembered and rerun. The panel binding is also
+  marked priority, without which it never reached Textual's command
+  palette, which is a system modal that excludes ordinary application
+  bindings. The panel's scroller laid out taller than its dialog, so
+  overflowing reasons were clipped while `max_scroll_y` stayed zero and
+  no key could reach them. And replay-on-mount was unconditional, so a
+  panel constructed with real findings rendered the app's nominal state
+  instead.
+
 ### Added
 
 - Safe mode: one name, and one question, for the four degraded states
