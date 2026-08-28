@@ -1,5 +1,5 @@
 {
- "built_at_commit": "c05139922931090775fc1720272bb93c9616fb19",
+ "built_at_commit": "b73e3285dfdaadd8fa5ceaab842c2f6e045174c9",
  "components": {
   "kstrl": {
    "classes": [],
@@ -7589,7 +7589,13 @@
    ],
    "id": "kstrl.safemode",
    "imported_by": [
-    "kstrl.cli"
+    "kstrl.cli",
+    "kstrl.tui.app",
+    "kstrl.tui.messages",
+    "kstrl.tui.screens.home",
+    "kstrl.tui.screens.overview",
+    "kstrl.tui.screens.safemode",
+    "kstrl.tui.widgets.safe_mode_chip"
    ],
    "imports": [
     "kstrl.autonomy",
@@ -7632,7 +7638,7 @@
     "test_first_run_is_not_a_fallback"
    ],
    "tests_primary": 39,
-   "tests_total": 39,
+   "tests_total": 54,
    "uses": {
     "kstrl.autonomy": [
      "AutonomyConfig",
@@ -8674,6 +8680,8 @@
       "def store(self) -> StateStore | None",
       "def run_dir(self) -> Path | None",
       "def on_mount(self) -> None",
+      "def on_safe_mode_checked(self, message: SafeModeChecked) -> None",
+      "def action_safe_mode(self) -> None",
       "def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None",
       "def open_component(self, component_id: str) -> None",
       "def action_nav_back(self) -> None",
@@ -8692,6 +8700,10 @@
     {
      "name": "DEFAULT_POLL_INTERVAL",
      "value": "0.2"
+    },
+    {
+     "name": "SAFE_MODE_INTERVAL_SECONDS",
+     "value": "5.0"
     }
    ],
    "docstring": "KstrlTuiApp: the dashboard application (stage 3 PR D/E).",
@@ -8708,6 +8720,7 @@
    "imports": [
     "kstrl.interaction",
     "kstrl.launch",
+    "kstrl.safemode",
     "kstrl.tui.bridge",
     "kstrl.tui.dispatch",
     "kstrl.tui.messages",
@@ -8718,16 +8731,19 @@
     "kstrl.tui.screens.options",
     "kstrl.tui.screens.overview",
     "kstrl.tui.screens.quit",
+    "kstrl.tui.screens.safemode",
     "kstrl.tui.session",
     "kstrl.tui.state",
     "kstrl.tui.theme"
    ],
-   "loc": 493,
+   "loc": 553,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "af24b99a7402",
+   "sha": "2646cca1094b",
    "tests": [
+    "test_a_clean_root_hides_the_banner",
     "test_a_tokenless_axis_marks_tokens_only",
+    "test_a_worker_failure_does_not_strand_the_chip",
     "test_apply_via_modal_mutates_and_stamps",
     "test_bad_directory_blocks_preview",
     "test_cancel_writes_nothing",
@@ -8749,12 +8765,10 @@
     "test_dash_command_opens_newest_run",
     "test_decompose_canonicalizes_agent_alias",
     "test_decompose_form_requires_spec_and_project",
-    "test_decompose_session_runs_end_to_end",
-    "test_default_keeps_terminal_bell_path",
-    "test_detail_shows_timeline_findings_transcript"
+    "test_decompose_session_runs_end_to_end"
    ],
    "tests_primary": 0,
-   "tests_total": 132,
+   "tests_total": 147,
    "uses": {
     "kstrl.interaction": [
      "PromptKind",
@@ -8764,6 +8778,11 @@
     "kstrl.launch": [
      "LaunchSpec"
     ],
+    "kstrl.safemode": [
+     "RECOVERY",
+     "SafeModeReason",
+     "safe_mode_reasons"
+    ],
     "kstrl.tui.bridge": [
      "OrchestratorHandle"
     ],
@@ -8771,6 +8790,7 @@
      "initial_screens_for_kind"
     ],
     "kstrl.tui.messages": [
+     "SafeModeChecked",
      "StateChanged"
     ],
     "kstrl.tui.runcontext": [
@@ -8793,6 +8813,9 @@
     ],
     "kstrl.tui.screens.quit": [
      "QuitModal"
+    ],
+    "kstrl.tui.screens.safemode": [
+     "SafeModePanel"
     ],
     "kstrl.tui.session": [
      "LaunchError",
@@ -9233,6 +9256,11 @@
      "name": "StateChanged"
     },
     {
+     "doc": "The background safe-mode check reported (R10.4 follow-up).",
+     "methods": [],
+     "name": "SafeModeChecked"
+    },
+    {
      "doc": "The home worker finished folding run summaries (D2).",
      "methods": [],
      "name": "SummariesReady"
@@ -9253,12 +9281,13 @@
    ],
    "imports": [
     "kstrl.reducer",
+    "kstrl.safemode",
     "kstrl.tui.home_data"
    ],
-   "loc": 32,
+   "loc": 46,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "8e17d07edb42",
+   "sha": "c286c0b2f7b7",
    "tests": [
     "test_cells_fill_after_the_worker_lands",
     "test_counts_unapplied_only",
@@ -9274,6 +9303,9 @@
    "uses": {
     "kstrl.reducer": [
      "RunState"
+    ],
+    "kstrl.safemode": [
+     "SafeModeReason"
     ],
     "kstrl.tui.home_data": [
      "HomeStats",
@@ -9900,6 +9932,7 @@
      "methods": [
       "def compose(self) -> ComposeResult",
       "def ready(self) -> bool",
+      "def update_safe_mode(self, reasons: list[SafeModeReason] | None) -> None",
       "def on_mount(self) -> None",
       "def refresh_runs(self) -> None",
       "def on_summaries_ready(self, message: SummariesReady) -> None",
@@ -9938,6 +9971,7 @@
    "imports": [
     "kstrl.config",
     "kstrl.manifest",
+    "kstrl.safemode",
     "kstrl.tui.home_data",
     "kstrl.tui.messages",
     "kstrl.tui.runs",
@@ -9950,12 +9984,13 @@
     "kstrl.tui.theme",
     "kstrl.tui.widgets.component_table",
     "kstrl.tui.widgets.cost_meter",
-    "kstrl.tui.widgets.run_table"
+    "kstrl.tui.widgets.run_table",
+    "kstrl.tui.widgets.safe_mode_chip"
    ],
-   "loc": 388,
+   "loc": 399,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "4eea60f676cf",
+   "sha": "d781fbe442ce",
    "tests": [
     "test_action_required_item_fires_its_own_command",
     "test_action_required_taxonomy",
@@ -9991,6 +10026,9 @@
     ],
     "kstrl.manifest": [
      "Manifest"
+    ],
+    "kstrl.safemode": [
+     "SafeModeReason"
     ],
     "kstrl.tui.home_data": [
      "HomeStats",
@@ -10035,6 +10073,9 @@
     ],
     "kstrl.tui.widgets.run_table": [
      "RunTable"
+    ],
+    "kstrl.tui.widgets.safe_mode_chip": [
+     "SafeModeChip"
     ]
    }
   },
@@ -10386,6 +10427,7 @@
      "doc": "",
      "methods": [
       "def compose(self) -> ComposeResult",
+      "def update_safe_mode(self, reasons: list[SafeModeReason] | None) -> None",
       "def on_mount(self) -> None",
       "def ready(self) -> bool",
       "def refresh_state(self, state: RunState) -> None",
@@ -10410,18 +10452,22 @@
    "imports": [
     "kstrl.events",
     "kstrl.reducer",
+    "kstrl.safemode",
     "kstrl.tui.messages",
     "kstrl.tui.widgets.activity",
     "kstrl.tui.widgets.component_table",
     "kstrl.tui.widgets.cost_meter",
-    "kstrl.tui.widgets.header"
+    "kstrl.tui.widgets.header",
+    "kstrl.tui.widgets.safe_mode_chip"
    ],
-   "loc": 117,
+   "loc": 138,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "94a82cc51bcf",
+   "sha": "370cbd1c9bd4",
    "tests": [
+    "test_a_clean_root_hides_the_banner",
     "test_a_tokenless_axis_marks_tokens_only",
+    "test_a_worker_failure_does_not_strand_the_chip",
     "test_captured_hook_writes_nothing_to_terminal",
     "test_chain_and_diamond",
     "test_checkpoint_banner_in_dash_mode",
@@ -10443,18 +10489,19 @@
     "test_digit_hotkey_opens_matching_command",
     "test_disabled_gating_leaves_no_run_dir",
     "test_empty_state",
-    "test_empty_state_renders_guidance",
-    "test_enter_opens_detail_and_escape_returns",
-    "test_enter_opens_run_with_kind_dispatch_and_escape_returns"
+    "test_empty_state_renders_guidance"
    ],
    "tests_primary": 0,
-   "tests_total": 91,
+   "tests_total": 106,
    "uses": {
     "kstrl.events": [
      "*"
     ],
     "kstrl.reducer": [
      "RunState"
+    ],
+    "kstrl.safemode": [
+     "SafeModeReason"
     ],
     "kstrl.tui.messages": [
      "StateChanged"
@@ -10470,6 +10517,9 @@
     ],
     "kstrl.tui.widgets.header": [
      "RunHeader"
+    ],
+    "kstrl.tui.widgets.safe_mode_chip": [
+     "SafeModeBanner"
     ]
    }
   },
@@ -10608,6 +10658,73 @@
     ],
     "kstrl.ui.plain": [
      "PlainUI"
+    ]
+   }
+  },
+  "kstrl.tui.screens.safemode": {
+   "classes": [
+    {
+     "doc": "",
+     "methods": [
+      "def compose(self) -> ComposeResult",
+      "def action_close(self) -> None"
+     ],
+     "name": "SafeModePanel"
+    }
+   ],
+   "constants": [],
+   "docstring": "Safe-mode panel: the reasons behind the masthead chip.",
+   "errors": [],
+   "file": "kstrl/tui/screens/safemode.py",
+   "functions": [
+    {
+     "doc": "",
+     "name": "render_reason",
+     "signature": "def render_reason(reason: SafeModeReason) -> Text"
+    },
+    {
+     "doc": "Three states, three titles. This is the surface that must never",
+     "name": "panel_title",
+     "signature": "def panel_title(reasons: list[SafeModeReason] | None) -> str"
+    }
+   ],
+   "id": "kstrl.tui.screens.safemode",
+   "imported_by": [
+    "kstrl.tui.app"
+   ],
+   "imports": [
+    "kstrl.safemode",
+    "kstrl.tui.theme"
+   ],
+   "loc": 84,
+   "package": "kstrl",
+   "plane": "tui",
+   "sha": "82b56ac51568",
+   "tests": [
+    "test_a_clean_root_hides_the_banner",
+    "test_a_worker_failure_does_not_strand_the_chip",
+    "test_escape_closes_the_panel",
+    "test_the_banner_names_repeated_sources_once",
+    "test_the_banner_names_the_sources",
+    "test_the_chip_reaches_the_home_masthead",
+    "test_the_chip_reaches_the_run_masthead",
+    "test_the_chip_stays_narrow_in_every_state",
+    "test_the_clean_state_is_rendered_not_hidden",
+    "test_the_home_chip_is_rendered_while_clean",
+    "test_the_interval_is_far_slower_than_the_poll",
+    "test_the_key_opens_the_panel_with_the_reasons",
+    "test_the_panel_separates_nominal_from_not_checked",
+    "test_the_run_topbar_keeps_the_run_state_label",
+    "test_three_states_are_visually_distinct"
+   ],
+   "tests_primary": 0,
+   "tests_total": 15,
+   "uses": {
+    "kstrl.safemode": [
+     "SafeModeReason"
+    ],
+    "kstrl.tui.theme": [
+     "*"
     ]
    }
   },
@@ -10952,6 +11069,7 @@
     "kstrl.tui.screens.home",
     "kstrl.tui.screens.init_wizard",
     "kstrl.tui.screens.retry",
+    "kstrl.tui.screens.safemode",
     "kstrl.tui.widgets.activity",
     "kstrl.tui.widgets.component_table",
     "kstrl.tui.widgets.context_bar",
@@ -10961,7 +11079,8 @@
     "kstrl.tui.widgets.form",
     "kstrl.tui.widgets.header",
     "kstrl.tui.widgets.phase_timeline",
-    "kstrl.tui.widgets.run_table"
+    "kstrl.tui.widgets.run_table",
+    "kstrl.tui.widgets.safe_mode_chip"
    ],
    "imports": [],
    "loc": 95,
@@ -11662,6 +11781,81 @@
     ],
     "kstrl.tui.widgets.cost_meter": [
      "format_tokens"
+    ]
+   }
+  },
+  "kstrl.tui.widgets.safe_mode_chip": {
+   "classes": [
+    {
+     "doc": "Status light on the masthead; re-rendered when the check reports.",
+     "methods": [
+      "def on_mount(self) -> None",
+      "def update_reasons(self, reasons: list[SafeModeReason] | None) -> None"
+     ],
+     "name": "SafeModeChip"
+    },
+    {
+     "doc": "Full-width alert line, hidden while nominal.",
+     "methods": [
+      "def update_reasons(self, reasons: list[SafeModeReason] | None) -> None"
+     ],
+     "name": "SafeModeBanner"
+    }
+   ],
+   "constants": [],
+   "docstring": "Safe-mode chip: the dashboard's answer to \"is the factory holding back\".",
+   "errors": [],
+   "file": "kstrl/tui/widgets/safe_mode_chip.py",
+   "functions": [
+    {
+     "doc": "A status light, at most five cells wide in every state.",
+     "name": "render_chip",
+     "signature": "def render_chip(reasons: list[SafeModeReason] | None) -> Text"
+    },
+    {
+     "doc": "The words the chip has no room for. Only shown when degraded.",
+     "name": "render_banner",
+     "signature": "def render_banner(reasons: list[SafeModeReason], *, key: str='m') -> str"
+    }
+   ],
+   "id": "kstrl.tui.widgets.safe_mode_chip",
+   "imported_by": [
+    "kstrl.tui.screens.home",
+    "kstrl.tui.screens.overview"
+   ],
+   "imports": [
+    "kstrl.safemode",
+    "kstrl.tui.theme"
+   ],
+   "loc": 85,
+   "package": "kstrl",
+   "plane": "tui",
+   "sha": "469364321445",
+   "tests": [
+    "test_a_clean_root_hides_the_banner",
+    "test_a_worker_failure_does_not_strand_the_chip",
+    "test_escape_closes_the_panel",
+    "test_the_banner_names_repeated_sources_once",
+    "test_the_banner_names_the_sources",
+    "test_the_chip_reaches_the_home_masthead",
+    "test_the_chip_reaches_the_run_masthead",
+    "test_the_chip_stays_narrow_in_every_state",
+    "test_the_clean_state_is_rendered_not_hidden",
+    "test_the_home_chip_is_rendered_while_clean",
+    "test_the_interval_is_far_slower_than_the_poll",
+    "test_the_key_opens_the_panel_with_the_reasons",
+    "test_the_panel_separates_nominal_from_not_checked",
+    "test_the_run_topbar_keeps_the_run_state_label",
+    "test_three_states_are_visually_distinct"
+   ],
+   "tests_primary": 0,
+   "tests_total": 15,
+   "uses": {
+    "kstrl.safemode": [
+     "SafeModeReason"
+    ],
+    "kstrl.tui.theme": [
+     "*"
     ]
    }
   },
@@ -12530,7 +12724,7 @@
     "test_an_unreadable_marker_file_reads_as_paused"
    ],
    "tests_primary": 91,
-   "tests_total": 558,
+   "tests_total": 573,
    "uses": {
     "kstrl.config": [
      "load_toml_section",

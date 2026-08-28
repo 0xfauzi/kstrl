@@ -20,10 +20,12 @@ from kstrl.tui.widgets.activity import ActivityFeed
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import CostMeter
 from kstrl.tui.widgets.header import RunHeader
+from kstrl.tui.widgets.safe_mode_chip import SafeModeBanner
 
 if TYPE_CHECKING:
     from kstrl import events as ev
     from kstrl.reducer import RunState
+    from kstrl.safemode import SafeModeReason
 
 
 class CheckpointBanner(Static):
@@ -61,14 +63,33 @@ class OverviewScreen(Screen[None]):
         with Horizontal(id="topbar"):
             yield RunHeader(id="run-header")
             yield CostMeter(id="cost-meter")
+        yield SafeModeBanner(id="safe-mode-banner")
         yield CheckpointBanner(id="checkpoint-banner")
         yield ComponentTable(id="component-table")
         yield Static("activity", id="activity-title")
         yield ActivityFeed(id="activity-feed")
         yield Footer()
 
+    def update_safe_mode(
+        self, reasons: list[SafeModeReason] | None,
+    ) -> None:
+        """Duck-typed contract the app calls; ignored while unmounted.
+
+        A banner and no chip, and that was measured rather than chosen:
+        the topbar is one line, and on the standard 120-column fixture
+        the header (41 cells) and the cost meter (79) already want 126
+        before anything is added. A chip there cost the run its own
+        state label. Degraded is impossible to miss on the banner, `m`
+        is always in the footer, and the panel is the surface that
+        distinguishes not-checked from checked-and-clear.
+        """
+        banner = next(iter(self.query(SafeModeBanner)), None)
+        if banner is not None:
+            banner.update_reasons(reasons)
+
     def on_mount(self) -> None:
         self.query_one(CheckpointBanner).display = False
+        self.query_one(SafeModeBanner).display = False
         if self._pending_feed:
             self.query_one(ActivityFeed).feed_events(self._pending_feed)
             self._pending_feed = []

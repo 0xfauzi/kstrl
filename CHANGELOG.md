@@ -23,10 +23,18 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   and a callout inside a pull request body. `safe_mode_reasons(root_dir)`
   reads all four and returns a source, a detail sentence taken verbatim
   from the existing signal, and the runbook anchor that recovers it;
-  the plain `ks status` report and `ks serve --dry-run` print
-  `safe mode: nominal` or one line per reason. The dashboard does not
-  show it yet, so on a terminal the question is asked with
-  `ks status --no-tui`. It never raises: a signal that cannot be read is
+  the plain `ks status` report, `ks serve --dry-run` and the dashboard
+  read it. On the dashboard `m` opens a panel from any screen, a warning
+  banner appears under the run masthead when a signal degrades, and the
+  home masthead carries a chip. The panel is what keeps three facts
+  apart that a banner alone would merge: not checked yet, checked and
+  clear, and a list of reasons in each signal's own words with the
+  runbook section that recovers it. The run masthead carries no chip
+  because it has no room: at 120 columns the run header and the cost
+  meter already want 126 cells, so anything added there cost the run its
+  own state label. The dashboard re-checks on a slow background thread
+  rather than on its event poll, because the predicate reads a run's
+  whole event stream. It never raises: a signal that cannot be read is
   itself a reason, because a reader that failed is not evidence that the
   signal is clear. No behaviour changed and no gate was added, since
   every signal it reads already refuses where refusing is right
