@@ -59,8 +59,15 @@ def sweep() -> list[dict[str, object]]:
             if state == "today" and (present["golden"] or present["memory"]):
                 continue
             seq = order(state, present)
-            rows.append({"state": state, **present, "order": seq,
-                         "after_retry": after_retry(seq), "last_before_template": seq[-2] if len(seq) > 1 else ""})
+            rows.append(
+                {
+                    "state": state,
+                    **present,
+                    "order": seq,
+                    "after_retry": after_retry(seq),
+                    "last_before_template": seq[-2] if len(seq) > 1 else "",
+                }
+            )
     return rows
 
 
@@ -70,27 +77,64 @@ def main() -> None:
         json.dump(rows, sys.stdout)
         return
     print(f"rows swept: {len(rows)}")
-    print("claim 1: the instructions are always last ->",
-          "holds" if all(r["order"][-1] == "template" for r in rows) else "fails")  # type: ignore[index]
-    print("claim 2: CLAUDE.md, when present, sits immediately before the instructions ->",
-          "holds" if all(r["order"][-2] == "claude_md" for r in rows if r["claude_md"]) else "fails")  # type: ignore[index]
-    print("claim 3: in the end state, memory follows the retry context immediately when both are present ->",
-          "holds" if all(r["after_retry"] == "memory" for r in rows
-                         if r["state"] == "end" and r["retry"] and r["memory"]) else "fails")
-    print("claim 4: golden patterns sit between knowledge and feedforward ->",
-          "holds" if all(
-              r["order"].index("knowledge") < r["order"].index("golden") < r["order"].index("feedforward")  # type: ignore[attr-defined]
-              for r in rows if r["state"] == "end" and r["knowledge"] and r["golden"] and r["feedforward"])
-          else "fails")
-    print("claim 5: today, what follows the retry context is CLAUDE.md when the worktree has one, "
-          "else the instructions ->",
-          "holds" if all(r["after_retry"] == ("claude_md" if r["claude_md"] else "template")
-                         for r in rows if r["state"] == "today" and r["retry"]) else "fails")
-    print("claim 6: the memory file is never the last part; CLAUDE.md or the instructions always follow it ->",
-          "holds" if all(r["order"][-1] != "memory" and r["order"][-2] != "memory" or not r["claude_md"]  # type: ignore[index]
-                         for r in rows if r["memory"]) and
-          all(r["order"].index("memory") < r["order"].index("claude_md")  # type: ignore[attr-defined]
-              for r in rows if r["memory"] and r["claude_md"]) else "fails")
+    print(
+        "claim 1: the instructions are always last ->",
+        "holds" if all(r["order"][-1] == "template" for r in rows) else "fails",
+    )  # type: ignore[index]
+    print(
+        "claim 2: CLAUDE.md, when present, sits immediately before the instructions ->",
+        "holds" if all(r["order"][-2] == "claude_md" for r in rows if r["claude_md"]) else "fails",
+    )  # type: ignore[index]
+    print(
+        "claim 3: in the end state, memory follows the retry context immediately "
+        "when both are present ->",
+        "holds"
+        if all(
+            r["after_retry"] == "memory"
+            for r in rows
+            if r["state"] == "end" and r["retry"] and r["memory"]
+        )
+        else "fails",
+    )
+    print(
+        "claim 4: golden patterns sit between knowledge and feedforward ->",
+        "holds"
+        if all(
+            r["order"].index("knowledge")
+            < r["order"].index("golden")
+            < r["order"].index("feedforward")  # type: ignore[attr-defined]
+            for r in rows
+            if r["state"] == "end" and r["knowledge"] and r["golden"] and r["feedforward"]
+        )
+        else "fails",
+    )
+    print(
+        "claim 5: today, what follows the retry context is CLAUDE.md when the worktree has one, "
+        "else the instructions ->",
+        "holds"
+        if all(
+            r["after_retry"] == ("claude_md" if r["claude_md"] else "template")
+            for r in rows
+            if r["state"] == "today" and r["retry"]
+        )
+        else "fails",
+    )
+    print(
+        "claim 6: the memory file is never the last part; CLAUDE.md or the "
+        "instructions always follow it ->",
+        "holds"
+        if all(
+            r["order"][-1] != "memory" and r["order"][-2] != "memory" or not r["claude_md"]  # type: ignore[index]
+            for r in rows
+            if r["memory"]
+        )
+        and all(
+            r["order"].index("memory") < r["order"].index("claude_md")  # type: ignore[attr-defined]
+            for r in rows
+            if r["memory"] and r["claude_md"]
+        )
+        else "fails",
+    )
     print()
     full = order("end", dict.fromkeys(PARTS, True))
     print("end state, everything present:", " -> ".join(NAMES[p] for p in full))

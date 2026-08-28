@@ -151,6 +151,15 @@ files = ["kstrl"]
 # goes in paths once one exists.
 min_confidence = 80
 paths = ['kstrl']
+# cancel_futures is a false positive, not dead code. _InlineExecutor.shutdown
+# duck-types concurrent.futures.Executor.shutdown, whose signature is
+# (wait=True, *, cancel_futures=False). factory.py calls
+# executor.shutdown(wait=False, cancel_futures=True) on the abort path and on
+# the scheduler-backstop path, and both can hold an _InlineExecutor. The body
+# has nothing to shut down, so the name is never read - measured: deleting the
+# parameter turns those two calls into
+# "TypeError: shutdown() got an unexpected keyword argument 'cancel_futures'".
+ignore_names = ["cancel_futures"]
 
 [tool.codespell]
 # All verified false positives, not typos. critcial is a deliberately invalid
