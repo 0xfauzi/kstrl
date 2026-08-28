@@ -149,7 +149,11 @@ repos:
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.11.29
     hooks:
-      # Skips cleanly in a repo with no uv.lock.
+      # Skips ONLY where there is no pyproject.toml. Where a pyproject exists but a
+      # uv.lock does not, this CREATES one rather than skipping: measured, a 3-line
+      # empty lock in a repo whose pyproject holds nothing but tool settings. An
+      # earlier version of this comment claimed it always skipped, which was tested
+      # in a scratch repo with no pyproject and so only ever exercised half the rule.
       - id: uv-lock
 
   # --- shell ----------------------------------------------------------------
