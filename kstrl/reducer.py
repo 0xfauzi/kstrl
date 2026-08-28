@@ -79,9 +79,7 @@ class ComponentState:
     @property
     def tokens_are_lower_bound(self) -> bool:
         """This component's ``total_tokens`` omits a call's spend."""
-        return (
-            self.usage_calls - self.coverage_unknown_calls - self.token_calls
-        ) > 0
+        return (self.usage_calls - self.coverage_unknown_calls - self.token_calls) > 0
 
     @property
     def cost_is_lower_bound(self) -> bool:
@@ -91,9 +89,7 @@ class ComponentState:
         reported cost and whose reviewer reported only tokens has an
         exact token total and a partial cost one.
         """
-        return (
-            self.usage_calls - self.coverage_unknown_calls - self.cost_calls
-        ) > 0
+        return (self.usage_calls - self.coverage_unknown_calls - self.cost_calls) > 0
 
 
 @dataclass(frozen=True)
@@ -193,9 +189,7 @@ class RunState:
         gap = self.coverage_gaps.get(axis)
         if gap is not None and gap.uncovered_calls > 0:
             return True
-        uncovered = (
-            self.usage_calls - self.coverage_unknown_calls - covered_calls
-        )
+        uncovered = self.usage_calls - self.coverage_unknown_calls - covered_calls
         return uncovered > 0
 
     @property
@@ -318,32 +312,30 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         )
         return
     if isinstance(event, ev.SpecIssueRecorded):
-        severity = (
-            event.severity
-            if event.severity in SPEC_ISSUE_SEVERITIES
-            else "unknown"
+        severity = event.severity if event.severity in SPEC_ISSUE_SEVERITIES else "unknown"
+        state.spec_issue_counts[severity] = state.spec_issue_counts.get(severity, 0) + 1
+        state.spec_issues.append(
+            {
+                "severity": severity,
+                "kind": event.kind,
+                "summary": event.summary,
+                "location": event.location,
+                "suggestion": event.suggestion,
+            }
         )
-        state.spec_issue_counts[severity] = (
-            state.spec_issue_counts.get(severity, 0) + 1
-        )
-        state.spec_issues.append({
-            "severity": severity,
-            "kind": event.kind,
-            "summary": event.summary,
-            "location": event.location,
-            "suggestion": event.suggestion,
-        })
         if len(state.spec_issues) > MAX_SPEC_ISSUES:
             del state.spec_issues[0]
         return
     if isinstance(event, ev.ArtifactWritten):
         # Run-scoped even when a component is stamped (per-component
         # PRDs): artifacts are a run-level record.
-        state.artifacts.append({
-            "label": event.label,
-            "path": event.path,
-            "component": event.component,
-        })
+        state.artifacts.append(
+            {
+                "label": event.label,
+                "path": event.path,
+                "component": event.component,
+            }
+        )
         if len(state.artifacts) > MAX_ARTIFACTS:
             del state.artifacts[0]
         return
@@ -372,13 +364,15 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
                 comp.status = "verifying"
     elif isinstance(event, ev.PhaseCompleted):
         comp.phase_explicit = True
-        comp.phase_history.append({
-            "phase": event.phase,
-            "passed": event.passed,
-            "detail": event.detail,
-            "duration_seconds": event.duration_seconds,
-            "attempt": comp.attempt or 1,
-        })
+        comp.phase_history.append(
+            {
+                "phase": event.phase,
+                "passed": event.passed,
+                "detail": event.detail,
+                "duration_seconds": event.duration_seconds,
+                "attempt": comp.attempt or 1,
+            }
+        )
         if not event.passed and event.detail:
             comp.error = event.detail
     elif isinstance(event, ev.ComponentCompleted):
@@ -422,11 +416,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.cost_calls += event.cost_calls
         state.token_calls += event.token_calls
         state.cost_calls += event.cost_calls
-        legacy = (
-            event.known_calls > 0
-            and event.token_calls == 0
-            and event.cost_calls == 0
-        )
+        legacy = event.known_calls > 0 and event.token_calls == 0 and event.cost_calls == 0
         if legacy:
             # See RunState.coverage_unknown_calls: a known call always
             # reported tokens or cost, so this shape can only be a
@@ -435,15 +425,17 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             state.coverage_unknown_calls += event.known_calls
     elif isinstance(event, ev.FindingRecorded):
         comp.findings_count += 1
-        comp.recent_findings.append({
-            "phase": event.phase,
-            "category": event.category,
-            "severity": event.severity,
-            "location": event.location,
-            "explanation": event.explanation,
-            "attempt": event.attempt,
-            "model": event.model,
-        })
+        comp.recent_findings.append(
+            {
+                "phase": event.phase,
+                "category": event.category,
+                "severity": event.severity,
+                "location": event.location,
+                "explanation": event.explanation,
+                "attempt": event.attempt,
+                "model": event.model,
+            }
+        )
         if len(comp.recent_findings) > MAX_RECENT_FINDINGS:
             del comp.recent_findings[0]
     elif isinstance(event, ev.PrCreated):
@@ -484,19 +476,12 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             # totals as evidence for it (review finding on #180).
             named = ", ".join(event.ceilings) or event.ceiling or "budget"
             comp.error = (
-                f"budget ceiling unenforceable ({named}): no configured "
-                "ceiling can still fire"
+                f"budget ceiling unenforceable ({named}): no configured ceiling can still fire"
             )
         elif kind == "cost":
-            comp.error = (
-                f"cost budget exceeded: ${event.cost_usd:.6f} >= "
-                f"${event.max_cost_usd}"
-            )
+            comp.error = f"cost budget exceeded: ${event.cost_usd:.6f} >= ${event.max_cost_usd}"
         else:
-            comp.error = (
-                f"token budget exceeded: {event.total_tokens} >= "
-                f"{event.max_total_tokens}"
-            )
+            comp.error = f"token budget exceeded: {event.total_tokens} >= {event.max_total_tokens}"
 
 
 def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:
@@ -536,15 +521,17 @@ def upconvert_v1(obj: Mapping[str, Any]) -> ev.Event:
     # Field renames between v1 data keys and v2 payload fields.
     if name == "adversarial_agent_selected" and "source" in data_dict:
         data_dict["agent_source"] = data_dict.pop("source")
-    return ev.event_from_dict({
-        "event": name,
-        "ts": ts,
-        "run_id": obj.get("run_id") or "",
-        "component": obj.get("component") or "",
-        "source": "orchestrator",
-        "seq": 0,
-        "data": data_dict,
-    })
+    return ev.event_from_dict(
+        {
+            "event": name,
+            "ts": ts,
+            "run_id": obj.get("run_id") or "",
+            "component": obj.get("component") or "",
+            "source": "orchestrator",
+            "seq": 0,
+            "data": data_dict,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -568,10 +555,7 @@ def _v2_run_dirs(root_dir: Path) -> list[Path]:
 
     try:
         return sorted(
-            (
-                d for d in _run_dirs_unsorted(root_dir)
-                if (d / "events.jsonl").exists()
-            ),
+            (d for d in _run_dirs_unsorted(root_dir) if (d / "events.jsonl").exists()),
             key=lambda d: run_sort_key(d.name),
         )
     except OSError:
@@ -638,7 +622,8 @@ def run_dirs_newest_first(root_dir: Path) -> list[Path]:
 
 
 def load_run_state(
-    root_dir: Path, run_id: str = "",
+    root_dir: Path,
+    run_id: str = "",
 ) -> tuple[RunState, Path | None]:
     """Reconstruct run state from disk.
 

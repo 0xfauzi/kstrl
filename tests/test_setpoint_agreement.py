@@ -50,7 +50,10 @@ from tests.test_pipeline import (
 
 
 def _story(
-    story_id: str, *, passes: bool, criteria: list[str] | None = None,
+    story_id: str,
+    *,
+    passes: bool,
+    criteria: list[str] | None = None,
     notes: str = "",
 ) -> UserStory:
     return UserStory(
@@ -68,7 +71,9 @@ def _prd(*stories: UserStory) -> PRD:
 
 
 def _criterion(
-    story_id: str, verdict: str, criterion: str = "does the thing",
+    story_id: str,
+    verdict: str,
+    criterion: str = "does the thing",
 ) -> CriterionReview:
     return CriterionReview(
         criterion=criterion,
@@ -80,12 +85,17 @@ def _criterion(
 
 
 def _review(
-    *criteria: CriterionReview, passed: bool = True, infra: bool = False,
+    *criteria: CriterionReview,
+    passed: bool = True,
+    infra: bool = False,
     model: str = "",
 ) -> ReviewResult:
     return ReviewResult(
-        passed=passed, mode="advisory", criteria=list(criteria),
-        infrastructure_error=infra, reviewer_model=model,
+        passed=passed,
+        mode="advisory",
+        criteria=list(criteria),
+        infrastructure_error=infra,
+        reviewer_model=model,
     )
 
 
@@ -103,26 +113,36 @@ def _write_prd(root: Path, comp: Component, prd: PRD) -> Path:
 
 class TestParserKeepsStoryId:
     def test_parse_review_output_keeps_story_id(self) -> None:
-        raw = json.dumps({
-            "stories": [
-                {
-                    "storyId": "US-001",
-                    "criteria": [
-                        {"criterion": "a", "verdict": "pass",
-                         "explanation": "ok", "suggestion": ""},
-                    ],
-                },
-                {
-                    "storyId": "US-002",
-                    "criteria": [
-                        {"criterion": "b", "verdict": "fail",
-                         "explanation": "no", "suggestion": "do b"},
-                    ],
-                },
-            ],
-            "concerns": [],
-            "overallNotes": "",
-        })
+        raw = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "US-001",
+                        "criteria": [
+                            {
+                                "criterion": "a",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            },
+                        ],
+                    },
+                    {
+                        "storyId": "US-002",
+                        "criteria": [
+                            {
+                                "criterion": "b",
+                                "verdict": "fail",
+                                "explanation": "no",
+                                "suggestion": "do b",
+                            },
+                        ],
+                    },
+                ],
+                "concerns": [],
+                "overallNotes": "",
+            }
+        )
         result = parse_review_output(raw)
         assert not result.infrastructure_error, result.overall_notes
         assert [c.story_id for c in result.criteria] == ["US-001", "US-002"]
@@ -130,14 +150,25 @@ class TestParserKeepsStoryId:
     def test_story_id_is_stored_stripped_but_not_lowercased(self) -> None:
         """The raw value stays inspectable; normalising happens at
         lookup, which is what lets a reviewer's case drift still match."""
-        raw = json.dumps({
-            "stories": [{
-                "storyId": "  us-001  ",
-                "criteria": [{"criterion": "a", "verdict": "pass",
-                              "explanation": "ok", "suggestion": ""}],
-            }],
-            "concerns": [], "overallNotes": "",
-        })
+        raw = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "  us-001  ",
+                        "criteria": [
+                            {
+                                "criterion": "a",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            }
+                        ],
+                    }
+                ],
+                "concerns": [],
+                "overallNotes": "",
+            }
+        )
         result = parse_review_output(raw)
         assert result.criteria[0].story_id == "us-001"
 
@@ -150,7 +181,8 @@ class TestParserKeepsStoryId:
 class TestStoryVerdicts:
     def test_story_verdicts_fail_dominates(self) -> None:
         review = _review(
-            _criterion("A", "pass"), _criterion("A", "fail"),
+            _criterion("A", "pass"),
+            _criterion("A", "fail"),
             _criterion("A", "advisory"),
         )
         assert review.story_verdicts() == {"a": "fail"}
@@ -196,7 +228,8 @@ class TestSetpointDisagreements:
     def test_disagreement_on_advisory_verdict(self) -> None:
         prd = _prd(_story("A", passes=True), _story("B", passes=True))
         review = _review(
-            _criterion("A", "pass"), _criterion("B", "advisory", "b-crit"),
+            _criterion("A", "pass"),
+            _criterion("B", "advisory", "b-crit"),
         )
         found = setpoint_disagreements(prd, review, severity="advisory")
         assert len(found) == 1
@@ -264,13 +297,25 @@ class TestCriterionCoverage:
 
     def test_the_existing_coverage_gate_does_not_catch_this(self) -> None:
         """The hole this closes is real, not hypothetical."""
-        raw = json.dumps({
-            "stories": [{"storyId": "A", "criteria": [
-                {"criterion": "crit A", "verdict": "pass",
-                 "explanation": "ok", "suggestion": ""},
-            ]}],
-            "concerns": [], "overallNotes": "",
-        })
+        raw = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "A",
+                        "criteria": [
+                            {
+                                "criterion": "crit A",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            },
+                        ],
+                    }
+                ],
+                "concerns": [],
+                "overallNotes": "",
+            }
+        )
         parsed = parse_review_output(raw, ["A"])
         assert parsed.infrastructure_error is False
         assert parsed.story_verdicts() == {"a": "pass"}
@@ -278,7 +323,8 @@ class TestCriterionCoverage:
     def test_full_criteria_all_passing_do_confirm(self) -> None:
         prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
         review = _review(
-            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "crit B"),
+            _criterion("A", "pass", "crit A"),
+            _criterion("A", "pass", "crit B"),
         )
         assert setpoint_disagreements(prd, review, severity="advisory") == []
 
@@ -288,7 +334,8 @@ class TestCriterionCoverage:
         fully judged on one criterion judged twice."""
         prd = _prd(_story("A", passes=True, criteria=["crit A", "crit B"]))
         review = _review(
-            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "crit A"),
+            _criterion("A", "pass", "crit A"),
+            _criterion("A", "pass", "crit A"),
         )
         assert review.judged_criterion_count("A") == 1
         assert len(setpoint_disagreements(prd, review, severity="advisory")) == 1
@@ -296,7 +343,8 @@ class TestCriterionCoverage:
     def test_extra_verdicts_do_not_create_a_disagreement(self) -> None:
         prd = _prd(_story("A", passes=True, criteria=["crit A"]))
         review = _review(
-            _criterion("A", "pass", "crit A"), _criterion("A", "pass", "extra"),
+            _criterion("A", "pass", "crit A"),
+            _criterion("A", "pass", "extra"),
         )
         assert setpoint_disagreements(prd, review, severity="advisory") == []
 
@@ -310,14 +358,20 @@ class TestCriterionCoverage:
 
 
 class TestSetpointBlocks:
-    @pytest.mark.parametrize(("mode", "level", "expected"), [
-        ("advisory", 0, False),
-        ("block", 0, True),
-        ("advisory", 1, True),
-        ("advisory", 2, True),
-    ])
+    @pytest.mark.parametrize(
+        ("mode", "level", "expected"),
+        [
+            ("advisory", 0, False),
+            ("block", 0, True),
+            ("advisory", 1, True),
+            ("advisory", 2, True),
+        ],
+    )
     def test_setpoint_blocks_rules(
-        self, mode: str, level: int, expected: bool,
+        self,
+        mode: str,
+        level: int,
+        expected: bool,
     ) -> None:
         config = FactoryConfig(setpoint_agreement=mode)
         assert setpoint_blocks(config, level) is expected
@@ -330,9 +384,7 @@ class TestSetpointBlocks:
         for mode in ("advisory", "block"):
             for level in range(5):
                 config = FactoryConfig(setpoint_agreement=mode)
-                assert setpoint_blocks(config, level) is (
-                    mode == "block" or level >= 1
-                )
+                assert setpoint_blocks(config, level) is (mode == "block" or level >= 1)
 
 
 # --------------------------------------------------------------------
@@ -344,26 +396,27 @@ class TestRevert:
     def test_revert_resets_the_flag_and_notes_why(self) -> None:
         prd = _prd(_story("A", passes=True), _story("B", passes=True))
         review = _review(
-            _criterion("A", "pass"), _criterion("B", "advisory", "b-crit"),
+            _criterion("A", "pass"),
+            _criterion("B", "advisory", "b-crit"),
         )
         found = setpoint_disagreements(prd, review, severity="fail")
         assert revert_unconfirmed_stories(
-            prd, review, found, attempt=2,
+            prd,
+            review,
+            found,
+            attempt=2,
         ) == ["B"]
         by_id = {s.id: s for s in prd.user_stories}
         assert by_id["A"].passes is True
         assert by_id["B"].passes is False
-        assert by_id["B"].notes == (
-            "reverted by reviewer (attempt 2): b-crit"
-        )
+        assert by_id["B"].notes == ("reverted by reviewer (attempt 2): b-crit")
 
     def test_revert_of_an_uncovered_story_says_so(self) -> None:
         prd = _prd(_story("A", passes=True, notes="earlier note"))
         found = setpoint_disagreements(prd, _review(), severity="fail")
         revert_unconfirmed_stories(prd, _review(), found, attempt=1)
         assert prd.user_stories[0].notes == (
-            "earlier note\n"
-            "reverted by reviewer (attempt 1): story not covered by review"
+            "earlier note\nreverted by reviewer (attempt 1): story not covered by review"
         )
 
 
@@ -382,13 +435,15 @@ class TestRetryContext:
         self,
     ) -> None:
         prd = _prd(_story("A", passes=True))
-        review = _review(CriterionReview(
-            criterion="raises on names over 64 characters",
-            verdict="advisory",
-            explanation="__init__.py:7-11 strips before measuring",
-            suggestion="measure before stripping",
-            story_id="A",
-        ))
+        review = _review(
+            CriterionReview(
+                criterion="raises on names over 64 characters",
+                verdict="advisory",
+                explanation="__init__.py:7-11 strips before measuring",
+                suggestion="measure before stripping",
+                story_id="A",
+            )
+        )
         found = setpoint_disagreements(prd, review, severity="fail")
         text = setpoint_retry_context(found, review)
         assert "raises on names over 64 characters" in text
@@ -400,7 +455,8 @@ class TestRetryContext:
         review = _review(_criterion("A", "fail"))
         found = setpoint_disagreements(prd, review, severity="fail")
         assert "have been reset to false" in setpoint_retry_context(
-            found, review,
+            found,
+            review,
         )
 
     def test_does_not_claim_a_revert_that_did_not_happen(self) -> None:
@@ -438,7 +494,8 @@ class TestRetryContext:
 
 class TestPrdSave:
     def test_save_of_an_unchanged_prd_is_byte_identical(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The factory writes PRDs with the same two-space indent and
         trailing newline PRD.save emits (decompose's atomic JSON
@@ -453,7 +510,8 @@ class TestPrdSave:
         assert path.read_bytes() == original
 
     def test_revert_changes_only_the_reverted_story(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         path = tmp_path / "prd.json"
         _prd(_story("A", passes=True), _story("B", passes=True)).save(path)
@@ -502,12 +560,17 @@ class TestFindingReachesTheRecord:
         comp = _component("comp-a")
         prd = _prd(_story("US-002", passes=True))
         comp.findings = setpoint_disagreements(
-            prd, _review(_criterion("US-002", "advisory", "handles empties")),
+            prd,
+            _review(_criterion("US-002", "advisory", "handles empties")),
             severity="advisory",
         )
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="test",
-            base_branch="main", single_pr=False, components=[comp],
+            version="1",
+            spec_file="spec.md",
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            components=[comp],
         )
         body = _generate_pr_body(comp, manifest)
         assert SETPOINT_DISAGREEMENT_CATEGORY in body
@@ -530,10 +593,12 @@ def _pipeline_seams(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
     monkeypatch.setattr(
-        "kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n",
+        "kstrl.git.get_diff_content",
+        lambda *a, **k: "diff --git a b\n",
     )
     monkeypatch.setattr(
-        "kstrl.agents.get_agent", lambda *a, **k: object(),
+        "kstrl.agents.get_agent",
+        lambda *a, **k: object(),
     )
 
 
@@ -542,8 +607,12 @@ def _review_hook(result: ReviewResult) -> dict[str, Any]:
 
 
 def _drive(
-    tmp_path: Path, *, review: ReviewResult, prd: PRD,
-    before_run: Callable[[Any], None] | None = None, **config: Any,
+    tmp_path: Path,
+    *,
+    review: ReviewResult,
+    prd: PRD,
+    before_run: Callable[[Any], None] | None = None,
+    **config: Any,
 ) -> tuple[Any, Component, Transition | None, Path]:
     """``before_run`` receives the pipeline after the PRD is on disk and
     before the phase chain runs. That is the only window in which a test
@@ -569,10 +638,7 @@ def _drive(
 
 
 def _setpoint_findings(comp: Component) -> list[Finding]:
-    return [
-        f for f in comp.findings
-        if f.category == SETPOINT_DISAGREEMENT_CATEGORY
-    ]
+    return [f for f in comp.findings if f.category == SETPOINT_DISAGREEMENT_CATEGORY]
 
 
 class TestPipelineWiring:
@@ -580,10 +646,12 @@ class TestPipelineWiring:
         _, comp, transition, prd_path = _drive(
             tmp_path,
             review=_review(
-                _criterion("A", "pass"), _criterion("B", "advisory", "b-crit"),
+                _criterion("A", "pass"),
+                _criterion("B", "advisory", "b-crit"),
             ),
             prd=_prd(_story("A", passes=True), _story("B", passes=True)),
-            review_mode="advisory", setpoint_agreement="advisory",
+            review_mode="advisory",
+            setpoint_agreement="advisory",
         )
         assert transition != Transition.RETRYING
         found = _setpoint_findings(comp)
@@ -597,10 +665,12 @@ class TestPipelineWiring:
         pipeline, comp, transition, prd_path = _drive(
             tmp_path,
             review=_review(
-                _criterion("A", "pass"), _criterion("B", "advisory", "b-crit"),
+                _criterion("A", "pass"),
+                _criterion("B", "advisory", "b-crit"),
             ),
             prd=_prd(_story("A", passes=True), _story("B", passes=True)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
         assert comp.failed_phase == "review"
@@ -620,13 +690,15 @@ class TestPipelineWiring:
         assert "advisory because" in ctx
 
     def test_block_mode_leaves_an_agreeing_run_alone(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, comp, transition, prd_path = _drive(
             tmp_path,
             review=_review(_criterion("A", "pass")),
             prd=_prd(_story("A", passes=True)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
         )
         assert transition != Transition.RETRYING
         assert _setpoint_findings(comp) == []
@@ -639,7 +711,8 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(_criterion("A", "fail", "a-crit"), passed=False),
             prd=_prd(_story("A", passes=True)),
-            review_mode="hard", setpoint_agreement="block",
+            review_mode="hard",
+            setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
         assert comp.failed_check == "criteria"
@@ -652,12 +725,15 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(),
             prd=_prd(_story("A", passes=True)),
-            review_mode="skip", setpoint_agreement="block",
+            review_mode="skip",
+            setpoint_agreement="block",
         )
         assert _setpoint_findings(comp) == []
 
     def test_unwritable_prd_fails_the_component_without_aborting_the_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """factory.py calls process_result without a try, so an
         exception escaping the phase chain would take the whole run
@@ -665,6 +741,7 @@ class TestPipelineWiring:
         degrades to an infrastructure finding, the component still
         fails, and the retry text stops claiming a revert that did not
         happen."""
+
         def _boom(self: PRD, path: Path) -> None:
             raise OSError("read-only file system")
 
@@ -673,20 +750,21 @@ class TestPipelineWiring:
             review=_review(_criterion("B", "fail", "b-crit")),
             prd=_prd(_story("B", passes=True)),
             before_run=lambda _p: monkeypatch.setattr(PRD, "save", _boom),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
         assert comp.failed_check == "setpoint"
         assert any(
-            f.is_infrastructure_error
-            and "Set-point revert could not be written" in f.explanation
+            f.is_infrastructure_error and "Set-point revert could not be written" in f.explanation
             for f in comp.findings
         )
         ctx = pipeline.component_contexts["comp-a"]
         assert "could NOT be reset automatically" in ctx
 
     def test_blocking_mode_fails_when_the_reviewer_never_reported(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Round-1 review, P2. In advisory review mode a crashed reviewer
         yields passed=True with infrastructure_error=True, so the review
@@ -696,11 +774,14 @@ class TestPipelineWiring:
         pipeline, comp, transition, prd_path = _drive(
             tmp_path,
             review=ReviewResult(
-                passed=True, mode="advisory", infrastructure_error=True,
+                passed=True,
+                mode="advisory",
+                infrastructure_error=True,
                 overall_notes="Review agent crashed: boom",
             ),
             prd=_prd(_story("A", passes=True)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
         )
         assert transition == Transition.RETRYING
         assert _setpoint_findings(comp) == []
@@ -717,34 +798,43 @@ class TestPipelineWiring:
         assert entries and all(e["infrastructure"] for e in entries)
 
     def test_advisory_mode_does_not_fail_on_a_silent_reviewer(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, comp, transition, _ = _drive(
             tmp_path,
             review=ReviewResult(
-                passed=True, mode="advisory", infrastructure_error=True,
+                passed=True,
+                mode="advisory",
+                infrastructure_error=True,
             ),
             prd=_prd(_story("A", passes=True)),
-            review_mode="advisory", setpoint_agreement="advisory",
+            review_mode="advisory",
+            setpoint_agreement="advisory",
         )
         assert transition != Transition.RETRYING
 
     def test_no_claimed_story_means_nothing_to_confirm(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A silent reviewer only blocks when a claim is outstanding."""
         _, comp, transition, _ = _drive(
             tmp_path,
             review=ReviewResult(
-                passed=True, mode="advisory", infrastructure_error=True,
+                passed=True,
+                mode="advisory",
+                infrastructure_error=True,
             ),
             prd=_prd(_story("A", passes=False)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
         )
         assert transition != Transition.RETRYING
 
     def test_budget_exhaustion_fails_closed_in_block_mode(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Round-2 review, P1. An exhausted adversarial budget downgrades
         review to SKIP and returns before the set-point gate, so the
@@ -755,7 +845,8 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(),
             prd=_prd(_story("A", passes=True)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
             max_adversarial_calls=1,
             before_run=lambda p: p.adversarial_budget_consume(),
         )
@@ -767,33 +858,38 @@ class TestPipelineWiring:
         assert PRD.load(prd_path).user_stories[0].passes is True
 
     def test_budget_exhaustion_with_no_claim_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, _, transition, _ = _drive(
             tmp_path,
             review=_review(),
             prd=_prd(_story("A", passes=False)),
-            review_mode="advisory", setpoint_agreement="block",
+            review_mode="advisory",
+            setpoint_agreement="block",
             max_adversarial_calls=1,
             before_run=lambda p: p.adversarial_budget_consume(),
         )
         assert transition != Transition.FAILED
 
     def test_budget_exhaustion_in_advisory_mode_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, _, transition, _ = _drive(
             tmp_path,
             review=_review(),
             prd=_prd(_story("A", passes=True)),
-            review_mode="advisory", setpoint_agreement="advisory",
+            review_mode="advisory",
+            setpoint_agreement="advisory",
             max_adversarial_calls=1,
             before_run=lambda p: p.adversarial_budget_consume(),
         )
         assert transition != Transition.FAILED
 
     def test_explicit_skip_is_the_operators_choice_not_a_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """review_mode="skip" turns the reviewer off deliberately, and
         run_factory warns at startup that the gate cannot fire. Failing
@@ -802,13 +898,15 @@ class TestPipelineWiring:
             tmp_path,
             review=_review(),
             prd=_prd(_story("A", passes=True)),
-            review_mode="skip", setpoint_agreement="block",
+            review_mode="skip",
+            setpoint_agreement="block",
         )
         assert transition != Transition.FAILED
         assert _setpoint_findings(comp) == []
 
     def test_unreadable_prd_records_but_does_not_block(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An unreadable PRD holds no claim to disagree with, and both
         check_prd_stories and run_review already fail on it. Recorded so
@@ -818,7 +916,8 @@ class TestPipelineWiring:
             tmp_path,
             components=[comp],
             config=_factory_config(
-                review_mode="advisory", setpoint_agreement="block",
+                review_mode="advisory",
+                setpoint_agreement="block",
             ),
             hooks_overrides=_review_hook(_review()),
         )
@@ -833,9 +932,9 @@ class TestPipelineWiring:
         assert outcome is not None
         assert outcome.transition != Transition.RETRYING
         infra = [
-            f for f in live.findings
-            if f.is_infrastructure_error
-            and "Set-point agreement not measured" in f.explanation
+            f
+            for f in live.findings
+            if f.is_infrastructure_error and "Set-point agreement not measured" in f.explanation
         ]
         assert len(infra) == 1
 
@@ -850,35 +949,37 @@ class TestConfig:
         assert FactoryConfig().setpoint_agreement == "advisory"
 
     def test_config_loads_setpoint_agreement(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", raising=False)
-        (tmp_path / "kstrl.toml").write_text(
-            '[factory]\nsetpoint_agreement = "block"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[factory]\nsetpoint_agreement = "block"\n')
         assert FactoryConfig.load(tmp_path).setpoint_agreement == "block"
 
     def test_env_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[factory]\nsetpoint_agreement = "block"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[factory]\nsetpoint_agreement = "block"\n')
         monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "advisory")
         assert FactoryConfig.load(tmp_path).setpoint_agreement == "advisory"
 
     def test_invalid_toml_value_is_rejected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", raising=False)
-        (tmp_path / "kstrl.toml").write_text(
-            '[factory]\nsetpoint_agreement = "warn"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[factory]\nsetpoint_agreement = "warn"\n')
         with pytest.raises(ValueError, match="setpoint_agreement"):
             FactoryConfig.load(tmp_path)
 
     def test_invalid_env_value_is_rejected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "warn")
         with pytest.raises(ValueError, match="(?i)setpoint_agreement"):
@@ -889,7 +990,8 @@ class TestConfig:
             FactoryConfig(setpoint_agreement="warn")
 
     def test_from_env_reads_the_env_var(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Round-1 review, P3. Unlike review_mode next door, this key has
         an env var, so from_env must read it."""
@@ -897,14 +999,17 @@ class TestConfig:
         assert FactoryConfig.from_env().setpoint_agreement == "block"
 
     def test_from_env_rejects_an_invalid_value(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "warn")
         with pytest.raises(ValueError, match="(?i)setpoint_agreement"):
             FactoryConfig.from_env()
 
     def test_env_value_is_not_reported_as_coming_from_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`ks factory` diffs load() against from_env() to tell the
         operator where a setting came from. A field missing from
@@ -915,8 +1020,11 @@ class TestConfig:
         monkeypatch.setenv("KSTRL_FACTORY_SETPOINT_AGREEMENT", "block")
         notes: list[str] = []
         _collect_toml_notes(
-            notes, "factory", FactoryConfig.load(tmp_path),
-            FactoryConfig.from_env(), set(),
+            notes,
+            "factory",
+            FactoryConfig.load(tmp_path),
+            FactoryConfig.from_env(),
+            set(),
         )
         assert not [n for n in notes if "setpoint_agreement" in n]
 
@@ -937,11 +1045,17 @@ class TestUnreachableGate:
 
     def test_block_with_a_reviewer_running_is_silent(self) -> None:
         for mode in ("hard", "advisory"):
-            assert setpoint_gate_unreachable_warning(
-                FactoryConfig(setpoint_agreement="block", review_mode=mode),
-            ) is None
+            assert (
+                setpoint_gate_unreachable_warning(
+                    FactoryConfig(setpoint_agreement="block", review_mode=mode),
+                )
+                is None
+            )
 
     def test_advisory_mode_never_warns(self) -> None:
-        assert setpoint_gate_unreachable_warning(
-            FactoryConfig(review_mode="skip"),
-        ) is None
+        assert (
+            setpoint_gate_unreachable_warning(
+                FactoryConfig(review_mode="skip"),
+            )
+            is None
+        )

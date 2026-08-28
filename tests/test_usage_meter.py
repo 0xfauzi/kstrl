@@ -101,9 +101,13 @@ class TestUsageTotalsMath:
 
     def test_codex_style_total_only_record(self) -> None:
         totals = UsageTotals()
-        totals.add_record(UsageRecord(
-            total_tokens=14511, duration_seconds=3.0, source="codex-text",
-        ))
+        totals.add_record(
+            UsageRecord(
+                total_tokens=14511,
+                duration_seconds=3.0,
+                source="codex-text",
+            )
+        )
         assert totals.calls == 1
         assert totals.known_calls == 1
         assert totals.total_tokens == 14511
@@ -150,28 +154,34 @@ class TestUsageTotalsMath:
         object: the defect lives in that method's ``known`` flag.
         """
         totals = UsageTotals()
-        totals.add_record(UsageRecord(
-            cost_usd=0.0227028, duration_seconds=1.8,
-            source="claude-stream-json",
-        ))
-        totals.add_record(UsageRecord(
-            cost_usd=0.0104, duration_seconds=2.1,
-            source="claude-stream-json",
-        ))
+        totals.add_record(
+            UsageRecord(
+                cost_usd=0.0227028,
+                duration_seconds=1.8,
+                source="claude-stream-json",
+            )
+        )
+        totals.add_record(
+            UsageRecord(
+                cost_usd=0.0104,
+                duration_seconds=2.1,
+                source="claude-stream-json",
+            )
+        )
         assert totals.calls == 2
-        assert totals.known_calls == 2      # unchanged semantics
+        assert totals.known_calls == 2  # unchanged semantics
         assert totals.unreported_calls == 0  # unchanged semantics
-        assert totals.token_calls == 0       # the honest token coverage
+        assert totals.token_calls == 0  # the honest token coverage
         assert totals.tokenless_calls == 2
         assert totals.total_tokens == 0
         assert totals.cost_usd == pytest.approx(0.0331028)
 
     def test_token_calls_counts_only_token_bearing_records(self) -> None:
         totals = UsageTotals()
-        totals.add_record(_claude_record())                        # parts
-        totals.add_record(UsageRecord(total_tokens=10))            # total
-        totals.add_record(UsageRecord(cost_usd=0.5))               # cost
-        totals.add_record(UsageRecord(duration_seconds=1.0))       # silence
+        totals.add_record(_claude_record())  # parts
+        totals.add_record(UsageRecord(total_tokens=10))  # total
+        totals.add_record(UsageRecord(cost_usd=0.5))  # cost
+        totals.add_record(UsageRecord(duration_seconds=1.0))  # silence
         assert totals.calls == 4
         assert totals.known_calls == 3
         assert totals.token_calls == 2
@@ -192,10 +202,10 @@ class TestUsageTotalsMath:
         ceiling has to know whether a COST was reported, which
         ``known_calls`` cannot answer either."""
         totals = UsageTotals()
-        totals.add_record(_claude_record())                        # both
-        totals.add_record(UsageRecord(total_tokens=10))            # tokens
-        totals.add_record(UsageRecord(cost_usd=0.5))               # cost
-        totals.add_record(UsageRecord(duration_seconds=1.0))       # silence
+        totals.add_record(_claude_record())  # both
+        totals.add_record(UsageRecord(total_tokens=10))  # tokens
+        totals.add_record(UsageRecord(cost_usd=0.5))  # cost
+        totals.add_record(UsageRecord(duration_seconds=1.0))  # silence
         assert totals.calls == 4
         assert totals.known_calls == 3
         assert totals.token_calls == 2
@@ -210,8 +220,8 @@ class TestUsageTotalsMath:
         totals = UsageTotals()
         totals.add_record(UsageRecord(total_tokens=14511, source="codex-text"))
         totals.add_record(UsageRecord(total_tokens=9000, source="codex-text"))
-        assert totals.known_calls == 2       # the misleading signal
-        assert totals.cost_calls == 0        # the honest one
+        assert totals.known_calls == 2  # the misleading signal
+        assert totals.cost_calls == 0  # the honest one
         assert totals.costless_calls == 2
         assert totals.cost_usd == 0.0
 
@@ -244,11 +254,13 @@ class TestUsageTotalsMath:
 
     def test_bool_and_negative_values_rejected(self) -> None:
         totals = UsageTotals()
-        totals.add_record(UsageRecord(
-            input_tokens=True,  # type: ignore[arg-type]
-            output_tokens=-5,
-            cost_usd=-1.0,
-        ))
+        totals.add_record(
+            UsageRecord(
+                input_tokens=True,  # type: ignore[arg-type]
+                output_tokens=-5,
+                cost_usd=-1.0,
+            )
+        )
         assert totals.known_calls == 0
         assert totals.input_tokens == 0
         assert totals.output_tokens == 0
@@ -290,7 +302,8 @@ class TestClaudeUsageExtraction:
         assert record.duration_seconds == pytest.approx(5.0)
 
     def test_malformed_json_records_parse_error_and_warns(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         with caplog.at_level(logging.WARNING, "kstrl.agents.claude_code"):
             record = _usage_from_result_event("{not json", 5.0)
@@ -299,11 +312,13 @@ class TestClaudeUsageExtraction:
         assert any("usage" in r.message for r in caplog.records)
 
     def test_event_without_usage_dict_warns_not_raises(
-        self, caplog: pytest.LogCaptureFixture,
+        self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         with caplog.at_level(logging.WARNING, "kstrl.agents.claude_code"):
             record = _usage_from_result_event(
-                json.dumps({"type": "result", "result": "hi"}), 5.0,
+                json.dumps({"type": "result", "result": "hi"}),
+                5.0,
             )
         assert record.source == "parse-error"
         assert caplog.records
@@ -323,12 +338,22 @@ class TestClaudeUsageExtraction:
     def test_agent_run_appends_record_from_stream(self, tmp_path: Path) -> None:
         mock_proc = MagicMock()
         mock_proc.stdin = MagicMock()
-        mock_proc.stdout = iter([
-            json.dumps({"type": "assistant", "message": {"content": [
-                {"type": "text", "text": "working"},
-            ]}}) + "\n",
-            json.dumps(CLAUDE_RESULT_EVENT) + "\n",
-        ])
+        mock_proc.stdout = iter(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [
+                                {"type": "text", "text": "working"},
+                            ]
+                        },
+                    }
+                )
+                + "\n",
+                json.dumps(CLAUDE_RESULT_EVENT) + "\n",
+            ]
+        )
         mock_proc.wait.return_value = 0
 
         with patch("subprocess.Popen", return_value=mock_proc):
@@ -340,7 +365,8 @@ class TestClaudeUsageExtraction:
         assert agent.usage_records[0].total_tokens == 9 + 42 + 17418 + 10371
 
     def test_agent_run_without_result_event_records_unavailable(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         mock_proc = MagicMock()
         mock_proc.stdin = MagicMock()
@@ -372,7 +398,9 @@ class TestClaudeUsageExtraction:
 
 
 def _run_codex_with_stdout(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, lines: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    lines: list[str],
 ) -> CodexAgent:
     monkeypatch.setattr(CodexAgent, "_supports_output_last_message", False)
     mock_proc = MagicMock()
@@ -387,12 +415,22 @@ def _run_codex_with_stdout(
 
 class TestCodexUsageExtraction:
     def test_measured_two_line_trailer(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         # Verbatim tail of the codex 0.134.0 probe output.
-        agent = _run_codex_with_stdout(monkeypatch, tmp_path, [
-            "codex\n", "hello\n", "tokens used\n", "14,511\n", "hello\n",
-        ])
+        agent = _run_codex_with_stdout(
+            monkeypatch,
+            tmp_path,
+            [
+                "codex\n",
+                "hello\n",
+                "tokens used\n",
+                "14,511\n",
+                "hello\n",
+            ],
+        )
         assert len(agent.usage_records) == 1
         record = agent.usage_records[0]
         assert record.source == "codex-text"
@@ -400,15 +438,24 @@ class TestCodexUsageExtraction:
         assert record.input_tokens is None  # codex reports only a total
 
     def test_single_line_trailer_variant(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
-        agent = _run_codex_with_stdout(monkeypatch, tmp_path, [
-            "hello\n", "tokens used: 1,234\n",
-        ])
+        agent = _run_codex_with_stdout(
+            monkeypatch,
+            tmp_path,
+            [
+                "hello\n",
+                "tokens used: 1,234\n",
+            ],
+        )
         assert agent.usage_records[0].total_tokens == 1234
 
     def test_no_trailer_falls_back_to_calls_plus_wall_time(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         agent = _run_codex_with_stdout(monkeypatch, tmp_path, ["hello\n"])
         assert len(agent.usage_records) == 1
@@ -418,20 +465,36 @@ class TestCodexUsageExtraction:
         assert record.duration_seconds >= 0.0
 
     def test_non_numeric_after_tokens_used_never_raises(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
-        agent = _run_codex_with_stdout(monkeypatch, tmp_path, [
-            "tokens used\n", "not a number\n",
-        ])
+        agent = _run_codex_with_stdout(
+            monkeypatch,
+            tmp_path,
+            [
+                "tokens used\n",
+                "not a number\n",
+            ],
+        )
         assert agent.usage_records[0].total_tokens is None
 
     def test_last_trailer_wins_over_echoed_text(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
-        agent = _run_codex_with_stdout(monkeypatch, tmp_path, [
-            "tokens used\n", "111\n", "more output\n",
-            "tokens used\n", "222\n",
-        ])
+        agent = _run_codex_with_stdout(
+            monkeypatch,
+            tmp_path,
+            [
+                "tokens used\n",
+                "111\n",
+                "more output\n",
+                "tokens used\n",
+                "222\n",
+            ],
+        )
         assert agent.usage_records[0].total_tokens == 222
 
 
@@ -480,7 +543,10 @@ class FakeUsageAgent:
         return "fake-usage"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         output = self._outputs[min(self._runs, len(self._outputs) - 1)]
         self._runs += 1
@@ -504,9 +570,7 @@ def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     return KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=kstrl_dir / "prompt.md",
@@ -520,14 +584,22 @@ def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
 class TestLoopUsageAggregation:
     def test_two_iterations_sum_correctly(self, tmp_path: Path) -> None:
         record = UsageRecord(
-            input_tokens=100, output_tokens=200, total_tokens=300,
-            cost_usd=0.01, duration_seconds=1.0, source="claude-stream-json",
+            input_tokens=100,
+            output_tokens=200,
+            total_tokens=300,
+            cost_usd=0.01,
+            duration_seconds=1.0,
+            source="claude-stream-json",
         )
         agent = FakeUsageAgent(
-            outputs=[["working..."], [COMPLETION_MARKER]], record=record,
+            outputs=[["working..."], [COMPLETION_MARKER]],
+            record=record,
         )
         result = run_loop(
-            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 5),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
         )
         assert result.completed is True
         assert result.iterations == 2
@@ -538,46 +610,59 @@ class TestLoopUsageAggregation:
         assert result.usage.cost_usd == pytest.approx(0.02)
 
     def test_usage_present_on_max_iterations_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         record = UsageRecord(total_tokens=50, source="codex-text")
         agent = FakeUsageAgent(outputs=[["no marker"]], record=record)
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
         )
         assert result.completed is False
         assert result.usage.calls == 3
         assert result.usage.total_tokens == 150
 
     def test_agent_without_usage_records_yields_empty_totals(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         class BareAgent:
             name = "bare"
             final_message = None
 
             def run(
-                self, prompt: str, cwd: Path | None = None,
+                self,
+                prompt: str,
+                cwd: Path | None = None,
                 timeout: float | None = None,
             ) -> Iterator[str]:
                 yield COMPLETION_MARKER
 
         result = run_loop(
-            _loop_config(tmp_path, 1), PlainUI(no_color=True),
-            BareAgent(), tmp_path,
+            _loop_config(tmp_path, 1),
+            PlainUI(no_color=True),
+            BareAgent(),
+            tmp_path,
         )
         assert result.completed is True
         assert result.usage.calls == 0
 
     def test_malformed_usage_records_never_crash_the_loop(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         agent = FakeUsageAgent(
             outputs=[[COMPLETION_MARKER]],
             records=[None, "garbage", 42],
         )
         result = run_loop(
-            _loop_config(tmp_path, 1), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 1),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
         )
         assert result.completed is True
         assert result.usage.calls == 3
@@ -617,29 +702,39 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     # Knowledge distillation off by default in these tests: its agent
     # call would add nondeterministic usage rows.
     (tmp_path / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
     for comp_id in component_ids:
         feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
     return tmp_path
 
 
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
-        comp_id, comp_id.title(), "Desc", deps or [],
+        comp_id,
+        comp_id.title(),
+        "Desc",
+        deps or [],
         f"scripts/kstrl/feature/{comp_id}/prd.json",
         f"kstrl/factory/{comp_id}",
     )
@@ -647,12 +742,19 @@ def _component(comp_id: str, deps: list[str] | None = None) -> Component:
 
 def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     defaults: dict[str, Any] = dict(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
         progress_log_path=tmp_path / "progress.jsonl",
     )
@@ -662,14 +764,16 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
 
 def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
     totals = UsageTotals()
-    totals.add_record(UsageRecord(
-        input_tokens=total // 3,
-        output_tokens=total - total // 3,
-        total_tokens=total,
-        cost_usd=cost or None,
-        duration_seconds=1.0,
-        source="claude-stream-json",
-    ))
+    totals.add_record(
+        UsageRecord(
+            input_tokens=total // 3,
+            output_tokens=total - total // 3,
+            total_tokens=total,
+            cost_usd=cost or None,
+            duration_seconds=1.0,
+            source="claude-stream-json",
+        )
+    )
     return totals
 
 
@@ -681,7 +785,8 @@ def _engineer_usage_events(root: Path) -> list[int]:
     """
     events = ProgressLog(root / "progress.jsonl").read_events()
     return [
-        int(e["data"]["total_tokens"]) for e in events
+        int(e["data"]["total_tokens"])
+        for e in events
         if e["event"] == "component_usage" and e["data"]["phase"] == "engineer"
     ]
 
@@ -697,23 +802,33 @@ def _read_journal(tmp_path: Path) -> list[dict[str, Any]]:
 
 class TestFactoryUsageAggregation:
     def test_engineer_usage_lands_in_journal_tsv_and_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root)
         success = ComponentResult(
-            "comp-a", success=True, iterations=2,
+            "comp-a",
+            success=True,
+            iterations=2,
             usage=_engineer_usage(1200, cost=0.05),
         )
         ui_buffer = io.StringIO()
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=ui_buffer), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=ui_buffer),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -754,28 +869,46 @@ class TestFactoryUsageAggregation:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, review_mode="advisory")
         success = ComponentResult(
-            "comp-a", success=True, iterations=1,
+            "comp-a",
+            success=True,
+            iterations=1,
             usage=_engineer_usage(1000),
         )
         review_agent = FakeUsageAgent(outputs=[["ok"]])
-        review_agent._usage_records.append(UsageRecord(
-            input_tokens=10, output_tokens=20, total_tokens=30,
-            duration_seconds=0.5, source="claude-stream-json",
-        ))
+        review_agent._usage_records.append(
+            UsageRecord(
+                input_tokens=10,
+                output_tokens=20,
+                total_tokens=30,
+                duration_seconds=0.5,
+                source="claude-stream-json",
+            )
+        )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="",
-        ), patch(
-            "kstrl.agents.get_agent", return_value=review_agent,
-        ), patch(
-            "kstrl.factory.run_review",
-            return_value=ReviewResult(passed=True, mode="advisory"),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=review_agent,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=ReviewResult(passed=True, mode="advisory"),
+            ),
         ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -800,7 +933,9 @@ class TestFactoryUsageAggregation:
             security_config=SecurityConfig(mode="advisory"),
         )
         success = ComponentResult(
-            "comp-a", success=True, iterations=1,
+            "comp-a",
+            success=True,
+            iterations=1,
             usage=_engineer_usage(1000),
         )
 
@@ -810,30 +945,47 @@ class TestFactoryUsageAggregation:
 
         def make_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
             agent = FakeUsageAgent(outputs=[["ok"]])
-            agent._usage_records.append(UsageRecord(
-                total_tokens=next(phase_tokens),
-                duration_seconds=0.1, source="claude-stream-json",
-            ))
+            agent._usage_records.append(
+                UsageRecord(
+                    total_tokens=next(phase_tokens),
+                    duration_seconds=0.1,
+                    source="claude-stream-json",
+                )
+            )
             return agent
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="",
-        ), patch(
-            "kstrl.agents.get_agent", side_effect=make_agent,
-        ), patch(
-            "kstrl.factory.run_review",
-            return_value=ReviewResult(passed=True, mode="advisory"),
-        ), patch(
-            "kstrl.factory.run_security_review",
-            return_value=SecurityResult(passed=True, mode="advisory"),
-        ), patch(
-            "kstrl.factory.distill_facts", return_value=(1, "ok"),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                side_effect=make_agent,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=ReviewResult(passed=True, mode="advisory"),
+            ),
+            patch(
+                "kstrl.factory.run_security_review",
+                return_value=SecurityResult(passed=True, mode="advisory"),
+            ),
+            patch(
+                "kstrl.factory.distill_facts",
+                return_value=(1, "ok"),
+            ),
         ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -846,19 +998,27 @@ class TestFactoryUsageAggregation:
         assert usage["distill"]["total_tokens"] == 50
 
     def test_missing_usage_still_completes_and_records_nothing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root)
         success = ComponentResult("comp-a", success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -871,7 +1031,8 @@ class TestFactoryUsageAggregation:
         assert row["total_tokens"] == "0"
 
     def test_unreported_calls_marked_as_lower_bound(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -879,16 +1040,26 @@ class TestFactoryUsageAggregation:
         fallback = UsageTotals()
         fallback.add_record(UsageRecord(duration_seconds=4.0))
         success = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=fallback,
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=fallback,
         )
         ui_buffer = io.StringIO()
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=ui_buffer), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=ui_buffer),
+                root,
             )
 
         out = ui_buffer.getvalue()
@@ -913,16 +1084,25 @@ class TestTokenBudgetHalt:
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             comp_id = args[0]
             return ComponentResult(
-                comp_id, success=True, iterations=1,
+                comp_id,
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(600),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         # comp-a's engineer spend (600 >= 500) trips the cap at the
@@ -934,7 +1114,8 @@ class TestTokenBudgetHalt:
         assert comp_a.status == ComponentStatus.FAILED.value
         assert "max_total_tokens" in (comp_a.error or "")
         budget_findings = [
-            f for f in comp_a.findings
+            f
+            for f in comp_a.findings
             if f.is_infrastructure_error and "token budget" in f.explanation
         ]
         assert len(budget_findings) == 1
@@ -944,10 +1125,7 @@ class TestTokenBudgetHalt:
         assert "comp-b" in result.failed
         comp_b = manifest.get_component("comp-b")
         assert comp_b is not None
-        assert any(
-            f.is_infrastructure_error and f.phase == "scheduling"
-            for f in comp_b.findings
-        )
+        assert any(f.is_infrastructure_error and f.phase == "scheduling" for f in comp_b.findings)
 
         # Progress log carries the budget_exceeded events.
         events = ProgressLog(root / "progress.jsonl").read_events()
@@ -966,16 +1144,25 @@ class TestTokenBudgetHalt:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root)  # max_total_tokens defaults to 0
         success = ComponentResult(
-            "comp-a", success=True, iterations=1,
+            "comp-a",
+            success=True,
+            iterations=1,
             usage=_engineer_usage(10_000_000),
         )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -990,15 +1177,25 @@ class TestTokenBudgetHalt:
         fallback = UsageTotals()
         fallback.add_record(UsageRecord(duration_seconds=60.0))
         success = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=fallback,
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=fallback,
         )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.completed
@@ -1024,7 +1221,9 @@ class SequenceUsageAgent:
     """
 
     def __init__(
-        self, records: list[UsageRecord], outputs: list[str] | None = None,
+        self,
+        records: list[UsageRecord],
+        outputs: list[str] | None = None,
     ) -> None:
         self._records = records
         self._outputs = outputs or ["working..."]
@@ -1035,7 +1234,10 @@ class SequenceUsageAgent:
         return "sequence-usage"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         index = min(len(self._usage_records), len(self._records) - 1)
         self._usage_records.append(self._records[index])
@@ -1055,17 +1257,23 @@ _UNREPORTED = UsageRecord(duration_seconds=5.0, source="unavailable")
 # Reports a cost but no tokens: "known" to the meter, invisible to a
 # token ceiling (review finding P1-b).
 _COST_ONLY = UsageRecord(
-    cost_usd=0.0227028, duration_seconds=1.8, source="claude-stream-json",
+    cost_usd=0.0227028,
+    duration_seconds=1.8,
+    source="claude-stream-json",
 )
 # Both axes, as the claude adapter reports on a healthy call.
 _BOTH = UsageRecord(
-    total_tokens=300, cost_usd=0.03, duration_seconds=1.8,
+    total_tokens=300,
+    cost_usd=0.03,
+    duration_seconds=1.8,
     source="claude-stream-json",
 )
 
 
 def _budget_for(
-    run_total: UsageTotals, cap: int, cost_cap: float = 0.0,
+    run_total: UsageTotals,
+    cap: int,
+    cost_cap: float = 0.0,
 ) -> LoopBudget:
     """Exactly the LoopBudget ``_submit_args`` hands a worker.
 
@@ -1090,14 +1298,18 @@ def _budget_for(
 
 class TestInLoopTokenBudget:
     def test_halt_happens_between_iterations_not_at_max_iterations(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The loop must stop ITSELF: 300 tokens/iteration against a 500
         cap means iteration 3 never starts, even though max_iterations
         is 10 and no phase boundary has been reached."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500),
         )
         assert result.completed is False
@@ -1112,10 +1324,16 @@ class TestInLoopTokenBudget:
         already on the run's meter has 50 left, not 500."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(
-                max_total_tokens=500, prior_total_tokens=450,
-                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
+                max_total_tokens=500,
+                prior_total_tokens=450,
+                prior_known_calls=1,
+                prior_calls=1,
+                prior_token_calls=1,
             ),
         )
         assert result.iterations == 1
@@ -1125,42 +1343,55 @@ class TestInLoopTokenBudget:
     def test_zero_cap_is_unbounded(self, tmp_path: Path) -> None:
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=0),
         )
         assert result.iterations == 3
         assert result.budget_halt_reason == ""
 
     def test_no_budget_argument_keeps_pre_r8_behaviour(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """`ks run` / `ks feature` pass no budget; nothing changes."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
         )
         assert result.iterations == 3
         assert result.budget_halt_reason == ""
 
     def test_completion_in_the_breaching_iteration_still_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Ordering: an iteration that finished the work is a success.
         The overrun is then caught by the phase-boundary check, which is
         exactly the pre-R8 path - the loop does not retro-fail work that
         is already done."""
         agent = FakeUsageAgent(
-            outputs=[[COMPLETION_MARKER]], record=_REPORTED,
+            outputs=[[COMPLETION_MARKER]],
+            record=_REPORTED,
         )
         result = run_loop(
-            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 5),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=100),
         )
         assert result.completed is True
         assert result.budget_halt_reason == ""
 
     def test_wholly_unreported_usage_halts_as_unenforceable(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Unknown usage is NOT treated as zero when nothing at all has
         reported: a cap that provably cannot trip is the defect being
@@ -1168,7 +1399,10 @@ class TestInLoopTokenBudget:
         max_iterations under a dead ceiling."""
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500),
         )
         assert result.completed is False
@@ -1178,7 +1412,8 @@ class TestInLoopTokenBudget:
         assert result.usage.unreported_calls == 2
 
     def test_one_silent_call_is_an_incident_not_a_dead_cap(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A single non-reporting call (a timed-out or unparseable
         iteration on an adapter that normally reports) must not kill the
@@ -1186,7 +1421,10 @@ class TestInLoopTokenBudget:
         loop continues until the arithmetic trips it."""
         agent = SequenceUsageAgent([_UNREPORTED, _REPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500),
         )
         assert result.iterations == 3  # 0 + 300 + 300 >= 500
@@ -1194,21 +1432,26 @@ class TestInLoopTokenBudget:
         assert result.usage.unreported_calls == 1
 
     def test_unreported_usage_is_free_when_the_cap_is_off(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The unenforceable halt is a property of an ENABLED cap. With
         no cap there is nothing to enforce and a non-reporting adapter
         (CustomAgent) runs exactly as before."""
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=0),
         )
         assert result.iterations == 3
         assert result.budget_halt_reason == ""
 
     def test_mixed_reporting_counts_unknown_as_zero_and_keeps_going(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """One unreported iteration among reporting ones does not halt:
         the total stays a documented lower bound that still grows toward
@@ -1216,7 +1459,10 @@ class TestInLoopTokenBudget:
         3, one iteration later than the true spend would have."""
         agent = SequenceUsageAgent([_REPORTED, _UNREPORTED, _REPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500),
         )
         assert result.iterations == 3
@@ -1226,7 +1472,8 @@ class TestInLoopTokenBudget:
         assert result.usage.total_tokens == 600
 
     def test_prior_reported_calls_do_not_disarm_the_unenforceable_halt(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A silent ENGINEER is a dead cap even when earlier phases
         reported.
@@ -1250,18 +1497,25 @@ class TestInLoopTokenBudget:
         """
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 5),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(
-                max_total_tokens=500, prior_total_tokens=100,
-                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
+                max_total_tokens=500,
+                prior_total_tokens=100,
+                prior_known_calls=1,
+                prior_calls=1,
+                prior_token_calls=1,
             ),
         )
-        assert result.iterations == 2      # halts at _UNENFORCEABLE_CALLS
+        assert result.iterations == 2  # halts at _UNENFORCEABLE_CALLS
         assert "unenforceable" in result.budget_halt_reason
         assert not result.completed
 
     def test_one_silent_call_alongside_prior_reporting_keeps_going(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A single unparseable result is an incident, not a dead cap.
 
@@ -1278,17 +1532,24 @@ class TestInLoopTokenBudget:
         """
         agent = SequenceUsageAgent([_UNREPORTED, _REPORTED, _REPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(
-                max_total_tokens=500_000, prior_total_tokens=100,
-                prior_known_calls=1, prior_calls=1, prior_token_calls=1,
+                max_total_tokens=500_000,
+                prior_total_tokens=100,
+                prior_known_calls=1,
+                prior_calls=1,
+                prior_token_calls=1,
             ),
         )
         assert result.budget_halt_reason == ""
         assert result.iterations == 3
 
     def test_cost_only_reporting_is_not_token_evidence(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P1-b): an adapter that reports cost but no
         tokens moved ``known_calls`` and so looked fully instrumented,
@@ -1298,17 +1559,21 @@ class TestInLoopTokenBudget:
         """
         agent = SequenceUsageAgent([_COST_ONLY])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500),
         )
-        assert result.iterations == 2      # not the configured 10
+        assert result.iterations == 2  # not the configured 10
         assert "unenforceable" in result.budget_halt_reason
-        assert result.usage.known_calls == 2   # the misleading signal
-        assert result.usage.token_calls == 0   # the honest one
+        assert result.usage.known_calls == 2  # the misleading signal
+        assert result.usage.token_calls == 0  # the honest one
         assert result.usage.total_tokens == 0
 
     def test_unenforceable_threshold_does_not_reset_per_loop(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P1-a): the threshold is run-wide.
 
@@ -1327,14 +1592,17 @@ class TestInLoopTokenBudget:
         for _ in range(3):
             agent = SequenceUsageAgent([_UNREPORTED])
             result = run_loop(
-                _loop_config(tmp_path, 1), PlainUI(no_color=True), agent,
-                tmp_path, budget=_budget_for(run_total, 500),
+                _loop_config(tmp_path, 1),
+                PlainUI(no_color=True),
+                agent,
+                tmp_path,
+                budget=_budget_for(run_total, 500),
             )
             run_total.merge(result.usage)
             reasons.append(result.budget_halt_reason)
 
-        assert reasons[0] == ""                    # one is an incident
-        assert "unenforceable" in reasons[1]       # two is the adapter
+        assert reasons[0] == ""  # one is an incident
+        assert "unenforceable" in reasons[1]  # two is the adapter
         assert "unenforceable" in reasons[2]
         assert run_total.calls == 3
         assert run_total.token_calls == 0
@@ -1350,12 +1618,15 @@ class TestInLoopTokenBudget:
         would fail a component that never got to run.
         """
         budget = LoopBudget(
-            max_total_tokens=500, prior_calls=20, prior_token_calls=0,
+            max_total_tokens=500,
+            prior_calls=20,
+            prior_token_calls=0,
         )
         assert budget.halt_reason(UsageTotals()) is None
 
     def test_a_tokenless_call_after_an_earlier_one_halts_immediately(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The deliberate cost of counting the threshold across attempts.
 
@@ -1376,10 +1647,16 @@ class TestInLoopTokenBudget:
         """
         agent = SequenceUsageAgent([_UNREPORTED, _REPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 5), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 5),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(
-                max_total_tokens=500_000, prior_total_tokens=900,
-                prior_known_calls=2, prior_calls=3, prior_token_calls=2,
+                max_total_tokens=500_000,
+                prior_total_tokens=900,
+                prior_known_calls=2,
+                prior_calls=3,
+                prior_token_calls=2,
             ),
         )
         assert result.iterations == 1
@@ -1387,25 +1664,33 @@ class TestInLoopTokenBudget:
         assert "2 tokenless call(s) this run" in result.budget_halt_reason
 
     def test_iteration_usage_callback_sees_cumulative_totals(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         seen: list[int] = []
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             on_iteration_usage=lambda totals: seen.append(totals.total_tokens),
         )
         assert seen == [300, 600, 900]
 
     def test_iteration_usage_callback_failure_never_breaks_the_loop(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         def explode(totals: UsageTotals) -> None:
             raise OSError("disk full")
 
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
         result = run_loop(
-            _loop_config(tmp_path, 2), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 2),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             on_iteration_usage=explode,
         )
         assert result.iterations == 2
@@ -1420,7 +1705,9 @@ class TestWorkerPropagatesInLoopHalt:
             root_dir_str=str(root),
             prompt_file_str="scripts/kstrl/prompt.md",
             agent_cmd="echo hi",
-            model=None, reasoning=None, agent_type=None,
+            model=None,
+            reasoning=None,
+            agent_type=None,
             sleep_seconds=0.0,
             max_iterations=10,
             events_dir_str=None,
@@ -1431,15 +1718,19 @@ class TestWorkerPropagatesInLoopHalt:
         return args
 
     def test_worker_reports_budget_exceeded_and_stops_early(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
 
         with patch("kstrl.agents.get_agent", return_value=agent):
-            result = _run_component(**self._worker_args(
-                root, token_budget=LoopBudget(max_total_tokens=500),
-            ))
+            result = _run_component(
+                **self._worker_args(
+                    root,
+                    token_budget=LoopBudget(max_total_tokens=500),
+                )
+            )
 
         assert result.success is False
         assert result.budget_exceeded is True
@@ -1449,21 +1740,26 @@ class TestWorkerPropagatesInLoopHalt:
         assert result.usage.total_tokens == 600
 
     def test_worker_without_a_budget_runs_to_max_iterations(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
 
         with patch("kstrl.agents.get_agent", return_value=agent):
-            result = _run_component(**self._worker_args(
-                root, max_iterations=3,
-            ))
+            result = _run_component(
+                **self._worker_args(
+                    root,
+                    max_iterations=3,
+                )
+            )
 
         assert result.budget_exceeded is False
         assert result.iterations == 3
 
     def test_worker_persists_usage_at_every_iteration_boundary(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The durable snapshot the abort path reads back.
 
@@ -1476,20 +1772,23 @@ class TestWorkerPropagatesInLoopHalt:
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
 
         with patch("kstrl.agents.get_agent", return_value=agent):
-            _run_component(**self._worker_args(
-                root, max_iterations=2,
-                events_dir_str=str(usage_dir), usage_dir_str=str(usage_dir),
-            ))
+            _run_component(
+                **self._worker_args(
+                    root,
+                    max_iterations=2,
+                    events_dir_str=str(usage_dir),
+                    usage_dir_str=str(usage_dir),
+                )
+            )
 
-        snapshot = _read_partial_usage(
-            RunPaths(root=usage_dir).engineer_usage("comp-a")
-        )
+        snapshot = _read_partial_usage(RunPaths(root=usage_dir).engineer_usage("comp-a"))
         assert snapshot is not None
         assert snapshot.total_tokens == 600
         assert snapshot.calls == 2
 
     def test_worker_persists_usage_without_an_events_dir(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P2-d), worker half.
 
@@ -1505,14 +1804,16 @@ class TestWorkerPropagatesInLoopHalt:
         agent = FakeUsageAgent(outputs=[["working..."]], record=_REPORTED)
 
         with patch("kstrl.agents.get_agent", return_value=agent):
-            _run_component(**self._worker_args(
-                root, max_iterations=2,
-                events_dir_str=None, usage_dir_str=str(usage_dir),
-            ))
+            _run_component(
+                **self._worker_args(
+                    root,
+                    max_iterations=2,
+                    events_dir_str=None,
+                    usage_dir_str=str(usage_dir),
+                )
+            )
 
-        snapshot = _read_partial_usage(
-            RunPaths(root=usage_dir).engineer_usage("comp-a")
-        )
+        snapshot = _read_partial_usage(RunPaths(root=usage_dir).engineer_usage("comp-a"))
         assert snapshot is not None
         assert snapshot.total_tokens == 600
         # No events were written: the opt-out is still honored.
@@ -1521,7 +1822,8 @@ class TestWorkerPropagatesInLoopHalt:
 
 class TestSchedulerHandsDownTheBudget:
     def test_worker_is_told_the_cap_and_what_the_run_already_spent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The cap is run-level, so the second worker must launch with
         the first component's spend already on its meter - otherwise the
@@ -1530,50 +1832,72 @@ class TestSchedulerHandsDownTheBudget:
         budget is the last element of the submit tuple, which is how the
         process-pool path passes it."""
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
-        manifest = _make_manifest([
-            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
-        ])
+        manifest = _make_manifest(
+            [
+                _component("comp-a"),
+                _component("comp-b", deps=["comp-a"]),
+            ]
+        )
         config = _factory_config(root, max_total_tokens=100_000)
         budgets: list[Any] = []
 
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             budgets.append(args[-1])
             return ComponentResult(
-                str(args[0]), success=True, iterations=1,
+                str(args[0]),
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(700),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert len(budgets) == 2
         assert all(isinstance(b, LoopBudget) for b in budgets)
         assert budgets[0] == LoopBudget(
-            max_total_tokens=100_000, prior_total_tokens=0,
-            prior_known_calls=0, prior_calls=0, prior_token_calls=0,
+            max_total_tokens=100_000,
+            prior_total_tokens=0,
+            prior_known_calls=0,
+            prior_calls=0,
+            prior_token_calls=0,
         )
         # prior_calls / prior_token_calls are the channel that stops the
         # unenforceable threshold resetting per component (P1-a).
         assert budgets[1] == LoopBudget(
-            max_total_tokens=100_000, prior_total_tokens=700,
-            prior_known_calls=1, prior_calls=1, prior_token_calls=1,
+            max_total_tokens=100_000,
+            prior_total_tokens=700,
+            prior_known_calls=1,
+            prior_calls=1,
+            prior_token_calls=1,
         )
 
     def test_tokenless_prior_calls_reach_the_next_worker(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P1-a), scheduler half: a component whose
         engineer reported nothing must leave that fact on the NEXT
         worker's budget, or the run-wide threshold cannot exist."""
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
-        manifest = _make_manifest([
-            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
-        ])
+        manifest = _make_manifest(
+            [
+                _component("comp-a"),
+                _component("comp-b", deps=["comp-a"]),
+            ]
+        )
         config = _factory_config(root, max_total_tokens=100_000)
         budgets: list[Any] = []
         silent = UsageTotals()
@@ -1582,22 +1906,33 @@ class TestSchedulerHandsDownTheBudget:
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             budgets.append(args[-1])
             return ComponentResult(
-                str(args[0]), success=True, iterations=1, usage=silent,
+                str(args[0]),
+                success=True,
+                iterations=1,
+                usage=silent,
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert budgets[1].prior_calls == 1
         assert budgets[1].prior_token_calls == 0
 
     def test_no_cap_still_hands_down_a_disabled_budget(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
@@ -1607,12 +1942,19 @@ class TestSchedulerHandsDownTheBudget:
             budgets.append(args[-1])
             return ComponentResult(str(args[0]), success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert [b.enabled for b in budgets] == [False]
@@ -1620,7 +1962,8 @@ class TestSchedulerHandsDownTheBudget:
 
 class TestInLoopHaltAuditState:
     def test_same_audit_state_as_a_phase_boundary_breach(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An in-loop halt must be indistinguishable, downstream, from
         the R3.1 phase-boundary halt: BudgetExceeded event, one typed
@@ -1641,16 +1984,27 @@ class TestInLoopHaltAuditState:
             "than spending under a cap that cannot fire (R8)"
         )
         halted = ComponentResult(
-            "comp-a", success=False, iterations=1, error=reason,
-            usage=_engineer_usage(10), budget_exceeded=True,
+            "comp-a",
+            success=False,
+            iterations=1,
+            error=reason,
+            usage=_engineer_usage(10),
+            budget_exceeded=True,
         )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=halted,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=halted,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.failed
@@ -1663,7 +2017,8 @@ class TestInLoopHaltAuditState:
         # "10 >= 1000000" sentence that would be false.
         assert comp_a.error == reason
         budget_findings = [
-            f for f in comp_a.findings
+            f
+            for f in comp_a.findings
             if f.is_infrastructure_error and "token budget" in f.explanation
         ]
         assert len(budget_findings) == 1
@@ -1683,7 +2038,8 @@ class TestInLoopHaltAuditState:
         assert comp_entry["usage"]["engineer"]["total_tokens"] == 10
 
     def test_no_retry_is_burned_on_an_in_loop_halt(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Retrying cannot un-spend tokens; the component fails outright
         even with retries available."""
@@ -1695,17 +2051,27 @@ class TestInLoopHaltAuditState:
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             calls.append(str(args[0]))
             return ComponentResult(
-                "comp-a", success=False, iterations=1,
+                "comp-a",
+                success=False,
+                iterations=1,
                 error="token budget unenforceable (R8)",
-                usage=_engineer_usage(10), budget_exceeded=True,
+                usage=_engineer_usage(10),
+                budget_exceeded=True,
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert calls == ["comp-a"]
@@ -1715,7 +2081,8 @@ class TestInLoopHaltAuditState:
 
 
 def _pending_executor(
-    sync_calls: int, on_pending: Callable[[tuple[Any, ...]], None],
+    sync_calls: int,
+    on_pending: Callable[[tuple[Any, ...]], None],
 ) -> type:
     """Executor stand-in whose LATER submissions never resolve.
 
@@ -1736,7 +2103,10 @@ def _pending_executor(
 
     class _PendingExecutor:
         def submit(
-            self, fn: Callable[..., ComponentResult], /, *args: Any,
+            self,
+            fn: Callable[..., ComponentResult],
+            /,
+            *args: Any,
         ) -> Future[ComponentResult]:
             state["n"] += 1
             future: Future[ComponentResult] = Future()
@@ -1753,7 +2123,9 @@ def _pending_executor(
             return future
 
         def shutdown(
-            self, wait: bool = True, cancel_futures: bool = False,
+            self,
+            wait: bool = True,
+            cancel_futures: bool = False,
         ) -> None:
             """Nothing to shut down."""
 
@@ -1800,18 +2172,20 @@ class TestAbortedWorkerUsage:
         """The scheduler clears before every submission, including the
         first, when there is nothing to clear."""
         path = tmp_path / "engineer_usage.json"
-        _clear_partial_usage(path)              # absent: no error
+        _clear_partial_usage(path)  # absent: no error
         _write_partial_usage(path, _engineer_usage(700))
         _clear_partial_usage(path)
         assert _read_partial_usage(path) is None
-        _clear_partial_usage(tmp_path)          # a directory: swallowed
+        _clear_partial_usage(tmp_path)  # a directory: swallowed
 
     def test_killed_worker_spend_recovered_from_the_snapshot(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         usage_paths = RunPaths(root=tmp_path)
         _write_partial_usage(
-            usage_paths.engineer_usage("comp-a"), _engineer_usage(700),
+            usage_paths.engineer_usage("comp-a"),
+            _engineer_usage(700),
         )
         pipeline = MagicMock()
         pipeline.usage_paths = usage_paths
@@ -1825,20 +2199,26 @@ class TestAbortedWorkerUsage:
         assert totals.total_tokens == 700
 
     def test_a_delivered_result_wins_over_the_snapshot(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """No double counting: a future that DID deliver is
         authoritative and the (staler) snapshot is ignored."""
         usage_paths = RunPaths(root=tmp_path)
         _write_partial_usage(
-            usage_paths.engineer_usage("comp-a"), _engineer_usage(700),
+            usage_paths.engineer_usage("comp-a"),
+            _engineer_usage(700),
         )
         pipeline = MagicMock()
         pipeline.usage_paths = usage_paths
         future: Future[ComponentResult] = Future()
-        future.set_result(ComponentResult(
-            "comp-a", success=False, usage=_engineer_usage(900),
-        ))
+        future.set_result(
+            ComponentResult(
+                "comp-a",
+                success=False,
+                usage=_engineer_usage(900),
+            )
+        )
 
         _salvage_aborted_usage(future, "comp-a", pipeline)
 
@@ -1856,7 +2236,8 @@ class TestAbortedWorkerUsage:
         pipeline.record_engineer_usage.assert_not_called()
 
     def test_stop_mid_run_keeps_the_aborted_component_spend(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """End to end: the shutdown path used to drop the worker's
         usage on the floor. Now it lands on the meter.
@@ -1878,16 +2259,26 @@ class TestAbortedWorkerUsage:
             stop.request("mid-run test stop")
             time.sleep(0.2)
             return ComponentResult(
-                comp_id, success=True, iterations=1,
+                comp_id,
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(4242),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=slow_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=slow_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                stop=stop,
             )
 
         assert result.exit_code == 130
@@ -1897,7 +2288,8 @@ class TestAbortedWorkerUsage:
         assert _engineer_usage_events(root) == [4242]
 
     def test_pending_worker_spend_is_salvaged_from_disk_end_to_end(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P2-e): the disk route, exercised for real.
 
@@ -1913,22 +2305,29 @@ class TestAbortedWorkerUsage:
 
         def worker_published_then_died(args: tuple[Any, ...]) -> None:
             _write_partial_usage(
-                RunPaths(root=_usage_dir_from_args(args))
-                .engineer_usage("comp-a"),
+                RunPaths(root=_usage_dir_from_args(args)).engineer_usage("comp-a"),
                 _engineer_usage(700),
             )
             stop.request("mid-run test stop")
 
-        with patch(
-            "kstrl.factory._InlineExecutor",
-            _pending_executor(0, worker_published_then_died),
-        ), patch(
-            "kstrl.factory._run_component",
-            side_effect=AssertionError("the worker never returned"),
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._InlineExecutor",
+                _pending_executor(0, worker_published_then_died),
+            ),
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=AssertionError("the worker never returned"),
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                stop=stop,
             )
 
         assert result.exit_code == 130
@@ -1938,7 +2337,8 @@ class TestAbortedWorkerUsage:
         assert _engineer_usage_events(root) == [700]
 
     def test_a_stale_snapshot_from_a_finished_attempt_is_not_recounted(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P2-c): the snapshot is attempt-scoped.
 
@@ -1962,31 +2362,43 @@ class TestAbortedWorkerUsage:
             # Attempt 1: a real worker publishing its boundary snapshot,
             # then failing organically with the same spend on the result.
             _write_partial_usage(
-                RunPaths(root=_usage_dir_from_args(args))
-                .engineer_usage("comp-a"),
+                RunPaths(root=_usage_dir_from_args(args)).engineer_usage("comp-a"),
                 _engineer_usage(700),
             )
             return ComponentResult(
-                "comp-a", success=False, iterations=1, error="tests failed",
+                "comp-a",
+                success=False,
+                iterations=1,
+                error="tests failed",
                 usage=_engineer_usage(700),
             )
 
-        with patch(
-            "kstrl.factory._InlineExecutor",
-            # Attempt 1 runs; attempt 2's future hangs and is aborted.
-            _pending_executor(1, lambda args: stop.request("mid-run stop")),
-        ), patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._InlineExecutor",
+                # Attempt 1 runs; attempt 2's future hangs and is aborted.
+                _pending_executor(1, lambda args: stop.request("mid-run stop")),
+            ),
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root, stop=stop,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                stop=stop,
             )
 
         assert _engineer_usage_events(root) == [700]
 
     def test_pending_worker_spend_survives_progress_log_disabled(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review regression (P2-d): accounting is not observability.
 
@@ -2014,21 +2426,28 @@ class TestAbortedWorkerUsage:
             )
             stop.request("mid-run test stop")
 
-        with patch(
-            "kstrl.factory._InlineExecutor",
-            _pending_executor(0, worker_published_then_died),
-        ), patch(
-            "kstrl.factory._run_component",
-            side_effect=AssertionError("the worker never returned"),
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._InlineExecutor",
+                _pending_executor(0, worker_published_then_died),
+            ),
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=AssertionError("the worker never returned"),
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=out), root, stop=stop,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=out),
+                root,
+                stop=stop,
             )
 
         rollup = [
-            line for line in out.getvalue().splitlines()
-            if "comp-a" in line and "engineer" in line
+            line for line in out.getvalue().splitlines() if "comp-a" in line and "engineer" in line
         ]
         assert rollup, "the aborted worker's spend never reached the meter"
         assert "700" in rollup[0]
@@ -2045,10 +2464,16 @@ class TestAbortedWorkerUsage:
 class TestRollupRendering:
     def test_rows_ordered_and_totalled(self) -> None:
         engineer = UsageTotals()
-        engineer.add_record(UsageRecord(
-            input_tokens=100, output_tokens=200, total_tokens=300,
-            cost_usd=0.5, duration_seconds=10.0, source="claude-stream-json",
-        ))
+        engineer.add_record(
+            UsageRecord(
+                input_tokens=100,
+                output_tokens=200,
+                total_tokens=300,
+                cost_usd=0.5,
+                duration_seconds=10.0,
+                source="claude-stream-json",
+            )
+        )
         review = UsageTotals()
         review.add_record(UsageRecord(total_tokens=50, source="codex-text"))
         run_usage = UsageTotals()
@@ -2056,7 +2481,8 @@ class TestRollupRendering:
         run_usage.merge(review)
 
         lines = _format_usage_rollup(
-            {"comp-a": {"review": review, "engineer": engineer}}, run_usage,
+            {"comp-a": {"review": review, "engineer": engineer}},
+            run_usage,
         )
         # Header, engineer row before review row (fixed phase order),
         # TOTAL. This fixture is the measured mixed shape - a claude
@@ -2094,11 +2520,11 @@ class TestMaxTotalTokensConfig:
         assert FactoryConfig.from_env().max_total_tokens == 250000
 
     def test_load_toml_and_env_precedence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_total_tokens = 111\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 111\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 111
         monkeypatch.setenv("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "222")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 222
@@ -2115,11 +2541,11 @@ class TestMaxCostUsdConfig:
         assert FactoryConfig.from_env().max_cost_usd == 12.50
 
     def test_load_toml_and_env_precedence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_cost_usd = 1.5\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 1.5\n")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 1.5
         monkeypatch.setenv("KSTRL_FACTORY_MAX_COST_USD", "2.5")
         assert FactoryConfig.load(tmp_path).max_cost_usd == 2.5
@@ -2152,19 +2578,28 @@ class TestUnenforceableHaltIsEngineerScoped:
         # 4 engineer calls, all reported; the run also had an architect
         # timeout, which is NOT engineer evidence and must not count.
         budget = LoopBudget(
-            max_total_tokens=500_000, prior_total_tokens=250_000,
-            prior_known_calls=5, prior_calls=4, prior_token_calls=4,
+            max_total_tokens=500_000,
+            prior_total_tokens=250_000,
+            prior_known_calls=5,
+            prior_calls=4,
+            prior_token_calls=4,
         )
-        assert budget.halt_reason(
-            UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
-        ) is None
+        assert (
+            budget.halt_reason(
+                UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
+            )
+            is None
+        )
 
     def test_silent_engineer_across_attempts_still_halts(self) -> None:
         # P1-a must stay fixed: one tokenless engineer call already
         # recorded, this loop's first is the second.
         budget = LoopBudget(
-            max_total_tokens=500_000, prior_total_tokens=0,
-            prior_known_calls=0, prior_calls=1, prior_token_calls=0,
+            max_total_tokens=500_000,
+            prior_total_tokens=0,
+            prior_known_calls=0,
+            prior_calls=1,
+            prior_token_calls=0,
         )
         reason = budget.halt_reason(
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
@@ -2179,8 +2614,11 @@ class TestUnenforceableHaltIsEngineerScoped:
         # that demonstrably reported; it states what is actually true -
         # prior spend is frozen, so the cap cannot advance from here.
         budget = LoopBudget(
-            max_total_tokens=500_000, prior_total_tokens=250_000,
-            prior_known_calls=4, prior_calls=2, prior_token_calls=0,
+            max_total_tokens=500_000,
+            prior_total_tokens=250_000,
+            prior_known_calls=4,
+            prior_calls=2,
+            prior_token_calls=0,
         )
         reason = budget.halt_reason(
             UsageTotals(calls=1, known_calls=0, token_calls=0, total_tokens=0),
@@ -2203,20 +2641,29 @@ class TestUnenforceableHaltIsEngineerScoped:
         pipeline.usage_meter = {
             "comp-a": {
                 "review": UsageTotals(
-                    calls=3, known_calls=3, token_calls=3, total_tokens=900,
+                    calls=3,
+                    known_calls=3,
+                    token_calls=3,
+                    total_tokens=900,
                 ),
                 "engineer": UsageTotals(
-                    calls=2, known_calls=0, token_calls=0, total_tokens=0,
+                    calls=2,
+                    known_calls=0,
+                    token_calls=0,
+                    total_tokens=0,
                 ),
             },
             "comp-b": {
                 "engineer": UsageTotals(
-                    calls=1, known_calls=1, token_calls=1, total_tokens=50,
+                    calls=1,
+                    known_calls=1,
+                    token_calls=1,
+                    total_tokens=50,
                 ),
             },
         }
         engineer = ComponentPipeline.engineer_usage_totals(pipeline)
-        assert engineer.calls == 3          # 2 + 1, review excluded
+        assert engineer.calls == 3  # 2 + 1, review excluded
         assert engineer.token_calls == 1
         assert engineer.total_tokens == 50
 
@@ -2237,7 +2684,10 @@ class TestCompletionBoundaryBypass:
 
     @staticmethod
     def _pipeline_with_engineer_usage(
-        tmp_path: Path, calls: int, token_calls: int, cap: int,
+        tmp_path: Path,
+        calls: int,
+        token_calls: int,
+        cap: int,
     ) -> Any:
         from kstrl.pipeline import ComponentPipeline
 
@@ -2245,13 +2695,16 @@ class TestCompletionBoundaryBypass:
         pipeline.usage_meter = {
             "comp-a": {
                 "engineer": UsageTotals(
-                    calls=calls, known_calls=0, token_calls=token_calls,
+                    calls=calls,
+                    known_calls=0,
+                    token_calls=token_calls,
                     total_tokens=0,
                 ),
             },
         }
         pipeline.factory_config = _factory_config(
-            tmp_path, max_total_tokens=cap,
+            tmp_path,
+            max_total_tokens=cap,
         )
         return pipeline
 
@@ -2259,7 +2712,10 @@ class TestCompletionBoundaryBypass:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
-            tmp_path, calls=2, token_calls=0, cap=500_000,
+            tmp_path,
+            calls=2,
+            token_calls=0,
+            cap=500_000,
         )
         reason = ComponentPipeline.token_budget_unenforceable(pipeline)
         assert reason is not None
@@ -2270,7 +2726,10 @@ class TestCompletionBoundaryBypass:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
-            tmp_path, calls=1, token_calls=0, cap=500_000,
+            tmp_path,
+            calls=1,
+            token_calls=0,
+            cap=500_000,
         )
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
@@ -2278,7 +2737,10 @@ class TestCompletionBoundaryBypass:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
-            tmp_path, calls=9, token_calls=9, cap=500_000,
+            tmp_path,
+            calls=9,
+            token_calls=9,
+            cap=500_000,
         )
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
@@ -2286,7 +2748,10 @@ class TestCompletionBoundaryBypass:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline_with_engineer_usage(
-            tmp_path, calls=5, token_calls=0, cap=0,
+            tmp_path,
+            calls=5,
+            token_calls=0,
+            cap=0,
         )
         assert ComponentPipeline.token_budget_unenforceable(pipeline) is None
 
@@ -2318,13 +2783,17 @@ class TestCompletionBoundaryBypass:
 
 class TestInLoopCostBudget:
     def test_cost_overrun_halts_between_iterations(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """$0.03/iteration against a $0.05 ceiling means iteration 3
         never starts, even though max_iterations is 10."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_cost_usd=0.05),
         )
         assert result.completed is False
@@ -2335,16 +2804,23 @@ class TestInLoopCostBudget:
         assert result.usage.cost_usd == pytest.approx(0.06)
 
     def test_prior_cost_from_earlier_components_counts(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The ceiling is run-level: a worker launched with $0.045
         already on the run's meter has half a cent left, not $0.05."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(
-                max_cost_usd=0.05, prior_cost_usd=0.045,
-                prior_known_calls=1, prior_calls=1, prior_cost_calls=1,
+                max_cost_usd=0.05,
+                prior_cost_usd=0.045,
+                prior_known_calls=1,
+                prior_calls=1,
+                prior_cost_calls=1,
             ),
         )
         assert result.iterations == 1
@@ -2354,21 +2830,28 @@ class TestInLoopCostBudget:
         """0.0 = unbounded, matching the max_total_tokens convention."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_cost_usd=0.0),
         )
         assert result.iterations == 3
         assert result.budget_halt_reason == ""
 
     def test_token_ceiling_wins_when_it_is_the_tighter_one(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Both set: whichever is reached first halts, and the message
         names THAT one. 300 tok + $0.03 per iteration against a 500-token
         / $100 pair trips the token ceiling at iteration 2."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500, max_cost_usd=100.0),
         )
         assert result.iterations == 2
@@ -2376,13 +2859,17 @@ class TestInLoopCostBudget:
         assert "cost budget exceeded" not in result.budget_halt_reason
 
     def test_cost_ceiling_wins_when_it_is_the_tighter_one(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The mirror, and the case the measured run is about: a token
         ceiling set high enough to be useless while the money runs out."""
         agent = FakeUsageAgent(outputs=[["working..."]], record=_BOTH)
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=1_000_000, max_cost_usd=0.05),
         )
         assert result.iterations == 2
@@ -2390,7 +2877,8 @@ class TestInLoopCostBudget:
         assert "token budget exceeded" not in result.budget_halt_reason
 
     def test_cost_only_adapter_enforces_cost_while_the_token_cap_is_dead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The inconsistency this change resolves.
 
@@ -2406,55 +2894,70 @@ class TestInLoopCostBudget:
         """
         agent = SequenceUsageAgent([_COST_ONLY])  # $0.0227028 per call
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500, max_cost_usd=0.05),
         )
-        assert result.iterations == 3           # 3 x 0.0227028 >= 0.05
+        assert result.iterations == 3  # 3 x 0.0227028 >= 0.05
         assert "cost budget exceeded" in result.budget_halt_reason
         assert "unenforceable" not in result.budget_halt_reason
-        assert result.usage.token_calls == 0    # token cap was dead
-        assert result.usage.cost_calls == 3     # cost cap was not
+        assert result.usage.token_calls == 0  # token cap was dead
+        assert result.usage.cost_calls == 3  # cost cap was not
 
     def test_token_only_adapter_enforces_tokens_while_the_cost_cap_is_dead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The converse, and just as real: codex reports a token total
         and no cost at all."""
         agent = SequenceUsageAgent([_REPORTED])  # 300 tokens, no cost
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=1000, max_cost_usd=100.0),
         )
-        assert result.iterations == 4           # 4 x 300 >= 1000
+        assert result.iterations == 4  # 4 x 300 >= 1000
         assert "token budget exceeded" in result.budget_halt_reason
         assert "unenforceable" not in result.budget_halt_reason
-        assert result.usage.cost_calls == 0     # cost cap was dead throughout
+        assert result.usage.cost_calls == 0  # cost cap was dead throughout
 
     def test_unenforceable_only_when_every_configured_ceiling_is_dead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A wholly silent adapter kills both ceilings, and only then
         does the loop halt as unenforceable - naming both."""
         agent = SequenceUsageAgent([_UNREPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_total_tokens=500, max_cost_usd=0.05),
         )
-        assert result.iterations == 2           # UNENFORCEABLE_CALLS
+        assert result.iterations == 2  # UNENFORCEABLE_CALLS
         assert "token budget unenforceable" in result.budget_halt_reason
         assert "cost budget unenforceable" in result.budget_halt_reason
         assert "max_total_tokens (500)" in result.budget_halt_reason
         assert "max_cost_usd ($0.05)" in result.budget_halt_reason
 
     def test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """With ONLY max_cost_usd configured, a codex-style adapter that
         never reports a cost leaves it unable to fire. Before the cost
         ceiling existed this configuration had no protection at all."""
         agent = SequenceUsageAgent([_REPORTED])
         result = run_loop(
-            _loop_config(tmp_path, 10), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 10),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_cost_usd=100.0),
         )
         assert result.iterations == 2
@@ -2463,20 +2966,25 @@ class TestInLoopCostBudget:
         assert "2 costless call(s) this run" in result.budget_halt_reason
 
     def test_one_costless_call_is_an_incident_not_a_dead_ceiling(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Symmetric with the token rule: a lone unparseable result must
         not kill a capped run."""
         agent = SequenceUsageAgent([_UNREPORTED, _BOTH, _BOTH])
         result = run_loop(
-            _loop_config(tmp_path, 3), PlainUI(no_color=True), agent, tmp_path,
+            _loop_config(tmp_path, 3),
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             budget=LoopBudget(max_cost_usd=100.0),
         )
         assert result.budget_halt_reason == ""
         assert result.iterations == 3
 
     def test_costless_threshold_does_not_reset_per_loop(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The cost mirror of P1-a: the threshold is run-wide, threaded
         through the same priors ``_submit_args`` threads."""
@@ -2485,13 +2993,16 @@ class TestInLoopCostBudget:
         for _ in range(3):
             agent = SequenceUsageAgent([_REPORTED])  # tokens, never a cost
             result = run_loop(
-                _loop_config(tmp_path, 1), PlainUI(no_color=True), agent,
-                tmp_path, budget=_budget_for(run_total, 0, cost_cap=100.0),
+                _loop_config(tmp_path, 1),
+                PlainUI(no_color=True),
+                agent,
+                tmp_path,
+                budget=_budget_for(run_total, 0, cost_cap=100.0),
             )
             run_total.merge(result.usage)
             reasons.append(result.budget_halt_reason)
 
-        assert reasons[0] == ""                      # one is an incident
+        assert reasons[0] == ""  # one is an incident
         assert "cost budget unenforceable" in reasons[1]
         assert "cost budget unenforceable" in reasons[2]
         assert run_total.calls == 3
@@ -2501,15 +3012,20 @@ class TestInLoopCostBudget:
         """No calls means no evidence either way; a worker launched into
         a run with costless priors must still get to run its engineer."""
         budget = LoopBudget(
-            max_cost_usd=100.0, prior_calls=20, prior_cost_calls=0,
+            max_cost_usd=100.0,
+            prior_calls=20,
+            prior_cost_calls=0,
         )
         assert budget.halt_reason(UsageTotals()) is None
 
     def test_no_ceiling_configured_is_always_none(self) -> None:
         budget = LoopBudget(prior_calls=20, prior_cost_calls=0)
-        assert budget.halt_reason(
-            UsageTotals(calls=5, known_calls=0),
-        ) is None
+        assert (
+            budget.halt_reason(
+                UsageTotals(calls=5, known_calls=0),
+            )
+            is None
+        )
 
 
 class TestCostCeilingParentGates:
@@ -2536,15 +3052,19 @@ class TestCostCeilingParentGates:
 
         pipeline = cast(Any, ComponentPipeline.__new__(ComponentPipeline))
         engineer = UsageTotals(
-            calls=calls, known_calls=max(token_calls, cost_calls),
-            token_calls=token_calls, cost_calls=cost_calls,
-            total_tokens=total_tokens, cost_usd=cost_usd,
+            calls=calls,
+            known_calls=max(token_calls, cost_calls),
+            token_calls=token_calls,
+            cost_calls=cost_calls,
+            total_tokens=total_tokens,
+            cost_usd=cost_usd,
         )
         pipeline.usage_meter = {"comp-a": {"engineer": engineer}}
         pipeline.run_usage = UsageTotals()
         pipeline.run_usage.merge(engineer)
         pipeline.factory_config = _factory_config(
-            tmp_path, max_total_tokens=max_total_tokens,
+            tmp_path,
+            max_total_tokens=max_total_tokens,
             max_cost_usd=max_cost_usd,
         )
         return pipeline
@@ -2553,7 +3073,11 @@ class TestCostCeilingParentGates:
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=1, cost_calls=1, cost_usd=0.25, max_cost_usd=0.10,
+            tmp_path,
+            calls=1,
+            cost_calls=1,
+            cost_usd=0.25,
+            max_cost_usd=0.10,
         )
         assert ComponentPipeline.cost_budget_exceeded(p) is True
         assert ComponentPipeline.token_budget_exceeded(p) is False
@@ -2561,12 +3085,16 @@ class TestCostCeilingParentGates:
         assert ComponentPipeline.budget_exceeded(p) is True
 
     def test_token_overrun_still_named_max_total_tokens(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=1, token_calls=1, total_tokens=900,
+            tmp_path,
+            calls=1,
+            token_calls=1,
+            total_tokens=900,
             max_total_tokens=500,
         )
         assert ComponentPipeline.breached_ceiling(p) == "max_total_tokens"
@@ -2575,34 +3103,50 @@ class TestCostCeilingParentGates:
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=1, cost_calls=1, cost_usd=99.0, max_cost_usd=0.0,
+            tmp_path,
+            calls=1,
+            cost_calls=1,
+            cost_usd=99.0,
+            max_cost_usd=0.0,
         )
         assert ComponentPipeline.cost_budget_exceeded(p) is False
         assert ComponentPipeline.breached_ceiling(p) is None
 
     def test_a_live_cost_ceiling_keeps_a_dead_token_one_from_halting(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The scheduling gate must not stop a run whose cost ceiling can
         still fire, even though its token ceiling provably cannot."""
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=2, token_calls=0, cost_calls=2, cost_usd=0.01,
-            max_total_tokens=500_000, max_cost_usd=100.0,
+            tmp_path,
+            calls=2,
+            token_calls=0,
+            cost_calls=2,
+            cost_usd=0.01,
+            max_total_tokens=500_000,
+            max_cost_usd=100.0,
         )
         assert ComponentPipeline.token_budget_unenforceable(p) is not None
         assert ComponentPipeline.cost_budget_unenforceable(p) is None
         assert ComponentPipeline.budget_unenforceable(p) is None
 
     def test_a_live_token_ceiling_keeps_a_dead_cost_one_from_halting(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=2, token_calls=2, cost_calls=0, total_tokens=100,
-            max_total_tokens=500_000, max_cost_usd=100.0,
+            tmp_path,
+            calls=2,
+            token_calls=2,
+            cost_calls=0,
+            total_tokens=100,
+            max_total_tokens=500_000,
+            max_cost_usd=100.0,
         )
         assert ComponentPipeline.cost_budget_unenforceable(p) is not None
         assert ComponentPipeline.token_budget_unenforceable(p) is None
@@ -2612,8 +3156,12 @@ class TestCostCeilingParentGates:
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=2, token_calls=0, cost_calls=0,
-            max_total_tokens=500_000, max_cost_usd=100.0,
+            tmp_path,
+            calls=2,
+            token_calls=0,
+            cost_calls=0,
+            max_total_tokens=500_000,
+            max_cost_usd=100.0,
         )
         reason = ComponentPipeline.budget_unenforceable(p)
         assert reason is not None
@@ -2622,14 +3170,19 @@ class TestCostCeilingParentGates:
         assert "refusing to schedule further components" in reason
 
     def test_a_lone_cost_ceiling_can_be_the_only_dead_one(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Only max_cost_usd configured: it is the only ceiling that has
         to be alive, so its death halts the gate on its own."""
         from kstrl.pipeline import ComponentPipeline
 
         p = self._pipeline(
-            tmp_path, calls=2, token_calls=2, cost_calls=0, total_tokens=100,
+            tmp_path,
+            calls=2,
+            token_calls=2,
+            cost_calls=0,
+            total_tokens=100,
             max_cost_usd=100.0,
         )
         reason = ComponentPipeline.budget_unenforceable(p)
@@ -2637,7 +3190,8 @@ class TestCostCeilingParentGates:
         assert "cost budget unenforceable" in reason
 
     def test_gate_is_inert_with_no_ceiling_configured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
@@ -2647,7 +3201,8 @@ class TestCostCeilingParentGates:
 
 class TestCostCeilingEndToEnd:
     def test_cost_halt_names_the_ceiling_everywhere_it_is_recorded(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """One run, every audit surface: the component error, the typed
         finding, and the budget_exceeded event all name max_cost_usd.
@@ -2658,16 +3213,25 @@ class TestCostCeilingEndToEnd:
 
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             return ComponentResult(
-                str(args[0]), success=True, iterations=1,
+                str(args[0]),
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(600, cost=0.25),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert "comp-a" in result.failed
@@ -2677,7 +3241,8 @@ class TestCostCeilingEndToEnd:
         assert "max_cost_usd" in (comp_a.error or "")
         assert "max_total_tokens" not in (comp_a.error or "")
         budget_findings = [
-            f for f in comp_a.findings
+            f
+            for f in comp_a.findings
             if f.is_infrastructure_error and "cost budget" in f.explanation
         ]
         assert len(budget_findings) == 1
@@ -2701,15 +3266,25 @@ class TestCostCeilingEndToEnd:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, max_total_tokens=500)
         success = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_engineer_usage(600),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_engineer_usage(600),
         )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         events = ProgressLog(root / "progress.jsonl").read_events()
@@ -2719,30 +3294,43 @@ class TestCostCeilingEndToEnd:
         assert breach["data"]["total_tokens"] >= 500
 
     def test_scheduler_hands_the_cost_ceiling_and_priors_down(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """``_submit_args`` must snapshot the cost priors per launch, or
         the in-loop cost check degrades to a per-component budget."""
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
-        manifest = _make_manifest([
-            _component("comp-a"), _component("comp-b", deps=["comp-a"]),
-        ])
+        manifest = _make_manifest(
+            [
+                _component("comp-a"),
+                _component("comp-b", deps=["comp-a"]),
+            ]
+        )
         config = _factory_config(root, max_cost_usd=100.0)
         budgets: list[Any] = []
 
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             budgets.append(args[-1])
             return ComponentResult(
-                str(args[0]), success=True, iterations=1,
+                str(args[0]),
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(700, cost=0.5),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert len(budgets) == 2
@@ -2776,10 +3364,12 @@ class TestFailedSnapshotDeletionInvalidates:
         target = tmp_path / "usage.json"
         target.write_text("{}")
         with patch.object(
-            Path, "unlink", side_effect=PermissionError("read-only"),
+            Path,
+            "unlink",
+            side_effect=PermissionError("read-only"),
         ):
             assert _clear_partial_usage(target) is False
-        assert target.exists()      # still there, hence unsafe
+        assert target.exists()  # still there, hence unsafe
 
     def test_unsafe_attempt_refuses_disk_salvage(self, tmp_path: Path) -> None:
         """The point of the flag: a stale 700 must not be recounted."""
@@ -2802,7 +3392,7 @@ class TestFailedSnapshotDeletionInvalidates:
             UsageTotals(calls=1, known_calls=1, token_calls=1, total_tokens=700),
         )
 
-        pending: Future[Any] = Future()      # never completes
+        pending: Future[Any] = Future()  # never completes
         ComponentPipeline.mark_usage_salvage_unsafe(pipeline, "comp-a")
         _salvage_aborted_usage(pending, "comp-a", pipeline)
         assert recorded == [], "a stale snapshot must not be salvaged"
@@ -2827,19 +3417,21 @@ class TestCostCeilingConfigValidation:
 
     @pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "-3.0"])
     def test_toml_rejects_unbounding_values(
-        self, tmp_path: Path, bad: str,
+        self,
+        tmp_path: Path,
+        bad: str,
     ) -> None:
         from kstrl.factory import BudgetConfigError, FactoryConfig
 
-        (tmp_path / "kstrl.toml").write_text(
-            f"[factory]\nmax_cost_usd = {bad}\n"
-        )
+        (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {bad}\n")
         with pytest.raises(BudgetConfigError):
             FactoryConfig.load(tmp_path)
 
     @pytest.mark.parametrize("bad", ["nan", "inf", "-3.0"])
     def test_env_rejects_unbounding_values(
-        self, monkeypatch: pytest.MonkeyPatch, bad: str,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        bad: str,
     ) -> None:
         from kstrl.factory import BudgetConfigError, FactoryConfig
 
@@ -2860,7 +3452,8 @@ class TestCostCeilingConfigValidation:
         assert FactoryConfig.load(tmp_path).max_cost_usd == 5.0
 
     def test_run_factory_rechecks_a_programmatic_config(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A limit that only holds via the front door is not a limit.
 
@@ -2874,11 +3467,21 @@ class TestCostCeilingConfigValidation:
 
         config = FactoryConfig(max_cost_usd=float("nan"))
         manifest = Manifest(
-            version="1", spec_file="s", project_name="t", base_branch="main",
+            version="1",
+            spec_file="s",
+            project_name="t",
+            base_branch="main",
             single_pr=False,
-            components=[Component(
-                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
-            )],
+            components=[
+                Component(
+                    "comp-a",
+                    "A",
+                    "D",
+                    [],
+                    "prd.json",
+                    "kstrl/comp-a",
+                )
+            ],
         )
         base = KstrlConfig(ui_mode="plain", no_color=True)
         with pytest.raises(BudgetConfigError):
@@ -2915,9 +3518,11 @@ class TestUnenforceableHaltNamesItsCeiling:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            0, 5.0,
-            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
-                        total_tokens=200, cost_usd=0.0),
+            0,
+            5.0,
+            UsageTotals(
+                calls=2, known_calls=2, token_calls=2, cost_calls=0, total_tokens=200, cost_usd=0.0
+            ),
         )
         assert ComponentPipeline.breached_ceiling(pipeline) is None
         assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
@@ -2928,9 +3533,11 @@ class TestUnenforceableHaltNamesItsCeiling:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            1000, 0.0,
-            UsageTotals(calls=2, known_calls=2, token_calls=0, cost_calls=2,
-                        total_tokens=0, cost_usd=0.5),
+            1000,
+            0.0,
+            UsageTotals(
+                calls=2, known_calls=2, token_calls=0, cost_calls=2, total_tokens=0, cost_usd=0.5
+            ),
         )
         assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
             "max_total_tokens",
@@ -2940,20 +3547,24 @@ class TestUnenforceableHaltNamesItsCeiling:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            1000, 5.0,
+            1000,
+            5.0,
             UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
         )
         assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
-            "max_total_tokens", "max_cost_usd",
+            "max_total_tokens",
+            "max_cost_usd",
         ]
 
     def test_a_live_ceiling_is_never_named(self) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            1000, 5.0,
-            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
-                        total_tokens=10, cost_usd=0.1),
+            1000,
+            5.0,
+            UsageTotals(
+                calls=2, known_calls=2, token_calls=2, cost_calls=2, total_tokens=10, cost_usd=0.1
+            ),
         )
         assert ComponentPipeline.unenforceable_ceilings(pipeline) == []
 
@@ -2962,7 +3573,8 @@ class TestUnenforceableHaltNamesItsCeiling:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            0, 5.0,
+            0,
+            5.0,
             UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
         )
         named = ComponentPipeline.unenforceable_ceilings(pipeline)
@@ -3001,36 +3613,43 @@ class TestBudgetHaltIdentityPrecedence:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            500, 100.0,
-            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=0,
-                        total_tokens=600, cost_usd=0.0),
+            500,
+            100.0,
+            UsageTotals(
+                calls=2, known_calls=2, token_calls=2, cost_calls=0, total_tokens=600, cost_usd=0.0
+            ),
         )
         assert ComponentPipeline.breached_ceiling(pipeline) == "max_total_tokens"
         assert ComponentPipeline.unenforceable_ceilings(pipeline) == [
             "max_cost_usd",
         ]
         assert ComponentPipeline.budget_halt_identity(pipeline) == (
-            "breached", ("max_total_tokens",),
+            "breached",
+            ("max_total_tokens",),
         )
 
     def test_dead_ceilings_only_when_nothing_breached(self) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            500, 100.0,
+            500,
+            100.0,
             UsageTotals(calls=2, known_calls=0, token_calls=0, cost_calls=0),
         )
         assert ComponentPipeline.budget_halt_identity(pipeline) == (
-            "unenforceable", ("max_total_tokens", "max_cost_usd"),
+            "unenforceable",
+            ("max_total_tokens", "max_cost_usd"),
         )
 
     def test_no_halt_yields_no_identity(self) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            1000, 5.0,
-            UsageTotals(calls=2, known_calls=2, token_calls=2, cost_calls=2,
-                        total_tokens=10, cost_usd=0.1),
+            1000,
+            5.0,
+            UsageTotals(
+                calls=2, known_calls=2, token_calls=2, cost_calls=2, total_tokens=10, cost_usd=0.1
+            ),
         )
         assert ComponentPipeline.budget_halt_identity(pipeline) == ("", ())
 
@@ -3043,10 +3662,16 @@ class TestLoopHaltCarriesItsOwnIdentity:
         from kstrl.loop import LoopBudget
 
         verdict = LoopBudget(
-            max_total_tokens=500, max_cost_usd=100.0,
-        ).halt_verdict(UsageTotals(
-            calls=2, known_calls=2, token_calls=2, total_tokens=600,
-        ))
+            max_total_tokens=500,
+            max_cost_usd=100.0,
+        ).halt_verdict(
+            UsageTotals(
+                calls=2,
+                known_calls=2,
+                token_calls=2,
+                total_tokens=600,
+            )
+        )
         assert verdict is not None
         assert verdict.condition == "breached"
         assert verdict.ceilings == ("max_total_tokens",)
@@ -3054,9 +3679,14 @@ class TestLoopHaltCarriesItsOwnIdentity:
     def test_cost_overrun(self) -> None:
         from kstrl.loop import LoopBudget
 
-        verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(UsageTotals(
-            calls=2, known_calls=2, cost_calls=2, cost_usd=2.0,
-        ))
+        verdict = LoopBudget(max_cost_usd=1.0).halt_verdict(
+            UsageTotals(
+                calls=2,
+                known_calls=2,
+                cost_calls=2,
+                cost_usd=2.0,
+            )
+        )
         assert verdict is not None
         assert verdict.condition == "breached"
         assert verdict.ceilings == ("max_cost_usd",)
@@ -3065,7 +3695,9 @@ class TestLoopHaltCarriesItsOwnIdentity:
         from kstrl.loop import LoopBudget
 
         verdict = LoopBudget(
-            max_total_tokens=500, max_cost_usd=100.0, prior_calls=2,
+            max_total_tokens=500,
+            max_cost_usd=100.0,
+            prior_calls=2,
         ).halt_verdict(UsageTotals(calls=2, known_calls=0))
         assert verdict is not None
         assert verdict.condition == "unenforceable"
@@ -3077,7 +3709,10 @@ class TestLoopHaltCarriesItsOwnIdentity:
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
-            calls=2, known_calls=2, token_calls=2, total_tokens=600,
+            calls=2,
+            known_calls=2,
+            token_calls=2,
+            total_tokens=600,
         )
         reason = budget.halt_reason(usage)
         verdict = budget.halt_verdict(usage)
@@ -3090,7 +3725,10 @@ class TestLoopHaltCarriesItsOwnIdentity:
 
         budget = LoopBudget(max_total_tokens=500)
         usage = UsageTotals(
-            calls=1, known_calls=1, token_calls=1, total_tokens=10,
+            calls=1,
+            known_calls=1,
+            token_calls=1,
+            total_tokens=10,
         )
         assert budget.halt_verdict(usage) is None
         assert budget.halt_reason(usage) is None
@@ -3111,18 +3749,27 @@ class TestBudgetHaltRendersHonestly:
         sink = cast(Any, LinearSink.__new__(LinearSink))
         sink._run_id = "r"
         body = LinearSink._comment_body(
-            sink, "budget_exceeded", event.to_dict()["data"],
+            sink,
+            "budget_exceeded",
+            event.to_dict()["data"],
         )
         return state.components["comp-a"].error, str(body)
 
     def test_breach_states_the_true_comparison(self) -> None:
         import kstrl.events as ev
 
-        reducer, linear = self._render(ev.BudgetExceeded(
-            component="comp-a", total_tokens=600, max_total_tokens=500,
-            cost_usd=0.0, max_cost_usd=100.0, ceiling="max_total_tokens",
-            condition="breached", ceilings=("max_total_tokens",),
-        ))
+        reducer, linear = self._render(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=600,
+                max_total_tokens=500,
+                cost_usd=0.0,
+                max_cost_usd=100.0,
+                ceiling="max_total_tokens",
+                condition="breached",
+                ceilings=("max_total_tokens",),
+            )
+        )
         assert reducer == "token budget exceeded: 600 >= 500"
         assert "600/500" in linear
         assert "cost" not in reducer
@@ -3130,13 +3777,18 @@ class TestBudgetHaltRendersHonestly:
     def test_unenforceable_claims_no_threshold(self) -> None:
         import kstrl.events as ev
 
-        reducer, linear = self._render(ev.BudgetExceeded(
-            component="comp-a", total_tokens=0, max_total_tokens=500,
-            cost_usd=0.0, max_cost_usd=100.0,
-            ceiling="max_total_tokens, max_cost_usd",
-            condition="unenforceable",
-            ceilings=("max_total_tokens", "max_cost_usd"),
-        ))
+        reducer, linear = self._render(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=0,
+                max_total_tokens=500,
+                cost_usd=0.0,
+                max_cost_usd=100.0,
+                ceiling="max_total_tokens, max_cost_usd",
+                condition="unenforceable",
+                ceilings=("max_total_tokens", "max_cost_usd"),
+            )
+        )
         for surface in (reducer, linear):
             # The defect: both rendered "token budget exceeded: 0 >= 500"
             # for a halt where no total ever moved.
@@ -3151,11 +3803,18 @@ class TestBudgetHaltRendersHonestly:
     def test_a_disabled_ceiling_is_never_blamed(self) -> None:
         import kstrl.events as ev
 
-        reducer, linear = self._render(ev.BudgetExceeded(
-            component="comp-a", total_tokens=200, max_total_tokens=0,
-            cost_usd=0.0, max_cost_usd=5.0, ceiling="max_cost_usd",
-            condition="unenforceable", ceilings=("max_cost_usd",),
-        ))
+        reducer, linear = self._render(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=200,
+                max_total_tokens=0,
+                cost_usd=0.0,
+                max_cost_usd=5.0,
+                ceiling="max_cost_usd",
+                condition="unenforceable",
+                ceilings=("max_cost_usd",),
+            )
+        )
         for surface in (reducer, linear):
             assert "max_total_tokens" not in surface
             assert "max_cost_usd" in surface
@@ -3165,10 +3824,16 @@ class TestBudgetHaltRendersHonestly:
         change carry only `ceiling` and must keep their old reading."""
         import kstrl.events as ev
 
-        reducer, linear = self._render(ev.BudgetExceeded(
-            component="comp-a", total_tokens=5, max_total_tokens=10,
-            cost_usd=9.0, max_cost_usd=8.0, ceiling="max_cost_usd",
-        ))
+        reducer, linear = self._render(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=5,
+                max_total_tokens=10,
+                cost_usd=9.0,
+                max_cost_usd=8.0,
+                ceiling="max_cost_usd",
+            )
+        )
         assert reducer == "cost budget exceeded: $9.000000 >= $8.0"
         assert "cost budget exceeded" in linear
 
@@ -3176,7 +3841,8 @@ class TestBudgetHaltRendersHonestly:
         import kstrl.events as ev
 
         event = ev.BudgetExceeded(
-            component="comp-a", condition="unenforceable",
+            component="comp-a",
+            condition="unenforceable",
             ceilings=("max_total_tokens", "max_cost_usd"),
         )
         back = ev.event_from_dict(event.to_dict())
@@ -3190,14 +3856,16 @@ class TestBudgetHaltRendersHonestly:
             ("breached", ("max_total_tokens",), "", "token"),
             ("breached", ("max_cost_usd",), "", "cost"),
             ("unenforceable", ("max_cost_usd",), "", "unenforceable"),
-            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "",
-             "unenforceable"),
+            ("unenforceable", ("max_total_tokens", "max_cost_usd"), "", "unenforceable"),
             ("", (), "max_cost_usd", "cost"),
             ("", (), "", "token"),
         ],
     )
     def test_one_classifier_for_every_surface(
-        self, condition: str, ceilings: tuple[str, ...], legacy: str,
+        self,
+        condition: str,
+        ceilings: tuple[str, ...],
+        legacy: str,
         expected: str,
     ) -> None:
         from kstrl.events import budget_halt_kind
@@ -3216,13 +3884,21 @@ class TestBudgetConfigErrorReachesTheOperator:
     @staticmethod
     def _manifest() -> dict[str, Any]:
         return {
-            "version": "1", "specFile": "s.md", "projectName": "p",
-            "baseBranch": "main", "singlePr": False,
-            "components": [{
-                "id": "comp-a", "title": "A", "description": "D",
-                "dependencies": [], "prdPath": "prd.json",
-                "branchName": "kstrl/comp-a",
-            }],
+            "version": "1",
+            "specFile": "s.md",
+            "projectName": "p",
+            "baseBranch": "main",
+            "singlePr": False,
+            "components": [
+                {
+                    "id": "comp-a",
+                    "title": "A",
+                    "description": "D",
+                    "dependencies": [],
+                    "prdPath": "prd.json",
+                    "branchName": "kstrl/comp-a",
+                }
+            ],
         }
 
     @pytest.mark.parametrize(
@@ -3233,15 +3909,15 @@ class TestBudgetConfigErrorReachesTheOperator:
             # ceiling is read, so the test passed on a developer machine
             # with `claude` installed and failed in CI without it -
             # measuring the environment, not the fix.
-            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
-             "nan"),
-            (["factory", "--manifest", "m.json", "--agent-cmd", "true"],
-             "-3.0"),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "nan"),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "-3.0"),
             (["config", "show"], "nan"),
         ],
     )
     def test_no_entry_point_leaks_a_traceback(
-        self, command: list[str], toml_value: str,
+        self,
+        command: list[str],
+        toml_value: str,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Proven against the harsher of the two environments: no agent
@@ -3255,9 +3931,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         runner = CliRunner()
         with runner.isolated_filesystem() as fs:
             root = Path(fs)
-            (root / "kstrl.toml").write_text(
-                f"[factory]\nmax_cost_usd = {toml_value}\n"
-            )
+            (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
             (root / "m.json").write_text(json.dumps(self._manifest()))
             (root / "s.md").write_text("# spec\n")
             result = runner.invoke(cli, command, catch_exceptions=True)
@@ -3268,7 +3942,8 @@ class TestBudgetConfigErrorReachesTheOperator:
         assert "max_cost_usd" in result.output
 
     def test_the_flag_override_is_checked_before_any_work_starts(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--max-cost-usd` bypasses every config-path validator, so the
         check has to hold at the run boundary too - and has to stop the
@@ -3285,8 +3960,7 @@ class TestBudgetConfigErrorReachesTheOperator:
             (root / "m.json").write_text(json.dumps(self._manifest()))
             result = runner.invoke(
                 cli,
-                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf",
-                 "--agent-cmd", "true"],
+                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf", "--agent-cmd", "true"],
                 catch_exceptions=True,
             )
 
@@ -3330,14 +4004,15 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         [
             ("nan", [], "[factory] max_cost_usd must be a finite number"),
             ("-3.0", [], "[factory] max_cost_usd must be >= 0"),
-            ("0", ["--max-cost-usd", "inf"],
-             "--max-cost-usd must be a finite number"),
-            ("0", ["--max-total-tokens", "-5"],
-             "--max-total-tokens must be >= 0"),
+            ("0", ["--max-cost-usd", "inf"], "--max-cost-usd must be a finite number"),
+            ("0", ["--max-total-tokens", "-5"], "--max-total-tokens must be >= 0"),
         ],
     )
     def test_the_spec_path_rejects_before_decomposition(
-        self, toml_value: str, extra_args: list[str], expected: str,
+        self,
+        toml_value: str,
+        extra_args: list[str],
+        expected: str,
     ) -> None:
         from click.testing import CliRunner
 
@@ -3347,14 +4022,12 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         with runner.isolated_filesystem() as fs:
             root = Path(fs)
             script, marker = self._fake_agent(root)
-            (root / "kstrl.toml").write_text(
-                f"[factory]\nmax_cost_usd = {toml_value}\n"
-            )
+            (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
             (root / "s.md").write_text("# spec\nbuild a thing\n")
             result = runner.invoke(
                 cli,
-                ["factory", "--spec", "s.md", "--project-name", "p",
-                 "--agent-cmd", str(script)] + extra_args,
+                ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)]
+                + extra_args,
                 catch_exceptions=True,
             )
             spent = marker.exists()
@@ -3381,8 +4054,7 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
             (root / "s.md").write_text("# spec\nbuild a thing\n")
             result = runner.invoke(
                 cli,
-                ["factory", "--spec", "s.md", "--project-name", "p",
-                 "--agent-cmd", str(script)],
+                ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
                 catch_exceptions=True,
             )
             reached_agent = marker.exists()
@@ -3408,14 +4080,13 @@ class TestTokenCeilingRejectsUnboundingValues:
     def test_negative_toml_value_is_rejected(self, tmp_path: Path) -> None:
         from kstrl.factory import BudgetConfigError, FactoryConfig
 
-        (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_total_tokens = -5\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = -5\n")
         with pytest.raises(BudgetConfigError):
             FactoryConfig.load(tmp_path)
 
     def test_negative_env_value_is_rejected(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.factory import BudgetConfigError, FactoryConfig
 
@@ -3426,21 +4097,18 @@ class TestTokenCeilingRejectsUnboundingValues:
     def test_zero_is_unbounded_not_invalid(self, tmp_path: Path) -> None:
         from kstrl.factory import FactoryConfig
 
-        (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_total_tokens = 0\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 0\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 0
 
     def test_ordinary_value_survives(self, tmp_path: Path) -> None:
         from kstrl.factory import FactoryConfig
 
-        (tmp_path / "kstrl.toml").write_text(
-            "[factory]\nmax_total_tokens = 500\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_total_tokens = 500\n")
         assert FactoryConfig.load(tmp_path).max_total_tokens == 500
 
     def test_run_factory_rechecks_a_programmatic_config(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
         from kstrl.factory import BudgetConfigError, FactoryConfig, run_factory
@@ -3449,11 +4117,21 @@ class TestTokenCeilingRejectsUnboundingValues:
 
         config = FactoryConfig(max_total_tokens=-5)
         manifest = Manifest(
-            version="1", spec_file="s", project_name="t", base_branch="main",
+            version="1",
+            spec_file="s",
+            project_name="t",
+            base_branch="main",
             single_pr=False,
-            components=[Component(
-                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
-            )],
+            components=[
+                Component(
+                    "comp-a",
+                    "A",
+                    "D",
+                    [],
+                    "prd.json",
+                    "kstrl/comp-a",
+                )
+            ],
         )
         base = KstrlConfig(ui_mode="plain", no_color=True)
         with pytest.raises(BudgetConfigError):
@@ -3506,12 +4184,17 @@ def _measured_meter() -> tuple[dict[str, dict[str, UsageTotals]], UsageTotals]:
     for index, row in enumerate(_MEASURED_RUN):
         phase, calls, tokens, cost, cost_calls, token_calls = row
         totals = UsageTotals(
-            calls=calls, known_calls=calls, token_calls=token_calls,
-            cost_calls=cost_calls, total_tokens=tokens, cost_usd=cost,
+            calls=calls,
+            known_calls=calls,
+            token_calls=token_calls,
+            cost_calls=cost_calls,
+            total_tokens=tokens,
+            cost_usd=cost,
         )
         comp_id = f"comp-{index // 2}"
         meter.setdefault(comp_id, {}).setdefault(
-            phase, UsageTotals(),
+            phase,
+            UsageTotals(),
         ).merge(totals)
         run_usage.merge(totals)
     return meter, run_usage
@@ -3523,12 +4206,10 @@ class TestMeasuredCoverageGap:
     def test_cost_undercounts_while_tokens_do_not(self) -> None:
         meter, run_usage = _measured_meter()
         engineer_cost = sum(
-            phases["engineer"].cost_usd
-            for phases in meter.values() if "engineer" in phases
+            phases["engineer"].cost_usd for phases in meter.values() if "engineer" in phases
         )
         engineer_tokens = sum(
-            phases["engineer"].total_tokens
-            for phases in meter.values() if "engineer" in phases
+            phases["engineer"].total_tokens for phases in meter.values() if "engineer" in phases
         )
         # The run's dollar total IS the engineer's, to the cent.
         assert run_usage.cost_usd == pytest.approx(engineer_cost)
@@ -3591,7 +4272,9 @@ class TestUsageCoverage:
 
         meter, _ = _measured_meter()
         note = usage_coverage(
-            meter, axis="cost", ceiling="max_cost_usd",
+            meter,
+            axis="cost",
+            ceiling="max_cost_usd",
         ).note()
         assert "8 of 13 metered call(s) reported a cost" in note
         assert "max_cost_usd bounds only those" in note
@@ -3609,10 +4292,18 @@ class TestUsageCoverage:
         so no token figure is claimed for it."""
         from kstrl.agents.base import usage_coverage
 
-        meter = {"comp-a": {"review": UsageTotals(
-            calls=4, known_calls=4, token_calls=4, cost_calls=2,
-            total_tokens=1_000, cost_usd=0.5,
-        )}}
+        meter = {
+            "comp-a": {
+                "review": UsageTotals(
+                    calls=4,
+                    known_calls=4,
+                    token_calls=4,
+                    cost_calls=2,
+                    total_tokens=1_000,
+                    cost_usd=0.5,
+                )
+            }
+        }
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
         assert coverage.uncovered_tokens == 0  # not 1000, and not a guess
         assert "review (2 of 4 call(s))" in coverage.note()
@@ -3621,10 +4312,18 @@ class TestUsageCoverage:
     def test_full_coverage_says_nothing(self) -> None:
         from kstrl.agents.base import usage_coverage
 
-        meter = {"comp-a": {"engineer": UsageTotals(
-            calls=3, known_calls=3, token_calls=3, cost_calls=3,
-            total_tokens=10, cost_usd=1.0,
-        )}}
+        meter = {
+            "comp-a": {
+                "engineer": UsageTotals(
+                    calls=3,
+                    known_calls=3,
+                    token_calls=3,
+                    cost_calls=3,
+                    total_tokens=10,
+                    cost_usd=1.0,
+                )
+            }
+        }
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
         assert coverage.complete is True
         assert coverage.note() == ""
@@ -3632,10 +4331,17 @@ class TestUsageCoverage:
     def test_an_empty_axis_is_labelled_empty_not_partial(self) -> None:
         from kstrl.agents.base import usage_coverage
 
-        meter = {"comp-a": {"engineer": UsageTotals(
-            calls=2, known_calls=2, token_calls=2, cost_calls=0,
-            total_tokens=500,
-        )}}
+        meter = {
+            "comp-a": {
+                "engineer": UsageTotals(
+                    calls=2,
+                    known_calls=2,
+                    token_calls=2,
+                    cost_calls=0,
+                    total_tokens=500,
+                )
+            }
+        }
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
         assert coverage.empty is True
         assert coverage.partial is False
@@ -3665,8 +4371,8 @@ class TestUsageCoverage:
         coverage = usage_coverage(meter, axis="cost", ceiling="max_cost_usd")
         roles = {role.role: role for role in coverage.roles}
         assert set(roles) == {"engineer", "review"}
-        assert roles["engineer"].calls == 8      # 5 + 1 + 1 + 1
-        assert roles["review"].calls == 5        # 2 + 3
+        assert roles["engineer"].calls == 8  # 5 + 1 + 1 + 1
+        assert roles["review"].calls == 5  # 2 + 3
         assert roles["review"].silent is True
         assert roles["engineer"].covered is True
 
@@ -3686,7 +4392,8 @@ class TestPipelineCeilingCoverage:
         return pipeline
 
     def test_a_configured_cost_ceiling_reports_its_coverage(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
@@ -3697,36 +4404,53 @@ class TestPipelineCeilingCoverage:
         assert coverage.uncovered_roles == ("review",)
 
     def test_an_unconfigured_ceiling_has_nothing_to_qualify(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(tmp_path)
-        assert ComponentPipeline.ceiling_coverage(
-            pipeline, "max_cost_usd",
-        ) is None
-        assert ComponentPipeline.ceiling_coverage(
-            pipeline, "max_total_tokens",
-        ) is None
+        assert (
+            ComponentPipeline.ceiling_coverage(
+                pipeline,
+                "max_cost_usd",
+            )
+            is None
+        )
+        assert (
+            ComponentPipeline.ceiling_coverage(
+                pipeline,
+                "max_total_tokens",
+            )
+            is None
+        )
 
     def test_an_unknown_key_is_not_a_ceiling(self, tmp_path: Path) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(tmp_path, max_cost_usd=25.0)
-        assert ComponentPipeline.ceiling_coverage(
-            pipeline, "max_adversarial_calls",
-        ) is None
+        assert (
+            ComponentPipeline.ceiling_coverage(
+                pipeline,
+                "max_adversarial_calls",
+            )
+            is None
+        )
 
     def test_notes_are_emitted_only_for_ceilings_that_fall_short(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.pipeline import ComponentPipeline
 
         pipeline = self._pipeline(
-            tmp_path, max_cost_usd=25.0, max_total_tokens=30_000_000,
+            tmp_path,
+            max_cost_usd=25.0,
+            max_total_tokens=30_000_000,
         )
         notes = ComponentPipeline.coverage_notes(
-            pipeline, ("max_total_tokens", "max_cost_usd"),
+            pipeline,
+            ("max_total_tokens", "max_cost_usd"),
         )
         # The token ceiling covered every call on this run; only the
         # cost one has anything to disclose.
@@ -3759,8 +4483,12 @@ class TestRollupReportsPerAxisCoverage:
 
     def test_a_reported_zero_cost_is_not_rendered_as_silence(self) -> None:
         totals = UsageTotals(
-            calls=1, known_calls=1, token_calls=1, cost_calls=1,
-            total_tokens=10, cost_usd=0.0,
+            calls=1,
+            known_calls=1,
+            token_calls=1,
+            cost_calls=1,
+            total_tokens=10,
+            cost_usd=0.0,
         )
         lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert "0.0000" in lines[1]
@@ -3773,9 +4501,12 @@ class TestRollupReportsPerAxisCoverage:
         each other. The reviewer's repro is one cost-only record.
         """
         totals = UsageTotals()
-        totals.add_record(UsageRecord(
-            cost_usd=1.0, source="claude-stream-json",
-        ))
+        totals.add_record(
+            UsageRecord(
+                cost_usd=1.0,
+                source="claude-stream-json",
+            )
+        )
         assert (totals.known_calls, totals.token_calls) == (1, 0)
         lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         rows = [line for line in lines if not line.startswith("note:")]
@@ -3791,16 +4522,24 @@ class TestRollupReportsPerAxisCoverage:
         """The counterpart of the reported-zero-cost case: a call that
         reported zero tokens is a measurement, not silence."""
         totals = UsageTotals(
-            calls=1, known_calls=1, token_calls=1, cost_calls=1,
-            total_tokens=0, cost_usd=1.0,
+            calls=1,
+            known_calls=1,
+            token_calls=1,
+            cost_calls=1,
+            total_tokens=0,
+            cost_usd=1.0,
         )
         lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert lines[1].split()[-4:-2] == ["0", "0"]
 
     def test_a_fully_covered_run_gets_no_coverage_note(self) -> None:
         totals = UsageTotals(
-            calls=2, known_calls=2, token_calls=2, cost_calls=2,
-            total_tokens=10, cost_usd=1.0,
+            calls=2,
+            known_calls=2,
+            token_calls=2,
+            cost_calls=2,
+            total_tokens=10,
+            cost_usd=1.0,
         )
         lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert not [line for line in lines if line.startswith("note:")]
@@ -3827,7 +4566,10 @@ class TestCoverageReachesTheAuditTrail:
 
     @staticmethod
     def _mixed_run(
-        tmp_path: Path, *, max_cost_usd: float, engineer_costs: dict[str, float],
+        tmp_path: Path,
+        *,
+        max_cost_usd: float,
+        engineer_costs: dict[str, float],
     ) -> tuple[Path, str]:
         """comp-a then comp-b, engineer cost per component.
 
@@ -3842,7 +4584,9 @@ class TestCoverageReachesTheAuditTrail:
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
         config = _factory_config(
-            root, max_cost_usd=max_cost_usd, review_mode="advisory",
+            root,
+            max_cost_usd=max_cost_usd,
+            review_mode="advisory",
         )
 
         def fresh_review_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
@@ -3852,34 +4596,51 @@ class TestCoverageReachesTheAuditTrail:
             agent = FakeUsageAgent(outputs=[["ok"]])
             # The cross-family reviewer: a token total and no cost,
             # which is verbatim what the codex adapter produces.
-            agent._usage_records.append(UsageRecord(
-                total_tokens=40_000, duration_seconds=0.5,
-                source="codex-text",
-            ))
+            agent._usage_records.append(
+                UsageRecord(
+                    total_tokens=40_000,
+                    duration_seconds=0.5,
+                    source="codex-text",
+                )
+            )
             return agent
 
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             comp_id = str(args[0])
             return ComponentResult(
-                comp_id, success=True, iterations=1,
+                comp_id,
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(
-                    1_000, cost=engineer_costs.get(comp_id, 0.0),
+                    1_000,
+                    cost=engineer_costs.get(comp_id, 0.0),
                 ),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="",
-        ), patch(
-            "kstrl.agents.get_agent", side_effect=fresh_review_agent,
-        ), patch(
-            "kstrl.factory.run_review",
-            return_value=ReviewResult(passed=True, mode="advisory"),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                side_effect=fresh_review_agent,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=ReviewResult(passed=True, mode="advisory"),
+            ),
         ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         run_dirs = sorted((root / ".kstrl" / "runs").iterdir())
         return root, str(run_dirs[-1])
@@ -3895,7 +4656,8 @@ class TestCoverageReachesTheAuditTrail:
         return rows
 
     def test_the_gap_is_announced_before_the_money_is_spent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A `budget_coverage` record lands at the first phase that
         exposes the gap - not only in the halt the operator reads
@@ -3903,11 +4665,13 @@ class TestCoverageReachesTheAuditTrail:
         breached and nothing is unenforceable: this signal is the ONLY
         one that fires."""
         root, run_dir = self._mixed_run(
-            tmp_path, max_cost_usd=100.0,
+            tmp_path,
+            max_cost_usd=100.0,
             engineer_costs={"comp-a": 0.01, "comp-b": 0.01},
         )
         durable = self._events(
-            Path(run_dir) / "events.jsonl", "budget_coverage",
+            Path(run_dir) / "events.jsonl",
+            "budget_coverage",
         )
         assert len(durable) == 1, "one warning per ceiling per run"
         data = durable[0]["data"]
@@ -3919,25 +4683,30 @@ class TestCoverageReachesTheAuditTrail:
         assert "PARTIAL" in data["detail"]
         # Nothing halted; the run completed under its ceiling.
         assert not self._events(
-            Path(run_dir) / "events.jsonl", "budget_exceeded",
+            Path(run_dir) / "events.jsonl",
+            "budget_exceeded",
         )
 
     def test_both_sinks_carry_the_same_coverage_record(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root, run_dir = self._mixed_run(
-            tmp_path, max_cost_usd=100.0,
+            tmp_path,
+            max_cost_usd=100.0,
             engineer_costs={"comp-a": 0.01, "comp-b": 0.01},
         )
         durable = self._events(
-            Path(run_dir) / "events.jsonl", "budget_coverage",
+            Path(run_dir) / "events.jsonl",
+            "budget_coverage",
         )
         legacy = self._events(root / "progress.jsonl", "budget_coverage")
         assert len(durable) == len(legacy) == 1
         assert durable[0]["data"] == legacy[0]["data"]
 
     def test_the_halt_record_says_what_the_ceiling_counted(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The measured defect: a breach message that states a total
         without stating what the total covers."""
@@ -3945,11 +4714,13 @@ class TestCoverageReachesTheAuditTrail:
         # 40,000 unpriced reviewer tokens are on the meter; comp-b's
         # engineer then breaches. The measured shape.
         root, run_dir = self._mixed_run(
-            tmp_path, max_cost_usd=0.10,
+            tmp_path,
+            max_cost_usd=0.10,
             engineer_costs={"comp-a": 0.05, "comp-b": 0.25},
         )
         durable = self._events(
-            Path(run_dir) / "events.jsonl", "budget_exceeded",
+            Path(run_dir) / "events.jsonl",
+            "budget_exceeded",
         )
         legacy = self._events(root / "progress.jsonl", "budget_exceeded")
         assert durable and len(durable) == len(legacy)
@@ -3961,17 +4732,20 @@ class TestCoverageReachesTheAuditTrail:
         assert coverage[0]["uncovered_roles"] == ["review"]
 
     def test_the_component_error_states_the_coverage(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # comp-a stays under the ceiling so its review runs and its
         # 40,000 unpriced reviewer tokens are on the meter; comp-b's
         # engineer then breaches. The measured shape.
         root, run_dir = self._mixed_run(
-            tmp_path, max_cost_usd=0.10,
+            tmp_path,
+            max_cost_usd=0.10,
             engineer_costs={"comp-a": 0.05, "comp-b": 0.25},
         )
         failures = self._events(
-            Path(run_dir) / "events.jsonl", "component_failed",
+            Path(run_dir) / "events.jsonl",
+            "component_failed",
         )
         errors = [row["data"]["error"] for row in failures]
         budget_errors = [e for e in errors if "cost budget" in e]
@@ -3980,7 +4754,8 @@ class TestCoverageReachesTheAuditTrail:
         assert any("review" in e for e in budget_errors)
 
     def test_a_fully_covered_halt_message_is_unchanged(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """No coverage clause when the ceiling counted every call - the
         disclosure must not become boilerplate on runs it does not
@@ -3989,15 +4764,24 @@ class TestCoverageReachesTheAuditTrail:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, max_cost_usd=0.10)
         success = ComponentResult(
-            "comp-a", success=True, iterations=1,
+            "comp-a",
+            success=True,
+            iterations=1,
             usage=_engineer_usage(600, cost=0.25),
         )
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         comp_a = manifest.get_component("comp-a")
         assert comp_a is not None
@@ -4029,20 +4813,30 @@ class TestCeilingScopeIsStatedUpFront:
         manifest = _make_manifest([_component("comp-a")])
         buffer = io.StringIO()
         success = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_engineer_usage(10),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_engineer_usage(10),
         )
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, _factory_config(root, **config),
+                manifest,
+                _factory_config(root, **config),
                 _make_base_config(root),
-                PlainUI(no_color=True, file=buffer), root,
+                PlainUI(no_color=True, file=buffer),
+                root,
             )
         return buffer.getvalue()
 
     def test_the_cost_ceiling_states_what_it_counts(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         out = self._run(tmp_path, max_cost_usd=25.0)
         assert "Cost ceiling" in out
@@ -4050,14 +4844,16 @@ class TestCeilingScopeIsStatedUpFront:
         assert "counts only calls whose agent reports a cost" in out
 
     def test_the_token_ceiling_states_what_it_counts(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         out = self._run(tmp_path, max_total_tokens=500_000)
         assert "Token ceiling" in out
         assert "counts only calls whose agent reports a token count" in out
 
     def test_an_unconfigured_ceiling_is_not_advertised(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         out = self._run(tmp_path)
         assert "Cost ceiling" not in out
@@ -4089,16 +4885,22 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest([_component("comp-a"), _component("comp-b")])
         config = _factory_config(
-            root, max_total_tokens=5_000, max_cost_usd=100.0,
+            root,
+            max_total_tokens=5_000,
+            max_cost_usd=100.0,
             review_mode="advisory",
         )
 
         def fresh_review_agent(*args: Any, **kwargs: Any) -> FakeUsageAgent:
             agent = FakeUsageAgent(outputs=[["ok"]])
             # The cross-family reviewer: tokens, no cost (codex).
-            agent._usage_records.append(UsageRecord(
-                total_tokens=1_000, duration_seconds=0.5, source="codex-text",
-            ))
+            agent._usage_records.append(
+                UsageRecord(
+                    total_tokens=1_000,
+                    duration_seconds=0.5,
+                    source="codex-text",
+                )
+            )
             return agent
 
         costs = {"comp-a": 0.01, "comp-b": 0.02}
@@ -4107,23 +4909,36 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
             comp_id = str(args[0])
             return ComponentResult(
-                comp_id, success=True, iterations=1,
+                comp_id,
+                success=True,
+                iterations=1,
                 usage=_engineer_usage(tokens[comp_id], cost=costs[comp_id]),
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="",
-        ), patch(
-            "kstrl.agents.get_agent", side_effect=fresh_review_agent,
-        ), patch(
-            "kstrl.factory.run_review",
-            return_value=ReviewResult(passed=True, mode="advisory"),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                side_effect=fresh_review_agent,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=ReviewResult(passed=True, mode="advisory"),
+            ),
         ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
         return root, run_dir
@@ -4139,7 +4954,8 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         return rows
 
     def test_a_token_breach_still_records_the_cost_ceilings_coverage(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root, run_dir = self._dual_cap_run(tmp_path)
         halts = self._events(run_dir / "events.jsonl", "budget_exceeded")
@@ -4156,19 +4972,22 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         assert by_ceiling["max_cost_usd"]["uncovered_roles"] == ["review"]
 
     def test_the_inbox_evidence_carries_the_same_entries(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.inbox import Inbox, InboxConfig
 
         root, _ = self._dual_cap_run(tmp_path)
         items = [
-            item for item in Inbox(root, InboxConfig()).items()
+            item
+            for item in Inbox(root, InboxConfig()).items()
             if str(item.kind) == "budget_overrun"
         ]
         assert items
         coverage = items[-1].evidence["coverage"]
         assert {entry["ceiling"] for entry in coverage} == {
-            "max_total_tokens", "max_cost_usd",
+            "max_total_tokens",
+            "max_cost_usd",
         }
 
     def test_both_sinks_still_agree(self, tmp_path: Path) -> None:
@@ -4186,14 +5005,24 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, max_total_tokens=500)
         success = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_engineer_usage(600),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_engineer_usage(600),
         )
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         run_dir = sorted((root / ".kstrl" / "runs").iterdir())[-1]
         halts = self._events(run_dir / "events.jsonl", "budget_exceeded")

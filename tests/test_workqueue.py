@@ -103,18 +103,21 @@ class TestAdd:
         assert queue.items() == []
 
     def test_add_refuses_a_negative_attempt_budget(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         with pytest.raises(QueueError, match="max_attempts must be >= 1"):
             queue.add("# spec\n", max_attempts=-1)
 
     def test_add_leaves_no_staging_dir_when_the_write_fails(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         with patch(
-            "kstrl.workqueue.atomic_write", side_effect=OSError("disk full"),
+            "kstrl.workqueue.atomic_write",
+            side_effect=OSError("disk full"),
         ):
             with pytest.raises(OSError):
                 _add(queue)
@@ -151,7 +154,8 @@ class TestLookup:
         assert found is not None and found.item_id == item.item_id
 
     def test_ambiguous_prefix_raises_instead_of_guessing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Operating on the wrong unit of work is worse than a retype."""
         queue = _queue(tmp_path)
@@ -203,7 +207,8 @@ class TestTransitions:
             queue.transition(item, ItemState.LEASED, nonsense=1)
 
     def test_transition_refuses_when_the_source_dir_is_gone(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
@@ -233,7 +238,8 @@ class TestAttemptCharging:
         assert item.attempts == 1
 
     def test_attempt_is_durable_before_the_rename_commits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A crash in the commit window must not lose the charge.
 
@@ -261,9 +267,7 @@ class TestAttemptCharging:
                 queue.start(item)
 
         on_disk = json.loads(
-            (
-                tmp_path / ".kstrl" / "queue" / "leased" / item.item_id / "meta.json"
-            ).read_text()
+            (tmp_path / ".kstrl" / "queue" / "leased" / item.item_id / "meta.json").read_text()
         )
         assert on_disk["attempts"] == 1, "the attempt must survive the crash"
 
@@ -272,7 +276,8 @@ class TestAttemptCharging:
         assert reread.attempts == 1
 
     def test_a_failed_move_leaves_the_item_object_honest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An uncommitted move must not leave the object claiming success."""
         queue = _queue(tmp_path)
@@ -292,7 +297,8 @@ class TestAttemptCharging:
         assert item.attempts == 1, "the charge stays; over-counting is safe"
 
     def test_the_substrate_refuses_to_start_past_the_bound(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#185 F5: the bound is enforced at the SPENDING boundary.
 
@@ -345,7 +351,8 @@ class TestPathSafety:
     """
 
     def test_a_crafted_item_id_cannot_redirect_removal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue, title="safe")
@@ -369,7 +376,9 @@ class TestPathSafety:
     def test_item_dir_refuses_an_unsafe_id(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         rogue = QueueItem(
-            item_id="../escape", title="t", spec_filename="spec.md",
+            item_id="../escape",
+            title="t",
+            spec_filename="spec.md",
         )
         with pytest.raises(QueueError, match="unsafe queue item id"):
             queue.item_dir(rogue)
@@ -389,7 +398,8 @@ class TestPathSafety:
         assert [i.item_id for i in loaded] == [item.item_id]
 
     def test_add_refuses_a_traversing_spec_filename(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The text form of add() is what PR 3's adapters will call."""
         queue = _queue(tmp_path)
@@ -399,7 +409,8 @@ class TestPathSafety:
         assert not (tmp_path / "escaped.md").exists()
 
     @pytest.mark.parametrize(
-        "name", ["../x.md", "a/b.md", "..", ".", "", ".hidden", "a\\b.md"],
+        "name",
+        ["../x.md", "a/b.md", "..", ".", "", ".hidden", "a\\b.md"],
     )
     def test_unsafe_names_are_rejected(self, name: str) -> None:
         assert not is_safe_component(name)
@@ -409,12 +420,19 @@ class TestPathSafety:
         assert is_safe_component(name)
 
     def test_a_crafted_spec_filename_is_rejected_on_decode(self) -> None:
-        assert QueueItem.from_dict({
-            "item_id": "q-1", "spec_filename": "../../../etc/passwd",
-        }) is None
+        assert (
+            QueueItem.from_dict(
+                {
+                    "item_id": "q-1",
+                    "spec_filename": "../../../etc/passwd",
+                }
+            )
+            is None
+        )
 
     def test_spec_path_refuses_to_escape_the_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
@@ -427,7 +445,8 @@ class TestStagingIsNeverScanned:
     """#185 F3: a death mid-publish must leave nothing a scan can see."""
 
     def test_staging_lives_outside_the_state_directories(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         queue.ensure_dirs()
@@ -437,21 +456,29 @@ class TestStagingIsNeverScanned:
             assert queue.staging_path.parent != queue.state_path(state)
 
     def test_a_leftover_staging_item_is_not_a_phantom_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         real = _add(queue, title="real")
         ghost = queue.staging_path / "q-ghost"
         ghost.mkdir(parents=True)
         (ghost / "spec.md").write_text("# ghost\n")
-        (ghost / "meta.json").write_text(json.dumps({
-            "item_id": "q-ghost", "spec_filename": "spec.md", "title": "ghost",
-        }))
+        (ghost / "meta.json").write_text(
+            json.dumps(
+                {
+                    "item_id": "q-ghost",
+                    "spec_filename": "spec.md",
+                    "title": "ghost",
+                }
+            )
+        )
 
         assert [i.item_id for i in queue.items()] == [real.item_id]
 
     def test_a_pre_fix_staging_dir_inside_queued_is_ignored_SILENTLY(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A queue written by the previous build must not wedge scans.
 
@@ -465,21 +492,27 @@ class TestStagingIsNeverScanned:
         real = _add(queue, title="real")
         legacy = queue.state_path(ItemState.QUEUED) / ".staging-q-ghost"
         legacy.mkdir(parents=True)
-        (legacy / "meta.json").write_text(json.dumps({
-            "item_id": "q-ghost", "spec_filename": "spec.md", "title": "ghost",
-        }))
+        (legacy / "meta.json").write_text(
+            json.dumps(
+                {
+                    "item_id": "q-ghost",
+                    "spec_filename": "spec.md",
+                    "title": "ghost",
+                }
+            )
+        )
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             found = queue.items()
         assert [i.item_id for i in found] == [real.item_id]
         assert caught == [], (
-            f"a scan must not warn about a staging leftover: "
-            f"{[str(w.message) for w in caught]}"
+            f"a scan must not warn about a staging leftover: {[str(w.message) for w in caught]}"
         )
 
     def test_a_hard_kill_mid_publish_leaves_no_phantom_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The reason staging lives outside the state directories.
 
@@ -527,14 +560,16 @@ class TestStagingIsNeverScanned:
         assert queue.sweep_staging() == 0
 
     def test_a_successful_add_leaves_staging_empty(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         _add(queue)
         assert list(queue.staging_path.iterdir()) == []
 
     def test_requeue_does_not_reset_attempts_by_default(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A retry policy that can zero its own bound is not a bound."""
         queue = _queue(tmp_path)
@@ -543,7 +578,8 @@ class TestStagingIsNeverScanned:
         assert item.attempts == 1
 
     def test_reset_attempts_is_explicit_and_clears_poison(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = queue.start(queue.lease(_add(queue)))
@@ -555,7 +591,8 @@ class TestStagingIsNeverScanned:
 
 class TestDirectoryIsAuthoritative:
     def test_state_comes_from_the_directory_not_the_sidecar(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
@@ -567,7 +604,8 @@ class TestDirectoryIsAuthoritative:
         assert queue.items()[0].state is ItemState.QUEUED
 
     def test_stale_mirror_self_heals_on_the_next_write(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
@@ -583,7 +621,8 @@ class TestDirectoryIsAuthoritative:
 
 class TestCorruptionHandling:
     def test_malformed_meta_is_skipped_with_a_warning(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A dropped item is lost work; say so rather than swallowing it."""
         queue = _queue(tmp_path)
@@ -613,30 +652,45 @@ class TestCorruptionHandling:
 
     def test_corrupt_merge_disposition_falls_back_to_gated(self) -> None:
         """A corrupt field must never GRANT a permission."""
-        item = QueueItem.from_dict({
-            "item_id": "q-1", "spec_filename": "spec.md",
-            "merge_disposition": "yolo-merge-everything",
-        })
+        item = QueueItem.from_dict(
+            {
+                "item_id": "q-1",
+                "spec_filename": "spec.md",
+                "merge_disposition": "yolo-merge-everything",
+            }
+        )
         assert item is not None
         assert item.merge_disposition is MergeDisposition.STOP_AT_PR
 
     def test_unknown_state_decodes_to_queued(self) -> None:
-        item = QueueItem.from_dict({
-            "item_id": "q-1", "spec_filename": "spec.md", "state": "wat",
-        })
+        item = QueueItem.from_dict(
+            {
+                "item_id": "q-1",
+                "spec_filename": "spec.md",
+                "state": "wat",
+            }
+        )
         assert item is not None and item.state is ItemState.QUEUED
 
     def test_non_integer_priority_falls_back(self) -> None:
-        item = QueueItem.from_dict({
-            "item_id": "q-1", "spec_filename": "spec.md", "priority": "high",
-        })
+        item = QueueItem.from_dict(
+            {
+                "item_id": "q-1",
+                "spec_filename": "spec.md",
+                "priority": "high",
+            }
+        )
         assert item is not None and item.priority == 0
 
     def test_legacy_payload_without_new_fields_decodes(self) -> None:
         """Sidecars written before a field existed must still load."""
-        item = QueueItem.from_dict({
-            "item_id": "q-1", "spec_filename": "spec.md", "title": "old",
-        })
+        item = QueueItem.from_dict(
+            {
+                "item_id": "q-1",
+                "spec_filename": "spec.md",
+                "title": "old",
+            }
+        )
         assert item is not None
         assert item.target_repo == ""
         assert item.max_attempts == 3
@@ -645,9 +699,13 @@ class TestCorruptionHandling:
     def test_round_trip(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         original = _add(
-            queue, title="round trip", priority=3,
-            source=ItemSource.GITHUB, source_ref="o/r#1",
-            target_repo="o/r", project_name="proj",
+            queue,
+            title="round trip",
+            priority=3,
+            source=ItemSource.GITHUB,
+            source_ref="o/r#1",
+            target_repo="o/r",
+            project_name="proj",
         )
         decoded = QueueItem.from_dict(original.to_dict())
         assert decoded is not None
@@ -675,7 +733,9 @@ class TestLeases:
 
     def test_unparseable_expiry_counts_as_expired(self) -> None:
         item = QueueItem(
-            item_id="q-1", title="t", spec_filename="s.md",
+            item_id="q-1",
+            title="t",
+            spec_filename="s.md",
             lease_expires_at="not-a-date",
         )
         assert item.lease_expired()
@@ -704,7 +764,8 @@ class TestPoison:
         assert (tmp_path / ".kstrl" / "queue" / "poison" / item.item_id).is_dir()
 
     def test_a_queued_item_can_be_poisoned_without_running(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Admission-time rejection never spends anything."""
         queue = _queue(tmp_path)
@@ -728,7 +789,8 @@ class TestRemoval:
             queue.remove(item)
 
     def test_a_failed_deletion_is_not_reported_as_success(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#185 F6: ignore_errors made both the result and the trail false."""
         queue = _queue(tmp_path)
@@ -741,12 +803,13 @@ class TestRemoval:
                 queue.remove(item)
 
         assert len(queue.items()) == 1, "the item is still there"
-        assert not any(
-            e["to"] == "removed" for e in queue.journal_entries(item.item_id)
-        ), "the audit trail must not claim a removal that did not happen"
+        assert not any(e["to"] == "removed" for e in queue.journal_entries(item.item_id)), (
+            "the audit trail must not claim a removal that did not happen"
+        )
 
     def test_a_silently_failed_deletion_is_caught(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Even a no-op rmtree must not produce a `removed` record."""
         queue = _queue(tmp_path)
@@ -754,9 +817,7 @@ class TestRemoval:
         with patch("kstrl.workqueue.shutil.rmtree", return_value=None):
             with pytest.raises(QueueError, match="still exists"):
                 queue.remove(item)
-        assert not any(
-            e["to"] == "removed" for e in queue.journal_entries(item.item_id)
-        )
+        assert not any(e["to"] == "removed" for e in queue.journal_entries(item.item_id))
 
 
 class TestPause:
@@ -792,7 +853,8 @@ class TestPause:
         assert state.active()
 
     def test_unreadable_pause_marker_reads_as_paused(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Fail closed: never resume unattended spend on a corrupt file."""
         queue = _queue(tmp_path)
@@ -803,7 +865,8 @@ class TestPause:
         assert "unreadable" in queue.pause_state().reason
 
     def test_non_object_pause_marker_reads_as_paused(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         queue.ensure_dirs()
@@ -812,7 +875,8 @@ class TestPause:
         assert queue.is_paused()
 
     def test_an_unreadable_marker_file_reads_as_paused(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#185 F7: a broad `except OSError` made PermissionError = RUNNING.
 
@@ -825,7 +889,9 @@ class TestPause:
         queue.pause(reason="daily budget")
 
         with patch.object(
-            Path, "read_text", side_effect=PermissionError("denied"),
+            Path,
+            "read_text",
+            side_effect=PermissionError("denied"),
         ):
             assert queue.is_paused()
             assert "unreadable" in queue.pause_state().reason
@@ -838,12 +904,15 @@ class TestPause:
         assert not queue.is_paused()
 
     def test_next_ready_is_none_when_the_marker_is_unreadable(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         _add(queue)
         with patch.object(
-            Path, "read_text", side_effect=PermissionError("denied"),
+            Path,
+            "read_text",
+            side_effect=PermissionError("denied"),
         ):
             assert queue.next_ready() is None
 
@@ -854,16 +923,16 @@ class TestJournal:
         item = queue.finish_ok(queue.start(queue.lease(_add(queue))))
         entries = queue.journal_entries(item.item_id)
         assert [(e["from"], e["to"]) for e in entries] == [
-            ("", "queued"), ("queued", "leased"),
-            ("leased", "running"), ("running", "done"),
+            ("", "queued"),
+            ("queued", "leased"),
+            ("leased", "running"),
+            ("running", "done"),
         ]
 
     def test_journal_records_the_attempt_count(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         item = queue.start(queue.lease(_add(queue)))
-        started = [
-            e for e in queue.journal_entries(item.item_id) if e["to"] == "running"
-        ]
+        started = [e for e in queue.journal_entries(item.item_id) if e["to"] == "running"]
         assert started[0]["attempts"] == 1
 
     def test_removal_is_journaled(self, tmp_path: Path) -> None:
@@ -877,13 +946,11 @@ class TestJournal:
     def test_pause_is_journaled(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         queue.pause(reason="budget", actor="serve")
-        assert any(
-            e["to"] == "paused" and e["reason"] == "budget"
-            for e in queue.journal_entries()
-        )
+        assert any(e["to"] == "paused" and e["reason"] == "budget" for e in queue.journal_entries())
 
     def test_a_failed_journal_write_does_not_undo_the_transition(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The directory is the truth; the journal is the narration."""
         queue = _queue(tmp_path)
@@ -918,7 +985,8 @@ class TestLock:
             pass
 
     def test_the_lock_is_released_when_the_body_raises(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pytest.importorskip("fcntl")
         with pytest.raises(ValueError):
@@ -928,7 +996,8 @@ class TestLock:
             pass
 
     def test_the_queue_lock_is_separate_from_the_factory_lock(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Listing the queue must not block on a running factory."""
         from kstrl.workqueue import LOCK_FILENAME, queue_root
@@ -961,22 +1030,23 @@ class TestConfig:
         assert config.lease_ttl_seconds == 120.0
 
     def test_load_reads_the_toml_section(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[queue]\nmax_attempts = 9\nlease_ttl_seconds = 30\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[queue]\nmax_attempts = 9\nlease_ttl_seconds = 30\n")
         config = QueueConfig.load(tmp_path)
         assert config.max_attempts == 9
         assert config.lease_ttl_seconds == 30.0
 
     def test_env_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[queue]\nmax_attempts = 9\n")
         monkeypatch.setenv("KSTRL_QUEUE_MAX_ATTEMPTS", "2")
         assert QueueConfig.load(tmp_path).max_attempts == 2
 
     def test_load_without_a_config_file_uses_defaults(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         assert QueueConfig.load(tmp_path).max_attempts == 3
 

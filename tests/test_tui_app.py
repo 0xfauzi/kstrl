@@ -24,7 +24,10 @@ from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
     return KstrlTuiApp(
-        run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=0.05,
+        run_dir=run_dir,
+        root_dir=root,
+        mode=Mode.DASH,
+        poll_interval=0.05,
     )
 
 
@@ -48,7 +51,9 @@ class TestOverview:
     async def test_live_updates_arrive(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-160000.000000-live"
         stepper = stream_fake_run(
-            tmp_path, FakeRunSpec(components=2), run_id=run_id,
+            tmp_path,
+            FakeRunSpec(components=2),
+            run_id=run_id,
         )
         next(stepper)  # factory_started written; run dir exists
         run_dir = tmp_path / ".kstrl" / "runs" / run_id
@@ -97,7 +102,8 @@ class TestOverview:
         assert app.return_value == 0
 
     async def test_stream_replacement_resets_before_rebuild(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
@@ -113,14 +119,17 @@ class TestOverview:
             assert app.store.state.total_tokens == initial_tokens
 
     async def test_timers_ignore_empty_screen_stack_during_teardown(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             with patch.object(
-                KstrlTuiApp, "screen_stack", new_callable=PropertyMock,
+                KstrlTuiApp,
+                "screen_stack",
+                new_callable=PropertyMock,
                 return_value=[],
             ):
                 app._poll()
@@ -153,7 +162,8 @@ class TestRenderHelpers:
             run_id="factory-20260720-170000.000000-clean",
         )
         state, _ = load_run_state(
-            tmp_path, "factory-20260720-170000.000000-clean",
+            tmp_path,
+            "factory-20260720-170000.000000-clean",
         )
         plain = render_cost_meter(state).plain
         assert "lower bound" not in plain
@@ -169,26 +179,39 @@ class TestCostMeterPerAxisLowerBound:
 
     @staticmethod
     def _state(
-        *, token_calls: int, cost_calls: int, gap: bool,
+        *,
+        token_calls: int,
+        cost_calls: int,
+        gap: bool,
     ) -> RunState:
         # The reviewer's shape: two metered calls, both reporting tokens,
         # only one reporting a cost; $5 against a $10 cap.
         events: list[ev.Event] = [
-            ev.RunPlan(components=(), max_cost_usd=10.0,
-                       max_total_tokens=100_000),
+            ev.RunPlan(components=(), max_cost_usd=10.0, max_total_tokens=100_000),
             ev.ComponentUsage(
-                component="a", phase="engineer", calls=2, known_calls=2,
-                token_calls=token_calls, cost_calls=cost_calls,
-                total_tokens=1_000, cost_usd=5.0,
+                component="a",
+                phase="engineer",
+                calls=2,
+                known_calls=2,
+                token_calls=token_calls,
+                cost_calls=cost_calls,
+                total_tokens=1_000,
+                cost_usd=5.0,
             ),
         ]
         if gap:
-            events.append(ev.BudgetCoverage(
-                ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
-                uncovered_calls=1, uncovered_tokens=500,
-                uncovered_roles=("review",),
-                detail="cost coverage is PARTIAL",
-            ))
+            events.append(
+                ev.BudgetCoverage(
+                    ceiling="max_cost_usd",
+                    axis="cost",
+                    calls=2,
+                    covered_calls=1,
+                    uncovered_calls=1,
+                    uncovered_tokens=500,
+                    uncovered_roles=("review",),
+                    detail="cost coverage is PARTIAL",
+                )
+            )
         return fold(events)
 
     def test_partial_cost_coverage_marks_the_cost_figure(self) -> None:

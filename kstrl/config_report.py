@@ -45,33 +45,48 @@ class ConfigReport:
 # (toml section, [(toml key, KstrlConfig field)]) - the documented
 # kstrl.toml surface for the base config.
 SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
-    ("agent", [
-        ("type", "agent_type"),
-        ("command", "agent_cmd"),
-        ("model", "model"),
-        ("reasoning_effort", "model_reasoning_effort"),
-    ]),
-    ("run", [
-        ("max_iterations", "max_iterations"),
-        ("sleep_seconds", "sleep_seconds"),
-        ("interactive", "interactive"),
-    ]),
-    ("paths", [
-        ("prompt", "prompt_file"),
-        ("prd", "prd_file"),
-        ("progress", "progress_file"),
-        ("codebase_map", "codebase_map_file"),
-        ("allowed", "allowed_paths"),
-    ]),
-    ("git", [
-        ("branch", "kstrl_branch"),
-        ("auto_checkout", "auto_checkout"),
-    ]),
-    ("ui", [
-        ("ascii", "ascii_only"),
-        ("ui_mode", "ui_mode"),
-        ("no_color", "no_color"),
-    ]),
+    (
+        "agent",
+        [
+            ("type", "agent_type"),
+            ("command", "agent_cmd"),
+            ("model", "model"),
+            ("reasoning_effort", "model_reasoning_effort"),
+        ],
+    ),
+    (
+        "run",
+        [
+            ("max_iterations", "max_iterations"),
+            ("sleep_seconds", "sleep_seconds"),
+            ("interactive", "interactive"),
+        ],
+    ),
+    (
+        "paths",
+        [
+            ("prompt", "prompt_file"),
+            ("prd", "prd_file"),
+            ("progress", "progress_file"),
+            ("codebase_map", "codebase_map_file"),
+            ("allowed", "allowed_paths"),
+        ],
+    ),
+    (
+        "git",
+        [
+            ("branch", "kstrl_branch"),
+            ("auto_checkout", "auto_checkout"),
+        ],
+    ),
+    (
+        "ui",
+        [
+            ("ascii", "ascii_only"),
+            ("ui_mode", "ui_mode"),
+            ("no_color", "no_color"),
+        ],
+    ),
 ]
 
 
@@ -152,50 +167,123 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
     from kstrl.verify import VerifyConfig
 
     return [
-        ("factory", FactoryConfig.load, [
-            "max_parallel", "max_retries", "retry_delay", "use_worktrees",
-            "single_pr", "create_prs", "review_mode", "merge_timeout",
-            "max_adversarial_calls", "max_total_tokens", "max_cost_usd",
-            "pause_before_pr_merge", "progress_log_enabled",
-            "keep_worktrees_on_failure",
-        ]),
-        ("verify", VerifyConfig.load, [
-            "test_command", "typecheck_command", "lint_command",
-            "check_diff_scope", "check_bad_patterns", "dead_code_cleanup",
-            "dead_code_command", "mutation_testing", "mutation_threshold",
-            "mutation_timeout", "subprocess_timeout", "require_self_critique",
-            "self_critique_min_bullets", "progress_file_path",
-        ]),
-        ("security", SecurityConfig.load, [
-            "mode", "fail_threshold", "timeout_seconds", "agent_cmd",
-            "agent_type", "model",
-        ]),
+        (
+            "factory",
+            FactoryConfig.load,
+            [
+                "max_parallel",
+                "max_retries",
+                "retry_delay",
+                "use_worktrees",
+                "single_pr",
+                "create_prs",
+                "review_mode",
+                "merge_timeout",
+                "max_adversarial_calls",
+                "max_total_tokens",
+                "max_cost_usd",
+                "pause_before_pr_merge",
+                "progress_log_enabled",
+                "keep_worktrees_on_failure",
+            ],
+        ),
+        (
+            "verify",
+            VerifyConfig.load,
+            [
+                "test_command",
+                "typecheck_command",
+                "lint_command",
+                "check_diff_scope",
+                "check_bad_patterns",
+                "dead_code_cleanup",
+                "dead_code_command",
+                "mutation_testing",
+                "mutation_threshold",
+                "mutation_timeout",
+                "subprocess_timeout",
+                "require_self_critique",
+                "self_critique_min_bullets",
+                "progress_file_path",
+            ],
+        ),
+        (
+            "security",
+            SecurityConfig.load,
+            [
+                "mode",
+                "fail_threshold",
+                "timeout_seconds",
+                "agent_cmd",
+                "agent_type",
+                "model",
+            ],
+        ),
         ("contract", ContractConfig.load, ["mode", "test_command", "timeout"]),
-        ("feedforward", FeedforwardConfig.load, [
-            "enabled", "module_map", "public_interfaces", "dependency_graph",
-            "conventions", "max_context_tokens",
-        ]),
-        ("knowledge", KnowledgeConfig.load, [
-            "enabled", "max_core_tokens", "max_dependency_tokens",
-            "max_sibling_tokens", "distill_timeout_seconds", "distill_model",
-            "max_facts_per_distill", "dependency_scope",
-        ]),
-        ("evolution", EvolutionConfig.load, [
-            "enabled", "journal_path", "experiments_path",
-            "min_pattern_frequency", "lookback_runs", "auto_propose",
-            "auto_apply_computational",
-        ]),
-        ("timeout", TimeoutConfig.load, [
-            f.name for f in dataclass_fields(TimeoutConfig)
-        ]),
-        ("notify", NotifyConfig.load, [
-            "on_complete", "on_first_failure", "on_inbox_item",
-            "hook_timeout",
-        ]),
-        ("linear", LinearConfig.load, [
-            "enabled", "team_id", "token_env", "auth_mode", "api_url",
-            "dry_run", "timeout_seconds", "min_request_interval",
-        ]),
+        (
+            "feedforward",
+            FeedforwardConfig.load,
+            [
+                "enabled",
+                "module_map",
+                "public_interfaces",
+                "dependency_graph",
+                "conventions",
+                "max_context_tokens",
+            ],
+        ),
+        (
+            "knowledge",
+            KnowledgeConfig.load,
+            [
+                "enabled",
+                "max_core_tokens",
+                "max_dependency_tokens",
+                "max_sibling_tokens",
+                "distill_timeout_seconds",
+                "distill_model",
+                "max_facts_per_distill",
+                "dependency_scope",
+            ],
+        ),
+        (
+            "evolution",
+            EvolutionConfig.load,
+            [
+                "enabled",
+                "journal_path",
+                "experiments_path",
+                "min_pattern_frequency",
+                "lookback_runs",
+                "auto_propose",
+                "auto_apply_computational",
+            ],
+        ),
+        ("timeout", TimeoutConfig.load, [f.name for f in dataclass_fields(TimeoutConfig)]),
+        (
+            "notify",
+            NotifyConfig.load,
+            [
+                "on_complete",
+                "on_first_failure",
+                "on_inbox_item",
+                "hook_timeout",
+            ],
+        ),
+        (
+            "linear",
+            LinearConfig.load,
+            [
+                "enabled",
+                "team_id",
+                "token_env",
+                "auth_mode",
+                "api_url",
+                "dry_run",
+                "timeout_seconds",
+                "min_request_interval",
+            ],
+        ),
     ]
 
 
@@ -218,12 +306,9 @@ def build_config_report(
     phase_resolved = {name: loader(root_dir) for name, loader, _ in phase_sections}
     with scrubbed_environ():
         noenv_base = KstrlConfig.load(root_dir)
-        phase_noenv = {
-            name: loader(root_dir) for name, loader, _ in phase_sections
-        }
+        phase_noenv = {name: loader(root_dir) for name, loader, _ in phase_sections}
     phase_toml_keys = {
-        name: set(load_toml_section(toml_path, name).keys())
-        for name, _, _ in phase_sections
+        name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
     }
 
     defaults_base = kstrl_config_defaults(root_dir)
@@ -247,14 +332,18 @@ def build_config_report(
     rows: list[ConfigRow] = []
     for section, keys in SHOW_SECTIONS:
         for toml_key, field_name in keys:
-            rows.append(ConfigRow(
-                section=section,
-                key=toml_key,
-                value=format_row_value(
-                    section, toml_key, getattr(resolved_base, field_name),
-                ),
-                source=base_sources[field_name],
-            ))
+            rows.append(
+                ConfigRow(
+                    section=section,
+                    key=toml_key,
+                    value=format_row_value(
+                        section,
+                        toml_key,
+                        getattr(resolved_base, field_name),
+                    ),
+                    source=base_sources[field_name],
+                )
+            )
     for section, _, knob_fields in phase_sections:
         resolved = phase_resolved[section]
         noenv = phase_noenv[section]
@@ -267,12 +356,14 @@ def build_config_report(
                 source = "toml"
             else:
                 source = "default"
-            rows.append(ConfigRow(
-                section=section,
-                key=field_name,
-                value=format_config_value(value),
-                source=source,
-            ))
+            rows.append(
+                ConfigRow(
+                    section=section,
+                    key=field_name,
+                    value=format_config_value(value),
+                    source=source,
+                )
+            )
 
     return ConfigReport(
         root_dir=root_dir,

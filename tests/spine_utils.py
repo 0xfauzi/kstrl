@@ -39,25 +39,25 @@ def ran_components(log_path: Path) -> list[str]:
     """Component ids the logging engineer actually ran, in order."""
     if not log_path.exists():
         return []
-    return [
-        Path(line).name
-        for line in log_path.read_text().splitlines()
-        if line.strip()
-    ]
+    return [Path(line).name for line in log_path.read_text().splitlines() if line.strip()]
 
 
 def git(*args: str, cwd: Path) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    assert result.returncode == 0, (
-        f"git {' '.join(args)} failed: {result.stderr}"
-    )
+    assert result.returncode == 0, f"git {' '.join(args)} failed: {result.stderr}"
     return result.stdout.strip()
 
 
 def init_kstrl_repo(
-    root: Path, comp_ids: tuple[str, ...], with_origin: bool = False,
+    root: Path,
+    comp_ids: tuple[str, ...],
+    with_origin: bool = False,
 ) -> Path | None:
     """Real git repo shaped like a kstrl project.
 
@@ -76,19 +76,22 @@ def init_kstrl_repo(
 
     kstrl_dir = root / "scripts" / "kstrl"
     (kstrl_dir / "prompt.md").parent.mkdir(parents=True, exist_ok=True)
-    (kstrl_dir / "prompt.md").write_text(
-        "Read the PRD at $prd_path and implement one story.\n"
-    )
+    (kstrl_dir / "prompt.md").write_text("Read the PRD at $prd_path and implement one story.\n")
     for comp_id in comp_ids:
         feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
             "branchName": f"kstrl/factory/{comp_id}",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
+            "userStories": [
+                {
+                    "id": "US-001",
+                    "title": "Test",
+                    "acceptanceCriteria": ["AC1"],
+                    "priority": 1,
+                    "passes": True,
+                    "notes": "",
+                }
+            ],
         }
         (feature_dir / "prd.json").write_text(json.dumps(prd))
 
@@ -103,7 +106,9 @@ def init_kstrl_repo(
 
 def component(comp_id: str, dependencies: list[str] | None = None) -> Component:
     return Component(
-        id=comp_id, title=comp_id.upper(), description="",
+        id=comp_id,
+        title=comp_id.upper(),
+        description="",
         dependencies=dependencies or [],
         prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
         branch_name=f"kstrl/factory/{comp_id}",
@@ -112,20 +117,31 @@ def component(comp_id: str, dependencies: list[str] | None = None) -> Component:
 
 def make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="spine",
-        base_branch="main", single_pr=False, components=components,
+        version="1",
+        spec_file="spec.md",
+        project_name="spine",
+        base_branch="main",
+        single_pr=False,
+        components=components,
     )
 
 
 def factory_config(**overrides: object) -> FactoryConfig:
     config = FactoryConfig(
-        use_worktrees=True, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=True,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         merge_timeout=2.0,
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=10.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=10.0,
         ),
     )
     for key, value in overrides.items():
@@ -137,9 +153,12 @@ def base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
         prd_file=root / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0, agent_cmd=agent_cmd,
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd=agent_cmd,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
@@ -150,7 +169,8 @@ def write_stub_gh(bin_dir: Path) -> Path:
     GH_SPINE_VIEW_STATE: "MERGED" (default), "OPEN", or "CLOSED".
     """
     gh = bin_dir / "gh"
-    gh.write_text(textwrap.dedent(f"""\
+    gh.write_text(
+        textwrap.dedent(f"""\
         #!/bin/sh
         if [ "$1" = "auth" ]; then exit 0; fi
         if [ "$1" = "pr" ]; then
@@ -171,6 +191,7 @@ def write_stub_gh(bin_dir: Path) -> Path:
           esac
         fi
         exit 0
-    """))
+    """)
+    )
     gh.chmod(0o755)
     return gh

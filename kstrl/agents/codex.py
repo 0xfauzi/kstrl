@@ -73,7 +73,10 @@ class CodexAgent:
         return shutil.which("codex") is not None
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         """Run codex with prompt piped to stdin.
 
@@ -108,7 +111,10 @@ class CodexAgent:
 
         try:
             streamer = DeadlineStreamer(
-                cmd, cwd=cwd, stdin_text=prompt, timeout=timeout,
+                cmd,
+                cwd=cwd,
+                stdin_text=prompt,
+                timeout=timeout,
             )
 
             # Stream output
@@ -137,20 +143,24 @@ class CodexAgent:
                 # written; partial output is not a trustworthy final
                 # message, so leave it unset. The trailer never printed
                 # either, so only wall time is recorded.
-                self._usage_records.append(UsageRecord(
-                    duration_seconds=time.monotonic() - started,
-                    source="timeout",
-                ))
+                self._usage_records.append(
+                    UsageRecord(
+                        duration_seconds=time.monotonic() - started,
+                        source="timeout",
+                    )
+                )
                 yield timeout_message(timeout)
                 return
 
             streamer.finish()
 
-            self._usage_records.append(UsageRecord(
-                total_tokens=trailer_total,
-                duration_seconds=time.monotonic() - started,
-                source="codex-text" if trailer_total is not None else "unavailable",
-            ))
+            self._usage_records.append(
+                UsageRecord(
+                    total_tokens=trailer_total,
+                    duration_seconds=time.monotonic() - started,
+                    source="codex-text" if trailer_total is not None else "unavailable",
+                )
+            )
 
             # Read final message
             if last_msg_file and last_msg_file.exists():

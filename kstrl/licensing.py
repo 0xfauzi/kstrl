@@ -94,9 +94,7 @@ def license_from_metadata_text(text: str) -> str | None:
     expr = md.get("License-Expression")
     if expr and expr.strip():
         return expr.strip()
-    classifiers = [
-        c for c in (md.get_all("Classifier") or []) if c.startswith("License ::")
-    ]
+    classifiers = [c for c in (md.get_all("Classifier") or []) if c.startswith("License ::")]
     mapped = _map_classifiers(classifiers)
     if mapped:
         return mapped
@@ -124,7 +122,9 @@ def uv_cache_dir() -> Path | None:
     try:
         result = subprocess.run(
             ["uv", "cache", "dir"],
-            capture_output=True, text=True, timeout=10.0,
+            capture_output=True,
+            text=True,
+            timeout=10.0,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -135,7 +135,9 @@ def uv_cache_dir() -> Path | None:
 
 
 def resolve_from_uv_cache(
-    name: str, version: str, cache_dir: Path | None,
+    name: str,
+    version: str,
+    cache_dir: Path | None,
 ) -> str | None:
     """Read ``<name>-<version>.dist-info/METADATA`` from uv's cache."""
     if cache_dir is None or not cache_dir.exists():
@@ -162,7 +164,9 @@ def _default_http_get(url: str, timeout: float) -> bytes:
 
 
 def resolve_from_pypi(
-    name: str, version: str, http_get: HttpGet | None = None,
+    name: str,
+    version: str,
+    http_get: HttpGet | None = None,
 ) -> str | None:
     """Resolve a license from PyPI's JSON API (best-effort, network)."""
     fetch = http_get or _default_http_get
@@ -175,9 +179,7 @@ def resolve_from_pypi(
     expr = info.get("license_expression")
     if expr and str(expr).strip():
         return str(expr).strip()
-    classifiers = [
-        c for c in info.get("classifiers", []) if str(c).startswith("License ::")
-    ]
+    classifiers = [c for c in info.get("classifiers", []) if str(c).startswith("License ::")]
     mapped = _map_classifiers(classifiers)
     if mapped:
         return mapped

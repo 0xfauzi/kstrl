@@ -117,7 +117,8 @@ def acceptable_kinds(required_kind: str) -> frozenset[str]:
 
 
 def required_kinds_satisfied(
-    required: Iterable[str], actual: Iterable[str],
+    required: Iterable[str],
+    actual: Iterable[str],
 ) -> bool:
     """True when every required kind is present in ``actual`` up to synonyms."""
     actual_set = set(actual)
@@ -168,10 +169,7 @@ class FixtureStats:
 
     @property
     def detected(self) -> bool:
-        return (
-            self.runs_completed > 0
-            and self.consistency >= FIXTURE_DETECTION_THRESHOLD
-        )
+        return self.runs_completed > 0 and self.consistency >= FIXTURE_DETECTION_THRESHOLD
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -206,10 +204,7 @@ class Baseline:
         return grouped
 
     def role_rates(self) -> dict[str, float]:
-        return {
-            role: role_detection_rate(fixtures)
-            for role, fixtures in self.roles().items()
-        }
+        return {role: role_detection_rate(fixtures) for role, fixtures in self.roles().items()}
 
     def category_rates(self) -> dict[str, dict[str, float]]:
         """Per-role, per-category mean consistency. Unknown (None)
@@ -220,14 +215,9 @@ class Baseline:
             for fixture in fixtures:
                 if fixture.category is None:
                     continue
-                by_category.setdefault(fixture.category, []).append(
-                    fixture.consistency
-                )
+                by_category.setdefault(fixture.category, []).append(fixture.consistency)
             if by_category:
-                rates[role] = {
-                    category: _mean(values)
-                    for category, values in by_category.items()
-                }
+                rates[role] = {category: _mean(values) for category, values in by_category.items()}
         return rates
 
 
@@ -259,41 +249,39 @@ def build_report(
     for role, fixture_id in order:
         runs = grouped[(role, fixture_id)]
         errored = sum(1 for r in runs if bool(r.get("error")))
-        detected = sum(
-            1 for r in runs if bool(r.get("caught")) and not bool(r.get("error"))
-        )
+        detected = sum(1 for r in runs if bool(r.get("caught")) and not bool(r.get("error")))
         first = runs[0]
         fixture = FixtureStats(
             role=role,
             fixture_id=fixture_id,
-            category=(
-                str(first["category"]) if first.get("category") is not None else None
-            ),
+            category=(str(first["category"]) if first.get("category") is not None else None),
             cwe=str(first["cwe"]) if first.get("cwe") is not None else None,
             runs_total=len(runs),
             runs_errored=errored,
             runs_detected=detected,
         )
         stats.append(fixture)
-        fixtures_json.append({
-            "role": fixture.role,
-            "fixture_id": fixture.fixture_id,
-            "category": fixture.category,
-            "cwe": fixture.cwe,
-            "runs_total": fixture.runs_total,
-            "runs_errored": fixture.runs_errored,
-            "runs_detected": fixture.runs_detected,
-            "consistency": fixture.consistency,
-            "detected": fixture.detected,
-            "runs": [
-                {
-                    "caught": bool(r.get("caught")),
-                    "error": bool(r.get("error")),
-                    "detail": str(r.get("detail", "")),
-                }
-                for r in runs
-            ],
-        })
+        fixtures_json.append(
+            {
+                "role": fixture.role,
+                "fixture_id": fixture.fixture_id,
+                "category": fixture.category,
+                "cwe": fixture.cwe,
+                "runs_total": fixture.runs_total,
+                "runs_errored": fixture.runs_errored,
+                "runs_detected": fixture.runs_detected,
+                "consistency": fixture.consistency,
+                "detected": fixture.detected,
+                "runs": [
+                    {
+                        "caught": bool(r.get("caught")),
+                        "error": bool(r.get("error")),
+                        "detail": str(r.get("detail", "")),
+                    }
+                    for r in runs
+                ],
+            }
+        )
 
     summary: dict[str, Any] = {}
     by_role: dict[str, list[FixtureStats]] = {}
@@ -309,9 +297,7 @@ def build_report(
         by_cwe: dict[str, list[float]] = {}
         for fixture in fixtures:
             if fixture.category is not None:
-                by_category.setdefault(fixture.category, []).append(
-                    fixture.consistency
-                )
+                by_category.setdefault(fixture.category, []).append(fixture.consistency)
             if fixture.cwe is not None:
                 by_cwe.setdefault(fixture.cwe, []).append(fixture.consistency)
         if by_category:
@@ -378,32 +364,33 @@ def load_baseline(path: Path) -> Baseline:
         role = str(entry.get("role", ""))
         fixture_id = str(entry.get("fixture_id", ""))
         if not role or not fixture_id:
-            raise ValueError(
-                f"baseline {path}: fixture entry missing role/fixture_id"
-            )
+            raise ValueError(f"baseline {path}: fixture entry missing role/fixture_id")
         if format_version >= 2:
-            fixtures.append(FixtureStats(
-                role=role,
-                fixture_id=fixture_id,
-                category=(
-                    str(entry["category"])
-                    if entry.get("category") is not None else None
-                ),
-                cwe=str(entry["cwe"]) if entry.get("cwe") is not None else None,
-                runs_total=int(entry.get("runs_total", 0)),
-                runs_errored=int(entry.get("runs_errored", 0)),
-                runs_detected=int(entry.get("runs_detected", 0)),
-            ))
+            fixtures.append(
+                FixtureStats(
+                    role=role,
+                    fixture_id=fixture_id,
+                    category=(
+                        str(entry["category"]) if entry.get("category") is not None else None
+                    ),
+                    cwe=str(entry["cwe"]) if entry.get("cwe") is not None else None,
+                    runs_total=int(entry.get("runs_total", 0)),
+                    runs_errored=int(entry.get("runs_errored", 0)),
+                    runs_detected=int(entry.get("runs_detected", 0)),
+                )
+            )
         else:
-            fixtures.append(FixtureStats(
-                role=role,
-                fixture_id=fixture_id,
-                category=None,
-                cwe=None,
-                runs_total=1,
-                runs_errored=0,
-                runs_detected=1 if bool(entry.get("caught")) else 0,
-            ))
+            fixtures.append(
+                FixtureStats(
+                    role=role,
+                    fixture_id=fixture_id,
+                    category=None,
+                    cwe=None,
+                    runs_total=1,
+                    runs_errored=0,
+                    runs_detected=1 if bool(entry.get("caught")) else 0,
+                )
+            )
 
     return Baseline(
         path=path,
@@ -491,9 +478,7 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
         delta = RateDelta(role=role, category=None, old_rate=old_rate, new_rate=new_rate)
         role_deltas.append(delta)
         if new_rate is None:
-            warnings.append(
-                f"role {role!r} present in old baseline but not exercised in new"
-            )
+            warnings.append(f"role {role!r} present in old baseline but not exercised in new")
             continue
         if new_rate < min_role_rate(role):
             failures.append(
@@ -519,13 +504,15 @@ def compare_baselines(old: Baseline, new: Baseline) -> Comparison:
             old_rate = old_by_cat.get(category)
             new_rate = new_by_cat.get(category)
             delta = RateDelta(
-                role=role, category=category, old_rate=old_rate, new_rate=new_rate,
+                role=role,
+                category=category,
+                old_rate=old_rate,
+                new_rate=new_rate,
             )
             category_deltas.append(delta)
             if new_rate is None:
                 warnings.append(
-                    f"category {role}/{category} present in old baseline "
-                    "but not exercised in new"
+                    f"category {role}/{category} present in old baseline but not exercised in new"
                 )
                 continue
             if old_rate is not None and delta.drop > MAX_CATEGORY_DETECTION_DROP:
@@ -565,10 +552,8 @@ def format_comparison(comparison: Comparison) -> str:
     old, new = comparison.old, comparison.new
     lines: list[str] = [
         "calibration compare",
-        f"  old: {old.path} (model={old.model}, "
-        f"runs={old.runs_per_fixture}, ts={old.timestamp})",
-        f"  new: {new.path} (model={new.model}, "
-        f"runs={new.runs_per_fixture}, ts={new.timestamp})",
+        f"  old: {old.path} (model={old.model}, runs={old.runs_per_fixture}, ts={old.timestamp})",
+        f"  new: {new.path} (model={new.model}, runs={new.runs_per_fixture}, ts={new.timestamp})",
         "",
         "per-role detection rate (mean per-fixture consistency):",
     ]
@@ -651,9 +636,7 @@ def reviewer_override_label(
     change, which is what R7.1 wants surfaced, not hidden."""
     if not reviewer_agent_type and not reviewer_model:
         return base_model
-    reviewer = "/".join(
-        part for part in (reviewer_agent_type, reviewer_model) if part
-    )
+    reviewer = "/".join(part for part in (reviewer_agent_type, reviewer_model) if part)
     return f"{base_model}+reviewer:{reviewer}"
 
 
@@ -714,8 +697,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     compare_parser = subparsers.add_parser(
         "compare",
-        help="Diff two baseline JSONs under the codified thresholds; "
-        "exit 1 on regression.",
+        help="Diff two baseline JSONs under the codified thresholds; exit 1 on regression.",
     )
     compare_parser.add_argument("old", type=Path, help="older baseline JSON")
     compare_parser.add_argument("new", type=Path, help="newer baseline JSON")

@@ -52,14 +52,9 @@ class TestOracleClassification:
 
     def test_raises_context_is_strong(self) -> None:
         source = (
-            "import pytest\n"
-            "def test_a():\n"
-            "    with pytest.raises(ValueError):\n"
-            "        parse('')\n"
+            "import pytest\ndef test_a():\n    with pytest.raises(ValueError):\n        parse('')\n"
         )
-        assert lint_test_source("t/test_x.py", source).strength is (
-            OracleStrength.STRONG
-        )
+        assert lint_test_source("t/test_x.py", source).strength is (OracleStrength.STRONG)
 
     def test_no_assertion_at_all(self) -> None:
         report = lint_test_source("t/test_x.py", "def test_a():\n    run()\n")
@@ -69,14 +64,11 @@ class TestOracleClassification:
     def test_boolop_takes_the_strongest_operand(self) -> None:
         # `assert x is not None and x == 3` can still fail on the value.
         source = "def test_a():\n    assert r is not None and r == 3\n"
-        assert lint_test_source("t/test_x.py", source).strength is (
-            OracleStrength.STRONG
-        )
+        assert lint_test_source("t/test_x.py", source).strength is (OracleStrength.STRONG)
 
     def test_one_strong_test_carries_the_file(self) -> None:
         source = (
-            "def test_weak():\n    assert r is not None\n"
-            "def test_strong():\n    assert r == 3\n"
+            "def test_weak():\n    assert r is not None\ndef test_strong():\n    assert r == 3\n"
         )
         report = lint_test_source("t/test_x.py", source)
         assert report.strength is OracleStrength.STRONG
@@ -95,9 +87,7 @@ class TestOracleClassification:
 
     def test_skip_markers_are_collected(self) -> None:
         source = (
-            "import pytest\n"
-            "@pytest.mark.skip(reason='later')\n"
-            "def test_a():\n    assert r == 1\n"
+            "import pytest\n@pytest.mark.skip(reason='later')\ndef test_a():\n    assert r == 1\n"
         )
         assert lint_test_source("t/test_x.py", source).skipped == [
             ("test_a", "pytest.mark.skip"),
@@ -164,7 +154,8 @@ class TestOracleClassification:
     )
     def test_value_pinning_methods_are_strong(self, call: str) -> None:
         report = lint_test_source(
-            "t/test_x.py", f"def test_a(self, m):\n    {call}\n",
+            "t/test_x.py",
+            f"def test_a(self, m):\n    {call}\n",
         )
         assert report.strength is OracleStrength.STRONG, call
         assert report.without_assertions == []
@@ -182,7 +173,8 @@ class TestOracleClassification:
     )
     def test_presence_only_methods_are_weak(self, call: str) -> None:
         report = lint_test_source(
-            "t/test_x.py", f"def test_a(self, m):\n    {call}\n",
+            "t/test_x.py",
+            f"def test_a(self, m):\n    {call}\n",
         )
         assert report.strength is OracleStrength.WEAK, call
 
@@ -201,10 +193,7 @@ class TestOracleClassification:
 
     # -- P2-e: skips that are not decorators ----------------------------
     def test_unconditional_body_skip_is_collected(self) -> None:
-        source = (
-            "import pytest\n"
-            "def test_a():\n    pytest.skip('disabled')\n    assert r == 1\n"
-        )
+        source = "import pytest\ndef test_a():\n    pytest.skip('disabled')\n    assert r == 1\n"
         assert lint_test_source("t/test_x.py", source).skipped == [
             ("test_a", "pytest.skip"),
         ]
@@ -231,10 +220,7 @@ class TestOracleClassification:
         ]
 
     def test_a_test_named_after_skipping_is_not_a_skip(self) -> None:
-        source = (
-            "def test_skip_behaviour():\n"
-            "    assert runner.skip_count == 1\n"
-        )
+        source = "def test_skip_behaviour():\n    assert runner.skip_count == 1\n"
         assert lint_test_source("t/test_x.py", source).skipped == []
 
 
@@ -272,10 +258,7 @@ class TestDiffDiscipline:
         assert analyze_test_diff(diff).deleted_tests() == []
 
     def test_added_skip_is_reported(self) -> None:
-        diff = (
-            "--- a/tests/t.py\n+++ b/tests/t.py\n"
-            "+@pytest.mark.xfail(reason='flaky')\n"
-        )
+        diff = "--- a/tests/t.py\n+++ b/tests/t.py\n+@pytest.mark.xfail(reason='flaky')\n"
         skips = analyze_test_diff(diff).added_skips
         assert skips and "xfail" in skips[0][1]
 
@@ -307,12 +290,18 @@ class TestDiffDiscipline:
         (tmp_path / "tests" / "test_core.py").unlink()
         for args in (["add", "-A"], ["commit", "-m", "delete the file"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         diff = subprocess.run(
-            ["git", "diff", "main...HEAD"], cwd=tmp_path,
-            check=True, capture_output=True, text=True,
+            ["git", "diff", "main...HEAD"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout
         assert "+++ /dev/null" in diff, "fixture must be a real deletion"
         result = analyze_test_diff(diff)
@@ -377,14 +366,14 @@ class TestConfigAndLevels:
             AdequacyConfig(layer0="maybe")
 
     def test_load_reads_section(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[adequacy]\nenabled = true\nlayer0 = "block"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[adequacy]\nenabled = true\nlayer0 = "block"\n')
         config = AdequacyConfig.load(tmp_path)
         assert config.enabled is True and config.layer0 == "block"
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[adequacy]\nenabled = false\n")
         monkeypatch.setenv("KSTRL_ADEQUACY_ENABLED", "1")
@@ -415,30 +404,47 @@ class TestEvaluateLayer0:
     def test_clean_change_has_no_findings(self) -> None:
         diff = "--- a/tests/t.py\n+++ b/tests/t.py\n+    assert f() == 1\n"
         sources = {"tests/t.py": "def test_a():\n    assert f() == 1\n"}
-        assert evaluate_layer0(
-            diff, sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
-        ) == []
+        assert (
+            evaluate_layer0(
+                diff,
+                sources,
+                AdequacyConfig(enabled=True),
+                new_paths={"tests/t.py"},
+            )
+            == []
+        )
 
     def test_weak_oracle_file_is_flagged(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
         findings = evaluate_layer0(
-            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+            "",
+            sources,
+            AdequacyConfig(enabled=True),
+            new_paths={"tests/t.py"},
         )
         assert [f.kind for f in findings] == [FindingKind.WEAK_ORACLE]
 
     def test_require_strong_oracle_can_be_disabled(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
         config = AdequacyConfig(enabled=True, require_strong_oracle=False)
-        assert evaluate_layer0(
-            "", sources, config, new_paths={"tests/t.py"},
-        ) == []
+        assert (
+            evaluate_layer0(
+                "",
+                sources,
+                config,
+                new_paths={"tests/t.py"},
+            )
+            == []
+        )
 
     def test_assertionless_test_is_flagged(self) -> None:
         sources = {"tests/t.py": "def test_a():\n    run()\n"}
         kinds = {
             f.kind
             for f in evaluate_layer0(
-                "", sources, AdequacyConfig(enabled=True),
+                "",
+                sources,
+                AdequacyConfig(enabled=True),
                 new_paths={"tests/t.py"},
             )
         }
@@ -446,54 +452,62 @@ class TestEvaluateLayer0:
 
     def test_unparseable_file_produces_no_finding(self) -> None:
         sources = {"tests/t.py": "def test_a(:\n"}
-        assert evaluate_layer0(
-            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
-        ) == []
+        assert (
+            evaluate_layer0(
+                "",
+                sources,
+                AdequacyConfig(enabled=True),
+                new_paths={"tests/t.py"},
+            )
+            == []
+        )
 
     # -- P2-d: the whole-file floor is a NEW-file rule -------------------
     def test_modified_file_is_not_held_to_the_oracle_floor(self) -> None:
         # Editing a legacy file whose tests predate the gate must not
         # block: the oracles it is being judged on are not this change's.
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
-        diff = (
-            "--- a/tests/t.py\n+++ b/tests/t.py\n"
-            "+    # tidy up\n"
+        diff = "--- a/tests/t.py\n+++ b/tests/t.py\n+    # tidy up\n"
+        assert (
+            evaluate_layer0(
+                diff,
+                sources,
+                AdequacyConfig(enabled=True),
+                new_paths=set(),
+            )
+            == []
         )
-        assert evaluate_layer0(
-            diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
-        ) == []
 
     def test_modified_file_still_gets_diff_discipline(self) -> None:
-        diff = (
-            "--- a/tests/t.py\n+++ b/tests/t.py\n"
-            "-def test_gone():\n-    assert f() == 1\n"
-        )
+        diff = "--- a/tests/t.py\n+++ b/tests/t.py\n-def test_gone():\n-    assert f() == 1\n"
         sources = {"tests/t.py": "def test_a():\n    assert f() is not None\n"}
         kinds = [
-            f.kind for f in evaluate_layer0(
-                diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
+            f.kind
+            for f in evaluate_layer0(
+                diff,
+                sources,
+                AdequacyConfig(enabled=True),
+                new_paths=set(),
             )
         ]
         assert kinds == [
-            FindingKind.TEST_DELETED, FindingKind.ASSERTION_REMOVED,
+            FindingKind.TEST_DELETED,
+            FindingKind.ASSERTION_REMOVED,
         ]
 
     def test_assertionless_test_added_to_a_modified_file_is_flagged(
         self,
     ) -> None:
         # The def is new even though the file is not, so it is fair game.
-        diff = (
-            "--- a/tests/t.py\n+++ b/tests/t.py\n"
-            "+def test_new():\n+    run()\n"
-        )
+        diff = "--- a/tests/t.py\n+++ b/tests/t.py\n+def test_new():\n+    run()\n"
         sources = {
-            "tests/t.py": (
-                "def test_old():\n    build()\n"
-                "def test_new():\n    run()\n"
-            ),
+            "tests/t.py": ("def test_old():\n    build()\ndef test_new():\n    run()\n"),
         }
         findings = evaluate_layer0(
-            diff, sources, AdequacyConfig(enabled=True), new_paths=set(),
+            diff,
+            sources,
+            AdequacyConfig(enabled=True),
+            new_paths=set(),
         )
         assert [(f.kind, f.symbol) for f in findings] == [
             (FindingKind.NO_ORACLE, "test_new"),
@@ -509,7 +523,10 @@ class TestEvaluateLayer0:
             ),
         }
         findings = evaluate_layer0(
-            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+            "",
+            sources,
+            AdequacyConfig(enabled=True),
+            new_paths={"tests/t.py"},
         )
         assert [(f.kind, f.symbol) for f in findings] == [
             (FindingKind.TEST_SKIPPED, "test_a"),
@@ -524,7 +541,10 @@ class TestEvaluateLayer0:
             ),
         }
         findings = evaluate_layer0(
-            "", sources, AdequacyConfig(enabled=True), new_paths={"tests/t.py"},
+            "",
+            sources,
+            AdequacyConfig(enabled=True),
+            new_paths={"tests/t.py"},
         )
         assert [f.kind for f in findings] == [FindingKind.TEST_SKIPPED]
         assert "every test in this file" in findings[0].detail
@@ -539,10 +559,15 @@ class TestEvaluateLayer0:
                 "def test_a():\n    assert f() == 1\n"
             ),
         }
-        assert evaluate_layer0(
-            "--- a/tests/t.py\n+++ b/tests/t.py\n+    # note\n",
-            sources, AdequacyConfig(enabled=True), new_paths=set(),
-        ) == []
+        assert (
+            evaluate_layer0(
+                "--- a/tests/t.py\n+++ b/tests/t.py\n+    # note\n",
+                sources,
+                AdequacyConfig(enabled=True),
+                new_paths=set(),
+            )
+            == []
+        )
 
 
 # --------------------------------------------------------------------------
@@ -551,7 +576,11 @@ class TestEvaluateLayer0:
 def _repo(root: Path) -> None:
     def run(*args: str) -> None:
         subprocess.run(
-            ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     run("init")
@@ -572,7 +601,11 @@ def _repo(root: Path) -> None:
 def _weaken(root: Path) -> None:
     def run(*args: str) -> None:
         subprocess.run(
-            ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     (root / "tests" / "test_core.py").write_text(
@@ -589,21 +622,27 @@ class TestCheckEndToEnd:
         _repo(tmp_path)
         _weaken(tmp_path)
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=0,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=0,
         )
         assert result.passed, "advisory must not fail the check"
         assert result.findings
         assert all(f.severity == "advisory" for f in result.findings)
         categories = {f.category for f in result.findings}
-        assert "adequacy_test_deleted" in categories     # test_subs left
-        assert "adequacy_test_skipped" in categories     # xfail added
-        assert "adequacy_no_oracle" in categories        # test_new asserts nothing
+        assert "adequacy_test_deleted" in categories  # test_subs left
+        assert "adequacy_test_skipped" in categories  # xfail added
+        assert "adequacy_no_oracle" in categories  # test_new asserts nothing
 
     def test_l1_blocks_on_the_same_diff(self, tmp_path: Path) -> None:
         _repo(tmp_path)
         _weaken(tmp_path)
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=1,
         )
         assert not result.passed
         assert all(f.severity == "high" for f in result.findings)
@@ -611,25 +650,35 @@ class TestCheckEndToEnd:
     def test_clean_change_passes_with_no_findings(self, tmp_path: Path) -> None:
         _repo(tmp_path)
         subprocess.run(
-            ["git", "checkout", "-b", "clean"], cwd=tmp_path,
-            check=True, capture_output=True, text=True,
+            ["git", "checkout", "-b", "clean"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         (tmp_path / "tests" / "test_more.py").write_text(
             "def test_mul():\n    assert mul(2, 3) == 6\n"
         )
         for args in (["add", "."], ["commit", "-m", "add a real test"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=1,
         )
         assert result.passed
         assert result.findings == []
 
     def test_editing_a_weak_legacy_file_does_not_block(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # P2-d end to end: the file's tests predate the gate and its diff
         # weakens nothing, so a one-line edit must survive L1.
@@ -639,31 +688,49 @@ class TestCheckEndToEnd:
         )
         for args in (["add", "-A"], ["commit", "-m", "legacy"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         subprocess.run(
-            ["git", "checkout", "main"], cwd=tmp_path, check=True,
-            capture_output=True, text=True,
+            ["git", "checkout", "main"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         subprocess.run(
-            ["git", "merge", "feature"], cwd=tmp_path, check=True,
-            capture_output=True, text=True,
+            ["git", "merge", "feature"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         subprocess.run(
-            ["git", "checkout", "-b", "edit"], cwd=tmp_path, check=True,
-            capture_output=True, text=True,
+            ["git", "checkout", "-b", "edit"],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         (tmp_path / "tests" / "test_legacy.py").write_text(
             "def test_a():\n    # tidy up\n    assert build() is not None\n"
         )
         for args in (["add", "-A"], ["commit", "-m", "tidy"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=1,
         )
         assert result.passed, result.details
         assert result.findings == []
@@ -677,11 +744,17 @@ class TestCheckEndToEnd:
         )
         for args in (["add", "-A"], ["commit", "-m", "add a weak file"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=1,
         )
         assert not result.passed
         assert "adequacy_weak_oracle" in {f.category for f in result.findings}
@@ -691,11 +764,17 @@ class TestCheckEndToEnd:
         (tmp_path / "tests" / "test_core.py").unlink()
         for args in (["add", "-A"], ["commit", "-m", "delete the file"]):
             subprocess.run(
-                ["git", *args], cwd=tmp_path, check=True,
-                capture_output=True, text=True,
+                ["git", *args],
+                cwd=tmp_path,
+                check=True,
+                capture_output=True,
+                text=True,
             )
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True), autonomy_level=1,
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
+            autonomy_level=1,
         )
         assert not result.passed
         categories = {f.category for f in result.findings}
@@ -705,7 +784,9 @@ class TestCheckEndToEnd:
     def test_unreadable_diff_fails_closed(self, tmp_path: Path) -> None:
         # No git repo: the check must not report adequacy as satisfied.
         result = check_test_adequacy(
-            tmp_path, "main", AdequacyConfig(enabled=True),
+            tmp_path,
+            "main",
+            AdequacyConfig(enabled=True),
         )
         assert not result.passed
         assert "infrastructure error" in result.message

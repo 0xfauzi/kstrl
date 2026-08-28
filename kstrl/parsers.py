@@ -32,9 +32,7 @@ class ParsedOutput:
     failures: list[ParsedFailure] = field(default_factory=list)
     raw_summary: str = ""  # last line(s) summary from the tool
 
-    def format_for_prompt(
-        self, max_failures: int = 10, include_source: bool = True
-    ) -> list[str]:
+    def format_for_prompt(self, max_failures: int = 10, include_source: bool = True) -> list[str]:
         """Format failures as structured lines optimized for LLM consumption.
 
         Returns list of detail strings suitable for CheckResult.details.
@@ -86,9 +84,7 @@ _PYTEST_ERROR_RE = re.compile(
 )
 
 # Matches: === 3 failed, 10 passed, 1 error in 4.52s ===
-_PYTEST_SUMMARY_RE = re.compile(
-    r"=+\s+(?P<summary>.+?)\s+=+\s*$"
-)
+_PYTEST_SUMMARY_RE = re.compile(r"=+\s+(?P<summary>.+?)\s+=+\s*$")
 
 # Extract failure count from summary like "3 failed"
 _PYTEST_FAILED_COUNT_RE = re.compile(r"(\d+)\s+failed")
@@ -126,21 +122,25 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
         # Parse FAILED lines (appear in short summary or standalone)
         m = _PYTEST_FAILED_RE.match(stripped)
         if m:
-            result.failures.append(ParsedFailure(
-                file=m.group("file"),
-                rule_or_test=m.group("test"),
-                message=m.group("message") or "",
-            ))
+            result.failures.append(
+                ParsedFailure(
+                    file=m.group("file"),
+                    rule_or_test=m.group("test"),
+                    message=m.group("message") or "",
+                )
+            )
             continue
 
         # Parse ERROR lines
         m = _PYTEST_ERROR_RE.match(stripped)
         if m:
-            result.failures.append(ParsedFailure(
-                file=m.group("file"),
-                rule_or_test=m.group("test") or "collection",
-                message=m.group("message") or "",
-            ))
+            result.failures.append(
+                ParsedFailure(
+                    file=m.group("file"),
+                    rule_or_test=m.group("test") or "collection",
+                    message=m.group("message") or "",
+                )
+            )
             continue
 
         # Parse summary line
@@ -179,9 +179,7 @@ _MYPY_ERROR_RE = re.compile(
 )
 
 # Matches: Found 5 errors in 3 files (checked 12 source files)
-_MYPY_SUMMARY_RE = re.compile(
-    r"Found\s+(?P<count>\d+)\s+error[s]?\s+in\s+(?P<files>\d+)\s+file"
-)
+_MYPY_SUMMARY_RE = re.compile(r"Found\s+(?P<count>\d+)\s+error[s]?\s+in\s+(?P<files>\d+)\s+file")
 
 
 def parse_mypy_output(raw: str) -> ParsedOutput:
@@ -204,12 +202,14 @@ def parse_mypy_output(raw: str) -> ParsedOutput:
         # Parse error lines
         m = _MYPY_ERROR_RE.match(stripped)
         if m:
-            result.failures.append(ParsedFailure(
-                file=m.group("file"),
-                line=int(m.group("line")),
-                rule_or_test=m.group("code") or "",
-                message=m.group("message"),
-            ))
+            result.failures.append(
+                ParsedFailure(
+                    file=m.group("file"),
+                    line=int(m.group("line")),
+                    rule_or_test=m.group("code") or "",
+                    message=m.group("message"),
+                )
+            )
             continue
 
         # Parse summary line
@@ -240,9 +240,7 @@ _RUFF_ERROR_RE = re.compile(
 )
 
 # Matches: Found 12 errors.  /  Found 12 errors (8 fixed, 4 remaining).
-_RUFF_SUMMARY_RE = re.compile(
-    r"Found\s+(?P<count>\d+)\s+error"
-)
+_RUFF_SUMMARY_RE = re.compile(r"Found\s+(?P<count>\d+)\s+error")
 
 
 def parse_ruff_output(raw: str) -> ParsedOutput:
@@ -265,12 +263,14 @@ def parse_ruff_output(raw: str) -> ParsedOutput:
         # Parse error lines
         m = _RUFF_ERROR_RE.match(stripped)
         if m:
-            result.failures.append(ParsedFailure(
-                file=m.group("file"),
-                line=int(m.group("line")),
-                rule_or_test=m.group("rule"),
-                message=m.group("message"),
-            ))
+            result.failures.append(
+                ParsedFailure(
+                    file=m.group("file"),
+                    line=int(m.group("line")),
+                    rule_or_test=m.group("rule"),
+                    message=m.group("message"),
+                )
+            )
             continue
 
         # Parse summary line
@@ -296,9 +296,7 @@ def parse_ruff_output(raw: str) -> ParsedOutput:
 # ---------------------------------------------------------------------------
 
 
-def add_source_context(
-    failure: ParsedFailure, worktree_path: Path, context_lines: int = 3
-) -> None:
+def add_source_context(failure: ParsedFailure, worktree_path: Path, context_lines: int = 3) -> None:
     """Read the source file and add surrounding lines to the failure.
 
     Reads `context_lines` above and below the failure line.

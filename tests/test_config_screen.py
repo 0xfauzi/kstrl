@@ -23,7 +23,9 @@ from kstrl.tui.screens.home import HomeScreen
 
 def _app(tmp_path: Path, report: Any) -> KstrlTuiApp:
     return KstrlTuiApp(
-        root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05,
+        root_dir=tmp_path,
+        mode=Mode.HOME,
+        poll_interval=0.05,
         config_report=report,
     )
 
@@ -31,12 +33,14 @@ def _app(tmp_path: Path, report: Any) -> KstrlTuiApp:
 def test_display_value_only_relativizes_paths_inside_root() -> None:
     root = "/work/repo"
     assert display_value("/work/repo/src/app.py", root).plain == "src/app.py"
-    assert display_value("/work/repository/app.py", root).plain == (
-        "/work/repository/app.py"
+    assert display_value("/work/repository/app.py", root).plain == ("/work/repository/app.py")
+    assert (
+        display_value(
+            "['/work/repo/src', '/work/repository/tests']",
+            root,
+        ).plain
+        == "['src', '/work/repository/tests']"
     )
-    assert display_value(
-        "['/work/repo/src', '/work/repository/tests']", root,
-    ).plain == "['src', '/work/repository/tests']"
     assert display_value("/work/repo", root).plain == "."
 
 
@@ -51,7 +55,9 @@ def report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 class TestConfigScreen:
     async def test_rows_sources_and_hint(
-        self, tmp_path: Path, report: Any,
+        self,
+        tmp_path: Path,
+        report: Any,
     ) -> None:
         app = _app(tmp_path, report)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -67,7 +73,8 @@ class TestConfigScreen:
             assert "kstrl.toml" in hint
 
     async def test_values_render_as_literal_text(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         report = ConfigReport(
             root_dir=tmp_path,
@@ -86,7 +93,9 @@ class TestConfigScreen:
             assert value.plain == "[/bold]"
 
     async def test_filter_narrows_and_escape_clears_then_pops(
-        self, tmp_path: Path, report: Any,
+        self,
+        tmp_path: Path,
+        report: Any,
     ) -> None:
         app = _app(tmp_path, report)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -116,7 +125,9 @@ class TestConfigScreen:
             assert isinstance(app.screen, HomeScreen)
 
     async def test_refresh_refused_while_a_session_is_active(
-        self, tmp_path: Path, report: Any,
+        self,
+        tmp_path: Path,
+        report: Any,
     ) -> None:
         app = _app(tmp_path, report)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -139,7 +150,9 @@ class TestConfigScreen:
                     return self.finished
 
             context = RunContext.observe(
-                run_dir, tmp_path, owns_app_exit=False,
+                run_dir,
+                tmp_path,
+                owns_app_exit=False,
             )
             handle = FakeHandle()
             context.handle = cast(Any, handle)
@@ -167,7 +180,8 @@ class TestConfigScreen:
             assert app.config_report is refreshed
 
     async def test_missing_report_renders_guidance(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _app(tmp_path, None)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -178,7 +192,9 @@ class TestConfigScreen:
             assert "could not be resolved" in hint
 
     async def test_launcher_entry_opens_the_screen(
-        self, tmp_path: Path, report: Any,
+        self,
+        tmp_path: Path,
+        report: Any,
     ) -> None:
         app = _app(tmp_path, report)
         async with app.run_test(size=(120, 40)) as pilot:

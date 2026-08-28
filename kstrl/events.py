@@ -284,7 +284,9 @@ class BudgetCoverage(Event):
 
 
 def budget_halt_kind(
-    condition: str, ceilings: Sequence[str], ceiling: str = "",
+    condition: str,
+    ceilings: Sequence[str],
+    ceiling: str = "",
 ) -> str:
     """Classify a :class:`BudgetExceeded` payload: the ONE vocabulary.
 
@@ -839,35 +841,51 @@ class V1CompatSink:
             log.component_retrying(comp, event.attempt, event.reason)
         elif isinstance(event, VerificationResultEvent):
             log.verification_result(
-                comp, event.passed, list(event.checks), list(event.failures),
+                comp,
+                event.passed,
+                list(event.checks),
+                list(event.failures),
                 event.duration_seconds,
             )
         elif isinstance(event, ReviewResultEvent):
             log.review_result(
-                comp, event.passed, event.mode, event.fail_count,
-                event.advisory_count, event.duration_seconds,
+                comp,
+                event.passed,
+                event.mode,
+                event.fail_count,
+                event.advisory_count,
+                event.duration_seconds,
             )
         elif isinstance(event, ComponentUsage):
-            log.component_usage(comp, event.phase, {
-                "calls": event.calls,
-                "known_calls": event.known_calls,
-                "token_calls": event.token_calls,
-                "cost_calls": event.cost_calls,
-                "unreported_calls": event.unreported_calls,
-                "input_tokens": event.input_tokens,
-                "output_tokens": event.output_tokens,
-                "cache_read_tokens": event.cache_read_tokens,
-                "cache_creation_tokens": event.cache_creation_tokens,
-                "total_tokens": event.total_tokens,
-                "cost_usd": event.cost_usd,
-                "duration_seconds": event.duration_seconds,
-            })
+            log.component_usage(
+                comp,
+                event.phase,
+                {
+                    "calls": event.calls,
+                    "known_calls": event.known_calls,
+                    "token_calls": event.token_calls,
+                    "cost_calls": event.cost_calls,
+                    "unreported_calls": event.unreported_calls,
+                    "input_tokens": event.input_tokens,
+                    "output_tokens": event.output_tokens,
+                    "cache_read_tokens": event.cache_read_tokens,
+                    "cache_creation_tokens": event.cache_creation_tokens,
+                    "total_tokens": event.total_tokens,
+                    "cost_usd": event.cost_usd,
+                    "duration_seconds": event.duration_seconds,
+                },
+            )
         elif isinstance(event, BudgetExceeded):
             log.budget_exceeded(
-                comp, event.total_tokens, event.max_total_tokens,
-                cost_usd=event.cost_usd, max_cost_usd=event.max_cost_usd,
-                ceiling=event.ceiling, condition=event.condition,
-                ceilings=event.ceilings, coverage=event.coverage,
+                comp,
+                event.total_tokens,
+                event.max_total_tokens,
+                cost_usd=event.cost_usd,
+                max_cost_usd=event.max_cost_usd,
+                ceiling=event.ceiling,
+                condition=event.condition,
+                ceilings=event.ceilings,
+                coverage=event.coverage,
             )
         elif isinstance(event, BudgetCoverage):
             # Mirrored rather than left v2-only: a ceiling that counts
@@ -875,7 +893,9 @@ class V1CompatSink:
             # budget fact reaches progress.jsonl (and through it the
             # v1 `ks status` arm and the Linear ProgressSink).
             log.budget_coverage(
-                ceiling=event.ceiling, axis=event.axis, calls=event.calls,
+                ceiling=event.ceiling,
+                axis=event.axis,
+                calls=event.calls,
                 covered_calls=event.covered_calls,
                 uncovered_calls=event.uncovered_calls,
                 uncovered_tokens=event.uncovered_tokens,
@@ -884,45 +904,78 @@ class V1CompatSink:
             )
         elif isinstance(event, ContractResult):
             log.contract_result(
-                event.tier, event.passed, event.breaker, event.duration_seconds,
+                event.tier,
+                event.passed,
+                event.breaker,
+                event.duration_seconds,
             )
         elif isinstance(event, RunCompleted):
             log.factory_completed(
-                event.completed, event.failed, event.skipped,
+                event.completed,
+                event.failed,
+                event.skipped,
                 event.duration_seconds,
             )
         elif isinstance(event, MergePendingV1):
-            log.emit("merge_pending", comp, {
-                "pr_url": event.pr_url, "error": event.error,
-            })
+            log.emit(
+                "merge_pending",
+                comp,
+                {
+                    "pr_url": event.pr_url,
+                    "error": event.error,
+                },
+            )
         elif isinstance(event, PhaseSkipped):
-            log.emit("phase_skipped", comp, {
-                "phase": event.phase, "reason": event.reason,
-            })
+            log.emit(
+                "phase_skipped",
+                comp,
+                {
+                    "phase": event.phase,
+                    "reason": event.reason,
+                },
+            )
         elif isinstance(event, DiffFetchFailed):
             log.emit("diff_fetch_failed", comp, {"error": event.error})
         elif isinstance(event, DiffUnsplittable):
-            log.emit("diff_unsplittable", comp, {
-                "error": event.error, "diff_chars": event.diff_chars,
-            })
+            log.emit(
+                "diff_unsplittable",
+                comp,
+                {
+                    "error": event.error,
+                    "diff_chars": event.diff_chars,
+                },
+            )
         elif isinstance(event, DiffChunked):
-            log.emit("diff_chunked", comp, {
-                "chunks": event.chunks, "diff_chars": event.diff_chars,
-            })
+            log.emit(
+                "diff_chunked",
+                comp,
+                {
+                    "chunks": event.chunks,
+                    "diff_chars": event.diff_chars,
+                },
+            )
         elif isinstance(event, ChunkBudgetInsufficient):
-            log.emit("chunk_budget_insufficient", comp, {
-                "phase": event.phase, "chunks": event.chunks,
-                "remaining": event.remaining,
-            })
+            log.emit(
+                "chunk_budget_insufficient",
+                comp,
+                {
+                    "phase": event.phase,
+                    "chunks": event.chunks,
+                    "remaining": event.remaining,
+                },
+            )
         elif isinstance(event, AdversarialAgentSelected):
-            log.emit("adversarial_agent_selected", data={
-                "phase": event.phase,
-                "source": event.agent_source,
-                "identity": event.identity,
-                "agent_type": event.agent_type,
-                "model": event.model,
-                "homogeneous": event.homogeneous,
-            })
+            log.emit(
+                "adversarial_agent_selected",
+                data={
+                    "phase": event.phase,
+                    "source": event.agent_source,
+                    "identity": event.identity,
+                    "agent_type": event.agent_type,
+                    "model": event.model,
+                    "homogeneous": event.homogeneous,
+                },
+            )
         # v2-only events: dropped by design.
 
     def close(self) -> None:

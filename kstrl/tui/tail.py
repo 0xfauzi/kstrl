@@ -48,8 +48,7 @@ class JsonlTailer:
                 stat = os.fstat(f.fileno())
                 identity = (stat.st_dev, stat.st_ino)
                 if (
-                    self._identity is not None
-                    and identity != self._identity
+                    self._identity is not None and identity != self._identity
                 ) or stat.st_size < self._offset:
                     self._offset = 0
                     self._partial = b""
@@ -95,8 +94,7 @@ class TextTailer:
                 stat = os.fstat(f.fileno())
                 identity = (stat.st_dev, stat.st_ino)
                 if (
-                    self._identity is not None
-                    and identity != self._identity
+                    self._identity is not None and identity != self._identity
                 ) or stat.st_size < self._offset:
                     self._offset = 0
                     self._partial = b""
@@ -115,7 +113,7 @@ class TextTailer:
         # Bound a catch-up burst: the consumer is a display pane, and
         # the spike measured that unbounded transcript floods starve
         # input (finding 3) - the cap belongs at the source.
-        return decoded[-self.max_lines:]
+        return decoded[-self.max_lines :]
 
 
 class RunTailer:
@@ -149,9 +147,7 @@ class RunTailer:
         except OSError:
             return
         for entry in entries:
-            if entry.name not in self._workers and (
-                entry / "engineer.jsonl"
-            ).exists():
+            if entry.name not in self._workers and (entry / "engineer.jsonl").exists():
                 self._workers[entry.name] = JsonlTailer(
                     entry / "engineer.jsonl",
                 )

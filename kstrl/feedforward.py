@@ -14,14 +14,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Directories to always skip during tree walks
-_SKIP_DIRS = frozenset({
-    "__pycache__", "node_modules", ".git", "venv", ".venv", ".kstrl",
-})
+_SKIP_DIRS = frozenset(
+    {
+        "__pycache__",
+        "node_modules",
+        ".git",
+        "venv",
+        ".venv",
+        ".kstrl",
+    }
+)
 
 # Source file extensions we care about
-_SOURCE_EXTENSIONS = frozenset({
-    ".py", ".ts", ".js", ".tsx", ".jsx", ".go", ".rs",
-})
+_SOURCE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".ts",
+        ".js",
+        ".tsx",
+        ".jsx",
+        ".go",
+        ".rs",
+    }
+)
 
 # Max directories in module map to avoid bloat
 _MAX_MODULE_MAP_DIRS = 50
@@ -35,11 +50,11 @@ class FeedforwardConfig:
     """Configuration for feedforward context generation."""
 
     enabled: bool = True
-    module_map: bool = True          # directory tree with LOC counts
-    public_interfaces: bool = True   # extract public symbols
-    dependency_graph: bool = True    # import-based dependency analysis
-    conventions: bool = True         # extract from config files
-    max_context_tokens: int = 4000   # rough cap (estimate 4 chars per token)
+    module_map: bool = True  # directory tree with LOC counts
+    public_interfaces: bool = True  # extract public symbols
+    dependency_graph: bool = True  # import-based dependency analysis
+    conventions: bool = True  # extract from config files
+    max_context_tokens: int = 4000  # rough cap (estimate 4 chars per token)
 
     @classmethod
     def from_env(cls) -> FeedforwardConfig:
@@ -52,13 +67,17 @@ class FeedforwardConfig:
     def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
         """Load feedforward config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
         section = load_toml_section(resolve_config_file(root_dir), "feedforward")
         for key in (
-            "enabled", "module_map", "public_interfaces",
-            "dependency_graph", "conventions",
+            "enabled",
+            "module_map",
+            "public_interfaces",
+            "dependency_graph",
+            "conventions",
         ):
             if key in section:
                 setattr(config, key, bool(section[key]))
@@ -172,13 +191,9 @@ def build_module_map(root: Path) -> str:
         if depth > 0:
             dir_name = rel.name + "/"
             # Build proper indented name
-            lines.append(
-                f"{indent}{dir_name:<20s} # {file_count} files, {line_count} lines"
-            )
+            lines.append(f"{indent}{dir_name:<20s} # {file_count} files, {line_count} lines")
         else:
-            lines.append(
-                f"{dir_name:<22s} # {file_count} files, {line_count} lines"
-            )
+            lines.append(f"{dir_name:<22s} # {file_count} files, {line_count} lines")
 
     return "\n".join(lines)
 
@@ -405,7 +420,7 @@ def build_dependency_graph(root: Path) -> str:
                     continue
 
                 names = set()
-                for alias in (node.names or []):
+                for alias in node.names or []:
                     if alias.name != "*":
                         names.add(alias.name)
 
@@ -437,10 +452,7 @@ def build_dependency_graph(root: Path) -> str:
         for tgt_mod in sorted(edges[src_mod]):
             sorted_names = sorted(edges[src_mod][tgt_mod])
             if sorted_names:
-                lines.append(
-                    f"{src_mod} -> {tgt_mod} "
-                    f"(imports: {', '.join(sorted_names)})"
-                )
+                lines.append(f"{src_mod} -> {tgt_mod} (imports: {', '.join(sorted_names)})")
             else:
                 lines.append(f"{src_mod} -> {tgt_mod}")
 
@@ -785,7 +797,7 @@ def _truncate_to_budget(
             heading, content = sections[0]
             available = max_chars - header_footer_overhead - len(f"## {heading}\n") - len("\n\n")
             if available > 100:
-                truncated = content[:available - 20] + "\n... (truncated)"
+                truncated = content[: available - 20] + "\n... (truncated)"
                 sections[0] = (heading, truncated)
             else:
                 sections = []

@@ -27,8 +27,7 @@ from kstrl.tui import theme
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
 
-COLUMNS = ("", "component", "status", "phase", "try", "iter",
-           "age", "tokens", "cost")
+COLUMNS = ("", "component", "status", "phase", "try", "iter", "age", "tokens", "cost")
 
 _NUMERIC_KEYS = {"try", "iter", "age", "tokens", "cost"}
 
@@ -55,24 +54,34 @@ def _num(value: str) -> Text:
 def _phase_cell(comp: ComponentState, state: RunState) -> Text:
     if comp.status == "pending" and comp.deps:
         blockers = [
-            dep for dep in comp.deps
-            if state.components.get(dep) is None
-            or state.components[dep].status != "completed"
+            dep
+            for dep in comp.deps
+            if state.components.get(dep) is None or state.components[dep].status != "completed"
         ]
         if blockers:
             return Text(
-                f"waiting on {', '.join(blockers)}", style=theme.MUTED,
+                f"waiting on {', '.join(blockers)}",
+                style=theme.MUTED,
             )
     if not comp.phase:
         return Text(theme.EMPTY_CELL, style=theme.MUTED)
     glyph_style = theme.status_glyph(comp.status)[1]
-    return Text(comp.phase, style=glyph_style if comp.status in (
-        "running", "verifying",
-    ) else "")
+    return Text(
+        comp.phase,
+        style=glyph_style
+        if comp.status
+        in (
+            "running",
+            "verifying",
+        )
+        else "",
+    )
 
 
 def _row_values(
-    comp: ComponentState, state: RunState, now: float,
+    comp: ComponentState,
+    state: RunState,
+    now: float,
 ) -> tuple[Text | str, ...]:
     glyph, color = theme.status_glyph(comp.status)
     # Per axis, matching the meter (R8 review finding 1): one shared
@@ -93,9 +102,9 @@ def _row_values(
         _num(str(comp.iteration)) if comp.iteration else _dim(theme.EMPTY_CELL),
         _dim(age) if age == theme.EMPTY_CELL else _num(age),
         _num(f"{comp.total_tokens:,}{token_marker}")
-        if comp.total_tokens else _dim(theme.EMPTY_CELL),
-        _num(f"${comp.cost_usd:.2f}{cost_marker}")
-        if comp.cost_usd else _dim(theme.EMPTY_CELL),
+        if comp.total_tokens
+        else _dim(theme.EMPTY_CELL),
+        _num(f"${comp.cost_usd:.2f}{cost_marker}") if comp.cost_usd else _dim(theme.EMPTY_CELL),
     )
 
 
@@ -117,7 +126,9 @@ class ComponentTable(DataTable[Text | str]):
             values = _row_values(comp, state, now)
             if comp_id in self.rows:
                 for key, value in zip(
-                    ("glyph", *COLUMNS[1:]), values, strict=True,
+                    ("glyph", *COLUMNS[1:]),
+                    values,
+                    strict=True,
                 ):
                     self.update_cell(comp_id, key, value)
             else:
@@ -130,6 +141,7 @@ class ComponentTable(DataTable[Text | str]):
             if comp_id in self.rows:
                 age = _age(comp.last_event_ts, now)
                 self.update_cell(
-                    comp_id, "age",
+                    comp_id,
+                    "age",
                     _dim(age) if age == theme.EMPTY_CELL else _num(age),
                 )

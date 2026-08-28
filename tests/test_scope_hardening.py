@@ -74,7 +74,9 @@ def repo_with_protected_file(tmp_path: Path) -> Path:
     origin = tmp_path / "origin.git"
     subprocess.run(
         ["git", "clone", "-q", "--bare", str(repo), str(origin)],
-        cwd=tmp_path, check=True, capture_output=True,
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
     )
     _git(repo, "remote", "add", "origin", str(origin))
     return repo
@@ -84,7 +86,8 @@ class TestRenameAwareDiffNames:
     """H-5: rename/copy SOURCES count as changed paths."""
 
     def test_rename_move_reports_both_sides(
-        self, repo_with_protected_file: Path,
+        self,
+        repo_with_protected_file: Path,
     ) -> None:
         repo = repo_with_protected_file
         _git(repo, "checkout", "-qb", "feat")
@@ -96,7 +99,8 @@ class TestRenameAwareDiffNames:
         assert "allowed/gate.py" in names
 
     def test_rename_move_fails_diff_scope(
-        self, repo_with_protected_file: Path,
+        self,
+        repo_with_protected_file: Path,
     ) -> None:
         """The empirical H-5 repro: `git mv protected/gate.py
         allowed/gate.py` must no longer pass a scope of allowed/."""
@@ -111,7 +115,8 @@ class TestRenameAwareDiffNames:
         assert "protected/gate.py" in details
 
     def test_plain_changes_still_reported(
-        self, repo_with_protected_file: Path,
+        self,
+        repo_with_protected_file: Path,
     ) -> None:
         """Modify/add/delete statuses keep working under --name-status."""
         repo = repo_with_protected_file
@@ -124,7 +129,9 @@ class TestRenameAwareDiffNames:
 
         names = get_diff_names("main", cwd=repo)
         assert sorted(names) == [
-            "allowed/app.py", "allowed/new.py", "protected/gate.py",
+            "allowed/app.py",
+            "allowed/new.py",
+            "protected/gate.py",
         ]
 
 
@@ -136,25 +143,25 @@ class TestParseNameStatusZ:
     def test_rename_record_yields_source_and_destination(self) -> None:
         raw = "R100\0protected/gate.py\0allowed/gate.py\0"
         assert _parse_name_status_z(raw) == [
-            "protected/gate.py", "allowed/gate.py",
+            "protected/gate.py",
+            "allowed/gate.py",
         ]
 
     def test_copy_record_yields_source_and_destination(self) -> None:
         raw = "C087\0protected/gate.py\0allowed/copy.py\0"
         assert _parse_name_status_z(raw) == [
-            "protected/gate.py", "allowed/copy.py",
+            "protected/gate.py",
+            "allowed/copy.py",
         ]
 
     def test_mixed_records_dedupe_and_preserve_order(self) -> None:
-        raw = (
-            "M\0a.py\0"
-            "R100\0old/x.py\0new/x.py\0"
-            "M\0a.py\0"
-            "A\0b.py\0"
-            "D\0gone.py\0"
-        )
+        raw = "M\0a.py\0R100\0old/x.py\0new/x.py\0M\0a.py\0A\0b.py\0D\0gone.py\0"
         assert _parse_name_status_z(raw) == [
-            "a.py", "old/x.py", "new/x.py", "b.py", "gone.py",
+            "a.py",
+            "old/x.py",
+            "new/x.py",
+            "b.py",
+            "gone.py",
         ]
 
     def test_empty_output(self) -> None:
@@ -189,52 +196,64 @@ class TestAllowedPathsContentValidation:
     """H-4: the validator enforces the EXCLUDE list DECOMPOSE_PROMPT
     rule #12 promises, plus structural hazards."""
 
-    @pytest.mark.parametrize("entry", [
-        ".kstrl/",
-        ".github/",
-        "kstrl/",
-        "scripts/kstrl/",
-        "pyproject.toml",
-        "package.json",
-        "Cargo.toml",
-    ])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            ".kstrl/",
+            ".github/",
+            "kstrl/",
+            "scripts/kstrl/",
+            "pyproject.toml",
+            "package.json",
+            "Cargo.toml",
+        ],
+    )
     def test_each_prompt_exclude_entry_rejected(self, entry: str) -> None:
         errors = _validate_decompose_output(_decompose_payload([entry]))
         assert any("allowedPaths" in e and entry in e for e in errors), errors
 
-    @pytest.mark.parametrize("entry", [
-        ".kstrl",           # no trailing slash
-        "./kstrl/",      # leading ./
-        "./.kstrl",         # both
-        "scripts/kstrl",    # bare prefix, no slash
-    ])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            ".kstrl",  # no trailing slash
+            "./kstrl/",  # leading ./
+            "./.kstrl",  # both
+            "scripts/kstrl",  # bare prefix, no slash
+        ],
+    )
     def test_normalized_variants_rejected(self, entry: str) -> None:
         errors = _validate_decompose_output(_decompose_payload([entry]))
         assert any("allowedPaths" in e for e in errors), errors
 
-    @pytest.mark.parametrize("entry", [
-        "/etc/passwd",
-        "/src/",
-        "..",
-        "../sibling/",
-        "src/../../escape/",
-        "/",
-        ".",
-        "./",
-    ])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "/etc/passwd",
+            "/src/",
+            "..",
+            "../sibling/",
+            "src/../../escape/",
+            "/",
+            ".",
+            "./",
+        ],
+    )
     def test_structural_hazards_rejected(self, entry: str) -> None:
         errors = _validate_decompose_output(_decompose_payload([entry]))
         assert any("allowedPaths" in e for e in errors), errors
 
-    @pytest.mark.parametrize("entry", [
-        "src/",
-        "tests/",
-        "lib/",
-        "scripts/kstrl/feature/comp-a/",
-        "docs/pyproject.toml",   # manifest NOT at repo root
-        "packages/",             # prefix-similar to an excluded name
-        "kstrl_docs/",
-    ])
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            "src/",
+            "tests/",
+            "lib/",
+            "scripts/kstrl/feature/comp-a/",
+            "docs/pyproject.toml",  # manifest NOT at repo root
+            "packages/",  # prefix-similar to an excluded name
+            "kstrl_docs/",
+        ],
+    )
     def test_legitimate_entries_accepted(self, entry: str) -> None:
         assert _validate_allowed_path_entry(entry) is None
         assert _validate_decompose_output(_decompose_payload([entry])) == []
@@ -307,7 +326,8 @@ class TestDiffScopeFailsClosed:
 
     def test_allowed_paths_error_fails_check(self, tmp_path: Path) -> None:
         result = check_diff_scope(
-            tmp_path, "main",
+            tmp_path,
+            "main",
             allowed_paths=None,
             allowed_paths_error="PRD failed to parse: bad JSON",
         )
@@ -321,7 +341,8 @@ class TestDiffScopeFailsClosed:
         recorded) must still fail closed rather than judge scope on
         possibly-stale paths."""
         result = check_diff_scope(
-            tmp_path, "main",
+            tmp_path,
+            "main",
             allowed_paths=["src/"],
             allowed_paths_error="PRD not found: prd.json",
         )
@@ -333,29 +354,43 @@ class TestDiffScopeFailsClosed:
         assert result.message == "No scope constraints (allowed_paths not set)"
 
     def test_run_mechanical_verification_forwards_error(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         prd_path = tmp_path / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "T",
-                "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "T",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         config = VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_bad_patterns=False,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_bad_patterns=False,
             subprocess_timeout=5.0,
         )
         verification = run_mechanical_verification(
-            tmp_path, prd_path, "main", None, config,
+            tmp_path,
+            prd_path,
+            "main",
+            None,
+            config,
             allowed_paths_error="PRD failed to parse: bad JSON",
         )
-        diff_scope = next(
-            c for c in verification.checks if c.name == "diff_scope"
-        )
+        diff_scope = next(c for c in verification.checks if c.name == "diff_scope")
         assert diff_scope.passed is False
         assert verification.passed is False
 
@@ -372,18 +407,27 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlCon
         single_pr=False,
         components=[
             Component(
-                "comp-a", "Component A", "Desc",
-                [], "scripts/kstrl/feature/comp-a/prd.json",
+                "comp-a",
+                "Component A",
+                "Desc",
+                [],
+                "scripts/kstrl/feature/comp-a/prd.json",
                 "kstrl/factory/comp-a",
             ),
         ],
     )
     config = FactoryConfig(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_bad_patterns=False,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),
     )
@@ -428,7 +472,8 @@ class TestFactoryScopeSiteFailsClosed:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error
             return VerificationResult(
-                passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+                passed=True,
+                checks=[CheckResult("diff_scope", True, "ok")],
             )
 
         success = ComponentResult("comp-a", success=True, iterations=1)
@@ -465,7 +510,8 @@ class TestFactoryScopeSiteFailsClosed:
         ) -> VerificationResult:
             captured["allowed_paths_error"] = allowed_paths_error
             return VerificationResult(
-                passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+                passed=True,
+                checks=[CheckResult("diff_scope", True, "ok")],
             )
 
         success = ComponentResult("comp-a", success=True, iterations=1)
@@ -481,21 +527,31 @@ class TestFactoryScopeSiteFailsClosed:
         assert "PRD not found" in str(captured["allowed_paths_error"])
 
     def test_legacy_prd_without_allowed_paths_stays_unconstrained(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The legitimate-disable case: a PRD that loads fine but has
         no allowedPaths field must NOT produce an error."""
         manifest, config, base = _factory_fixtures(tmp_path)
         feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "T",
-                "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "T",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         captured: dict[str, Any] = {}
 
@@ -515,7 +571,8 @@ class TestFactoryScopeSiteFailsClosed:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error
             return VerificationResult(
-                passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+                passed=True,
+                checks=[CheckResult("diff_scope", True, "ok")],
             )
 
         success = ComponentResult("comp-a", success=True, iterations=1)

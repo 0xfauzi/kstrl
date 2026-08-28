@@ -178,7 +178,11 @@ class IterationContext:
         self.records.append(record)
 
     def add_review_finding(
-        self, finding: str, *, attempt: int, phase: str,
+        self,
+        finding: str,
+        *,
+        attempt: int,
+        phase: str,
         infrastructure: bool = False,
     ) -> None:
         """``phase`` is explicit: the review and security call sites both
@@ -195,7 +199,11 @@ class IterationContext:
         self._add(request, attempt, "pr")
 
     def add_verification_failure(
-        self, failure: str, *, attempt: int, phase: str = "verification",
+        self,
+        failure: str,
+        *,
+        attempt: int,
+        phase: str = "verification",
         infrastructure: bool = False,
     ) -> None:
         """``phase`` is "diff" at the one site where the diff fetch
@@ -210,19 +218,24 @@ class IterationContext:
         self._add(failure, attempt, "contract")
 
     def _add(
-        self, text: str, attempt: int, phase: str,
+        self,
+        text: str,
+        attempt: int,
+        phase: str,
         infrastructure: bool = False,
     ) -> None:
         if not text:
             return
         if phase not in PHASE_RANK:
-            raise ValueError(
-                f"unknown phase {phase!r}; expected one of {sorted(PHASE_RANK)}"
+            raise ValueError(f"unknown phase {phase!r}; expected one of {sorted(PHASE_RANK)}")
+        self.entries.append(
+            FailureEntry(
+                attempt=attempt,
+                phase=phase,
+                text=text,
+                infrastructure=infrastructure,
             )
-        self.entries.append(FailureEntry(
-            attempt=attempt, phase=phase, text=text,
-            infrastructure=infrastructure,
-        ))
+        )
 
     def _latest_attempt(self) -> int:
         """The latest attempt any evidence came from.
@@ -274,9 +287,7 @@ class IterationContext:
         # A crashed sensor proves the phases BEFORE it ran (the attempt
         # got that far), but it is not a reading of its own phase, so it
         # cannot supersede an earlier real finding there.
-        measured_ranks = {
-            PHASE_RANK[e.phase] for e in latest if not e.infrastructure
-        }
+        measured_ranks = {PHASE_RANK[e.phase] for e in latest if not e.infrastructure}
 
         for entry in self.entries:
             if entry.attempt == LEGACY_ATTEMPT:
@@ -314,19 +325,15 @@ class IterationContext:
 
         if buckets.current:
             gate = max(
-                buckets.current, key=lambda e: PHASE_RANK[e.phase],
+                buckets.current,
+                key=lambda e: PHASE_RANK[e.phase],
             ).phase
             sections.append("")
-            sections.append(
-                f"## Current failures (measured in attempt {measured}, {gate})"
-            )
+            sections.append(f"## Current failures (measured in attempt {measured}, {gate})")
             sections.extend(e.text for e in buckets.current)
 
         if buckets.not_remeasured:
-            dated = [
-                e.attempt for e in buckets.not_remeasured
-                if e.attempt > LEGACY_ATTEMPT
-            ]
+            dated = [e.attempt for e in buckets.not_remeasured if e.attempt > LEGACY_ATTEMPT]
             heading = "## Not re-measured"
             if dated:
                 heading += f" since attempt {min(dated)}"
@@ -334,16 +341,19 @@ class IterationContext:
             sections.append(heading)
             for entry in buckets.not_remeasured:
                 label = (
-                    "attempt unknown" if entry.attempt == LEGACY_ATTEMPT
+                    "attempt unknown"
+                    if entry.attempt == LEGACY_ATTEMPT
                     else f"attempt {entry.attempt}"
                 )
                 sections.append(f"({label}, {entry.phase}) {entry.text}")
 
         if buckets.resolved:
-            names = ", ".join(sorted(
-                {e.phase for e in buckets.resolved},
-                key=lambda p: PHASE_RANK[p],
-            ))
+            names = ", ".join(
+                sorted(
+                    {e.phase for e in buckets.resolved},
+                    key=lambda p: PHASE_RANK[p],
+                )
+            )
             sections.append("")
             sections.append("## Resolved or superseded")
             sections.append(
@@ -353,15 +363,11 @@ class IterationContext:
             )
 
         if self.records:
-            measured_attempts = {
-                e.attempt for e in self.entries if e.attempt > LEGACY_ATTEMPT
-            }
+            measured_attempts = {e.attempt for e in self.entries if e.attempt > LEGACY_ATTEMPT}
             sections.append("")
             sections.append("## Attempt history")
             for position, rec in enumerate(self.records, start=1):
-                attempt = (
-                    rec.attempt if rec.attempt > LEGACY_ATTEMPT else position
-                )
+                attempt = rec.attempt if rec.attempt > LEGACY_ATTEMPT else position
                 status = "completed" if rec.success else "FAILED"
                 line = f"- Attempt {attempt}: {status}"
                 # The record's error is the failure text itself on the
@@ -421,25 +427,33 @@ class IterationContext:
         parsed = json.loads(data)
         ctx = cls()
         for rec_data in parsed.get("records", []):
-            ctx.records.append(IterationRecord(
-                iteration=rec_data["iteration"],
-                success=rec_data["success"],
-                error=rec_data.get("error"),
-                summary=rec_data.get("summary", ""),
-                attempt=rec_data.get("attempt", LEGACY_ATTEMPT),
-            ))
+            ctx.records.append(
+                IterationRecord(
+                    iteration=rec_data["iteration"],
+                    success=rec_data["success"],
+                    error=rec_data.get("error"),
+                    summary=rec_data.get("summary", ""),
+                    attempt=rec_data.get("attempt", LEGACY_ATTEMPT),
+                )
+            )
         if "entries" in parsed:
             for entry_data in parsed["entries"]:
-                ctx.entries.append(FailureEntry(
-                    attempt=entry_data["attempt"],
-                    phase=entry_data["phase"],
-                    text=entry_data["text"],
-                    infrastructure=entry_data.get("infrastructure", False),
-                ))
+                ctx.entries.append(
+                    FailureEntry(
+                        attempt=entry_data["attempt"],
+                        phase=entry_data["phase"],
+                        text=entry_data["text"],
+                        infrastructure=entry_data.get("infrastructure", False),
+                    )
+                )
             return ctx
         for list_name, phase in _LEGACY_LIST_PHASE.items():
             for text in parsed.get(list_name, []):
-                ctx.entries.append(FailureEntry(
-                    attempt=LEGACY_ATTEMPT, phase=phase, text=text,
-                ))
+                ctx.entries.append(
+                    FailureEntry(
+                        attempt=LEGACY_ATTEMPT,
+                        phase=phase,
+                        text=text,
+                    )
+                )
         return ctx

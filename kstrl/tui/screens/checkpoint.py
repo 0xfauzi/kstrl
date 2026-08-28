@@ -35,10 +35,7 @@ def _findings_block(title: str, findings: tuple[object, ...]) -> Text:
         severity = getattr(finding, "severity", "")
         location = getattr(finding, "location", "")
         explanation = getattr(finding, "explanation", "")
-        style = (
-            theme.ERROR if severity in ("critical", "high", "fail")
-            else theme.WARNING
-        )
+        style = theme.ERROR if severity in ("critical", "high", "fail") else theme.WARNING
         text.append(f"  [{severity}] ", style=f"bold {style}")
         text.append(f"{location}  ", style="bold")
         text.append(f"{explanation}\n")
@@ -81,25 +78,34 @@ class CheckpointModal(ModalScreen[int | None]):
                     )
                 yield Static(summary, id="checkpoint-summary")
                 with VerticalScroll(id="checkpoint-body"):
-                    yield Static(_findings_block(
-                        "Review findings", ctx.review_findings,
-                    ))
-                    yield Static(_findings_block(
-                        "Security findings", ctx.security_findings,
-                    ))
+                    yield Static(
+                        _findings_block(
+                            "Review findings",
+                            ctx.review_findings,
+                        )
+                    )
+                    yield Static(
+                        _findings_block(
+                            "Security findings",
+                            ctx.security_findings,
+                        )
+                    )
                     diff_text = Text()
                     diff_text.append("diff\n", style=f"bold {theme.ACCENT}")
                     if ctx.diff_excerpt:
                         for line in ctx.diff_excerpt.splitlines():
                             style = (
-                                theme.SUCCESS if line.startswith("+")
-                                else theme.ERROR if line.startswith("-")
+                                theme.SUCCESS
+                                if line.startswith("+")
+                                else theme.ERROR
+                                if line.startswith("-")
                                 else theme.MUTED
                             )
                             diff_text.append(line + "\n", style=style)
                     else:
                         diff_text.append(
-                            "  (no diff captured)\n", style=theme.MUTED,
+                            "  (no diff captured)\n",
+                            style=theme.MUTED,
                         )
                     yield Static(diff_text)
             with Horizontal(id="checkpoint-buttons"):
@@ -108,7 +114,8 @@ class CheckpointModal(ModalScreen[int | None]):
                 for index, option in enumerate(self.request.options):
                     label = option.split(" (")[0]
                     yield Button(
-                        f"{label} ({index + 1})", id=f"choice-{index}",
+                        f"{label} ({index + 1})",
+                        id=f"choice-{index}",
                     )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

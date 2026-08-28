@@ -114,16 +114,13 @@ class KstrlTuiApp(App[int]):
         # HOME opens and closes contexts as the user navigates. Named
         # run_context because App.run() is Textual's entry point.
         self.run_context: RunContext | None = (
-            RunContext.observe(run_dir, root_dir)
-            if run_dir is not None else None
+            RunContext.observe(run_dir, root_dir) if run_dir is not None else None
         )
         self._pending_prompts: dict[str, PromptRequest] = {}
         self._stopping = False
         # D6 launch seam: injectable so Pilot tests drive a fake
         # session; the default binds the real substrate lazily.
-        self.start_session: Callable[[object], object] = (
-            self._default_start_session
-        )
+        self.start_session: Callable[[object], object] = self._default_start_session
         self._session: object | None = None
         self._session_notified = False
 
@@ -138,17 +135,11 @@ class KstrlTuiApp(App[int]):
     # Compat views for screens and tests that duck-pull off the app.
     @property
     def store(self) -> StateStore | None:
-        return (
-            self.run_context.store
-            if self.run_context is not None else None
-        )
+        return self.run_context.store if self.run_context is not None else None
 
     @property
     def run_dir(self) -> Path | None:
-        return (
-            self.run_context.run_dir
-            if self.run_context is not None else None
-        )
+        return self.run_context.run_dir if self.run_context is not None else None
 
     def on_mount(self) -> None:
         self.register_theme(KSTRL_THEME)
@@ -159,9 +150,11 @@ class KstrlTuiApp(App[int]):
             for screen in self.screen_factory():
                 self.push_screen(screen)
         else:
-            self.push_screen(OverviewScreen(
-                observe_only=self.mode is Mode.DASH,
-            ))
+            self.push_screen(
+                OverviewScreen(
+                    observe_only=self.mode is Mode.DASH,
+                )
+            )
         self.set_interval(self.poll_interval, self._poll)
         self.set_interval(1.0, self._tick_ages)
         # Off the poll timer on purpose. safe_mode_reasons stats the
@@ -169,7 +162,8 @@ class KstrlTuiApp(App[int]):
         # and reads a run's whole events.jsonl; poll runs at 5Hz and a
         # long stream would hitch every frame. Slow, and on a thread.
         self.set_interval(
-            SAFE_MODE_INTERVAL_SECONDS, self._check_safe_mode,
+            SAFE_MODE_INTERVAL_SECONDS,
+            self._check_safe_mode,
         )
         self._check_safe_mode()
         if self.mode is Mode.HOME:
@@ -184,7 +178,8 @@ class KstrlTuiApp(App[int]):
                 # NOT_PROMPTED - exactly the non-TTY semantics.
                 self.channel.attach(
                     lambda req: self.call_from_thread(
-                        self.on_prompt_request, req,
+                        self.on_prompt_request,
+                        req,
                     ),
                 )
         self._poll()  # catch-up fold before the first frame settles
@@ -231,11 +226,13 @@ class KstrlTuiApp(App[int]):
         except Exception as exc:  # noqa: BLE001 - see above
             from kstrl.safemode import SafeModeReason
 
-            reasons = [SafeModeReason(
-                source="control_dir",
-                detail=f"could not evaluate safe mode: {exc}",
-                recovery=RECOVERY["control_dir"],
-            )]
+            reasons = [
+                SafeModeReason(
+                    source="control_dir",
+                    detail=f"could not evaluate safe mode: {exc}",
+                    recovery=RECOVERY["control_dir"],
+                )
+            ]
         finally:
             self._safe_mode_running = False
         self.post_message(SafeModeChecked(reasons, seq=seq))
@@ -292,7 +289,8 @@ class KstrlTuiApp(App[int]):
             if component_id:
                 if ready:
                     screen.refresh_state(  # type: ignore[attr-defined]
-                        run.store.state, run.store.manifest(),
+                        run.store.state,
+                        run.store.manifest(),
                     )
             else:
                 screen.post_message(StateChanged(run.store.state))
@@ -318,7 +316,8 @@ class KstrlTuiApp(App[int]):
     # -- navigation ----------------------------------------------------------
 
     def on_data_table_row_selected(
-        self, event: DataTable.RowSelected,
+        self,
+        event: DataTable.RowSelected,
     ) -> None:
         if not isinstance(self.screen, OverviewScreen):
             return
@@ -339,7 +338,8 @@ class KstrlTuiApp(App[int]):
         if isinstance(below, HomeScreen) and self.session_in_flight():
             # The run owns its board while in flight; q offers a stop.
             self.notify(
-                "run in flight - press q to stop it", severity="warning",
+                "run in flight - press q to stop it",
+                severity="warning",
             )
             return
         self.pop_screen()
@@ -356,7 +356,9 @@ class KstrlTuiApp(App[int]):
         from kstrl.tui.dispatch import initial_screens_for_kind
 
         self.run_context = RunContext.observe(
-            run_dir, self.root_dir, owns_app_exit=False,
+            run_dir,
+            self.root_dir,
+            owns_app_exit=False,
         )
         for screen in initial_screens_for_kind(kind, observe_only=True)():
             self.push_screen(screen)
@@ -413,7 +415,9 @@ class KstrlTuiApp(App[int]):
 
         sess = cast(Any, session)
         run = RunContext.observe(
-            Path(sess.run_dir), self.root_dir, owns_app_exit=False,
+            Path(sess.run_dir),
+            self.root_dir,
+            owns_app_exit=False,
         )
         run.channel = sess.channel
         run.handle = sess.handle
@@ -429,7 +433,8 @@ class KstrlTuiApp(App[int]):
             self.pop_screen()
         kind = str(getattr(session, "kind", "factory"))
         for screen in initial_screens_for_kind(
-            kind, observe_only=False,
+            kind,
+            observe_only=False,
         )():
             self.push_screen(screen)
         self._poll()
@@ -522,8 +527,7 @@ class KstrlTuiApp(App[int]):
         if self.mode is Mode.HOME:
             if bool(getattr(self.screen, "navigation_blocked", False)):
                 self.notify(
-                    "this operation is still writing files; wait for it "
-                    "to finish",
+                    "this operation is still writing files; wait for it to finish",
                     severity="warning",
                 )
                 return
@@ -545,8 +549,7 @@ class KstrlTuiApp(App[int]):
                     self._stopping = True
                     session_handle.stop.request("stopped from TUI")
                     self.notify(
-                        "shutting down - the board stays up until the "
-                        "run finishes",
+                        "shutting down - the board stays up until the run finishes",
                         timeout=10,
                     )
 

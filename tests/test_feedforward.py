@@ -109,10 +109,7 @@ class TestBuildDependencyGraph:
         (pkg / "__init__.py").write_text("")
         (pkg / "models.py").write_text("class Foo:\n    pass\n")
         (pkg / "service.py").write_text(
-            "from mypkg.models import Foo\n"
-            "\n"
-            "def run(f: Foo) -> None:\n"
-            "    pass\n"
+            "from mypkg.models import Foo\n\ndef run(f: Foo) -> None:\n    pass\n"
         )
 
         result = build_dependency_graph(tmp_path)
@@ -139,14 +136,14 @@ class TestExtractConventions:
     def test_extract_conventions_pyproject(self, tmp_path: Path) -> None:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text(
-            '[project]\n'
+            "[project]\n"
             'requires-python = ">=3.11"\n'
-            '\n'
-            '[tool.ruff]\n'
-            'line-length = 100\n'
+            "\n"
+            "[tool.ruff]\n"
+            "line-length = 100\n"
             'target-version = "py311"\n'
-            '\n'
-            '[tool.ruff.lint]\n'
+            "\n"
+            "[tool.ruff.lint]\n"
             'select = ["E", "F", "W"]\n'
         )
 
@@ -178,18 +175,11 @@ class TestBuildFeedforwardContext:
         pkg.mkdir()
         (pkg / "__init__.py").write_text("")
         (pkg / "core.py").write_text(
-            "class Widget:\n"
-            "    pass\n"
-            "\n"
-            "def build_widget(name: str) -> Widget:\n"
-            "    pass\n"
+            "class Widget:\n    pass\n\ndef build_widget(name: str) -> Widget:\n    pass\n"
         )
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\n'
-            'requires-python = ">=3.11"\n'
-        )
+        pyproject.write_text('[project]\nrequires-python = ">=3.11"\n')
 
         config = FeedforwardConfig(enabled=True)
         result = build_feedforward_context(tmp_path, config)

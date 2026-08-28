@@ -141,16 +141,30 @@ class TestSummarizeEvents:
         new = ProgressLog(path, run_id="run-new")
         new.factory_started("demo", 2)
         new.component_started("comp-a")
-        new.component_usage("comp-a", "engineer", {
-            "calls": 3, "known_calls": 2, "unreported_calls": 1,
-            "total_tokens": 1200, "cost_usd": 0.25,
-        })
+        new.component_usage(
+            "comp-a",
+            "engineer",
+            {
+                "calls": 3,
+                "known_calls": 2,
+                "unreported_calls": 1,
+                "total_tokens": 1200,
+                "cost_usd": 0.25,
+            },
+        )
         new.verification_result("comp-a", passed=True)
         new.review_result("comp-a", passed=True, mode="hard")
-        new.component_usage("comp-a", "review", {
-            "calls": 1, "known_calls": 1, "unreported_calls": 0,
-            "total_tokens": 300, "cost_usd": 0.05,
-        })
+        new.component_usage(
+            "comp-a",
+            "review",
+            {
+                "calls": 1,
+                "known_calls": 1,
+                "unreported_calls": 0,
+                "total_tokens": 300,
+                "cost_usd": 0.05,
+            },
+        )
         new.component_retrying("comp-b", attempt=2, reason="tests failed")
         return path
 
@@ -165,7 +179,8 @@ class TestSummarizeEvents:
         assert comp_a.last_event == "component_usage"
 
     def test_usage_totals_accumulate_across_phases(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         events = read_progress_events(self._two_run_log(tmp_path))
         comp_a = summarize_events(events, "run-new").components["comp-a"]

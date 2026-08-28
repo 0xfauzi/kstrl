@@ -332,15 +332,14 @@ class CeilingCoverage:
         noun = "price" if self.axis == "cost" else "token count"
         bounded = (
             f"{self.ceiling} bounds only those"
-            if self.ceiling else f"the {self.axis} total covers only those"
+            if self.ceiling
+            else f"the {self.axis} total covers only those"
         )
         parts: list[str] = []
         for role in self.roles:
             if role.covered:
                 continue
-            detail = (
-                f"{role.role} ({role.uncovered_calls} of {role.calls} call(s)"
-            )
+            detail = f"{role.role} ({role.uncovered_calls} of {role.calls} call(s)"
             # Only a SILENT role's tokens are attributable to uncovered
             # calls; a partially covered role's aggregate does not say
             # which call carried the figure.
@@ -396,9 +395,7 @@ def usage_coverage(
     for role_name in sorted(by_role):
         totals = by_role[role_name]
         role_covered = (
-            totals.cost_calls if axis == "cost"
-            else totals.token_calls if axis == "token"
-            else 0
+            totals.cost_calls if axis == "cost" else totals.token_calls if axis == "token" else 0
         )
         role = RoleCoverage(
             role=role_name,
@@ -464,7 +461,10 @@ class Agent(Protocol):
         ...
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         """Run agent with prompt, yielding output lines.
 

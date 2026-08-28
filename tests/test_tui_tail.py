@@ -74,7 +74,8 @@ class TestJsonlTailer:
 
         assert chunk.truncated is True
         assert [e.to_dict()["data"]["text"] for e in chunk.events] == [
-            "fresh-one", "fresh-two",
+            "fresh-one",
+            "fresh-two",
         ]
 
     def test_invalid_json_line_skipped(self, tmp_path: Path) -> None:
@@ -118,13 +119,16 @@ class TestTextTailer:
 
 class TestRunTailer:
     def test_streamed_run_arrives_incrementally_and_folds(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Step the fake run; every poll's events fold incrementally to
         the same state a one-shot fold produces (fold == tailed apply)."""
         run_id = "factory-20260720-130000.000000-t"
         stepper = stream_fake_run(
-            tmp_path, FakeRunSpec(components=2), run_id=run_id,
+            tmp_path,
+            FakeRunSpec(components=2),
+            run_id=run_id,
         )
         tailer = RunTailer(tmp_path / ".kstrl" / "runs" / run_id)
         state = reducer.RunState()
@@ -146,7 +150,8 @@ class TestRunTailer:
         run_id = "factory-20260720-140000.000000-t"
         run_dir = tmp_path / ".kstrl" / "runs" / run_id
         bus = ev.EventBus(
-            ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_id,
+            ev.JsonlSink(run_dir / "events.jsonl"),
+            run_id=run_id,
         )
         tailer = RunTailer(run_dir)
         bus.emit(ev.ComponentStarted(component="late"))
@@ -156,7 +161,9 @@ class TestRunTailer:
         paths = ev.RunPaths.for_run(tmp_path, run_id)
         worker = ev.EventBus(
             ev.JsonlSink(paths.engineer_events("late")),
-            run_id=run_id, source="worker", component="late",
+            run_id=run_id,
+            source="worker",
+            component="late",
         )
         worker.emit(ev.IterationStarted(iteration=1, max_iterations=3))
         events = tailer.poll_events().events
@@ -173,7 +180,8 @@ class TestRunTailer:
         assert any(e.source == "worker" for e in events)
 
     def test_worker_replacement_rebuilds_complete_snapshot(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
         tailer = RunTailer(run_dir)
@@ -182,8 +190,10 @@ class TestRunTailer:
         worker_path = run_dir / "components" / "comp-a" / "engineer.jsonl"
         replacement = tmp_path / "replacement.jsonl"
         replacement_bus = ev.EventBus(
-            ev.JsonlSink(replacement), run_id=run_dir.name,
-            source="worker", component="comp-a",
+            ev.JsonlSink(replacement),
+            run_id=run_dir.name,
+            source="worker",
+            component="comp-a",
         )
         replacement_bus.emit(ev.Log(text="replacement worker stream"))
         replacement_bus.emit(ev.Log(text="second replacement event"))
@@ -194,8 +204,8 @@ class TestRunTailer:
         assert rebuilt.truncated is True
         assert any(isinstance(event, ev.RunStarted) for event in rebuilt.events)
         replacement_logs = [
-            event for event in rebuilt.events
-            if isinstance(event, ev.Log)
-            and event.text.startswith("replacement")
+            event
+            for event in rebuilt.events
+            if isinstance(event, ev.Log) and event.text.startswith("replacement")
         ]
         assert len(replacement_logs) == 1

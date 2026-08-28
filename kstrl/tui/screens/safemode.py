@@ -42,7 +42,8 @@ def render_body(reasons: list[SafeModeReason] | None) -> Text:
     text = Text()
     if reasons is None:
         text.append(
-            "The background check has not reported yet.", style=theme.MUTED,
+            "The background check has not reported yet.",
+            style=theme.MUTED,
         )
         return text
     if not reasons:
@@ -84,7 +85,8 @@ class SafeModePanel(ModalScreen[None]):
         with dialog:
             with VerticalScroll(id="safemode-scroll"):
                 yield Static(
-                    render_body(self._panel_reasons), id="safemode-body",
+                    render_body(self._panel_reasons),
+                    id="safemode-body",
                 )
 
     def on_mount(self) -> None:
@@ -102,7 +104,8 @@ class SafeModePanel(ModalScreen[None]):
                 self.update_safe_mode(cached)
 
     def update_safe_mode(
-        self, reasons: list[SafeModeReason] | None,
+        self,
+        reasons: list[SafeModeReason] | None,
     ) -> None:
         """Duck-typed contract the app broadcasts to every live screen."""
         self._panel_reasons = reasons

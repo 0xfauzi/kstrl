@@ -51,8 +51,15 @@ def sweep() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for state, table in (("main", COMMANDS), ("after_237", AFTER_237)):
         for cmd, reaches, standalone in table:
-            rows.append({"state": state, "command": cmd, "reaches": reaches,
-                         "standalone": standalone, "verdict": classify(reaches, standalone)})
+            rows.append(
+                {
+                    "state": state,
+                    "command": cmd,
+                    "reaches": reaches,
+                    "standalone": standalone,
+                    "verdict": classify(reaches, standalone),
+                }
+            )
     return rows
 
 
@@ -73,20 +80,29 @@ def main() -> None:
     for state, table in (("main", COMMANDS), ("after_237", AFTER_237)):
         reach = [c for c, r, _ in table if r]
         direct = [c for c, _, s in table if s]
-        print(f"{state}: {len(table)} commands; {len(reach)} reach the sensors through a "
-              f"factory run {reach}; {len(direct)} run them directly {direct}")
+        print(
+            f"{state}: {len(table)} commands; {len(reach)} reach the sensors through a "
+            f"factory run {reach}; {len(direct)} run them directly {direct}"
+        )
     repo = Path(__file__).resolve().parents[4]
     if (repo / "kstrl").is_dir():
         hits = live_callers(repo)
         print(f"live grep, call sites of run_mechanical_verification( under kstrl/: {hits}")
         in_cli = [h for h in hits if h.startswith("kstrl/cli.py")]
-        print("claim: on this tree no command calls the sensor directly ->",
-              "holds" if not in_cli else f"fails ({in_cli})")
-    print("claim: the design doc's count (fourteen) matches the help output ->",
-          "holds" if len(COMMANDS) == 14 else f"fails (measured {len(COMMANDS)})")
-    print("claim: zero commands run a sensor standalone on main; one after PR #237 ->",
-          "holds" if sum(1 for _, _, s in COMMANDS if s) == 0
-          and sum(1 for _, _, s in AFTER_237 if s) == 1 else "fails")
+        print(
+            "claim: on this tree no command calls the sensor directly ->",
+            "holds" if not in_cli else f"fails ({in_cli})",
+        )
+    print(
+        "claim: the design doc's count (fourteen) matches the help output ->",
+        "holds" if len(COMMANDS) == 14 else f"fails (measured {len(COMMANDS)})",
+    )
+    print(
+        "claim: zero commands run a sensor standalone on main; one after PR #237 ->",
+        "holds"
+        if sum(1 for _, _, s in COMMANDS if s) == 0 and sum(1 for _, _, s in AFTER_237 if s) == 1
+        else "fails",
+    )
 
 
 if __name__ == "__main__":

@@ -149,17 +149,29 @@ def fake_streamer(monkeypatch: pytest.MonkeyPatch) -> type[_FakeStreamer]:
 
 class TestAdapterRun:
     def test_contract_lines_consumed_display_passed_through(
-        self, fake_streamer: type[_FakeStreamer], tmp_path: Path,
+        self,
+        fake_streamer: type[_FakeStreamer],
+        tmp_path: Path,
     ) -> None:
         fake_streamer.scripted_lines = [
             "[Write] hello.py",
-            USAGE_PREFIX + json.dumps({
-                "input_tokens": 1, "output_tokens": 2, "cost_usd": 0.01,
-            }),
+            USAGE_PREFIX
+            + json.dumps(
+                {
+                    "input_tokens": 1,
+                    "output_tokens": 2,
+                    "cost_usd": 0.01,
+                }
+            ),
             "done text",
-            RESULT_PREFIX + json.dumps({
-                "subtype": "success", "is_error": False, "result": "final answer",
-            }),
+            RESULT_PREFIX
+            + json.dumps(
+                {
+                    "subtype": "success",
+                    "is_error": False,
+                    "result": "final answer",
+                }
+            ),
         ]
         agent = ClaudeSdkAgent(model="haiku")
         lines = list(agent.run("prompt", cwd=tmp_path, timeout=60.0))
@@ -173,7 +185,9 @@ class TestAdapterRun:
         assert record.source == "claude-sdk-typed"
 
     def test_timeout_yields_timeout_line_and_record(
-        self, fake_streamer: type[_FakeStreamer], tmp_path: Path,
+        self,
+        fake_streamer: type[_FakeStreamer],
+        tmp_path: Path,
     ) -> None:
         fake_streamer.scripted_lines = ["partial output"]
         fake_streamer.timed_out_flag = True
@@ -186,11 +200,16 @@ class TestAdapterRun:
         assert agent.final_message is None
 
     def test_stdin_config_document(
-        self, fake_streamer: type[_FakeStreamer], tmp_path: Path,
+        self,
+        fake_streamer: type[_FakeStreamer],
+        tmp_path: Path,
     ) -> None:
         sandbox = SandboxConfig(enabled=True, allow_network=False)
         agent = ClaudeSdkAgent(
-            model="haiku", effort="low", sandbox=sandbox, max_budget_usd=2.5,
+            model="haiku",
+            effort="low",
+            sandbox=sandbox,
+            max_budget_usd=2.5,
         )
         list(agent.run("the prompt", cwd=tmp_path, timeout=5.0))
 
@@ -212,7 +231,9 @@ class TestAdapterRun:
         assert call["cmd"][1:] == ["-u", "-m", "kstrl.agents.sdk_runner"]
 
     def test_no_sandbox_keeps_bypass_permissions(
-        self, fake_streamer: type[_FakeStreamer], tmp_path: Path,
+        self,
+        fake_streamer: type[_FakeStreamer],
+        tmp_path: Path,
     ) -> None:
         agent = ClaudeSdkAgent()
         list(agent.run("p", cwd=tmp_path))
@@ -239,11 +260,13 @@ class TestWorkspaceGuard:
         workspace = tmp_path / "ws"
         workspace.mkdir()
         guard = sdk_runner._make_workspace_guard(workspace)
-        out = asyncio.run(guard(
-            {"tool_name": "Write",
-             "tool_input": {"file_path": str(tmp_path / "outside.py")}},
-            None, None,
-        ))
+        out = asyncio.run(
+            guard(
+                {"tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "outside.py")}},
+                None,
+                None,
+            )
+        )
         specific = out["hookSpecificOutput"]
         assert specific["hookEventName"] == "PreToolUse"
         assert specific["permissionDecision"] == "deny"
@@ -251,26 +274,34 @@ class TestWorkspaceGuard:
 
     def test_inside_path_is_allowed(self, tmp_path: Path) -> None:
         guard = sdk_runner._make_workspace_guard(tmp_path)
-        out = asyncio.run(guard(
-            {"tool_name": "Edit",
-             "tool_input": {"file_path": str(tmp_path / "src" / "a.py")}},
-            None, None,
-        ))
+        out = asyncio.run(
+            guard(
+                {"tool_name": "Edit", "tool_input": {"file_path": str(tmp_path / "src" / "a.py")}},
+                None,
+                None,
+            )
+        )
         assert out == {}
 
     def test_relative_path_resolves_against_workspace(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         guard = sdk_runner._make_workspace_guard(tmp_path)
-        inside = asyncio.run(guard(
-            {"tool_name": "Write", "tool_input": {"file_path": "src/a.py"}},
-            None, None,
-        ))
-        escape = asyncio.run(guard(
-            {"tool_name": "Write",
-             "tool_input": {"file_path": "../escape.py"}},
-            None, None,
-        ))
+        inside = asyncio.run(
+            guard(
+                {"tool_name": "Write", "tool_input": {"file_path": "src/a.py"}},
+                None,
+                None,
+            )
+        )
+        escape = asyncio.run(
+            guard(
+                {"tool_name": "Write", "tool_input": {"file_path": "../escape.py"}},
+                None,
+                None,
+            )
+        )
         assert inside == {}
         assert escape["hookSpecificOutput"]["permissionDecision"] == "deny"
 
@@ -283,48 +314,62 @@ class TestWorkspaceGuard:
         guard = sdk_runner._make_workspace_guard(
             Path(os.path.realpath(workspace)),
         )
-        out = asyncio.run(guard(
-            {"tool_name": "Write",
-             "tool_input": {"file_path": str(workspace / "link" / "x.py")}},
-            None, None,
-        ))
+        out = asyncio.run(
+            guard(
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": str(workspace / "link" / "x.py")},
+                },
+                None,
+                None,
+            )
+        )
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
     def test_unguarded_tool_passes(self, tmp_path: Path) -> None:
         guard = sdk_runner._make_workspace_guard(tmp_path)
-        out = asyncio.run(guard(
-            {"tool_name": "Bash", "tool_input": {"command": "touch /tmp/x"}},
-            None, None,
-        ))
+        out = asyncio.run(
+            guard(
+                {"tool_name": "Bash", "tool_input": {"command": "touch /tmp/x"}},
+                None,
+                None,
+            )
+        )
         assert out == {}
 
     def test_notebook_path_key_is_guarded(self, tmp_path: Path) -> None:
         guard = sdk_runner._make_workspace_guard(tmp_path)
-        out = asyncio.run(guard(
-            {"tool_name": "NotebookEdit",
-             "tool_input": {"notebook_path": "/etc/nb.ipynb"}},
-            None, None,
-        ))
+        out = asyncio.run(
+            guard(
+                {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": "/etc/nb.ipynb"}},
+                None,
+                None,
+            )
+        )
         assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 class TestRunnerConfigAndEmission:
     def test_read_config_rejects_non_object(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("sys.stdin", io.StringIO("[1, 2]"))
         with pytest.raises(ValueError):
             sdk_runner._read_config()
 
     def test_read_config_requires_prompt(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
         with pytest.raises(ValueError):
             sdk_runner._read_config()
 
     def test_main_reports_bad_config_line(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setattr("sys.stdin", io.StringIO("{not json"))
         code = sdk_runner.main()
@@ -333,7 +378,8 @@ class TestRunnerConfigAndEmission:
         assert "ERROR: invalid sdk-runner config" in out
 
     def test_result_message_emits_both_contract_records(
-        self, capsys: pytest.CaptureFixture[str],
+        self,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         sdk = pytest.importorskip("claude_agent_sdk")
         message = sdk.ResultMessage(
@@ -359,13 +405,13 @@ class TestRunnerConfigAndEmission:
         result_lines = [ln for ln in out_lines if ln.startswith(RESULT_PREFIX)]
         assert len(usage_lines) == 1 and len(result_lines) == 1
 
-        usage = json.loads(usage_lines[0][len(USAGE_PREFIX):])
+        usage = json.loads(usage_lines[0][len(USAGE_PREFIX) :])
         assert usage["input_tokens"] == 7
         assert usage["cache_read_tokens"] == 13
         assert usage["cache_creation_tokens"] == 17
         assert usage["cost_usd"] == 0.0262
 
-        result = json.loads(result_lines[0][len(RESULT_PREFIX):])
+        result = json.loads(result_lines[0][len(RESULT_PREFIX) :])
         assert result["subtype"] == "success"
         assert result["is_error"] is False
         assert result["result"] == "all done"
@@ -380,7 +426,9 @@ class TestRunnerConfigAndEmission:
 class TestRegistration:
     def test_get_agent_dispatches_claude_sdk(self) -> None:
         agent = get_agent(
-            agent_type="claude-sdk", model="haiku", max_budget_usd=1.0,
+            agent_type="claude-sdk",
+            model="haiku",
+            max_budget_usd=1.0,
         )
         assert isinstance(agent, ClaudeSdkAgent)
         assert agent.name == "claude-sdk (haiku)"
@@ -398,25 +446,36 @@ class TestRegistration:
         assert _CROSS_FAMILY_TYPE[family] == "codex"
 
     def test_identity_keeps_sdk_label(self) -> None:
-        assert _agent_identity(
-            None, "claude-sdk", "haiku", claude_available=True,
-        ) == "claude-sdk (haiku)"
-        assert _agent_identity(
-            None, "claude-sdk", None, claude_available=True,
-        ) == "claude-sdk"
+        assert (
+            _agent_identity(
+                None,
+                "claude-sdk",
+                "haiku",
+                claude_available=True,
+            )
+            == "claude-sdk (haiku)"
+        )
+        assert (
+            _agent_identity(
+                None,
+                "claude-sdk",
+                None,
+                claude_available=True,
+            )
+            == "claude-sdk"
+        )
 
     def test_toml_budget_usd(self, tmp_path: Path) -> None:
         toml = tmp_path / "kstrl.toml"
-        toml.write_text(
-            '[agent]\ntype = "claude-sdk"\nbudget_usd = 2.5\n'
-        )
+        toml.write_text('[agent]\ntype = "claude-sdk"\nbudget_usd = 2.5\n')
         config = KstrlConfig()
         _apply_toml_overrides(config, toml, tmp_path)
         assert config.agent_type == "claude-sdk"
         assert config.agent_budget_usd == 2.5
 
     def test_toml_budget_rejects_bool_and_nonpositive(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         toml = tmp_path / "kstrl.toml"
         toml.write_text("[agent]\nbudget_usd = true\n")
@@ -428,7 +487,9 @@ class TestRegistration:
         assert config.agent_budget_usd is None
 
     def test_env_budget_overrides(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", "3.75")
         config = KstrlConfig()
@@ -436,7 +497,9 @@ class TestRegistration:
         assert config.agent_budget_usd == 3.75
 
     def test_env_budget_ignores_garbage(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", "lots")
         config = KstrlConfig()
@@ -444,24 +507,30 @@ class TestRegistration:
         assert config.agent_budget_usd is None
 
     def test_preflight_accepts_available_sdk(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl import cli
 
         monkeypatch.setattr(
-            cli.ClaudeSdkAgent, "is_available", classmethod(lambda _: True),
+            cli.ClaudeSdkAgent,
+            "is_available",
+            classmethod(lambda _: True),
         )
         canonical, error, hint = cli._agent_preflight(None, "claude-sdk")
         assert canonical == "claude-sdk"
         assert error is None and hint is None
 
     def test_preflight_names_missing_sdk_extra(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl import cli
 
         monkeypatch.setattr(
-            cli.ClaudeSdkAgent, "is_available", classmethod(lambda _: False),
+            cli.ClaudeSdkAgent,
+            "is_available",
+            classmethod(lambda _: False),
         )
         canonical, error, hint = cli._agent_preflight(None, "claude-sdk")
         assert error is not None and "claude-agent-sdk" in error

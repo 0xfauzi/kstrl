@@ -15,6 +15,7 @@ Subcommands:
 
 Stdlib only.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,16 +44,28 @@ def _percentiles(xs: list[float]) -> dict[str, float]:
     }
 
 
-def run_latency_cell(poll: float, rate: float, duration: float, out_root: Path,
-                     components: int = 4) -> dict[str, object]:
+def run_latency_cell(
+    poll: float, rate: float, duration: float, out_root: Path, components: int = 4
+) -> dict[str, object]:
     sys.path.insert(0, str(SPIKE_DIR))
     from tailer import RunTailer  # noqa: E402
 
     cell_dir = out_root / f"cell-p{poll}-r{rate}"
     cell_dir.mkdir(parents=True, exist_ok=True)
-    gen_cmd = [sys.executable, str(SPIKE_DIR / "fake_run.py"), "--out", str(cell_dir),
-               "--components", str(components), "--rate", str(rate),
-               "--duration", str(duration), "--torn-tail-every", "50"]
+    gen_cmd = [
+        sys.executable,
+        str(SPIKE_DIR / "fake_run.py"),
+        "--out",
+        str(cell_dir),
+        "--components",
+        str(components),
+        "--rate",
+        str(rate),
+        "--duration",
+        str(duration),
+        "--torn-tail-every",
+        "50",
+    ]
     if rate > 1:
         gen_cmd.append("--churn")  # sustained storm: components never finish
     gen = subprocess.Popen(gen_cmd, stdout=subprocess.PIPE, text=True)
@@ -107,11 +120,16 @@ def run_latency_cell(poll: float, rate: float, duration: float, out_root: Path,
     # Latency of records that existed before the first poll is not
     # meaningful for steady-state; keep them, they only appear in max.
     return {
-        "poll_s": poll, "rate": rate, "duration_s": duration,
-        "records_written": written, "records_seen": seen,
+        "poll_s": poll,
+        "rate": rate,
+        "duration_s": duration,
+        "records_written": written,
+        "records_seen": seen,
         "latency_ms": _percentiles(latencies),
-        "tailer_cpu_s": round(cpu, 3), "wall_s": round(wall, 1),
-        "tailer_cpu_pct": round(100 * cpu / wall, 2), "polls": polls,
+        "tailer_cpu_s": round(cpu, 3),
+        "wall_s": round(wall, 1),
+        "tailer_cpu_pct": round(100 * cpu / wall, 2),
+        "polls": polls,
     }
 
 
@@ -135,7 +153,8 @@ def cmd_monitor(args: argparse.Namespace) -> None:
     while True:
         p = subprocess.run(
             ["ps", "-o", "%cpu=,rss=", "-p", str(args.pid)],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if p.returncode != 0:
             break
@@ -147,13 +166,17 @@ def cmd_monitor(args: argparse.Namespace) -> None:
             break
     if samples:
         cpus = sorted(s[0] for s in samples)
-        print(json.dumps({
-            "samples": len(samples),
-            "cpu_pct_p50": cpus[len(cpus) // 2],
-            "cpu_pct_p95": cpus[min(len(cpus) - 1, int(0.95 * len(cpus)))],
-            "cpu_pct_max": cpus[-1],
-            "rss_kb_max": max(s[1] for s in samples),
-        }))
+        print(
+            json.dumps(
+                {
+                    "samples": len(samples),
+                    "cpu_pct_p50": cpus[len(cpus) // 2],
+                    "cpu_pct_p95": cpus[min(len(cpus) - 1, int(0.95 * len(cpus)))],
+                    "cpu_pct_max": cpus[-1],
+                    "rss_kb_max": max(s[1] for s in samples),
+                }
+            )
+        )
     else:
         print(json.dumps({"samples": 0}))
 
@@ -171,16 +194,25 @@ def cmd_pty_app(args: argparse.Namespace) -> None:
     if args.no_gen:
         gen = subprocess.Popen(["sleep", "0"])
     else:
-        gen_cmd = [sys.executable, str(SPIKE_DIR / "fake_run.py"), "--out", str(out_dir),
-                   "--components", "3", "--rate", str(args.rate), "--duration", "600"]
+        gen_cmd = [
+            sys.executable,
+            str(SPIKE_DIR / "fake_run.py"),
+            "--out",
+            str(out_dir),
+            "--components",
+            "3",
+            "--rate",
+            str(args.rate),
+            "--duration",
+            "600",
+        ]
         if args.rate > 1:
             gen_cmd.append("--churn")
         gen = subprocess.Popen(gen_cmd, stdout=subprocess.DEVNULL)
     time.sleep(1.0)
     master, slave = pty.openpty()
     env = dict(os.environ, TERM="xterm-256color", COLUMNS="120", LINES="40")
-    cmd = [sys.executable, str(SPIKE_DIR / "app.py"), "--root", str(out_dir),
-           "--poll", "0.2"]
+    cmd = [sys.executable, str(SPIKE_DIR / "app.py"), "--root", str(out_dir), "--poll", "0.2"]
     if args.chatter:
         cmd.append("--chatter")
     if args.subproc_chatter:
@@ -191,8 +223,9 @@ def cmd_pty_app(args: argparse.Namespace) -> None:
         cmd.append("--no-transcript")
     if args.crash_after:
         cmd += ["--crash-after", str(args.crash_after)]
-    app = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave, env=env,
-                           start_new_session=True)
+    app = subprocess.Popen(
+        cmd, stdin=slave, stdout=slave, stderr=slave, env=env, start_new_session=True
+    )
     os.close(slave)
     captured = b""
     end = time.monotonic() + args.run_for
@@ -208,8 +241,9 @@ def cmd_pty_app(args: argparse.Namespace) -> None:
             break
         if time.monotonic() - last_sample >= 1.0:
             last_sample = time.monotonic()
-            ps = subprocess.run(["ps", "-o", "%cpu=", "-p", str(app.pid)],
-                                capture_output=True, text=True)
+            ps = subprocess.run(
+                ["ps", "-o", "%cpu=", "-p", str(app.pid)], capture_output=True, text=True
+            )
             if ps.returncode == 0 and ps.stdout.strip():
                 cpu_samples.append(float(ps.stdout.strip()))
         time.sleep(0.05)
@@ -277,16 +311,18 @@ def main() -> None:
 
     pp = sub.add_parser("pty-app")
     pp.add_argument("--out", required=True)
-    pp.add_argument("--action", required=True,
-                    choices=["sigint", "sigterm", "key-q", "ctrl-c-key", "crash"])
+    pp.add_argument(
+        "--action", required=True, choices=["sigint", "sigterm", "key-q", "ctrl-c-key", "crash"]
+    )
     pp.add_argument("--rate", type=float, default=1.0)
     pp.add_argument("--run-for", type=float, default=8.0)
     pp.add_argument("--chatter", action="store_true")
     pp.add_argument("--subproc-chatter", action="store_true")
     pp.add_argument("--prompt-demo", action="store_true")
     pp.add_argument("--crash-after", type=float, default=0.0)
-    pp.add_argument("--no-gen", action="store_true",
-                    help="tail an existing (finished) run - the idle case")
+    pp.add_argument(
+        "--no-gen", action="store_true", help="tail an existing (finished) run - the idle case"
+    )
     pp.add_argument("--no-transcript", action="store_true")
     pp.set_defaults(func=cmd_pty_app)
 

@@ -27,7 +27,9 @@ class StubAgent:
     usage_records: list[Any] = []
 
     def run(
-        self, prompt: str, cwd: Path | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
         timeout: float | None = None,
     ) -> Iterator[str]:
         yield "understanding the codebase"
@@ -35,23 +37,36 @@ class StubAgent:
 
 
 def _fake_run_loop(
-    record: dict[str, Any], exit_code: int = 0, *,
+    record: dict[str, Any],
+    exit_code: int = 0,
+    *,
     completed: bool | None = None,
 ) -> Any:
     def fake(
-        config: Any, ui: Any, agent: Any, cwd: Any = None,
-        context_prefix: Any = None, timeouts: Any = None,
-        breaker_config: Any = None, *, bus: Any = None,
-        interaction: Any = None, stop_check: Any = None,
+        config: Any,
+        ui: Any,
+        agent: Any,
+        cwd: Any = None,
+        context_prefix: Any = None,
+        timeouts: Any = None,
+        breaker_config: Any = None,
+        *,
+        bus: Any = None,
+        interaction: Any = None,
+        stop_check: Any = None,
     ) -> LoopResult:
         record.update(bus=bus, interaction=interaction, agent=agent)
         for _ in agent.run("prompt", cwd):
             pass
         if bus is not None:
             bus.emit(ev.IterationStarted(iteration=1, max_iterations=3))
-            bus.emit(ev.IterationCompleted(
-                iteration=1, duration_seconds=5.0, completed=exit_code == 0,
-            ))
+            bus.emit(
+                ev.IterationCompleted(
+                    iteration=1,
+                    duration_seconds=5.0,
+                    completed=exit_code == 0,
+                )
+            )
         return LoopResult(
             completed=exit_code == 0 if completed is None else completed,
             iterations=1,
@@ -69,7 +84,8 @@ def _invoke_understand(tmp_path: Path, record: dict[str, Any]) -> Any:
         patch("kstrl.cli.run_loop", _fake_run_loop(record)),
     ):
         return runner.invoke(
-            cli, ["understand", "--root", str(tmp_path)],
+            cli,
+            ["understand", "--root", str(tmp_path)],
             catch_exceptions=False,
         )
 
@@ -117,7 +133,8 @@ class TestUnderstandRun:
             patch("kstrl.cli.run_loop", _fake_run_loop({}, exit_code=1)),
         ):
             result = runner.invoke(
-                cli, ["understand", "--root", str(tmp_path)],
+                cli,
+                ["understand", "--root", str(tmp_path)],
                 catch_exceptions=False,
             )
         assert result.exit_code == 1
@@ -140,7 +157,8 @@ class TestUnderstandRun:
             ),
         ):
             result = runner.invoke(
-                cli, ["understand", "--root", str(tmp_path)],
+                cli,
+                ["understand", "--root", str(tmp_path)],
                 catch_exceptions=False,
             )
         assert result.exit_code == 0
@@ -162,7 +180,8 @@ class TestUnderstandRun:
             patch("kstrl.cli.run_loop", explode),
         ):
             result = runner.invoke(
-                cli, ["understand", "--root", str(tmp_path)],
+                cli,
+                ["understand", "--root", str(tmp_path)],
             )
         assert result.exit_code == 1
         assert isinstance(result.exception, RuntimeError)
@@ -174,7 +193,9 @@ class TestUnderstandRun:
         assert comp.phase_history[-1]["passed"] is False
 
     def test_disabled_gating_leaves_no_run_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "0")
         record: dict[str, Any] = {}
@@ -183,7 +204,9 @@ class TestUnderstandRun:
         assert not (tmp_path / ".kstrl" / "runs").exists()
 
     def test_terminal_output_identical_with_recording_off(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Recording is silent: the plain terminal bytes must not
         change when the run dir is being written."""
@@ -195,11 +218,14 @@ class TestUnderstandRun:
 
 class TestUnderstandDashboard:
     async def test_component_screen_renders_understand_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_understand_run(tmp_path)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.DASH,
             poll_interval=0.05,
             screen_factory=lambda: [
                 OverviewScreen(observe_only=True),

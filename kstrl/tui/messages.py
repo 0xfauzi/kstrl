@@ -43,7 +43,9 @@ class SummariesReady(Message):
     """The home worker finished folding run summaries (D2)."""
 
     def __init__(
-        self, summaries: dict[str, RunSummary], stats: HomeStats,
+        self,
+        summaries: dict[str, RunSummary],
+        stats: HomeStats,
     ) -> None:
         super().__init__()
         self.summaries = summaries

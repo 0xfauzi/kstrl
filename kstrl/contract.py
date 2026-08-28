@@ -101,6 +101,7 @@ class ContractConfig:
     def load(cls, root_dir: Path | None = None) -> ContractConfig:
         """Load contract config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -218,7 +219,9 @@ def _remove_temp_worktree(
 
 
 def _run_tests(
-    cwd: Path, test_command: str, timeout: float,
+    cwd: Path,
+    test_command: str,
+    timeout: float,
 ) -> tuple[bool, str]:
     """Run test suite and return (passed, output)."""
     try:
@@ -256,7 +259,9 @@ def bisect_breaker(
         Component ID of the breaker, or None if unclear.
     """
     worktree_path, _error = _create_temp_worktree(
-        base_branch, root_dir, "bisect",
+        base_branch,
+        root_dir,
+        "bisect",
     )
     if worktree_path is None:
         return None
@@ -313,7 +318,9 @@ def run_tier_check(
     )
 
     worktree_path, error = _create_temp_worktree(
-        manifest.base_branch, root_dir, f"tier{tier_index}",
+        manifest.base_branch,
+        root_dir,
+        f"tier{tier_index}",
     )
     if worktree_path is None:
         return ContractResult(
@@ -351,7 +358,9 @@ def run_tier_check(
 
         # Run tests
         passed, output = _run_tests(
-            worktree_path, config.test_command, config.timeout,
+            worktree_path,
+            config.test_command,
+            config.timeout,
         )
 
         if passed:
@@ -376,8 +385,12 @@ def run_tier_check(
 
     # Bisect to find breaker (fresh temp worktree of its own)
     breaker = bisect_breaker(
-        manifest.base_branch, prior_branches, tier_branches,
-        root_dir, config.test_command, config.timeout,
+        manifest.base_branch,
+        prior_branches,
+        tier_branches,
+        root_dir,
+        config.test_command,
+        config.timeout,
     )
 
     if breaker:
@@ -419,7 +432,9 @@ def run_integrated_base_check(
     )
 
     worktree_path, error = _create_temp_worktree(
-        manifest.base_branch, root_dir, "integrated",
+        manifest.base_branch,
+        root_dir,
+        "integrated",
     )
     if worktree_path is None:
         return ContractResult(
@@ -432,7 +447,9 @@ def run_integrated_base_check(
 
     try:
         passed, output = _run_tests(
-            worktree_path, config.test_command, config.timeout,
+            worktree_path,
+            config.test_command,
+            config.timeout,
         )
     finally:
         _remove_temp_worktree(worktree_path, root_dir)
@@ -478,9 +495,7 @@ def run_contract_testing(
 
     ui.section("Contract Testing")
 
-    completed_ids = {
-        c.id for c in manifest.components if c.status == "completed"
-    }
+    completed_ids = {c.id for c in manifest.components if c.status == "completed"}
 
     if not completed_ids:
         ui.info("  No completed components, skipping contract tests")
@@ -489,13 +504,14 @@ def run_contract_testing(
     tiers = compute_tiers(manifest)
 
     if components_merged:
-        ordered_ids = [
-            comp_id for tier in tiers for comp_id in tier
-            if comp_id in completed_ids
-        ]
+        ordered_ids = [comp_id for tier in tiers for comp_id in tier if comp_id in completed_ids]
         return [
             run_integrated_base_check(
-                manifest, ordered_ids, root_dir, config, ui,
+                manifest,
+                ordered_ids,
+                root_dir,
+                config,
+                ui,
             )
         ]
 

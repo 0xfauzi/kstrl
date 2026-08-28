@@ -39,7 +39,9 @@ class TestUiInteractionChannel:
         assert channel.can_prompt() is False
         response = channel.request(_req(default=1))
         assert response == PromptResponse(
-            request_id=response.request_id, choice=1, answered=False,
+            request_id=response.request_id,
+            choice=1,
+            answered=False,
         )
 
     def test_delegates_to_ui_choose(self) -> None:
@@ -47,8 +49,7 @@ class TestUiInteractionChannel:
             def can_prompt(self) -> bool:
                 return True
 
-            def choose(self, header: str, options: list[str],
-                       default: int = 0) -> int:
+            def choose(self, header: str, options: list[str], default: int = 0) -> int:
                 return 1
 
         channel = UiInteractionChannel(FakeUI(no_color=True, file=io.StringIO()))
@@ -61,8 +62,7 @@ class TestUiInteractionChannel:
             def can_prompt(self) -> bool:
                 return True
 
-            def choose(self, header: str, options: list[str],
-                       default: int = 0) -> int:
+            def choose(self, header: str, options: list[str], default: int = 0) -> int:
                 return len(options)
 
         channel = UiInteractionChannel(
@@ -198,10 +198,15 @@ class TestCheckpointContext:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(
-            root, create_prs=True, pause_before_pr_merge=True,
+            root,
+            create_prs=True,
+            pause_before_pr_merge=True,
         )
         result = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_usage(1234),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_usage(1234),
         )
 
         requests: list[PromptRequest] = []
@@ -213,17 +218,28 @@ class TestCheckpointContext:
             def request(self, req: PromptRequest) -> PromptResponse:
                 requests.append(req)
                 return PromptResponse(
-                    request_id=req.request_id, choice=0, answered=True,
+                    request_id=req.request_id,
+                    choice=0,
+                    answered=True,
                 )
 
-        with patch(
-            "kstrl.factory._run_component", return_value=result,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="+real diff\n",
-        ), patch("kstrl.pr.is_gh_available", return_value=False):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=result,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="+real diff\n",
+            ),
+            patch("kstrl.pr.is_gh_available", return_value=False),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
                 interaction=Recorder(),
             )
 
@@ -256,20 +272,36 @@ class TestEvolveApplyNonTty:
             "# X\n\n## Agent Learnings\n\n### Conventions\n",
         )
         journal = EvolutionJournal(EvolutionConfig())
-        proposals = journal.propose_improvements([FailurePattern(
-            description="linter failure 'S608' in 2/4 components",
-            frequency=2, total_components=4,
-            affected_components=["a", "b"], check_name="linter",
-            error_signature="S608", category="verification",
-        )])
+        proposals = journal.propose_improvements(
+            [
+                FailurePattern(
+                    description="linter failure 'S608' in 2/4 components",
+                    frequency=2,
+                    total_components=4,
+                    affected_components=["a", "b"],
+                    check_name="linter",
+                    error_signature="S608",
+                    category="verification",
+                )
+            ]
+        )
         journal.save_proposals(proposals, tmp_path / ".kstrl" / "proposals")
 
         # No input= at all: stdin is at EOF, which used to raise
         # click.Abort out of the raw click.confirm.
-        result = CliRunner().invoke(cli, [
-            "evolve", "--apply", "PROP-001", "--root", str(tmp_path),
-            "--ui", "plain", "--no-color",
-        ])
+        result = CliRunner().invoke(
+            cli,
+            [
+                "evolve",
+                "--apply",
+                "PROP-001",
+                "--root",
+                str(tmp_path),
+                "--ui",
+                "plain",
+                "--no-color",
+            ],
+        )
         assert result.exit_code == 0, result.output
         assert "not applied (declined)" in result.output
         assert "S608" not in (tmp_path / "CLAUDE.md").read_text()

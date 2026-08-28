@@ -34,16 +34,16 @@ class FactoryLaunchForm(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield ContextBar(
-            "launch", "everything unset resolves env > kstrl.toml > defaults",
+            "launch",
+            "everything unset resolves env > kstrl.toml > defaults",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="launch-root")
             panel.border_title = "launch factory"
             with panel:
                 yield FormField(
-                "manifest",
-                Input(id="factory-manifest",
-                      placeholder="scripts/kstrl/manifest.json"),
+                    "manifest",
+                    Input(id="factory-manifest", placeholder="scripts/kstrl/manifest.json"),
                     hint="decompose writes it",
                 )
                 yield FormField(
@@ -54,14 +54,14 @@ class FactoryLaunchForm(Screen[None]):
                     "review mode",
                     Select(
                         [(m, m) for m in REVIEW_MODES if m],
-                        allow_blank=True, prompt="from config",
+                        allow_blank=True,
+                        prompt="from config",
                         id="factory-review",
                     ),
                 )
                 yield FormErrors(id="launch-errors")
                 with Horizontal(classes="wizard-buttons"):
-                    yield Button("start factory", id="factory-start",
-                                 classes="default-choice")
+                    yield Button("start factory", id="factory-start", classes="default-choice")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -70,9 +70,13 @@ class FactoryLaunchForm(Screen[None]):
         root_dir = getattr(self.app, "root_dir", Path.cwd())
         raw_manifest = self.query_one("#factory-manifest", Input).value.strip()
         manifest_path = (
-            (root_dir / raw_manifest if not Path(raw_manifest).is_absolute()
-             else Path(raw_manifest))
-            if raw_manifest else None
+            (
+                root_dir / raw_manifest
+                if not Path(raw_manifest).is_absolute()
+                else Path(raw_manifest)
+            )
+            if raw_manifest
+            else None
         )
         raw_parallel = self.query_one("#factory-parallel", Input).value.strip()
         errors: list[str] = []
@@ -88,8 +92,7 @@ class FactoryLaunchForm(Screen[None]):
         default_manifest = root_dir / "scripts" / "kstrl" / "manifest.json"
         if not (manifest_path or default_manifest).exists():
             errors.append(
-                f"no manifest at {manifest_path or default_manifest} - "
-                "decompose a spec first",
+                f"no manifest at {manifest_path or default_manifest} - decompose a spec first",
             )
         self.query_one(FormErrors).show(errors)
         if errors:
@@ -98,11 +101,13 @@ class FactoryLaunchForm(Screen[None]):
         review = review_value if isinstance(review_value, str) else ""
         launch = getattr(self.app, "launch", None)
         if launch is not None:
-            launch(FactoryLaunch(
-                manifest_path=manifest_path,
-                max_parallel=max_parallel,
-                review_mode=review or None,
-            ))
+            launch(
+                FactoryLaunch(
+                    manifest_path=manifest_path,
+                    max_parallel=max_parallel,
+                    review_mode=review or None,
+                )
+            )
 
 
 class DecomposeLaunchForm(Screen[None]):
@@ -110,7 +115,8 @@ class DecomposeLaunchForm(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield ContextBar(
-            "launch", "everything unset resolves env > kstrl.toml > defaults",
+            "launch",
+            "everything unset resolves env > kstrl.toml > defaults",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="launch-root")
@@ -118,8 +124,7 @@ class DecomposeLaunchForm(Screen[None]):
             with panel:
                 yield FormField(
                     "spec",
-                    Input(id="decompose-spec",
-                          placeholder="scripts/kstrl/spec.md"),
+                    Input(id="decompose-spec", placeholder="scripts/kstrl/spec.md"),
                     hint="markdown or SpecKit dir",
                 )
                 yield FormField(
@@ -137,8 +142,7 @@ class DecomposeLaunchForm(Screen[None]):
                 )
                 yield FormErrors(id="launch-errors")
                 with Horizontal(classes="wizard-buttons"):
-                    yield Button("start decompose", id="decompose-start",
-                                 classes="default-choice")
+                    yield Button("start decompose", id="decompose-start", classes="default-choice")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -147,14 +151,13 @@ class DecomposeLaunchForm(Screen[None]):
         root_dir = getattr(self.app, "root_dir", Path.cwd())
         raw_spec = self.query_one("#decompose-spec", Input).value.strip()
         project = self.query_one("#decompose-project", Input).value.strip()
-        branch = (
-            self.query_one("#decompose-branch", Input).value.strip() or "main"
-        )
+        branch = self.query_one("#decompose-branch", Input).value.strip() or "main"
         errors: list[str] = []
         spec_path = (
-            Path(raw_spec) if Path(raw_spec).is_absolute()
-            else root_dir / raw_spec
-        ) if raw_spec else None
+            (Path(raw_spec) if Path(raw_spec).is_absolute() else root_dir / raw_spec)
+            if raw_spec
+            else None
+        )
         if spec_path is None:
             errors.append("spec path is required")
         elif not spec_path.exists():
@@ -166,9 +169,11 @@ class DecomposeLaunchForm(Screen[None]):
             return
         launch = getattr(self.app, "launch", None)
         if launch is not None:
-            launch(DecomposeLaunch(
-                spec_path=spec_path,
-                project_name=project,
-                base_branch=branch,
-                single_pr=self.query_one("#decompose-single-pr", Switch).value,
-            ))
+            launch(
+                DecomposeLaunch(
+                    spec_path=spec_path,
+                    project_name=project,
+                    base_branch=branch,
+                    single_pr=self.query_one("#decompose-single-pr", Switch).value,
+                )
+            )

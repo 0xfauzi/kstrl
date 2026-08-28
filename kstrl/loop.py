@@ -287,19 +287,27 @@ class LoopBudget:
         # evaluation; over time whichever is reached first halts.
         total_tokens = self.prior_total_tokens + loop_usage.total_tokens
         if self.token_enabled and total_tokens >= self.max_total_tokens:
-            return BudgetHalt("breached", ("max_total_tokens",), (
-                f"token budget exceeded: {total_tokens} total tokens "
-                f"recorded >= max_total_tokens ({self.max_total_tokens}); "
-                "halting the engineer loop instead of starting another "
-                "iteration (R8)"
-            ))
+            return BudgetHalt(
+                "breached",
+                ("max_total_tokens",),
+                (
+                    f"token budget exceeded: {total_tokens} total tokens "
+                    f"recorded >= max_total_tokens ({self.max_total_tokens}); "
+                    "halting the engineer loop instead of starting another "
+                    "iteration (R8)"
+                ),
+            )
         total_cost = self.prior_cost_usd + loop_usage.cost_usd
         if self.cost_enabled and total_cost >= self.max_cost_usd:
-            return BudgetHalt("breached", ("max_cost_usd",), (
-                f"cost budget exceeded: ${total_cost:.6f} recorded >= "
-                f"max_cost_usd (${self.max_cost_usd}); halting the engineer "
-                "loop instead of starting another iteration (R8)"
-            ))
+            return BudgetHalt(
+                "breached",
+                ("max_cost_usd",),
+                (
+                    f"cost budget exceeded: ${total_cost:.6f} recorded >= "
+                    f"max_cost_usd (${self.max_cost_usd}); halting the engineer "
+                    "loop instead of starting another iteration (R8)"
+                ),
+            )
 
         # UNENFORCEABLE, per ceiling. Only halts when every configured
         # ceiling is dead - a live one is worth continuing under.
@@ -310,10 +318,7 @@ class LoopBudget:
         if self.token_enabled:
             prior_tokenless = max(0, self.prior_calls - self.prior_token_calls)
             run_tokenless = prior_tokenless + loop_usage.tokenless_calls
-            if (
-                loop_usage.token_calls == 0
-                and run_tokenless >= _UNENFORCEABLE_CALLS
-            ):
+            if loop_usage.token_calls == 0 and run_tokenless >= _UNENFORCEABLE_CALLS:
                 clauses.append(
                     f"token budget unenforceable: none of this loop's "
                     f"{loop_usage.calls} agent call(s) reported a token "
@@ -329,10 +334,7 @@ class LoopBudget:
         if self.cost_enabled:
             prior_costless = max(0, self.prior_calls - self.prior_cost_calls)
             run_costless = prior_costless + loop_usage.costless_calls
-            if (
-                loop_usage.cost_calls == 0
-                and run_costless >= _UNENFORCEABLE_CALLS
-            ):
+            if loop_usage.cost_calls == 0 and run_costless >= _UNENFORCEABLE_CALLS:
                 clauses.append(
                     f"cost budget unenforceable: none of this loop's "
                     f"{loop_usage.calls} agent call(s) reported a cost, and "
@@ -346,9 +348,12 @@ class LoopBudget:
                 return None
         if not clauses:
             return None
-        return BudgetHalt("unenforceable", tuple(dead), "; ".join(clauses) + (
-            "; halting rather than spending under a cap that cannot fire (R8)"
-        ))
+        return BudgetHalt(
+            "unenforceable",
+            tuple(dead),
+            "; ".join(clauses)
+            + ("; halting rather than spending under a cap that cannot fire (R8)"),
+        )
 
     def halt_reason(self, loop_usage: UsageTotals) -> str | None:
         """The prose half of :meth:`halt_verdict`, or None.
@@ -472,9 +477,7 @@ def run_loop(
     ui.kv("Max iterations", str(config.max_iterations))
     ui.kv("Sleep", f"{config.sleep_seconds}s")
     ui.kv("Interactive", "yes" if config.interactive else "no")
-    allowed_paths = (
-        ", ".join(config.allowed_paths) if config.allowed_paths else "<disabled>"
-    )
+    allowed_paths = ", ".join(config.allowed_paths) if config.allowed_paths else "<disabled>"
     ui.kv("Allowed paths", allowed_paths)
     ui.kv("Reasoning", config.model_reasoning_effort or "<default>")
     ui.kv("UI", config.ui_mode)
@@ -489,7 +492,8 @@ def run_loop(
     ui.kv(
         "No-progress breaker",
         f"{breaker_config.no_progress_iterations} iterations"
-        if breaker_config.no_progress_iterations > 0 else "<disabled>",
+        if breaker_config.no_progress_iterations > 0
+        else "<disabled>",
     )
 
     # Resolve the prompt template. If the explicit prompt file does not
@@ -503,10 +507,12 @@ def run_loop(
     # scripts/kstrl/prompt.md", which matters when reading the
     # iteration log later.
     from string import Template
+
     if config.prompt_file.exists():
         raw_prompt = config.prompt_file.read_text()
     else:
         from kstrl.init_cmd import DEFAULT_PROMPT
+
         ui.warn(
             f"Prompt file not found at {config.prompt_file}; "
             "falling back to harness DEFAULT_PROMPT (run `ks init` "
@@ -529,10 +535,7 @@ def run_loop(
     if claude_md_path.exists():
         claude_md_content = claude_md_path.read_text()
         prompt = (
-            "# Project Context (from CLAUDE.md)\n\n"
-            + claude_md_content
-            + "\n\n---\n\n"
-            + prompt
+            "# Project Context (from CLAUDE.md)\n\n" + claude_md_content + "\n\n---\n\n" + prompt
         )
 
     # Prepend context from previous retries if provided
@@ -574,7 +577,8 @@ def run_loop(
         # everything the agent does from here - committed or not - is
         # attributable to the agent.
         guard_baseline = git.capture_workspace_baseline(
-            cwd, base_ref=guard_base_ref,
+            cwd,
+            base_ref=guard_base_ref,
         )
         if guard_baseline.dirty:
             ui.info(
@@ -600,16 +604,15 @@ def run_loop(
     # rather than silently.
     breaker = NoProgressBreaker(cwd, breaker_config)
     if breaker_config.no_progress_iterations > 0 and not breaker.enabled:
-        ui.warn(
-            "No-progress breaker disabled: working directory is not a "
-            "usable git repository"
-        )
+        ui.warn("No-progress breaker disabled: working directory is not a usable git repository")
 
     for iteration in range(1, config.max_iterations + 1):
         if stop_check is not None and stop_check():
             ui.warn("Stop requested; ending loop before next iteration")
             return LoopResult(
-                completed=False, iterations=iteration - 1, exit_code=130,
+                completed=False,
+                iterations=iteration - 1,
+                exit_code=130,
                 duration_seconds=time.monotonic() - loop_start,
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,
@@ -618,9 +621,12 @@ def run_loop(
         ui.section(f"Iteration {iteration} / {config.max_iterations}")
         iter_start = time.monotonic()
         if bus is not None:
-            bus.emit(IterationStarted(
-                iteration=iteration, max_iterations=config.max_iterations,
-            ))
+            bus.emit(
+                IterationStarted(
+                    iteration=iteration,
+                    max_iterations=config.max_iterations,
+                )
+            )
 
         # Bound the iteration by the per-iteration limit AND the remaining
         # component budget, so one iteration cannot blow far past the
@@ -632,8 +638,7 @@ def run_loop(
         if component_budget > 0:
             remaining = component_budget - (iter_start - loop_start)
             iteration_timeout = (
-                min(iteration_timeout, remaining)
-                if iteration_timeout is not None else remaining
+                min(iteration_timeout, remaining) if iteration_timeout is not None else remaining
             )
 
         # Run agent
@@ -650,19 +655,20 @@ def run_loop(
             final_message = agent.final_message
             if not completion_seen and final_message:
                 completion_seen = any(
-                    line.strip() == COMPLETION_MARKER
-                    for line in final_message.splitlines()
+                    line.strip() == COMPLETION_MARKER for line in final_message.splitlines()
                 )
         finally:
             iter_duration = time.monotonic() - iter_start
             iteration_durations.append(iter_duration)
             if bus is not None:
-                bus.emit(IterationCompleted(
-                    iteration=iteration,
-                    duration_seconds=round(iter_duration, 2),
-                    completed=completion_seen,
-                    timed_out=iteration_timed_out,
-                ))
+                bus.emit(
+                    IterationCompleted(
+                        iteration=iteration,
+                        duration_seconds=round(iter_duration, 2),
+                        completed=completion_seen,
+                        timed_out=iteration_timed_out,
+                    )
+                )
 
         # One usage snapshot per iteration, taken before any early
         # return below so a timed-out or guard-failing iteration is
@@ -692,7 +698,10 @@ def run_loop(
             if bus is not None and bus.run_id:
                 ignored_paths.append(f".kstrl/runs/{bus.run_id}/")
             ok, violations = guards.enforce_allowed_paths(
-                config, ui, cwd, interaction=channel,
+                config,
+                ui,
+                cwd,
+                interaction=channel,
                 ignored_paths=ignored_paths,
                 baseline=guard_baseline,
             )
@@ -787,18 +796,22 @@ def run_loop(
 
         # Interactive pause (PR A: through the interaction seam)
         if config.interactive and channel.can_prompt():
-            response = channel.request(PromptRequest(
-                kind=PromptKind.ITERATION,
-                header="Iteration complete. What next?",
-                options=("Continue", "Skip interactive", "Quit"),
-                default=0,
-            ))
+            response = channel.request(
+                PromptRequest(
+                    kind=PromptKind.ITERATION,
+                    header="Iteration complete. What next?",
+                    options=("Continue", "Skip interactive", "Quit"),
+                    default=0,
+                )
+            )
             if response.answered and response.choice == 1:
                 # Disable interactive for remaining iterations
                 config.interactive = False
             elif response.answered and response.choice == 2:
                 return LoopResult(
-                    completed=False, iterations=iteration, exit_code=0,
+                    completed=False,
+                    iterations=iteration,
+                    exit_code=0,
                     usage=collect_usage(agent),
                 )
 

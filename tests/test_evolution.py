@@ -88,13 +88,24 @@ class TestRecordRun:
         )
         journal = EvolutionJournal(config)
 
-        manifest = _make_manifest([
-            _make_component("a", status=ComponentStatus.COMPLETED.value,
-                            duration_seconds=10.0, iteration_count=2),
-            _make_component("b", status=ComponentStatus.FAILED.value,
-                            error="pytest: assert 1 == 2", retries=3,
-                            duration_seconds=5.0, iteration_count=1),
-        ])
+        manifest = _make_manifest(
+            [
+                _make_component(
+                    "a",
+                    status=ComponentStatus.COMPLETED.value,
+                    duration_seconds=10.0,
+                    iteration_count=2,
+                ),
+                _make_component(
+                    "b",
+                    status=ComponentStatus.FAILED.value,
+                    error="pytest: assert 1 == 2",
+                    retries=3,
+                    duration_seconds=5.0,
+                    iteration_count=1,
+                ),
+            ]
+        )
         factory_result = FactoryResult(completed=["a"], failed=["b"], skipped=[])
 
         journal.record_run("run-001", manifest, factory_result)
@@ -117,7 +128,8 @@ class TestRecordRun:
         assert "run-001" in tsv_lines[1]
 
     def test_record_run_includes_typed_findings(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """E3-consume: the evolution journal must serialize
         Component.findings alongside the existing scalars, and include
@@ -134,18 +146,25 @@ class TestRecordRun:
         journal = EvolutionJournal(config)
 
         comp = _make_component(
-            "a", status=ComponentStatus.COMPLETED.value, duration_seconds=10.0,
+            "a",
+            status=ComponentStatus.COMPLETED.value,
+            duration_seconds=10.0,
         )
         comp.findings = [
             Finding.from_review_concern(
-                category="dead_code", severity="fail",
-                location="src/a.py:1", explanation="unused",
+                category="dead_code",
+                severity="fail",
+                location="src/a.py:1",
+                explanation="unused",
             ),
             Finding.from_security_finding(
-                category="injection", severity="critical",
-                location="src/b.py:2", explanation="raw sql",
+                category="injection",
+                severity="critical",
+                location="src/b.py:2",
+                explanation="raw sql",
                 suggestion="parametrize",
-                owasp="A03:2021-Injection", cwe="CWE-89",
+                owasp="A03:2021-Injection",
+                cwe="CWE-89",
             ),
             Finding.infrastructure_error("security", "agent timeout"),
         ]
@@ -181,13 +200,23 @@ class TestExtractFailurePatterns:
         config = EvolutionConfig()
         journal = EvolutionJournal(config)
 
-        manifest = _make_manifest([
-            _make_component("a", status=ComponentStatus.FAILED.value,
-                            error="ruff: S608 violation", retries=1),
-            _make_component("b", status=ComponentStatus.FAILED.value,
-                            error="ruff: S608 violation", retries=2),
-            _make_component("c", status=ComponentStatus.COMPLETED.value),
-        ])
+        manifest = _make_manifest(
+            [
+                _make_component(
+                    "a",
+                    status=ComponentStatus.FAILED.value,
+                    error="ruff: S608 violation",
+                    retries=1,
+                ),
+                _make_component(
+                    "b",
+                    status=ComponentStatus.FAILED.value,
+                    error="ruff: S608 violation",
+                    retries=2,
+                ),
+                _make_component("c", status=ComponentStatus.COMPLETED.value),
+            ]
+        )
 
         patterns = journal.extract_failure_patterns(manifest, min_frequency=2)
         assert len(patterns) >= 1
@@ -198,9 +227,11 @@ class TestExtractFailurePatterns:
     def test_extract_failure_patterns_no_failures(self) -> None:
         config = EvolutionConfig()
         journal = EvolutionJournal(config)
-        manifest = _make_manifest([
-            _make_component("a", status=ComponentStatus.COMPLETED.value),
-        ])
+        manifest = _make_manifest(
+            [
+                _make_component("a", status=ComponentStatus.COMPLETED.value),
+            ]
+        )
         patterns = journal.extract_failure_patterns(manifest)
         assert patterns == []
 
@@ -249,54 +280,68 @@ class TestConcernHitRate:
         journal = EvolutionJournal(config)
         result = journal.get_concern_hit_rate()
         assert result == {
-            "runs": 0, "components": 0, "with_concern": 0, "by_category": {},
+            "runs": 0,
+            "components": 0,
+            "with_concern": 0,
+            "by_category": {},
         }
 
     def test_counts_categories_from_findings_summary(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R6.2: the hit rate consumes the typed findings_summary that
         record_run writes, not the error string (concern categories
         never appear there, so the old scan was structurally zero)."""
         journal_path = tmp_path / "evolution.jsonl"
-        self._write_entries(journal_path, [
-            {
-                "run_id": "run-1", "component_id": "a",
-                "event_type": "component_result",
-                "findings_summary": {
-                    "total": 2,
-                    "by_category": {"scope_creep": 1, "test_quality": 1},
+        self._write_entries(
+            journal_path,
+            [
+                {
+                    "run_id": "run-1",
+                    "component_id": "a",
+                    "event_type": "component_result",
+                    "findings_summary": {
+                        "total": 2,
+                        "by_category": {"scope_creep": 1, "test_quality": 1},
+                    },
                 },
-            },
-            {
-                "run_id": "run-1", "component_id": "b",
-                "event_type": "component_result",
-                # Infrastructure-only summaries are non-execution, not
-                # adversarial signal.
-                "findings_summary": {
-                    "total": 1,
-                    "by_category": {"infrastructure_error": 1},
+                {
+                    "run_id": "run-1",
+                    "component_id": "b",
+                    "event_type": "component_result",
+                    # Infrastructure-only summaries are non-execution, not
+                    # adversarial signal.
+                    "findings_summary": {
+                        "total": 1,
+                        "by_category": {"infrastructure_error": 1},
+                    },
                 },
-            },
-            {
-                "run_id": "run-2", "component_id": "c",
-                "event_type": "component_result",
-                "findings_summary": {
-                    "total": 1,
-                    "by_category": {"security_concern": 1},
+                {
+                    "run_id": "run-2",
+                    "component_id": "c",
+                    "event_type": "component_result",
+                    "findings_summary": {
+                        "total": 1,
+                        "by_category": {"security_concern": 1},
+                    },
                 },
-            },
-            {
-                "run_id": "run-2", "component_id": "d",
-                "event_type": "component_result",
-                "findings_summary": {"total": 0, "by_category": {}},
-            },
-            # Non-component entries are excluded from the denominator.
-            {
-                "run_id": "run-2", "component_id": "",
-                "event_type": "contract_result", "tier": 1, "passed": True,
-            },
-        ])
+                {
+                    "run_id": "run-2",
+                    "component_id": "d",
+                    "event_type": "component_result",
+                    "findings_summary": {"total": 0, "by_category": {}},
+                },
+                # Non-component entries are excluded from the denominator.
+                {
+                    "run_id": "run-2",
+                    "component_id": "",
+                    "event_type": "contract_result",
+                    "tier": 1,
+                    "passed": True,
+                },
+            ],
+        )
         config = EvolutionConfig(journal_path=journal_path)
         journal = EvolutionJournal(config)
         result = journal.get_concern_hit_rate()
@@ -304,7 +349,9 @@ class TestConcernHitRate:
         assert result["components"] == 4
         assert result["with_concern"] == 2
         assert result["by_category"] == {
-            "scope_creep": 1, "test_quality": 1, "security_concern": 1,
+            "scope_creep": 1,
+            "test_quality": 1,
+            "security_concern": 1,
         }
         assert "infrastructure_error" not in result["by_category"]
 
@@ -397,27 +444,34 @@ class TestSignatureHelpers:
         from kstrl.parsers import ParsedFailure, ParsedOutput
         from kstrl.verify import CheckResult
 
-        ruff = ParsedOutput(tool="ruff", failures=[
-            ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
-            ParsedFailure(file="b.py", line=2, rule_or_test="S608", message="y"),
-            ParsedFailure(file="c.py", line=3, rule_or_test="E501", message="z"),
-        ])
-        mypy = ParsedOutput(tool="mypy", failures=[
-            ParsedFailure(file="a.py", line=4, rule_or_test="arg-type", message="m"),
-        ])
-        pytest_out = ParsedOutput(tool="pytest", failures=[
-            ParsedFailure(
-                file="tests/test_a.py", rule_or_test="test_x",
-                message="AssertionError: assert 1 == 2",
-            ),
-        ])
+        ruff = ParsedOutput(
+            tool="ruff",
+            failures=[
+                ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
+                ParsedFailure(file="b.py", line=2, rule_or_test="S608", message="y"),
+                ParsedFailure(file="c.py", line=3, rule_or_test="E501", message="z"),
+            ],
+        )
+        mypy = ParsedOutput(
+            tool="mypy",
+            failures=[
+                ParsedFailure(file="a.py", line=4, rule_or_test="arg-type", message="m"),
+            ],
+        )
+        pytest_out = ParsedOutput(
+            tool="pytest",
+            failures=[
+                ParsedFailure(
+                    file="tests/test_a.py",
+                    rule_or_test="test_x",
+                    message="AssertionError: assert 1 == 2",
+                ),
+            ],
+        )
         checks = [
-            CheckResult(name="linter", passed=False, message="Linter failed",
-                        parsed=ruff),
-            CheckResult(name="typecheck", passed=False,
-                        message="Typecheck failed", parsed=mypy),
-            CheckResult(name="test_suite", passed=False,
-                        message="Tests failed", parsed=pytest_out),
+            CheckResult(name="linter", passed=False, message="Linter failed", parsed=ruff),
+            CheckResult(name="typecheck", passed=False, message="Typecheck failed", parsed=mypy),
+            CheckResult(name="test_suite", passed=False, message="Tests failed", parsed=pytest_out),
             CheckResult(name="bad_patterns", passed=True, message="ok"),
         ]
         sigs = signatures_from_verification(checks)
@@ -432,10 +486,13 @@ class TestSignatureHelpers:
     def test_signatures_from_verification_fallback_slug(self) -> None:
         from kstrl.verify import CheckResult
 
-        checks = [CheckResult(
-            name="diff_scope", passed=False,
-            message="3 files outside allowed scope (diff vs base branch 'main')",
-        )]
+        checks = [
+            CheckResult(
+                name="diff_scope",
+                passed=False,
+                message="3 files outside allowed scope (diff vs base branch 'main')",
+            )
+        ]
         sigs = signatures_from_verification(checks)
         assert len(sigs) == 1
         check, code = split_signature(sigs[0])
@@ -451,12 +508,16 @@ class TestSignatureHelpers:
 
         findings = [
             Finding.from_review_concern(
-                category="scope_creep", severity="fail",
-                location="a.py", explanation="x",
+                category="scope_creep",
+                severity="fail",
+                location="a.py",
+                explanation="x",
             ),
             Finding.from_review_concern(
-                category="test_quality", severity="advisory",
-                location="b.py", explanation="y",
+                category="test_quality",
+                severity="advisory",
+                location="b.py",
+                explanation="y",
             ),
         ]
         assert signatures_from_findings("review", findings) == [
@@ -473,10 +534,12 @@ class TestSignatureHelpers:
 
     def test_signature_for_error_stable(self) -> None:
         sig1 = signature_for_error(
-            "engineer", "component timeout: exceeded 600s wall clock",
+            "engineer",
+            "component timeout: exceeded 600s wall clock",
         )
         sig2 = signature_for_error(
-            "engineer", "component timeout: exceeded 1200s wall clock",
+            "engineer",
+            "component timeout: exceeded 1200s wall clock",
         )
         assert sig1 == sig2
         assert sig1.startswith("engineer:")
@@ -484,7 +547,8 @@ class TestSignatureHelpers:
 
 class TestRecordRunSignatures:
     def test_journal_entry_carries_structured_signatures(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         config = EvolutionConfig(
             journal_path=tmp_path / "evolution.jsonl",
@@ -492,8 +556,10 @@ class TestRecordRunSignatures:
         )
         journal = EvolutionJournal(config)
         comp = _make_component(
-            "b", status=ComponentStatus.FAILED.value,
-            error="Mechanical verification failed", retries=1,
+            "b",
+            status=ComponentStatus.FAILED.value,
+            error="Mechanical verification failed",
+            retries=1,
         )
         comp.failed_phase = "verify"
         comp.failed_check = "linter"
@@ -501,7 +567,9 @@ class TestRecordRunSignatures:
         factory_result = FactoryResult(completed=[], failed=["b"], skipped=[])
 
         journal.record_run(
-            "run-001", manifest, factory_result,
+            "run-001",
+            manifest,
+            factory_result,
             failure_signatures={"b": ["linter:S608", "linter:E501"]},
         )
 
@@ -527,12 +595,14 @@ class TestRecordRunSignatures:
         )
         journal = EvolutionJournal(config)
         comp = _make_component(
-            "b", status=ComponentStatus.FAILED.value,
+            "b",
+            status=ComponentStatus.FAILED.value,
             error="ruff: S608 violation",
         )
         manifest = _make_manifest([comp])
         journal.record_run(
-            "run-001", manifest,
+            "run-001",
+            manifest,
             FactoryResult(completed=[], failed=["b"], skipped=[]),
         )
         entry = json.loads(config.journal_path.read_text().strip())
@@ -545,7 +615,8 @@ class TestRecordRunFactUtilization:
     engineer referenced nothing"."""
 
     def _journal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> tuple[EvolutionJournal, EvolutionConfig]:
         config = EvolutionConfig(
             journal_path=tmp_path / "evolution.jsonl",
@@ -557,15 +628,24 @@ class TestRecordRunFactUtilization:
         journal, config = self._journal(tmp_path)
         comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
         journal.record_run(
-            "run-001", _make_manifest([comp]),
+            "run-001",
+            _make_manifest([comp]),
             FactoryResult(completed=["b"], failed=[], skipped=[]),
-            fact_utilization={"b": {
-                "measured": True, "injected": 4, "referenced": 2, "reason": "",
-            }},
+            fact_utilization={
+                "b": {
+                    "measured": True,
+                    "injected": 4,
+                    "referenced": 2,
+                    "reason": "",
+                }
+            },
         )
         entry = json.loads(config.journal_path.read_text().strip())
         assert entry["knowledge_utilization"] == {
-            "measured": True, "injected": 4, "referenced": 2, "reason": "",
+            "measured": True,
+            "injected": 4,
+            "referenced": 2,
+            "reason": "",
         }
 
     def test_entry_carries_the_tier_breakdown(self, tmp_path: Path) -> None:
@@ -575,16 +655,22 @@ class TestRecordRunFactUtilization:
         journal, config = self._journal(tmp_path)
         comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
         journal.record_run(
-            "run-001", _make_manifest([comp]),
+            "run-001",
+            _make_manifest([comp]),
             FactoryResult(completed=["b"], failed=[], skipped=[]),
-            fact_utilization={"b": {
-                "measured": True, "injected": 6, "referenced": 2, "reason": "",
-                "by_tier": {
-                    "core": {"injected": 2, "referenced": 2},
-                    "dependency": {"injected": 1, "referenced": 0},
-                    "sibling": {"injected": 3, "referenced": 0},
-                },
-            }},
+            fact_utilization={
+                "b": {
+                    "measured": True,
+                    "injected": 6,
+                    "referenced": 2,
+                    "reason": "",
+                    "by_tier": {
+                        "core": {"injected": 2, "referenced": 2},
+                        "dependency": {"injected": 1, "referenced": 0},
+                        "sibling": {"injected": 3, "referenced": 0},
+                    },
+                }
+            },
         )
         entry = json.loads(config.journal_path.read_text().strip())
         by_tier = entry["knowledge_utilization"]["by_tier"]
@@ -592,14 +678,16 @@ class TestRecordRunFactUtilization:
         assert by_tier["sibling"] == {"injected": 3, "referenced": 0}
 
     def test_unrecorded_component_gets_measured_false(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The key is written for every component, so a reader never has
         to guess whether a missing field means zero or means nothing."""
         journal, config = self._journal(tmp_path)
         comp = _make_component("b", status=ComponentStatus.FAILED.value)
         journal.record_run(
-            "run-001", _make_manifest([comp]),
+            "run-001",
+            _make_manifest([comp]),
             FactoryResult(completed=[], failed=["b"], skipped=[]),
         )
         entry = json.loads(config.journal_path.read_text().strip())
@@ -614,41 +702,50 @@ class TestRecordRunFactUtilization:
         journal, config = self._journal(tmp_path)
         comp = _make_component("b", status=ComponentStatus.COMPLETED.value)
         journal.record_run(
-            "run-001", _make_manifest([comp]),
+            "run-001",
+            _make_manifest([comp]),
             FactoryResult(completed=["b"], failed=[], skipped=[]),
-            fact_utilization={"b": {
-                "measured": True, "injected": 1, "referenced": 1, "reason": "",
-            }},
+            fact_utilization={
+                "b": {
+                    "measured": True,
+                    "injected": 1,
+                    "referenced": 1,
+                    "reason": "",
+                }
+            },
         )
         entry = json.loads(config.journal_path.read_text().strip())
         assert entry["schema_version"] == JOURNAL_SCHEMA_VERSION
         assert "knowledge_utilization" in entry
 
     def test_get_fact_utilization_never_counts_unmeasured_as_zero(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal, config = self._journal(tmp_path)
         # run-001: one component referenced facts, one measured zero.
         journal.record_run(
             "run-001",
-            _make_manifest([
-                _make_component("a", status=ComponentStatus.COMPLETED.value),
-                _make_component("b", status=ComponentStatus.COMPLETED.value),
-            ]),
+            _make_manifest(
+                [
+                    _make_component("a", status=ComponentStatus.COMPLETED.value),
+                    _make_component("b", status=ComponentStatus.COMPLETED.value),
+                ]
+            ),
             FactoryResult(completed=["a", "b"], failed=[], skipped=[]),
             fact_utilization={
-                "a": {"measured": True, "injected": 4, "referenced": 2,
-                      "reason": ""},
-                "b": {"measured": True, "injected": 3, "referenced": 0,
-                      "reason": ""},
+                "a": {"measured": True, "injected": 4, "referenced": 2, "reason": ""},
+                "b": {"measured": True, "injected": 3, "referenced": 0, "reason": ""},
             },
         )
         # run-002: never measured at all.
         journal.record_run(
             "run-002",
-            _make_manifest([
-                _make_component("a", status=ComponentStatus.FAILED.value),
-            ]),
+            _make_manifest(
+                [
+                    _make_component("a", status=ComponentStatus.FAILED.value),
+                ]
+            ),
             FactoryResult(completed=[], failed=["a"], skipped=[]),
         )
 
@@ -664,35 +761,53 @@ class TestRecordRunFactUtilization:
         assert stats["runs_with_referenced"] == 1
 
     def test_get_fact_utilization_ignores_legacy_entries(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Pre-#191 entries have no knowledge_utilization key at all and
         must count as unmeasured, not as measured zeros."""
         journal, config = self._journal(tmp_path)
-        config.journal_path.write_text(json.dumps({
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "run_id": "run-legacy", "component_id": "a",
-            "event_type": "component_result", "status": "completed",
-        }) + "\n")
+        config.journal_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": JOURNAL_SCHEMA_VERSION,
+                    "run_id": "run-legacy",
+                    "component_id": "a",
+                    "event_type": "component_result",
+                    "status": "completed",
+                }
+            )
+            + "\n"
+        )
         stats = journal.get_fact_utilization()
         assert stats["measured"] == 0
         assert stats["unmeasured"] == 1
         assert stats["runs_with_referenced"] == 0
 
     def test_get_fact_utilization_rejects_unreadable_counts(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Present but garbled is not evidence either - fail toward
         "no measurement", never toward a fabricated number."""
         journal, config = self._journal(tmp_path)
-        config.journal_path.write_text(json.dumps({
-            "schema_version": JOURNAL_SCHEMA_VERSION,
-            "run_id": "r", "component_id": "a",
-            "event_type": "component_result", "status": "completed",
-            "knowledge_utilization": {
-                "measured": True, "injected": "four", "referenced": 2,
-            },
-        }) + "\n")
+        config.journal_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": JOURNAL_SCHEMA_VERSION,
+                    "run_id": "r",
+                    "component_id": "a",
+                    "event_type": "component_result",
+                    "status": "completed",
+                    "knowledge_utilization": {
+                        "measured": True,
+                        "injected": "four",
+                        "referenced": 2,
+                    },
+                }
+            )
+            + "\n"
+        )
         stats = journal.get_fact_utilization()
         assert stats["measured"] == 0
         assert stats["unmeasured"] == 1
@@ -708,16 +823,21 @@ class TestEvolutionIntegration:
         from kstrl.findings import Finding
 
         comp = _make_component(
-            comp_id, status=ComponentStatus.FAILED.value,
-            error="Review failed", retries=1, duration_seconds=42.0,
+            comp_id,
+            status=ComponentStatus.FAILED.value,
+            error="Review failed",
+            retries=1,
+            duration_seconds=42.0,
             iteration_count=3,
         )
         comp.failed_phase = "review"
         comp.failed_check = "criteria"
         comp.findings = [
             Finding.from_review_concern(
-                category="scope_creep", severity="fail",
-                location=f"{comp_id}.py", explanation="touched other files",
+                category="scope_creep",
+                severity="fail",
+                location=f"{comp_id}.py",
+                explanation="touched other files",
             ),
         ]
         return comp
@@ -734,18 +854,23 @@ class TestEvolutionIntegration:
         # scope_creep failure - the shapes record_run actually writes.
         for run_id in ("run-001", "run-002"):
             lint_comp = _make_component(
-                "comp-lint", status=ComponentStatus.FAILED.value,
-                error="Mechanical verification failed", retries=2,
-                duration_seconds=30.0, iteration_count=2,
+                "comp-lint",
+                status=ComponentStatus.FAILED.value,
+                error="Mechanical verification failed",
+                retries=2,
+                duration_seconds=30.0,
+                iteration_count=2,
             )
             lint_comp.failed_phase = "verify"
             lint_comp.failed_check = "linter"
             review_comp = self._failed_component("comp-review")
             manifest = _make_manifest([lint_comp, review_comp])
             journal.record_run(
-                run_id, manifest,
+                run_id,
+                manifest,
                 FactoryResult(
-                    completed=[], failed=["comp-lint", "comp-review"],
+                    completed=[],
+                    failed=["comp-lint", "comp-review"],
                     skipped=[],
                 ),
                 failure_signatures={
@@ -756,8 +881,7 @@ class TestEvolutionIntegration:
 
         patterns = journal.get_cross_run_patterns(lookback_runs=10)
         linter_patterns = [
-            p for p in patterns
-            if p.check_name == "linter" and p.error_signature == "S608"
+            p for p in patterns if p.check_name == "linter" and p.error_signature == "S608"
         ]
         assert linter_patterns, (
             f"expected a linter:S608 pattern, got "
@@ -765,8 +889,7 @@ class TestEvolutionIntegration:
         )
         assert linter_patterns[0].frequency == 2
         review_patterns = [
-            p for p in patterns
-            if p.check_name == "review" and p.error_signature == "scope_creep"
+            p for p in patterns if p.check_name == "review" and p.error_signature == "scope_creep"
         ]
         assert review_patterns
 
@@ -797,9 +920,11 @@ class TestProposalIdMonotonicity:
         def _pattern(sig: str) -> FailurePattern:
             return FailurePattern(
                 description=f"linter failure '{sig}' in 2/4 components",
-                frequency=2, total_components=4,
+                frequency=2,
+                total_components=4,
                 affected_components=["a", "b"],
-                check_name="linter", error_signature=sig,
+                check_name="linter",
+                error_signature=sig,
                 category="verification",
             )
 
@@ -828,15 +953,19 @@ class TestProposalIdMonotonicity:
         output_dir.mkdir()
         (output_dir / "prop-001.md").write_text("# PROP-001: original\n")
 
-        clashing = journal.propose_improvements([
-            FailurePattern(
-                description="linter failure 'E501' in 2/4 components",
-                frequency=2, total_components=4,
-                affected_components=["a", "b"],
-                check_name="linter", error_signature="E501",
-                category="verification",
-            ),
-        ])
+        clashing = journal.propose_improvements(
+            [
+                FailurePattern(
+                    description="linter failure 'E501' in 2/4 components",
+                    frequency=2,
+                    total_components=4,
+                    affected_components=["a", "b"],
+                    check_name="linter",
+                    error_signature="E501",
+                    category="verification",
+                ),
+            ]
+        )
         written = journal.save_proposals(clashing, output_dir)
         assert written == []
         assert (output_dir / "prop-001.md").read_text() == "# PROP-001: original\n"

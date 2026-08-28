@@ -37,7 +37,10 @@ def resolve_base_ref(
     try:
         result = subprocess.run(
             [
-                "git", "rev-parse", "--verify", "--quiet",
+                "git",
+                "rev-parse",
+                "--verify",
+                "--quiet",
                 f"refs/remotes/origin/{base_branch}",
             ],
             cwd=cwd,
@@ -74,10 +77,7 @@ def fetch_base_branch(
     except subprocess.TimeoutExpired:
         return f"git fetch origin {base_branch} timed out after {timeout}s"
     if result.returncode != 0:
-        return (
-            result.stderr.strip()
-            or f"git fetch origin {base_branch} failed"
-        )
+        return result.stderr.strip() or f"git fetch origin {base_branch} failed"
     return None
 
 
@@ -114,7 +114,9 @@ def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) ->
 
 
 def branch_exists(
-    branch: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> bool:
     """Check if a branch exists."""
     try:
@@ -178,7 +180,8 @@ def checkout_branch(
 
 
 def get_changed_files(
-    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> set[str]:
     """Get all changed files (staged, unstaged, and untracked).
 
@@ -196,9 +199,7 @@ def get_changed_files(
             timeout=timeout,
         )
         if result.returncode == 0:
-            files.update(
-                line.strip() for line in result.stdout.splitlines() if line.strip()
-            )
+            files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
 
         # Staged changes
         result = subprocess.run(
@@ -209,9 +210,7 @@ def get_changed_files(
             timeout=timeout,
         )
         if result.returncode == 0:
-            files.update(
-                line.strip() for line in result.stdout.splitlines() if line.strip()
-            )
+            files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
 
     except subprocess.TimeoutExpired:
         pass
@@ -221,7 +220,8 @@ def get_changed_files(
 
 
 def get_untracked_files(
-    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> set[str]:
     """Untracked, non-ignored files. Separate from ``get_changed_files``
     because a baseline comparison needs them WITHOUT the index/HEAD
@@ -238,9 +238,7 @@ def get_untracked_files(
         return set()
     if result.returncode != 0:
         return set()
-    return {
-        line.strip() for line in result.stdout.splitlines() if line.strip()
-    }
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 
 @dataclass(frozen=True)
@@ -267,7 +265,8 @@ class WorkspaceBaseline:
 
 
 def get_head_sha(
-    cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> str | None:
     """The commit HEAD points at, or None (unborn HEAD, not a repo,
     timeout)."""
@@ -316,7 +315,9 @@ def capture_workspace_baseline(
 
 
 def resolve_ref(
-    ref: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    ref: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> str | None:
     """The sha ``ref`` names, or None when it does not resolve.
 
@@ -327,7 +328,10 @@ def resolve_ref(
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
-                cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             return None
@@ -377,7 +381,9 @@ def get_changed_files_since(
 
 
 def _committed_since(
-    ref: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    ref: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> list[str]:
     """Paths differing between ``ref`` and the working tree.
 
@@ -419,8 +425,13 @@ def restore_file_from(
     try:
         result = subprocess.run(
             [
-                "git", "restore", f"--source={ref}", "--staged", "--worktree",
-                "--", file,
+                "git",
+                "restore",
+                f"--source={ref}",
+                "--staged",
+                "--worktree",
+                "--",
+                file,
             ],
             cwd=cwd,
             capture_output=True,
@@ -432,7 +443,9 @@ def restore_file_from(
 
 
 def remove_from_index(
-    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> bool:
     """Drop ``file`` from the index, leaving the working tree alone.
 
@@ -454,7 +467,9 @@ def remove_from_index(
 
 
 def restore_file(
-    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> bool:
     """Restore a tracked file (staged and working tree)."""
     try:
@@ -476,6 +491,7 @@ def delete_untracked(file: str, cwd: Path | None = None) -> bool:
         if path.exists():
             if path.is_dir():
                 import shutil
+
                 shutil.rmtree(path)
             else:
                 path.unlink()
@@ -485,7 +501,9 @@ def delete_untracked(file: str, cwd: Path | None = None) -> bool:
 
 
 def is_file_tracked(
-    file: str, cwd: Path | None = None, timeout: float = DEFAULT_TIMEOUT,
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> bool:
     """Check if a file is tracked by git."""
     try:
@@ -527,8 +545,12 @@ def get_diff_names(
     callers keep the lenient contract they were written against.
     """
     return _unique_paths(
-        path for _, path in get_diff_name_status(
-            base_branch, cwd, timeout, strict=strict,
+        path
+        for _, path in get_diff_name_status(
+            base_branch,
+            cwd,
+            timeout,
+            strict=strict,
         )
     )
 
@@ -561,8 +583,14 @@ def get_diff_name_status(
     try:
         result = subprocess.run(
             [
-                "git", "diff", "--name-status", "-z", "-M", "-C",
-                f"{base_ref}...HEAD", "--",
+                "git",
+                "diff",
+                "--name-status",
+                "-z",
+                "-M",
+                "-C",
+                f"{base_ref}...HEAD",
+                "--",
             ],
             cwd=cwd,
             capture_output=True,
@@ -574,8 +602,7 @@ def get_diff_name_status(
     except subprocess.TimeoutExpired as exc:
         if strict:
             raise GitDiffError(
-                f"git diff --name-status against {base_ref} timed out "
-                f"after {timeout}s"
+                f"git diff --name-status against {base_ref} timed out after {timeout}s"
             ) from exc
         return []
     if strict:
@@ -602,9 +629,7 @@ def _parse_name_status_records(output: str) -> list[tuple[str, str]]:
             i += 1
             continue
         if status[0] in ("R", "C"):
-            records.extend(
-                (status, path) for path in tokens[i + 1:i + 3] if path
-            )
+            records.extend((status, path) for path in tokens[i + 1 : i + 3] if path)
             i += 3
         else:
             if i + 1 < len(tokens) and tokens[i + 1]:
@@ -661,13 +686,10 @@ def get_diff_content(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise GitDiffError(
-            f"git diff against {base_ref} timed out after {timeout}s"
-        ) from exc
+        raise GitDiffError(f"git diff against {base_ref} timed out after {timeout}s") from exc
     if result.returncode != 0:
         raise GitDiffError(
-            f"git diff against {base_ref} exited "
-            f"{result.returncode}: {result.stderr.strip()[:500]}"
+            f"git diff against {base_ref} exited {result.returncode}: {result.stderr.strip()[:500]}"
         )
     return result.stdout
 
@@ -722,8 +744,7 @@ def get_diff_numstat(
     except subprocess.TimeoutExpired as exc:
         if strict:
             raise GitDiffError(
-                f"git diff --numstat against {base_ref} timed out "
-                f"after {timeout}s"
+                f"git diff --numstat against {base_ref} timed out after {timeout}s"
             ) from exc
         return []
     if result.returncode != 0:
@@ -754,7 +775,8 @@ DEFAULT_PROMPT_DIFF_CHAR_LIMIT = 50_000
 
 
 def truncate_diff_for_prompt(
-    diff_content: str, limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
+    diff_content: str,
+    limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
 ) -> str:
     """Truncate a diff string for inclusion in an LLM prompt.
 
@@ -853,7 +875,7 @@ def _file_segment_label(header: str) -> str:
     """
     first_line = header.split("\n", 1)[0]
     if first_line.startswith("diff --git a/"):
-        a_path = first_line[len("diff --git a/"):].split(" b/", 1)[0]
+        a_path = first_line[len("diff --git a/") :].split(" b/", 1)[0]
         if a_path:
             return a_path[:200]
     return first_line[:200] or "(unnamed diff segment)"
@@ -928,7 +950,9 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     hunks = [
         segment[start:end]
         for start, end in zip(
-            starts, starts[1:] + [len(segment)], strict=True,
+            starts,
+            starts[1:] + [len(segment)],
+            strict=True,
         )
     ]
     path = _file_segment_label(header)
@@ -959,9 +983,7 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     parts_assumed = 1
     groups: list[list[str]] = []
     for _ in range(_PART_COUNT_FIXED_POINT_ROUNDS):
-        content_budget = (
-            budget - _part_marker_reserve(path, parts_assumed) - len(header)
-        )
+        content_budget = budget - _part_marker_reserve(path, parts_assumed) - len(header)
         if content_budget <= 0:
             raise DiffUnsplittableError(
                 f"file header for {path} is {len(header)} chars, leaving no "
@@ -999,9 +1021,7 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
     total = len(groups)
     parts: list[_DiffUnit] = []
     for i, group in enumerate(groups, 1):
-        template = (
-            _FILE_PART_MARKER if i == 1 else _FILE_PART_CONTINUED_MARKER
-        )
+        template = _FILE_PART_MARKER if i == 1 else _FILE_PART_CONTINUED_MARKER
         marker = template.format(i=i, n=total, path=path)
         text = marker + header + "".join(group)
         if len(text) > budget:  # defensive: the reserve math prevents this
@@ -1014,7 +1034,8 @@ def _split_file_segment(segment: str, budget: int) -> list[_DiffUnit]:
 
 
 def split_diff_for_prompt(
-    diff_content: str, limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
+    diff_content: str,
+    limit: int = DEFAULT_PROMPT_DIFF_CHAR_LIMIT,
 ) -> list[str]:
     """R1.4 (H-16): split an oversized diff into chunks on ``diff --git``
     file boundaries, each at most ``limit`` chars including a one-line
@@ -1039,15 +1060,12 @@ def split_diff_for_prompt(
     """
     if limit <= _CHUNK_HEADER_RESERVE:
         raise ValueError(
-            f"limit must exceed the {_CHUNK_HEADER_RESERVE}-char header "
-            f"reserve, got {limit}"
+            f"limit must exceed the {_CHUNK_HEADER_RESERVE}-char header reserve, got {limit}"
         )
     if len(diff_content) <= limit:
         return [diff_content]
 
-    boundaries = [
-        m.start() for m in _DIFF_FILE_BOUNDARY_RE.finditer(diff_content)
-    ]
+    boundaries = [m.start() for m in _DIFF_FILE_BOUNDARY_RE.finditer(diff_content)]
     if not boundaries:
         raise DiffUnsplittableError(
             f"diff is {len(diff_content)} chars (limit {limit}) but "
@@ -1061,7 +1079,9 @@ def split_diff_for_prompt(
     segments = [
         diff_content[start:end]
         for start, end in zip(
-            starts, starts[1:] + [len(diff_content)], strict=True,
+            starts,
+            starts[1:] + [len(diff_content)],
+            strict=True,
         )
     ]
 
@@ -1093,9 +1113,7 @@ def split_diff_for_prompt(
         # Provenance only, no reviewer directives: prompt-body guidance
         # about truncated/chunked diffs is Session 8C's calibrated change.
         template = (
-            _CHUNK_HEADER_PARTIAL_FILE
-            if any(u.is_file_part for u in group)
-            else _CHUNK_HEADER
+            _CHUNK_HEADER_PARTIAL_FILE if any(u.is_file_part for u in group) else _CHUNK_HEADER
         )
         header = template.format(i=i, n=total)
         chunk = header + "".join(u.text for u in group)

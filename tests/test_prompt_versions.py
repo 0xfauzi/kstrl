@@ -122,13 +122,15 @@ _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 # rationale. (DEFAULT_PRD_PROMPT was previously enrolled here but was
 # deleted along with the manual `kstrl prd create` path during the
 # legacy-purge cleanup -- the factory is now the only PRD path.)
-_ENROLLMENT_EXEMPT_NAMES = frozenset({
-    "DEFAULT_PROGRESS",
-    "DEFAULT_CODEBASE_MAP",
-    "DEFAULT_FEATURE_UNDERSTAND",
-    "DEFAULT_UNDERSTAND_PROMPT",
-    "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
-})
+_ENROLLMENT_EXEMPT_NAMES = frozenset(
+    {
+        "DEFAULT_PROGRESS",
+        "DEFAULT_CODEBASE_MAP",
+        "DEFAULT_FEATURE_UNDERSTAND",
+        "DEFAULT_UNDERSTAND_PROMPT",
+        "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
+    }
+)
 
 
 def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]) -> str:
@@ -136,13 +138,9 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
     act_hash, act_ver = actual
     parts = [f"{name} snapshot drift detected.\n"]
     if exp_hash != act_hash:
-        parts.append(
-            f"  Hash:    expected={exp_hash}\n           actual  ={act_hash}\n"
-        )
+        parts.append(f"  Hash:    expected={exp_hash}\n           actual  ={act_hash}\n")
     if exp_ver != act_ver:
-        parts.append(
-            f"  Version: expected={exp_ver!r:>10}    actual={act_ver!r}\n"
-        )
+        parts.append(f"  Version: expected={exp_ver!r:>10}    actual={act_ver!r}\n")
     parts.append(
         "\nTo land this change:\n"
         "  1. Re-run calibration to verify detection rate did not regress:\n"
@@ -208,12 +206,8 @@ def test_no_silent_version_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(AssertionError) as exc_info:
         _check_snapshot(name)
     message = str(exc_info.value)
-    assert "Hash:" in message, (
-        "snapshot failure must name the hash drift"
-    )
-    assert "Version:" not in message, (
-        "version columns still agree; only the hash moved"
-    )
+    assert "Hash:" in message, "snapshot failure must name the hash drift"
+    assert "Version:" not in message, "version columns still agree; only the hash moved"
 
 
 # ---------------------------------------------------------------------------
@@ -312,9 +306,7 @@ def _module_level_prompt_constants(
     re-implementing the walk inline (which would guard nothing).
     """
     found: dict[str, list[str]] = {}
-    kstrl = package_root or (
-        Path(__file__).resolve().parent.parent / "kstrl"
-    )
+    kstrl = package_root or (Path(__file__).resolve().parent.parent / "kstrl")
     for py_file in sorted(kstrl.rglob("*.py")):
         try:
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
@@ -371,9 +363,7 @@ def test_no_unenrolled_prompt_constants() -> None:
                 leaked.append(f"{module_file}::{name}")
     assert not leaked, (
         "Module-level *_PROMPT constants found in kstrl/ that are NOT "
-        "enrolled in H3 snapshot protection:\n  "
-        + "\n  ".join(leaked)
-        + "\n\nFor each, either:\n"
+        "enrolled in H3 snapshot protection:\n  " + "\n  ".join(leaked) + "\n\nFor each, either:\n"
         "  - Add a matching *_PROMPT_VERSION constant next to it and "
         "enroll in tests/test_prompt_versions.py::_PROMPTS, "
         "_VERSIONS, and _EXPECTED_SNAPSHOTS.\n"
@@ -405,7 +395,8 @@ def test_ast_walker_catches_typed_assignment(tmp_path: Path) -> None:
     in addition to ``NAME = "..."``. Without this, a developer can
     type-annotate the assignment and bypass H3 protection."""
     pkg = _synthetic_module(
-        tmp_path, 'TYPED_PROMPT: str = "you are a hostile reviewer"\n',
+        tmp_path,
+        'TYPED_PROMPT: str = "you are a hostile reviewer"\n',
     )
     assert _module_level_prompt_constants(pkg) == {
         "synth_pkg/mod.py": ["TYPED_PROMPT"],
@@ -417,11 +408,14 @@ def test_ast_walker_catches_nested_declaration(tmp_path: Path) -> None:
     declared inside a function or class body, not just at module level.
     Without this, wrapping a prompt declaration in
     ``def _build_default(): ...`` bypasses H3."""
-    pkg = _synthetic_module(tmp_path, (
-        "def _build_default():\n"
-        '    NESTED_PROMPT = "you are a hostile reviewer"\n'
-        "    return NESTED_PROMPT\n"
-    ))
+    pkg = _synthetic_module(
+        tmp_path,
+        (
+            "def _build_default():\n"
+            '    NESTED_PROMPT = "you are a hostile reviewer"\n'
+            "    return NESTED_PROMPT\n"
+        ),
+    )
     assert _module_level_prompt_constants(pkg) == {
         "synth_pkg/mod.py": ["NESTED_PROMPT"],
     }, "AST walker failed to catch nested prompt declaration."
@@ -431,10 +425,13 @@ def test_ast_walker_skips_enrollment_exempt_names(tmp_path: Path) -> None:
     """The REAL walker must honor _ENROLLMENT_EXEMPT_NAMES (exempt
     scaffolding templates are not flagged) while still catching a
     non-exempt prompt in the same module."""
-    pkg = _synthetic_module(tmp_path, (
-        'DEFAULT_UNDERSTAND_PROMPT = "scaffolding template"\n'
-        'REAL_PROMPT = "you are a hostile reviewer"\n'
-    ))
+    pkg = _synthetic_module(
+        tmp_path,
+        (
+            'DEFAULT_UNDERSTAND_PROMPT = "scaffolding template"\n'
+            'REAL_PROMPT = "you are a hostile reviewer"\n'
+        ),
+    )
     assert _module_level_prompt_constants(pkg) == {
         "synth_pkg/mod.py": ["REAL_PROMPT"],
     }
@@ -469,10 +466,7 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
                     continue
                 if isinstance(node.target, ast.Name):
                     discovered_anywhere.add(node.target.id)
-    stale = [
-        name for name in _ENROLLMENT_EXEMPT_NAMES
-        if name not in discovered_anywhere
-    ]
+    stale = [name for name in _ENROLLMENT_EXEMPT_NAMES if name not in discovered_anywhere]
     assert not stale, (
         f"_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "
         f"correspond to a module-level string constant in kstrl/: "

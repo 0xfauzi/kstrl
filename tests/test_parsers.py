@@ -151,15 +151,7 @@ class TestParseRuffOutput:
 class TestAddSourceContext:
     def test_add_source_context(self, tmp_path: Path) -> None:
         src_file = tmp_path / "example.py"
-        src_file.write_text(
-            "line1\n"
-            "line2\n"
-            "line3\n"
-            "line4_error_here\n"
-            "line5\n"
-            "line6\n"
-            "line7\n"
-        )
+        src_file.write_text("line1\nline2\nline3\nline4_error_here\nline5\nline6\nline7\n")
         failure = ParsedFailure(file="example.py", line=4, message="some error")
         add_source_context(failure, tmp_path, context_lines=2)
         assert failure.source_context != ""
@@ -239,14 +231,18 @@ class TestFormatForPrompt:
             total_errors=2,
             failures=[
                 ParsedFailure(
-                    file="test_foo.py", line=10,
-                    rule_or_test="test_bar", message="assert 1 == 2",
+                    file="test_foo.py",
+                    line=10,
+                    rule_or_test="test_bar",
+                    message="assert 1 == 2",
                     source_context="  10 | assert 1 == 2",
                     fix_hint="Check expected vs actual values.",
                 ),
                 ParsedFailure(
-                    file="test_foo.py", line=20,
-                    rule_or_test="test_baz", message="KeyError",
+                    file="test_foo.py",
+                    line=20,
+                    rule_or_test="test_baz",
+                    message="KeyError",
                 ),
             ],
             raw_summary="2 failed, 3 passed in 1.5s",
@@ -268,10 +264,7 @@ class TestFormatForPrompt:
         assert "[ruff]" in lines[0]
 
     def test_format_for_prompt_truncation(self) -> None:
-        failures = [
-            ParsedFailure(file=f"f{i}.py", line=i, message=f"err{i}")
-            for i in range(15)
-        ]
+        failures = [ParsedFailure(file=f"f{i}.py", line=i, message=f"err{i}") for i in range(15)]
         output = ParsedOutput(tool="ruff", total_errors=15, failures=failures)
         lines = output.format_for_prompt(max_failures=5)
         # Should show 5 failures + "... and 10 more errors"
@@ -282,7 +275,9 @@ class TestFormatForPrompt:
             tool="mypy",
             failures=[
                 ParsedFailure(
-                    file="x.py", line=1, message="err",
+                    file="x.py",
+                    line=1,
+                    message="err",
                     source_context="  1 | x = 1",
                 ),
             ],

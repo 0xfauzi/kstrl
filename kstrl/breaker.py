@@ -162,11 +162,7 @@ def compute_diff_hash(cwd: Path) -> str | None:
     hasher.update(b"\x00")
     hasher.update(diff.encode())
 
-    untracked = [
-        line[3:]
-        for line in status.splitlines()
-        if line.startswith("?? ")
-    ]
+    untracked = [line[3:] for line in status.splitlines() if line.startswith("?? ")]
     hashed_bytes = 0
     for index, rel in enumerate(sorted(untracked)):
         hasher.update(b"\x00")
@@ -229,7 +225,9 @@ def compute_test_signature(cwd: Path, config: BreakerConfig) -> str:
 
     try:
         result = run_scrubbed(
-            config.test_command, cwd=cwd, timeout=config.test_timeout,
+            config.test_command,
+            cwd=cwd,
+            timeout=config.test_timeout,
         )
     except subprocess.TimeoutExpired:
         return "timeout"
@@ -262,9 +260,7 @@ class NoProgressBreaker:
         self._config = config
         self._enabled = config.no_progress_iterations > 0
         self._stall_count = 0
-        self._prev_fingerprint: str | None = (
-            compute_diff_hash(cwd) if self._enabled else None
-        )
+        self._prev_fingerprint: str | None = compute_diff_hash(cwd) if self._enabled else None
         self._prev_signature: str | None = None
 
     @property

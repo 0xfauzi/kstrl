@@ -114,48 +114,37 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
     if fixture_type == "cli":
         command = input_data.get("command")
         if not isinstance(command, str) or not command.strip():
-            errors.append(
-                f"{prefix}.input_data.command: must be a non-empty string"
-            )
+            errors.append(f"{prefix}.input_data.command: must be a non-empty string")
         if "exit_code" in expected and (
-            isinstance(expected["exit_code"], bool)
-            or not isinstance(expected["exit_code"], int)
+            isinstance(expected["exit_code"], bool) or not isinstance(expected["exit_code"], int)
         ):
             errors.append(f"{prefix}.expected.exit_code: must be an integer")
         for key in ("stdout_contains", "stdout_not_contains"):
             if key in expected:
                 errors.extend(
                     _validate_string_list(
-                        f"{prefix}.expected.{key}", expected[key],
+                        f"{prefix}.expected.{key}",
+                        expected[key],
                     )
                 )
     elif fixture_type == "function":
         for key in ("module", "function"):
             value = input_data.get(key)
             if not isinstance(value, str) or not value:
-                errors.append(
-                    f"{prefix}.input_data.{key}: must be a non-empty string"
-                )
+                errors.append(f"{prefix}.input_data.{key}: must be a non-empty string")
         if "args" in input_data and not isinstance(input_data["args"], list):
             errors.append(f"{prefix}.input_data.args: must be an array")
         if "kwargs" in input_data and not isinstance(input_data["kwargs"], dict):
             errors.append(f"{prefix}.input_data.kwargs: must be an object")
         if "raises" in expected:
             if not isinstance(expected["raises"], str) or not expected["raises"]:
-                errors.append(
-                    f"{prefix}.expected.raises: must be a non-empty string"
-                )
+                errors.append(f"{prefix}.expected.raises: must be a non-empty string")
             if "returns" in expected:
-                errors.append(
-                    f"{prefix}.expected: 'returns' and 'raises' are "
-                    "mutually exclusive"
-                )
+                errors.append(f"{prefix}.expected: 'returns' and 'raises' are mutually exclusive")
     elif fixture_type == "file":
         path_value = input_data.get("path")
         if not isinstance(path_value, str) or not path_value:
-            errors.append(
-                f"{prefix}.input_data.path: must be a non-empty string"
-            )
+            errors.append(f"{prefix}.input_data.path: must be a non-empty string")
         elif Path(path_value).is_absolute() or ".." in Path(path_value).parts:
             # The PRD is untrusted input; a path outside the worktree
             # would leak file content into retry prompts and PR bodies.
@@ -169,7 +158,8 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
             if key in expected:
                 errors.extend(
                     _validate_string_list(
-                        f"{prefix}.expected.{key}", expected[key],
+                        f"{prefix}.expected.{key}",
+                        expected[key],
                     )
                 )
     return errors
@@ -290,9 +280,7 @@ class PRD:
                 )
             else:
                 for i, entry in enumerate(fixtures):
-                    errors.extend(
-                        _validate_fixture_entry(f"fixtures[{i}]", entry)
-                    )
+                    errors.extend(_validate_fixture_entry(f"fixtures[{i}]", entry))
 
         # Validate branchName
         branch_name = data.get("branchName")
@@ -389,7 +377,9 @@ class PRD:
         # indent, one trailing newline - so a save of an unmodified PRD
         # is byte-identical to what the architect wrote.
         fd, tmp_name = tempfile.mkstemp(
-            dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-",
+            dir=str(path.parent),
+            suffix=".tmp",
+            prefix=f".{path.name}-",
         )
         try:
             with os.fdopen(fd, "w") as f:

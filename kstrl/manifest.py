@@ -20,6 +20,7 @@ def _iso_now() -> str:
     """Current UTC time as ISO 8601, matching the factory's timestamps."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+
 # R0.6 input hygiene: component ids and branch names are LLM-emitted
 # (architect output) and flow into filesystem paths
 # (.kstrl/worktrees/<id>, scripts/kstrl/feature/<id>) and git argv
@@ -79,10 +80,7 @@ def validate_branch_name(branch: str) -> str | None:
     if not branch:
         return "branch name must be a non-empty string"
     if len(branch) > MAX_BRANCH_NAME_LENGTH:
-        return (
-            f"branch name is too long ({len(branch)} chars, max "
-            f"{MAX_BRANCH_NAME_LENGTH})"
-        )
+        return f"branch name is too long ({len(branch)} chars, max {MAX_BRANCH_NAME_LENGTH})"
     if not _BRANCH_CHARSET_RE.match(branch):
         return (
             f"branch name {branch!r} contains disallowed characters: only "
@@ -102,10 +100,7 @@ def validate_branch_name(branch: str) -> str | None:
             "(leading '/', trailing '/', or '//')"
         )
     if any(seg.startswith(".") for seg in branch.split("/")):
-        return (
-            f"branch name {branch!r} must not have a path segment "
-            "starting with '.'"
-        )
+        return f"branch name {branch!r} must not have a path segment starting with '.'"
     if branch.endswith("."):
         return f"branch name {branch!r} must not end with '.'"
     if branch.endswith(".lock"):
@@ -297,9 +292,7 @@ class Manifest:
                 verification_passed=c.get("verificationPassed"),
                 review_passed=c.get("reviewPassed"),
                 findings=[
-                    Finding.from_dict(d)
-                    for d in c.get("findings", [])
-                    if isinstance(d, dict)
+                    Finding.from_dict(d) for d in c.get("findings", []) if isinstance(d, dict)
                 ],
                 review_findings=c.get("reviewFindings", ""),
                 scaffold=c.get("scaffold", ""),
@@ -378,9 +371,7 @@ class Manifest:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # Atomic write: temp file in same directory then os.replace
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), suffix=".tmp", prefix=".manifest-"
-        )
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".manifest-")
         try:
             with os.fdopen(fd, "w") as f:
                 json.dump(data, f, indent=2)
@@ -403,7 +394,12 @@ class Manifest:
             return errors
 
         required_keys = {
-            "version", "specFile", "projectName", "baseBranch", "singlePr", "components",
+            "version",
+            "specFile",
+            "projectName",
+            "baseBranch",
+            "singlePr",
+            "components",
         }
         actual_keys = set(data.keys())
 
@@ -442,13 +438,28 @@ class Manifest:
 
         component_required = {"id", "title", "description", "dependencies", "prdPath", "branchName"}
         component_optional = {
-            "status", "error", "retries", "prNumber", "prUrl",
-            "linearIssueId", "linearIssueIdentifier",
-            "startedAt", "completedAt", "durationSeconds", "iterationCount",
-            "verificationPassed", "reviewPassed", "reviewFindings",
-            "findings", "scaffold",
-            "failedPhase", "failedCheck", "evidenceWorktree",
-            "evidenceDebugDir", "journalOffsetStart", "journalOffsetEnd",
+            "status",
+            "error",
+            "retries",
+            "prNumber",
+            "prUrl",
+            "linearIssueId",
+            "linearIssueIdentifier",
+            "startedAt",
+            "completedAt",
+            "durationSeconds",
+            "iterationCount",
+            "verificationPassed",
+            "reviewPassed",
+            "reviewFindings",
+            "findings",
+            "scaffold",
+            "failedPhase",
+            "failedCheck",
+            "evidenceWorktree",
+            "evidenceDebugDir",
+            "journalOffsetStart",
+            "journalOffsetEnd",
         }
         component_all = component_required | component_optional
 
@@ -519,9 +530,7 @@ class Manifest:
         for comp in self.components:
             for dep in comp.dependencies:
                 if dep not in id_set:
-                    errors.append(
-                        f"Component '{comp.id}' depends on unknown component '{dep}'"
-                    )
+                    errors.append(f"Component '{comp.id}' depends on unknown component '{dep}'")
 
         if errors:
             return errors
@@ -600,9 +609,7 @@ class Manifest:
         - Its status is PENDING
         - All its dependencies have status COMPLETED
         """
-        completed = {
-            c.id for c in self.components if c.status == ComponentStatus.COMPLETED.value
-        }
+        completed = {c.id for c in self.components if c.status == ComponentStatus.COMPLETED.value}
         ready = []
         for comp in self.components:
             if comp.status != ComponentStatus.PENDING.value:
@@ -704,10 +711,7 @@ class Manifest:
                 continue
             if all(
                 dep in reset_ids
-                or (
-                    (d := self.get_component(dep)) is not None
-                    and d.status in runnable
-                )
+                or ((d := self.get_component(dep)) is not None and d.status in runnable)
                 for dep in dep_comp.dependencies
             ):
                 reset_ids.add(cid)

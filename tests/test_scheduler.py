@@ -38,7 +38,10 @@ from kstrl.verify import VerifyConfig
 
 def _git(root: Path, *args: str) -> None:
     subprocess.run(
-        ["git", *args], cwd=root, check=True, capture_output=True,
+        ["git", *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
     )
 
 
@@ -53,7 +56,10 @@ def _init_repo(root: Path) -> None:
 
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
-        comp_id, comp_id.title(), "Desc", deps or [],
+        comp_id,
+        comp_id.title(),
+        "Desc",
+        deps or [],
         f"scripts/kstrl/feature/{comp_id}/prd.json",
         f"kstrl/factory/{comp_id}",
     )
@@ -61,8 +67,12 @@ def _component(comp_id: str, deps: list[str] | None = None) -> Component:
 
 def _manifest(components: list[Component]) -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="test",
-        base_branch="main", single_pr=False, components=components,
+        version="1",
+        spec_file="spec.md",
+        project_name="test",
+        base_branch="main",
+        single_pr=False,
+        components=components,
     )
 
 
@@ -81,12 +91,19 @@ def _base_config(root: Path) -> KstrlConfig:
 
 def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     defaults: dict[str, Any] = dict(
-        max_parallel=1, max_retries=0, retry_delay=0,
-        create_prs=False, use_worktrees=True, review_mode="skip",
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        create_prs=False,
+        use_worktrees=True,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
         fixtures_config=FixturesConfig(),
         progress_log_path=tmp_path / "progress.jsonl",
@@ -119,7 +136,8 @@ class TestInlineExecutor:
 
 class TestUnifiedSchedulingLoop:
     def test_provisioning_failure_does_not_strand_siblings(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """comp-a's worktree setup fails; comp-b is INDEPENDENT and must
         still be scheduled. A pass that only transitioned components
@@ -147,16 +165,26 @@ class TestUnifiedSchedulingLoop:
             )
             return wt
 
-        with patch(
-            "kstrl.factory._setup_worktree", side_effect=_setup,
-        ), patch(
-            "kstrl.factory._run_component", return_value=success_b,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="",
+        with (
+            patch(
+                "kstrl.factory._setup_worktree",
+                side_effect=_setup,
+            ),
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_b,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(tmp_path),
-                PlainUI(no_color=True, file=io.StringIO()), tmp_path,
+                manifest,
+                config,
+                _base_config(tmp_path),
+                PlainUI(no_color=True, file=io.StringIO()),
+                tmp_path,
                 manifest_path=tmp_path / "manifest.json",
             )
 
@@ -172,8 +200,8 @@ class TestUnifiedSchedulingLoop:
         run_dir = sorted((tmp_path / ".kstrl" / "runs").iterdir())[-1]
         events = ev.read_events(run_dir / "events.jsonl")
         engineer_starts = [
-            event for event in events
-            if isinstance(event, ev.PhaseStarted)
-            and event.phase == "engineer"
+            event
+            for event in events
+            if isinstance(event, ev.PhaseStarted) and event.phase == "engineer"
         ]
         assert [event.component for event in engineer_starts] == ["comp-b"]

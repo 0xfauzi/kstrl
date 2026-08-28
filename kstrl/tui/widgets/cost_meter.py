@@ -39,8 +39,10 @@ def format_tokens(tokens: int) -> str:
 
 def _pressure_style(pct: int) -> str:
     return (
-        f"bold {theme.ERROR}" if pct >= 90
-        else f"bold {theme.WARNING}" if pct >= 70
+        f"bold {theme.ERROR}"
+        if pct >= 90
+        else f"bold {theme.WARNING}"
+        if pct >= 70
         else theme.MUTED
     )
 
@@ -57,7 +59,8 @@ def render_cost_meter(state: RunState) -> Text:
     cost_marker = "+" if state.cost_is_lower_bound else ""
     text = Text()
     text.append(
-        f"{format_tokens(state.total_tokens)}{token_marker}", style="bold",
+        f"{format_tokens(state.total_tokens)}{token_marker}",
+        style="bold",
     )
     text.append(" tok", style=theme.MUTED)
     text.append(" · ", style=theme.MUTED)
@@ -72,11 +75,13 @@ def render_cost_meter(state: RunState) -> Text:
     # nobody measured.
     if state.max_total_tokens:
         pct = min(
-            100, int(100 * state.total_tokens / state.max_total_tokens),
+            100,
+            int(100 * state.total_tokens / state.max_total_tokens),
         )
         text.append(" · ", style=theme.MUTED)
         text.append(
-            f"{pct}%{token_marker} of token cap", style=_pressure_style(pct),
+            f"{pct}%{token_marker} of token cap",
+            style=_pressure_style(pct),
         )
     if state.max_cost_usd:
         cost_pct = min(100, int(100 * state.cost_usd / state.max_cost_usd))
@@ -86,9 +91,12 @@ def render_cost_meter(state: RunState) -> Text:
             style=_pressure_style(cost_pct),
         )
     axes = [
-        name for name, marked in (
-            ("tokens", token_marker), ("cost", cost_marker),
-        ) if marked
+        name
+        for name, marked in (
+            ("tokens", token_marker),
+            ("cost", cost_marker),
+        )
+        if marked
     ]
     if axes:
         # The legend names which axes are short - and stops there. The

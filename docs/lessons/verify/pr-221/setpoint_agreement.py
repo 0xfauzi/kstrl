@@ -84,13 +84,26 @@ def new_rule(
 def sweep() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for eng, rev, c1, c2, mode, level in product(
-        (True, False), REVIEW_STATES, VERDICTS, VERDICTS, MODES, LEVELS,
+        (True, False),
+        REVIEW_STATES,
+        VERDICTS,
+        VERDICTS,
+        MODES,
+        LEVELS,
     ):
         out = new_rule(eng, rev, (c1, c2), mode, level)
-        rows.append({
-            "engineer_passes": eng, "review": rev, "c1": c1, "c2": c2,
-            "mode": mode, "level": level, "old": old_rule(eng), **out,
-        })
+        rows.append(
+            {
+                "engineer_passes": eng,
+                "review": rev,
+                "c1": c1,
+                "c2": c2,
+                "mode": mode,
+                "level": level,
+                "old": old_rule(eng),
+                **out,
+            }
+        )
     return rows
 
 
@@ -104,39 +117,62 @@ def main() -> None:
     blocking = [r for r in findings if r["key"] == "block"]
     print(f"rows swept: {len(rows)}")
     print(f"rows with a finding: {len(findings)}")
-    print(f"rows where the OLD check passed and the NEW rule files a finding: "
-          f"{len(old_pass_new_finding)}")
+    print(
+        f"rows where the OLD check passed and the NEW rule files a finding: "
+        f"{len(old_pass_new_finding)}"
+    )
     print(f"rows that block (revert the flag and retry): {len(blocking)}")
     print()
     for key in ("unclaimed", "skip", "infra", "agree", "advisory", "block"):
         print(f"  outcome {key:9s}: {sum(1 for r in rows if r['key'] == key)} rows")
     print()
-    print("claim 1: the old check never consults the reviewer ->",
-          "holds" if all(r["old"] == old_rule(bool(r["engineer_passes"])) for r in rows)
-          else "fails")
-    print("claim 2: a story the engineer did not claim never produces a finding ->",
-          "holds" if not any(r["finding"] for r in rows if not r["engineer_passes"])
-          else "fails")
-    print("claim 3: no measurement (infra error or skip) never produces a finding ->",
-          "holds" if not any(r["finding"] for r in rows if r["review"] != "ran")
-          else "fails")
-    print("claim 4: a finding exists exactly when the engineer claimed, the review "
-          "ran, and the story verdict is not pass ->",
-          "holds" if all(
-              r["finding"] == (r["engineer_passes"] and r["review"] == "ran"
-                               and r["verdict"] != "pass")
-              for r in rows) else "fails")
-    print("claim 5: one uncovered criterion beside a pass still reads as pass ->",
-          "holds" if story_verdict(("pass", "uncovered")) == "pass" else "fails")
-    print("claim 6: blocks exactly when mode is block or level >= 1 (issue #224 test 10) ->",
-          "holds" if [blocks("advisory", lv) for lv in LEVELS] == [False, True, True, True, True]
-          and all(blocks("block", lv) for lv in LEVELS) else "fails")
-    print("claim 7: with the default config (advisory, ladder off) nothing blocks ->",
-          "holds" if not any(r["key"] == "block" for r in rows
-                             if r["mode"] == "advisory" and r["level"] == 0) else "fails")
-    print("claim 8: a fail verdict on one criterion dominates a pass on the other ->",
-          "holds" if story_verdict(("pass", "fail")) == "fail"
-          and story_verdict(("advisory", "pass")) == "advisory" else "fails")
+    print(
+        "claim 1: the old check never consults the reviewer ->",
+        "holds" if all(r["old"] == old_rule(bool(r["engineer_passes"])) for r in rows) else "fails",
+    )
+    print(
+        "claim 2: a story the engineer did not claim never produces a finding ->",
+        "holds" if not any(r["finding"] for r in rows if not r["engineer_passes"]) else "fails",
+    )
+    print(
+        "claim 3: no measurement (infra error or skip) never produces a finding ->",
+        "holds" if not any(r["finding"] for r in rows if r["review"] != "ran") else "fails",
+    )
+    print(
+        "claim 4: a finding exists exactly when the engineer claimed, the review "
+        "ran, and the story verdict is not pass ->",
+        "holds"
+        if all(
+            r["finding"]
+            == (r["engineer_passes"] and r["review"] == "ran" and r["verdict"] != "pass")
+            for r in rows
+        )
+        else "fails",
+    )
+    print(
+        "claim 5: one uncovered criterion beside a pass still reads as pass ->",
+        "holds" if story_verdict(("pass", "uncovered")) == "pass" else "fails",
+    )
+    print(
+        "claim 6: blocks exactly when mode is block or level >= 1 (issue #224 test 10) ->",
+        "holds"
+        if [blocks("advisory", lv) for lv in LEVELS] == [False, True, True, True, True]
+        and all(blocks("block", lv) for lv in LEVELS)
+        else "fails",
+    )
+    print(
+        "claim 7: with the default config (advisory, ladder off) nothing blocks ->",
+        "holds"
+        if not any(r["key"] == "block" for r in rows if r["mode"] == "advisory" and r["level"] == 0)
+        else "fails",
+    )
+    print(
+        "claim 8: a fail verdict on one criterion dominates a pass on the other ->",
+        "holds"
+        if story_verdict(("pass", "fail")) == "fail"
+        and story_verdict(("advisory", "pass")) == "advisory"
+        else "fails",
+    )
 
 
 if __name__ == "__main__":

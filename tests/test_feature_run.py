@@ -30,8 +30,7 @@ def _loop_results_with_agent(*codes: int) -> Callable[..., LoopResult]:
     returns the scripted exit codes in order."""
     remaining = list(codes)
 
-    def fake(config: Any, ui: Any, agent: Any, *args: Any,
-             **kwargs: Any) -> LoopResult:
+    def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
         for _ in agent.run("prompt"):
             pass
         code = remaining.pop(0)
@@ -41,13 +40,20 @@ def _loop_results_with_agent(*codes: int) -> Callable[..., LoopResult]:
 
 
 def _run_recorded(
-    tmp_path: Path, *, codes: tuple[int, ...], choice: int = 0,
+    tmp_path: Path,
+    *,
+    codes: tuple[int, ...],
+    choice: int = 0,
 ) -> int:
     params = _params(tmp_path, repair_max_runs=2)
     ui = PlainUI(no_color=True, file=io.StringIO())
     command_run = open_command_run(
-        ui, tmp_path, "feature", component=params.feature_name,
-        enabled=True, heartbeat=False,
+        ui,
+        tmp_path,
+        "feature",
+        component=params.feature_name,
+        enabled=True,
+        heartbeat=False,
     )
     try:
         with (
@@ -55,7 +61,11 @@ def _run_recorded(
             patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             return run_feature(
-                params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                params,
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=ScriptedChannel(choice),
                 run=command_run,
             )
@@ -75,14 +85,19 @@ class TestFeatureRunRecording:
         comp = state.components["demo"]
         assert comp.status == "completed"
         assert [p["phase"] for p in comp.phase_history] == [
-            "understand", "implement", "repair-1",
+            "understand",
+            "implement",
+            "repair-1",
         ]
         assert [p["passed"] for p in comp.phase_history] == [
-            True, False, True,
+            True,
+            False,
+            True,
         ]
         assert comp.checkpoint_open == ""  # gate resolved
         assert [a["label"] for a in state.artifacts] == [
-            "understand_file", "repair_prd",
+            "understand_file",
+            "repair_prd",
         ]
 
     def test_gate_quit_folds_as_skipped(self, tmp_path: Path) -> None:
@@ -98,8 +113,12 @@ class TestFeatureRunRecording:
         params = _params(tmp_path)
         ui = PlainUI(no_color=True, file=io.StringIO())
         command_run = open_command_run(
-            ui, tmp_path, "feature", component="demo",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "feature",
+            component="demo",
+            enabled=True,
+            heartbeat=False,
         )
 
         def incomplete(*args: Any, **kwargs: Any) -> LoopResult:
@@ -108,8 +127,13 @@ class TestFeatureRunRecording:
         try:
             with patch("kstrl.feature_cmd.run_loop", incomplete):
                 code = run_feature(
-                    params, KstrlConfig(), StubAgent(), ui, tmp_path,
-                    interaction=ScriptedChannel(0), run=command_run,
+                    params,
+                    KstrlConfig(),
+                    StubAgent(),
+                    ui,
+                    tmp_path,
+                    interaction=ScriptedChannel(0),
+                    run=command_run,
                 )
         finally:
             command_run.close()
@@ -139,15 +163,21 @@ class TestFeatureRunRecording:
         params.implementation_auto_run = True
         ui = PlainUI(no_color=True, file=io.StringIO())
         command_run = open_command_run(
-            ui, tmp_path, "feature", component="demo",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "feature",
+            component="demo",
+            enabled=True,
+            heartbeat=False,
         )
         remaining = iter(outcomes)
 
         def scripted(*args: Any, **kwargs: Any) -> LoopResult:
             completed, exit_code = next(remaining)
             return LoopResult(
-                completed=completed, iterations=1, exit_code=exit_code,
+                completed=completed,
+                iterations=1,
+                exit_code=exit_code,
             )
 
         try:
@@ -156,7 +186,11 @@ class TestFeatureRunRecording:
                 patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
             ):
                 code = run_feature(
-                    params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                    params,
+                    KstrlConfig(),
+                    StubAgent(),
+                    ui,
+                    tmp_path,
                     run=command_run,
                 )
         finally:
@@ -174,8 +208,12 @@ class TestFeatureRunRecording:
         params = _params(tmp_path)
         ui = PlainUI(no_color=True, file=io.StringIO())
         command_run = open_command_run(
-            ui, tmp_path, "feature", component="demo",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "feature",
+            component="demo",
+            enabled=True,
+            heartbeat=False,
         )
 
         def explode(*args: Any, **kwargs: Any) -> LoopResult:
@@ -187,8 +225,13 @@ class TestFeatureRunRecording:
                 pytest.raises(RuntimeError, match="agent exploded"),
             ):
                 run_feature(
-                    params, KstrlConfig(), StubAgent(), ui, tmp_path,
-                    interaction=ScriptedChannel(0), run=command_run,
+                    params,
+                    KstrlConfig(),
+                    StubAgent(),
+                    ui,
+                    tmp_path,
+                    interaction=ScriptedChannel(0),
+                    run=command_run,
                 )
         finally:
             command_run.close()
@@ -200,7 +243,8 @@ class TestFeatureRunRecording:
         assert comp.phase_history[-1]["passed"] is False
 
     def test_transcript_tees_on_top_of_legacy_logs(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _run_recorded(tmp_path, codes=(0, 0))
         runs_root = tmp_path / ".kstrl" / "runs"
@@ -215,16 +259,19 @@ class TestFeatureRunRecording:
             assert "line" in log.read_text()
 
     def test_narration_identical_with_and_without_recording(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         def run_once(root: Path, recorded: bool) -> str:
             params = _params(root, repair_max_runs=0)
             stream = io.StringIO()
             ui = PlainUI(no_color=True, file=stream)
             command_run = (
-                open_command_run(ui, root, "feature", component="demo",
-                                 enabled=True, heartbeat=False)
-                if recorded else None
+                open_command_run(
+                    ui, root, "feature", component="demo", enabled=True, heartbeat=False
+                )
+                if recorded
+                else None
             )
             try:
                 with patch(
@@ -232,8 +279,13 @@ class TestFeatureRunRecording:
                     _loop_results_with_agent(0, 0),
                 ):
                     run_feature(
-                        params, KstrlConfig(), StubAgent(), ui, root,
-                        interaction=ScriptedChannel(0), run=command_run,
+                        params,
+                        KstrlConfig(),
+                        StubAgent(),
+                        ui,
+                        root,
+                        interaction=ScriptedChannel(0),
+                        run=command_run,
                     )
             finally:
                 if command_run is not None:
@@ -249,7 +301,8 @@ class TestFeatureRunRecording:
 
 class TestFeatureEmbeddedGate:
     async def test_gate_opens_options_modal_and_unblocks(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The real run_feature blocks on its gate through the queue
         channel; the options modal answers it and the flow finishes."""
@@ -258,8 +311,12 @@ class TestFeatureEmbeddedGate:
         stop = StopController()
         ui = PlainUI(no_color=True, file=io.StringIO())
         command_run = open_command_run(
-            ui, tmp_path, "feature", component="demo",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "feature",
+            component="demo",
+            enabled=True,
+            heartbeat=False,
         )
 
         base_stub = _loop_results_with_agent(0, 0)
@@ -273,33 +330,37 @@ class TestFeatureEmbeddedGate:
                 time.sleep(0.01)
             return base_stub(*args, **kwargs)
 
-        patches = (
-            patch("kstrl.feature_cmd.run_loop", waiting_stub),
-        )
+        patches = (patch("kstrl.feature_cmd.run_loop", waiting_stub),)
         for p in patches:
             p.start()
         try:
             handle = start_command_thread(
                 lambda: run_feature(
-                    params, KstrlConfig(), StubAgent(), ui, tmp_path,
-                    interaction=channel, run=command_run,
+                    params,
+                    KstrlConfig(),
+                    StubAgent(),
+                    ui,
+                    tmp_path,
+                    interaction=channel,
+                    run=command_run,
                     stop_check=stop.is_set,
                 ),
                 stop=stop,
             )
             app = KstrlTuiApp(
                 run_dir=command_run.paths.root,  # type: ignore[union-attr]
-                root_dir=tmp_path, mode=Mode.EMBEDDED,
-                poll_interval=0.05, channel=channel, orchestrator=handle,
+                root_dir=tmp_path,
+                mode=Mode.EMBEDDED,
+                poll_interval=0.05,
+                channel=channel,
+                orchestrator=handle,
             )
             async with app.run_test(size=(120, 40)) as pilot:
                 deadline = time.monotonic() + 5
                 while not isinstance(app.screen, OptionsModal):
                     await pilot.pause(0.05)
                     assert time.monotonic() < deadline, "gate never opened"
-                assert "confirm implementation start" in (
-                    app.screen.request.header
-                )
+                assert "confirm implementation start" in (app.screen.request.header)
                 await pilot.press("1")
                 deadline = time.monotonic() + 5
                 while not handle.done():

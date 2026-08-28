@@ -42,7 +42,10 @@ REASONING_LEVELS = ("", "low", "medium", "high", "max")
 
 class WizardDone(Message):
     def __init__(
-        self, exit_code: int, transcript: str, agent_note: str,
+        self,
+        exit_code: int,
+        transcript: str,
+        agent_note: str,
     ) -> None:
         super().__init__()
         self.exit_code = exit_code
@@ -65,7 +68,8 @@ class InitWizardScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield ContextBar(
-            "init", "scaffold is non-destructive - existing files are kept",
+            "init",
+            "scaffold is non-destructive - existing files are kept",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="wizard-root")
@@ -81,7 +85,8 @@ class InitWizardScreen(Screen[None]):
                         "agent type",
                         Select(
                             [(t, t) for t in AGENT_TYPES if t],
-                            allow_blank=True, prompt="auto-detect",
+                            allow_blank=True,
+                            prompt="auto-detect",
                             id="wizard-agent-type",
                         ),
                     )
@@ -93,21 +98,20 @@ class InitWizardScreen(Screen[None]):
                         "reasoning",
                         Select(
                             [(r, r) for r in REASONING_LEVELS if r],
-                            allow_blank=True, prompt="agent default",
+                            allow_blank=True,
+                            prompt="agent default",
                             id="wizard-reasoning",
                         ),
                     )
                     yield Static(id="wizard-detected")
                     yield FormErrors(id="wizard-errors")
                     with Horizontal(classes="wizard-buttons"):
-                        yield Button("preview", id="wizard-preview-btn",
-                                     classes="default-choice")
+                        yield Button("preview", id="wizard-preview-btn", classes="default-choice")
                 with Vertical(id="wizard-preview"):
                     yield Static("plan", id="wizard-plan-title")
                     yield Static(id="wizard-plan")
                     with Horizontal(classes="wizard-buttons"):
-                        yield Button("run init", id="wizard-run-btn",
-                                     classes="default-choice")
+                        yield Button("run init", id="wizard-run-btn", classes="default-choice")
                         yield Button("back", id="wizard-back-btn")
                 with Vertical(id="wizard-result"):
                     yield Static("init transcript", id="wizard-log-title")
@@ -139,8 +143,7 @@ class InitWizardScreen(Screen[None]):
 
     def _directory(self) -> Path:
         return Path(
-            self.query_one("#wizard-directory", Input).value.strip()
-            or ".",
+            self.query_one("#wizard-directory", Input).value.strip() or ".",
         ).expanduser()
 
     def _agent_values(self) -> tuple[str, str, str]:
@@ -169,16 +172,18 @@ class InitWizardScreen(Screen[None]):
         if any((agent_type, model, reasoning)):
             if (directory / "kstrl.toml").exists():
                 plan.append(
-                    "\n  existing kstrl.toml - agent settings will NOT "
-                    "be written",
+                    "\n  existing kstrl.toml - agent settings will NOT be written",
                     style=theme.WARNING,
                 )
             else:
                 chosen = ", ".join(
-                    f"{k}={v}" for k, v in (
-                        ("type", agent_type), ("model", model),
+                    f"{k}={v}"
+                    for k, v in (
+                        ("type", agent_type),
+                        ("model", model),
                         ("reasoning", reasoning),
-                    ) if v
+                    )
+                    if v
                 )
                 plan.append(
                     f"\n  [agent] will be set: {chosen}",
@@ -220,19 +225,20 @@ class InitWizardScreen(Screen[None]):
             note = ""
             try:
                 code = run_init(
-                    directory, PlainUI(no_color=True, file=stream),
+                    directory,
+                    PlainUI(no_color=True, file=stream),
                 )
                 if any((agent_type, model, reasoning)):
                     if not toml_missing_before:
                         note = (
-                            "agent settings NOT written: kstrl.toml already "
-                            "existed before this run"
+                            "agent settings NOT written: kstrl.toml already existed before this run"
                         )
                     elif code != 0:
                         note = "agent settings skipped: init did not succeed"
                     elif apply_agent_settings(
                         directory / "kstrl.toml",
-                        agent_type=agent_type, model=model,
+                        agent_type=agent_type,
+                        model=model,
                         reasoning=reasoning,
                     ):
                         note = "agent settings written to kstrl.toml [agent]"

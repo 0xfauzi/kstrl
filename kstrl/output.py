@@ -47,7 +47,10 @@ def build_console(
 ) -> Console:
     """Assemble the event-native console for one CLI command."""
     concrete = get_ui(
-        mode, no_color=no_color, ascii_only=ascii_only, force_rich=force_rich,
+        mode,
+        no_color=no_color,
+        ascii_only=ascii_only,
+        force_rich=force_rich,
     )
     renderer = UIBackedRenderer(concrete)
     bus = EventBus(CallbackSink(renderer.handle))

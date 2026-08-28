@@ -57,12 +57,19 @@ class TestBridge:
         result.exit_code = 0
 
         with patch(
-            "kstrl.tui.bridge.run_factory", return_value=result,
+            "kstrl.tui.bridge.run_factory",
+            return_value=result,
         ) as fake:
             handle = start_orchestrator(
-                object(), object(), object(), object(),  # type: ignore[arg-type]
-                tmp_path, None,
-                run_id="run-x", stop=stop, channel=channel,
+                object(),
+                object(),
+                object(),
+                object(),  # type: ignore[arg-type]
+                tmp_path,
+                None,
+                run_id="run-x",
+                stop=stop,
+                channel=channel,
             )
             handle.join(timeout=5)
         assert handle.done()
@@ -74,16 +81,22 @@ class TestBridge:
         assert kwargs["notify_capture_output"] is True
 
     def test_orchestrator_exception_lands_in_error_box(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with patch(
             "kstrl.tui.bridge.run_factory",
             side_effect=RuntimeError("boom"),
         ):
             handle = start_orchestrator(
-                object(), object(), object(), object(),  # type: ignore[arg-type]
-                tmp_path, None,
-                run_id="run-x", stop=StopController(),
+                object(),
+                object(),
+                object(),
+                object(),  # type: ignore[arg-type]
+                tmp_path,
+                None,
+                run_id="run-x",
+                stop=StopController(),
                 channel=QueueInteractionChannel(),
             )
             handle.join(timeout=5)
@@ -111,16 +124,19 @@ def _fake_orchestrator(
             deadline = time.monotonic() + 5
             while not channel.can_prompt() and time.monotonic() < deadline:
                 time.sleep(0.01)
-            response = channel.request(PromptRequest(
-                kind=PromptKind.CHECKPOINT,
-                header="Approve PR creation and merge for comp-a?",
-                options=("Approve", "Reject", "Retry"),
-                default=0,
-                component_id="comp-a",
-                checkpoint=CheckpointContext(
-                    component_id="comp-a", diff_excerpt="+x\n",
-                ),
-            ))
+            response = channel.request(
+                PromptRequest(
+                    kind=PromptKind.CHECKPOINT,
+                    header="Approve PR creation and merge for comp-a?",
+                    options=("Approve", "Reject", "Retry"),
+                    default=0,
+                    component_id="comp-a",
+                    checkpoint=CheckpointContext(
+                        component_id="comp-a",
+                        diff_excerpt="+x\n",
+                    ),
+                )
+            )
             decisions.append(response.choice if response.answered else -1)
         if wait_for_stop:
             stop.wait(timeout=30)
@@ -128,8 +144,10 @@ def _fake_orchestrator(
 
     thread = threading.Thread(target=_target, daemon=False)
     handle = OrchestratorHandle(
-        thread=thread, stop=stop,
-        result_box=result_box, error_box=error_box,
+        thread=thread,
+        stop=stop,
+        result_box=result_box,
+        error_box=error_box,
     )
     thread.start()
     return handle
@@ -137,7 +155,8 @@ def _fake_orchestrator(
 
 class TestEmbeddedApp:
     async def test_checkpoint_modal_answers_the_channel(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The full bridge loop: orchestrator thread blocks on the
         channel -> call_from_thread opens the modal -> keypress
@@ -149,8 +168,12 @@ class TestEmbeddedApp:
         decisions: list[int] = []
         handle = _fake_orchestrator(channel, stop, decisions)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             deadline = time.monotonic() + 5
@@ -167,15 +190,20 @@ class TestEmbeddedApp:
         assert app.return_value == 0
 
     async def test_quit_flow_requests_graceful_stop(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-embed2")
         channel = QueueInteractionChannel()
         stop = StopController()
         handle = _fake_orchestrator(channel, stop, [], wait_for_stop=True)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
@@ -199,8 +227,12 @@ class TestEmbeddedApp:
         stop = StopController()
         handle = _fake_orchestrator(channel, stop, [], wait_for_stop=True)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
@@ -215,7 +247,8 @@ class TestEmbeddedApp:
         handle.join(timeout=5)
 
     async def test_pending_checkpoint_reopens_with_c(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-embed4")
         channel = QueueInteractionChannel()
@@ -223,8 +256,12 @@ class TestEmbeddedApp:
         decisions: list[int] = []
         handle = _fake_orchestrator(channel, stop, decisions)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             deadline = time.monotonic() + 5
@@ -245,11 +282,14 @@ class TestEmbeddedApp:
         assert decisions == [2]
 
     async def test_generic_prompt_uses_request_labels_and_valid_choices(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-generic")
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.DASH,
             poll_interval=0.05,
         )
         request = PromptRequest(
@@ -280,7 +320,9 @@ class TestFallbackAndLogging:
         thread.start()
         thread.join()
         handle = OrchestratorHandle(
-            thread=thread, stop=StopController(), result_box=[7],
+            thread=thread,
+            stop=StopController(),
+            result_box=[7],
         )
 
         assert _plain_fallback(handle, run_dir) == 7
@@ -306,11 +348,14 @@ class TestFallbackAndLogging:
 
 class TestNotifyCapture:
     def test_captured_hook_writes_nothing_to_terminal(
-        self, capfd: Any,
+        self,
+        capfd: Any,
     ) -> None:
         hooks = NotifyHooks(
             NotifyConfig(on_complete="echo HOOK-NOISE"),
-            run_id="r", project="p", capture_output=True,
+            run_id="r",
+            project="p",
+            capture_output=True,
         )
         hooks.fire_complete("done")
         out, err = capfd.readouterr()
@@ -320,7 +365,8 @@ class TestNotifyCapture:
     def test_default_keeps_terminal_bell_path(self, capfd: Any) -> None:
         hooks = NotifyHooks(
             NotifyConfig(on_complete="echo HOOK-RINGS"),
-            run_id="r", project="p",
+            run_id="r",
+            project="p",
         )
         hooks.fire_complete("done")
         out, _ = capfd.readouterr()
@@ -350,12 +396,14 @@ def _fake_confirm_worker(
         deadline = time.monotonic() + 5
         while not channel.can_prompt() and time.monotonic() < deadline:
             time.sleep(0.01)
-        response = channel.request(PromptRequest(
-            kind=PromptKind.CONFIRM,
-            header="Understanding complete. Start implementation?",
-            options=("Start implementation", "Quit"),
-            default=0,
-        ))
+        response = channel.request(
+            PromptRequest(
+                kind=PromptKind.CONFIRM,
+                header="Understanding complete. Start implementation?",
+                options=("Start implementation", "Quit"),
+                default=0,
+            )
+        )
         decisions.append(response.choice if response.answered else -1)
         return 0
 
@@ -396,11 +444,14 @@ class TestCommandThread:
 
 class TestScreenFactory:
     async def test_custom_stack_pushed_bottom_first(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-stack1")
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.DASH,
             poll_interval=0.05,
             screen_factory=lambda: [
                 OverviewScreen(observe_only=True),
@@ -418,7 +469,8 @@ class TestScreenFactory:
 
 class TestOptionsModal:
     async def test_confirm_resolves_through_the_channel(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """D9 regression: a 2-option CONFIRM must open the lean options
         modal; an out-of-range digit does NOTHING (the checkpoint
@@ -430,8 +482,12 @@ class TestOptionsModal:
         decisions: list[int] = []
         handle = _fake_confirm_worker(channel, stop, decisions)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             deadline = time.monotonic() + 5
@@ -452,7 +508,8 @@ class TestOptionsModal:
         assert app.return_value == 0
 
     async def test_escape_leaves_pending_and_c_reopens(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = _write_minimal_run(tmp_path, "factory-20260720-opts2")
         channel = QueueInteractionChannel()
@@ -460,8 +517,12 @@ class TestOptionsModal:
         decisions: list[int] = []
         handle = _fake_confirm_worker(channel, stop, decisions)
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.EMBEDDED,
-            poll_interval=0.05, channel=channel, orchestrator=handle,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.EMBEDDED,
+            poll_interval=0.05,
+            channel=channel,
+            orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
             deadline = time.monotonic() + 5

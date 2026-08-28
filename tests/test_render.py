@@ -93,9 +93,11 @@ class TestInversionRoundTrip:
     def test_unknown_log_kind_still_surfaces_text(self) -> None:
         buf = io.StringIO()
         renderer = UIBackedRenderer(PlainUI(no_color=True, file=buf))
-        renderer.handle(ev.EventBus().emit(
-            ev.Log(kind="holo_display", text="important message"),
-        ))
+        renderer.handle(
+            ev.EventBus().emit(
+                ev.Log(kind="holo_display", text="important message"),
+            )
+        )
         assert "important message" in buf.getvalue()
 
 

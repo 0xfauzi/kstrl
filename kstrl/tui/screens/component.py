@@ -70,7 +70,9 @@ class ComponentScreen(Screen[None]):
             self.refresh_state(store.state, store.manifest())
 
     def refresh_state(
-        self, state: RunState, manifest: Manifest | None,
+        self,
+        state: RunState,
+        manifest: Manifest | None,
     ) -> None:
         comp: ComponentState | None = state.components.get(self.component_id)
         if comp is None:
@@ -102,10 +104,7 @@ class ComponentScreen(Screen[None]):
         if not real_count and not findings.hidden_count:
             title.append(" · none", style=theme.MUTED)
         self.query_one("#findings-title", Static).update(title)
-        manifest_comp = (
-            manifest.get_component(self.component_id)
-            if manifest is not None else None
-        )
+        manifest_comp = manifest.get_component(self.component_id) if manifest is not None else None
         self.query_one(EvidencePanel).update_state(comp, manifest_comp)
 
     def _update_transcript_title(self) -> None:

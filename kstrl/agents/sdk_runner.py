@@ -91,20 +91,24 @@ def _make_workspace_guard(workspace: Path) -> Any:
     the denial is recorded by the CLI in permission_denials)."""
 
     async def guard(
-        hook_input: Any, _tool_use_id: str | None, _context: Any,
+        hook_input: Any,
+        _tool_use_id: str | None,
+        _context: Any,
     ) -> dict[str, Any]:
         tool_name = str(hook_input.get("tool_name", ""))
         tool_input = hook_input.get("tool_input")
         if tool_name in _GUARDED_TOOLS and isinstance(tool_input, dict):
             for key in _PATH_KEYS:
                 raw = tool_input.get(key)
-                if isinstance(raw, str) and raw and _path_escapes_workspace(
-                    raw, workspace,
-                ):
-                    _emit(
-                        f"[workspace-guard] denied {tool_name} "
-                        f"outside workspace: {raw}"
+                if (
+                    isinstance(raw, str)
+                    and raw
+                    and _path_escapes_workspace(
+                        raw,
+                        workspace,
                     )
+                ):
+                    _emit(f"[workspace-guard] denied {tool_name} outside workspace: {raw}")
                     return {
                         "hookSpecificOutput": {
                             "hookEventName": "PreToolUse",
@@ -151,23 +155,30 @@ def _render_content_blocks(blocks: Any, sdk: Any) -> None:
 def _emit_result_message(message: Any) -> None:
     """Emit the typed ResultMessage as the two contract records."""
     usage = message.usage if isinstance(message.usage, dict) else {}
-    _emit(USAGE_PREFIX + json.dumps({
-        "input_tokens": usage.get("input_tokens"),
-        "output_tokens": usage.get("output_tokens"),
-        "cache_read_tokens": usage.get("cache_read_input_tokens"),
-        "cache_creation_tokens": usage.get("cache_creation_input_tokens"),
-        "cost_usd": message.total_cost_usd,
-        "duration_ms": message.duration_ms,
-    }))
+    _emit(
+        USAGE_PREFIX
+        + json.dumps(
+            {
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
+                "cache_read_tokens": usage.get("cache_read_input_tokens"),
+                "cache_creation_tokens": usage.get("cache_creation_input_tokens"),
+                "cost_usd": message.total_cost_usd,
+                "duration_ms": message.duration_ms,
+            }
+        )
+    )
     denials = message.permission_denials
-    _emit_result({
-        "subtype": message.subtype,
-        "is_error": message.is_error,
-        "errors": message.errors,
-        "num_turns": message.num_turns,
-        "result": message.result,
-        "permission_denials": len(denials) if isinstance(denials, list) else 0,
-    })
+    _emit_result(
+        {
+            "subtype": message.subtype,
+            "is_error": message.is_error,
+            "errors": message.errors,
+            "num_turns": message.num_turns,
+            "result": message.result,
+            "permission_denials": len(denials) if isinstance(denials, list) else 0,
+        }
+    )
 
 
 async def _drive(config: dict[str, Any], sdk: Any) -> int:
@@ -191,17 +202,20 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         options_kwargs["permission_mode"] = "bypassPermissions"
     if config.get("workspace_guard", True):
         options_kwargs["hooks"] = {
-            "PreToolUse": [sdk.HookMatcher(
-                matcher="|".join(_GUARDED_TOOLS),
-                hooks=[_make_workspace_guard(workspace)],
-            )],
+            "PreToolUse": [
+                sdk.HookMatcher(
+                    matcher="|".join(_GUARDED_TOOLS),
+                    hooks=[_make_workspace_guard(workspace)],
+                )
+            ],
         }
 
     options = sdk.ClaudeAgentOptions(**options_kwargs)
     saw_result = False
     try:
         async for message in sdk.query(
-            prompt=str(config["prompt"]), options=options,
+            prompt=str(config["prompt"]),
+            options=options,
         ):
             if isinstance(message, sdk.ResultMessage):
                 saw_result = True
@@ -219,25 +233,29 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
         # surface.
         _emit(f"ERROR: {type(exc).__name__}: {exc}")
         if not saw_result:
-            _emit_result({
-                "subtype": type(exc).__name__,
-                "is_error": True,
-                "errors": [str(exc)],
-                "num_turns": 0,
-                "result": None,
-                "permission_denials": 0,
-            })
+            _emit_result(
+                {
+                    "subtype": type(exc).__name__,
+                    "is_error": True,
+                    "errors": [str(exc)],
+                    "num_turns": 0,
+                    "result": None,
+                    "permission_denials": 0,
+                }
+            )
         return _EXIT_SDK_ERROR
     if not saw_result:
         _emit("ERROR: SDK stream ended without a result message")
-        _emit_result({
-            "subtype": "missing_result",
-            "is_error": True,
-            "errors": ["stream ended without ResultMessage"],
-            "num_turns": 0,
-            "result": None,
-            "permission_denials": 0,
-        })
+        _emit_result(
+            {
+                "subtype": "missing_result",
+                "is_error": True,
+                "errors": ["stream ended without ResultMessage"],
+                "num_turns": 0,
+                "result": None,
+                "permission_denials": 0,
+            }
+        )
         return _EXIT_SDK_ERROR
     return _EXIT_OK
 
@@ -264,17 +282,18 @@ def main() -> int:
         import claude_agent_sdk as sdk
     except ImportError:
         _emit(
-            "ERROR: claude-agent-sdk is not installed; "
-            "install the sdk extra (uv sync --extra sdk)"
+            "ERROR: claude-agent-sdk is not installed; install the sdk extra (uv sync --extra sdk)"
         )
-        _emit_result({
-            "subtype": "sdk_not_installed",
-            "is_error": True,
-            "errors": ["claude-agent-sdk not installed"],
-            "num_turns": 0,
-            "result": None,
-            "permission_denials": 0,
-        })
+        _emit_result(
+            {
+                "subtype": "sdk_not_installed",
+                "is_error": True,
+                "errors": ["claude-agent-sdk not installed"],
+                "num_turns": 0,
+                "result": None,
+                "permission_denials": 0,
+            }
+        )
         return _EXIT_SDK_MISSING
 
     try:
@@ -288,14 +307,16 @@ def main() -> int:
         # Exception for in-stream error results (measured, 0.2.123) -
         # a traceback on stdout is never an acceptable surface.
         _emit(f"ERROR: {type(exc).__name__}: {exc}")
-        _emit_result({
-            "subtype": type(exc).__name__,
-            "is_error": True,
-            "errors": [str(exc)],
-            "num_turns": 0,
-            "result": None,
-            "permission_denials": 0,
-        })
+        _emit_result(
+            {
+                "subtype": type(exc).__name__,
+                "is_error": True,
+                "errors": [str(exc)],
+                "num_turns": 0,
+                "result": None,
+                "permission_denials": 0,
+            }
+        )
         return _EXIT_SDK_ERROR
 
 

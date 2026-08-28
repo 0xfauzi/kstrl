@@ -35,22 +35,29 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
 
 class TestFactoryConfigLoad:
     def test_reads_factory_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(monkeypatch, "FACTORY_MAX_PARALLEL", "FACTORY_MAX_RETRIES")
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [factory]
 max_parallel = 8
 max_retries = 5
 review_mode = "advisory"
-""")
+""",
+        )
         config = FactoryConfig.load(tmp_path)
         assert config.max_parallel == 8
         assert config.max_retries == 5
         assert config.review_mode == "advisory"
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _write(tmp_path / "kstrl.toml", "[factory]\nmax_parallel = 8\n")
         monkeypatch.setenv("FACTORY_MAX_PARALLEL", "99")
@@ -65,19 +72,26 @@ review_mode = "advisory"
 
 class TestVerifyConfigLoad:
     def test_reads_verify_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "KSTRL_VERIFY_TEST_CMD", "KSTRL_VERIFY_TYPECHECK_CMD",
+            monkeypatch,
+            "KSTRL_VERIFY_TEST_CMD",
+            "KSTRL_VERIFY_TYPECHECK_CMD",
             "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE",
         )
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [verify]
 test_command = "pytest -x"
 typecheck_command = "mypy ."
 require_self_critique = true
 self_critique_min_bullets = 5
-""")
+""",
+        )
         config = VerifyConfig.load(tmp_path)
         assert config.test_command == "pytest -x"
         assert config.typecheck_command == "mypy ."
@@ -92,14 +106,19 @@ self_critique_min_bullets = 5
 
 class TestContractConfigLoad:
     def test_reads_contract_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(monkeypatch, "KSTRL_CONTRACT_MODE", "KSTRL_CONTRACT_TEST_CMD")
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [contract]
 mode = "final"
 test_command = "pytest tests/"
-""")
+""",
+        )
         config = ContractConfig.load(tmp_path)
         assert config.mode == ContractMode.FINAL.value
         assert config.test_command == "pytest tests/"
@@ -117,25 +136,33 @@ test_command = "pytest tests/"
 
 class TestFeedforwardConfigLoad:
     def test_reads_feedforward_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "KSTRL_FEEDFORWARD_ENABLED",
+            monkeypatch,
+            "KSTRL_FEEDFORWARD_ENABLED",
             "KSTRL_FEEDFORWARD_MAX_TOKENS",
         )
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [feedforward]
 enabled = false
 module_map = false
 max_context_tokens = 8000
-""")
+""",
+        )
         config = FeedforwardConfig.load(tmp_path)
         assert config.enabled is False
         assert config.module_map is False
         assert config.max_context_tokens == 8000
 
     def test_env_overrides(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _write(tmp_path / "kstrl.toml", "[feedforward]\nenabled = false\n")
         monkeypatch.setenv("KSTRL_FEEDFORWARD_ENABLED", "true")
@@ -150,30 +177,41 @@ max_context_tokens = 8000
 
 class TestEvolutionConfigLoad:
     def test_reads_evolution_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "KSTRL_EVOLUTION_ENABLED",
+            monkeypatch,
+            "KSTRL_EVOLUTION_ENABLED",
             "KSTRL_EVOLUTION_JOURNAL_PATH",
             "KSTRL_EVOLUTION_LOOKBACK_RUNS",
         )
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [evolution]
 enabled = false
 lookback_runs = 25
-""")
+""",
+        )
         config = EvolutionConfig.load(tmp_path)
         assert config.enabled is False
         assert config.lookback_runs == 25
 
     def test_resolves_journal_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(monkeypatch, "KSTRL_EVOLUTION_JOURNAL_PATH")
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [evolution]
 journal_path = "custom/evolution.jsonl"
-""")
+""",
+        )
         config = EvolutionConfig.load(tmp_path)
         assert config.journal_path == tmp_path / "custom/evolution.jsonl"
 
@@ -185,17 +223,23 @@ journal_path = "custom/evolution.jsonl"
 
 class TestSecurityConfigLoad:
     def test_reads_security_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
-            monkeypatch, "KSTRL_SECURITY_MODE",
+            monkeypatch,
+            "KSTRL_SECURITY_MODE",
             "KSTRL_SECURITY_FAIL_THRESHOLD",
         )
-        _write(tmp_path / "kstrl.toml", """
+        _write(
+            tmp_path / "kstrl.toml",
+            """
 [security]
 mode = "hard"
 fail_threshold = "critical"
-""")
+""",
+        )
         config = SecurityConfig.load(tmp_path)
         assert config.mode == SecurityMode.HARD.value
         assert config.fail_threshold == "critical"
@@ -211,7 +255,9 @@ fail_threshold = "critical"
             SecurityConfig.load(tmp_path)
 
     def test_invalid_threshold_in_env_raises(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_SECURITY_FAIL_THRESHOLD", "critcial")
         with pytest.raises(ValueError):
@@ -235,7 +281,8 @@ fail_threshold = "critical"
     ],
 )
 def test_malformed_toml_raises_value_error(
-    loader, tmp_path: Path,
+    loader,
+    tmp_path: Path,
 ) -> None:
     _write(tmp_path / "kstrl.toml", "this is = not = valid = [ toml\n")
     with pytest.raises(ValueError, match="Invalid TOML"):

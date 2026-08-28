@@ -41,13 +41,8 @@ def fold_run(ref: RunRef) -> RunState:
 
 
 def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
-    done = sum(
-        1 for comp in state.components.values()
-        if comp.status == "completed"
-    )
-    failed = sum(
-        1 for comp in state.components.values() if comp.status == "failed"
-    )
+    done = sum(1 for comp in state.components.values() if comp.status == "completed")
+    failed = sum(1 for comp in state.components.values() if comp.status == "failed")
     total = len(state.plan_order) or len(state.components)
     if ref.live:
         outcome = "live"
@@ -132,26 +127,26 @@ def _run_stream_signature(
             stat = path.stat()
         except OSError:
             continue
-        signature.append((
-            str(path.relative_to(ref.run_dir)),
-            stat.st_dev,
-            stat.st_ino,
-            stat.st_mtime_ns,
-            stat.st_size,
-        ))
+        signature.append(
+            (
+                str(path.relative_to(ref.run_dir)),
+                stat.st_dev,
+                stat.st_ino,
+                stat.st_mtime_ns,
+                stat.st_size,
+            )
+        )
     return tuple(signature)
 
 
 def pending_proposal_count(root_dir: Path) -> int:
     proposals_dir = root_dir / ".kstrl" / "proposals"
-    return sum(
-        1 for proposal in list_proposals(proposals_dir)
-        if not proposal.applied
-    )
+    return sum(1 for proposal in list_proposals(proposals_dir) if not proposal.applied)
 
 
 def gather_stats(
-    root_dir: Path, summaries: dict[str, RunSummary],
+    root_dir: Path,
+    summaries: dict[str, RunSummary],
     newest_run_id: str,
 ) -> HomeStats:
     return HomeStats(

@@ -39,7 +39,10 @@ class TestApplyAgentSettings:
         toml = tmp_path / "kstrl.toml"
         toml.write_text(DEFAULT_KSTRL_TOML)
         assert apply_agent_settings(
-            toml, agent_type="codex", model="gpt-5", reasoning="high",
+            toml,
+            agent_type="codex",
+            model="gpt-5",
+            reasoning="high",
         )
         content = toml.read_text()
         assert 'type = "codex"' in content
@@ -50,7 +53,8 @@ class TestApplyAgentSettings:
         assert "# max_iterations = 10" in content
 
     def test_escapes_free_form_values_as_toml_strings(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         toml = tmp_path / "kstrl.toml"
         toml.write_text(DEFAULT_KSTRL_TOML)
@@ -61,13 +65,16 @@ class TestApplyAgentSettings:
         assert "max_parallel" not in parsed["factory"]
 
     def test_refuses_user_edited_files_without_writing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         toml = tmp_path / "kstrl.toml"
         edited = DEFAULT_KSTRL_TOML.replace('# model = ""', 'model = "opus"')
         toml.write_text(edited)
         assert not apply_agent_settings(
-            toml, agent_type="codex", model="gpt-5",
+            toml,
+            agent_type="codex",
+            model="gpt-5",
         )
         assert toml.read_text() == edited  # all-or-nothing: no write
 
@@ -88,10 +95,12 @@ class TestApplyAgentSettings:
 
 class TestWizardScreen:
     async def _run_wizard(
-        self, tmp_path: Path, *, agent_type: str = "",
+        self,
+        tmp_path: Path,
+        *,
+        agent_type: str = "",
     ) -> tuple[KstrlTuiApp, InitWizardScreen]:
-        app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME,
-                          poll_interval=0.05)
+        app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
         pilot_ctx = app.run_test(size=(120, 45))
         pilot = await pilot_ctx.__aenter__()
         self._pilot_ctx = pilot_ctx
@@ -107,7 +116,8 @@ class TestWizardScreen:
         return app, screen
 
     async def test_happy_path_scaffolds_and_writes_agent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app, screen = await self._run_wizard(tmp_path, agent_type="codex")
         try:
@@ -138,7 +148,8 @@ class TestWizardScreen:
             await self._pilot_ctx.__aexit__(None, None, None)
 
     async def test_existing_toml_keeps_agent_settings_out(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("# user file\n")
         app, screen = await self._run_wizard(tmp_path, agent_type="codex")
@@ -166,7 +177,8 @@ class TestWizardScreen:
             await self._pilot_ctx.__aexit__(None, None, None)
 
     async def test_bad_directory_blocks_preview(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app, screen = await self._run_wizard(tmp_path)
         try:
@@ -200,7 +212,8 @@ class TestWizardScreen:
             await self._pilot_ctx.__aexit__(None, None, None)
 
     async def test_worker_error_is_terminal_and_navigation_waits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app, screen = await self._run_wizard(tmp_path)
         try:

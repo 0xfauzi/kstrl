@@ -87,8 +87,10 @@ def start_command_thread(
 
     thread = threading.Thread(target=_run, name=name, daemon=False)
     handle = CommandHandle(
-        thread=thread, stop=stop,
-        result_box=result_box, error_box=error_box,
+        thread=thread,
+        stop=stop,
+        result_box=result_box,
+        error_box=error_box,
     )
     thread.start()
     return handle
@@ -108,7 +110,11 @@ def start_orchestrator(
 ) -> CommandHandle:
     def _target() -> int:
         return run_factory(
-            manifest, factory_config, base_config, ui, root_dir,
+            manifest,
+            factory_config,
+            base_config,
+            ui,
+            root_dir,
             manifest_path=manifest_path,
             interaction=channel,
             stop=stop,
@@ -117,5 +123,7 @@ def start_orchestrator(
         ).exit_code
 
     return start_command_thread(
-        _target, stop=stop, name="kstrl-orchestrator",
+        _target,
+        stop=stop,
+        name="kstrl-orchestrator",
     )

@@ -89,14 +89,23 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
     for comp_id in component_ids:
         feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": f"US-{comp_id}", "title": "ok",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": f"US-{comp_id}",
+                            "title": "ok",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
     return tmp_path
 
 
@@ -115,9 +124,12 @@ def _base_config(root: Path) -> KstrlConfig:
 
 def _verify_passing() -> VerifyConfig:
     return VerifyConfig(
-        test_command="true", typecheck_command="true",
-        lint_command="true", check_diff_scope=False,
-        check_bad_patterns=False, subprocess_timeout=5.0,
+        test_command="true",
+        typecheck_command="true",
+        lint_command="true",
+        check_diff_scope=False,
+        check_bad_patterns=False,
+        subprocess_timeout=5.0,
     )
 
 
@@ -127,8 +139,7 @@ def _verify_passing() -> VerifyConfig:
 
 
 @pytest.mark.spine
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="POSIX shell fake agents")
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fake agents")
 class TestC1ParallelExecution:
     """R4.3: true two-worker execution through the ProcessPoolExecutor
     path - real git repo, real worktrees, real fake-agent subprocesses,
@@ -142,7 +153,9 @@ class TestC1ParallelExecution:
     test - so this cannot pass without two engineers alive at once."""
 
     def test_two_components_run_concurrently_in_worktrees(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
@@ -157,20 +170,25 @@ class TestC1ParallelExecution:
             f'comp=$(basename "$PWD"); '
             f'touch "{sync}/$comp.started"; n=0; '
             f'while [ "$(ls "{sync}" | grep -c ".started$")" -lt 2 ]; do '
-            f'n=$((n+1)); '
+            f"n=$((n+1)); "
             f'if [ "$n" -gt 300 ]; then '
             f'touch "{sync}/$comp.barrier-timeout"; break; fi; '
             f"sleep 0.05; done; {spine_utils.COMPLETE_LINE}"
         )
 
-        manifest = spine_utils.make_manifest([
-            spine_utils.component("comp-a"), spine_utils.component("comp-b"),
-        ])
+        manifest = spine_utils.make_manifest(
+            [
+                spine_utils.component("comp-a"),
+                spine_utils.component("comp-b"),
+            ]
+        )
         config = spine_utils.factory_config(max_parallel=2)
         result = run_factory(
-            manifest, config,
+            manifest,
+            config,
             spine_utils.base_config(root, agent_cmd=barrier_agent),
-            PlainUI(no_color=True), root,
+            PlainUI(no_color=True),
+            root,
         )
 
         started = sorted(p.name for p in sync.glob("*.started"))
@@ -197,8 +215,12 @@ class TestC2ReviewRetry:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=2, retry_delay=0, review_mode="hard",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=2,
+            retry_delay=0,
+            review_mode="hard",
             verify_config=_verify_passing(),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
@@ -210,14 +232,23 @@ class TestC2ReviewRetry:
                 return ReviewResult(passed=False, mode="hard")
             return ReviewResult(passed=True, mode="hard")
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_review", side_effect=fake_run_review,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                side_effect=fake_run_review,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert review_calls["count"] >= 2  # retried
         assert "comp-a" in result.completed
@@ -235,10 +266,15 @@ class TestC3SecurityRetry:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=2, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=2,
+            retry_delay=0,
+            review_mode="skip",
             security_config=SecurityConfig(
-                mode=SecurityMode.HARD.value, fail_threshold="high",
+                mode=SecurityMode.HARD.value,
+                fail_threshold="high",
             ),
             verify_config=_verify_passing(),
         )
@@ -251,14 +287,23 @@ class TestC3SecurityRetry:
                 return SecurityResult(passed=False, mode="hard")
             return SecurityResult(passed=True, mode="hard")
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_security_review", side_effect=fake_run_security,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_security_review",
+                side_effect=fake_run_security,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert sec_calls["count"] >= 2
         assert "comp-a" in result.completed
@@ -271,7 +316,8 @@ class TestC3SecurityRetry:
 
 class TestC4ContractBreaker:
     def test_contract_failure_sends_breaker_for_retry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.contract import ContractResult
 
@@ -280,8 +326,12 @@ class TestC4ContractBreaker:
         comp_b = _component("comp-b", deps=["comp-a"])
         manifest = _make_manifest([comp_a, comp_b])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=1, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=1,
+            retry_delay=0,
+            review_mode="skip",
             contract_config=ContractConfig(mode=ContractMode.TIER.value),
             verify_config=_verify_passing(),
         )
@@ -297,24 +347,40 @@ class TestC4ContractBreaker:
         def fake_contract(manifest, root, cfg, ui, components_merged=False):
             contract_calls["count"] += 1
             if contract_calls["count"] == 1:
-                return [ContractResult(
-                    passed=False, tier=0,
-                    components_tested=["comp-a"], breaker="comp-a",
-                    test_output="planted failure",
-                )]
-            return [ContractResult(
-                passed=True, tier=0, components_tested=["comp-a"],
-            )]
+                return [
+                    ContractResult(
+                        passed=False,
+                        tier=0,
+                        components_tested=["comp-a"],
+                        breaker="comp-a",
+                        test_output="planted failure",
+                    )
+                ]
+            return [
+                ContractResult(
+                    passed=True,
+                    tier=0,
+                    components_tested=["comp-a"],
+                )
+            ]
 
-        with patch(
-            "kstrl.factory._run_component",
-            side_effect=[success_a, success_b, success_a],
-        ) as mock_run, patch(
-            "kstrl.factory.run_contract_testing", side_effect=fake_contract,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=[success_a, success_b, success_a],
+            ) as mock_run,
+            patch(
+                "kstrl.factory.run_contract_testing",
+                side_effect=fake_contract,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert contract_calls["count"] == 2
         assert mock_run.call_count == 3
@@ -333,26 +399,40 @@ class TestC4ContractBreaker:
 
 class TestC5SinglePrMode:
     def test_single_pr_skips_knowledge_distill_and_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         manifest.single_pr = True
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            review_mode="skip", verify_config=_verify_passing(),
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            review_mode="skip",
+            verify_config=_verify_passing(),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.distill_facts", return_value=(0, "skipped"),
-        ) as mock_distill, patch(
-            "kstrl.git.get_diff_content", return_value="",
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.distill_facts",
+                return_value=(0, "skipped"),
+            ) as mock_distill,
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.completed
         # A2 invariant: distill is skipped in single_pr mode.
@@ -365,8 +445,7 @@ class TestC5SinglePrMode:
 
 
 @pytest.mark.spine
-@pytest.mark.skipif(sys.platform == "win32",
-                    reason="flock is POSIX-only; concurrent factory test")
+@pytest.mark.skipif(sys.platform == "win32", reason="flock is POSIX-only; concurrent factory test")
 class TestC6ConcurrentFactory:
     """R4.3: two real run_factory invocations against the SAME root_dir,
     no mocks. The first invocation is held mid-run by a gated engineer;
@@ -382,7 +461,9 @@ class TestC6ConcurrentFactory:
     thread while the contender runs on the test thread."""
 
     def test_second_invocation_on_same_root_is_refused_while_first_runs(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
@@ -402,24 +483,23 @@ class TestC6ConcurrentFactory:
         first_results: list[FactoryResult] = []
 
         def first_invocation() -> None:
-            first_results.append(run_factory(
-                spine_utils.make_manifest([spine_utils.component("comp-a")]),
-                spine_utils.factory_config(),
-                spine_utils.base_config(root, agent_cmd=gated_agent),
-                PlainUI(no_color=True), root,
-            ))
+            first_results.append(
+                run_factory(
+                    spine_utils.make_manifest([spine_utils.component("comp-a")]),
+                    spine_utils.factory_config(),
+                    spine_utils.base_config(root, agent_cmd=gated_agent),
+                    PlainUI(no_color=True),
+                    root,
+                )
+            )
 
         holder = threading.Thread(target=first_invocation)
         holder.start()
         try:
             deadline = time.monotonic() + 30
             while not started.exists():
-                assert time.monotonic() < deadline, (
-                    "first invocation never reached its engineer"
-                )
-                assert holder.is_alive(), (
-                    "first invocation died before its engineer started"
-                )
+                assert time.monotonic() < deadline, "first invocation never reached its engineer"
+                assert holder.is_alive(), "first invocation died before its engineer started"
                 time.sleep(0.01)
 
             # First invocation is now mid-engineer and holds the run
@@ -429,8 +509,11 @@ class TestC6ConcurrentFactory:
                 [spine_utils.component("comp-a")],
             )
             refused = run_factory(
-                contender_manifest, spine_utils.factory_config(),
-                spine_utils.base_config(root), PlainUI(no_color=True), root,
+                contender_manifest,
+                spine_utils.factory_config(),
+                spine_utils.base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
             assert refused.exit_code == 2
             assert refused.completed == []
@@ -449,16 +532,19 @@ class TestC6ConcurrentFactory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("factory_fn", [
-    lambda: KstrlConfig(),
-    lambda: FactoryConfig(),
-    lambda: VerifyConfig(),
-    lambda: ContractConfig(),
-    lambda: FeedforwardConfig(),
-    lambda: EvolutionConfig(),
-    lambda: KnowledgeConfig(),
-    lambda: SecurityConfig(),
-])
+@pytest.mark.parametrize(
+    "factory_fn",
+    [
+        lambda: KstrlConfig(),
+        lambda: FactoryConfig(),
+        lambda: VerifyConfig(),
+        lambda: ContractConfig(),
+        lambda: FeedforwardConfig(),
+        lambda: EvolutionConfig(),
+        lambda: KnowledgeConfig(),
+        lambda: SecurityConfig(),
+    ],
+)
 def test_c8_config_pickle_roundtrip(factory_fn) -> None:
     """Configs flow through ProcessPoolExecutor's pickling. If a config
     gains a non-picklable field, workers break silently. This catches
@@ -476,11 +562,13 @@ def test_c8_config_pickle_roundtrip(factory_fn) -> None:
 class TestC9AgentFactoryMatrix:
     def test_get_agent_returns_custom_when_cmd_set(self) -> None:
         from kstrl.agents import CustomAgent, get_agent
+
         agent = get_agent(agent_cmd="my-cli --opt")
         assert isinstance(agent, CustomAgent)
 
     def test_get_agent_returns_codex_when_typed(self) -> None:
         from kstrl.agents import CodexAgent, get_agent
+
         agent = get_agent(agent_type="codex")
         assert isinstance(agent, CodexAgent)
 
@@ -488,6 +576,7 @@ class TestC9AgentFactoryMatrix:
         import shutil
 
         from kstrl.agents import ClaudeCodeAgent, get_agent
+
         if shutil.which("claude") is None:
             pytest.skip("claude CLI not present; auto-detect would skip claude")
         agent = get_agent(agent_type="claude-code")
@@ -497,6 +586,7 @@ class TestC9AgentFactoryMatrix:
         import shutil
 
         from kstrl.agents import ClaudeCodeAgent, CodexAgent, get_agent
+
         agent = get_agent(agent_type="auto")
         if shutil.which("claude") is not None:
             assert isinstance(agent, ClaudeCodeAgent)

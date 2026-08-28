@@ -16,7 +16,9 @@ MAX_BUFFER_LINES = 1000
 class TranscriptTail(RichLog):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(
-            max_lines=MAX_BUFFER_LINES, wrap=False, highlight=False,
+            max_lines=MAX_BUFFER_LINES,
+            wrap=False,
+            highlight=False,
             **kwargs,  # type: ignore[arg-type]
         )
         self.follow = True

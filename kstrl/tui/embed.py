@@ -66,7 +66,8 @@ class EmbeddedContext:
 
 
 def _install_exclusive_root_handler(
-    root_logger: logging.Logger, handler: logging.Handler,
+    root_logger: logging.Logger,
+    handler: logging.Handler,
 ) -> list[logging.Handler]:
     """Route root-logger output only to ``handler`` until restored."""
     previous = list(root_logger.handlers)
@@ -101,8 +102,10 @@ def run_embedded(
     # Core narration -> orchestrator.log via the standard console
     # stack; prompts go through the queue channel, never a TTY.
     log_fh = open(
-        run_paths.root / "orchestrator.log", "a",
-        buffering=1, encoding="utf-8",
+        run_paths.root / "orchestrator.log",
+        "a",
+        buffering=1,
+        encoding="utf-8",
     )
     renderer = UIBackedRenderer(PlainUI(no_color=True, file=log_fh))
     bus = EventBus(CallbackSink(renderer.handle))
@@ -111,29 +114,39 @@ def run_embedded(
     channel = QueueInteractionChannel()
     stop = StopController()
     context = EmbeddedContext(
-        run_id=run_id, run_paths=run_paths, ui=core_ui,
-        channel=channel, stop=stop,
+        run_id=run_id,
+        run_paths=run_paths,
+        ui=core_ui,
+        channel=channel,
+        stop=stop,
     )
 
     # Module loggers (evolution, agents/*) must not hit the alt screen.
     root_logger = logging.getLogger()
     log_handler = logging.FileHandler(
-        run_paths.root / "orchestrator.log", encoding="utf-8",
+        run_paths.root / "orchestrator.log",
+        encoding="utf-8",
     )
     previous_log_handlers = _install_exclusive_root_handler(
-        root_logger, log_handler,
+        root_logger,
+        log_handler,
     )
 
     uninstall = install_signal_handlers(stop)
     handle: CommandHandle | None = None
     try:
         handle = start_command_thread(
-            lambda: target(context), stop=stop, name=thread_name,
+            lambda: target(context),
+            stop=stop,
+            name=thread_name,
         )
         app = KstrlTuiApp(
-            run_dir=run_paths.root, root_dir=root_dir,
-            mode=Mode.EMBEDDED, poll_interval=poll_interval,
-            channel=channel, orchestrator=handle,
+            run_dir=run_paths.root,
+            root_dir=root_dir,
+            mode=Mode.EMBEDDED,
+            poll_interval=poll_interval,
+            channel=channel,
+            orchestrator=handle,
             screen_factory=screen_factory,
         )
         # The app attaches the channel itself in on_mount - attaching
@@ -158,7 +171,9 @@ def run_embedded(
             handle.join()
         uninstall()
         _restore_root_handlers(
-            root_logger, log_handler, previous_log_handlers,
+            root_logger,
+            log_handler,
+            previous_log_handlers,
         )
         log_handler.close()
         try:
@@ -182,7 +197,11 @@ def run_factory_embedded(
 
     def _target(ctx: EmbeddedContext) -> int:
         return run_factory(
-            manifest, factory_config, base_config, ctx.ui, root_dir,
+            manifest,
+            factory_config,
+            base_config,
+            ctx.ui,
+            root_dir,
             manifest_path=manifest_path,
             interaction=ctx.channel,
             stop=ctx.stop,
@@ -191,8 +210,11 @@ def run_factory_embedded(
         ).exit_code
 
     return run_embedded(
-        _target, root_dir=root_dir, run_id=current_run_id(),
-        thread_name="kstrl-orchestrator", poll_interval=poll_interval,
+        _target,
+        root_dir=root_dir,
+        run_id=current_run_id(),
+        thread_name="kstrl-orchestrator",
+        poll_interval=poll_interval,
     )
 
 

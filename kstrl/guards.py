@@ -132,10 +132,13 @@ def enforce_allowed_paths(
     # Get changed files
     changed = (
         git.get_changed_files_since(baseline, cwd)
-        if baseline is not None else git.get_changed_files(cwd)
+        if baseline is not None
+        else git.get_changed_files(cwd)
     )
     violations = check_violations(
-        changed, config.allowed_paths, ignored_paths,
+        changed,
+        config.allowed_paths,
+        ignored_paths,
     )
 
     if not violations:
@@ -163,12 +166,14 @@ def enforce_allowed_paths(
         ui.warn("Non-TTY in interactive mode, defaulting to quit")
         return False, violations
 
-    response = channel.request(PromptRequest(
-        kind=PromptKind.GUARD,
-        header="Disallowed changes detected. What would you like to do?",
-        options=("Quit", "Revert and continue", "Continue anyway"),
-        default=0,
-    ))
+    response = channel.request(
+        PromptRequest(
+            kind=PromptKind.GUARD,
+            header="Disallowed changes detected. What would you like to do?",
+            options=("Quit", "Revert and continue", "Continue anyway"),
+            default=0,
+        )
+    )
     if not response.answered:
         ui.warn("Prompt unavailable, defaulting to quit")
         return False, violations

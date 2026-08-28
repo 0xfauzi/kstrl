@@ -187,8 +187,7 @@ class FactoryRunner(Protocol):
         pause_before_pr_merge: bool,
         timeout_seconds: float,
         on_spawn: Callable[[int], None] | None = None,
-    ) -> RunOutcome:
-        ...
+    ) -> RunOutcome: ...
 
 
 def _utc_now() -> datetime:
@@ -213,7 +212,10 @@ def next_local_midnight(now: datetime | None = None) -> str:
     """UTC ISO timestamp of the next local midnight."""
     local = (now or _utc_now()).astimezone()
     tomorrow = (local + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
     )
     return _iso(tomorrow.astimezone(UTC))
 
@@ -254,22 +256,17 @@ class ServeConfig:
     def __post_init__(self) -> None:
         if self.poll_interval_seconds <= 0:
             raise ServeError(
-                "serve.poll_interval_seconds must be > 0, got "
-                f"{self.poll_interval_seconds}"
+                f"serve.poll_interval_seconds must be > 0, got {self.poll_interval_seconds}"
             )
         if self.daily_budget_usd < 0:
-            raise ServeError(
-                f"serve.daily_budget_usd must be >= 0, got {self.daily_budget_usd}"
-            )
+            raise ServeError(f"serve.daily_budget_usd must be >= 0, got {self.daily_budget_usd}")
         if self.max_consecutive_poison < 1:
             raise ServeError(
-                "serve.max_consecutive_poison must be >= 1, got "
-                f"{self.max_consecutive_poison}"
+                f"serve.max_consecutive_poison must be >= 1, got {self.max_consecutive_poison}"
             )
         if self.factory_timeout_seconds < 0:
             raise ServeError(
-                "serve.factory_timeout_seconds must be >= 0, got "
-                f"{self.factory_timeout_seconds}"
+                f"serve.factory_timeout_seconds must be >= 0, got {self.factory_timeout_seconds}"
             )
 
     @classmethod
@@ -282,25 +279,17 @@ class ServeConfig:
         timeout = os.environ.get("KSTRL_SERVE_FACTORY_TIMEOUT")
         uncovered = os.environ.get("KSTRL_SERVE_ALLOW_UNCOVERED_COST")
         return cls(
-            poll_interval_seconds=(
-                defaults.poll_interval_seconds if poll is None else float(poll)
-            ),
-            daily_budget_usd=(
-                defaults.daily_budget_usd if budget is None else float(budget)
-            ),
+            poll_interval_seconds=(defaults.poll_interval_seconds if poll is None else float(poll)),
+            daily_budget_usd=(defaults.daily_budget_usd if budget is None else float(budget)),
             max_consecutive_poison=(
                 defaults.max_consecutive_poison if poison is None else int(poison)
             ),
-            caffeinate=(
-                defaults.caffeinate if caffeinate is None else caffeinate == "1"
-            ),
+            caffeinate=(defaults.caffeinate if caffeinate is None else caffeinate == "1"),
             factory_timeout_seconds=(
-                defaults.factory_timeout_seconds
-                if timeout is None else float(timeout)
+                defaults.factory_timeout_seconds if timeout is None else float(timeout)
             ),
             allow_uncovered_cost=(
-                defaults.allow_uncovered_cost
-                if uncovered is None else uncovered == "1"
+                defaults.allow_uncovered_cost if uncovered is None else uncovered == "1"
             ),
         )
 
@@ -328,7 +317,8 @@ class ServeConfig:
         poison = _int("max_consecutive_poison", defaults.max_consecutive_poison)
         caffeinate = _bool("caffeinate", defaults.caffeinate)
         timeout = _float(
-            "factory_timeout_seconds", defaults.factory_timeout_seconds,
+            "factory_timeout_seconds",
+            defaults.factory_timeout_seconds,
         )
         uncovered = _bool("allow_uncovered_cost", defaults.allow_uncovered_cost)
 
@@ -433,9 +423,11 @@ class DailySpend:
             return float(value)
 
         raw_phases = data.get("unmetered_phases")
-        phases = tuple(
-            str(p) for p in raw_phases if isinstance(p, str)
-        ) if isinstance(raw_phases, list) else ()
+        phases = (
+            tuple(str(p) for p in raw_phases if isinstance(p, str))
+            if isinstance(raw_phases, list)
+            else ()
+        )
         return cls(
             date=str(data.get("date") or ""),
             spent_usd=_num("spent_usd"),
@@ -478,16 +470,12 @@ class ServeState:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ServeState:
         raw_spend = data.get("spend")
-        spend = (
-            DailySpend.from_dict(raw_spend) if isinstance(raw_spend, dict)
-            else DailySpend()
-        )
+        spend = DailySpend.from_dict(raw_spend) if isinstance(raw_spend, dict) else DailySpend()
         streak = data.get("consecutive_poison", 0)
         return cls(
             spend=spend,
             consecutive_poison=(
-                streak if isinstance(streak, int) and not isinstance(streak, bool)
-                else 0
+                streak if isinstance(streak, int) and not isinstance(streak, bool) else 0
             ),
             cost_coverage_seen=bool(data.get("cost_coverage_seen", False)),
         )
@@ -604,9 +592,9 @@ class SpendLedger:
         with control_lock(self.root_dir):
             state = self.read_state(stamp)
             current = state.spend
-            merged_phases = tuple(sorted(
-                set(current.unmetered_phases) | {p for p in unmetered_phases if p}
-            ))
+            merged_phases = tuple(
+                sorted(set(current.unmetered_phases) | {p for p in unmetered_phases if p})
+            )
             spend = DailySpend(
                 date=stamp,
                 spent_usd=round(current.spent_usd + max(0.0, usd), 6),
@@ -615,11 +603,13 @@ class SpendLedger:
                 total_calls=current.total_calls + max(0, total_calls),
                 unmetered_phases=merged_phases,
             )
-            self._write_unlocked(replace(
-                state,
-                spend=spend,
-                cost_coverage_seen=state.cost_coverage_seen or covered_calls > 0,
-            ))
+            self._write_unlocked(
+                replace(
+                    state,
+                    spend=spend,
+                    cost_coverage_seen=state.cost_coverage_seen or covered_calls > 0,
+                )
+            )
             return spend
 
     def record_terminal(self, *, poisoned: bool, today: str | None = None) -> int:
@@ -691,9 +681,7 @@ def run_dir_names(root_dir: Path) -> frozenset[str]:
     """
     runs_root = state_dir(root_dir) / "runs"
     try:
-        return frozenset(
-            entry.name for entry in runs_root.iterdir() if entry.is_dir()
-        )
+        return frozenset(entry.name for entry in runs_root.iterdir() if entry.is_dir())
     except OSError:
         return frozenset()
 
@@ -742,7 +730,9 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
                 # shared classifier so this cannot drift from the reducer's
                 # and the Linear sink's reading of the same payload.
                 kind = ev.budget_halt_kind(
-                    event.condition, event.ceilings, event.ceiling,
+                    event.condition,
+                    event.ceilings,
+                    event.ceiling,
                 )
                 if kind == "unenforceable":
                     return (
@@ -759,6 +749,7 @@ def budget_halt_reason(root_dir: Path, owned_run_ids: Sequence[str]) -> str:
                     "work against the same limit at a higher cost"
                 )
     return ""
+
 
 def _infra_casualty(component: Any) -> bool:
     """Whether a component's failure was infrastructural.
@@ -828,8 +819,7 @@ def classify_run(
         # spec, so it is the one crash shape that legitimately retries.
         return Outcome(
             Verdict.RETRY_INFRA,
-            f"killed by signal {-run.returncode} (external cause, not a "
-            "verdict on the spec)",
+            f"killed by signal {-run.returncode} (external cause, not a verdict on the spec)",
             {"signal": -run.returncode},
         )
 
@@ -892,10 +882,7 @@ def classify_run(
             {"returncode": run.returncode, "manifest": str(manifest_path)},
         )
 
-    failed = [
-        comp for comp in manifest.components
-        if str(comp.status) == "failed"
-    ]
+    failed = [comp for comp in manifest.components if str(comp.status) == "failed"]
     if not failed:
         # Nonzero exit with nothing blamed: unconfirmed merges, contract
         # failures, a stop mid-run. Each may well be resumable, but none
@@ -908,9 +895,7 @@ def classify_run(
             "run); a human decides whether to resume",
             {
                 "returncode": run.returncode,
-                "statuses": sorted(
-                    {str(c.status) for c in manifest.components}
-                ),
+                "statuses": sorted({str(c.status) for c in manifest.components}),
             },
         )
 
@@ -925,10 +910,7 @@ def classify_run(
     # merits, not on infrastructure". Both verdicts poison, so the money
     # behaviour was already right; the STATEMENT was false. Every unit
     # test had constructed manifests WITH findings, so nothing caught it.
-    judged = [
-        comp.id for comp in failed
-        if comp.findings and not _infra_casualty(comp)
-    ]
+    judged = [comp.id for comp in failed if comp.findings and not _infra_casualty(comp)]
     unevidenced = [comp for comp in failed if not comp.findings]
     # Collected BEFORE the SPEC_FAILURE return: a mixed manifest used to
     # report only the component with a finding, silently dropping a
@@ -938,8 +920,7 @@ def classify_run(
     sibling_note = ""
     if unevidenced:
         sibling_note = "; also failed with no finding to explain it - " + "; ".join(
-            f"{comp.id}: {comp.error or 'no error recorded'}"
-            for comp in unevidenced
+            f"{comp.id}: {comp.error or 'no error recorded'}" for comp in unevidenced
         )
     if judged:
         return Outcome(
@@ -952,27 +933,21 @@ def classify_run(
                 "returncode": run.returncode,
                 "judged_failures": judged,
                 "unevidenced_failures": [comp.id for comp in unevidenced],
-                "component_errors": {
-                    comp.id: comp.error for comp in unevidenced
-                },
+                "component_errors": {comp.id: comp.error for comp in unevidenced},
             },
         )
 
     if unevidenced:
         detail = "; ".join(
-            f"{comp.id}: {comp.error or 'no error recorded'}"
-            for comp in unevidenced
+            f"{comp.id}: {comp.error or 'no error recorded'}" for comp in unevidenced
         )
         return Outcome(
             Verdict.UNCLASSIFIABLE,
-            "failed with no finding to attribute it to, so the cause is "
-            f"unproven - {detail}",
+            f"failed with no finding to attribute it to, so the cause is unproven - {detail}",
             {
                 "returncode": run.returncode,
                 "unevidenced_failures": [comp.id for comp in unevidenced],
-                "component_errors": {
-                    comp.id: comp.error for comp in unevidenced
-                },
+                "component_errors": {comp.id: comp.error for comp in unevidenced},
             },
         )
 
@@ -1050,7 +1025,8 @@ def reap_leases(
 
     for item in queue.items((ItemState.LEASED,)):
         if item.lease_expired(moment) or not _pid_alive(
-            item.lease_pid, item.lease_host,
+            item.lease_pid,
+            item.lease_host,
         ):
             queue.requeue(
                 item,
@@ -1061,10 +1037,7 @@ def reap_leases(
             requeued.append(item.item_id)
 
     for item in queue.items((ItemState.RUNNING,)):
-        if not (
-            item.lease_expired(moment)
-            or not _pid_alive(item.lease_pid, item.lease_host)
-        ):
+        if not (item.lease_expired(moment) or not _pid_alive(item.lease_pid, item.lease_host)):
             continue
         detail = (
             f"run interrupted (lease holder pid {item.lease_pid} on "
@@ -1080,18 +1053,13 @@ def reap_leases(
                 reread,
                 reason="reaped: retrying an interrupted run",
                 actor=actor,
-                not_before=_iso(
-                    moment + timedelta(seconds=backoff_seconds(reread.attempts))
-                ),
+                not_before=_iso(moment + timedelta(seconds=backoff_seconds(reread.attempts))),
             )
             failed.append(item.item_id)
         else:
             queue.poison(
                 reread,
-                reason=(
-                    f"{detail}; no attempts left "
-                    f"({reread.attempts}/{reread.max_attempts})"
-                ),
+                reason=(f"{detail}; no attempts left ({reread.attempts}/{reread.max_attempts})"),
                 actor=actor,
             )
             poisoned.append(item.item_id)
@@ -1153,8 +1121,10 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
 
     policy = PolicyConfig.load(root_dir)
     level, clamps = resolve_runtime_level(
-        AutonomyState.load(root_dir), config,
-        policy_enabled=policy.enabled, root_dir=root_dir,
+        AutonomyState.load(root_dir),
+        config,
+        policy_enabled=policy.enabled,
+        root_dir=root_dir,
     )
     bundle = flag_bundle_for(level)
     notes = list(clamps)
@@ -1180,7 +1150,8 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
         )
 
     return MergeGate(
-        pause_before_pr_merge=bundle.pause_before_pr_merge, notes=tuple(notes),
+        pause_before_pr_merge=bundle.pause_before_pr_merge,
+        notes=tuple(notes),
     )
 
 
@@ -1240,18 +1211,24 @@ def subprocess_factory_runner(
     """
     command = [
         *caffeinate_prefix(caffeinate),
-        sys.executable, "-m", "kstrl", "factory",
-        "--spec", str(spec_path),
-        "--project-name", project_name,
-        "--root", str(root_dir),
+        sys.executable,
+        "-m",
+        "kstrl",
+        "factory",
+        "--spec",
+        str(spec_path),
+        "--project-name",
+        project_name,
+        "--root",
+        str(root_dir),
         "--yes",
         "--no-tui",
-        "--ui", "plain",
+        "--ui",
+        "plain",
         "--no-color",
     ]
     command.append(
-        "--pause-before-pr-merge" if pause_before_pr_merge
-        else "--no-pause-before-pr-merge"
+        "--pause-before-pr-merge" if pause_before_pr_merge else "--no-pause-before-pr-merge"
     )
     env = dict(os.environ)
     env["KSTRL_NO_TUI"] = "1"
@@ -1319,9 +1296,7 @@ def run_supervised(
         except (subprocess.TimeoutExpired, ValueError, OSError):
             output = ""
         return RunOutcome(
-            returncode=(
-                process.returncode if process.returncode is not None else -9
-            ),
+            returncode=(process.returncode if process.returncode is not None else -9),
             timed_out=True,
             output_tail=_tail(output),
             group_reaped=reaped,
@@ -1344,7 +1319,8 @@ GROUP_TERM_GRACE_SECONDS = 15.0
 
 
 def terminate_process_group(
-    process: subprocess.Popen[str], pgid: int | None = None,
+    process: subprocess.Popen[str],
+    pgid: int | None = None,
 ) -> bool:
     """SIGTERM then SIGKILL a child's whole process group; True if reaped.
 
@@ -1369,7 +1345,8 @@ def terminate_process_group(
         return process.poll() is not None
 
     for sig, wait in (
-        (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS), (signal.SIGKILL, 10.0),
+        (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS),
+        (signal.SIGKILL, 10.0),
     ):
         try:
             os.killpg(pgid, sig)
@@ -1436,7 +1413,10 @@ class Admission:
 
 
 def check_budget(
-    ledger: SpendLedger, config: ServeConfig, *, today: str | None = None,
+    ledger: SpendLedger,
+    config: ServeConfig,
+    *,
+    today: str | None = None,
 ) -> Admission:
     """The daily-budget hard stop, evaluated BEFORE admitting an item.
 
@@ -1481,7 +1461,10 @@ def _floor_note(spend: DailySpend) -> str:
 
 
 def check_cost_coverage(
-    ledger: SpendLedger, config: ServeConfig, *, today: str | None = None,
+    ledger: SpendLedger,
+    config: ServeConfig,
+    *,
+    today: str | None = None,
 ) -> Admission:
     """Refuse to run under a budget that can never fire.
 
@@ -1664,9 +1647,7 @@ def serve_lock(root_dir: Path) -> Iterator[None]:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as exc:
-            raise ServeLockedError(
-                f"another ks serve holds {lock_path}"
-            ) from exc
+            raise ServeLockedError(f"another ks serve holds {lock_path}") from exc
         handle.seek(0)
         handle.truncate()
         handle.write(f"{os.getpid()}\n")
@@ -1770,7 +1751,9 @@ def _file_inbox_item(
 
 
 def _run_intake(
-    root_dir: Path, queue: Queue, observer: ServeObserver,
+    root_dir: Path,
+    queue: Queue,
+    observer: ServeObserver,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Pull remote work into the queue, best effort.
 
@@ -1792,7 +1775,9 @@ def _run_intake(
         if not config.enabled:
             return (), ()
         result = intake_sync(
-            queue, config, root_dir,
+            queue,
+            config,
+            root_dir,
             # Poll and authorize unlocked; take the queue mutex only for
             # the local commit, so a slow GitHub cannot block
             # `ks queue pause` or any other transition (#189 N1).
@@ -1833,7 +1818,11 @@ def _report_remote_outcome(
         if not config.enabled:
             return
         error = report_outcome(
-            item, state=state, detail=detail, config=config, root_dir=root_dir,
+            item,
+            state=state,
+            detail=detail,
+            config=config,
+            root_dir=root_dir,
         )
         if error:
             observer.warn(f"  writeback to {item.source_ref} failed: {error}")
@@ -1902,14 +1891,16 @@ def serve_cycle(
         result.skipped = str(exc)
         result.needs_human = True
         obs.err(str(exc))
-        result.inbox_items += (_file_inbox_item(
-            root_dir,
-            kind_name="budget_overrun",
-            title="Continuous intake halted: unreadable spend ledger",
-            detail=str(exc),
-            dedupe_key=f"serve-ledger:{ledger.path}",
-            evidence={"path": str(ledger.path)},
-        ),)
+        result.inbox_items += (
+            _file_inbox_item(
+                root_dir,
+                kind_name="budget_overrun",
+                title="Continuous intake halted: unreadable spend ledger",
+                detail=str(exc),
+                dedupe_key=f"serve-ledger:{ledger.path}",
+                evidence={"path": str(ledger.path)},
+            ),
+        )
         return result
 
     # 1. Recovery, under the mutex: staging leftovers and dead leases.
@@ -1926,24 +1917,26 @@ def serve_cycle(
         obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
         result.needs_human = True
         _report_remote_outcome(
-            root_dir, queue.get(item_id), state="poison",
-            detail=(
-                "The run was interrupted and the item had no attempts left."
-            ),
+            root_dir,
+            queue.get(item_id),
+            state="poison",
+            detail=("The run was interrupted and the item had no attempts left."),
             observer=obs,
         )
-        result.inbox_items += (_file_inbox_item(
-            root_dir,
-            kind_name="halted_run",
-            title=f"Queue item {item_id[:12]} poisoned after an interrupted run",
-            detail=(
-                "The run was interrupted and the item had no attempts left. "
-                "Inspect with `ks queue show` and requeue with "
-                "`ks queue retry --reset-attempts` if it should run again."
+        result.inbox_items += (
+            _file_inbox_item(
+                root_dir,
+                kind_name="halted_run",
+                title=f"Queue item {item_id[:12]} poisoned after an interrupted run",
+                detail=(
+                    "The run was interrupted and the item had no attempts left. "
+                    "Inspect with `ks queue show` and requeue with "
+                    "`ks queue retry --reset-attempts` if it should run again."
+                ),
+                dedupe_key=f"queue-poison:{item_id}",
+                evidence={"item_id": item_id, "cause": "interrupted run"},
             ),
-            dedupe_key=f"queue-poison:{item_id}",
-            evidence={"item_id": item_id, "cause": "interrupted run"},
-        ),)
+        )
 
     # 2. Pull remote work in BEFORE the gates, so newly-admitted items face
     #    the same budget, breaker and cap checks as everything else. The
@@ -1988,16 +1981,16 @@ def serve_cycle(
         if admission.pause_reason:
             result.paused = _pause_queue(queue, admission, obs, root_dir)
             result.needs_human = True
-            result.inbox_items += (_file_inbox_item(
-                root_dir,
-                kind_name="budget_overrun",
-                title="Continuous intake paused",
-                detail=admission.reason,
-                dedupe_key=(
-                    f"serve-pause:{_local_today()}:{admission.pause_reason[:40]}"
+            result.inbox_items += (
+                _file_inbox_item(
+                    root_dir,
+                    kind_name="budget_overrun",
+                    title="Continuous intake paused",
+                    detail=admission.reason,
+                    dedupe_key=(f"serve-pause:{_local_today()}:{admission.pause_reason[:40]}"),
+                    evidence={"reason": admission.reason},
                 ),
-                evidence={"reason": admission.reason},
-            ),)
+            )
         result.skipped = admission.reason
         return result
 
@@ -2038,20 +2031,23 @@ def serve_cycle(
     if refused_item is not None:
         obs.err(f"{candidate.item_id[:12]}: {gate.refusal}")
         result.needs_human = True
-        result.inbox_items += (_file_inbox_item(
-            root_dir,
-            kind_name="merge_gate",
-            title=(
-                f"Queue item {candidate.item_id[:12]} needs a merge decision"
+        result.inbox_items += (
+            _file_inbox_item(
+                root_dir,
+                kind_name="merge_gate",
+                title=(f"Queue item {candidate.item_id[:12]} needs a merge decision"),
+                detail=gate.refusal,
+                dedupe_key=f"queue-merge-gate:{candidate.item_id}",
+                evidence={"item_id": candidate.item_id},
             ),
-            detail=gate.refusal,
-            dedupe_key=f"queue-merge-gate:{candidate.item_id}",
-            evidence={"item_id": candidate.item_id},
-        ),)
+        )
         # Outside the mutex: two gh calls at the configured timeout must
         # not block every local queue transition (#187 F10).
         _report_remote_outcome(
-            root_dir, refused_item, state="poison", detail=gate.refusal,
+            root_dir,
+            refused_item,
+            state="poison",
+            detail=gate.refusal,
             observer=obs,
         )
         result.skipped = gate.refusal
@@ -2073,7 +2069,10 @@ def serve_cycle(
         result.skipped = str(exc)
         result.needs_human = True
         _report_remote_outcome(
-            root_dir, exhausted_item, state="poison", detail=str(exc),
+            root_dir,
+            exhausted_item,
+            state="poison",
+            detail=str(exc),
             observer=obs,
         )
         return result
@@ -2083,7 +2082,9 @@ def serve_cycle(
     # the trigger label alone and `running` is applied here, when the item
     # actually starts (#187 F8).
     _report_remote_outcome(
-        root_dir, running, state="running",
+        root_dir,
+        running,
+        state="running",
         detail=(
             f"Claimed by the queue as `{running.item_id}` "
             f"(attempt {running.attempts} of {running.max_attempts})."
@@ -2140,19 +2141,25 @@ def serve_cycle(
                 current = queue.get(running.item_id)
         obs.err(f"  {running.item_id[:12]}: {detail}")
         _report_remote_outcome(
-            root_dir, current, state="poison", detail=detail, observer=obs,
+            root_dir,
+            current,
+            state="poison",
+            detail=detail,
+            observer=obs,
         )
         result.verdict = Verdict.UNCLASSIFIABLE
         result.reason = detail
         result.needs_human = True
-        result.inbox_items += (_file_inbox_item(
-            root_dir,
-            kind_name="halted_run",
-            title=f"Queue item {running.item_id[:12]}: orphaned factory process",
-            detail=detail,
-            dedupe_key=f"queue-orphan:{running.item_id}",
-            evidence={"item_id": running.item_id},
-        ),)
+        result.inbox_items += (
+            _file_inbox_item(
+                root_dir,
+                kind_name="halted_run",
+                title=f"Queue item {running.item_id[:12]}: orphaned factory process",
+                detail=detail,
+                dedupe_key=f"queue-orphan:{running.item_id}",
+                evidence={"item_id": running.item_id},
+            ),
+        )
         return result
 
     # 7. Charge the spend before deciding anything, so a classification
@@ -2184,7 +2191,8 @@ def serve_cycle(
         f"  charged ${total:.2f} over {len(owned_runs)} run dir(s)"
         + (
             f"; {total_calls - covered_calls} call(s) reported no cost"
-            if total_calls > covered_calls else ""
+            if total_calls > covered_calls
+            else ""
         )
         + f"; today ${charged.spent_usd:.2f}"
         + (" (a floor)" if charged.lower_bound else "")
@@ -2202,14 +2210,16 @@ def serve_cycle(
     result.verdict = verdict.verdict
     result.reason = verdict.reason
     evidence = dict(verdict.evidence)
-    evidence.update({
-        "item_id": running.item_id,
-        "owned_run_ids": owned_runs,
-        "attempts": running.attempts,
-        "max_attempts": running.max_attempts,
-        "cost_usd": total,
-        "cost_is_lower_bound": charged.lower_bound,
-    })
+    evidence.update(
+        {
+            "item_id": running.item_id,
+            "owned_run_ids": owned_runs,
+            "attempts": running.attempts,
+            "max_attempts": running.max_attempts,
+            "cost_usd": total,
+            "cost_is_lower_bound": charged.lower_bound,
+        }
+    )
 
     with queue_lock(root_dir, blocking=True):
         current = queue.get(running.item_id)
@@ -2229,8 +2239,11 @@ def serve_cycle(
         obs.info(f"  {running.item_id[:12]} done")
         # Outside the mutex (#187 F10).
         _report_remote_outcome(
-            root_dir, finished, state="done",
-            detail="The factory run completed.", observer=obs,
+            root_dir,
+            finished,
+            state="done",
+            detail="The factory run completed.",
+            observer=obs,
         )
         return result
 
@@ -2264,10 +2277,13 @@ def serve_cycle(
         else:
             exhausted = (
                 f"; no attempts left ({failed.attempts}/{failed.max_attempts})"
-                if verdict.verdict.may_retry else ""
+                if verdict.verdict.may_retry
+                else ""
             )
             queue.poison(
-                failed, reason=f"{verdict.reason}{exhausted}", actor="serve",
+                failed,
+                reason=f"{verdict.reason}{exhausted}",
+                actor="serve",
             )
             ledger.record_terminal(poisoned=True)
             poisoned_item = queue.get(running.item_id)
@@ -2281,7 +2297,9 @@ def serve_cycle(
         # A retry IS a state change the remote should see: the item is
         # back in the queue, not running (#187 F8).
         _report_remote_outcome(
-            root_dir, queue.get(running.item_id), state="failed",
+            root_dir,
+            queue.get(running.item_id),
+            state="failed",
             detail=(
                 f"{verdict.reason}\n\nRetrying in {int(retry_delay)}s "
                 f"({running.attempts} of {running.max_attempts} attempts used)."
@@ -2293,23 +2311,28 @@ def serve_cycle(
     result.needs_human = True
     obs.err(f"  {running.item_id[:12]} poisoned: {verdict.reason}")
     _report_remote_outcome(
-        root_dir, poisoned_item, state="poison",
-        detail=verdict.reason, observer=obs,
-    )
-    result.inbox_items += (_file_inbox_item(
         root_dir,
-        kind_name="halted_run",
-        title=f"Queue item {running.item_id[:12]} poisoned",
-        detail=(
-            f"{verdict.reason}\n\n"
-            f"Verdict: {verdict.verdict}. This item will NOT be retried "
-            "automatically. Inspect with `ks queue show "
-            f"{running.item_id[:12]}`."
+        poisoned_item,
+        state="poison",
+        detail=verdict.reason,
+        observer=obs,
+    )
+    result.inbox_items += (
+        _file_inbox_item(
+            root_dir,
+            kind_name="halted_run",
+            title=f"Queue item {running.item_id[:12]} poisoned",
+            detail=(
+                f"{verdict.reason}\n\n"
+                f"Verdict: {verdict.verdict}. This item will NOT be retried "
+                "automatically. Inspect with `ks queue show "
+                f"{running.item_id[:12]}`."
+            ),
+            dedupe_key=f"queue-poison:{running.item_id}",
+            evidence=evidence,
+            run_id=owned_runs[-1] if owned_runs else "",
         ),
-        dedupe_key=f"queue-poison:{running.item_id}",
-        evidence=evidence,
-        run_id=owned_runs[-1] if owned_runs else "",
-    ),)
+    )
     return result
 
 
@@ -2486,9 +2509,7 @@ def calendar_schedule(interval_minutes: int) -> list[dict[str, int]]:
     R8.6 plan had recorded the correct behaviour all along.
     """
     if interval_minutes < 1:
-        raise ServeError(
-            f"launchd interval must be >= 1 minute, got {interval_minutes}"
-        )
+        raise ServeError(f"launchd interval must be >= 1 minute, got {interval_minutes}")
     if interval_minutes <= 60:
         if 60 % interval_minutes:
             raise ServeError(
@@ -2552,9 +2573,7 @@ def launchd_plist_dict(
     mode refuses to generate without one (review #189 F2).
     """
     if mode not in ("keepalive", "interval"):
-        raise ServeError(
-            f"launchd mode must be 'keepalive' or 'interval', got {mode!r}"
-        )
+        raise ServeError(f"launchd mode must be 'keepalive' or 'interval', got {mode!r}")
     if mode == "interval" and factory_timeout_seconds <= 0:
         raise ServeError(
             "interval mode needs [serve] factory_timeout_seconds > 0. "
@@ -2575,8 +2594,12 @@ def launchd_plist_dict(
     # findable or every poll fails silently.
     path_parts = [
         str(Path(interpreter).parent),
-        "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
-        "/usr/sbin", "/sbin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
     ]
     if extra_path:
         path_parts.insert(0, extra_path)

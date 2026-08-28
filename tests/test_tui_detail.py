@@ -22,7 +22,10 @@ from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
     return KstrlTuiApp(
-        run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=0.05,
+        run_dir=run_dir,
+        root_dir=root,
+        mode=Mode.DASH,
+        poll_interval=0.05,
     )
 
 
@@ -36,10 +39,15 @@ def _checkpoint_request() -> PromptRequest:
         checkpoint=CheckpointContext(
             component_id="comp-a",
             diff_excerpt="+added line\n-removed line\n context\n",
-            review_findings=(Finding(
-                phase="review", category="test_quality", severity="advisory",
-                location="src/x.py:10", explanation="weak assertion",
-            ),),
+            review_findings=(
+                Finding(
+                    phase="review",
+                    category="test_quality",
+                    severity="advisory",
+                    location="src/x.py:10",
+                    explanation="weak assertion",
+                ),
+            ),
             security_findings=(),
             usage=_usage_totals(),
             branch="kstrl/factory/comp-a",
@@ -54,9 +62,12 @@ def _usage_totals() -> UsageTotals:
     totals.total_tokens = 4321
     totals.cost_usd = 1.25
     return totals
+
+
 class TestComponentScreen:
     async def test_enter_opens_detail_and_escape_returns(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
         app = _app(tmp_path, run_dir)
@@ -72,7 +83,8 @@ class TestComponentScreen:
             assert isinstance(app.screen, OverviewScreen)
 
     async def test_detail_shows_timeline_findings_transcript(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
@@ -121,7 +133,8 @@ class TestComponentScreen:
             assert isinstance(app.screen, ComponentScreen)
 
     async def test_findings_rollover_rebuilds_same_length_table(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
@@ -133,15 +146,13 @@ class TestComponentScreen:
             assert isinstance(screen, ComponentScreen)
             comp = app.store.state.components["comp-a"]
             comp.recent_findings = [
-                {"phase": "review", "severity": "low", "location": str(i)}
-                for i in range(3)
+                {"phase": "review", "severity": "low", "location": str(i)} for i in range(3)
             ]
             screen.refresh_state(app.store.state, None)
             table = screen.query_one(FindingsTable)
             assert table.row_count == 3
             comp.recent_findings = [
-                {"phase": "review", "severity": "low", "location": str(i)}
-                for i in range(1, 4)
+                {"phase": "review", "severity": "low", "location": str(i)} for i in range(1, 4)
             ]
             screen.refresh_state(app.store.state, None)
 
@@ -151,7 +162,8 @@ class TestComponentScreen:
 
 class TestOverviewScreenTeardown:
     async def test_state_update_after_header_removed_is_safe(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # Regression: a late StateChanged or age-tick can arrive while the
         # screen is tearing down and RunHeader (composed first) has already
@@ -182,9 +194,7 @@ class TestCheckpointModal:
             assert isinstance(app.screen, CheckpointModal)
             # The inspection surface is populated:
             body = app.screen.query_one("#checkpoint-body")
-            rendered = "".join(
-                str(static.render()) for static in body.query("Static")
-            )
+            rendered = "".join(str(static.render()) for static in body.query("Static"))
             assert "weak assertion" in rendered
             assert "+added line" in rendered
             summary = str(
@@ -204,7 +214,8 @@ class TestCheckpointModal:
             await pilot.pause()
             for key in ("r", "t", "escape"):
                 app.push_screen(
-                    CheckpointModal(_checkpoint_request()), results.append,
+                    CheckpointModal(_checkpoint_request()),
+                    results.append,
                 )
                 await pilot.pause()
                 await pilot.press(key)
@@ -225,11 +236,18 @@ class TestCheckpointModal:
 class TestPhaseTimeline:
     def test_retry_of_completed_phase_is_still_shown_running(self) -> None:
         comp = ComponentState(
-            component_id="comp-a", status="running", phase="engineer",
-            attempt=2, phase_history=[{
-                "phase": "engineer", "passed": False,
-                "duration_seconds": 1.0, "attempt": 1,
-            }],
+            component_id="comp-a",
+            status="running",
+            phase="engineer",
+            attempt=2,
+            phase_history=[
+                {
+                    "phase": "engineer",
+                    "passed": False,
+                    "duration_seconds": 1.0,
+                    "attempt": 1,
+                }
+            ],
         )
 
         timeline = render_timeline(comp).plain

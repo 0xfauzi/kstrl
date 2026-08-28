@@ -63,19 +63,18 @@ def _summary_cells(summary: RunSummary | None) -> tuple[Text, Text, Text]:
         comps.append(f" {summary.components_failed}✗", style=theme.ERROR)
     marker = "+" if summary.tokens_lower_bound else ""
     tok = (
-        Text(f"{format_tokens(summary.total_tokens)}{marker}",
-             justify="right")
-        if summary.total_tokens else _dot()
+        Text(f"{format_tokens(summary.total_tokens)}{marker}", justify="right")
+        if summary.total_tokens
+        else _dot()
     )
-    cost = (
-        Text(f"${summary.cost_usd:.2f}{marker}", justify="right")
-        if summary.cost_usd else _dot()
-    )
+    cost = Text(f"${summary.cost_usd:.2f}{marker}", justify="right") if summary.cost_usd else _dot()
     return comps, tok, cost
 
 
 def _row_values(
-    ref: RunRef, summary: RunSummary | None, now: float,
+    ref: RunRef,
+    summary: RunSummary | None,
+    now: float,
 ) -> tuple[Text | str, ...]:
     return (
         _status_cell(ref, summary),
@@ -102,10 +101,7 @@ class RunTable(DataTable[Text | str]):
         summaries = summaries or {}
         desired = [ref.run_id for ref in refs]
         current = [str(key.value) for key in self.rows]
-        selected = (
-            current[self.cursor_row]
-            if 0 <= self.cursor_row < len(current) else None
-        )
+        selected = current[self.cursor_row] if 0 <= self.cursor_row < len(current) else None
         order_changed = current != desired
         if order_changed:
             self.clear()
@@ -113,7 +109,9 @@ class RunTable(DataTable[Text | str]):
             values = _row_values(ref, summaries.get(ref.run_id), now)
             if ref.run_id in self.rows:
                 for key, value in zip(
-                    ("status", *COLUMNS[1:]), values, strict=True,
+                    ("status", *COLUMNS[1:]),
+                    values,
+                    strict=True,
                 ):
                     self.update_cell(ref.run_id, key, value)
             else:

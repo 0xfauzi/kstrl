@@ -55,8 +55,8 @@ class TestSubstrate:
         item = box.add(ItemKind.MERGE_GATE, "m", dedupe_key="k")
         box.approve(item.id, actor="human")
         lines = box.path.read_text().strip().splitlines()
-        assert len(lines) == 2          # emission + decision, nothing rewritten
-        assert len(box.items()) == 1    # folded to one current item
+        assert len(lines) == 2  # emission + decision, nothing rewritten
+        assert len(box.items()) == 1  # folded to one current item
 
     def test_decision_folds_to_latest(self, tmp_path: Path) -> None:
         box = _box(tmp_path)
@@ -139,21 +139,27 @@ class TestDecisions:
         # Two ids sharing a prefix must not silently resolve to one.
         box = _box(tmp_path)
         for suffix in ("aa", "bb"):
-            box._append(InboxItem(
-                id=f"abcdef{suffix}",
-                kind=ItemKind.HALTED_RUN,
-                title=f"item {suffix}",
-                created_at="2026-07-27T00:00:00+00:00",
-            ))
+            box._append(
+                InboxItem(
+                    id=f"abcdef{suffix}",
+                    kind=ItemKind.HALTED_RUN,
+                    title=f"item {suffix}",
+                    created_at="2026-07-27T00:00:00+00:00",
+                )
+            )
         with pytest.raises(InboxError, match="ambiguous"):
             box.get("abcdef")
 
     def test_unambiguous_prefix_still_resolves(self, tmp_path: Path) -> None:
         box = _box(tmp_path)
-        box._append(InboxItem(
-            id="abcdefaa", kind=ItemKind.HALTED_RUN, title="only",
-            created_at="2026-07-27T00:00:00+00:00",
-        ))
+        box._append(
+            InboxItem(
+                id="abcdefaa",
+                kind=ItemKind.HALTED_RUN,
+                title="only",
+                created_at="2026-07-27T00:00:00+00:00",
+            )
+        )
         assert box.get("abcdef") is not None
 
 
@@ -212,9 +218,9 @@ class TestCapacityAndNotification:
             (ItemKind.MERGE_GATE, True),
             (ItemKind.HALTED_RUN, True),
             (ItemKind.BUDGET_OVERRUN, True),
-            (ItemKind.DEMOTION_NOTICE, False),   # informational, but notified
+            (ItemKind.DEMOTION_NOTICE, False),  # informational, but notified
             (ItemKind.CALIBRATION_DRIFT, False),
-            (ItemKind.TEST_ADEQUACY, True),      # a blocked change waits
+            (ItemKind.TEST_ADEQUACY, True),  # a blocked change waits
         ],
     )
     def test_action_required_taxonomy(self, kind: ItemKind, expected: bool) -> None:
@@ -249,9 +255,9 @@ class TestUnparseableLineCount:
 
     def test_missing_and_clean_logs_count_zero(self, tmp_path: Path) -> None:
         box = _box(tmp_path)
-        assert box.unparseable_line_count() == 0    # no file yet
+        assert box.unparseable_line_count() == 0  # no file yet
         box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
-        assert box.unparseable_line_count() == 0    # every line parses
+        assert box.unparseable_line_count() == 0  # every line parses
 
     def test_torn_json_line_counts(self, tmp_path: Path) -> None:
         box = _box(tmp_path)
@@ -280,7 +286,9 @@ class TestUnparseableLineCount:
         assert box.open_items() == [item]
 
     def test_read_oserror_is_unreadable_not_one_skip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Whole-file read failure is not 'one garbled line' - the gate
         has no positive evidence the backlog is under the cap (#190 P1)."""
@@ -296,10 +304,12 @@ class TestUnparseableLineCount:
         monkeypatch.setattr(Path, "read_bytes", flaky_read)
         scan = box.scan()
         assert scan.unreadable is True
-        assert box.items() == []          # display stays tolerant
+        assert box.items() == []  # display stays tolerant
 
     def test_exists_oserror_is_unreadable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         box = _box(tmp_path)
         real_exists = Path.exists
@@ -314,7 +324,8 @@ class TestUnparseableLineCount:
         assert box.items() == []
 
     def test_invalid_utf8_is_unreadable_and_display_tolerant(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A write torn inside a multibyte character must not raise out of
         the fold or the gate (#190 P1). Whole-file decode failure is the
@@ -324,7 +335,7 @@ class TestUnparseableLineCount:
         box.path.parent.mkdir(parents=True, exist_ok=True)
         box.path.write_bytes(b"\xff\n")
         assert box.scan().unreadable is True
-        assert box.items() == []          # no UnicodeDecodeError escape
+        assert box.items() == []  # no UnicodeDecodeError escape
 
 
 class TestConfig:
@@ -341,7 +352,9 @@ class TestConfig:
         assert config.snooze_hours == 2.5
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[inbox]\nopen_item_cap = 7\n")
         monkeypatch.setenv("KSTRL_INBOX_OPEN_CAP", "3")
@@ -354,7 +367,11 @@ class TestConfig:
 def _init_git_repo(root: Path) -> None:
     def run(*args: str) -> None:
         subprocess.run(
-            ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     run("init")
@@ -370,14 +387,16 @@ def _usage(total: int, cost: float = 0.0) -> object:
     from kstrl.agents.base import UsageRecord, UsageTotals
 
     totals = UsageTotals()
-    totals.add_record(UsageRecord(
-        input_tokens=total // 3,
-        output_tokens=total - total // 3,
-        total_tokens=total,
-        cost_usd=cost or None,
-        duration_seconds=1.0,
-        source="claude-stream-json",
-    ))
+    totals.add_record(
+        UsageRecord(
+            input_tokens=total // 3,
+            output_tokens=total - total // 3,
+            total_tokens=total,
+            cost_usd=cost or None,
+            duration_seconds=1.0,
+            source="claude-stream-json",
+        )
+    )
     return totals
 
 
@@ -413,42 +432,66 @@ def _run_factory(
     )
     AutonomyState(level=int(level)).save(tmp_path)
     manifest = Manifest(
-        version="1", spec_file="s", project_name="t", base_branch="main",
+        version="1",
+        spec_file="s",
+        project_name="t",
+        base_branch="main",
         single_pr=False,
-        components=[Component(
-            "comp-a", "A", "D", [],
-            "scripts/kstrl/feature/comp-a/prd.json", "kstrl/factory/comp-a",
-        )],
+        components=[
+            Component(
+                "comp-a",
+                "A",
+                "D",
+                [],
+                "scripts/kstrl/feature/comp-a/prd.json",
+                "kstrl/factory/comp-a",
+            )
+        ],
     )
     config = FactoryConfig(
-        use_worktrees=False, create_prs=create_prs, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=create_prs,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         max_total_tokens=max_total_tokens,
         max_cost_usd=max_cost_usd,
         pause_before_pr_merge=pause_before_pr_merge,
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true", lint_command="true",
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
     )
     base = KstrlConfig(
-        prompt_file=kstrl_dir / "prompt.md", prd_file=kstrl_dir / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test", kstrl_branch="",
-        kstrl_branch_explicit=True, ui_mode="plain", no_color=True,
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
     result = verification or VerificationResult(
-        passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+        passed=True,
+        checks=[CheckResult("diff_scope", True, "ok")],
     )
     component_result = ComponentResult(
-        "comp-a", success=True, iterations=1,
+        "comp-a",
+        success=True,
+        iterations=1,
         usage=(
-            _usage(engineer_tokens, engineer_cost)
-            if engineer_tokens or engineer_cost else None
+            _usage(engineer_tokens, engineer_cost) if engineer_tokens or engineer_cost else None
         ),
     )
     with (
         patch(
-            "kstrl.factory._run_component", return_value=component_result,
+            "kstrl.factory._run_component",
+            return_value=component_result,
         ),
         patch("kstrl.factory.run_mechanical_verification", return_value=result),
         patch(
@@ -465,19 +508,29 @@ class TestEmittersFireDuringRuns:
         from kstrl.verify import CheckResult, VerificationResult
 
         violation = Finding.policy_violation(
-            category="paths_deny", explanation="touched .env",
+            category="paths_deny",
+            explanation="touched .env",
         )
-        _run_factory(tmp_path, verification=VerificationResult(
-            passed=False,
-            checks=[CheckResult(
-                "policy_envelope", False, "1 violation", findings=[violation],
-            )],
-        ))
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
+                passed=False,
+                checks=[
+                    CheckResult(
+                        "policy_envelope",
+                        False,
+                        "1 violation",
+                        findings=[violation],
+                    )
+                ],
+            ),
+        )
         kinds = {str(i.kind) for i in Inbox(tmp_path, InboxConfig()).items()}
         assert "policy_exception" in kinds
 
     def test_blocking_adequacy_finding_emits_one_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # R8.5 / P2-f: the claim that adequacy findings reach the inbox
         # was made before the wiring existed. This is the wiring.
@@ -489,23 +542,30 @@ class TestEmittersFireDuringRuns:
             location="tests/test_core.py",
             severity="high",
         )
-        _run_factory(tmp_path, verification=VerificationResult(
-            passed=False,
-            checks=[CheckResult(
-                "test_adequacy", False, "1 finding [blocking]",
-                findings=[finding],
-            )],
-        ))
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
+                passed=False,
+                checks=[
+                    CheckResult(
+                        "test_adequacy",
+                        False,
+                        "1 finding [blocking]",
+                        findings=[finding],
+                    )
+                ],
+            ),
+        )
         items = [
-            i for i in Inbox(tmp_path, InboxConfig()).items()
-            if i.kind is ItemKind.TEST_ADEQUACY
+            i for i in Inbox(tmp_path, InboxConfig()).items() if i.kind is ItemKind.TEST_ADEQUACY
         ]
         assert len(items) == 1, [str(i.kind) for i in items]
         assert items[0].component == "comp-a"
         assert items[0].evidence.get("location") == "tests/test_core.py"
 
     def test_advisory_adequacy_finding_emits_nothing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # The inbox is a queue of decisions. An advisory is a note, and it
         # is already recorded in the component's finding stream.
@@ -516,22 +576,33 @@ class TestEmittersFireDuringRuns:
             explanation="tests/test_new.py: no strong-oracle assertion",
             location="tests/test_new.py",
         )
-        _run_factory(tmp_path, verification=VerificationResult(
-            passed=True,
-            checks=[CheckResult(
-                "test_adequacy", True, "1 finding [advisory]",
-                findings=[finding],
-            )],
-        ))
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
+                passed=True,
+                checks=[
+                    CheckResult(
+                        "test_adequacy",
+                        True,
+                        "1 finding [advisory]",
+                        findings=[finding],
+                    )
+                ],
+            ),
+        )
         kinds = [str(i.kind) for i in Inbox(tmp_path, InboxConfig()).items()]
         assert "test_adequacy" not in kinds, kinds
 
     def test_failed_component_emits_halted_run(self, tmp_path: Path) -> None:
         from kstrl.verify import CheckResult, VerificationResult
 
-        _run_factory(tmp_path, verification=VerificationResult(
-            passed=False, checks=[CheckResult("test_suite", False, "boom")],
-        ))
+        _run_factory(
+            tmp_path,
+            verification=VerificationResult(
+                passed=False,
+                checks=[CheckResult("test_suite", False, "boom")],
+            ),
+        )
         items = Inbox(tmp_path, InboxConfig()).items()
         halted = [i for i in items if i.kind is ItemKind.HALTED_RUN]
         assert halted
@@ -542,15 +613,21 @@ class TestEmittersFireDuringRuns:
         from kstrl.verify import CheckResult, VerificationResult
 
         violation = Finding.policy_violation(
-            category="paths_deny", explanation="touched .env",
+            category="paths_deny",
+            explanation="touched .env",
         )
         _run_factory(
             tmp_path,
             verification=VerificationResult(
                 passed=False,
-                checks=[CheckResult(
-                    "policy_envelope", False, "1 violation", findings=[violation],
-                )],
+                checks=[
+                    CheckResult(
+                        "policy_envelope",
+                        False,
+                        "1 violation",
+                        findings=[violation],
+                    )
+                ],
             ),
             level=AutonomyLevel.L3_ENVELOPED_AUTO,
             autonomy=True,
@@ -572,23 +649,30 @@ class TestEmittersFireDuringRuns:
         _run_factory(
             tmp_path,
             verification=VerificationResult(
-                passed=False, checks=[CheckResult("test_suite", False, "boom")],
+                passed=False,
+                checks=[CheckResult("test_suite", False, "boom")],
             ),
             inbox_enabled=False,
         )
         assert Inbox(tmp_path, InboxConfig()).items() == []
 
     def test_inbox_write_failure_does_not_fail_the_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.verify import CheckResult, VerificationResult
 
         with patch(
-            "kstrl.pipeline.Inbox.add", side_effect=OSError("disk full"),
+            "kstrl.pipeline.Inbox.add",
+            side_effect=OSError("disk full"),
         ):
-            _run_factory(tmp_path, verification=VerificationResult(
-                passed=False, checks=[CheckResult("test_suite", False, "boom")],
-            ))
+            _run_factory(
+                tmp_path,
+                verification=VerificationResult(
+                    passed=False,
+                    checks=[CheckResult("test_suite", False, "boom")],
+                ),
+            )
         # The run completed; that is the assertion.
 
 
@@ -599,12 +683,22 @@ class TestInboxRetryRoundTrip:
         manifest_path = tmp_path / "scripts" / "kstrl" / "manifest.json"
         manifest_path.parent.mkdir(parents=True)
         manifest = Manifest(
-            version="1", spec_file="s", project_name="t", base_branch="main",
+            version="1",
+            spec_file="s",
+            project_name="t",
+            base_branch="main",
             single_pr=False,
-            components=[Component(
-                "comp-a", "A", "D", [], "prd.json", "kstrl/comp-a",
-                status=ComponentStatus.FAILED.value,
-            )],
+            components=[
+                Component(
+                    "comp-a",
+                    "A",
+                    "D",
+                    [],
+                    "prd.json",
+                    "kstrl/comp-a",
+                    status=ComponentStatus.FAILED.value,
+                )
+            ],
         )
         manifest.save(manifest_path)
         reset = manifest.reset_for_retry("comp-a")
@@ -652,8 +746,10 @@ class TestInboxScreen:
 
         box = _box(tmp_path)
         box.add(
-            ItemKind.POLICY_EXCEPTION, "comp-a: denied path",
-            component="comp-a", dedupe_key="p1",
+            ItemKind.POLICY_EXCEPTION,
+            "comp-a: denied path",
+            component="comp-a",
+            dedupe_key="p1",
         )
 
         class _Harness(App[None]):
@@ -679,7 +775,8 @@ class TestDedupeAcrossGenerations:
     """A repeat must collapse onto the OPEN generation, not fan out."""
 
     def test_two_repeats_after_a_decision_share_one_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         box = _box(tmp_path)
         first = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
@@ -701,7 +798,8 @@ class TestDedupeAcrossGenerations:
         assert box.open_items()[0].occurrences == 5
 
     def test_open_generation_wins_over_older_decided(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The exact regression: two generations of one key exist, and
         the lookup must return the OPEN one even though the decided one
@@ -716,7 +814,8 @@ class TestDedupeAcrossGenerations:
         assert found.id == reopened.id
 
     def test_all_decided_falls_back_to_the_newest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         box = _box(tmp_path)
         first = box.add(ItemKind.HALTED_RUN, "x", dedupe_key="k")
@@ -732,7 +831,8 @@ class TestDedupeAcrossGenerations:
 
 class TestBudgetEmitsOneItem:
     def test_budget_halt_does_not_also_emit_halted_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """One event must not consume two cap slots or bury its reason.
 
@@ -745,7 +845,8 @@ class TestBudgetEmitsOneItem:
         assert kinds == ["budget_overrun"]
 
     def test_cost_halt_also_emits_exactly_one_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The cost ceiling reuses the SAME suppression, so it must not
         regress it: one budget_overrun, no duplicate halted_run."""
@@ -754,7 +855,8 @@ class TestBudgetEmitsOneItem:
         assert [str(i.kind) for i in items] == ["budget_overrun"]
 
     def test_cost_item_names_the_ceiling_that_tripped(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """With two ceilings, an item that always said "token" would send
         the operator to raise the wrong knob."""
@@ -765,7 +867,8 @@ class TestBudgetEmitsOneItem:
         assert item.evidence["ceiling"] == "max_cost_usd"
 
     def test_token_item_still_names_the_token_ceiling(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _run_factory(tmp_path, max_total_tokens=100, engineer_tokens=500)
         item = _box(tmp_path).open_items()[0]
@@ -782,7 +885,8 @@ class TestBudgetEmitsOneItem:
 
 class TestNotifyWiring:
     def test_inbox_hook_is_silent_without_its_own_command(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review #5: the knob had no consumer. It has one now, but it
         must NOT borrow on_first_failure - a failing component already
@@ -796,7 +900,8 @@ class TestNotifyWiring:
         assert not marker.exists()
 
     def test_action_required_item_fires_its_own_command(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.observability import NotifyConfig, NotifyHooks
 
@@ -828,7 +933,9 @@ class TestMergeGateIsTheHumanGate:
         # pause_before_pr_merge with no interactive UI must NOT merge:
         # it parks the component and files exactly one merge_gate item.
         _run_factory(
-            tmp_path, create_prs=True, pause_before_pr_merge=True,
+            tmp_path,
+            create_prs=True,
+            pause_before_pr_merge=True,
         )
         items = _box(tmp_path).open_items()
         assert [str(i.kind) for i in items] == ["merge_gate"]

@@ -66,7 +66,10 @@ class ClaudeCodeAgent:
         return shutil.which("claude") is not None
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         """Run claude --print with prompt piped to stdin.
 
@@ -82,8 +85,10 @@ class ClaudeCodeAgent:
         result_event_line: str | None = None
 
         cmd = [
-            "claude", "--print",
-            "--output-format", "stream-json",
+            "claude",
+            "--print",
+            "--output-format",
+            "stream-json",
             "--verbose",
         ]
         # R7.5: the no-network sandbox mode must NOT skip permissions -
@@ -101,7 +106,10 @@ class ClaudeCodeAgent:
 
         try:
             streamer = DeadlineStreamer(
-                cmd, cwd=cwd, stdin_text=prompt, timeout=timeout,
+                cmd,
+                cwd=cwd,
+                stdin_text=prompt,
+                timeout=timeout,
             )
         except FileNotFoundError:
             self._usage_records.append(UsageRecord(source="unavailable"))
@@ -129,19 +137,24 @@ class ClaudeCodeAgent:
                 yield display_line
 
         if streamer.timed_out:
-            self._usage_records.append(UsageRecord(
-                duration_seconds=time.monotonic() - started,
-                source="timeout",
-            ))
+            self._usage_records.append(
+                UsageRecord(
+                    duration_seconds=time.monotonic() - started,
+                    source="timeout",
+                )
+            )
             yield timeout_message(timeout)
             return
 
         # Wait for process to exit, but don't hang forever
         streamer.finish(timeout=10)
 
-        self._usage_records.append(_usage_from_result_event(
-            result_event_line, time.monotonic() - started,
-        ))
+        self._usage_records.append(
+            _usage_from_result_event(
+                result_event_line,
+                time.monotonic() - started,
+            )
+        )
 
         # Set final_message from accumulated text if not already set by result event
         if self._final_message is None and accumulated_text:
@@ -159,7 +172,8 @@ class ClaudeCodeAgent:
 
 
 def _usage_from_result_event(
-    raw_line: str | None, fallback_duration: float,
+    raw_line: str | None,
+    fallback_duration: float,
 ) -> UsageRecord:
     """Build a UsageRecord from the stream-json ``result`` event.
 
@@ -202,16 +216,11 @@ def _usage_from_result_event(
 
         cost_raw = evt.get("total_cost_usd")
         cost: float | None = None
-        if (
-            isinstance(cost_raw, (int, float))
-            and not isinstance(cost_raw, bool)
-            and cost_raw >= 0
-        ):
+        if isinstance(cost_raw, (int, float)) and not isinstance(cost_raw, bool) and cost_raw >= 0:
             cost = float(cost_raw)
 
         parts = [
-            p for p in (input_tokens, output_tokens, cache_read, cache_creation)
-            if p is not None
+            p for p in (input_tokens, output_tokens, cache_read, cache_creation) if p is not None
         ]
         if not parts and cost is None:
             logger.warning(
@@ -233,7 +242,8 @@ def _usage_from_result_event(
     except Exception as exc:  # noqa: BLE001 - meter must never crash a run
         logger.warning("Failed to parse claude usage: %s", exc)
         return UsageRecord(
-            duration_seconds=fallback_duration, source="parse-error",
+            duration_seconds=fallback_duration,
+            source="parse-error",
         )
 
 

@@ -100,7 +100,9 @@ class DeadlineStreamer:
             start_new_session=True,
         )
         self._writer = threading.Thread(
-            target=self._write_stdin, args=(stdin_text,), daemon=True,
+            target=self._write_stdin,
+            args=(stdin_text,),
+            daemon=True,
         )
         self._writer.start()
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
@@ -173,11 +175,7 @@ class DeadlineStreamer:
             # makes the child its own group leader (pgid == child pid), so
             # any pgid at or below 1, or equal to ours, means something is
             # wrong and group-kill must not proceed.
-            if (
-                hasattr(os, "killpg")
-                and isinstance(pid, int)
-                and pid > 1
-            ):
+            if hasattr(os, "killpg") and isinstance(pid, int) and pid > 1:
                 pgid = os.getpgid(pid)
                 if pgid > 1 and pgid != os.getpgrp():
                     os.killpg(pgid, sig)

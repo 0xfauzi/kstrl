@@ -49,7 +49,8 @@ HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 
 def start_heartbeat(
-    bus: EventBus, interval: float | None = None,
+    bus: EventBus,
+    interval: float | None = None,
 ) -> Callable[[], None]:
     """Emit WorkerHeartbeat every ``interval`` seconds on a daemon
     thread until the returned stop callable runs. JsonlSink's lock
@@ -63,10 +64,12 @@ def start_heartbeat(
 
     def _beat() -> None:
         while not stop_event.wait(period):
-            bus.emit(WorkerHeartbeat(
-                pid=pid,
-                elapsed_seconds=round(time.monotonic() - started, 1),
-            ))
+            bus.emit(
+                WorkerHeartbeat(
+                    pid=pid,
+                    elapsed_seconds=round(time.monotonic() - started, 1),
+                )
+            )
 
     thread = threading.Thread(target=_beat, daemon=True, name="kstrl-heartbeat")
     thread.start()
@@ -85,18 +88,15 @@ class _StreamFilterSink:
     """
 
     def __init__(
-        self, inner: EventSink,
+        self,
+        inner: EventSink,
         drop_stream_keys: frozenset[str] = frozenset({"AI"}),
     ) -> None:
         self._inner = inner
         self._drop = drop_stream_keys
 
     def emit(self, event: Event) -> None:
-        if (
-            isinstance(event, Log)
-            and event.kind == "stream"
-            and event.key in self._drop
-        ):
+        if isinstance(event, Log) and event.kind == "stream" and event.key in self._drop:
             return
         self._inner.emit(event)
 
@@ -130,7 +130,8 @@ class CommandRun:
         return self.paths.engineer_log(component_id)
 
     def transcript_writer(
-        self, component_id: str,
+        self,
+        component_id: str,
     ) -> Callable[[str], None] | None:
         """Line-buffered appender onto the component's transcript file
         (the file the dashboard's transcript pane tails); None when
@@ -211,7 +212,10 @@ def open_command_run(
         bus = EventBus(run_id=rid, component=component)
 
     run = CommandRun(
-        run_id=rid, kind=kind, bus=bus, paths=None,
+        run_id=rid,
+        kind=kind,
+        bus=bus,
+        paths=None,
         _restore_run_id=restore_run_id,
         _restore_component=restore_component,
     )

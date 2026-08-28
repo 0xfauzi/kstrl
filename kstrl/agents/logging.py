@@ -24,7 +24,10 @@ class LoggingAgent:
         return self._agent.name
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         with self._log_path.open("a") as handle:

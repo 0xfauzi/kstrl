@@ -21,12 +21,17 @@ def _events_on_disk(run: CommandRun) -> list[dict[str, Any]]:
 
 class TestOpenCommandRun:
     def test_enabled_records_events_with_component_stamp(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ui = PlainUI(no_color=True)
         run = open_command_run(
-            ui, tmp_path, "understand", component="understand",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "understand",
+            component="understand",
+            enabled=True,
+            heartbeat=False,
         )
         assert run.recording
         assert run_kind(run.run_id) == "understand"
@@ -39,7 +44,9 @@ class TestOpenCommandRun:
 
     def test_disabled_leaves_no_run_dir(self, tmp_path: Path) -> None:
         run = open_command_run(
-            PlainUI(no_color=True), tmp_path, "understand",
+            PlainUI(no_color=True),
+            tmp_path,
+            "understand",
             enabled=False,
         )
         assert not run.recording
@@ -54,25 +61,33 @@ class TestOpenCommandRun:
             "[factory]\nprogress_log_enabled = false\n",
         )
         run = open_command_run(
-            PlainUI(no_color=True), tmp_path, "decompose",
+            PlainUI(no_color=True),
+            tmp_path,
+            "decompose",
         )
         assert not run.recording
         run.close()
 
     def test_bridge_ui_bus_is_reused_and_restored(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Console narration lands in the run stream (chunk-7 wiring),
         and close() un-stamps the shared bus for post-run lines."""
         rendered: list[ev.Event] = []
         bus = ev.EventBus(
             ev.CallbackSink(rendered.append),
-            run_id="outer-run", component="outer-component",
+            run_id="outer-run",
+            component="outer-component",
         )
         ui = EventBridgeUI(bus, prompter=NullPrompter())
         run = open_command_run(
-            ui, tmp_path, "decompose", component="architect",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "decompose",
+            component="architect",
+            enabled=True,
+            heartbeat=False,
         )
         assert run.bus is bus
         assert bus.run_id == run.run_id
@@ -89,12 +104,17 @@ class TestOpenCommandRun:
         assert len(rendered) == 2
 
     def test_bridge_run_level_session_clears_inherited_component(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         bus = ev.EventBus(run_id="outer-run", component="outer-component")
         ui = EventBridgeUI(bus, prompter=NullPrompter())
         run = open_command_run(
-            ui, tmp_path, "decompose", enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "decompose",
+            enabled=True,
+            heartbeat=False,
         )
         assert bus.component == ""
         run.bus.emit(ev.RunStarted(project="p"))
@@ -106,8 +126,12 @@ class TestOpenCommandRun:
 
     def test_heartbeat_started_when_enabled(self, tmp_path: Path) -> None:
         run = open_command_run(
-            PlainUI(no_color=True), tmp_path, "feature",
-            component="my-feature", enabled=True, heartbeat=True,
+            PlainUI(no_color=True),
+            tmp_path,
+            "feature",
+            component="my-feature",
+            enabled=True,
+            heartbeat=True,
         )
         assert run._stop_heartbeat is not None
         run.close()
@@ -116,13 +140,18 @@ class TestOpenCommandRun:
 
 class TestStreamFilter:
     def test_agent_stream_stays_out_of_events_jsonl(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         bus = ev.EventBus(ev.CallbackSink(lambda e: None))
         ui = EventBridgeUI(bus, prompter=NullPrompter())
         run = open_command_run(
-            ui, tmp_path, "understand", component="understand",
-            enabled=True, heartbeat=False,
+            ui,
+            tmp_path,
+            "understand",
+            component="understand",
+            enabled=True,
+            heartbeat=False,
         )
         ui.stream_line("AI", "full agent output line")
         ui.stream_line("verify", "pytest output line")
@@ -137,11 +166,16 @@ class TestStreamFilter:
 
 class TestTranscripts:
     def test_writer_appends_lines_to_engineer_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run = open_command_run(
-            PlainUI(no_color=True), tmp_path, "understand",
-            component="understand", enabled=True, heartbeat=False,
+            PlainUI(no_color=True),
+            tmp_path,
+            "understand",
+            component="understand",
+            enabled=True,
+            heartbeat=False,
         )
         write = run.transcript_writer("understand")
         assert write is not None

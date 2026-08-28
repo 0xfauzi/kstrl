@@ -48,7 +48,8 @@ class TestCodexAgentStructure:
         assert a.final_message is None
 
     def test_supports_output_last_message_introspection_cached(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The class memoizes the --output-last-message probe: two calls
         must agree AND spawn exactly one subprocess. Asserting only
@@ -59,7 +60,9 @@ class TestCodexAgentStructure:
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             probe_calls["count"] += 1
             return subprocess.CompletedProcess(
-                cmd, 0, stdout="usage: codex exec [--output-last-message FILE]\n",
+                cmd,
+                0,
+                stdout="usage: codex exec [--output-last-message FILE]\n",
             )
 
         # monkeypatch restores both the cache slot and subprocess.run on
@@ -78,7 +81,8 @@ class TestCodexAgentStructure:
         )
 
     def test_probe_failure_caches_false(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A failing probe (codex missing / timing out) caches False
         without retrying on the next call."""
@@ -135,7 +139,8 @@ class TestCodexLiveContract:
         lines = []
         for line in agent.run(
             "Reply with exactly the single word: OK\n",
-            cwd=tmp_path, timeout=60.0,
+            cwd=tmp_path,
+            timeout=60.0,
         ):
             lines.append(line)
 

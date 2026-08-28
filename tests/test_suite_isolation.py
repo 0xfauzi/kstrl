@@ -67,9 +67,7 @@ class TestRedirect:
         assert Path.cwd() == tmp_path
         assert Path.cwd() != REPO_ROOT
 
-    def test_default_evolution_journal_writes_land_in_tmp(
-        self, tmp_path: Path
-    ) -> None:
+    def test_default_evolution_journal_writes_land_in_tmp(self, tmp_path: Path) -> None:
         """Deliberate journal write through the DEFAULT config.
 
         This is the exact shape of the historical pollution: run_factory
@@ -95,13 +93,9 @@ class TestRedirect:
         if repo_journal.exists():  # archived away by R4.1; belt and braces
             assert _RUN_MARKER not in repo_journal.read_text()
 
-    def test_default_knowledge_root_resolves_and_writes_into_tmp(
-        self, tmp_path: Path
-    ) -> None:
+    def test_default_knowledge_root_resolves_and_writes_into_tmp(self, tmp_path: Path) -> None:
         # load(None) resolves against Path.cwd(), which the redirect owns.
-        assert KnowledgeConfig.load(None).knowledge_root == (
-            tmp_path / ".kstrl" / "knowledge"
-        )
+        assert KnowledgeConfig.load(None).knowledge_root == (tmp_path / ".kstrl" / "knowledge")
 
         fact = Fact(
             id="iso-fact-1",
@@ -151,15 +145,11 @@ class TestRedirect:
 class TestGuardHelpers:
     """Unit tests for the snapshot/diff logic the session guard runs on."""
 
-    def test_missing_dir_snapshots_empty_on_both_sides(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_dir_snapshots_empty_on_both_sides(self, tmp_path: Path) -> None:
         missing = tmp_path / "nope" / ".kstrl"
         assert snapshot_kstrl_dir(missing) == snapshot_kstrl_dir(missing) == {}
 
-    def test_detects_created_modified_and_deleted_entries(
-        self, tmp_path: Path
-    ) -> None:
+    def test_detects_created_modified_and_deleted_entries(self, tmp_path: Path) -> None:
         kstrl_dir = tmp_path / ".kstrl"
         kstrl_dir.mkdir()
         (kstrl_dir / "evolution.jsonl").write_text('{"run_id": "real"}\n')
@@ -200,12 +190,9 @@ class TestGuardEndToEnd:
 
         env = os.environ.copy()
         env["KSTRL_SUITE_GUARD_ROOT"] = str(guarded_repo)
-        env["KSTRL_GUARDED_JOURNAL"] = str(
-            guarded_repo / ".kstrl" / "evolution.jsonl"
-        )
+        env["KSTRL_GUARDED_JOURNAL"] = str(guarded_repo / ".kstrl" / "evolution.jsonl")
         return subprocess.run(
-            [sys.executable, "-m", "pytest", str(nested), "-q",
-             "-p", "no:cacheprovider"],
+            [sys.executable, "-m", "pytest", str(nested), "-q", "-p", "no:cacheprovider"],
             capture_output=True,
             text=True,
             env=env,
@@ -216,9 +203,7 @@ class TestGuardEndToEnd:
     def guarded_repo(self, tmp_path: Path) -> Path:
         repo = tmp_path / "synthetic_repo"
         (repo / ".kstrl").mkdir(parents=True)
-        (repo / ".kstrl" / "evolution.jsonl").write_text(
-            '{"run_id": "real-data"}\n'
-        )
+        (repo / ".kstrl" / "evolution.jsonl").write_text('{"run_id": "real-data"}\n')
         return repo
 
     def test_guard_fails_the_run_when_a_test_mutates_kstrl_dir(
@@ -236,8 +221,7 @@ class TestGuardEndToEnd:
             """,
         )
         assert result.returncode != 0, (
-            f"guard did not fail the run\nstdout:\n{result.stdout}\n"
-            f"stderr:\n{result.stderr}"
+            f"guard did not fail the run\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
         assert "mutated the repository's real .kstrl/" in result.stdout
         assert "modified: evolution.jsonl" in result.stdout

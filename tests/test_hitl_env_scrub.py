@@ -56,76 +56,117 @@ class ScriptedUI(PlainUI):
 
 
 def _scaffold(
-    tmp_path: Path, comp_ids: list[str], deps: dict[str, list[str]],
+    tmp_path: Path,
+    comp_ids: list[str],
+    deps: dict[str, list[str]],
 ) -> tuple[Manifest, KstrlConfig]:
     scaffold = tmp_path / "scripts" / "kstrl"
     scaffold.mkdir(parents=True)
     (scaffold / "prompt.md").write_text("p")
-    (scaffold / "prd.json").write_text(
-        '{"branchName": "t", "userStories": []}'
-    )
+    (scaffold / "prd.json").write_text('{"branchName": "t", "userStories": []}')
     components: list[Component] = []
     for cid in comp_ids:
         feature_dir = scaffold / "feature" / cid
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "t",
-            "userStories": [{
-                "id": "US-1", "title": "t", "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
-        components.append(Component(
-            id=cid, title=cid, description="",
-            dependencies=deps.get(cid, []),
-            prd_path=f"scripts/kstrl/feature/{cid}/prd.json",
-            branch_name=f"kstrl/{cid}",
-        ))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "t",
+                    "userStories": [
+                        {
+                            "id": "US-1",
+                            "title": "t",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
+        components.append(
+            Component(
+                id=cid,
+                title=cid,
+                description="",
+                dependencies=deps.get(cid, []),
+                prd_path=f"scripts/kstrl/feature/{cid}/prd.json",
+                branch_name=f"kstrl/{cid}",
+            )
+        )
     manifest = Manifest(
-        version="1", spec_file="s", project_name="t",
-        base_branch="main", single_pr=False, components=components,
+        version="1",
+        spec_file="s",
+        project_name="t",
+        base_branch="main",
+        single_pr=False,
+        components=components,
     )
     base = KstrlConfig(
         prompt_file=scaffold / "prompt.md",
         prd_file=scaffold / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
     return manifest, base
 
 
 def _checkpoint_config(max_retries: int = 3) -> FactoryConfig:
     return FactoryConfig(
-        use_worktrees=False, create_prs=True, max_parallel=1,
-        review_mode="skip", pause_before_pr_merge=True,
-        max_retries=max_retries, retry_delay=0.0,
+        use_worktrees=False,
+        create_prs=True,
+        max_parallel=1,
+        review_mode="skip",
+        pause_before_pr_merge=True,
+        max_retries=max_retries,
+        retry_delay=0.0,
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=10.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=10.0,
         ),
     )
 
 
 class TestHitlCheckpoint:
     def test_reject_fails_immediately_zero_further_agent_calls(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Reject = FAILED now: one agent run total, one prompt total,
         dependents cascade-skipped, no retry consumed."""
         manifest, base = _scaffold(
-            tmp_path, ["comp-a", "comp-b"], {"comp-b": ["comp-a"]},
+            tmp_path,
+            ["comp-a", "comp-b"],
+            {"comp-b": ["comp-a"]},
         )
         ui = ScriptedUI(choices=[1])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ) as fake_agent, patch(
-            "kstrl.pr.is_gh_available", return_value=False,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ) as fake_agent,
+            patch(
+                "kstrl.pr.is_gh_available",
+                return_value=False,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _checkpoint_config(), base, ui, tmp_path,
+                manifest,
+                _checkpoint_config(),
+                base,
+                ui,
+                tmp_path,
             )
         assert fake_agent.call_count == 1
         assert len(ui.choose_calls) == 1
@@ -138,20 +179,30 @@ class TestHitlCheckpoint:
         assert comp_a.retries == 0
 
     def test_retry_choice_consumes_a_retry_and_reruns(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Retry is explicit: the agent runs again, one retry is spent,
         and a second Approve completes the component."""
         manifest, base = _scaffold(tmp_path, ["comp-a"], {})
         ui = ScriptedUI(choices=[2, 0])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ) as fake_agent, patch(
-            "kstrl.pr.is_gh_available", return_value=False,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ) as fake_agent,
+            patch(
+                "kstrl.pr.is_gh_available",
+                return_value=False,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _checkpoint_config(max_retries=1), base, ui,
+                manifest,
+                _checkpoint_config(max_retries=1),
+                base,
+                ui,
                 tmp_path,
             )
         assert fake_agent.call_count == 2
@@ -162,18 +213,29 @@ class TestHitlCheckpoint:
         assert comp_a.retries == 1
 
     def test_approve_proceeds_without_retry_or_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest, base = _scaffold(tmp_path, ["comp-a"], {})
         ui = ScriptedUI(choices=[0])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ) as fake_agent, patch(
-            "kstrl.pr.is_gh_available", return_value=False,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ) as fake_agent,
+            patch(
+                "kstrl.pr.is_gh_available",
+                return_value=False,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _checkpoint_config(), base, ui, tmp_path,
+                manifest,
+                _checkpoint_config(),
+                base,
+                ui,
+                tmp_path,
             )
         assert fake_agent.call_count == 1
         assert "comp-a" in result.completed
@@ -184,7 +246,8 @@ class TestHitlCheckpoint:
 
 class TestScrubbedEnv:
     def test_allowlist_passes_and_secrets_drop(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-oai-secret")
@@ -207,21 +270,23 @@ class TestScrubbedEnv:
         assert "PATH" in env
         assert "HOME" in env
         forbidden = ("API_KEY", "SECRET", "TOKEN", "PASSWORD", "CREDENTIAL")
-        assert not any(
-            frag in name for name in env for frag in forbidden
-        )
+        assert not any(frag in name for name in env for frag in forbidden)
 
     def test_subprocess_sees_no_api_keys(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-oai-secret")
         result = run_scrubbed(
             [
-                sys.executable, "-c",
+                sys.executable,
+                "-c",
                 "import os, json; print(json.dumps(dict(os.environ)))",
             ],
-            cwd=tmp_path, timeout=30,
+            cwd=tmp_path,
+            timeout=30,
         )
         assert result.returncode == 0
         child_env = json.loads(result.stdout)
@@ -231,7 +296,9 @@ class TestScrubbedEnv:
 
     @pytest.mark.skipif(shutil.which("uv") is None, reason="uv not on PATH")
     def test_uv_run_functions_under_scrub(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """uv itself must keep working with only the allowlist env, and
         the interpreter it launches must not see the harness's keys."""
@@ -240,7 +307,8 @@ class TestScrubbedEnv:
         code = "import os, json; print(json.dumps(dict(os.environ)))"
         result = run_scrubbed(
             f'uv run --no-project python -c "{code}"',
-            cwd=tmp_path, timeout=120,
+            cwd=tmp_path,
+            timeout=120,
         )
         assert result.returncode == 0, result.stderr
         child_env = json.loads(result.stdout.strip().splitlines()[-1])
@@ -260,19 +328,23 @@ def _assert_process_dies(pid: int, deadline_seconds: float = 10.0) -> None:
 
 class TestProcessGroupKill:
     def test_child_runs_in_its_own_process_group(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         result = run_scrubbed(
             [
-                sys.executable, "-c",
+                sys.executable,
+                "-c",
                 "import os; print(os.getpgrp() == os.getpid())",
             ],
-            cwd=tmp_path, timeout=30,
+            cwd=tmp_path,
+            timeout=30,
         )
         assert result.stdout.strip() == "True"
 
     def test_timeout_kills_backgrounded_grandchild(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A backgrounded grandchild (the leaked-server shape) dies with
         the group when the deadline fires."""
@@ -284,7 +356,8 @@ class TestProcessGroupKill:
         _assert_process_dies(pid)
 
     def test_check_test_suite_timeout_kills_grandchild(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Same guarantee through a real verification entry point."""
         pid_file = tmp_path / "server.pid"

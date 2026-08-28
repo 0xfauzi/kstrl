@@ -728,12 +728,10 @@ def _detect_project_context(root: Path) -> dict[str, str]:
             ctx["name"] = pkg.get("name", root.name)
             scripts = pkg.get("scripts", {})
             ctx["test_cmd"] = (
-                f"npm run {scripts.get('test', 'test')}"
-                if "test" in scripts else "npx jest"
+                f"npm run {scripts.get('test', 'test')}" if "test" in scripts else "npx jest"
             )
             ctx["lint_cmd"] = (
-                f"npm run {scripts.get('lint', 'lint')}"
-                if "lint" in scripts else "npx eslint ."
+                f"npm run {scripts.get('lint', 'lint')}" if "lint" in scripts else "npx eslint ."
             )
             ctx["typecheck_cmd"] = "npx tsc --noEmit"
             ctx["build_cmd"] = "npm run build" if "build" in scripts else ""

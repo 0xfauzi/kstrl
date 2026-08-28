@@ -117,7 +117,8 @@ class RichUI:
         if not self._animations_enabled():
             return
         self.console.print(
-            Text(animated_art.brand_mark(), style="bold"), justify="center",
+            Text(animated_art.brand_mark(), style="bold"),
+            justify="center",
         )
 
     def section(self, text: str) -> None:

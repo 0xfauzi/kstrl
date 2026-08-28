@@ -24,7 +24,14 @@ repos:
       - id: trailing-whitespace
         # Captured model output is evidence: reformatting it destroys the
         # provenance a spike's findings rest on. Linted as evidence, never source.
-        exclude: &evidence ^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/
+        #
+        # tests/__snapshots__/ is the same rule reached by a different route: those
+        # .raw files are SVG frames Rich renders, and pytest-textual-snapshot
+        # compares them BYTE FOR BYTE. Measured: stripping one whitespace-only line
+        # from each of two of them failed test_overview_snapshot and
+        # test_component_detail_snapshot. Regenerating cannot settle it either, since
+        # the renderer writes that padding straight back on the next capture.
+        exclude: &evidence ^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/|^tests/__snapshots__/
       - id: end-of-file-fixer
         exclude: *evidence
       - id: check-yaml

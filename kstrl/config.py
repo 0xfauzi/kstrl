@@ -136,11 +136,13 @@ def reconcile_progress_config(
     """
     writer_domain = (
         relative_to_root(base_config.progress_file, root_dir)
-        if base_config.progress_file is not None else None
+        if base_config.progress_file is not None
+        else None
     )
     reader_domain = (
         relative_to_root(Path(verify_config.progress_file_path), root_dir)
-        if verify_config.progress_file_path else None
+        if verify_config.progress_file_path
+        else None
     )
     writer, reader = reconcile_progress_paths(writer_domain, reader_domain)
     verify_config.progress_file_path = reader
@@ -206,9 +208,7 @@ class KstrlConfig:
     # Standalone callers that need a concrete path (the prompt template's
     # $progress_path) call resolved_progress_file(root_dir).
     progress_file: Path | None = None
-    codebase_map_file: Path = field(
-        default_factory=lambda: Path("scripts/kstrl/codebase_map.md")
-    )
+    codebase_map_file: Path = field(default_factory=lambda: Path("scripts/kstrl/codebase_map.md"))
     sleep_seconds: float = 2.0
     interactive: bool = False
     allowed_paths: list[str] = field(default_factory=list)
@@ -292,7 +292,9 @@ class KstrlConfig:
         return config
 
     def component_progress_file(
-        self, prd_path: str | Path, root_dir: Path,
+        self,
+        prd_path: str | Path,
+        root_dir: Path,
     ) -> str:
         """Worktree-relative progress path for one factory component.
 
@@ -304,7 +306,8 @@ class KstrlConfig:
         """
         configured = (
             relative_to_root(self.progress_file, root_dir)
-            if self.progress_file is not None else None
+            if self.progress_file is not None
+            else None
         )
         return component_progress_path(prd_path, configured).as_posix()
 
@@ -384,7 +387,9 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
 
 
 def _apply_toml_overrides(
-    config: KstrlConfig, toml_path: Path, root_dir: Path,
+    config: KstrlConfig,
+    toml_path: Path,
+    root_dir: Path,
 ) -> None:
     """Mutate config in place from a kstrl.toml file.
 
@@ -471,9 +476,7 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
     if "PROGRESS_FILE" in os.environ:
         config.progress_file = _resolve_path(os.environ["PROGRESS_FILE"], root_dir)
     if "CODEBASE_MAP_FILE" in os.environ:
-        config.codebase_map_file = _resolve_path(
-            os.environ["CODEBASE_MAP_FILE"], root_dir
-        )
+        config.codebase_map_file = _resolve_path(os.environ["CODEBASE_MAP_FILE"], root_dir)
     if "SLEEP_SECONDS" in os.environ:
         config.sleep_seconds = float(os.environ["SLEEP_SECONDS"])
     if "INTERACTIVE" in os.environ:

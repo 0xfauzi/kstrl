@@ -40,48 +40,54 @@ class MockDecomposeAgent:
         return self._final_message
 
 
-VALID_DECOMPOSE_OUTPUT = json.dumps({
-    "components": [
-        {
-            "id": "database",
-            "title": "Database Schema",
-            "description": "Create the database tables",
-            "dependencies": [],
-            "allowedPaths": [
-                "src/", "tests/", "scripts/kstrl/feature/database/",
-            ],
-            "userStories": [
-                {
-                    "id": "US-001",
-                    "title": "Create users table",
-                    "acceptanceCriteria": ["Users table exists", "Tests pass"],
-                    "priority": 1,
-                    "passes": False,
-                    "notes": "",
-                }
-            ],
-        },
-        {
-            "id": "api",
-            "title": "API Endpoints",
-            "description": "Create REST API endpoints",
-            "dependencies": ["database"],
-            "allowedPaths": [
-                "src/", "tests/", "scripts/kstrl/feature/api/",
-            ],
-            "userStories": [
-                {
-                    "id": "US-002",
-                    "title": "GET /users endpoint",
-                    "acceptanceCriteria": ["Returns user list", "Tests pass"],
-                    "priority": 1,
-                    "passes": False,
-                    "notes": "",
-                }
-            ],
-        },
-    ]
-})
+VALID_DECOMPOSE_OUTPUT = json.dumps(
+    {
+        "components": [
+            {
+                "id": "database",
+                "title": "Database Schema",
+                "description": "Create the database tables",
+                "dependencies": [],
+                "allowedPaths": [
+                    "src/",
+                    "tests/",
+                    "scripts/kstrl/feature/database/",
+                ],
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Create users table",
+                        "acceptanceCriteria": ["Users table exists", "Tests pass"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
+            },
+            {
+                "id": "api",
+                "title": "API Endpoints",
+                "description": "Create REST API endpoints",
+                "dependencies": ["database"],
+                "allowedPaths": [
+                    "src/",
+                    "tests/",
+                    "scripts/kstrl/feature/api/",
+                ],
+                "userStories": [
+                    {
+                        "id": "US-002",
+                        "title": "GET /users endpoint",
+                        "acceptanceCriteria": ["Returns user list", "Tests pass"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
+            },
+        ]
+    }
+)
 
 
 class TestExtractJson:
@@ -201,9 +207,7 @@ class TestValidateDecomposeOutput:
             ]
         }
         errors = _validate_decompose_output(data)
-        assert any(
-            "allowedPaths" in e and "required" in e for e in errors
-        )
+        assert any("allowedPaths" in e and "required" in e for e in errors)
 
     def test_allowed_paths_must_be_array(self) -> None:
         data = {
@@ -237,9 +241,7 @@ class TestValidateDecomposeOutput:
             ]
         }
         errors = _validate_decompose_output(data)
-        assert any(
-            "allowedPaths" in e and "non-empty" in e for e in errors
-        )
+        assert any("allowedPaths" in e and "non-empty" in e for e in errors)
 
     def test_allowed_paths_non_string_item_rejected(self) -> None:
         data = {
@@ -315,37 +317,51 @@ class TestSpecIssues:
         assert issues[1].kind == "undefined_failure_mode"
 
     def test_invalid_severity_dropped(self) -> None:
-        data = {"spec_issues": [{
-            "severity": "critical",  # not valid
-            "kind": "ambiguity",
-            "summary": "x",
-        }]}
+        data = {
+            "spec_issues": [
+                {
+                    "severity": "critical",  # not valid
+                    "kind": "ambiguity",
+                    "summary": "x",
+                }
+            ]
+        }
         assert _parse_spec_issues(data) == []
 
     def test_invalid_kind_dropped(self) -> None:
-        data = {"spec_issues": [{
-            "severity": "major",
-            "kind": "made_up_kind",
-            "summary": "x",
-        }]}
+        data = {
+            "spec_issues": [
+                {
+                    "severity": "major",
+                    "kind": "made_up_kind",
+                    "summary": "x",
+                }
+            ]
+        }
         assert _parse_spec_issues(data) == []
 
     def test_missing_summary_dropped(self) -> None:
-        data = {"spec_issues": [{
-            "severity": "minor",
-            "kind": "ambiguity",
-            "summary": "",
-        }]}
+        data = {
+            "spec_issues": [
+                {
+                    "severity": "minor",
+                    "kind": "ambiguity",
+                    "summary": "",
+                }
+            ]
+        }
         assert _parse_spec_issues(data) == []
 
     def test_empty_components_allowed_when_blocker_exists(self) -> None:
         data = {
             "components": [],
-            "spec_issues": [{
-                "severity": "blocker",
-                "kind": "ambiguity",
-                "summary": "spec is too vague",
-            }],
+            "spec_issues": [
+                {
+                    "severity": "blocker",
+                    "kind": "ambiguity",
+                    "summary": "spec is too vague",
+                }
+            ],
         }
         assert _validate_decompose_output(data) == []
 
@@ -360,16 +376,20 @@ class TestSpecIssues:
         spec_file.write_text("# Vague spec\nDo something good.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({
-            "spec_issues": [{
-                "severity": "blocker",
-                "kind": "ambiguity",
-                "summary": "Spec is empty",
-                "location": "everywhere",
-                "suggestion": "Write actual requirements",
-            }],
-            "components": [],
-        })
+        output = json.dumps(
+            {
+                "spec_issues": [
+                    {
+                        "severity": "blocker",
+                        "kind": "ambiguity",
+                        "summary": "Spec is empty",
+                        "location": "everywhere",
+                        "suggestion": "Write actual requirements",
+                    }
+                ],
+                "components": [],
+            }
+        )
         agent = MockDecomposeAgent(output)
         ui = PlainUI(no_color=True)
         with pytest.raises(SpecBlockerError) as exc_info:
@@ -390,32 +410,40 @@ class TestSpecIssues:
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({
-            "spec_issues": [{
-                "severity": "minor",
-                "kind": "missing_detail",
-                "summary": "Edge case unspecified",
-            }],
-            "components": [
-                {
-                    "id": "comp-a",
-                    "title": "A",
-                    "description": "x",
-                    "dependencies": [],
-                    "allowedPaths": [
-                        "src/", "tests/", "scripts/kstrl/feature/comp-a/",
-                    ],
-                    "userStories": [{
-                        "id": "US-001",
-                        "title": "S1",
-                        "acceptanceCriteria": ["AC1", "AC2"],
-                        "priority": 1,
-                        "passes": False,
-                        "notes": "",
-                    }],
-                },
-            ],
-        })
+        output = json.dumps(
+            {
+                "spec_issues": [
+                    {
+                        "severity": "minor",
+                        "kind": "missing_detail",
+                        "summary": "Edge case unspecified",
+                    }
+                ],
+                "components": [
+                    {
+                        "id": "comp-a",
+                        "title": "A",
+                        "description": "x",
+                        "dependencies": [],
+                        "allowedPaths": [
+                            "src/",
+                            "tests/",
+                            "scripts/kstrl/feature/comp-a/",
+                        ],
+                        "userStories": [
+                            {
+                                "id": "US-001",
+                                "title": "S1",
+                                "acceptanceCriteria": ["AC1", "AC2"],
+                                "priority": 1,
+                                "passes": False,
+                                "notes": "",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
         agent = MockDecomposeAgent(output)
         ui = PlainUI(no_color=True)
         manifest = decompose_spec(
@@ -633,7 +661,9 @@ def _single_component_output(
                 "description": "x",
                 "dependencies": [],
                 "allowedPaths": [
-                    "src/", "tests/", "scripts/kstrl/feature/comp-a/",
+                    "src/",
+                    "tests/",
+                    "scripts/kstrl/feature/comp-a/",
                 ],
                 "userStories": stories,
             }
@@ -650,19 +680,12 @@ class TestVacuousPrdRejection:
     def test_empty_user_stories_rejected(self) -> None:
         data = json.loads(_single_component_output([]))
         errors = _validate_decompose_output(data)
-        assert any(
-            "userStories" in e and "must not be empty" in e for e in errors
-        )
+        assert any("userStories" in e and "must not be empty" in e for e in errors)
 
     def test_empty_acceptance_criteria_rejected(self) -> None:
-        data = json.loads(
-            _single_component_output([_story(acceptanceCriteria=[])])
-        )
+        data = json.loads(_single_component_output([_story(acceptanceCriteria=[])]))
         errors = _validate_decompose_output(data)
-        assert any(
-            "acceptanceCriteria" in e and "must not be empty" in e
-            for e in errors
-        )
+        assert any("acceptanceCriteria" in e and "must not be empty" in e for e in errors)
 
     def test_passes_true_rejected(self) -> None:
         data = json.loads(_single_component_output([_story(passes=True)]))
@@ -676,10 +699,12 @@ class TestVacuousPrdRejection:
         spec_file.write_text("# Feature")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        agent = SequenceAgent([
-            _single_component_output([_story(passes=True)]),
-            _single_component_output([_story()]),
-        ])
+        agent = SequenceAgent(
+            [
+                _single_component_output([_story(passes=True)]),
+                _single_component_output([_story()]),
+            ]
+        )
         manifest = decompose_spec(
             spec_path=spec_file,
             project_name="test",
@@ -787,7 +812,8 @@ class TestSpecIssuesPersistence:
         """An empty issues array is the record that the audit ran and
         found nothing - distinct from no record at all."""
         artifact = self._run(
-            tmp_path, _single_component_output([_story()], spec_issues=[]),
+            tmp_path,
+            _single_component_output([_story()], spec_issues=[]),
         )
         assert artifact.exists()
         content = json.loads(artifact.read_text())
@@ -797,11 +823,7 @@ class TestSpecIssuesPersistence:
     def _read_journal_events(self, tmp_path: Path) -> list[dict[str, object]]:
         journal = tmp_path / ".kstrl" / "evolution.jsonl"
         assert journal.exists(), "journal event was not written"
-        entries = [
-            json.loads(line)
-            for line in journal.read_text().splitlines()
-            if line.strip()
-        ]
+        entries = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
         return [e for e in entries if e.get("event_type") == "spec_issues"]
 
     def test_journal_event_on_halt(self, tmp_path: Path) -> None:
@@ -851,10 +873,12 @@ class TestPrdValidationInsideRetryLoop:
 
         malformed = _story()
         del malformed["notes"]
-        agent = SequenceAgent([
-            _single_component_output([malformed]),
-            _single_component_output([_story()]),
-        ])
+        agent = SequenceAgent(
+            [
+                _single_component_output([malformed]),
+                _single_component_output([_story()]),
+            ]
+        )
         manifest = decompose_spec(
             spec_path=spec_file,
             project_name="test",
@@ -869,15 +893,11 @@ class TestPrdValidationInsideRetryLoop:
         assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
         assert "notes" in agent.prompts[1]
         assert len(manifest.components) == 1
-        prd_path = (
-            tmp_path / "scripts" / "kstrl" / "feature" / "comp-a" / "prd.json"
-        )
+        prd_path = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a" / "prd.json"
         assert prd_path.exists()
         assert PRD.load(prd_path).user_stories[0].id == "US-001"
 
-    def test_no_partial_files_after_terminal_failure(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_partial_files_after_terminal_failure(self, tmp_path: Path) -> None:
         """Terminal validation failure must not leave prd.json, feature
         dirs, or a manifest behind."""
         spec_file = tmp_path / "spec.md"
@@ -918,17 +938,13 @@ class TestPrdValidationInsideRetryLoop:
         real_generate = decompose_mod._generate_component_prd
         calls: list[str] = []
 
-        def flaky_generate(
-            comp_data: dict[str, object], root_dir: Path, branch_name: str
-        ) -> Path:
+        def flaky_generate(comp_data: dict[str, object], root_dir: Path, branch_name: str) -> Path:
             calls.append(str(comp_data["id"]))
             if len(calls) == 2:
                 raise OSError("disk full")
             return real_generate(comp_data, root_dir, branch_name)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(
-            decompose_mod, "_generate_component_prd", flaky_generate
-        )
+        monkeypatch.setattr(decompose_mod, "_generate_component_prd", flaky_generate)
 
         agent = MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT)
         with pytest.raises(OSError, match="disk full"):

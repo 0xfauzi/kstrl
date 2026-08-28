@@ -23,7 +23,10 @@ class MockAgent:
         return "mock"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         yield from self._output
         if self._output:
@@ -43,9 +46,7 @@ class TestRunLoop:
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         config = KstrlConfig(
             max_iterations=5,
@@ -71,9 +72,7 @@ class TestRunLoop:
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         config = KstrlConfig(
             max_iterations=3,
@@ -93,7 +92,8 @@ class TestRunLoop:
         assert result.iterations == 3
 
     def test_missing_prompt_file_falls_back_to_default(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Gap 1 fix: when the configured prompt file does not exist,
         run_loop falls back to the H3-protected DEFAULT_PROMPT from
@@ -114,7 +114,8 @@ class TestRunLoop:
             final_message: str | None = None
 
             def run(
-                self, prompt: str,
+                self,
+                prompt: str,
                 cwd: Path | None = None,
                 timeout: float | None = None,
             ) -> Iterator[str]:
@@ -146,9 +147,7 @@ class TestRunLoop:
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         config = KstrlConfig(
             max_iterations=5,
@@ -167,7 +166,8 @@ class TestRunLoop:
         assert result.exit_code == 0
 
     def test_auto_checkout_false_skips_branch_checkout(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """When config.auto_checkout is False, run_loop must skip both the
         branch resolution AND the checkout call, even if a non-empty
@@ -178,24 +178,29 @@ class TestRunLoop:
         # Real git repo so the is_git_repo check passes
         subprocess.run(
             ["git", "init", "-q", "-b", "main", str(tmp_path)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         (tmp_path / "stub").write_text("stub")
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "stub"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         kstrl_dir = tmp_path / "scripts" / "kstrl"
@@ -220,7 +225,9 @@ class TestRunLoop:
 
         current = subprocess.run(
             ["git", "-C", str(tmp_path), "branch", "--show-current"],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         # Did not switch to feature/should-not-checkout
         assert current == "main"
@@ -230,9 +237,7 @@ class TestRunLoop:
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("hello")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         config = KstrlConfig(
             max_iterations=1,
@@ -273,7 +278,10 @@ class _RogueWriterAgent:
         return "rogue"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         self._rogue_file.write_text("rogue = True\n")
         yield COMPLETION_MARKER
@@ -295,30 +303,33 @@ class TestGuardsRunBeforeCompletion:
 
         subprocess.run(
             ["git", "init", "-q", "-b", "main", str(tmp_path)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
         # Commit the scaffolding so the rogue file is the ONLY change.
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "-A"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         return KstrlConfig(
             max_iterations=3,
@@ -331,7 +342,8 @@ class TestGuardsRunBeforeCompletion:
         )
 
     def test_out_of_scope_edit_plus_complete_fails_noninteractive(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Non-interactive: enforcement fires and the COMPLETE marker is
         NOT honored -- the loop reports failure, not success."""
@@ -345,7 +357,8 @@ class TestGuardsRunBeforeCompletion:
         assert result.iterations == 1
 
     def test_active_run_state_does_not_trip_scope_guard(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         config = self._git_repo(tmp_path)
         run_id = "understand-20260721-test"
@@ -354,7 +367,10 @@ class TestGuardsRunBeforeCompletion:
         agent = _RogueWriterAgent(state_file)
 
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             bus=EventBus(run_id=run_id),
         )
 
@@ -362,7 +378,8 @@ class TestGuardsRunBeforeCompletion:
         assert result.exit_code == 0
 
     def test_out_of_scope_edit_plus_complete_is_reverted_interactive(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Interactive revert path: the guard runs first, reverts the
         out-of-scope edit, and only then is the completion marker honored
@@ -373,7 +390,10 @@ class TestGuardsRunBeforeCompletion:
                 return True
 
             def choose(
-                self, header: str, options: list[str], default: int = 0,
+                self,
+                header: str,
+                options: list[str],
+                default: int = 0,
             ) -> int:
                 return options.index("Revert and continue")
 
@@ -383,7 +403,10 @@ class TestGuardsRunBeforeCompletion:
         agent = _RogueWriterAgent(rogue)
 
         result = run_loop(
-            config, _ChooseRevertUI(no_color=True), agent, tmp_path,
+            config,
+            _ChooseRevertUI(no_color=True),
+            agent,
+            tmp_path,
         )
 
         assert not rogue.exists(), "out-of-scope edit was not reverted"

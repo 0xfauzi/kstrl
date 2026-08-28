@@ -92,27 +92,32 @@ def prepare_retry(
     if evidence_worktree and Path(evidence_worktree).exists():
         subprocess.run(
             ["git", "worktree", "remove", "--force", evidence_worktree],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
         shutil.rmtree(evidence_worktree, ignore_errors=True)
         subprocess.run(
             ["git", "worktree", "prune"],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
-        ui.info(
-            f"Removed the failed attempt's evidence worktree: "
-            f"{evidence_worktree}"
-        )
+        ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
     if failed_branch and not manifest.single_pr:
         branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet",
-             f"refs/heads/{failed_branch}"],
-            cwd=root_dir, capture_output=True, timeout=30,
+            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{failed_branch}"],
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
         if branch_exists.returncode == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", failed_branch],
-                cwd=root_dir, capture_output=True, text=True, timeout=30,
+                cwd=root_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if deleted.returncode == 0:
                 ui.info(
@@ -121,18 +126,13 @@ def prepare_retry(
                     f"'{manifest.base_branch}'"
                 )
             else:
-                ui.err(
-                    f"Could not delete branch '{failed_branch}': "
-                    f"{deleted.stderr.strip()}"
-                )
+                ui.err(f"Could not delete branch '{failed_branch}': {deleted.stderr.strip()}")
                 ui.info(
                     "Delete it manually (git branch -D "
                     f"{failed_branch}) and re-run; the factory refuses "
                     "to silently reuse stale branches (R0.5)."
                 )
-                raise RetryError(
-                    f"could not delete branch '{failed_branch}'"
-                )
+                raise RetryError(f"could not delete branch '{failed_branch}'")
     elif manifest.single_pr:
         ui.warn(
             "single_pr mode: the shared branch is left in place; if the "

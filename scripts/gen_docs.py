@@ -57,7 +57,8 @@ def _marker(name: str, end: bool = False) -> str:
 
 
 def _iter_commands(
-    group: click.Group, prefix: str,
+    group: click.Group,
+    prefix: str,
 ) -> Iterator[tuple[str, click.Command]]:
     """Yield (full command path, command) for every leaf command, depth-first."""
     for name in sorted(group.commands):
@@ -157,7 +158,8 @@ def _section_specs() -> list[SectionSpec]:
         # KstrlConfig fans out over five sections with renamed keys; the
         # key->field mapping is declared here and verified behaviorally.
         SectionSpec(
-            "agent", "Agent selection",
+            "agent",
+            "Agent selection",
             {
                 "type": "agent_type",
                 "command": "agent_cmd",
@@ -165,19 +167,25 @@ def _section_specs() -> list[SectionSpec]:
                 "reasoning_effort": "model_reasoning_effort",
                 "budget_usd": "agent_budget_usd",
             },
-            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
+            kstrl_loader,
+            kstrl_defaults,
+            probe_undocumented_fields=False,
         ),
         SectionSpec(
-            "run", "Loop behavior",
+            "run",
+            "Loop behavior",
             {
                 "max_iterations": "max_iterations",
                 "sleep_seconds": "sleep_seconds",
                 "interactive": "interactive",
             },
-            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
+            kstrl_loader,
+            kstrl_defaults,
+            probe_undocumented_fields=False,
         ),
         SectionSpec(
-            "paths", "File locations",
+            "paths",
+            "File locations",
             {
                 "prompt": "prompt_file",
                 "prd": "prd_file",
@@ -185,175 +193,221 @@ def _section_specs() -> list[SectionSpec]:
                 "codebase_map": "codebase_map_file",
                 "allowed": "allowed_paths",
             },
-            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
+            kstrl_loader,
+            kstrl_defaults,
+            probe_undocumented_fields=False,
         ),
         SectionSpec(
-            "git", "Branch handling",
+            "git",
+            "Branch handling",
             {"branch": "kstrl_branch", "auto_checkout": "auto_checkout"},
-            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
+            kstrl_loader,
+            kstrl_defaults,
+            probe_undocumented_fields=False,
         ),
         SectionSpec(
-            "ui", "Output rendering",
+            "ui",
+            "Output rendering",
             {"ascii": "ascii_only"},
-            kstrl_loader, kstrl_defaults, probe_undocumented_fields=False,
+            kstrl_loader,
+            kstrl_defaults,
+            probe_undocumented_fields=False,
         ),
         SectionSpec(
-            "timeout", "Timeout limits (seconds; 0 or less disables)",
+            "timeout",
+            "Timeout limits (seconds; 0 or less disables)",
             identity_keys(TimeoutConfig, [f.name for f in dataclasses.fields(TimeoutConfig)]),
             lambda root: TimeoutConfig.load(root_dir=root),
-            TimeoutConfig(), probe_undocumented_fields=True,
+            TimeoutConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "factory", "Factory orchestration (Phase 0-3 pipeline)",
-            identity_keys(FactoryConfig, [
-                "max_parallel", "max_retries", "retry_delay", "use_worktrees",
-                "single_pr", "create_prs", "review_mode", "setpoint_agreement",
-                "merge_timeout",
-                "max_adversarial_calls", "max_total_tokens", "max_cost_usd",
-                "pause_before_pr_merge", "progress_log_enabled",
-                "keep_worktrees_on_failure",
-            ]),
+            "factory",
+            "Factory orchestration (Phase 0-3 pipeline)",
+            identity_keys(
+                FactoryConfig,
+                [
+                    "max_parallel",
+                    "max_retries",
+                    "retry_delay",
+                    "use_worktrees",
+                    "single_pr",
+                    "create_prs",
+                    "review_mode",
+                    "setpoint_agreement",
+                    "merge_timeout",
+                    "max_adversarial_calls",
+                    "max_total_tokens",
+                    "max_cost_usd",
+                    "pause_before_pr_merge",
+                    "progress_log_enabled",
+                    "keep_worktrees_on_failure",
+                ],
+            ),
             lambda root: FactoryConfig.load(root_dir=root),
-            FactoryConfig(), probe_undocumented_fields=True,
+            FactoryConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
             "breaker",
             "No-progress circuit breaker (R7.5; 0 iterations disables)",
-            identity_keys(BreakerConfig, [
-                f.name for f in dataclasses.fields(BreakerConfig)
-            ]),
+            identity_keys(BreakerConfig, [f.name for f in dataclasses.fields(BreakerConfig)]),
             lambda root: BreakerConfig.load(root_dir=root),
-            BreakerConfig(), probe_undocumented_fields=True,
+            BreakerConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
             "sandbox",
             "OS-level agent sandboxing (R7.5; claude-code/codex only)",
-            identity_keys(SandboxConfig, [
-                f.name for f in dataclasses.fields(SandboxConfig)
-            ]),
+            identity_keys(SandboxConfig, [f.name for f in dataclasses.fields(SandboxConfig)]),
             lambda root: SandboxConfig.load(root_dir=root),
-            SandboxConfig(), probe_undocumented_fields=True,
+            SandboxConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "verify", "Phase 1 mechanical verification",
+            "verify",
+            "Phase 1 mechanical verification",
             identity_keys(VerifyConfig, [f.name for f in dataclasses.fields(VerifyConfig)]),
             lambda root: VerifyConfig.load(root_dir=root),
-            VerifyConfig(), probe_undocumented_fields=True,
+            VerifyConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "fixtures", "Phase 1 approved-fixtures oracle (R7.2; default off)",
-            identity_keys(FixturesConfig, [
-                f.name for f in dataclasses.fields(FixturesConfig)
-            ]),
+            "fixtures",
+            "Phase 1 approved-fixtures oracle (R7.2; default off)",
+            identity_keys(FixturesConfig, [f.name for f in dataclasses.fields(FixturesConfig)]),
             lambda root: FixturesConfig.load(root_dir=root),
-            FixturesConfig(), probe_undocumented_fields=True,
+            FixturesConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "policy", "Phase 1 policy envelope (R8.1; opt-in)",
-            identity_keys(PolicyConfig, [
-                f.name for f in dataclasses.fields(PolicyConfig)
-            ]),
+            "policy",
+            "Phase 1 policy envelope (R8.1; opt-in)",
+            identity_keys(PolicyConfig, [f.name for f in dataclasses.fields(PolicyConfig)]),
             lambda root: PolicyConfig.load(root_dir=root),
-            PolicyConfig(), probe_undocumented_fields=True,
+            PolicyConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "autonomy", "Autonomy ladder (R8.2; opt-in)",
-            identity_keys(AutonomyConfig, [
-                f.name for f in dataclasses.fields(AutonomyConfig)
-            ]),
+            "autonomy",
+            "Autonomy ladder (R8.2; opt-in)",
+            identity_keys(AutonomyConfig, [f.name for f in dataclasses.fields(AutonomyConfig)]),
             lambda root: AutonomyConfig.load(root_dir=root),
-            AutonomyConfig(), probe_undocumented_fields=True,
+            AutonomyConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "inbox", "Exception inbox (R8.3)",
-            identity_keys(InboxConfig, [
-                f.name for f in dataclasses.fields(InboxConfig)
-            ]),
+            "inbox",
+            "Exception inbox (R8.3)",
+            identity_keys(InboxConfig, [f.name for f in dataclasses.fields(InboxConfig)]),
             lambda root: InboxConfig.load(root_dir=root),
-            InboxConfig(), probe_undocumented_fields=True,
+            InboxConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "intake_github", "GitHub Issues remote inbox (R8.6)",
-            identity_keys(GitHubIntakeConfig, [
-                f.name for f in dataclasses.fields(GitHubIntakeConfig)
-            ]),
+            "intake_github",
+            "GitHub Issues remote inbox (R8.6)",
+            identity_keys(
+                GitHubIntakeConfig, [f.name for f in dataclasses.fields(GitHubIntakeConfig)]
+            ),
             lambda root: GitHubIntakeConfig.load(root_dir=root),
-            GitHubIntakeConfig(), probe_undocumented_fields=True,
+            GitHubIntakeConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "serve", "Continuous-intake daemon (R8.6)",
-            identity_keys(ServeConfig, [
-                f.name for f in dataclasses.fields(ServeConfig)
-            ]),
+            "serve",
+            "Continuous-intake daemon (R8.6)",
+            identity_keys(ServeConfig, [f.name for f in dataclasses.fields(ServeConfig)]),
             lambda root: ServeConfig.load(root_dir=root),
-            ServeConfig(), probe_undocumented_fields=True,
+            ServeConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "queue", "Continuous intake queue (R8.6)",
-            identity_keys(QueueConfig, [
-                f.name for f in dataclasses.fields(QueueConfig)
-            ]),
+            "queue",
+            "Continuous intake queue (R8.6)",
+            identity_keys(QueueConfig, [f.name for f in dataclasses.fields(QueueConfig)]),
             lambda root: QueueConfig.load(root_dir=root),
-            QueueConfig(), probe_undocumented_fields=True,
+            QueueConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "adequacy", "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
-            identity_keys(AdequacyConfig, [
-                f.name for f in dataclasses.fields(AdequacyConfig)
-            ]),
+            "adequacy",
+            "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
+            identity_keys(AdequacyConfig, [f.name for f in dataclasses.fields(AdequacyConfig)]),
             lambda root: AdequacyConfig.load(root_dir=root),
-            AdequacyConfig(), probe_undocumented_fields=True,
+            AdequacyConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "security", "Phase 2.5 security review",
+            "security",
+            "Phase 2.5 security review",
             identity_keys(SecurityConfig, [f.name for f in dataclasses.fields(SecurityConfig)]),
             lambda root: SecurityConfig.load(root_dir=root),
-            SecurityConfig(), probe_undocumented_fields=True,
+            SecurityConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "contract", "Phase 3 cross-component contract testing",
+            "contract",
+            "Phase 3 cross-component contract testing",
             identity_keys(ContractConfig, [f.name for f in dataclasses.fields(ContractConfig)]),
             lambda root: ContractConfig.load(root_dir=root),
-            ContractConfig(), probe_undocumented_fields=True,
+            ContractConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "feedforward", "Phase 0 feedforward (computational, no LLM)",
+            "feedforward",
+            "Phase 0 feedforward (computational, no LLM)",
             identity_keys(
                 FeedforwardConfig,
                 [f.name for f in dataclasses.fields(FeedforwardConfig)],
             ),
             lambda root: FeedforwardConfig.load(root_dir=root),
-            FeedforwardConfig(), probe_undocumented_fields=True,
+            FeedforwardConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "knowledge", "Per-component knowledge layer",
-            identity_keys(KnowledgeConfig, [
-                "enabled", "max_core_tokens", "max_dependency_tokens",
-                "max_sibling_tokens", "distill_timeout_seconds",
-                "distill_model", "max_facts_per_distill", "dependency_scope",
-            ]),
+            "knowledge",
+            "Per-component knowledge layer",
+            identity_keys(
+                KnowledgeConfig,
+                [
+                    "enabled",
+                    "max_core_tokens",
+                    "max_dependency_tokens",
+                    "max_sibling_tokens",
+                    "distill_timeout_seconds",
+                    "distill_model",
+                    "max_facts_per_distill",
+                    "dependency_scope",
+                ],
+            ),
             lambda root: KnowledgeConfig.load(root_dir=root),
-            KnowledgeConfig(), probe_undocumented_fields=True,
+            KnowledgeConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "evolution", "Continuous-learning journal",
+            "evolution",
+            "Continuous-learning journal",
             identity_keys(EvolutionConfig, [f.name for f in dataclasses.fields(EvolutionConfig)]),
             lambda root: EvolutionConfig.load(root_dir=root),
-            EvolutionConfig(), probe_undocumented_fields=True,
+            EvolutionConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "notify", "Run-milestone notification hooks (R3.2)",
-            identity_keys(NotifyConfig, [
-                f.name for f in dataclasses.fields(NotifyConfig)
-            ]),
+            "notify",
+            "Run-milestone notification hooks (R3.2)",
+            identity_keys(NotifyConfig, [f.name for f in dataclasses.fields(NotifyConfig)]),
             lambda root: NotifyConfig.load(root_dir=root),
-            NotifyConfig(), probe_undocumented_fields=True,
+            NotifyConfig(),
+            probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "linear", "Linear integration (R7.4; default off)",
+            "linear",
+            "Linear integration (R7.4; default off)",
             identity_keys(LinearConfig, [f.name for f in dataclasses.fields(LinearConfig)]),
             lambda root: LinearConfig.load(root_dir=root),
-            LinearConfig(), probe_undocumented_fields=True,
+            LinearConfig(),
+            probe_undocumented_fields=True,
         ),
     ]
     return specs
@@ -362,13 +416,14 @@ def _section_specs() -> list[SectionSpec]:
 # One-line description per documented key. Regeneration fails when a key
 # has no description, so new keys cannot land undocumented.
 KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
-    ("agent", "type"):
-        '"claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect',
+    ("agent", "type"): '"claude-code" | "claude-sdk" | "codex"; empty/"auto" = auto-detect',
     ("agent", "command"): "custom agent shell command; overrides type",
     ("agent", "model"): 'e.g. "sonnet" (claude) or "gpt-5.5" (codex); empty = agent default',
     ("agent", "reasoning_effort"): "low | medium | high | max (model-dependent)",
-    ("agent", "budget_usd"):
-        "in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)",
+    (
+        "agent",
+        "budget_usd",
+    ): "in-loop USD ceiling; claude-sdk adapter only; empty/0 = unlimited (R7.6)",
     ("run", "max_iterations"): "iteration budget per component",
     ("run", "sleep_seconds"): "pause between iterations",
     ("run", "interactive"): "human-in-the-loop mode for the legacy loop",
@@ -379,10 +434,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     # string is ignored by the loader. The previous rendering emitted the
     # live repo-root path, and copying THAT recreated the out-of-scope
     # defect this key's default was changed to avoid (review finding 1).
-    ("paths", "progress"):
-        'progress log the agent appends to; empty = each factory '
-        "component writes beside its own PRD (inside its allowedPaths), "
-        "set = that one path is forced on every component",
+    ("paths", "progress"): "progress log the agent appends to; empty = each factory "
+    "component writes beside its own PRD (inside its allowedPaths), "
+    "set = that one path is forced on every component",
     ("paths", "codebase_map"): "brownfield codebase notes",
     ("paths", "allowed"): 'diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted',
     ("git", "branch"): "branch override; empty = use PRD branchName",
@@ -395,8 +449,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("timeout", "review_agent"): "Phase 2 reviewer call",
     ("timeout", "contract_test"): "Phase 3 contract test run",
     ("timeout", "subprocess_default"): "any other subprocess",
-    ("timeout", "scheduler_backstop_margin"):
-        "extra slack before the scheduler declares a worker dead",
+    (
+        "timeout",
+        "scheduler_backstop_margin",
+    ): "extra slack before the scheduler declares a worker dead",
     ("factory", "max_parallel"): "concurrent component workers",
     ("factory", "max_retries"): "per-component retry budget across all phases",
     ("factory", "retry_delay"): "seconds between retry attempts",
@@ -410,31 +466,35 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ),
     ("factory", "merge_timeout"): "seconds to wait for PR merge confirmation",
     ("factory", "max_adversarial_calls"): "cap on review+security+distill LLM calls; 0 = unbounded",
-    ("factory", "max_total_tokens"):
-        "run-level token budget; 0 = unbounded. Counts cache reads at par, so "
-        "it is a poor proxy for cost - prefer max_cost_usd. Halts before the "
-        "next engineer iteration or phase, never mid-call (docs/env-vars.md)",
-    ("factory", "max_cost_usd"):
-        "run-level USD budget; 0 = unbounded. Same halt granularity as "
-        "max_total_tokens (between iterations, not mid-call), so NOT a hard "
-        "cap. Not [agent] budget_usd (docs/env-vars.md)",
+    (
+        "factory",
+        "max_total_tokens",
+    ): "run-level token budget; 0 = unbounded. Counts cache reads at par, so "
+    "it is a poor proxy for cost - prefer max_cost_usd. Halts before the "
+    "next engineer iteration or phase, never mid-call (docs/env-vars.md)",
+    ("factory", "max_cost_usd"): "run-level USD budget; 0 = unbounded. Same halt granularity as "
+    "max_total_tokens (between iterations, not mid-call), so NOT a hard "
+    "cap. Not [agent] budget_usd (docs/env-vars.md)",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
-    ("factory", "progress_log_enabled"):
-        "JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is "
-        "written either way (docs/env-vars.md)",
-    ("factory", "keep_worktrees_on_failure"):
-        "keep failed components' worktrees for post-mortem (R3.3)",
-    ("breaker", "no_progress_iterations"):
-        "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
-    ("breaker", "test_command"):
-        "stall-probe command; empty = the explicit [verify] test_command, "
-        "else diff-hash only",
+    (
+        "factory",
+        "progress_log_enabled",
+    ): "JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is "
+    "written either way (docs/env-vars.md)",
+    (
+        "factory",
+        "keep_worktrees_on_failure",
+    ): "keep failed components' worktrees for post-mortem (R3.3)",
+    (
+        "breaker",
+        "no_progress_iterations",
+    ): "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
+    ("breaker", "test_command"): "stall-probe command; empty = the explicit [verify] test_command, "
+    "else diff-hash only",
     ("breaker", "test_timeout"): "seconds before the stall probe is killed",
-    ("sandbox", "enabled"):
-        "OS-sandbox the engineer's agent CLI (writes scoped to its "
-        "worktree); ignored for custom agent commands",
-    ("sandbox", "allow_network"):
-        "re-open outbound network inside the sandbox (off = deny)",
+    ("sandbox", "enabled"): "OS-sandbox the engineer's agent CLI (writes scoped to its "
+    "worktree); ignored for custom agent commands",
+    ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
     ("verify", "test_command"): "empty = smart default (uv run pytest)",
     ("verify", "typecheck_command"): "empty = smart default (uv run mypy)",
     ("verify", "lint_command"): "empty = smart default (uv run ruff check)",
@@ -446,27 +506,30 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "mutation_threshold"): "minimum mutation kill rate (percent)",
     ("verify", "mutation_timeout"): "seconds for the mutation run",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess",
-    ("verify", "require_self_critique"):
-        "fail Phase 1 if the ## Self-Critique block is missing/sparse",
+    (
+        "verify",
+        "require_self_critique",
+    ): "fail Phase 1 if the ## Self-Critique block is missing/sparse",
     ("verify", "self_critique_min_bullets"): "minimum substantive bullets in the block",
-    ("verify", "progress_file_path"):
-        "progress file the self-critique check reads; "
-        "empty = the log beside the component's PRD",
-    ("fixtures", "enabled"):
-        "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
-    ("fixtures", "snapshot_on_success"):
-        "save passing outputs for cross-run regression comparison",
+    ("verify", "progress_file_path"): "progress file the self-critique check reads; "
+    "empty = the log beside the component's PRD",
+    ("fixtures", "enabled"): "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
+    ("fixtures", "snapshot_on_success"): "save passing outputs for cross-run regression comparison",
     ("fixtures", "snapshot_dir"): "relative paths resolve against the repo root",
     ("fixtures", "timeout"): "seconds per fixture subprocess",
     ("policy", "enabled"): "enforce the [policy] envelope in Phase 1 (opt-in)",
     ("policy", "paths_deny"): "globs no change may touch (gitignore-style **)",
     ("policy", "max_files_changed"): "max files in a change; negative disables",
-    ("policy", "max_lines_changed"):
-        "max added+removed lines (lockfiles excluded); negative disables",
+    (
+        "policy",
+        "max_lines_changed",
+    ): "max added+removed lines (lockfiles excluded); negative disables",
     ("policy", "deps_allow_new"): "allow new uv.lock packages (L3+ may enable)",
     ("policy", "secret_patterns"): "regexes flagged in added diff lines",
-    ("policy", "enforcement_paths_extra"):
-        "extra halt paths; additive - cannot shrink the built-in set",
+    (
+        "policy",
+        "enforcement_paths_extra",
+    ): "extra halt paths; additive - cannot shrink the built-in set",
     ("policy", "license_allow"): "allowed SPDX ids for new deps (empty disables)",
     ("policy", "license_deny_partial"): "substrings that deny a dep license (copyleft)",
     ("policy", "license_unresolved"): "block | advisory when no source resolves a license",
@@ -478,40 +541,35 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
     ("inbox", "snooze_hours"): "default snooze TTL in hours; snoozed items return",
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
-    ("intake_github", "enabled"):
-        "poll GitHub Issues for labelled work (opt-in outbound poller)",
-    ("intake_github", "repo"):
-        "owner/name to poll; empty resolves from the checkout's remote",
-    ("intake_github", "queued_label"):
-        "the trigger label; applying it requires repo write access",
-    ("intake_github", "label_prefix"):
-        "prefix for the state labels written back to the issue",
-    ("intake_github", "max_items_per_sync"):
-        "upper bound on items admitted per sync",
-    ("intake_github", "default_priority"):
-        "queue priority given to remote-sourced items",
-    ("intake_github", "comment_on_result"):
-        "post the queue's verdict back to the source issue",
-    ("intake_github", "dry_run"):
-        "poll and log, but send no labels or comments",
-    ("intake_github", "timeout_seconds"):
-        "per-gh-invocation timeout in seconds",
-    ("serve", "poll_interval_seconds"):
-        "seconds between poll cycles when ks serve runs as a daemon",
-    ("serve", "daily_budget_usd"):
-        "hard stop on reported spend per local day; 0 = no cap",
-    ("serve", "max_consecutive_poison"):
-        "consecutive poisoned items that pause the whole queue",
-    ("serve", "caffeinate"):
-        "hold caffeinate -i for each run so the machine cannot sleep mid-factory",
-    ("serve", "factory_timeout_seconds"):
-        "kill a factory run after this long; 0 = no timeout",
-    ("serve", "allow_uncovered_cost"):
-        "run unattended even when no adapter reports cost, making the budget unenforceable",
-    ("queue", "max_attempts"):
-        "execution attempts per queue item before it is poisoned",
-    ("queue", "lease_ttl_seconds"):
-        "claim validity in seconds; the reaper recovers anything past this",
+    ("intake_github", "enabled"): "poll GitHub Issues for labelled work (opt-in outbound poller)",
+    ("intake_github", "repo"): "owner/name to poll; empty resolves from the checkout's remote",
+    ("intake_github", "queued_label"): "the trigger label; applying it requires repo write access",
+    ("intake_github", "label_prefix"): "prefix for the state labels written back to the issue",
+    ("intake_github", "max_items_per_sync"): "upper bound on items admitted per sync",
+    ("intake_github", "default_priority"): "queue priority given to remote-sourced items",
+    ("intake_github", "comment_on_result"): "post the queue's verdict back to the source issue",
+    ("intake_github", "dry_run"): "poll and log, but send no labels or comments",
+    ("intake_github", "timeout_seconds"): "per-gh-invocation timeout in seconds",
+    (
+        "serve",
+        "poll_interval_seconds",
+    ): "seconds between poll cycles when ks serve runs as a daemon",
+    ("serve", "daily_budget_usd"): "hard stop on reported spend per local day; 0 = no cap",
+    ("serve", "max_consecutive_poison"): "consecutive poisoned items that pause the whole queue",
+    (
+        "serve",
+        "caffeinate",
+    ): "hold caffeinate -i for each run so the machine cannot sleep mid-factory",
+    ("serve", "factory_timeout_seconds"): "kill a factory run after this long; 0 = no timeout",
+    (
+        "serve",
+        "allow_uncovered_cost",
+    ): "run unattended even when no adapter reports cost, making the budget unenforceable",
+    ("queue", "max_attempts"): "execution attempts per queue item before it is poisoned",
+    (
+        "queue",
+        "lease_ttl_seconds",
+    ): "claim validity in seconds; the reaper recovers anything past this",
     ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
     ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
     ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",
@@ -546,12 +604,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("evolution", "lookback_runs"): "past runs to analyze",
     ("evolution", "auto_propose"): "generate proposals after each factory run",
     ("evolution", "auto_apply_computational"): "auto-apply computational proposals",
-    ("notify", "on_complete"):
-        "shell hook fired once when the run finishes; empty = disabled",
-    ("notify", "on_first_failure"):
-        "shell hook fired once on the first component failure",
-    ("notify", "on_inbox_item"):
-        "shell hook fired per R8.3 inbox item kind; empty = disabled",
+    ("notify", "on_complete"): "shell hook fired once when the run finishes; empty = disabled",
+    ("notify", "on_first_failure"): "shell hook fired once on the first component failure",
+    ("notify", "on_inbox_item"): "shell hook fired per R8.3 inbox item kind; empty = disabled",
     ("notify", "hook_timeout"): "seconds before a hook command is killed",
     ("linear", "enabled"): "mirror runs into Linear (project/issues/status via GitHub linking)",
     ("linear", "team_id"): "Linear team UUID (required when enabled)",
@@ -707,10 +762,13 @@ def build_config_reference() -> str:
     blocks: list[str] = []
     for spec in specs:
         lines = [f"# {spec.title}", f"[{spec.section}]"]
-        width = max(
-            len(f"{key} = {_toml_literal(getattr(spec.defaults, field_name))}")
-            for key, field_name in spec.keys.items()
-        ) + 2
+        width = (
+            max(
+                len(f"{key} = {_toml_literal(getattr(spec.defaults, field_name))}")
+                for key, field_name in spec.keys.items()
+            )
+            + 2
+        )
         for key, field_name in spec.keys.items():
             assignment = f"{key} = {_toml_literal(getattr(spec.defaults, field_name))}"
             description = KEY_DESCRIPTIONS[(spec.section, key)]
@@ -751,7 +809,8 @@ def render_readme(text: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--check", action="store_true",
+        "--check",
+        action="store_true",
         help="verify README.md is current; exit 1 on drift without writing",
     )
     args = parser.parse_args(argv)
@@ -762,8 +821,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         if rendered != current:
             sys.stderr.write(
-                "README.md generated sections are stale.\n"
-                "Run: uv run python scripts/gen_docs.py\n"
+                "README.md generated sections are stale.\nRun: uv run python scripts/gen_docs.py\n"
             )
             return 1
         print("README.md generated sections are current.")

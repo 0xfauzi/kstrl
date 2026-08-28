@@ -39,27 +39,37 @@ def _setup_project(tmp_path: Path, component_ids: list[str]) -> Path:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     (tmp_path / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
     for comp_id in component_ids:
         feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
     return tmp_path
 
 
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
-        comp_id, comp_id.title(), "Desc", deps or [],
+        comp_id,
+        comp_id.title(),
+        "Desc",
+        deps or [],
         f"scripts/kstrl/feature/{comp_id}/prd.json",
         f"kstrl/factory/{comp_id}",
     )
@@ -67,8 +77,12 @@ def _component(comp_id: str, deps: list[str] | None = None) -> Component:
 
 def _make_manifest(components: list[Component]) -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="test",
-        base_branch="main", single_pr=False, components=components,
+        version="1",
+        spec_file="spec.md",
+        project_name="test",
+        base_branch="main",
+        single_pr=False,
+        components=components,
     )
 
 
@@ -76,20 +90,30 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root_dir / "scripts" / "kstrl" / "prompt.md",
         prd_file=root_dir / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
 def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     defaults: dict[str, Any] = dict(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
         progress_log_path=tmp_path / "progress.jsonl",
     )
@@ -99,16 +123,20 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
 
 def _usage(total: int, cost: float = 0.01) -> UsageTotals:
     totals = UsageTotals()
-    totals.add_record(UsageRecord(
-        input_tokens=total // 2, output_tokens=total - total // 2,
-        total_tokens=total, cost_usd=cost, duration_seconds=1.0,
-        source="claude-stream-json",
-    ))
+    totals.add_record(
+        UsageRecord(
+            input_tokens=total // 2,
+            output_tokens=total - total // 2,
+            total_tokens=total,
+            cost_usd=cost,
+            duration_seconds=1.0,
+            source="claude-stream-json",
+        )
+    )
     return totals
 
 
-def _run_stub_factory(root: Path, comp_ids: list[str],
-                      success: bool = True) -> Path:
+def _run_stub_factory(root: Path, comp_ids: list[str], success: bool = True) -> Path:
     """Run run_factory with a stubbed worker; returns the root."""
     _setup_project(root, comp_ids)
     manifest = _make_manifest([_component(c) for c in comp_ids])
@@ -116,17 +144,27 @@ def _run_stub_factory(root: Path, comp_ids: list[str],
 
     def fake_component(comp_id: str, *args: Any, **kwargs: Any) -> ComponentResult:
         return ComponentResult(
-            comp_id, success=success, iterations=2, duration_seconds=1.0,
+            comp_id,
+            success=success,
+            iterations=2,
+            duration_seconds=1.0,
             error=None if success else "stub failure",
             usage=_usage(500),
         )
 
-    with patch(
-        "kstrl.factory._run_component", side_effect=fake_component,
-    ), patch("kstrl.git.get_diff_content", return_value=""):
+    with (
+        patch(
+            "kstrl.factory._run_component",
+            side_effect=fake_component,
+        ),
+        patch("kstrl.git.get_diff_content", return_value=""),
+    ):
         run_factory(
-            manifest, config, _make_base_config(root),
-            PlainUI(no_color=True, file=io.StringIO()), root,
+            manifest,
+            config,
+            _make_base_config(root),
+            PlainUI(no_color=True, file=io.StringIO()),
+            root,
         )
     return root
 
@@ -141,10 +179,7 @@ class TestDualWrite:
     def test_v2_stream_written_all_schema_2(self, tmp_path: Path) -> None:
         root = _run_stub_factory(tmp_path, ["comp-a", "comp-b"])
         events_file = _events_file(root)
-        lines = [
-            json.loads(line)
-            for line in events_file.read_text().splitlines() if line.strip()
-        ]
+        lines = [json.loads(line) for line in events_file.read_text().splitlines() if line.strip()]
         assert lines, "events.jsonl is empty"
         assert all(line["schema"] == 2 for line in lines)
         names = [line["event"] for line in lines]
@@ -162,9 +197,13 @@ class TestDualWrite:
 
         v1_names = {e["event"] for e in v1}
         projected = [
-            e for e in v2
-            if type(e).type in v1_names or type(e).type in {
-                "merge_pending", "phase_skipped",
+            e
+            for e in v2
+            if type(e).type in v1_names
+            or type(e).type
+            in {
+                "merge_pending",
+                "phase_skipped",
             }
         ]
         # Project v2 events into (event, component, selected-data) and
@@ -178,13 +217,13 @@ class TestDualWrite:
             v1_data = v1_event.get("data", {})
             v2_data = v2_event.to_dict()["data"]
             for key, value in v1_data.items():
-                v2_key = "agent_source" if (
-                    v1_event["event"] == "adversarial_agent_selected"
-                    and key == "source"
-                ) else key
+                v2_key = (
+                    "agent_source"
+                    if (v1_event["event"] == "adversarial_agent_selected" and key == "source")
+                    else key
+                )
                 assert v2_data.get(v2_key) == value, (
-                    f"{v1_event['event']}.{key}: v1={value!r} "
-                    f"v2={v2_data.get(v2_key)!r}"
+                    f"{v1_event['event']}.{key}: v1={value!r} v2={v2_data.get(v2_key)!r}"
                 )
 
     def test_fold_agrees_with_summarize_events(self, tmp_path: Path) -> None:
@@ -203,8 +242,7 @@ class TestDualWrite:
 
     def test_failure_path_events_match(self, tmp_path: Path) -> None:
         root = _run_stub_factory(tmp_path, ["comp-a"], success=False)
-        v1_names = [e["event"] for e in
-                    read_progress_events(root / "progress.jsonl")]
+        v1_names = [e["event"] for e in read_progress_events(root / "progress.jsonl")]
         v2_names = [type(e).type for e in ev.read_events(_events_file(root))]
         assert "component_failed" in v1_names
         assert v1_names == [n for n in v2_names if n in set(v1_names)]
@@ -216,14 +254,24 @@ class TestDualWrite:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, progress_log_enabled=False)
         result = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_usage(10),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_usage(10),
         )
-        with patch(
-            "kstrl.factory._run_component", return_value=result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
             )
         assert not (root / "progress.jsonl").exists()
         assert not (root / ".kstrl" / "runs").exists()
@@ -288,8 +336,7 @@ class TestSemanticEvents:
         names = _v2_names_for(events, "comp-a")
         assert "phase_completed:engineer" in names
         engineer_done = [
-            e for e in events
-            if isinstance(e, ev.PhaseCompleted) and e.phase == "engineer"
+            e for e in events if isinstance(e, ev.PhaseCompleted) and e.phase == "engineer"
         ]
         assert engineer_done[0].passed is False
         assert "stub failure" in engineer_done[0].detail
@@ -297,13 +344,19 @@ class TestSemanticEvents:
 
     def test_v1_file_has_no_semantic_events(self, tmp_path: Path) -> None:
         root = _run_stub_factory(tmp_path, ["comp-a"])
-        v1_names = {e["event"] for e in
-                    read_progress_events(root / "progress.jsonl")}
+        v1_names = {e["event"] for e in read_progress_events(root / "progress.jsonl")}
         assert not v1_names & {
-            "run_plan", "phase_started", "phase_completed",
-            "checkpoint_requested", "checkpoint_resolved", "pr_created",
-            "pr_merged", "pr_merge_pending", "distill_result",
-            "finding_recorded", "fact_utilization_measured",
+            "run_plan",
+            "phase_started",
+            "phase_completed",
+            "checkpoint_requested",
+            "checkpoint_resolved",
+            "pr_created",
+            "pr_merged",
+            "pr_merge_pending",
+            "distill_result",
+            "finding_recorded",
+            "fact_utilization_measured",
         }
 
     def test_reducer_sees_explicit_phases(self, tmp_path: Path) -> None:
@@ -322,19 +375,33 @@ class TestSemanticEvents:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(
-            root, create_prs=True, pause_before_pr_merge=True,
+            root,
+            create_prs=True,
+            pause_before_pr_merge=True,
         )
         result = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_usage(10),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_usage(10),
         )
-        with patch(
-            "kstrl.factory._run_component", return_value=result,
-        ), patch("kstrl.git.get_diff_content", return_value=""), patch(
-            "kstrl.pr.is_gh_available", return_value=False,
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+            patch(
+                "kstrl.pr.is_gh_available",
+                return_value=False,
+            ),
         ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
             )
         events = ev.read_events(_events_file(root))
         requested = [e for e in events if isinstance(e, ev.CheckpointRequested)]
@@ -356,7 +423,10 @@ class TestPhaseTranscripts:
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, review_mode="advisory")
         result = ComponentResult(
-            "comp-a", success=True, iterations=1, usage=_usage(10),
+            "comp-a",
+            success=True,
+            iterations=1,
+            usage=_usage(10),
         )
 
         def fake_review(*args: Any, **kwargs: Any) -> ReviewResult:
@@ -366,14 +436,23 @@ class TestPhaseTranscripts:
             on_line("reviewer line two")
             return ReviewResult(passed=True, mode="advisory")
 
-        with patch(
-            "kstrl.factory._run_component", return_value=result,
-        ), patch("kstrl.git.get_diff_content", return_value="+x\n"), patch(
-            "kstrl.factory.run_review", side_effect=fake_review,
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value="+x\n"),
+            patch(
+                "kstrl.factory.run_review",
+                side_effect=fake_review,
+            ),
         ):
             run_factory(
-                manifest, config, _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                config,
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
             )
 
         run_dir = _events_file(root).parent
@@ -392,22 +471,25 @@ class TestPhaseTranscripts:
             def name(self) -> str:
                 return "fake"
 
-            def run(self, prompt: str, cwd: Path | None = None,
-                    timeout: float | None = None) -> Any:
+            def run(
+                self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+            ) -> Any:
                 yield from ["line-a", "line-b"]
 
             @property
             def final_message(self) -> str | None:
                 return None
 
-        (tmp_path / "prd.json").write_text(
-            '{"branchName": "b", "userStories": []}'
-        )
+        (tmp_path / "prd.json").write_text('{"branchName": "b", "userStories": []}')
         seen: list[str] = []
         run_review(
-            _Agent(), tmp_path / "prd.json", tmp_path, "main",
+            _Agent(),
+            tmp_path / "prd.json",
+            tmp_path,
+            "main",
             VerificationResult(passed=True, checks=[]),
-            ReviewMode.ADVISORY, _PlainUI(no_color=True, file=io.StringIO()),
+            ReviewMode.ADVISORY,
+            _PlainUI(no_color=True, file=io.StringIO()),
             diff_content="+x\n",
             on_line=seen.append,
         )
@@ -415,9 +497,9 @@ class TestPhaseTranscripts:
 
 
 class TestWorkerChannel:
-    def _worker_args(self, root: Path, events_dir: Path | None,
-                     agent_cmd: str) -> dict[str, Any]:
+    def _worker_args(self, root: Path, events_dir: Path | None, agent_cmd: str) -> dict[str, Any]:
         from kstrl.factory import _run_component  # noqa: F401 - existence
+
         _setup_project(root, ["comp-a"])
         return dict(
             component_id="comp-a",
@@ -426,7 +508,9 @@ class TestWorkerChannel:
             root_dir_str=str(root),
             prompt_file_str="scripts/kstrl/prompt.md",
             agent_cmd=agent_cmd,
-            model=None, reasoning=None, agent_type=None,
+            model=None,
+            reasoning=None,
+            agent_type=None,
             sleep_seconds=0.0,
             max_iterations=1,
             events_dir_str=str(events_dir) if events_dir else None,
@@ -435,14 +519,20 @@ class TestWorkerChannel:
         )
 
     def test_worker_writes_events_and_transcript(
-        self, tmp_path: Path, capfd: Any,
+        self,
+        tmp_path: Path,
+        capfd: Any,
     ) -> None:
         from kstrl.factory import _run_component
 
         events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
-        result = _run_component(**self._worker_args(
-            tmp_path, events_dir, "echo engineer-output-line",
-        ))
+        result = _run_component(
+            **self._worker_args(
+                tmp_path,
+                events_dir,
+                "echo engineer-output-line",
+            )
+        )
         assert result.component_id == "comp-a"
 
         comp_dir = events_dir / "components" / "comp-a"
@@ -464,26 +554,40 @@ class TestWorkerChannel:
         assert err == ""
 
     def test_worker_without_events_dir_keeps_legacy_stderr(
-        self, tmp_path: Path, capfd: Any,
+        self,
+        tmp_path: Path,
+        capfd: Any,
     ) -> None:
         from kstrl.factory import _run_component
 
-        _run_component(**self._worker_args(
-            tmp_path, None, "echo legacy-line",
-        ))
+        _run_component(
+            **self._worker_args(
+                tmp_path,
+                None,
+                "echo legacy-line",
+            )
+        )
         _, err = capfd.readouterr()
         assert "legacy-line" in err  # PlainUI on stderr, as before
 
     def test_setup_failure_does_not_start_heartbeat(self, tmp_path: Path) -> None:
         from kstrl.factory import _run_component
 
-        with patch(
-            "kstrl.agents.get_agent", side_effect=RuntimeError("no agent"),
-        ), patch("kstrl.factory._start_heartbeat") as start_heartbeat:
+        with (
+            patch(
+                "kstrl.agents.get_agent",
+                side_effect=RuntimeError("no agent"),
+            ),
+            patch("kstrl.factory._start_heartbeat") as start_heartbeat,
+        ):
             try:
-                _run_component(**self._worker_args(
-                    tmp_path, tmp_path / ".kstrl" / "runs" / "run-w", "bad",
-                ))
+                _run_component(
+                    **self._worker_args(
+                        tmp_path,
+                        tmp_path / ".kstrl" / "runs" / "run-w",
+                        "bad",
+                    )
+                )
             except RuntimeError as exc:
                 assert str(exc) == "no agent"
             else:  # pragma: no cover - get_agent must fail
@@ -509,14 +613,16 @@ class TestWorkerChannel:
 
         events_dir = tmp_path / ".kstrl" / "runs" / "run-w"
         with patch("kstrl.agents.get_agent", return_value=CrashingAgent()):
-            result = _run_component(**self._worker_args(
-                tmp_path, events_dir, "crash",
-            ))
+            result = _run_component(
+                **self._worker_args(
+                    tmp_path,
+                    events_dir,
+                    "crash",
+                )
+            )
         assert result.success is False
         assert result.error == "agent crashed"
-        events = ev.read_events(
-            events_dir / "components" / "comp-a" / "engineer.jsonl"
-        )
+        events = ev.read_events(events_dir / "components" / "comp-a" / "engineer.jsonl")
         starts = [e for e in events if isinstance(e, ev.IterationStarted)]
         completed = [e for e in events if isinstance(e, ev.IterationCompleted)]
         assert len(starts) == len(completed) == 1
@@ -530,7 +636,9 @@ class TestWorkerChannel:
         captured: list[ev.Event] = []
         bus = ev.EventBus(
             ev.CallbackSink(captured.append),
-            run_id="run-h", source="worker", component="comp-a",
+            run_id="run-h",
+            source="worker",
+            component="comp-a",
         )
         stop = _start_heartbeat(bus, interval=0.01)
         _time.sleep(0.08)
@@ -540,12 +648,13 @@ class TestWorkerChannel:
         assert beats[0].pid > 0
         count_after_stop = len(beats)
         _time.sleep(0.05)
-        assert len([
-            e for e in captured if isinstance(e, ev.WorkerHeartbeat)
-        ]) == count_after_stop  # stopped means stopped
+        assert (
+            len([e for e in captured if isinstance(e, ev.WorkerHeartbeat)]) == count_after_stop
+        )  # stopped means stopped
 
     def test_inline_factory_tees_live_lines_and_persists_files(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """max_parallel=1 runs the REAL worker in-process: the parent UI
         still shows live AI lines, while events + transcript land in the
@@ -560,8 +669,11 @@ class TestWorkerChannel:
         base.agent_cmd = f"echo '{marker}'"
         with patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
-                manifest, config, base,
-                PlainUI(no_color=True, file=ui_buffer), root,
+                manifest,
+                config,
+                base,
+                PlainUI(no_color=True, file=ui_buffer),
+                root,
             )
         # The echo agent emits the completion marker: component succeeds.
         assert "comp-a" in result.completed
@@ -574,10 +686,7 @@ class TestWorkerChannel:
         assert (comp_dir / "engineer.log").exists()
         assert marker in (comp_dir / "engineer.log").read_text()
         worker_events = ev.read_events(comp_dir / "engineer.jsonl")
-        assert any(
-            isinstance(e, ev.IterationCompleted) and e.completed
-            for e in worker_events
-        )
+        assert any(isinstance(e, ev.IterationCompleted) and e.completed for e in worker_events)
 
         # The reducer merges worker files into the run view.
         state, _ = reducer.load_run_state(root)

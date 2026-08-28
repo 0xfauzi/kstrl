@@ -27,29 +27,45 @@ from kstrl.verify import (
 class TestCheckPrdStories:
     def test_all_passing(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [
+        prd.write_text(
+            json.dumps(
                 {
-                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                    "priority": 1, "passes": True, "notes": "",
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
         result = check_prd_stories(prd)
         assert result.passed is True
 
     def test_story_not_passing(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [
+        prd.write_text(
+            json.dumps(
                 {
-                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                    "priority": 1, "passes": False, "notes": "",
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": False,
+                            "notes": "",
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
         result = check_prd_stories(prd)
         assert result.passed is False
         assert "US-001" in result.details[0]
@@ -63,10 +79,14 @@ class TestCheckPrdStories:
 
     def test_empty_stories(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [],
-        }))
+        prd.write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [],
+                }
+            )
+        )
         result = check_prd_stories(prd)
         assert result.passed is True
 
@@ -109,6 +129,7 @@ class TestDefaultTypecheckCommand:
 
     def _default(self, cwd: Path) -> str:
         from kstrl.verify import _default_typecheck_command
+
         return _default_typecheck_command(cwd)
 
     def test_no_pyproject_falls_back_to_dot(self, tmp_path: Path) -> None:
@@ -117,7 +138,8 @@ class TestDefaultTypecheckCommand:
         assert self._default(tmp_path) == "uv run mypy ."
 
     def test_pyproject_without_mypy_section_falls_back_to_dot(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             "[project]\nname = 'foo'\n",
@@ -133,7 +155,8 @@ class TestDefaultTypecheckCommand:
         assert self._default(tmp_path) == "uv run mypy"
 
     def test_mypy_packages_present_uses_no_arg_form(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """``[tool.mypy] packages`` also triggers the no-arg default."""
         (tmp_path / "pyproject.toml").write_text(
@@ -142,7 +165,8 @@ class TestDefaultTypecheckCommand:
         assert self._default(tmp_path) == "uv run mypy"
 
     def test_mypy_section_without_files_or_packages_falls_back(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A [tool.mypy] section that only sets strict / python_version
         but doesn't constrain scope keeps the broad default."""
@@ -152,7 +176,8 @@ class TestDefaultTypecheckCommand:
         assert self._default(tmp_path) == "uv run mypy ."
 
     def test_malformed_pyproject_falls_back_to_dot(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Don't crash on malformed TOML -- fall back to the broad
         default, which the operator can then override explicitly."""
@@ -182,7 +207,8 @@ class TestCheckDiffScope:
         assert not any("src/main.py" in d for d in result.details)
 
     def test_failure_names_base_branch_and_allowed_paths(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R0.4: the failure details must name the base branch and the
         allowed paths -- without them the retry agent guesses both (the
@@ -193,7 +219,8 @@ class TestCheckDiffScope:
             return_value=["evil.py"],
         ):
             result = check_diff_scope(
-                tmp_path, "feat/retrospective-cleanup-2",
+                tmp_path,
+                "feat/retrospective-cleanup-2",
                 allowed_paths=["src/", "tests/"],
             )
         assert result.passed is False
@@ -203,7 +230,8 @@ class TestCheckDiffScope:
         assert "Allowed paths (complete list): src/, tests/" in joined
 
     def test_retry_context_carries_base_and_full_allowed_paths(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The retry prompt is built via VerificationResult.as_context()
         (which slices details[:10]) and IterationContext.format_for_prompt.
@@ -215,7 +243,8 @@ class TestCheckDiffScope:
         allowed = [f"pkg{i}/" for i in range(12)]
         violations = [f"rogue{i}.py" for i in range(20)]
         with patch(
-            "kstrl.verify.git.get_diff_names", return_value=violations,
+            "kstrl.verify.git.get_diff_names",
+            return_value=violations,
         ):
             result = check_diff_scope(tmp_path, "main", allowed_paths=allowed)
 
@@ -236,18 +265,14 @@ class TestCheckBadPatterns:
     def test_clean_files(self, tmp_path: Path) -> None:
         py_file = tmp_path / "clean.py"
         py_file.write_text("x = 1\n")
-        with patch(
-            "kstrl.verify.git.get_diff_names", return_value=["clean.py"]
-        ):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["clean.py"]):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is True
 
     def test_empty_py_file(self, tmp_path: Path) -> None:
         py_file = tmp_path / "empty.py"
         py_file.write_text("")
-        with patch(
-            "kstrl.verify.git.get_diff_names", return_value=["empty.py"]
-        ):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["empty.py"]):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
         assert any("empty" in d for d in result.details)
@@ -255,9 +280,7 @@ class TestCheckBadPatterns:
     def test_syntax_error(self, tmp_path: Path) -> None:
         py_file = tmp_path / "bad.py"
         py_file.write_text("def f(\n")
-        with patch(
-            "kstrl.verify.git.get_diff_names", return_value=["bad.py"]
-        ):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["bad.py"]):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
         assert any("syntax" in d.lower() for d in result.details)
@@ -265,9 +288,7 @@ class TestCheckBadPatterns:
     def test_secret_detected(self, tmp_path: Path) -> None:
         py_file = tmp_path / "leak.py"
         py_file.write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
-        with patch(
-            "kstrl.verify.git.get_diff_names", return_value=["leak.py"]
-        ):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["leak.py"]):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is False
         assert any("secret" in d.lower() for d in result.details)
@@ -275,9 +296,7 @@ class TestCheckBadPatterns:
     def test_non_py_files_skipped(self, tmp_path: Path) -> None:
         txt_file = tmp_path / "data.txt"
         txt_file.write_text("")
-        with patch(
-            "kstrl.verify.git.get_diff_names", return_value=["data.txt"]
-        ):
+        with patch("kstrl.verify.git.get_diff_names", return_value=["data.txt"]):
             result = check_bad_patterns(tmp_path, "main")
         assert result.passed is True
 
@@ -285,15 +304,23 @@ class TestCheckBadPatterns:
 class TestRunMechanicalVerification:
     def test_all_pass(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [
+        prd.write_text(
+            json.dumps(
                 {
-                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                    "priority": 1, "passes": True, "notes": "",
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
         config = VerifyConfig(
             test_command="true",
             typecheck_command="true",
@@ -303,24 +330,36 @@ class TestRunMechanicalVerification:
             subprocess_timeout=5.0,
         )
         result = run_mechanical_verification(
-            tmp_path, prd, "main", None, config,
+            tmp_path,
+            prd,
+            "main",
+            None,
+            config,
         )
         assert result.passed is True
         assert len(result.checks) == 4  # prd + test + typecheck + lint
 
     def test_partial_failure(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [
+        prd.write_text(
+            json.dumps(
                 {
-                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                    "priority": 1, "passes": True, "notes": "",
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
         config = VerifyConfig(
-            test_command="false",   # Tests fail
+            test_command="false",  # Tests fail
             typecheck_command="true",
             lint_command="true",
             check_diff_scope=False,
@@ -328,14 +367,18 @@ class TestRunMechanicalVerification:
             subprocess_timeout=5.0,
         )
         result = run_mechanical_verification(
-            tmp_path, prd, "main", None, config,
+            tmp_path,
+            prd,
+            "main",
+            None,
+            config,
         )
         assert result.passed is False
         # All checks should have run (no short-circuit)
         assert len(result.checks) == 4
-        assert result.checks[0].passed is True   # PRD stories
-        assert result.checks[1].passed is False   # Test suite
-        assert result.checks[2].passed is True   # Typecheck
+        assert result.checks[0].passed is True  # PRD stories
+        assert result.checks[1].passed is False  # Test suite
+        assert result.checks[2].passed is True  # Typecheck
 
     def test_as_context_formatting(self) -> None:
         result = VerificationResult(
@@ -493,12 +536,11 @@ class TestCheckSelfCritique:
                 "- failure: realistic\n"
             )
             result = check_self_critique(progress)
-            assert result.passed is False, (
-                f"line {line!r} should not be treated as heading"
-            )
+            assert result.passed is False, f"line {line!r} should not be treated as heading"
 
     def test_missing_block_in_latest_iteration_fails(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R5.4 regression: an earlier iteration's Self-Critique block
         must not satisfy the check when the LATEST entry omits it."""
@@ -527,13 +569,13 @@ class TestCheckSelfCritique:
             )
             result = check_self_critique(progress, min_bullets=3)
             assert result.passed is False, (
-                f"earlier entry {earlier!r} must not mask the latest "
-                "entry's missing block"
+                f"earlier entry {earlier!r} must not mask the latest entry's missing block"
             )
             assert "latest iteration entry" in result.message
 
     def test_next_section_bullets_do_not_inflate_count(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R5.4 regression: bullets belonging to a FOLLOWING bold-label
         section (e.g. Interpretations in the engineer prompt's format)
@@ -553,7 +595,8 @@ class TestCheckSelfCritique:
         assert "1 bullets" in result.message
 
     def test_default_prompt_entry_format_counts_exact_bullets(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Positive control: a full entry in the engineer prompt's
         documented Progress Format passes with EXACTLY the critique
@@ -585,7 +628,8 @@ class TestCheckSelfCritique:
         assert "3 failure modes" in result.message
 
     def test_entry_separator_terminates_bullet_count(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Bullets after the closing `---` belong to no entry and must
         not count."""
@@ -603,7 +647,8 @@ class TestCheckSelfCritique:
         assert "1 bullets" in result.message
 
     def test_no_iteration_heading_falls_back_to_whole_file(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Free-form progress files without a recognized iteration
         heading are treated as a single entry (documented fallback)."""
@@ -648,6 +693,7 @@ class TestCheckMutationScore:
 
     def test_timeout_passes_gracefully(self, tmp_path: Path) -> None:
         import subprocess as sp
+
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
             patch(
@@ -714,7 +760,8 @@ class TestCheckDeadCode:
                 return sp.CompletedProcess(cmd, 0, "", "")
             # vulture output
             return sp.CompletedProcess(
-                cmd, 1,
+                cmd,
+                1,
                 "src/main.py:10: unused function 'old_handler' (60% confidence)\n"
                 "src/utils.py:25: unused variable 'temp' (90% confidence)\n",
                 "",
@@ -787,10 +834,16 @@ class TestCheckDeadCode:
             patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
             patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
             patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
-            patch("kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
-            patch("kstrl.verify.check_dead_code", return_value=CheckResult("dead_code", True)) as mock_dc,
+            patch(
+                "kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)
+            ),
+            patch(
+                "kstrl.verify.check_dead_code", return_value=CheckResult("dead_code", True)
+            ) as mock_dc,
         ):
-            result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
+            result = run_mechanical_verification(
+                tmp_path, tmp_path / "prd.json", "main", None, config
+            )
 
         mock_dc.assert_called_once()
         assert any(c.name == "dead_code" for c in result.checks)
@@ -805,9 +858,13 @@ class TestCheckDeadCode:
             patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
             patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
             patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
-            patch("kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)),
+            patch(
+                "kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)
+            ),
         ):
-            result = run_mechanical_verification(tmp_path, tmp_path / "prd.json", "main", None, config)
+            result = run_mechanical_verification(
+                tmp_path, tmp_path / "prd.json", "main", None, config
+            )
 
         assert not any(c.name == "dead_code" for c in result.checks)
 
@@ -828,36 +885,61 @@ class TestRunMechanicalVerificationWithoutPrd:
 
     def test_run_mechanical_verification_without_prd(self, tmp_path: Path) -> None:
         prd = tmp_path / "prd.json"
-        prd.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [
+        prd.write_text(
+            json.dumps(
                 {
-                    "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                    "priority": 1, "passes": True, "notes": "",
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
                 }
-            ],
-        }))
+            )
+        )
         fixtures = FixturesConfig(enabled=True)
 
         with_prd = run_mechanical_verification(
-            tmp_path, prd, "main", None, self._config(), fixtures_config=fixtures,
+            tmp_path,
+            prd,
+            "main",
+            None,
+            self._config(),
+            fixtures_config=fixtures,
         )
         without_prd = run_mechanical_verification(
-            tmp_path, None, "main", None, self._config(), fixtures_config=fixtures,
+            tmp_path,
+            None,
+            "main",
+            None,
+            self._config(),
+            fixtures_config=fixtures,
         )
 
         # The Path call keeps its full list, PRD-dependent checks included.
         assert [c.name for c in with_prd.checks] == [
-            "prd_stories", "test_suite", "typecheck", "linter", "fixtures",
+            "prd_stories",
+            "test_suite",
+            "typecheck",
+            "linter",
+            "fixtures",
         ]
         # None drops exactly prd_stories and fixtures; nothing else moves.
         assert [c.name for c in without_prd.checks] == [
-            "test_suite", "typecheck", "linter",
+            "test_suite",
+            "typecheck",
+            "linter",
         ]
         assert without_prd.passed is True
 
     def test_without_prd_self_critique_needs_an_explicit_progress_path(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """No PRD means no sibling log to derive: the check is skipped,
         unless [verify] progress_file_path names the log explicitly."""
@@ -892,7 +974,8 @@ class TestReadOnlyVerification:
         return f"/usr/bin/{name}" if name in ("ruff", "vulture") else None
 
     def test_dead_code_read_only_never_fixes_stages_or_commits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         import subprocess as sp
 
@@ -925,7 +1008,8 @@ class TestReadOnlyVerification:
         assert "3 auto-removable, not removed" in result.message
 
     def test_dead_code_default_still_fixes_and_commits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The factory path is untouched: no existing caller passes the flag."""
         import subprocess as sp
@@ -936,7 +1020,10 @@ class TestReadOnlyVerification:
             calls.append(cmd)
             if "ruff check --fix" in cmd:
                 return sp.CompletedProcess(
-                    cmd, 0, "Found 3 errors (2 fixed, 1 remaining).", "",
+                    cmd,
+                    0,
+                    "Found 3 errors (2 fixed, 1 remaining).",
+                    "",
                 )
             return sp.CompletedProcess(cmd, 0, "", "")
 
@@ -953,7 +1040,8 @@ class TestReadOnlyVerification:
         assert "auto-fixed 2" in result.message
 
     def test_mutation_read_only_skips_without_running_mutmut(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """mutmut works by rewriting the source it mutates: there is no
         read-only way to run it, so the check is skipped and says so."""
@@ -970,7 +1058,8 @@ class TestReadOnlyVerification:
         assert "read-only" in result.message
 
     def test_bad_patterns_writes_no_bytecode_beside_the_source(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
         the file it compiles; scanning must not leave that behind."""
@@ -993,29 +1082,44 @@ class TestReadOnlyVerification:
 
     @staticmethod
     def _forwarded_read_only(
-        tmp_path: Path, **kwargs: bool,
+        tmp_path: Path,
+        **kwargs: bool,
     ) -> tuple[bool, bool]:
         """``(dead_code, mutation)`` read_only as actually forwarded."""
         config = VerifyConfig(dead_code_cleanup=True, mutation_testing=True)
         with ExitStack() as stack:
             for name in (
-                "check_test_suite", "check_typecheck", "check_linter",
-                "check_diff_scope", "check_bad_patterns",
+                "check_test_suite",
+                "check_typecheck",
+                "check_linter",
+                "check_diff_scope",
+                "check_bad_patterns",
             ):
-                stack.enter_context(patch(
-                    f"kstrl.verify.{name}",
-                    return_value=CheckResult(name.removeprefix("check_"), True),
-                ))
-            dc = stack.enter_context(patch(
-                "kstrl.verify.check_dead_code",
-                return_value=CheckResult("dead_code", True),
-            ))
-            ms = stack.enter_context(patch(
-                "kstrl.verify.check_mutation_score",
-                return_value=CheckResult("mutation_testing", True),
-            ))
+                stack.enter_context(
+                    patch(
+                        f"kstrl.verify.{name}",
+                        return_value=CheckResult(name.removeprefix("check_"), True),
+                    )
+                )
+            dc = stack.enter_context(
+                patch(
+                    "kstrl.verify.check_dead_code",
+                    return_value=CheckResult("dead_code", True),
+                )
+            )
+            ms = stack.enter_context(
+                patch(
+                    "kstrl.verify.check_mutation_score",
+                    return_value=CheckResult("mutation_testing", True),
+                )
+            )
             run_mechanical_verification(
-                tmp_path, None, "main", None, config, **kwargs,
+                tmp_path,
+                None,
+                "main",
+                None,
+                config,
+                **kwargs,
             )
             return (
                 bool(dc.call_args.kwargs["read_only"]),

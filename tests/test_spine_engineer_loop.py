@@ -37,7 +37,8 @@ PROMPT_REL = "scripts/kstrl/prompt.md"
 
 class TestEngineerLoopPlumbing:
     def test_run_component_end_to_end_with_fake_agent_binary(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
@@ -51,7 +52,8 @@ class TestEngineerLoopPlumbing:
         cap_dir.mkdir()
         agent_bin = tmp_path / "bin" / "fake-agent"
         agent_bin.parent.mkdir()
-        agent_bin.write_text(textwrap.dedent(f"""\
+        agent_bin.write_text(
+            textwrap.dedent(f"""\
             #!/bin/bash
             cat > '{cap_dir}/prompt.txt'
             pwd > '{cap_dir}/cwd.txt'
@@ -59,7 +61,8 @@ class TestEngineerLoopPlumbing:
             git add result.txt
             git commit -q -m 'engineer output'
             echo '<promise>COMPLETE</promise>'
-        """))
+        """)
+        )
         agent_bin.chmod(0o755)
 
         result = _run_component(
@@ -72,7 +75,7 @@ class TestEngineerLoopPlumbing:
             None,  # model
             None,  # reasoning
             None,  # agent_type
-            0.0,   # sleep_seconds
+            0.0,  # sleep_seconds
         )
 
         assert result.success is True
@@ -82,12 +85,8 @@ class TestEngineerLoopPlumbing:
 
         # PRD copy present, byte-identical to the root's per-component
         # PRD; prompt copy present likewise.
-        assert (worktree / PRD_REL).read_text() == (
-            (root / PRD_REL).read_text()
-        )
-        assert (worktree / PROMPT_REL).read_text() == (
-            (root / PROMPT_REL).read_text()
-        )
+        assert (worktree / PRD_REL).read_text() == ((root / PRD_REL).read_text())
+        assert (worktree / PROMPT_REL).read_text() == ((root / PROMPT_REL).read_text())
 
         # Worktree in: the agent subprocess really ran inside the
         # provisioned worktree, on the component branch.
@@ -105,7 +104,5 @@ class TestEngineerLoopPlumbing:
 
         # Result out: the engineer's commit is on the component branch.
         assert (worktree / "result.txt").read_text() == "implemented\n"
-        assert git("log", "-1", "--format=%s", cwd=worktree) == (
-            "engineer output"
-        )
+        assert git("log", "-1", "--format=%s", cwd=worktree) == ("engineer output")
         assert git("status", "--porcelain", cwd=worktree) == ""

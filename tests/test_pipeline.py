@@ -60,14 +60,20 @@ class _ChoiceUI(PlainUI):
         return True
 
     def choose(
-        self, header: str, options: list[str], default: int = 0,
+        self,
+        header: str,
+        options: list[str],
+        default: int = 0,
     ) -> int:
         return self._choice
 
 
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
     return Component(
-        comp_id, comp_id.title(), "Desc", deps or [],
+        comp_id,
+        comp_id.title(),
+        "Desc",
+        deps or [],
         f"scripts/kstrl/feature/{comp_id}/prd.json",
         f"kstrl/factory/{comp_id}",
     )
@@ -99,9 +105,14 @@ def _base_config(root: Path) -> KstrlConfig:
 
 def _factory_config(**overrides: Any) -> FactoryConfig:
     defaults: dict[str, Any] = dict(
-        max_parallel=1, max_retries=1, retry_delay=0,
-        create_prs=False, use_worktrees=False, review_mode="skip",
-        verify_config=VerifyConfig(), fixtures_config=FixturesConfig(),
+        max_parallel=1,
+        max_retries=1,
+        retry_delay=0,
+        create_prs=False,
+        use_worktrees=False,
+        review_mode="skip",
+        verify_config=VerifyConfig(),
+        fixtures_config=FixturesConfig(),
     )
     defaults.update(overrides)
     return FactoryConfig(**defaults)
@@ -109,13 +120,19 @@ def _factory_config(**overrides: Any) -> FactoryConfig:
 
 def _selection(phase: str) -> AdversarialAgentSelection:
     return AdversarialAgentSelection(
-        phase=phase, agent_cmd=None, agent_type=None, model=None,
-        reasoning=None, source="explicit", identity=f"test-{phase}",
+        phase=phase,
+        agent_cmd=None,
+        agent_type=None,
+        model=None,
+        reasoning=None,
+        source="explicit",
+        identity=f"test-{phase}",
     )
 
 
 def _recording_hooks(
-    calls: list[str], **overrides: Any,
+    calls: list[str],
+    **overrides: Any,
 ) -> PipelineHooks:
     """Hooks whose stubs append their name to ``calls`` when invoked."""
 
@@ -123,25 +140,31 @@ def _recording_hooks(
         def _f(*args: Any, **kwargs: Any) -> Any:
             calls.append(name)
             return ret
+
         return _f
 
     defaults: dict[str, Any] = dict(
         run_mechanical_verification=_rec(
-            "verify", VerificationResult(passed=True, checks=[]),
+            "verify",
+            VerificationResult(passed=True, checks=[]),
         ),
         run_review=_rec("review", ReviewResult(passed=True, mode="advisory")),
         run_chunked_review=_rec(
-            "chunked_review", ReviewResult(passed=True, mode="hard"),
+            "chunked_review",
+            ReviewResult(passed=True, mode="hard"),
         ),
         run_security_review=_rec(
-            "security", SecurityResult(passed=True, mode="advisory"),
+            "security",
+            SecurityResult(passed=True, mode="advisory"),
         ),
         run_chunked_security_review=_rec(
-            "chunked_security", SecurityResult(passed=True, mode="hard"),
+            "chunked_security",
+            SecurityResult(passed=True, mode="hard"),
         ),
         distill_facts=_rec("distill", (1, "1 fact written")),
         measure_fact_utilization=_rec(
-            "utilization", {"injected": 0, "referenced": 0},
+            "utilization",
+            {"injected": 0, "referenced": 0},
         ),
         cleanup_worktree=_rec("cleanup_worktree", None),
     )
@@ -160,9 +183,14 @@ def _make_pipeline(
     calls: list[str] | None = None,
     hooks_overrides: dict[str, Any] | None = None,
 ) -> tuple[ComponentPipeline, Manifest, FactoryResult, list[str]]:
-    comps = components if components is not None else [
-        _component("comp-a"), _component("comp-b", deps=["comp-a"]),
-    ]
+    comps = (
+        components
+        if components is not None
+        else [
+            _component("comp-a"),
+            _component("comp-b", deps=["comp-a"]),
+        ]
+    )
     manifest = _make_manifest(comps)
     factory_config = config or _factory_config()
     factory_result = FactoryResult()
@@ -182,7 +210,10 @@ def _make_pipeline(
         ),
         journal_path=tmp_path / "progress.jsonl",
         notify=NotifyHooks(
-            NotifyConfig(), run_id="run-test", project="test", warn=ui.warn,
+            NotifyConfig(),
+            run_id="run-test",
+            project="test",
+            warn=ui.warn,
         ),
         review_selection=_selection("review"),
         security_selection=security_selection,
@@ -199,25 +230,34 @@ def _make_pipeline(
 
 def _raise(exc: Exception) -> Any:
     """A hook stub that raises, for the non-fatal error paths."""
+
     def _f(*args: Any, **kwargs: Any) -> Any:
         raise exc
+
     return _f
 
 
 def _success(comp_id: str, usage: UsageTotals | None = None) -> ComponentResult:
     return ComponentResult(
-        comp_id, success=True, iterations=2, duration_seconds=1.0,
+        comp_id,
+        success=True,
+        iterations=2,
+        duration_seconds=1.0,
         usage=usage,
     )
 
 
 def _usage(total: int) -> UsageTotals:
     totals = UsageTotals()
-    totals.add_record(UsageRecord(
-        input_tokens=total // 2, output_tokens=total - total // 2,
-        total_tokens=total, duration_seconds=1.0,
-        source="claude-stream-json",
-    ))
+    totals.add_record(
+        UsageRecord(
+            input_tokens=total // 2,
+            output_tokens=total - total // 2,
+            total_tokens=total,
+            duration_seconds=1.0,
+            source="claude-stream-json",
+        )
+    )
     return totals
 
 
@@ -231,10 +271,12 @@ def _no_real_diff(monkeypatch: pytest.MonkeyPatch) -> None:
     the agent factory are stubbed at their source modules (the same
     seams the factory-level tests use)."""
     monkeypatch.setattr(
-        "kstrl.git.get_diff_content", lambda *a, **k: "diff --git a b\n",
+        "kstrl.git.get_diff_content",
+        lambda *a, **k: "diff --git a b\n",
     )
     monkeypatch.setattr(
-        "kstrl.agents.get_agent", lambda *a, **k: object(),
+        "kstrl.agents.get_agent",
+        lambda *a, **k: object(),
     )
 
 
@@ -244,15 +286,22 @@ class TestEngineerTransitions:
         assert pipeline.process_result("ghost", _success("ghost")) is None
 
     def test_engineer_failure_retries_with_context(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, result, _ = _make_pipeline(tmp_path)
         comp = manifest.get_component("comp-a")
         assert comp is not None
         pipeline.begin_attempt(comp)
-        outcome = pipeline.process_result("comp-a", ComponentResult(
-            "comp-a", success=False, iterations=3, error="Did not complete",
-        ))
+        outcome = pipeline.process_result(
+            "comp-a",
+            ComponentResult(
+                "comp-a",
+                success=False,
+                iterations=3,
+                error="Did not complete",
+            ),
+        )
         assert outcome is not None
         assert outcome.transition == Transition.RETRYING
         assert comp.status == ComponentStatus.PENDING.value
@@ -263,23 +312,35 @@ class TestEngineerTransitions:
         assert result.failed == []
 
     def test_retry_exhaustion_fails_and_cascade_skips(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=_factory_config(max_retries=1),
+            tmp_path,
+            config=_factory_config(max_retries=1),
         )
         comp = manifest.get_component("comp-a")
         dep = manifest.get_component("comp-b")
         assert comp is not None and dep is not None
         pipeline.begin_attempt(comp)
-        first = pipeline.process_result("comp-a", ComponentResult(
-            "comp-a", success=False, error="boom",
-        ))
+        first = pipeline.process_result(
+            "comp-a",
+            ComponentResult(
+                "comp-a",
+                success=False,
+                error="boom",
+            ),
+        )
         assert first is not None and first.transition == Transition.RETRYING
         pipeline.begin_attempt(comp)
-        second = pipeline.process_result("comp-a", ComponentResult(
-            "comp-a", success=False, error="boom again",
-        ))
+        second = pipeline.process_result(
+            "comp-a",
+            ComponentResult(
+                "comp-a",
+                success=False,
+                error="boom again",
+            ),
+        )
         assert second is not None and second.transition == Transition.FAILED
         assert comp.status == ComponentStatus.FAILED.value
         assert dep.status == ComponentStatus.SKIPPED.value
@@ -287,51 +348,57 @@ class TestEngineerTransitions:
         assert result.skipped == ["comp-b"]
 
     def test_timeout_failure_marks_worktree_hygiene(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, _ = _make_pipeline(
-            tmp_path, config=_factory_config(use_worktrees=True),
+            tmp_path,
+            config=_factory_config(use_worktrees=True),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
         pipeline.begin_attempt(comp)
-        outcome = pipeline.process_result("comp-a", ComponentResult(
-            "comp-a", success=False,
-            error="component timeout: exceeded 5.0s wall clock",
-        ))
+        outcome = pipeline.process_result(
+            "comp-a",
+            ComponentResult(
+                "comp-a",
+                success=False,
+                error="component timeout: exceeded 5.0s wall clock",
+            ),
+        )
         assert outcome is not None
         assert outcome.transition == Transition.RETRYING
         assert "comp-a" in pipeline.fresh_base_retry_ids
         assert "worktree recreated from base" in comp.error
 
     def test_token_budget_at_engineer_checkpoint_fails(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=_factory_config(max_total_tokens=100),
+            tmp_path,
+            config=_factory_config(max_total_tokens=100),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
         pipeline.begin_attempt(comp)
         outcome = pipeline.process_result(
-            "comp-a", _success("comp-a", usage=_usage(150)),
+            "comp-a",
+            _success("comp-a", usage=_usage(150)),
         )
         assert outcome is not None
         assert outcome.transition == Transition.FAILED
         assert comp.status == ComponentStatus.FAILED.value
         assert comp.failed_check == "token_budget"
         # Loud, typed, journaled: the synthetic finding and the event.
-        assert any(
-            f.is_infrastructure_error for f in comp.findings
-        )
-        assert any(
-            e["event"] == "budget_exceeded" for e in _events(tmp_path)
-        )
+        assert any(f.is_infrastructure_error for f in comp.findings)
+        assert any(e["event"] == "budget_exceeded" for e in _events(tmp_path))
         assert result.failed == ["comp-a"]
 
     def test_scheduling_gate_budget_failure(self, tmp_path: Path) -> None:
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=_factory_config(max_total_tokens=10),
+            tmp_path,
+            config=_factory_config(max_total_tokens=10),
         )
         pipeline.run_usage.merge(_usage(50))
         comp = manifest.get_component("comp-a")
@@ -361,9 +428,12 @@ class TestVerifyAndDiffTransitions:
         assert calls == ["verify"]
 
     def test_verify_failure_retries(self, tmp_path: Path) -> None:
-        failing = VerificationResult(passed=False, checks=[
-            CheckResult(name="tests", passed=False, message="1 failed"),
-        ])
+        failing = VerificationResult(
+            passed=False,
+            checks=[
+                CheckResult(name="tests", passed=False, message="1 failed"),
+            ],
+        )
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             hooks_overrides={
@@ -382,10 +452,12 @@ class TestVerifyAndDiffTransitions:
         assert "tests" in pipeline.component_contexts["comp-a"]
 
     def test_skip_verification_records_skip_and_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, calls = _make_pipeline(
-            tmp_path, config=_factory_config(skip_verification=True),
+            tmp_path,
+            config=_factory_config(skip_verification=True),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -399,7 +471,9 @@ class TestVerifyAndDiffTransitions:
         assert any(f.is_phase_skip for f in comp.findings)
 
     def test_diff_fetch_failure_fails_closed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.git import GitDiffError
 
@@ -418,22 +492,27 @@ class TestVerifyAndDiffTransitions:
         assert comp.failed_check == "git_diff"
 
     def test_unsplittable_hard_mode_diff_retries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.git import DiffUnsplittableError
 
         monkeypatch.setattr(
-            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
+            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT",
+            10,
         )
 
         def _unsplittable(*args: Any, **kwargs: Any) -> list[str]:
             raise DiffUnsplittableError("one file exceeds the cap")
 
         monkeypatch.setattr(
-            "kstrl.git.split_diff_for_prompt", _unsplittable,
+            "kstrl.git.split_diff_for_prompt",
+            _unsplittable,
         )
         pipeline, manifest, _, _ = _make_pipeline(
-            tmp_path, config=_factory_config(review_mode="hard"),
+            tmp_path,
+            config=_factory_config(review_mode="hard"),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -458,7 +537,8 @@ class TestReviewAndSecurityTransitions:
             config=_factory_config(review_mode="hard"),
             hooks_overrides={
                 "run_review": lambda *a, **k: ReviewResult(
-                    passed=False, mode="hard",
+                    passed=False,
+                    mode="hard",
                 ),
             },
         )
@@ -473,12 +553,14 @@ class TestReviewAndSecurityTransitions:
         assert comp.review_passed is False
 
     def test_review_budget_exhausted_skips_but_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, calls = _make_pipeline(
             tmp_path,
             config=_factory_config(
-                review_mode="advisory", max_adversarial_calls=1,
+                review_mode="advisory",
+                max_adversarial_calls=1,
             ),
         )
         pipeline.adversarial_budget_consume()
@@ -494,10 +576,13 @@ class TestReviewAndSecurityTransitions:
         assert any(f.is_phase_skip for f in comp.findings)
 
     def test_chunk_budget_insufficient_fails_without_retry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT", 10,
+            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT",
+            10,
         )
         monkeypatch.setattr(
             "kstrl.git.split_diff_for_prompt",
@@ -506,7 +591,9 @@ class TestReviewAndSecurityTransitions:
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(
-                review_mode="hard", max_adversarial_calls=1, max_retries=3,
+                review_mode="hard",
+                max_adversarial_calls=1,
+                max_retries=3,
             ),
         )
         comp = manifest.get_component("comp-a")
@@ -533,7 +620,8 @@ class TestReviewAndSecurityTransitions:
             security_selection=_selection("security"),
             hooks_overrides={
                 "run_security_review": lambda *a, **k: SecurityResult(
-                    passed=False, mode="hard",
+                    passed=False,
+                    mode="hard",
                 ),
             },
         )
@@ -547,7 +635,8 @@ class TestReviewAndSecurityTransitions:
         assert comp.failed_check == "findings"
 
     def test_review_crash_in_advisory_mode_degrades_and_completes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         def _crash(*args: Any, **kwargs: Any) -> ReviewResult:
             raise RuntimeError("reviewer exploded")
@@ -575,7 +664,8 @@ class TestCheckpointAndPrTransitions:
         return _factory_config(create_prs=True, **overrides)
 
     def test_checkpoint_reject_fails_component(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, result, _ = _make_pipeline(
             tmp_path,
@@ -613,24 +703,28 @@ class TestCheckpointAndPrTransitions:
         assert comp.retries == 1
         assert comp.status == ComponentStatus.PENDING.value
         assert comp.failed_check == "hitl_retry"
-        assert "Human reviewer requested changes" in (
-            pipeline.component_contexts["comp-a"]
-        )
+        assert "Human reviewer requested changes" in (pipeline.component_contexts["comp-a"])
 
     def test_merge_pending_parks_component(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
-                pushed=True, pr_number=7, pr_url="https://x/pull/7",
-                merged=False, merge_pending=True,
+                pushed=True,
+                pr_number=7,
+                pr_url="https://x/pull/7",
+                merged=False,
+                merge_pending=True,
                 error="merge not confirmed",
             ),
         )
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(),
+            tmp_path,
+            config=self._pr_config(),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -646,22 +740,25 @@ class TestCheckpointAndPrTransitions:
         assert result.completed == []
         assert result.failed == []
         assert result.pr_urls == ["https://x/pull/7"]
-        assert any(
-            e["event"] == "merge_pending" for e in _events(tmp_path)
-        )
+        assert any(e["event"] == "merge_pending" for e in _events(tmp_path))
 
     def test_pr_flow_failure_fails_and_cascade_skips(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
-                pushed=False, merged=False, error="push rejected",
+                pushed=False,
+                merged=False,
+                error="push rejected",
             ),
         )
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(),
+            tmp_path,
+            config=self._pr_config(),
         )
         comp = manifest.get_component("comp-a")
         dep = manifest.get_component("comp-b")
@@ -678,18 +775,23 @@ class TestCheckpointAndPrTransitions:
         assert result.failed == ["comp-a"]
 
     def test_confirmed_merge_completes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.push_create_and_merge_pr",
             lambda *a, **k: PrOutcome(
-                pushed=True, pr_number=8, pr_url="https://x/pull/8",
+                pushed=True,
+                pr_number=8,
+                pr_url="https://x/pull/8",
                 merged=True,
             ),
         )
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(),
+            tmp_path,
+            config=self._pr_config(),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -704,11 +806,14 @@ class TestCheckpointAndPrTransitions:
         assert result.pr_urls == ["https://x/pull/8"]
 
     def test_no_gh_completes_without_pr(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: False)
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(),
+            tmp_path,
+            config=self._pr_config(),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -731,13 +836,18 @@ class TestMergeConflictDoctrine:
 
     def _conflict_outcome(self) -> PrOutcome:
         return PrOutcome(
-            pushed=True, pr_number=7, pr_url="https://x/pull/7",
-            merged=False, merge_conflict=True,
+            pushed=True,
+            pr_number=7,
+            pr_url="https://x/pull/7",
+            merged=False,
+            merge_conflict=True,
             error="PR #7 conflicts with main",
         )
 
     def test_conflict_routes_to_fresh_base_retry(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
@@ -752,7 +862,8 @@ class TestMergeConflictDoctrine:
 
         monkeypatch.setattr("kstrl.pr.close_pr_for_rerun", fake_close)
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(max_retries=1, use_worktrees=True),
+            tmp_path,
+            config=self._pr_config(max_retries=1, use_worktrees=True),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -783,7 +894,9 @@ class TestMergeConflictDoctrine:
         assert "freshly merged base" in pipeline.component_contexts["comp-a"]
 
     def test_conflict_with_retries_exhausted_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
@@ -791,10 +904,12 @@ class TestMergeConflictDoctrine:
             lambda *a, **k: self._conflict_outcome(),
         )
         monkeypatch.setattr(
-            "kstrl.pr.close_pr_for_rerun", lambda *a: None,
+            "kstrl.pr.close_pr_for_rerun",
+            lambda *a: None,
         )
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(max_retries=0),
+            tmp_path,
+            config=self._pr_config(max_retries=0),
         )
         comp = manifest.get_component("comp-a")
         dep = manifest.get_component("comp-b")
@@ -809,7 +924,9 @@ class TestMergeConflictDoctrine:
         assert result.failed == ["comp-a"]
 
     def test_conflict_close_failure_is_nonfatal(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
@@ -821,7 +938,8 @@ class TestMergeConflictDoctrine:
             lambda *a: "gh pr close #7 failed",
         )
         pipeline, manifest, _, _ = _make_pipeline(
-            tmp_path, config=self._pr_config(max_retries=1),
+            tmp_path,
+            config=self._pr_config(max_retries=1),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -834,11 +952,16 @@ class TestMergeConflictDoctrine:
 
 
 class TestMergePendingRepoll:
-    def _parked(self, tmp_path: Path) -> tuple[
-        ComponentPipeline, Manifest, FactoryResult,
+    def _parked(
+        self, tmp_path: Path
+    ) -> tuple[
+        ComponentPipeline,
+        Manifest,
+        FactoryResult,
     ]:
         pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path, config=_factory_config(create_prs=True),
+            tmp_path,
+            config=_factory_config(create_prs=True),
         )
         comp = manifest.get_component("comp-a")
         assert comp is not None
@@ -851,20 +974,26 @@ class TestMergePendingRepoll:
         """The merge_gate item the park itself would have raised."""
         box = Inbox(tmp_path, InboxConfig())
         box.add(
-            ItemKind.MERGE_GATE, "comp-a merge unconfirmed",
-            component="comp-a", dedupe_key="merge:comp-a",
+            ItemKind.MERGE_GATE,
+            "comp-a merge unconfirmed",
+            component="comp-a",
+            dedupe_key="merge:comp-a",
         )
         return box
 
     def test_repoll_merged_completes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: "merged",
+            "kstrl.pr.wait_for_merge",
+            lambda *a, **k: "merged",
         )
         monkeypatch.setattr(
-            "kstrl.git.fetch_base_branch", lambda *a, **k: None,
+            "kstrl.git.fetch_base_branch",
+            lambda *a, **k: None,
         )
         pipeline, manifest, result = self._parked(tmp_path)
         box = self._seed_merge_gate(tmp_path)
@@ -878,11 +1007,14 @@ class TestMergePendingRepoll:
         assert box.open_items() == []
 
     def test_repoll_closed_fails_and_cascade_skips(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: "closed",
+            "kstrl.pr.wait_for_merge",
+            lambda *a, **k: "closed",
         )
         pipeline, manifest, result = self._parked(tmp_path)
         box = self._seed_merge_gate(tmp_path)
@@ -900,11 +1032,14 @@ class TestMergePendingRepoll:
         assert [str(i.kind) for i in box.open_items()] == ["halted_run"]
 
     def test_repoll_unconfirmed_stays_parked(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
-            "kstrl.pr.wait_for_merge", lambda *a, **k: "unknown",
+            "kstrl.pr.wait_for_merge",
+            lambda *a, **k: "unknown",
         )
         pipeline, manifest, result = self._parked(tmp_path)
         pipeline.repoll_merge_pending()
@@ -922,8 +1057,10 @@ class TestSchedulerFacingTransitions:
         assert comp is not None
         pipeline.begin_attempt(comp)
         transition = pipeline.fail(
-            comp, "worktree add failed",
-            phase="provisioning", check="worktree_setup",
+            comp,
+            "worktree add failed",
+            phase="provisioning",
+            check="worktree_setup",
         )
         assert transition == Transition.FAILED
         assert comp.failed_phase == "provisioning"
@@ -954,7 +1091,9 @@ class TestSchedulerFacingTransitions:
 
 class TestDistillPlacement:
     def test_distiller_runs_pre_pr(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The R7.3 placement decision, as a test: distillation happens
         after the review gates and BEFORE the PR step, so the distilled
@@ -965,7 +1104,9 @@ class TestDistillPlacement:
         def _pr(*args: Any, **kwargs: Any) -> PrOutcome:
             calls.append("pr")
             return PrOutcome(
-                pushed=True, pr_number=9, pr_url="https://x/pull/9",
+                pushed=True,
+                pr_number=9,
+                pr_url="https://x/pull/9",
                 merged=True,
             )
 
@@ -974,7 +1115,8 @@ class TestDistillPlacement:
             tmp_path,
             config=_factory_config(create_prs=True),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             calls=calls,
         )
@@ -989,15 +1131,18 @@ class TestDistillPlacement:
         assert calls.index("distill") < calls.index("pr")
 
     def test_distill_skipped_on_exhausted_adversarial_budget(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, calls = _make_pipeline(
             tmp_path,
             config=_factory_config(
-                review_mode="skip", max_adversarial_calls=1,
+                review_mode="skip",
+                max_adversarial_calls=1,
             ),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
         )
         pipeline.adversarial_budget_consume()
@@ -1027,22 +1172,36 @@ class TestFactUtilizationUsesTheRealMatcher:
 
     def _prefix(self) -> str:
         from kstrl.knowledge import _format_section
-        return _format_section("Dependencies", [Fact(
-            id="fact-001", component_id="comp-x", created_iter=1,
-            created_run_id="factory-20260101-120000-aaaaaa",
-            scope="contract", evidence=["src/x.py:1"],
-            confidence="review_passed", claim=self.CLAIM,
-        )])
+
+        return _format_section(
+            "Dependencies",
+            [
+                Fact(
+                    id="fact-001",
+                    component_id="comp-x",
+                    created_iter=1,
+                    created_run_id="factory-20260101-120000-aaaaaa",
+                    scope="contract",
+                    evidence=["src/x.py:1"],
+                    confidence="review_passed",
+                    claim=self.CLAIM,
+                )
+            ],
+        )
 
     def _run_with_diff(
-        self, tmp_path: Path, diff: str, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        diff: str,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> FactUtilization:
         monkeypatch.setattr("kstrl.git.get_diff_content", lambda *a, **k: diff)
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             # The real function, not a stub.
             hooks_overrides={
@@ -1057,23 +1216,26 @@ class TestFactUtilizationUsesTheRealMatcher:
         return pipeline.fact_utilization["comp-a"]
 
     def _diff(self, body: str) -> str:
-        return (
-            "diff --git a/w.py b/w.py\n--- a/w.py\n+++ b/w.py\n"
-            "@@ -1,3 +1,3 @@\n" + body
-        )
+        return "diff --git a/w.py b/w.py\n--- a/w.py\n+++ b/w.py\n@@ -1,3 +1,3 @@\n" + body
 
     def test_added_line_is_referenced_end_to_end(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         util = self._run_with_diff(
-            tmp_path, self._diff(f"+# {self.CLAIM}\n"), monkeypatch,
+            tmp_path,
+            self._diff(f"+# {self.CLAIM}\n"),
+            monkeypatch,
         )
         assert util.measured is True
         assert util.injected == 1
         assert util.referenced == 1
 
     def test_deleted_line_is_not_referenced_end_to_end(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The regression this seam let through: deleting the code that
         expressed a fact must not satisfy the utilization gate."""
@@ -1087,7 +1249,9 @@ class TestFactUtilizationUsesTheRealMatcher:
         assert util.referenced == 0
 
     def test_context_line_is_not_referenced_end_to_end(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         util = self._run_with_diff(
             tmp_path,
@@ -1121,7 +1285,8 @@ class TestFactUtilizationRecording:
             tmp_path,
             config=config or _factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides=overrides,
         )
@@ -1140,13 +1305,11 @@ class TestFactUtilizationRecording:
     def _util_events(
         captured: list[Event],
     ) -> list[ev.FactUtilizationMeasured]:
-        return [
-            e for e in captured
-            if isinstance(e, ev.FactUtilizationMeasured)
-        ]
+        return [e for e in captured if isinstance(e, ev.FactUtilizationMeasured)]
 
     def test_utilization_event_carries_the_measurement(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, outcome, captured, _ = self._run(
             tmp_path,
@@ -1158,11 +1321,14 @@ class TestFactUtilizationRecording:
         assert events[0].injected == 4
         assert events[0].referenced == 2
         assert outcome.distill.utilization == FactUtilization(
-            measured=True, injected=4, referenced=2,
+            measured=True,
+            injected=4,
+            referenced=2,
         )
 
     def test_distill_result_does_not_duplicate_the_measurement(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """One measurement, one event. Carrying it on DistillResult too
         would let a consumer folding both double count."""
@@ -1173,31 +1339,36 @@ class TestFactUtilizationRecording:
         distills = [e for e in captured if isinstance(e, ev.DistillResult)]
         assert len(distills) == 1
         assert not any(
-            f.name.startswith(("facts_injected", "facts_referenced",
-                               "utilization"))
+            f.name.startswith(("facts_injected", "facts_referenced", "utilization"))
             for f in dataclasses.fields(distills[0])
         )
 
     def test_measured_against_the_injected_prefix(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The prefix handed to measure_fact_utilization is the one the
         factory recorded at submit time, verbatim."""
         seen: list[str] = []
 
         def measure(
-            prefix: str, *artifacts: str, **kwargs: Any,
+            prefix: str,
+            *artifacts: str,
+            **kwargs: Any,
         ) -> dict[str, int]:
             seen.append(prefix)
             return {"injected": 1, "referenced": 1}
 
         self._run(
-            tmp_path, prefix="FACT: the sentinel prefix", measure=measure,
+            tmp_path,
+            prefix="FACT: the sentinel prefix",
+            measure=measure,
         )
         assert seen == ["FACT: the sentinel prefix"]
 
     def test_prefix_is_not_rebuilt_after_distillation(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The regression pin for the bug #191 actually fixed.
 
@@ -1223,23 +1394,29 @@ class TestFactUtilizationRecording:
         seen: list[str] = []
 
         def measure(
-            prefix: str, *artifacts: str, **kwargs: Any,
+            prefix: str,
+            *artifacts: str,
+            **kwargs: Any,
         ) -> dict[str, int]:
             seen.append(prefix)
             return {"injected": 1, "referenced": 1}
 
         _, outcome, captured, _ = self._run(
-            tmp_path, prefix="FACT: only what the engineer saw",
-            measure=measure, distill=distill,
+            tmp_path,
+            prefix="FACT: only what the engineer saw",
+            measure=measure,
+            distill=distill,
         )
         assert seen == ["FACT: only what the engineer saw"]
         assert self._util_events(captured)[0].injected == 1
 
     def test_unmeasured_when_no_prefix_recorded(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _, outcome, captured, calls = self._run(
-            tmp_path, record_prefix=False,
+            tmp_path,
+            record_prefix=False,
         )
         util = outcome.distill.utilization
         assert util.measured is False
@@ -1268,17 +1445,20 @@ class TestFactUtilizationRecording:
         assert "utilization" not in calls
 
     def test_measurement_failure_warns_and_is_unmeasured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Was a bare `except: pass`. A broken recorder must not be
         indistinguishable from an engineer that referenced nothing."""
         buf = io.StringIO()
         ui = PlainUI(no_color=True, file=buf)
         pipeline, manifest, _, _ = _make_pipeline(
-            tmp_path, ui=ui,
+            tmp_path,
+            ui=ui,
             config=_factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides={
                 "measure_fact_utilization": _raise(RuntimeError("boom")),
@@ -1296,7 +1476,8 @@ class TestFactUtilizationRecording:
         assert "utilization measurement failed" in buf.getvalue()
 
     def test_measured_zero_is_distinct_from_unmeasured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Facts injected and demonstrably unused is a real negative
         result; being unable to measure is no result at all."""
@@ -1308,13 +1489,11 @@ class TestFactUtilizationRecording:
         assert measured_zero.distill.utilization.measured is True
         assert measured_zero.distill.utilization.referenced == 0
         assert unmeasured.distill.utilization.measured is False
-        assert (
-            measured_zero.distill.utilization
-            != unmeasured.distill.utilization
-        )
+        assert measured_zero.distill.utilization != unmeasured.distill.utilization
 
     def test_utilization_recorded_when_distillation_raises(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Utilization answers "did the engineer use what we gave it",
         which does not depend on the distiller succeeding."""
@@ -1323,33 +1502,34 @@ class TestFactUtilizationRecording:
             measure=lambda *a, **k: {"injected": 5, "referenced": 3},
             distill=_raise(RuntimeError("distiller down")),
         )
-        assert [
-            e for e in captured if isinstance(e, ev.DistillResult)
-        ] == []
+        assert [e for e in captured if isinstance(e, ev.DistillResult)] == []
         # ...but the utilization event still fires: it no longer rides
         # on distillation succeeding.
         assert self._util_events(captured)[0].measured is True
         assert pipeline.fact_utilization["comp-a"] == FactUtilization(
-            measured=True, injected=5, referenced=3,
+            measured=True,
+            injected=5,
+            referenced=3,
         )
 
     def test_utilization_recorded_when_distill_budget_skipped(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The metric costs zero tokens, so an exhausted LLM budget must
         not throw away evidence the run already paid for."""
         pipeline, manifest, _, calls = _make_pipeline(
             tmp_path,
             config=_factory_config(
-                review_mode="skip", max_adversarial_calls=1,
+                review_mode="skip",
+                max_adversarial_calls=1,
             ),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides={
-                "measure_fact_utilization": (
-                    lambda *a, **k: {"injected": 6, "referenced": 4}
-                ),
+                "measure_fact_utilization": (lambda *a, **k: {"injected": 6, "referenced": 4}),
             },
         )
         pipeline.adversarial_budget_consume()
@@ -1362,15 +1542,19 @@ class TestFactUtilizationRecording:
         assert outcome.distill.ran is False
         assert "distill" not in calls
         assert outcome.distill.utilization == FactUtilization(
-            measured=True, injected=6, referenced=4,
+            measured=True,
+            injected=6,
+            referenced=4,
         )
         assert pipeline.fact_utilization["comp-a"].measured is True
 
     def test_nothing_recorded_when_knowledge_disabled(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, calls = _make_pipeline(
-            tmp_path, config=_factory_config(review_mode="skip"),
+            tmp_path,
+            config=_factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(enabled=False),
         )
         comp = manifest.get_component("comp-a")
@@ -1384,9 +1568,11 @@ class TestFactUtilizationRecording:
         """single_pr's shared diff carries sibling changes, which would
         inflate `referenced` - the same reason distillation skips."""
         pipeline, manifest, _, calls = _make_pipeline(
-            tmp_path, config=_factory_config(review_mode="skip"),
+            tmp_path,
+            config=_factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
         )
         pipeline.manifest.single_pr = True
@@ -1399,7 +1585,8 @@ class TestFactUtilizationRecording:
         assert "utilization" not in calls
 
     def test_review_failed_component_is_still_measured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The sampling-bias fix. Distillation runs only after review
         and security pass, so measuring there sampled successful
@@ -1409,15 +1596,15 @@ class TestFactUtilizationRecording:
             tmp_path,
             config=_factory_config(review_mode="hard"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides={
                 "run_review": lambda *a, **k: ReviewResult(
-                    passed=False, mode="hard",
+                    passed=False,
+                    mode="hard",
                 ),
-                "measure_fact_utilization": (
-                    lambda *a, **k: {"injected": 4, "referenced": 3}
-                ),
+                "measure_fact_utilization": (lambda *a, **k: {"injected": 4, "referenced": 3}),
             },
         )
         comp = manifest.get_component("comp-a")
@@ -1430,11 +1617,14 @@ class TestFactUtilizationRecording:
         assert outcome.distill is None
         # ...and is measured anyway.
         assert pipeline.fact_utilization["comp-a"] == FactUtilization(
-            measured=True, injected=4, referenced=3,
+            measured=True,
+            injected=4,
+            referenced=3,
         )
 
     def test_security_failed_component_is_still_measured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
@@ -1444,15 +1634,15 @@ class TestFactUtilizationRecording:
             ),
             security_selection=_selection("security"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides={
                 "run_security_review": lambda *a, **k: SecurityResult(
-                    passed=False, mode="hard",
+                    passed=False,
+                    mode="hard",
                 ),
-                "measure_fact_utilization": (
-                    lambda *a, **k: {"injected": 2, "referenced": 1}
-                ),
+                "measure_fact_utilization": (lambda *a, **k: {"injected": 2, "referenced": 1}),
             },
         )
         comp = manifest.get_component("comp-a")
@@ -1466,32 +1656,37 @@ class TestFactUtilizationRecording:
         assert pipeline.fact_utilization["comp-a"].referenced == 1
 
     def _verify_failing_pipeline(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> tuple[ComponentPipeline, Manifest, list[str]]:
         pipeline, manifest, _, calls = _make_pipeline(
             tmp_path,
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
             hooks_overrides={
                 "run_mechanical_verification": (
                     lambda *a, **k: VerificationResult(
                         passed=False,
-                        checks=[CheckResult(
-                            name="test_suite", passed=False,
-                            message="boom", duration_seconds=0.1,
-                        )],
+                        checks=[
+                            CheckResult(
+                                name="test_suite",
+                                passed=False,
+                                message="boom",
+                                duration_seconds=0.1,
+                            )
+                        ],
                     )
                 ),
-                "measure_fact_utilization": (
-                    lambda *a, **k: {"injected": 5, "referenced": 2}
-                ),
+                "measure_fact_utilization": (lambda *a, **k: {"injected": 5, "referenced": 2}),
             },
         )
         return pipeline, manifest, calls
 
     def test_verify_failed_component_is_still_measured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A verification failure means the diff phase has not run yet,
         NOT that no diff exists - the engineer's change is committed and
@@ -1507,14 +1702,19 @@ class TestFactUtilizationRecording:
         assert outcome is not None
         assert outcome.transition != Transition.COMPLETED
         assert pipeline.fact_utilization["comp-a"] == FactUtilization(
-            measured=True, injected=5, referenced=2,
+            measured=True,
+            injected=5,
+            referenced=2,
         )
 
     def test_unmeasured_only_when_the_diff_fetch_actually_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`measured: false` is reserved for a real inability to
         measure, and it says so rather than going silently absent."""
+
         def _boom(*args: Any, **kwargs: Any) -> str:
             raise git.GitDiffError("git exploded")
 
@@ -1531,7 +1731,8 @@ class TestFactUtilizationRecording:
         assert "utilization" not in calls
 
     def test_the_real_matcher_is_called_with_the_diff_as_a_keyword(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Pins the call SHAPE, not just the matcher.
 
@@ -1546,7 +1747,9 @@ class TestFactUtilizationRecording:
         seen: dict[str, Any] = {}
 
         def spy(
-            prefix: str, *artifacts: str, **kwargs: Any,
+            prefix: str,
+            *artifacts: str,
+            **kwargs: Any,
         ) -> dict[str, int]:
             seen["artifacts"] = artifacts
             seen["diff"] = kwargs.get("diff")
@@ -1559,17 +1762,22 @@ class TestFactUtilizationRecording:
         assert "diff --git" not in "".join(seen["artifacts"])
 
     def test_per_tier_counts_are_carried_through(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The denominator-bias fix: the sibling tier inflates the
         overall ratio, so the core tier is recorded separately."""
         _, outcome, _, _ = self._run(
             tmp_path,
             measure=lambda *a, **k: {
-                "injected": 6, "referenced": 2,
-                "core_injected": 2, "core_referenced": 2,
-                "dependency_injected": 1, "dependency_referenced": 0,
-                "sibling_injected": 3, "sibling_referenced": 0,
+                "injected": 6,
+                "referenced": 2,
+                "core_injected": 2,
+                "core_referenced": 2,
+                "dependency_injected": 1,
+                "dependency_referenced": 0,
+                "sibling_injected": 3,
+                "sibling_referenced": 0,
             },
         )
         util = outcome.distill.utilization
@@ -1578,11 +1786,13 @@ class TestFactUtilizationRecording:
         assert (util.core_injected, util.core_referenced) == (2, 2)
         assert (util.sibling_injected, util.sibling_referenced) == (3, 0)
         assert util.to_dict()["by_tier"]["core"] == {
-            "injected": 2, "referenced": 2,
+            "injected": 2,
+            "referenced": 2,
         }
 
     def test_hook_without_tier_keys_degrades_to_no_breakdown(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """measure_fact_utilization is an injected seam; a hook that
         reports only the totals must not break the measurement."""
@@ -1596,15 +1806,18 @@ class TestFactUtilizationRecording:
         assert util.core_injected == 0
 
     def test_none_record_supersedes_a_previous_attempt(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A retry whose capture fails must not be measured against the
         previous attempt's prefix - it would score this attempt's diff
         against facts this attempt's engineer never received."""
         pipeline, manifest, _, calls = _make_pipeline(
-            tmp_path, config=_factory_config(review_mode="skip"),
+            tmp_path,
+            config=_factory_config(review_mode="skip"),
             knowledge=KnowledgeConfig(
-                enabled=True, knowledge_root=tmp_path / "knowledge",
+                enabled=True,
+                knowledge_root=tmp_path / "knowledge",
             ),
         )
         comp = manifest.get_component("comp-a")

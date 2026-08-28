@@ -31,7 +31,10 @@ class MockSecurityAgent:
         return "mock-security"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         yield from self._output.splitlines()
         if self._output.strip():
@@ -42,24 +45,26 @@ class MockSecurityAgent:
         return self._final_message
 
 
-VALID_SECURITY_OUTPUT = json.dumps({
-    "findings": [
-        {
-            "category": "injection",
-            "severity": "critical",
-            "location": "src/handler.py:42",
-            "explanation": "subprocess.run with shell=True on user input",
-            "suggestion": "Use shell=False and pass args as list",
-        },
-        {
-            "category": "hardcoded_secret",
-            "severity": "medium",
-            "location": "src/auth.py:10",
-            "explanation": "default API key string in source",
-        },
-    ],
-    "exhaustively_searched": True,
-})
+VALID_SECURITY_OUTPUT = json.dumps(
+    {
+        "findings": [
+            {
+                "category": "injection",
+                "severity": "critical",
+                "location": "src/handler.py:42",
+                "explanation": "subprocess.run with shell=True on user input",
+                "suggestion": "Use shell=False and pass args as list",
+            },
+            {
+                "category": "hardcoded_secret",
+                "severity": "medium",
+                "location": "src/auth.py:10",
+                "explanation": "default API key string in source",
+            },
+        ],
+        "exhaustively_searched": True,
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,40 +110,60 @@ class TestParseSecurityOutput:
         assert "Failed to parse" in result.overall_notes
 
     def test_invalid_category_dropped(self) -> None:
-        output = json.dumps({"findings": [{
-            "category": "made_up",
-            "severity": "high",
-            "location": "x:1",
-            "explanation": "x",
-        }]})
+        output = json.dumps(
+            {
+                "findings": [
+                    {
+                        "category": "made_up",
+                        "severity": "high",
+                        "location": "x:1",
+                        "explanation": "x",
+                    }
+                ]
+            }
+        )
         result = parse_security_output(output, "advisory")
         assert result.findings == []
 
     def test_invalid_severity_dropped(self) -> None:
-        output = json.dumps({"findings": [{
-            "category": "injection",
-            "severity": "showstopper",
-            "location": "x:1",
-            "explanation": "x",
-        }]})
+        output = json.dumps(
+            {
+                "findings": [
+                    {
+                        "category": "injection",
+                        "severity": "showstopper",
+                        "location": "x:1",
+                        "explanation": "x",
+                    }
+                ]
+            }
+        )
         result = parse_security_output(output, "advisory")
         assert result.findings == []
 
     def test_missing_explanation_dropped(self) -> None:
-        output = json.dumps({"findings": [{
-            "category": "injection",
-            "severity": "high",
-            "location": "x:1",
-            "explanation": "",
-        }]})
+        output = json.dumps(
+            {
+                "findings": [
+                    {
+                        "category": "injection",
+                        "severity": "high",
+                        "location": "x:1",
+                        "explanation": "",
+                    }
+                ]
+            }
+        )
         result = parse_security_output(output, "advisory")
         assert result.findings == []
 
     def test_empty_findings_with_exhaustive_flag(self) -> None:
-        output = json.dumps({
-            "findings": [],
-            "exhaustively_searched": True,
-        })
+        output = json.dumps(
+            {
+                "findings": [],
+                "exhaustively_searched": True,
+            }
+        )
         result = parse_security_output(output, "hard")
         assert result.findings == []
         assert result.exhaustively_searched is True
@@ -160,37 +185,51 @@ class TestPassesThreshold:
 
     def test_skip_always_passes(self) -> None:
         assert _passes_threshold(
-            [self._f("critical")], SecurityMode.SKIP.value, "high",
+            [self._f("critical")],
+            SecurityMode.SKIP.value,
+            "high",
         )
 
     def test_advisory_always_passes(self) -> None:
         assert _passes_threshold(
-            [self._f("critical")], SecurityMode.ADVISORY.value, "high",
+            [self._f("critical")],
+            SecurityMode.ADVISORY.value,
+            "high",
         )
 
     def test_hard_passes_when_below_threshold(self) -> None:
         # threshold=high; medium is below
         assert _passes_threshold(
-            [self._f("medium")], SecurityMode.HARD.value, "high",
+            [self._f("medium")],
+            SecurityMode.HARD.value,
+            "high",
         )
 
     def test_hard_fails_at_threshold(self) -> None:
         assert not _passes_threshold(
-            [self._f("high")], SecurityMode.HARD.value, "high",
+            [self._f("high")],
+            SecurityMode.HARD.value,
+            "high",
         )
 
     def test_hard_fails_above_threshold(self) -> None:
         assert not _passes_threshold(
-            [self._f("critical")], SecurityMode.HARD.value, "high",
+            [self._f("critical")],
+            SecurityMode.HARD.value,
+            "high",
         )
 
     def test_hard_with_critical_only_threshold(self) -> None:
         # threshold=critical; high is below
         assert _passes_threshold(
-            [self._f("high")], SecurityMode.HARD.value, "critical",
+            [self._f("high")],
+            SecurityMode.HARD.value,
+            "critical",
         )
         assert not _passes_threshold(
-            [self._f("critical")], SecurityMode.HARD.value, "critical",
+            [self._f("critical")],
+            SecurityMode.HARD.value,
+            "critical",
         )
 
 
@@ -202,26 +241,32 @@ class TestPassesThreshold:
 class TestRunSecurityReview:
     def _setup_repo(self, tmp_path: Path) -> Path:
         import subprocess
+
         subprocess.run(
             ["git", "init", "-q", "-b", "main", str(tmp_path)],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         (tmp_path / "stub").write_text("x")
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "stub"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         prd_path = tmp_path / "prd.json"
         prd_path.write_text('{"branchName": "test", "userStories": []}')
@@ -233,7 +278,12 @@ class TestRunSecurityReview:
         agent = MockSecurityAgent("should not be called")
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is True
         assert result.findings == []
@@ -244,7 +294,12 @@ class TestRunSecurityReview:
         agent = MockSecurityAgent(VALID_SECURITY_OUTPUT)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is True
         assert len(result.findings) == 2
@@ -252,31 +307,49 @@ class TestRunSecurityReview:
     def test_hard_fails_on_critical(self, tmp_path: Path) -> None:
         prd_path = self._setup_repo(tmp_path)
         config = SecurityConfig(
-            mode=SecurityMode.HARD.value, fail_threshold="high",
+            mode=SecurityMode.HARD.value,
+            fail_threshold="high",
         )
         agent = MockSecurityAgent(VALID_SECURITY_OUTPUT)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         # Critical finding exceeds threshold=high
         assert result.passed is False
 
     def test_hard_passes_with_only_low(self, tmp_path: Path) -> None:
         prd_path = self._setup_repo(tmp_path)
-        output = json.dumps({"findings": [{
-            "category": "information_disclosure",
-            "severity": "low",
-            "location": "x:1",
-            "explanation": "stack trace in log",
-        }]})
+        output = json.dumps(
+            {
+                "findings": [
+                    {
+                        "category": "information_disclosure",
+                        "severity": "low",
+                        "location": "x:1",
+                        "explanation": "stack trace in log",
+                    }
+                ]
+            }
+        )
         agent = MockSecurityAgent(output)
         config = SecurityConfig(
-            mode=SecurityMode.HARD.value, fail_threshold="high",
+            mode=SecurityMode.HARD.value,
+            fail_threshold="high",
         )
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is True
 
@@ -287,7 +360,9 @@ class TestRunSecurityReview:
                 return "boom"
 
             def run(
-                self, prompt: str, cwd: Path | None = None,
+                self,
+                prompt: str,
+                cwd: Path | None = None,
                 timeout: float | None = None,
             ) -> Iterator[str]:
                 raise RuntimeError("agent exploded")
@@ -306,7 +381,12 @@ class TestRunSecurityReview:
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            self._boom_agent(), prd_path, tmp_path, "main", config, ui,
+            self._boom_agent(),
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is False
         assert result.infrastructure_error is True
@@ -318,7 +398,12 @@ class TestRunSecurityReview:
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            self._boom_agent(), prd_path, tmp_path, "main", config, ui,
+            self._boom_agent(),
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is True
         assert result.infrastructure_error is True
@@ -332,7 +417,12 @@ class TestRunSecurityReview:
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is False
         assert result.infrastructure_error is True
@@ -343,7 +433,12 @@ class TestRunSecurityReview:
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
-            agent, prd_path, tmp_path, "main", config, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            config,
+            ui,
         )
         assert result.passed is True
         assert result.infrastructure_error is True
@@ -388,13 +483,15 @@ class TestResultFormatting:
         r = SecurityResult(
             passed=False,
             mode="hard",
-            findings=[SecurityFinding(
-                category="auth_bypass",
-                severity="high",
-                location="x:1",
-                explanation="no auth check",
-                suggestion="add @require_auth",
-            )],
+            findings=[
+                SecurityFinding(
+                    category="auth_bypass",
+                    severity="high",
+                    location="x:1",
+                    explanation="no auth check",
+                    suggestion="add @require_auth",
+                )
+            ],
         )
         ctx = r.as_retry_context()
         assert "auth_bypass" in ctx

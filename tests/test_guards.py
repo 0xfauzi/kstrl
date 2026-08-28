@@ -93,13 +93,15 @@ class TestStateDirExemption:
     def test_lookalike_paths_still_flagged(self) -> None:
         violations = check_violations(
             {
-                ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+                ".kstrl-backup/x",
+                ".kstrl/other-run/events.jsonl",
                 "sub/.kstrl/y",
             },
             ["scripts/"],
             [".kstrl/runs/understand-x/"],
         )
         assert violations == [
-            ".kstrl-backup/x", ".kstrl/other-run/events.jsonl",
+            ".kstrl-backup/x",
+            ".kstrl/other-run/events.jsonl",
             "sub/.kstrl/y",
         ]

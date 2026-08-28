@@ -49,8 +49,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         line.append(comp, style=theme.MUTED)
         line.append(
             f" iteration {event.iteration} "
-            f"({event.duration_seconds:.0f}s)"
-            + (" · complete" if event.completed else ""),
+            f"({event.duration_seconds:.0f}s)" + (" · complete" if event.completed else ""),
             style=theme.MUTED,
         )
     elif isinstance(event, ev.PhaseCompleted):
@@ -133,11 +132,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         if event.breaker:
             line.append(f" · breaker {event.breaker}", style=theme.MUTED)
     elif isinstance(event, ev.SpecIssueRecorded):
-        severity = (
-            event.severity
-            if event.severity in {"blocker", "major", "minor"}
-            else "unknown"
-        )
+        severity = event.severity if event.severity in {"blocker", "major", "minor"} else "unknown"
         severe = severity == "blocker"
         line.append(
             "▲ ",
@@ -199,7 +194,9 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
 class ActivityFeed(RichLog):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(
-            max_lines=MAX_FEED_LINES, wrap=False, highlight=False,
+            max_lines=MAX_FEED_LINES,
+            wrap=False,
+            highlight=False,
             auto_scroll=True,
             **kwargs,  # type: ignore[arg-type]
         )

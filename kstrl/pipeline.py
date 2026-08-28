@@ -476,18 +476,26 @@ class ComponentPipeline:
         return max(0, cap - self._adversarial_calls)
 
     def _record_usage(
-        self, comp_id: str, phase: str, totals: UsageTotals,
+        self,
+        comp_id: str,
+        phase: str,
+        totals: UsageTotals,
     ) -> None:
         if totals.calls == 0:
             return
         slot = self.usage_meter.setdefault(comp_id, {}).setdefault(
-            phase, UsageTotals(),
+            phase,
+            UsageTotals(),
         )
         slot.merge(totals)
         self.run_usage.merge(totals)
-        self.bus.emit(ev.ComponentUsage(
-            component=comp_id, phase=phase, **totals.to_dict(),
-        ))
+        self.bus.emit(
+            ev.ComponentUsage(
+                component=comp_id,
+                phase=phase,
+                **totals.to_dict(),
+            )
+        )
         self._announce_coverage_gaps()
 
     def _announce_coverage_gaps(self) -> None:
@@ -514,19 +522,23 @@ class ComponentPipeline:
             self._coverage_announced.add(ceiling)
             detail = coverage.note()
             self.ui.warn(f"  BUDGET COVERAGE: {detail}")
-            self.bus.emit(ev.BudgetCoverage(
-                ceiling=coverage.ceiling,
-                axis=coverage.axis,
-                calls=coverage.calls,
-                covered_calls=coverage.covered_calls,
-                uncovered_calls=coverage.uncovered_calls,
-                uncovered_tokens=coverage.uncovered_tokens,
-                uncovered_roles=coverage.uncovered_roles,
-                detail=detail,
-            ))
+            self.bus.emit(
+                ev.BudgetCoverage(
+                    ceiling=coverage.ceiling,
+                    axis=coverage.axis,
+                    calls=coverage.calls,
+                    covered_calls=coverage.covered_calls,
+                    uncovered_calls=coverage.uncovered_calls,
+                    uncovered_tokens=coverage.uncovered_tokens,
+                    uncovered_roles=coverage.uncovered_roles,
+                    detail=detail,
+                )
+            )
 
     def record_engineer_usage(
-        self, comp_id: str, totals: UsageTotals,
+        self,
+        comp_id: str,
+        totals: UsageTotals,
     ) -> None:
         """Record engineer spend that never came back through
         process_result (R8 abort path). The worker was killed, so its
@@ -536,7 +548,9 @@ class ComponentPipeline:
         self._record_usage(comp_id, "engineer", totals)
 
     def record_injected_knowledge(
-        self, comp_id: str, prefix: str | None,
+        self,
+        comp_id: str,
+        prefix: str | None,
     ) -> None:
         """Record the knowledge prefix handed to ``comp_id``'s engineer.
 
@@ -602,26 +616,36 @@ class ComponentPipeline:
             # reason distillation skips it.
             return
         if unavailable:
-            self._store_fact_utilization(comp, FactUtilization(
-                reason=unavailable,
-            ))
+            self._store_fact_utilization(
+                comp,
+                FactUtilization(
+                    reason=unavailable,
+                ),
+            )
             return
         if diff_text is None:
             try:
                 diff_text = git.get_diff_content(
-                    self.manifest.base_branch, wt_path,
+                    self.manifest.base_branch,
+                    wt_path,
                 )
             except git.GitDiffError as exc:
-                self._store_fact_utilization(comp, FactUtilization(
-                    reason=f"diff unavailable: {exc}",
-                ))
+                self._store_fact_utilization(
+                    comp,
+                    FactUtilization(
+                        reason=f"diff unavailable: {exc}",
+                    ),
+                )
                 return
         self._store_fact_utilization(
-            comp, self._measure_utilization(comp, wt_path, diff_text),
+            comp,
+            self._measure_utilization(comp, wt_path, diff_text),
         )
 
     def _store_fact_utilization(
-        self, comp: Component, util: FactUtilization,
+        self,
+        comp: Component,
+        util: FactUtilization,
     ) -> None:
         """Persist one measurement and put it on the event stream.
 
@@ -633,19 +657,21 @@ class ComponentPipeline:
         and #191 requires the ratio in both.
         """
         self.fact_utilization[comp.id] = util
-        self.bus.emit(ev.FactUtilizationMeasured(
-            component=comp.id,
-            measured=util.measured,
-            injected=util.injected,
-            referenced=util.referenced,
-            reason=util.reason,
-            core_injected=util.core_injected,
-            core_referenced=util.core_referenced,
-            dependency_injected=util.dependency_injected,
-            dependency_referenced=util.dependency_referenced,
-            sibling_injected=util.sibling_injected,
-            sibling_referenced=util.sibling_referenced,
-        ))
+        self.bus.emit(
+            ev.FactUtilizationMeasured(
+                component=comp.id,
+                measured=util.measured,
+                injected=util.injected,
+                referenced=util.referenced,
+                reason=util.reason,
+                core_injected=util.core_injected,
+                core_referenced=util.core_referenced,
+                dependency_injected=util.dependency_injected,
+                dependency_referenced=util.dependency_referenced,
+                sibling_injected=util.sibling_injected,
+                sibling_referenced=util.sibling_referenced,
+            )
+        )
         if util.measured and util.injected > 0:
             self.ui.info(
                 f"  Knowledge utilization: "
@@ -835,10 +861,7 @@ class ComponentPipeline:
             return None
         if ceiling == "max_cost_usd" and self.factory_config.max_cost_usd <= 0:
             return None
-        if (
-            ceiling == "max_total_tokens"
-            and self.factory_config.max_total_tokens <= 0
-        ):
+        if ceiling == "max_total_tokens" and self.factory_config.max_total_tokens <= 0:
             return None
         return usage_coverage(self.usage_meter, axis=axis, ceiling=ceiling)
 
@@ -876,10 +899,7 @@ class ComponentPipeline:
             and self.token_budget_unenforceable() is not None
         ):
             dead.append("max_total_tokens")
-        if (
-            self.factory_config.max_cost_usd > 0
-            and self.cost_budget_unenforceable() is not None
-        ):
+        if self.factory_config.max_cost_usd > 0 and self.cost_budget_unenforceable() is not None:
             dead.append("max_cost_usd")
         return dead
 
@@ -925,10 +945,12 @@ class ComponentPipeline:
             )
             if reason is not None
         ]
-        configured = sum((
-            self.factory_config.max_total_tokens > 0,
-            self.factory_config.max_cost_usd > 0,
-        ))
+        configured = sum(
+            (
+                self.factory_config.max_total_tokens > 0,
+                self.factory_config.max_cost_usd > 0,
+            )
+        )
         if not reasons or len(reasons) < configured:
             return None
         return "; ".join(reasons)
@@ -947,16 +969,15 @@ class ComponentPipeline:
         if self.journal_path is None:
             return -1
         try:
-            return (
-                self.journal_path.stat().st_size
-                if self.journal_path.exists() else 0
-            )
+            return self.journal_path.stat().st_size if self.journal_path.exists() else 0
         except OSError:
             return -1
 
     @contextmanager
     def _phase_transcript(
-        self, comp_id: str, phase: str,
+        self,
+        comp_id: str,
+        phase: str,
     ) -> Iterator[Callable[[str], None] | None]:
         """Line writer onto RunPaths.phase_log for one phase invocation.
 
@@ -975,6 +996,7 @@ class ComponentPipeline:
         except OSError:
             yield None
             return
+
         def _write_line(line: str) -> None:
             fh.write(line + "\n")
 
@@ -989,47 +1011,62 @@ class ComponentPipeline:
     def _phase_started(self, comp: Component, phase: str) -> float:
         """Emit the authoritative phase bracket opener; returns the
         monotonic start for the matching _phase_completed."""
-        self.bus.emit(ev.PhaseStarted(
-            component=comp.id, phase=phase, attempt=comp.retries + 1,
-        ))
+        self.bus.emit(
+            ev.PhaseStarted(
+                component=comp.id,
+                phase=phase,
+                attempt=comp.retries + 1,
+            )
+        )
         return time.monotonic()
 
     def _phase_completed(
-        self, comp: Component, phase: str, started: float,
-        passed: bool, detail: str = "",
+        self,
+        comp: Component,
+        phase: str,
+        started: float,
+        passed: bool,
+        detail: str = "",
     ) -> None:
-        self.bus.emit(ev.PhaseCompleted(
-            component=comp.id, phase=phase, passed=passed, detail=detail,
-            duration_seconds=round(time.monotonic() - started, 2),
-        ))
+        self.bus.emit(
+            ev.PhaseCompleted(
+                component=comp.id,
+                phase=phase,
+                passed=passed,
+                detail=detail,
+                duration_seconds=round(time.monotonic() - started, 2),
+            )
+        )
 
     def _debug_dir_for(self, comp_id: str) -> Path:
         """Forensic raw-output dir for this run's component (R1.2)."""
         return self.root_dir / ".kstrl" / "debug" / self.run_id / comp_id
 
     def _add_findings(
-        self, comp: Component, new_findings: list[Finding],
+        self,
+        comp: Component,
+        new_findings: list[Finding],
     ) -> None:
         """Append findings tagged ``attempt:<n>`` for the attempt in
         flight (R3.3), so the journal can attribute every finding to the
         attempt that produced it."""
         attempt = comp.retries + 1
-        comp.findings.extend(
-            tag_finding_with_attempt(f, attempt) for f in new_findings
-        )
+        comp.findings.extend(tag_finding_with_attempt(f, attempt) for f in new_findings)
         # Chunk 4: stream each finding as a typed event the moment it is
         # recorded (the manifest only carries them at transition time).
         for finding in new_findings:
-            self.bus.emit(ev.FindingRecorded(
-                component=comp.id,
-                phase=finding.phase,
-                category=finding.category,
-                severity=finding.severity,
-                location=finding.location,
-                explanation=finding.explanation,
-                attempt=attempt,
-                model=finding_model(finding) or "",
-            ))
+            self.bus.emit(
+                ev.FindingRecorded(
+                    component=comp.id,
+                    phase=finding.phase,
+                    category=finding.category,
+                    severity=finding.severity,
+                    location=finding.location,
+                    explanation=finding.explanation,
+                    attempt=attempt,
+                    model=finding_model(finding) or "",
+                )
+            )
 
     def begin_attempt(self, comp: Component) -> None:
         """PENDING -> RUNNING transition for one attempt (R3.3).
@@ -1092,7 +1129,8 @@ class ComponentPipeline:
             "event_type": "findings_superseded",
             "attempt": comp.retries + 1,
             "failure_signatures": self.component_failure_signatures.get(
-                comp.id, [],
+                comp.id,
+                [],
             ),
             "findings": [f.to_dict() for f in comp.findings],
         }
@@ -1102,9 +1140,7 @@ class ComponentPipeline:
                 f.write(json.dumps(entry, separators=(",", ":")) + "\n")
         except OSError as exc:
             # Evolution recording is non-fatal, but never silent (R6.1).
-            self.ui.warn(
-                f"  Evolution journal write failed (non-fatal): {exc}"
-            )
+            self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
 
     # ------------------------------------------------------------------
     # Transitions (the single place component state moves)
@@ -1153,8 +1189,7 @@ class ComponentPipeline:
             if fresh_base and self.factory_config.use_worktrees:
                 self.fresh_base_retry_ids.add(comp.id)
                 error = (
-                    error
-                    + " [conflict retry: component re-run against the "
+                    error + " [conflict retry: component re-run against the "
                     "freshly merged base; agent output is not rebased]"
                 )
             # A timeout failure means the agent was killed mid-flight: the
@@ -1164,8 +1199,7 @@ class ComponentPipeline:
             elif "timeout" in error.lower() and self.factory_config.use_worktrees:
                 self.fresh_base_retry_ids.add(comp.id)
                 error = (
-                    error
-                    + " [timeout retry: worktree recreated from base; "
+                    error + " [timeout retry: worktree recreated from base; "
                     "stale index.lock removed]"
                 )
             # R3.3: journal this attempt's findings as superseded BEFORE
@@ -1181,9 +1215,13 @@ class ComponentPipeline:
             comp.error = error
             if context_json:
                 self.component_contexts[comp.id] = context_json
-            self.bus.emit(ev.ComponentRetrying(
-                component=comp.id, attempt=comp.retries, reason=error,
-            ))
+            self.bus.emit(
+                ev.ComponentRetrying(
+                    component=comp.id,
+                    attempt=comp.retries,
+                    reason=error,
+                )
+            )
             self.ui.info(
                 f"  Retrying '{comp.id}' "
                 f"(attempt {comp.retries}/{self.factory_config.max_retries}): "
@@ -1193,7 +1231,11 @@ class ComponentPipeline:
             self.manifest.save(self.manifest_path)
             return Transition.RETRYING
         return self.fail(
-            comp, error, phase=phase, check=check, signatures=signatures,
+            comp,
+            error,
+            phase=phase,
+            check=check,
+            signatures=signatures,
         )
 
     def fail_aborted(self, comp_id: str, reason: str) -> None:
@@ -1204,8 +1246,10 @@ class ComponentPipeline:
         if comp is None:
             return
         self.fail(
-            comp, f"aborted: {reason}",
-            phase="aborted", check="shutdown",
+            comp,
+            f"aborted: {reason}",
+            phase="aborted",
+            check="shutdown",
             signatures=["aborted:shutdown"],
         )
 
@@ -1346,8 +1390,7 @@ class ComponentPipeline:
         # returns "" there: the operator-facing sentence is unchanged
         # wherever there is nothing to disclose.
         coverage = [
-            cov for cov in (self.ceiling_coverage(c) for c in CEILING_AXES)
-            if cov is not None
+            cov for cov in (self.ceiling_coverage(c) for c in CEILING_AXES) if cov is not None
         ]
         notes = [note for note in (cov.note() for cov in coverage) if note]
         if notes:
@@ -1355,20 +1398,28 @@ class ComponentPipeline:
         ceiling = ", ".join(ceilings)
         label = ceiling or "budget"
         self.ui.err(f"  BUDGET EXCEEDED ({label}) for {comp.id}: {error}")
-        self._add_findings(comp, [Finding.infrastructure_error(
-            phase=phase, explanation=error,
-        )])
-        self.bus.emit(ev.BudgetExceeded(
-            component=comp.id,
-            total_tokens=self.run_usage.total_tokens,
-            max_total_tokens=self.factory_config.max_total_tokens,
-            cost_usd=round(self.run_usage.cost_usd, 6),
-            max_cost_usd=self.factory_config.max_cost_usd,
-            ceiling=ceiling,
-            condition=condition,
-            ceilings=ceilings,
-            coverage=tuple(cov.to_dict() for cov in coverage),
-        ))
+        self._add_findings(
+            comp,
+            [
+                Finding.infrastructure_error(
+                    phase=phase,
+                    explanation=error,
+                )
+            ],
+        )
+        self.bus.emit(
+            ev.BudgetExceeded(
+                component=comp.id,
+                total_tokens=self.run_usage.total_tokens,
+                max_total_tokens=self.factory_config.max_total_tokens,
+                cost_usd=round(self.run_usage.cost_usd, 6),
+                max_cost_usd=self.factory_config.max_cost_usd,
+                ceiling=ceiling,
+                condition=condition,
+                ceilings=ceilings,
+                coverage=tuple(cov.to_dict() for cov in coverage),
+            )
+        )
         # Raised BEFORE delegating to fail(): a blown budget is its own
         # exception kind, and the generic halted_run item fail() adds
         # would bury why the run stopped.
@@ -1400,12 +1451,18 @@ class ComponentPipeline:
         # ceiling that tripped is carried by the message, the finding,
         # the event and the inbox evidence instead.
         return self.fail(
-            comp, error, phase=phase, check="token_budget",
+            comp,
+            error,
+            phase=phase,
+            check="token_budget",
             signatures=["token_budget:exceeded"],
         )
 
     def complete(
-        self, comp: Component, duration_seconds: float, iterations: int,
+        self,
+        comp: Component,
+        duration_seconds: float,
+        iterations: int,
     ) -> Transition:
         """VERIFYING -> COMPLETED: every gate passed (and the PR merge,
         when configured, was confirmed)."""
@@ -1415,15 +1472,14 @@ class ComponentPipeline:
         comp.completed_at = _iso_now()
         self._end_attempt(comp)
         self.factory_result.completed.append(comp.id)
-        self.bus.emit(ev.ComponentCompleted(
-            component=comp.id, duration_seconds=duration_seconds,
-            iterations=iterations,
-        ))
-        self.ui.ok(
-            f"  COMPLETED: {comp.id} "
-            f"({iterations} iterations, "
-            f"{duration_seconds:.0f}s)"
+        self.bus.emit(
+            ev.ComponentCompleted(
+                component=comp.id,
+                duration_seconds=duration_seconds,
+                iterations=iterations,
+            )
         )
+        self.ui.ok(f"  COMPLETED: {comp.id} ({iterations} iterations, {duration_seconds:.0f}s)")
         self.manifest.save(self.manifest_path)
         return Transition.COMPLETED
 
@@ -1479,7 +1535,8 @@ class ComponentPipeline:
             if self._inbox_disabled:
                 return
             item = self._inbox.add(
-                kind, title,
+                kind,
+                title,
                 detail=detail,
                 component=component,
                 run_id=self.run_id,
@@ -1491,13 +1548,17 @@ class ComponentPipeline:
             # this the [inbox] notify knob was a documented no-op.
             if self._inbox.config.notify_action_required and notifiable([item]):
                 self.notify.fire_inbox_item(
-                    str(item.kind), item.title, component_id=component,
+                    str(item.kind),
+                    item.title,
+                    component_id=component,
                 )
         except (OSError, ValueError) as exc:
             self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
     def _park_merge_pending(
-        self, comp: Component, error: str,
+        self,
+        comp: Component,
+        error: str,
     ) -> Transition:
         """VERIFYING -> MERGE_PENDING: the PR merge was initiated but not
         confirmed (R0.2). Parked, not terminal: no completed_at, but the
@@ -1507,12 +1568,20 @@ class ComponentPipeline:
         comp.error = error
         # Richer v2 event first; the v1-parity twin keeps progress.jsonl
         # unchanged (the reducer prefers the v2 event, chunk 2).
-        self.bus.emit(ev.PrMergePending(
-            component=comp.id, pr_url=comp.pr_url, error=comp.error,
-        ))
-        self.bus.emit(ev.MergePendingV1(
-            component=comp.id, pr_url=comp.pr_url, error=comp.error,
-        ))
+        self.bus.emit(
+            ev.PrMergePending(
+                component=comp.id,
+                pr_url=comp.pr_url,
+                error=comp.error,
+            )
+        )
+        self.bus.emit(
+            ev.MergePendingV1(
+                component=comp.id,
+                pr_url=comp.pr_url,
+                error=comp.error,
+            )
+        )
         self.notify.fire_merge_pending(comp.id, comp.error)
         self._inbox_add(
             ItemKind.MERGE_GATE,
@@ -1562,31 +1631,35 @@ class ComponentPipeline:
         )
         if pr_number:
             close_error = close_pr_for_rerun(
-                pr_number, comp.branch_name, self.root_dir,
+                pr_number,
+                comp.branch_name,
+                self.root_dir,
             )
             if close_error:
                 # Non-fatal: the re-run's own push fails loudly if the
                 # remote branch is still in the way.
-                self.ui.warn(
-                    f"  Conflicting-PR cleanup incomplete (non-fatal): "
-                    f"{close_error}"
-                )
+                self.ui.warn(f"  Conflicting-PR cleanup incomplete (non-fatal): {close_error}")
         comp.pr_number = None
         comp.pr_url = ""
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
-        ctx.add_iteration(IterationRecord(
-            iteration=comp_result.iterations,
-            success=False,
-            attempt=comp.retries + 1,
-            error=(
-                "The previous attempt's PR hit a merge conflict with the "
-                "base branch; this attempt starts from the freshly merged "
-                "base, which already contains the sibling changes"
-            ),
-        ))
+        ctx.add_iteration(
+            IterationRecord(
+                iteration=comp_result.iterations,
+                success=False,
+                attempt=comp.retries + 1,
+                error=(
+                    "The previous attempt's PR hit a merge conflict with the "
+                    "base branch; this attempt starts from the freshly merged "
+                    "base, which already contains the sibling changes"
+                ),
+            )
+        )
         return self.retry_or_fail(
-            comp, error, ctx.to_json(),
-            phase="pr", check="merge_conflict",
+            comp,
+            error,
+            ctx.to_json(),
+            phase="pr",
+            check="merge_conflict",
             signatures=["pr:merge-conflict"],
             fresh_base=True,
         )
@@ -1619,7 +1692,9 @@ class ComponentPipeline:
         return Transition.FAILED
 
     def fail_scheduler_backstop(
-        self, comp_id: str, backstop_seconds: float,
+        self,
+        comp_id: str,
+        backstop_seconds: float,
     ) -> None:
         """RUNNING -> FAILED when the scheduler backstop deadline passes
         (R0.1): the worker hung outside the adapter and loop timeout
@@ -1639,32 +1714,34 @@ class ComponentPipeline:
             # The worktree stays (leaked worker may own it);
             # point the evidence at it (R3.3).
             if comp_id in self.worktree_paths:
-                timed_out_comp.evidence_worktree = str(
-                    self.worktree_paths[comp_id]
-                )
+                timed_out_comp.evidence_worktree = str(self.worktree_paths[comp_id])
             skipped = self.manifest.cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
             self.factory_result.skipped.extend(skipped)
             started = self._attempt_started_monotonic.get(comp_id)
             duration = time.monotonic() - started if started is not None else 0.0
-            self.bus.emit(ev.PhaseCompleted(
-                component=comp_id,
-                phase="engineer",
-                passed=False,
-                detail="component timeout",
-                duration_seconds=round(duration, 2),
-            ))
-            self.bus.emit(ev.ComponentFailed(
-                component=comp_id, error="component timeout",
-            ))
+            self.bus.emit(
+                ev.PhaseCompleted(
+                    component=comp_id,
+                    phase="engineer",
+                    passed=False,
+                    detail="component timeout",
+                    duration_seconds=round(duration, 2),
+                )
+            )
+            self.bus.emit(
+                ev.ComponentFailed(
+                    component=comp_id,
+                    error="component timeout",
+                )
+            )
             self.notify.fire_first_failure(comp_id, "component timeout")
         self.ui.err(
             f"  Failed: {comp_id}: component timeout "
             f"(scheduler backstop after {backstop_seconds:.0f}s)"
         )
         self.ui.warn(
-            f"  A worker process for '{comp_id}' may be leaked; "
-            f"its worktree is left in place"
+            f"  A worker process for '{comp_id}' may be leaked; its worktree is left in place"
         )
         self._inbox_add(
             ItemKind.HALTED_RUN,
@@ -1687,8 +1764,7 @@ class ComponentPipeline:
         their dependents (MERGE_PENDING -> COMPLETED, or -> FAILED when
         the PR was closed without merging)."""
         merge_pending_comps = [
-            c for c in self.manifest.components
-            if c.status == ComponentStatus.MERGE_PENDING.value
+            c for c in self.manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
         ]
         if not merge_pending_comps:
             return
@@ -1708,41 +1784,39 @@ class ComponentPipeline:
             for comp in merge_pending_comps:
                 pr_number = comp.pr_number or pr_number_from_url(comp.pr_url)
                 if not pr_number:
-                    self.ui.warn(
-                        f"  Cannot re-poll '{comp.id}': no PR number recorded"
-                    )
+                    self.ui.warn(f"  Cannot re-poll '{comp.id}': no PR number recorded")
                     continue
-                self.ui.info(
-                    f"  Re-polling merge state for '{comp.id}' "
-                    f"(PR #{pr_number})..."
-                )
+                self.ui.info(f"  Re-polling merge state for '{comp.id}' (PR #{pr_number})...")
                 merge_state = wait_for_merge(
-                    pr_number, self.root_dir,
+                    pr_number,
+                    self.root_dir,
                     timeout=self.factory_config.merge_timeout,
                 )
                 if merge_state == "merged":
                     git.fetch_base_branch(
-                        self.manifest.base_branch, self.root_dir,
+                        self.manifest.base_branch,
+                        self.root_dir,
                     )
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
                     self.component_failure_signatures.pop(comp.id, None)
                     comp.completed_at = _iso_now()
                     self.factory_result.completed.append(comp.id)
-                    self.bus.emit(ev.ComponentCompleted(
-                        component=comp.id,
-                        duration_seconds=comp.duration_seconds,
-                        iterations=comp.iteration_count,
-                    ))
-                    self.ui.ok(
-                        f"  PR #{pr_number} merged; '{comp.id}' completed"
+                    self.bus.emit(
+                        ev.ComponentCompleted(
+                            component=comp.id,
+                            duration_seconds=comp.duration_seconds,
+                            iterations=comp.iteration_count,
+                        )
                     )
+                    self.ui.ok(f"  PR #{pr_number} merged; '{comp.id}' completed")
                     # The gate that parked this component is answered by
                     # reality; leaving it open would hold a cap slot
                     # forever and ask a human to decide something already
                     # decided.
                     self._inbox_resolve(
-                        f"merge:{comp.id}", f"PR #{pr_number} merged",
+                        f"merge:{comp.id}",
+                        f"PR #{pr_number} merged",
                     )
                 elif merge_state == "closed":
                     comp.status = ComponentStatus.FAILED.value
@@ -1769,9 +1843,12 @@ class ComponentPipeline:
                     skipped = self.manifest.cascade_skip(comp.id)
                     self.factory_result.failed.append(comp.id)
                     self.factory_result.skipped.extend(skipped)
-                    self.bus.emit(ev.ComponentFailed(
-                        component=comp.id, error=comp.error,
-                    ))
+                    self.bus.emit(
+                        ev.ComponentFailed(
+                            component=comp.id,
+                            error=comp.error,
+                        )
+                    )
                     self.notify.fire_first_failure(comp.id, comp.error)
                     self.ui.err(f"  Failed: {comp.id}: {comp.error}")
                 else:
@@ -1786,18 +1863,27 @@ class ComponentPipeline:
     # ------------------------------------------------------------------
 
     def _record_phase_skip(
-        self, comp: Component, phase: str, reason: str,
+        self,
+        comp: Component,
+        phase: str,
+        reason: str,
     ) -> None:
         """R1.2: a phase that never ran must leave a trace in both
         the findings stream and the journal, so "ran clean" and
         "never ran" are distinguishable downstream."""
         self._add_findings(comp, [Finding.phase_skipped(phase, reason)])
-        self.bus.emit(ev.PhaseSkipped(
-            component=comp.id, phase=phase, reason=reason,
-        ))
+        self.bus.emit(
+            ev.PhaseSkipped(
+                component=comp.id,
+                phase=phase,
+                reason=reason,
+            )
+        )
 
     def process_result(
-        self, comp_id: str, comp_result: ComponentResult,
+        self,
+        comp_id: str,
+        comp_result: ComponentResult,
     ) -> PipelineOutcome | None:
         """Process one component result through the phase chain.
 
@@ -1816,12 +1902,15 @@ class ComponentPipeline:
 
         # Engineer bracket closer: PhaseStarted(engineer) was emitted by
         # the scheduler at submit time; the worker's exit lands here.
-        self.bus.emit(ev.PhaseCompleted(
-            component=comp_id, phase="engineer",
-            passed=comp_result.success,
-            detail=comp_result.error or "",
-            duration_seconds=round(comp_result.duration_seconds, 2),
-        ))
+        self.bus.emit(
+            ev.PhaseCompleted(
+                component=comp_id,
+                phase="engineer",
+                passed=comp_result.success,
+                detail=comp_result.error or "",
+                duration_seconds=round(comp_result.duration_seconds, 2),
+            )
+        )
 
         # R3.1: engineer-loop spend counts BEFORE the success branch -
         # failed attempts cost real tokens too.
@@ -1841,13 +1930,12 @@ class ComponentPipeline:
         # not show a breach - the unreportable-usage case, where the
         # derived "N >= cap" sentence would be false.
         if comp_result.budget_exceeded or self.budget_exceeded():
-            reason = (
-                "" if self.budget_exceeded()
-                else (comp_result.error or "")
-            )
+            reason = "" if self.budget_exceeded() else (comp_result.error or "")
             return PipelineOutcome(
                 transition=self.fail_for_budget(
-                    comp, "engineer", reason,
+                    comp,
+                    "engineer",
+                    reason,
                     # The loop's own verdict when IT halted; empty when
                     # the parent's totals are what tripped, in which
                     # case fail_for_budget derives the identity under
@@ -1866,24 +1954,31 @@ class ComponentPipeline:
             # signature for the evolution journal.
             if comp_result.no_progress:
                 error = comp_result.error or "no-progress circuit breaker tripped"
-                self.bus.emit(ev.CircuitBreakerTripped(
-                    component=comp_id, iterations=comp_result.iterations,
-                    error=error,
-                ))
+                self.bus.emit(
+                    ev.CircuitBreakerTripped(
+                        component=comp_id,
+                        iterations=comp_result.iterations,
+                        error=error,
+                    )
+                )
                 return PipelineOutcome(
                     transition=self.fail(
-                        comp, error,
-                        phase="engineer", check="no_progress_breaker",
+                        comp,
+                        error,
+                        phase="engineer",
+                        check="no_progress_breaker",
                         signatures=["engineer:no-progress-stall"],
                     ),
                 )
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_iteration(IterationRecord(
-                iteration=comp_result.iterations,
-                success=False,
-                attempt=comp.retries + 1,
-                error=comp_result.error,
-            ))
+            ctx.add_iteration(
+                IterationRecord(
+                    iteration=comp_result.iterations,
+                    success=False,
+                    attempt=comp.retries + 1,
+                    error=comp_result.error,
+                )
+            )
             if comp_result.guard_violations:
                 # The in-loop guard runs the SAME check as Phase 1's
                 # diff_scope, only earlier, so it must produce the same
@@ -1896,11 +1991,15 @@ class ComponentPipeline:
                 # would claim tests and typecheck ran when the loop
                 # halted before they could.
                 detail = comp_result.error or "files outside allowed scope"
-                self.bus.emit(ev.VerificationResultEvent(
-                    component=comp.id, passed=False,
-                    checks=("diff_scope",), failures=(detail,),
-                    duration_seconds=0.0,
-                ))
+                self.bus.emit(
+                    ev.VerificationResultEvent(
+                        component=comp.id,
+                        passed=False,
+                        checks=("diff_scope",),
+                        failures=(detail,),
+                        duration_seconds=0.0,
+                    )
+                )
                 # Same "<check>: FAIL" token as
                 # VerificationResult.as_context(), and the same retry
                 # reason Phase 1 uses: consumers keying on either keep
@@ -1920,8 +2019,11 @@ class ComponentPipeline:
                 )
                 return PipelineOutcome(
                     transition=self.retry_or_fail(
-                        comp, "Mechanical verification failed", ctx.to_json(),
-                        phase="verify", check="diff_scope",
+                        comp,
+                        "Mechanical verification failed",
+                        ctx.to_json(),
+                        phase="verify",
+                        check="diff_scope",
                     ),
                 )
             # R10.2: without an entry this attempt would carry no
@@ -1933,8 +2035,11 @@ class ComponentPipeline:
             ctx.add_engineer_failure(error, attempt=comp.retries + 1)
             return PipelineOutcome(
                 transition=self.retry_or_fail(
-                    comp, error, ctx.to_json(),
-                    phase="engineer", check="loop",
+                    comp,
+                    error,
+                    ctx.to_json(),
+                    phase="engineer",
+                    check="loop",
                 ),
             )
 
@@ -1947,7 +2052,10 @@ class ComponentPipeline:
         t0 = self._phase_started(comp, "verify")
         verify = self._phase_verify(comp, comp_result, wt_path)
         self._phase_completed(
-            comp, "verify", t0, verify.failure is None,
+            comp,
+            "verify",
+            t0,
+            verify.failure is None,
             verify.failure.error if verify.failure else "",
         )
         if verify.failure is not None:
@@ -1965,16 +2073,23 @@ class ComponentPipeline:
         t0 = self._phase_started(comp, "diff")
         diff = self._phase_diff(comp, comp_result, wt_path)
         self._phase_completed(
-            comp, "diff", t0, diff.failure is None,
+            comp,
+            "diff",
+            t0,
+            diff.failure is None,
             diff.failure.error if diff.failure else "",
         )
         if diff.failure is not None:
             self.record_fact_utilization(
-                comp, wt_path, "", unavailable="diff unavailable",
+                comp,
+                wt_path,
+                "",
+                unavailable="diff unavailable",
             )
             return PipelineOutcome(
                 transition=self._route_failure(comp, diff.failure),
-                verify=verify, diff=diff,
+                verify=verify,
+                diff=diff,
             )
 
         # #191: measure fact utilization the moment a diff exists, so
@@ -1985,39 +2100,62 @@ class ComponentPipeline:
         # PHASE 2: Second-opinion review
         t0 = self._phase_started(comp, "review")
         review = self._phase_review(
-            comp, comp_result, wt_path, verify.verification,
-            diff.review_diff, diff.chunks,
+            comp,
+            comp_result,
+            wt_path,
+            verify.verification,
+            diff.review_diff,
+            diff.chunks,
         )
         self._phase_completed(
-            comp, "review", t0, review.failure is None,
+            comp,
+            "review",
+            t0,
+            review.failure is None,
             review.failure.error if review.failure else "",
         )
         if review.failure is not None:
             return PipelineOutcome(
                 transition=self._route_failure(comp, review.failure),
-                verify=verify, diff=diff, review=review,
+                verify=verify,
+                diff=diff,
+                review=review,
             )
 
         # PHASE 2.5: Security review
         t0 = self._phase_started(comp, "security")
         security = self._phase_security(
-            comp, comp_result, wt_path, diff.review_diff, diff.chunks,
+            comp,
+            comp_result,
+            wt_path,
+            diff.review_diff,
+            diff.chunks,
         )
         self._phase_completed(
-            comp, "security", t0, security.failure is None,
+            comp,
+            "security",
+            t0,
+            security.failure is None,
             security.failure.error if security.failure else "",
         )
         if security.failure is not None:
             return PipelineOutcome(
                 transition=self._route_failure(comp, security.failure),
-                verify=verify, diff=diff, review=review, security=security,
+                verify=verify,
+                diff=diff,
+                review=review,
+                security=security,
             )
 
         # Knowledge distillation: a NAMED PRE-PR step (R7.3 decision).
         t0 = self._phase_started(comp, "distill")
         distill = self._phase_distill(comp, comp_result, wt_path, diff.diff)
         self._phase_completed(
-            comp, "distill", t0, True, distill.skip_reason or "",
+            comp,
+            "distill",
+            t0,
+            True,
+            distill.skip_reason or "",
         )
 
         # HITL checkpoint + PR create/merge (per-component PR mode only).
@@ -2025,16 +2163,22 @@ class ComponentPipeline:
         pr = PrPhaseResult(disposition=PrDisposition.SKIPPED)
         if self.factory_config.create_prs and not self.factory_config.single_pr:
             checkpoint = self._phase_checkpoint(
-                comp, diff_text=diff.review_diff,
+                comp,
+                diff_text=diff.review_diff,
             )
             if checkpoint == CheckpointDecision.REJECTED:
                 return PipelineOutcome(
                     transition=self.fail(
-                        comp, "Rejected at HITL checkpoint",
-                        phase="pr", check="hitl_reject",
+                        comp,
+                        "Rejected at HITL checkpoint",
+                        phase="pr",
+                        check="hitl_reject",
                     ),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
                     checkpoint=checkpoint,
                 )
             if checkpoint == CheckpointDecision.PARKED:
@@ -2050,10 +2194,14 @@ class ComponentPipeline:
                         "Parked awaiting merge approval "
                         "(pause_before_pr_merge, no interactive UI); "
                         "approve with `ks inbox retry <id>`",
-                        phase="pr", check="merge_gate",
+                        phase="pr",
+                        check="merge_gate",
                     ),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
                     checkpoint=checkpoint,
                 )
             if checkpoint == CheckpointDecision.RETRY:
@@ -2068,19 +2216,28 @@ class ComponentPipeline:
                     transition=self.retry_or_fail(
                         comp,
                         "Retry requested at HITL checkpoint",
-                        ctx.to_json(), phase="pr", check="hitl_retry",
+                        ctx.to_json(),
+                        phase="pr",
+                        check="hitl_retry",
                     ),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
                     checkpoint=checkpoint,
                 )
 
             t0 = self._phase_started(comp, "pr")
             pr = self._phase_pr(comp)
             self._phase_completed(
-                comp, "pr", t0,
-                pr.disposition in (
-                    PrDisposition.MERGED, PrDisposition.NO_GH,
+                comp,
+                "pr",
+                t0,
+                pr.disposition
+                in (
+                    PrDisposition.MERGED,
+                    PrDisposition.NO_GH,
                     PrDisposition.SKIPPED,
                 ),
                 pr.error,
@@ -2088,25 +2245,39 @@ class ComponentPipeline:
             if pr.disposition == PrDisposition.CONFLICT:
                 return PipelineOutcome(
                     transition=self._retry_after_merge_conflict(
-                        comp, comp_result, pr,
+                        comp,
+                        comp_result,
+                        pr,
                     ),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
-                    checkpoint=checkpoint, pr=pr,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
+                    checkpoint=checkpoint,
+                    pr=pr,
                 )
             if pr.disposition == PrDisposition.MERGE_PENDING:
                 return PipelineOutcome(
                     transition=self._park_merge_pending(comp, pr.error),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
-                    checkpoint=checkpoint, pr=pr,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
+                    checkpoint=checkpoint,
+                    pr=pr,
                 )
             if pr.disposition == PrDisposition.FAILED:
                 return PipelineOutcome(
                     transition=self._fail_pr_flow(comp, pr.error),
-                    verify=verify, diff=diff, review=review,
-                    security=security, distill=distill,
-                    checkpoint=checkpoint, pr=pr,
+                    verify=verify,
+                    diff=diff,
+                    review=review,
+                    security=security,
+                    distill=distill,
+                    checkpoint=checkpoint,
+                    pr=pr,
                 )
 
         # Clean up worktree now that code is merged
@@ -2116,15 +2287,23 @@ class ComponentPipeline:
 
         return PipelineOutcome(
             transition=self.complete(
-                comp, comp_result.duration_seconds, comp_result.iterations,
+                comp,
+                comp_result.duration_seconds,
+                comp_result.iterations,
             ),
-            verify=verify, diff=diff, review=review,
-            security=security, distill=distill,
-            checkpoint=checkpoint, pr=pr,
+            verify=verify,
+            diff=diff,
+            review=review,
+            security=security,
+            distill=distill,
+            checkpoint=checkpoint,
+            pr=pr,
         )
 
     def _route_failure(
-        self, comp: Component, failure: PhaseFailure,
+        self,
+        comp: Component,
+        failure: PhaseFailure,
     ) -> Transition:
         """The single dispatch from a phase's typed failure into a
         component state transition."""
@@ -2132,17 +2311,26 @@ class ComponentPipeline:
             return self.fail_for_budget(comp, failure.phase)
         if failure.action == FailureAction.FAIL:
             return self.fail(
-                comp, failure.error, phase=failure.phase,
-                check=failure.check, signatures=failure.signatures,
+                comp,
+                failure.error,
+                phase=failure.phase,
+                check=failure.check,
+                signatures=failure.signatures,
             )
         return self.retry_or_fail(
-            comp, failure.error, failure.context_json,
-            phase=failure.phase, check=failure.check,
+            comp,
+            failure.error,
+            failure.context_json,
+            phase=failure.phase,
+            check=failure.check,
             signatures=failure.signatures,
         )
 
     def _phase_verify(
-        self, comp: Component, comp_result: ComponentResult, wt_path: Path,
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
     ) -> VerifyPhaseResult:
         """Phase 1: mechanical verification (tests / typecheck / lint /
         PRD stories / diff scope / bad patterns / fixtures)."""
@@ -2154,12 +2342,12 @@ class ComponentPipeline:
             # VerificationResult below is what downstream reviewers see:
             # no checks ran, none are claimed.
             self.ui.info(
-                f"  Phase 1 SKIPPED for {comp.id}: mechanical "
-                f"verification disabled (--no-verify)"
+                f"  Phase 1 SKIPPED for {comp.id}: mechanical verification disabled (--no-verify)"
             )
             comp.verification_passed = None
             self._record_phase_skip(
-                comp, "verify",
+                comp,
+                "verify",
                 "mechanical verification disabled (--no-verify)",
             )
             return VerifyPhaseResult(
@@ -2211,21 +2399,13 @@ class ComponentPipeline:
         # R7.2: fixtures config resolves from toml/env when the
         # caller did not inject one; enabled=false (the default)
         # makes run_mechanical_verification skip the check entirely.
-        fixtures_cfg = (
-            self.factory_config.fixtures_config
-            or FixturesConfig.load(self.root_dir)
-        )
+        fixtures_cfg = self.factory_config.fixtures_config or FixturesConfig.load(self.root_dir)
         # R8.1 policy envelope: opt-in ([policy].enabled). enabled=false
         # (the default) makes run_mechanical_verification skip the check.
-        policy_cfg = (
-            self.factory_config.policy_config
-            or PolicyConfig.load(self.root_dir)
-        )
+        policy_cfg = self.factory_config.policy_config or PolicyConfig.load(self.root_dir)
         adequacy_cfg = AdequacyConfig.load(self.root_dir)
         autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = (
-            AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
-        )
+        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -2246,9 +2426,7 @@ class ComponentPipeline:
         # a machine-made gate decision reaches the audit trail - PR body,
         # journal, evolution - and not just the retry context. Recorded for
         # passing checks too: a non-blocking advisory is still evidence.
-        check_findings = [
-            finding for check in verification.checks for finding in check.findings
-        ]
+        check_findings = [finding for check in verification.checks for finding in check.findings]
         if check_findings:
             self._add_findings(comp, check_findings)
             # R8.3: an envelope breach is the archetypal exception - a
@@ -2290,10 +2468,7 @@ class ComponentPipeline:
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=(
-                            f"adequacy:{comp.id}:{finding.category}:"
-                            f"{finding.location}"
-                        ),
+                        dedupe_key=(f"adequacy:{comp.id}:{finding.category}:{finding.location}"),
                         evidence={
                             "category": finding.category,
                             "severity": finding.severity,
@@ -2301,31 +2476,31 @@ class ComponentPipeline:
                             "suggestion": finding.suggestion,
                         },
                     )
-        self.bus.emit(ev.VerificationResultEvent(
-            component=comp.id, passed=verification.passed,
-            checks=tuple(c.name for c in verification.checks),
-            failures=tuple(
-                c.message for c in verification.checks if not c.passed
-            ),
-            duration_seconds=round(verify_duration, 2),
-        ))
+        self.bus.emit(
+            ev.VerificationResultEvent(
+                component=comp.id,
+                passed=verification.passed,
+                checks=tuple(c.name for c in verification.checks),
+                failures=tuple(c.message for c in verification.checks if not c.passed),
+                duration_seconds=round(verify_duration, 2),
+            )
+        )
 
         if not verification.passed:
             failing = [c for c in verification.checks if not c.passed]
-            self.ui.warn(
-                f"  Phase 1 FAILED for {comp.id}: "
-                f"{', '.join(c.name for c in failing)}"
-            )
+            self.ui.warn(f"  Phase 1 FAILED for {comp.id}: {', '.join(c.name for c in failing)}")
             ctx = IterationContext.from_json(
                 comp_result.context_json or "{}",
             )
             ctx.add_verification_failure(
-                verification.as_context(), attempt=comp.retries + 1,
+                verification.as_context(),
+                attempt=comp.retries + 1,
             )
             # R6.1: carry the parser's structured codes (ruff rule,
             # mypy error code, pytest exception type) into the
             # journal instead of the flattened string.
             from kstrl.evolution import signatures_from_verification
+
             return VerifyPhaseResult(
                 ran=True,
                 verification=verification,
@@ -2345,7 +2520,10 @@ class ComponentPipeline:
         return VerifyPhaseResult(ran=True, verification=verification)
 
     def _phase_diff(
-        self, comp: Component, comp_result: ComponentResult, wt_path: Path,
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
     ) -> DiffPhaseResult:
         """Fetch the component diff once and share it across Phase 2,
         Phase 2.5, and knowledge distillation. Without this each phase
@@ -2359,31 +2537,41 @@ class ComponentPipeline:
         """
         try:
             shared_diff = git.get_diff_content(
-                self.manifest.base_branch, wt_path,
+                self.manifest.base_branch,
+                wt_path,
             )
         except git.GitDiffError as exc:
             self.ui.err(f"  Diff fetch FAILED for {comp.id}: {exc}")
-            self._add_findings(comp, [Finding.infrastructure_error(
-                phase="diff",
-                explanation=(
-                    f"git diff against {self.manifest.base_branch} failed; "
-                    f"review/security/knowledge cannot run: {exc}"
-                ),
-            )])
+            self._add_findings(
+                comp,
+                [
+                    Finding.infrastructure_error(
+                        phase="diff",
+                        explanation=(
+                            f"git diff against {self.manifest.base_branch} failed; "
+                            f"review/security/knowledge cannot run: {exc}"
+                        ),
+                    )
+                ],
+            )
             self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
                 f"git diff against {self.manifest.base_branch} failed: {exc}",
-                attempt=comp.retries + 1, phase="diff",
+                attempt=comp.retries + 1,
+                phase="diff",
                 infrastructure=True,
             )
-            return DiffPhaseResult(failure=PhaseFailure(
-                action=FailureAction.RETRY_OR_FAIL,
-                error=f"Diff fetch failed (infrastructure): {exc}",
-                phase="diff", check="git_diff",
-                context_json=ctx.to_json(),
-                signatures=["diff:fetch-failed"],
-            ))
+            return DiffPhaseResult(
+                failure=PhaseFailure(
+                    action=FailureAction.RETRY_OR_FAIL,
+                    error=f"Diff fetch failed (infrastructure): {exc}",
+                    phase="diff",
+                    check="git_diff",
+                    context_json=ctx.to_json(),
+                    signatures=["diff:fetch-failed"],
+                )
+            )
 
         # R1.4: strip the engineer's Self-Critique block ONCE and share
         # the stripped diff with BOTH reviewers (E2 anti-anchoring now
@@ -2403,15 +2591,10 @@ class ComponentPipeline:
         # run_review/run_security_review annotate as PARTIAL.
         review_mode = ReviewMode(self.factory_config.review_mode)
         sec_config = self.factory_config.security_config
-        oversized = (
-            len(review_diff) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
-        )
+        oversized = len(review_diff) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         needs_chunks = oversized and (
             review_mode == ReviewMode.HARD
-            or (
-                sec_config is not None
-                and sec_config.mode == SecurityMode.HARD.value
-            )
+            or (sec_config is not None and sec_config.mode == SecurityMode.HARD.value)
         )
         review_chunks: list[str] | None = None
         if needs_chunks:
@@ -2431,18 +2614,26 @@ class ComponentPipeline:
                 # guidance below names hunk granularity, since "make
                 # each file smaller" no longer describes the fix.
                 self.ui.err(f"  Diff unsplittable for {comp.id}: {exc}")
-                self._add_findings(comp, [Finding.infrastructure_error(
-                    phase="review",
-                    explanation=(
-                        "Hard-mode review requires chunking the "
-                        f"oversized diff, but it cannot be split: {exc} "
-                        "(R1.4: an unreviewable diff must not merge)"
-                    ),
-                )])
-                self.bus.emit(ev.DiffUnsplittable(
-                    component=comp.id, error=str(exc),
-                    diff_chars=len(review_diff),
-                ))
+                self._add_findings(
+                    comp,
+                    [
+                        Finding.infrastructure_error(
+                            phase="review",
+                            explanation=(
+                                "Hard-mode review requires chunking the "
+                                f"oversized diff, but it cannot be split: {exc} "
+                                "(R1.4: an unreviewable diff must not merge)"
+                            ),
+                        )
+                    ],
+                )
+                self.bus.emit(
+                    ev.DiffUnsplittable(
+                        component=comp.id,
+                        error=str(exc),
+                        diff_chars=len(review_diff),
+                    )
+                )
                 ctx = IterationContext.from_json(
                     comp_result.context_json or "{}",
                 )
@@ -2456,7 +2647,8 @@ class ComponentPipeline:
                     # R10.2: the diff rank. This fires while preparing
                     # the diff for the reviewer, inside _phase_diff, so
                     # the reviewer produced no reading this attempt.
-                    attempt=comp.retries + 1, phase="diff",
+                    attempt=comp.retries + 1,
+                    phase="diff",
                     infrastructure=True,
                 )
                 return DiffPhaseResult(
@@ -2464,22 +2656,25 @@ class ComponentPipeline:
                     review_diff=review_diff,
                     failure=PhaseFailure(
                         action=FailureAction.RETRY_OR_FAIL,
-                        error=(
-                            "Review diff unsplittable at the prompt cap: "
-                            f"{exc}"
-                        ),
-                        phase="review", check="diff_chunking",
+                        error=(f"Review diff unsplittable at the prompt cap: {exc}"),
+                        phase="review",
+                        check="diff_chunking",
                         context_json=ctx.to_json(),
                         signatures=["review:diff-unsplittable"],
                     ),
                 )
-            self.bus.emit(ev.DiffChunked(
-                component=comp.id, chunks=len(review_chunks),
-                diff_chars=len(review_diff),
-            ))
+            self.bus.emit(
+                ev.DiffChunked(
+                    component=comp.id,
+                    chunks=len(review_chunks),
+                    diff_chars=len(review_diff),
+                )
+            )
 
         return DiffPhaseResult(
-            diff=shared_diff, review_diff=review_diff, chunks=review_chunks,
+            diff=shared_diff,
+            review_diff=review_diff,
+            chunks=review_chunks,
         )
 
     def _phase_review(
@@ -2493,9 +2688,7 @@ class ComponentPipeline:
     ) -> ReviewPhaseResult:
         """Phase 2: second-opinion review against the PRD."""
         review_mode = ReviewMode(self.factory_config.review_mode)
-        chunked_review = (
-            review_mode == ReviewMode.HARD and review_chunks is not None
-        )
+        chunked_review = review_mode == ReviewMode.HARD and review_chunks is not None
         review_skip_reason: str | None = None
         # R10.3: "the operator turned the reviewer off" and "the
         # reviewer ran out of budget" are both SKIP, and the set-point
@@ -2516,8 +2709,7 @@ class ComponentPipeline:
                 f"({self.factory_config.max_adversarial_calls}) exhausted"
             )
             review_skip_reason = (
-                f"adversarial LLM budget "
-                f"({self.factory_config.max_adversarial_calls}) exhausted"
+                f"adversarial LLM budget ({self.factory_config.max_adversarial_calls}) exhausted"
             )
             review_mode = ReviewMode.SKIP
             budget_downgraded = True
@@ -2536,26 +2728,39 @@ class ComponentPipeline:
                 )
                 self.ui.err(f"  Phase 2 FAILED for {comp.id}: {error}")
                 comp.review_passed = False
-                self._add_findings(comp, [Finding.infrastructure_error(
-                    phase="review", explanation=error,
-                )])
-                self.bus.emit(ev.ChunkBudgetInsufficient(
-                    component=comp.id, phase="review",
-                    chunks=len(review_chunks), remaining=remaining,
-                ))
+                self._add_findings(
+                    comp,
+                    [
+                        Finding.infrastructure_error(
+                            phase="review",
+                            explanation=error,
+                        )
+                    ],
+                )
+                self.bus.emit(
+                    ev.ChunkBudgetInsufficient(
+                        component=comp.id,
+                        phase="review",
+                        chunks=len(review_chunks),
+                        remaining=remaining,
+                    )
+                )
                 return ReviewPhaseResult(
                     ran=False,
                     failure=PhaseFailure(
                         action=FailureAction.FAIL,
                         error=f"Review infrastructure error: {error}",
-                        phase="review", check="adversarial_budget",
+                        phase="review",
+                        check="adversarial_budget",
                         signatures=["review:chunk-budget-insufficient"],
                     ),
                 )
         if review_mode == ReviewMode.SKIP:
             comp.review_passed = None
             self._record_phase_skip(
-                comp, "review", review_skip_reason or "review skipped",
+                comp,
+                "review",
+                review_skip_reason or "review skipped",
             )
             # R10.3: this return is BEFORE the set-point gate, so a
             # component whose reviewer never ran would otherwise
@@ -2599,13 +2804,9 @@ class ComponentPipeline:
         if not chunked_review:
             self.adversarial_budget_consume()
         chunk_note = (
-            f", {len(review_chunks)} chunks"
-            if chunked_review and review_chunks is not None else ""
+            f", {len(review_chunks)} chunks" if chunked_review and review_chunks is not None else ""
         )
-        self.ui.info(
-            f"  Phase 2: review ({review_mode.value}{chunk_note}) "
-            f"for {comp.id}..."
-        )
+        self.ui.info(f"  Phase 2: review ({review_mode.value}{chunk_note}) for {comp.id}...")
 
         # Forensic home for full raw reviewer output on parse failures
         # (R1.2; mirrors knowledge.py's _debug/<run_id>/ layout).
@@ -2694,13 +2895,16 @@ class ComponentPipeline:
         # historical meaning of fail_count = "failed PRD criteria".
         # Concern counts ride along separately via fail_concerns /
         # advisory_concerns so dashboards can distinguish.
-        self.bus.emit(ev.ReviewResultEvent(
-            component=comp.id, passed=review_result.passed,
-            mode=review_mode.value,
-            fail_count=review_result.criterion_fail_count,
-            advisory_count=review_result.criterion_advisory_count,
-            duration_seconds=round(review_result.duration_seconds, 2),
-        ))
+        self.bus.emit(
+            ev.ReviewResultEvent(
+                component=comp.id,
+                passed=review_result.passed,
+                mode=review_mode.value,
+                fail_count=review_result.criterion_fail_count,
+                advisory_count=review_result.criterion_advisory_count,
+                duration_seconds=round(review_result.duration_seconds, 2),
+            )
+        )
 
         # R10.3 set-point agreement. The engineer agent is the only
         # writer of the PRD's `passes` flag, so a story marked done is a
@@ -2734,16 +2938,23 @@ class ComponentPipeline:
             # coverage gate, so a review that PASSED is itself evidence
             # the file parsed moments earlier. A third gate here would
             # guard a state the second one rules out.
-            self._add_findings(comp, [Finding.infrastructure_error(
-                phase="review",
-                explanation=(
-                    "Set-point agreement not measured: the PRD at "
-                    f"{comp.prd_path} could not be read: {exc}"
-                ),
-            )])
+            self._add_findings(
+                comp,
+                [
+                    Finding.infrastructure_error(
+                        phase="review",
+                        explanation=(
+                            "Set-point agreement not measured: the PRD at "
+                            f"{comp.prd_path} could not be read: {exc}"
+                        ),
+                    )
+                ],
+            )
         else:
             disagreements = setpoint_disagreements(
-                setpoint_prd, review_result, severity=severity,
+                setpoint_prd,
+                review_result,
+                severity=severity,
             )
             self._add_findings(comp, disagreements)
 
@@ -2753,20 +2964,19 @@ class ComponentPipeline:
                 if review_result.infrastructure_error
                 else "Review failed"
             )
-            self.ui.warn(
-                f"  Phase 2 FAILED for {comp.id}: "
-                f"{review_result.fail_count} failures"
-            )
+            self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_review_finding(
                 review_result.as_retry_context(),
-                attempt=comp.retries + 1, phase="review",
+                attempt=comp.retries + 1,
+                phase="review",
                 infrastructure=review_result.infrastructure_error,
             )
             # R6.1: journal the finding categories that failed the
             # gate ("review:scope_creep", "review:prd_criterion",
             # "review:infrastructure"), not the flattened reason.
             from kstrl.evolution import signatures_from_findings
+
             return ReviewPhaseResult(
                 ran=True,
                 result=review_result,
@@ -2774,13 +2984,11 @@ class ComponentPipeline:
                     action=FailureAction.RETRY_OR_FAIL,
                     error=reason,
                     phase="review",
-                    check=(
-                        "infrastructure"
-                        if review_result.infrastructure_error else "criteria"
-                    ),
+                    check=("infrastructure" if review_result.infrastructure_error else "criteria"),
                     context_json=ctx.to_json(),
                     signatures=signatures_from_findings(
-                        "review", review_result.as_findings(),
+                        "review",
+                        review_result.as_findings(),
                     ),
                 ),
             )
@@ -2813,7 +3021,9 @@ class ComponentPipeline:
                 "cannot be confirmed, the reviewer did not report"
             )
             return self._setpoint_failure(
-                comp, comp_result, review_result,
+                comp,
+                comp_result,
+                review_result,
                 error=(
                     "Set-point disagreement: the reviewer produced no "
                     "usable verdict, so no story claimed done is confirmed"
@@ -2828,7 +3038,9 @@ class ComponentPipeline:
             )
         if blocking and disagreements and setpoint_prd is not None:
             reverted = revert_unconfirmed_stories(
-                setpoint_prd, review_result, disagreements,
+                setpoint_prd,
+                review_result,
+                disagreements,
                 attempt=comp.retries + 1,
             )
             saved = True
@@ -2845,27 +3057,34 @@ class ComponentPipeline:
                 # rewritten. What changes is the retry text, which must
                 # not claim a revert that did not happen.
                 saved = False
-                self._add_findings(comp, [Finding.infrastructure_error(
-                    phase="review",
-                    explanation=(
-                        "Set-point revert could not be written to "
-                        f"{comp.prd_path}: {exc}"
-                    ),
-                )])
+                self._add_findings(
+                    comp,
+                    [
+                        Finding.infrastructure_error(
+                            phase="review",
+                            explanation=(
+                                f"Set-point revert could not be written to {comp.prd_path}: {exc}"
+                            ),
+                        )
+                    ],
+                )
             self.ui.warn(
                 f"  Phase 2 FAILED for {comp.id}: set-point disagreement "
                 f"on {len(reverted)} story(ies)"
-                + ("; passes reverted in the PRD" if saved
-                   else "; PRD could not be rewritten")
+                + ("; passes reverted in the PRD" if saved else "; PRD could not be rewritten")
             )
             return self._setpoint_failure(
-                comp, comp_result, review_result,
+                comp,
+                comp_result,
+                review_result,
                 error=(
                     f"Set-point disagreement: {len(reverted)} story(ies) "
                     "claimed done but not confirmed by review"
                 ),
                 retry_text=setpoint_retry_context(
-                    disagreements, review_result, reverted=saved,
+                    disagreements,
+                    review_result,
+                    reverted=saved,
                 ),
             )
 
@@ -2897,10 +3116,7 @@ class ComponentPipeline:
         ladder is on, and 0 when it is off.
         """
         autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = (
-            AutonomyState.load(self.root_dir).level
-            if autonomy_cfg.enabled else 0
-        )
+        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
         blocking = setpoint_blocks(self.factory_config, level)
         return blocking, "fail" if blocking else "advisory"
 
@@ -2934,7 +3150,9 @@ class ComponentPipeline:
         infrastructure = review_result.infrastructure_error
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         ctx.add_review_finding(
-            retry_text, attempt=comp.retries + 1, phase="review",
+            retry_text,
+            attempt=comp.retries + 1,
+            phase="review",
             infrastructure=infrastructure,
         )
         return ReviewPhaseResult(
@@ -2951,7 +3169,8 @@ class ComponentPipeline:
                 # severity fail/critical/high - true for a disagreement,
                 # but the signature must not silently depend on that.
                 signatures=[
-                    "review:infrastructure" if infrastructure
+                    "review:infrastructure"
+                    if infrastructure
                     else f"review:{SETPOINT_DISAGREEMENT_CATEGORY}"
                 ],
             ),
@@ -2978,14 +3197,19 @@ class ComponentPipeline:
         )
         if sec_config is None:
             self._record_phase_skip(
-                comp, "security", "security review not configured",
+                comp,
+                "security",
+                "security review not configured",
             )
             return SecurityPhaseResult(
-                ran=False, skip_reason="security review not configured",
+                ran=False,
+                skip_reason="security review not configured",
             )
         if sec_config.mode == SecurityMode.SKIP.value:
             self._record_phase_skip(
-                comp, "security", "security review disabled (mode=skip)",
+                comp,
+                "security",
+                "security review disabled (mode=skip)",
             )
             return SecurityPhaseResult(
                 ran=False,
@@ -2995,20 +3219,17 @@ class ComponentPipeline:
             # As with Phase 2: chunked hard-mode security never
             # downgrades to SKIP on an exhausted budget - it covers
             # every chunk or fails as infrastructure below.
-            self.ui.warn(
-                f"  Phase 2.5 SKIPPED for {comp.id}: "
-                f"adversarial LLM budget exhausted"
-            )
+            self.ui.warn(f"  Phase 2.5 SKIPPED for {comp.id}: adversarial LLM budget exhausted")
             self._record_phase_skip(
-                comp, "security", "adversarial LLM budget exhausted",
+                comp,
+                "security",
+                "adversarial LLM budget exhausted",
             )
             return SecurityPhaseResult(
-                ran=False, skip_reason="adversarial LLM budget exhausted",
+                ran=False,
+                skip_reason="adversarial LLM budget exhausted",
             )
-        if (
-            sec_config.mode == SecurityMode.HARD.value
-            and review_chunks is not None
-        ):
+        if sec_config.mode == SecurityMode.HARD.value and review_chunks is not None:
             remaining = self.adversarial_budget_remaining()
             if remaining is not None and remaining < len(review_chunks):
                 # R1.4: same rule as Phase 2 - budget cannot cover the
@@ -3021,21 +3242,30 @@ class ComponentPipeline:
                     "refusing a partial hard-mode security review (R1.4)"
                 )
                 self.ui.err(f"  Phase 2.5 FAILED for {comp.id}: {error}")
-                self._add_findings(comp, [Finding.infrastructure_error(
-                    phase="security", explanation=error,
-                )])
-                self.bus.emit(ev.ChunkBudgetInsufficient(
-                    component=comp.id, phase="security",
-                    chunks=len(review_chunks), remaining=remaining,
-                ))
+                self._add_findings(
+                    comp,
+                    [
+                        Finding.infrastructure_error(
+                            phase="security",
+                            explanation=error,
+                        )
+                    ],
+                )
+                self.bus.emit(
+                    ev.ChunkBudgetInsufficient(
+                        component=comp.id,
+                        phase="security",
+                        chunks=len(review_chunks),
+                        remaining=remaining,
+                    )
+                )
                 return SecurityPhaseResult(
                     ran=False,
                     failure=PhaseFailure(
                         action=FailureAction.FAIL,
-                        error=(
-                            f"Security review infrastructure error: {error}"
-                        ),
-                        phase="security", check="adversarial_budget",
+                        error=(f"Security review infrastructure error: {error}"),
+                        phase="security",
+                        check="adversarial_budget",
                         signatures=["security:chunk-budget-insufficient"],
                     ),
                 )
@@ -3048,11 +3278,11 @@ class ComponentPipeline:
 
         chunk_note = (
             f", {len(review_chunks)} chunks"
-            if chunked_security and review_chunks is not None else ""
+            if chunked_security and review_chunks is not None
+            else ""
         )
         self.ui.info(
-            f"  Phase 2.5: security review "
-            f"({sec_config.mode}{chunk_note}) for {comp.id}..."
+            f"  Phase 2.5: security review ({sec_config.mode}{chunk_note}) for {comp.id}..."
         )
         sec_result = None
         sec_agent: Any = None
@@ -3075,10 +3305,7 @@ class ComponentPipeline:
                 self.security_selection.reasoning,
                 self.security_selection.agent_type,
             )
-            if (
-                sec_config.mode == SecurityMode.HARD.value
-                and review_chunks is not None
-            ):
+            if sec_config.mode == SecurityMode.HARD.value and review_chunks is not None:
                 # R1.4: one pass per chunk, each consuming budget
                 # via consume_budget; any chunk failure fails the
                 # merged result.
@@ -3120,10 +3347,7 @@ class ComponentPipeline:
             sec_result = SecurityResult(
                 passed=sec_config.mode != SecurityMode.HARD.value,
                 mode=sec_config.mode,
-                overall_notes=(
-                    f"Security review agent failed before "
-                    f"completion: {exc}"
-                ),
+                overall_notes=(f"Security review agent failed before completion: {exc}"),
                 infrastructure_error=True,
                 # R7.1: a crash before/inside the run is still
                 # attributed to the selected reviewer identity.
@@ -3147,13 +3371,16 @@ class ComponentPipeline:
             )
 
         if sec_result is not None:
-            self.bus.emit(ev.ReviewResultEvent(
-                component=comp.id, passed=sec_result.passed,
-                mode=f"security-{sec_config.mode}",
-                fail_count=sec_result.critical_count + sec_result.high_count,
-                advisory_count=len(sec_result.findings),
-                duration_seconds=round(sec_result.duration_seconds, 2),
-            ))
+            self.bus.emit(
+                ev.ReviewResultEvent(
+                    component=comp.id,
+                    passed=sec_result.passed,
+                    mode=f"security-{sec_config.mode}",
+                    fail_count=sec_result.critical_count + sec_result.high_count,
+                    advisory_count=len(sec_result.findings),
+                    duration_seconds=round(sec_result.duration_seconds, 2),
+                )
+            )
 
             # E3: source-of-truth typed findings list, plus the
             # legacy rendered string for PR body / manifest readers.
@@ -3161,8 +3388,7 @@ class ComponentPipeline:
             if sec_result.findings:
                 if comp.review_findings:
                     comp.review_findings = (
-                        comp.review_findings + "\n\n"
-                        + sec_result.as_pr_body_section()
+                        comp.review_findings + "\n\n" + sec_result.as_pr_body_section()
                     )
                 else:
                     comp.review_findings = sec_result.as_pr_body_section()
@@ -3186,14 +3412,15 @@ class ComponentPipeline:
                 # retry prompt still says what went wrong.
                 ctx.add_review_finding(
                     sec_result.as_retry_context()
-                    or "Security review infrastructure error: "
-                    + sec_result.overall_notes,
-                    attempt=comp.retries + 1, phase="security",
+                    or "Security review infrastructure error: " + sec_result.overall_notes,
+                    attempt=comp.retries + 1,
+                    phase="security",
                     infrastructure=sec_result.infrastructure_error,
                 )
                 # R6.1: journal the vuln categories that failed the
                 # gate ("security:injection", ...), not the reason.
                 from kstrl.evolution import signatures_from_findings
+
                 return SecurityPhaseResult(
                     ran=True,
                     result=sec_result,
@@ -3201,14 +3428,11 @@ class ComponentPipeline:
                         action=FailureAction.RETRY_OR_FAIL,
                         error=reason,
                         phase="security",
-                        check=(
-                            "infrastructure"
-                            if sec_result.infrastructure_error
-                            else "findings"
-                        ),
+                        check=("infrastructure" if sec_result.infrastructure_error else "findings"),
                         context_json=ctx.to_json(),
                         signatures=signatures_from_findings(
-                            "security", sec_result.as_findings(),
+                            "security",
+                            sec_result.as_findings(),
                         ),
                     ),
                 )
@@ -3246,7 +3470,8 @@ class ComponentPipeline:
         knowledge_config = self.knowledge_config
         if not knowledge_config.enabled:
             return DistillPhaseResult(
-                ran=False, skip_reason="knowledge disabled",
+                ran=False,
+                skip_reason="knowledge disabled",
             )
         if self.manifest.single_pr:
             self.ui.info(
@@ -3254,14 +3479,13 @@ class ComponentPipeline:
                 f"(single_pr mode produces a polluted per-component diff)"
             )
             self._record_phase_skip(
-                comp, "knowledge",
+                comp,
+                "knowledge",
                 "single_pr mode produces a polluted per-component diff",
             )
             return DistillPhaseResult(
                 ran=False,
-                skip_reason=(
-                    "single_pr mode produces a polluted per-component diff"
-                ),
+                skip_reason=("single_pr mode produces a polluted per-component diff"),
             )
         # Already measured at the diff phase, for every component that
         # got that far - including the ones that then failed review or
@@ -3272,15 +3496,15 @@ class ComponentPipeline:
         util = self.fact_utilization.get(comp.id) or FactUtilization()
 
         if not self.adversarial_budget_ok():
-            self.ui.info(
-                f"  Knowledge: skipped for {comp.id} "
-                f"(adversarial budget exhausted)"
-            )
+            self.ui.info(f"  Knowledge: skipped for {comp.id} (adversarial budget exhausted)")
             self._record_phase_skip(
-                comp, "knowledge", "adversarial LLM budget exhausted",
+                comp,
+                "knowledge",
+                "adversarial LLM budget exhausted",
             )
             return DistillPhaseResult(
-                ran=False, skip_reason="adversarial LLM budget exhausted",
+                ran=False,
+                skip_reason="adversarial LLM budget exhausted",
                 utilization=util,
             )
         breached = self.breached_ceiling()
@@ -3290,20 +3514,17 @@ class ComponentPipeline:
             # The skip is recorded, and the scheduling gate stops any
             # remaining components loudly.
             detail = (
-                f"{self.run_usage.total_tokens} >= "
-                f"{self.factory_config.max_total_tokens}"
+                f"{self.run_usage.total_tokens} >= {self.factory_config.max_total_tokens}"
                 if breached == "max_total_tokens"
-                else (
-                    f"${self.run_usage.cost_usd:.6f} >= "
-                    f"${self.factory_config.max_cost_usd}"
-                )
+                else (f"${self.run_usage.cost_usd:.6f} >= ${self.factory_config.max_cost_usd}")
             )
             self.ui.warn(
-                f"  Knowledge: skipped for {comp.id} "
-                f"(budget exceeded, {breached}: {detail})"
+                f"  Knowledge: skipped for {comp.id} (budget exceeded, {breached}: {detail})"
             )
             self._record_phase_skip(
-                comp, "knowledge", f"budget ({breached}) exceeded",
+                comp,
+                "knowledge",
+                f"budget ({breached}) exceeded",
             )
             return DistillPhaseResult(
                 ran=False,
@@ -3319,9 +3540,7 @@ class ComponentPipeline:
             # Reuse the diff already fetched by the diff phase - the
             # worktree state hasn't changed between Phase 1 and here.
             diff_content = shared_diff
-            distill_model = (
-                knowledge_config.distill_model or self.base_config.model
-            )
+            distill_model = knowledge_config.distill_model or self.base_config.model
             distill_agent = _get_agent(
                 self.base_config.agent_cmd,
                 distill_model,
@@ -3343,12 +3562,16 @@ class ComponentPipeline:
                     comp.review_passed,
                     on_line=on_line,
                 )
-            self.bus.emit(ev.DistillResult(
-                component=comp.id, facts_written=written,
-                duration_seconds=round(
-                    time.monotonic() - distill_start, 2,
-                ),
-            ))
+            self.bus.emit(
+                ev.DistillResult(
+                    component=comp.id,
+                    facts_written=written,
+                    duration_seconds=round(
+                        time.monotonic() - distill_start,
+                        2,
+                    ),
+                )
+            )
             if written > 0:
                 self.ui.ok(f"  Knowledge: {status}")
             else:
@@ -3362,13 +3585,18 @@ class ComponentPipeline:
         # gate halts the run before any FURTHER spend.
         if distill_agent is not None:
             self._record_usage(
-                comp.id, "distill", collect_usage(distill_agent),
+                comp.id,
+                "distill",
+                collect_usage(distill_agent),
             )
 
         return DistillPhaseResult(ran=True, utilization=util)
 
     def _measure_utilization(
-        self, comp: Component, wt_path: Path, shared_diff: str,
+        self,
+        comp: Component,
+        wt_path: Path,
+        shared_diff: str,
     ) -> FactUtilization:
         """Did the engineer reference any fact we injected? (#191)
 
@@ -3407,10 +3635,9 @@ class ComponentPipeline:
             # wrote. The hardcoded scripts/kstrl/progress.txt this
             # replaced was a second copy of the out-of-scope default
             # and read nothing for every decomposed component.
-            progress_path = (
-                wt_path / self.base_config.component_progress_file(
-                    comp.prd_path, self.root_dir,
-                )
+            progress_path = wt_path / self.base_config.component_progress_file(
+                comp.prd_path,
+                self.root_dir,
             )
             try:
                 progress_text = progress_path.read_text(encoding="utf-8")
@@ -3426,7 +3653,9 @@ class ComponentPipeline:
             # TestFactUtilizationUsesTheRealMatcher pins this call shape
             # against the real matcher for exactly that reason.
             util = self.hooks.measure_fact_utilization(
-                prefix, progress_text, diff=shared_diff,
+                prefix,
+                progress_text,
+                diff=shared_diff,
             )
             # .get for the per-tier keys: this is an injected seam, and
             # a hook that only reports the totals must degrade to "no
@@ -3448,13 +3677,14 @@ class ComponentPipeline:
             # Was a bare `except: pass`. Silence made a broken recorder
             # indistinguishable from "the engineer referenced nothing",
             # so the L2+ gate could never accrue and never say why.
-            self.ui.warn(
-                f"  Knowledge utilization measurement failed: {exc}"
-            )
+            self.ui.warn(f"  Knowledge utilization measurement failed: {exc}")
             return FactUtilization(reason=f"{type(exc).__name__}: {exc}")
 
     def _phase_checkpoint(
-        self, comp: Component, *, diff_text: str = "",
+        self,
+        comp: Component,
+        *,
+        diff_text: str = "",
     ) -> CheckpointDecision:
         """E6: human-in-the-loop checkpoint. When opt-in, prompt
         before pushing+merging so a human can inspect the diff,
@@ -3473,9 +3703,13 @@ class ComponentPipeline:
         if not self.factory_config.pause_before_pr_merge:
             return CheckpointDecision.NOT_PROMPTED
         question = f"Approve PR creation and merge for {comp.id}?"
-        self.bus.emit(ev.CheckpointRequested(
-            component=comp.id, kind="pr_merge", question=question,
-        ))
+        self.bus.emit(
+            ev.CheckpointRequested(
+                component=comp.id,
+                kind="pr_merge",
+                question=question,
+            )
+        )
         request = PromptRequest(
             kind=PromptKind.CHECKPOINT,
             header=question,
@@ -3489,14 +3723,13 @@ class ComponentPipeline:
             checkpoint=CheckpointContext(
                 component_id=comp.id,
                 diff_excerpt=git.truncate_diff_for_prompt(
-                    diff_text, CHECKPOINT_DIFF_CHAR_LIMIT,
-                ) if diff_text else "",
-                review_findings=tuple(
-                    f for f in comp.findings if f.phase == "review"
-                ),
-                security_findings=tuple(
-                    f for f in comp.findings if f.phase == "security"
-                ),
+                    diff_text,
+                    CHECKPOINT_DIFF_CHAR_LIMIT,
+                )
+                if diff_text
+                else "",
+                review_findings=tuple(f for f in comp.findings if f.phase == "review"),
+                security_findings=tuple(f for f in comp.findings if f.phase == "security"),
                 usage=self.usage_totals_for(comp.id),
                 branch=comp.branch_name,
             ),
@@ -3513,10 +3746,14 @@ class ComponentPipeline:
                 f"non-interactive; parking {comp.id} for approval "
                 f"(see `ks inbox ls`)"
             )
-            self.bus.emit(ev.CheckpointResolved(
-                component=comp.id, kind="pr_merge",
-                decision="parked", decided_by="inbox",
-            ))
+            self.bus.emit(
+                ev.CheckpointResolved(
+                    component=comp.id,
+                    kind="pr_merge",
+                    decision="parked",
+                    decided_by="inbox",
+                )
+            )
             self._inbox_add(
                 ItemKind.MERGE_GATE,
                 f"{comp.id} awaiting merge approval",
@@ -3529,9 +3766,7 @@ class ComponentPipeline:
                 dedupe_key=f"merge-gate:{comp.id}",
                 evidence={
                     "branch": comp.branch_name,
-                    "review_findings": len([
-                        f for f in comp.findings if f.phase == "review"
-                    ]),
+                    "review_findings": len([f for f in comp.findings if f.phase == "review"]),
                 },
             )
             return CheckpointDecision.PARKED
@@ -3541,28 +3776,31 @@ class ComponentPipeline:
         if not response.answered:
             # The channel lost its resolver between the guard and the
             # answer (detached TUI): same semantics as non-interactive.
-            self.bus.emit(ev.CheckpointResolved(
-                component=comp.id, kind="pr_merge",
-                decision="not_prompted", decided_by="auto",
-            ))
+            self.bus.emit(
+                ev.CheckpointResolved(
+                    component=comp.id,
+                    kind="pr_merge",
+                    decision="not_prompted",
+                    decided_by="auto",
+                )
+            )
             return CheckpointDecision.NOT_PROMPTED
         decision = {
             1: CheckpointDecision.REJECTED,
             2: CheckpointDecision.RETRY,
         }.get(response.choice, CheckpointDecision.APPROVED)
-        self.bus.emit(ev.CheckpointResolved(
-            component=comp.id, kind="pr_merge",
-            decision=decision.name.lower(), decided_by="operator",
-        ))
+        self.bus.emit(
+            ev.CheckpointResolved(
+                component=comp.id,
+                kind="pr_merge",
+                decision=decision.name.lower(),
+                decided_by="operator",
+            )
+        )
         if decision == CheckpointDecision.REJECTED:
-            self.ui.warn(
-                f"  Human rejected {comp.id} at PR checkpoint"
-            )
+            self.ui.warn(f"  Human rejected {comp.id} at PR checkpoint")
         elif decision == CheckpointDecision.RETRY:
-            self.ui.warn(
-                f"  Human requested retry for {comp.id} "
-                f"at PR checkpoint"
-            )
+            self.ui.warn(f"  Human requested retry for {comp.id} at PR checkpoint")
         return decision
 
     def _phase_pr(self, comp: Component) -> PrPhaseResult:
@@ -3585,16 +3823,22 @@ class ComponentPipeline:
 
         self.ui.info(f"  Creating and merging PR for {comp.id}...")
         outcome = push_create_and_merge_pr(
-            comp, self.manifest, self.root_dir, self.ui,
+            comp,
+            self.manifest,
+            self.root_dir,
+            self.ui,
             merge_method="squash",
             merge_timeout=self.factory_config.merge_timeout,
         )
         if outcome.pr_url:
             self.factory_result.pr_urls.append(outcome.pr_url)
-            self.bus.emit(ev.PrCreated(
-                component=comp.id, pr_number=comp.pr_number or 0,
-                pr_url=outcome.pr_url,
-            ))
+            self.bus.emit(
+                ev.PrCreated(
+                    component=comp.id,
+                    pr_number=comp.pr_number or 0,
+                    pr_url=outcome.pr_url,
+                )
+            )
         self.manifest.save(self.manifest_path)
 
         # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
@@ -3619,10 +3863,14 @@ class ComponentPipeline:
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
             )
-        self.bus.emit(ev.PrMerged(
-            component=comp.id, pr_number=comp.pr_number or 0,
-            pr_url=outcome.pr_url,
-        ))
+        self.bus.emit(
+            ev.PrMerged(
+                component=comp.id,
+                pr_number=comp.pr_number or 0,
+                pr_url=outcome.pr_url,
+            )
+        )
         return PrPhaseResult(
-            disposition=PrDisposition.MERGED, pr_url=outcome.pr_url,
+            disposition=PrDisposition.MERGED,
+            pr_url=outcome.pr_url,
         )

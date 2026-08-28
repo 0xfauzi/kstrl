@@ -20,8 +20,7 @@ from tests.spine_utils import git
 
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
 _LINT_FAIL_COMMAND = (
-    f"{sys.executable} -c "
-    "'import sys; print(\"x.py:1:1: E501 line too long\"); sys.exit(1)'"
+    f"{sys.executable} -c 'import sys; print(\"x.py:1:1: E501 line too long\"); sys.exit(1)'"
 )
 
 # CheckResult.name values, read from kstrl/verify.py, not guessed.
@@ -46,9 +45,7 @@ def _make_repo(tmp_path: Path, lint_command: str = _OK_COMMAND) -> Path:
     git("init", "-q", "-b", "main", cwd=root)
     git("config", "user.email", "sense@test", cwd=root)
     git("config", "user.name", "Sense Test", cwd=root)
-    (root / "pyproject.toml").write_text(
-        '[project]\nname = "proj"\nversion = "0.0.1"\n'
-    )
+    (root / "pyproject.toml").write_text('[project]\nname = "proj"\nversion = "0.0.1"\n')
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text("def a() -> int:\n    return 1\n")
     (root / "tests").mkdir()
@@ -90,7 +87,12 @@ def test_sense_passes_on_clean_tree(tmp_path: Path) -> None:
     assert _ALWAYS_ON_CHECKS <= names
     for check in document["checks"]:
         assert set(check) == {
-            "name", "passed", "message", "details", "duration_seconds", "findings",
+            "name",
+            "passed",
+            "message",
+            "details",
+            "duration_seconds",
+            "findings",
         }
         assert check["passed"] is True
         assert isinstance(check["duration_seconds"], float)
@@ -125,15 +127,23 @@ def test_sense_skips_prd_checks_without_prd(tmp_path: Path) -> None:
 def test_sense_runs_prd_checks_with_prd(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     prd = tmp_path / "prd.json"
-    prd.write_text(json.dumps({
-        "branchName": "test",
-        "userStories": [
+    prd.write_text(
+        json.dumps(
             {
-                "id": "US-001", "title": "Test", "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": False, "notes": "",
+                "branchName": "test",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Test",
+                        "acceptanceCriteria": ["AC"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
             }
-        ],
-    }))
+        )
+    )
 
     result, document = _sense_json(root, "--prd", str(prd))
 
@@ -221,8 +231,14 @@ def test_sense_help_lists_every_option() -> None:
 
     assert result.exit_code == 0
     for option in (
-        "--root", "--path", "--base", "--prd", "--allowed-path",
-        "--json", "--ui", "--no-color",
+        "--root",
+        "--path",
+        "--base",
+        "--prd",
+        "--allowed-path",
+        "--json",
+        "--ui",
+        "--no-color",
     ):
         assert option in result.output
 
@@ -243,9 +259,7 @@ def _dead_code_repo(tmp_path: Path) -> Path:
     bystander a `git add -A` would have swept in.
     """
     root = _make_repo(tmp_path)
-    (root / "kstrl.toml").write_text(
-        _kstrl_toml() + "dead_code_cleanup = true\n"
-    )
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "dead_code_cleanup = true\n")
     git("commit", "-q", "-am", "enable dead code cleanup", cwd=root)
     git("checkout", "-q", "-b", "feature", cwd=root)
     (root / "src" / "b.py").write_text("import os\n\n\ndef b() -> int:\n    return 2\n")
@@ -355,8 +369,7 @@ def test_sense_runs_without_git_when_no_check_reads_the_diff(
     root = tmp_path / "plain"
     root.mkdir()
     (root / "kstrl.toml").write_text(
-        _kstrl_toml()
-        + "check_diff_scope = false\ncheck_bad_patterns = false\n"
+        _kstrl_toml() + "check_diff_scope = false\ncheck_bad_patterns = false\n"
     )
 
     result, document = _sense_json(root)

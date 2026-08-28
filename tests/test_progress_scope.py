@@ -75,7 +75,9 @@ def _architect_component(comp_id: str = COMPONENT_ID) -> dict[str, Any]:
         "description": "Sign and verify payloads",
         "dependencies": [],
         "allowedPaths": [
-            "hmac_signer/", "tests/", f"scripts/kstrl/feature/{comp_id}/",
+            "hmac_signer/",
+            "tests/",
+            f"scripts/kstrl/feature/{comp_id}/",
         ],
         "userStories": [
             {
@@ -95,7 +97,10 @@ def _architect_component(comp_id: str = COMPONENT_ID) -> dict[str, Any]:
 
 def _component(comp_id: str = COMPONENT_ID) -> Component:
     return Component(
-        comp_id, comp_id.title(), "Desc", [],
+        comp_id,
+        comp_id.title(),
+        "Desc",
+        [],
         f"scripts/kstrl/feature/{comp_id}/prd.json",
         f"kstrl/factory/{comp_id}",
     )
@@ -103,8 +108,12 @@ def _component(comp_id: str = COMPONENT_ID) -> Component:
 
 def _manifest(components: list[Component]) -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="test",
-        base_branch="main", single_pr=False, components=components,
+        version="1",
+        spec_file="spec.md",
+        project_name="test",
+        base_branch="main",
+        single_pr=False,
+        components=components,
     )
 
 
@@ -146,26 +155,41 @@ def _pipeline(
         manifest=_manifest([comp]),
         manifest_path=root / "manifest.json",
         factory_config=FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
         ),
         base_config=_base_config(root),
         ui=ui,
         root_dir=root,
         run_id="run-test",
         bus=EventBus(
-            V1CompatSink(ProgressLog(
-                root / "progress.jsonl", run_id="run-test",
-            )),
+            V1CompatSink(
+                ProgressLog(
+                    root / "progress.jsonl",
+                    run_id="run-test",
+                )
+            ),
             run_id="run-test",
         ),
         journal_path=None,
         notify=NotifyHooks(
-            NotifyConfig(), run_id="run-test", project="t", warn=ui.warn,
+            NotifyConfig(),
+            run_id="run-test",
+            project="t",
+            warn=ui.warn,
         ),
         review_selection=AdversarialAgentSelection(
-            phase="review", agent_cmd=None, agent_type=None, model=None,
-            reasoning=None, source="explicit", identity="test-review",
+            phase="review",
+            agent_cmd=None,
+            agent_type=None,
+            model=None,
+            reasoning=None,
+            source="explicit",
+            identity="test-review",
         ),
         security_selection=None,
         knowledge_config=KnowledgeConfig(enabled=True),
@@ -176,21 +200,24 @@ def _pipeline(
                 or (lambda *a, **k: VerificationResult(passed=True, checks=[]))
             ),
             run_review=lambda *a, **k: ReviewResult(
-                passed=True, mode="advisory",
+                passed=True,
+                mode="advisory",
             ),
             run_chunked_review=lambda *a, **k: ReviewResult(
-                passed=True, mode="hard",
+                passed=True,
+                mode="hard",
             ),
             run_security_review=lambda *a, **k: SecurityResult(
-                passed=True, mode="advisory",
+                passed=True,
+                mode="advisory",
             ),
             run_chunked_security_review=lambda *a, **k: SecurityResult(
-                passed=True, mode="hard",
+                passed=True,
+                mode="hard",
             ),
             distill_facts=lambda *a, **k: (1, "1 fact written"),
             measure_fact_utilization=(
-                measure_fact_utilization
-                or (lambda *a, **k: {"injected": 0, "referenced": 0})
+                measure_fact_utilization or (lambda *a, **k: {"injected": 0, "referenced": 0})
             ),
             cleanup_worktree=lambda *a, **k: None,
         ),
@@ -208,21 +235,28 @@ def _setup_project(root: Path, comp_ids: list[str]) -> None:
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     (root / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
     for comp_id in comp_ids:
         feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True, exist_ok=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +266,8 @@ def _setup_project(root: Path, comp_ids: list[str]) -> None:
 
 class TestProgressPathInsideAllowedPaths:
     def test_default_progress_path_is_inside_component_allowed_paths(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """THE regression: the default progress path for a factory
         component passes the same guard the diff-scope check applies.
@@ -243,14 +278,17 @@ class TestProgressPathInsideAllowedPaths:
         path is resolved by the factory's own resolver.
         """
         prd_path = _generate_component_prd(
-            _architect_component(), tmp_path, "kstrl/factory/hmac",
+            _architect_component(),
+            tmp_path,
+            "kstrl/factory/hmac",
         )
         rel_prd = prd_path.relative_to(tmp_path).as_posix()
         allowed = PRD.load(prd_path).allowed_paths
         assert allowed == ARCHITECT_ALLOWED_PATHS
 
         progress_rel = _base_config(tmp_path).component_progress_file(
-            rel_prd, tmp_path,
+            rel_prd,
+            tmp_path,
         )
 
         assert path_is_allowed(progress_rel, allowed), (
@@ -259,13 +297,18 @@ class TestProgressPathInsideAllowedPaths:
         )
 
     def test_progress_path_is_a_sibling_of_the_component_prd(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Derived from prdPath, the same source of truth the architect
         was told about - not a second string-built convention."""
-        assert _base_config(tmp_path).component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == f"{FEATURE_DIR}/progress.txt"
+        assert (
+            _base_config(tmp_path).component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == f"{FEATURE_DIR}/progress.txt"
+        )
 
     def test_single_component_layout_is_unchanged(self, tmp_path: Path) -> None:
         """The standalone loop has no feature subtree: a PRD at
@@ -287,29 +330,40 @@ class TestProgressPathInsideAllowedPaths:
 
 class TestExplicitConfigurationWins:
     def test_toml_progress_path_wins_for_every_component(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            '[paths]\nprogress = "docs/agent-progress.md"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[paths]\nprogress = "docs/agent-progress.md"\n')
         config = KstrlConfig.load(tmp_path)
         assert config.progress_file is not None
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == "docs/agent-progress.md"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == "docs/agent-progress.md"
+        )
 
     def test_env_progress_path_wins(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("PROGRESS_FILE", "docs/env-progress.md")
         config = KstrlConfig.load(tmp_path)
         assert config.progress_file is not None
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == "docs/env-progress.md"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == "docs/env-progress.md"
+        )
 
     def test_explicit_value_equal_to_the_default_is_still_explicit(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Explicitness is carried by the sentinel, not inferred by
         comparing against the default (R2.1 removed that pattern) - an
@@ -318,9 +372,13 @@ class TestExplicitConfigurationWins:
         monkeypatch.setenv("PROGRESS_FILE", "scripts/kstrl/progress.txt")
         config = KstrlConfig.load(tmp_path)
         assert config.progress_file is not None
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == "scripts/kstrl/progress.txt"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == "scripts/kstrl/progress.txt"
+        )
 
     def test_unset_config_is_the_none_sentinel(self, tmp_path: Path) -> None:
         assert KstrlConfig.load(tmp_path).progress_file is None
@@ -341,22 +399,35 @@ class TestProgrammaticallySetProgressFileIsHonored:
 
     def test_constructor_value_is_honored(self, tmp_path: Path) -> None:
         config = KstrlConfig(progress_file=Path("docs/custom-progress.md"))
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == "docs/custom-progress.md"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == "docs/custom-progress.md"
+        )
 
     def test_attribute_assignment_is_honored(self, tmp_path: Path) -> None:
         config = _base_config(tmp_path)
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == f"{FEATURE_DIR}/progress.txt"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == f"{FEATURE_DIR}/progress.txt"
+        )
         config.progress_file = tmp_path / "docs" / "custom-progress.md"
-        assert config.component_progress_file(
-            f"{FEATURE_DIR}/prd.json", tmp_path,
-        ) == "docs/custom-progress.md"
+        assert (
+            config.component_progress_file(
+                f"{FEATURE_DIR}/prd.json",
+                tmp_path,
+            )
+            == "docs/custom-progress.md"
+        )
 
     def test_run_factory_honors_a_directly_constructed_config(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The end-to-end shape of the regression: no toml, no env, one
         constructor argument, and the worker must be told THAT path."""
@@ -366,21 +437,31 @@ class TestProgrammaticallySetProgressFileIsHonored:
         def fake_component(*args: Any, **kwargs: Any) -> ComponentResult:
             captured.append(args)
             return ComponentResult(
-                COMPONENT_ID, success=True, iterations=1,
+                COMPONENT_ID,
+                success=True,
+                iterations=1,
                 duration_seconds=1.0,
             )
 
         base = _base_config(tmp_path)
         base.progress_file = Path("docs/custom-progress.md")
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
                 _manifest([_component()]),
                 FactoryConfig(
-                    use_worktrees=False, create_prs=False, max_parallel=1,
-                    max_retries=0, retry_delay=0, review_mode="skip",
+                    use_worktrees=False,
+                    create_prs=False,
+                    max_parallel=1,
+                    max_retries=0,
+                    retry_delay=0,
+                    review_mode="skip",
                     verify_config=None,
                     progress_log_path=tmp_path / "progress.jsonl",
                 ),
@@ -393,7 +474,8 @@ class TestProgrammaticallySetProgressFileIsHonored:
         assert "docs/custom-progress.md" in captured[0]
 
     def test_the_standalone_loop_still_gets_a_concrete_path(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The sentinel must not leak "None" into the engineer prompt:
         the loop resolves it against the run root."""
@@ -402,12 +484,18 @@ class TestProgrammaticallySetProgressFileIsHonored:
         )
         # An absolute explicit setting is returned untouched (the factory
         # worker's case); a relative one is anchored to the root.
-        assert KstrlConfig(
-            progress_file=tmp_path / "wt" / "p.txt",
-        ).resolved_progress_file(tmp_path) == tmp_path / "wt" / "p.txt"
-        assert KstrlConfig(
-            progress_file=Path("docs/p.md"),
-        ).resolved_progress_file(tmp_path) == tmp_path / "docs" / "p.md"
+        assert (
+            KstrlConfig(
+                progress_file=tmp_path / "wt" / "p.txt",
+            ).resolved_progress_file(tmp_path)
+            == tmp_path / "wt" / "p.txt"
+        )
+        assert (
+            KstrlConfig(
+                progress_file=Path("docs/p.md"),
+            ).resolved_progress_file(tmp_path)
+            == tmp_path / "docs" / "p.md"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -425,18 +513,28 @@ class TestFactoryWiring:
         def fake_component(*args: Any, **kwargs: Any) -> ComponentResult:
             captured.append(args)
             return ComponentResult(
-                COMPONENT_ID, success=True, iterations=1,
+                COMPONENT_ID,
+                success=True,
+                iterations=1,
                 duration_seconds=1.0,
             )
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
                 _manifest([_component()]),
                 FactoryConfig(
-                    use_worktrees=False, create_prs=False, max_parallel=1,
-                    max_retries=0, retry_delay=0, review_mode="skip",
+                    use_worktrees=False,
+                    create_prs=False,
+                    max_parallel=1,
+                    max_retries=0,
+                    retry_delay=0,
+                    review_mode="skip",
                     verify_config=None,
                     progress_log_path=tmp_path / "progress.jsonl",
                 ),
@@ -451,7 +549,8 @@ class TestFactoryWiring:
         assert "scripts/kstrl/progress.txt" not in args
 
     def test_run_component_default_derives_from_the_prd(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A direct caller that omits progress_file_str gets the
         in-scope path too: the safe path is the default, not an opt-in.
@@ -463,11 +562,15 @@ class TestFactoryWiring:
         seen: list[KstrlConfig] = []
 
         def fake_run_loop(
-            config: KstrlConfig, *args: Any, **kwargs: Any,
+            config: KstrlConfig,
+            *args: Any,
+            **kwargs: Any,
         ) -> LoopResult:
             seen.append(config)
             return LoopResult(
-                completed=True, iterations=1, exit_code=0,
+                completed=True,
+                iterations=1,
+                exit_code=0,
                 duration_seconds=0.0,
             )
 
@@ -479,7 +582,9 @@ class TestFactoryWiring:
                 root_dir_str=str(tmp_path),
                 prompt_file_str="scripts/kstrl/prompt.md",
                 agent_cmd="echo test",
-                model=None, reasoning=None, agent_type=None,
+                model=None,
+                reasoning=None,
+                agent_type=None,
                 sleep_seconds=0.0,
                 redirect_output=False,
             )
@@ -505,9 +610,13 @@ _SELF_CRITIQUE_ENTRY = """## [2026-07-27] - US-001
 
 def _verify_config(**overrides: Any) -> VerifyConfig:
     defaults: dict[str, Any] = dict(
-        test_command="true", typecheck_command="true", lint_command="true",
-        check_diff_scope=False, check_bad_patterns=False,
-        subprocess_timeout=10.0, require_self_critique=True,
+        test_command="true",
+        typecheck_command="true",
+        lint_command="true",
+        check_diff_scope=False,
+        check_bad_patterns=False,
+        subprocess_timeout=10.0,
+        require_self_critique=True,
     )
     defaults.update(overrides)
     return VerifyConfig(**defaults)
@@ -523,25 +632,36 @@ class TestSelfCritiqueReadsTheComponentLog:
     def _worktree(self, tmp_path: Path) -> Path:
         feature_dir = tmp_path / FEATURE_DIR
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "b", "userStories": [],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "b",
+                    "userStories": [],
+                }
+            )
+        )
         return feature_dir
 
     def test_reads_the_log_next_to_the_component_prd(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         feature_dir = self._worktree(tmp_path)
         (feature_dir / "progress.txt").write_text(_SELF_CRITIQUE_ENTRY)
 
         result = run_mechanical_verification(
-            tmp_path, feature_dir / "prd.json", "main", None, _verify_config(),
+            tmp_path,
+            feature_dir / "prd.json",
+            "main",
+            None,
+            _verify_config(),
         )
         check = _self_critique_check(result)
         assert check.passed, check.message
 
     def test_explicit_progress_file_path_still_wins(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         feature_dir = self._worktree(tmp_path)
         (feature_dir / "progress.txt").write_text("no critique here\n")
@@ -550,21 +670,24 @@ class TestSelfCritiqueReadsTheComponentLog:
         (custom / "progress.md").write_text(_SELF_CRITIQUE_ENTRY)
 
         result = run_mechanical_verification(
-            tmp_path, feature_dir / "prd.json", "main", None,
+            tmp_path,
+            feature_dir / "prd.json",
+            "main",
+            None,
             _verify_config(progress_file_path="docs/progress.md"),
         )
         check = _self_critique_check(result)
         assert check.passed, check.message
 
     def test_verify_progress_path_is_unset_until_configured(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Unset means "derive from the component PRD"; toml and env
         both still pin an explicit file."""
         assert VerifyConfig.load(tmp_path).progress_file_path is None
-        (tmp_path / "kstrl.toml").write_text(
-            '[verify]\nprogress_file_path = "docs/progress.md"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text('[verify]\nprogress_file_path = "docs/progress.md"\n')
         assert VerifyConfig.load(tmp_path).progress_file_path == "docs/progress.md"
 
         monkeypatch.setenv("KSTRL_VERIFY_PROGRESS_FILE", "docs/other.md")
@@ -579,7 +702,8 @@ class TestSelfCritiqueReadsTheComponentLog:
 
 class TestFactUtilizationReadsTheComponentLog:
     def test_metric_reads_the_component_progress_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The metric's progress path was a second hardcoded copy of the
         out-of-scope default, so it silently read nothing (or a stale
@@ -590,14 +714,14 @@ class TestFactUtilizationReadsTheComponentLog:
         (wt_path / FEATURE_DIR / "progress.txt").write_text(
             "component log: fact-alpha referenced\n"
         )
-        (wt_path / "scripts" / "kstrl" / "progress.txt").write_text(
-            "decoy root log\n"
-        )
+        (wt_path / "scripts" / "kstrl" / "progress.txt").write_text("decoy root log\n")
 
         seen: list[str] = []
 
         def fake_measure(
-            prefix: str, *artifacts: str, **kwargs: Any,
+            prefix: str,
+            *artifacts: str,
+            **kwargs: Any,
         ) -> dict[str, int]:
             # Mirrors the real signature: the progress log is a plain
             # artifact, the diff arrives as `diff=` so it can be
@@ -606,7 +730,9 @@ class TestFactUtilizationReadsTheComponentLog:
             return {"injected": 1, "referenced": 1}
 
         pipeline = _pipeline(
-            tmp_path, comp, wt_path,
+            tmp_path,
+            comp,
+            wt_path,
             measure_fact_utilization=fake_measure,
             knowledge_prefix="FACT: fact-alpha",
         )
@@ -637,11 +763,17 @@ class TestInLoopGuardSeesTheComponentScope:
         from kstrl.manifest import Component
 
         return Component(
-            "comp-a", "A", "D", [], prd_rel, "kstrl/comp-a",
+            "comp-a",
+            "A",
+            "D",
+            [],
+            prd_rel,
+            "kstrl/comp-a",
         )
 
     def test_the_prd_scope_is_what_reaches_the_worker(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
         from kstrl.factory import _component_scope
@@ -649,18 +781,25 @@ class TestInLoopGuardSeesTheComponentScope:
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
         prd.parent.mkdir(parents=True)
-        prd.write_text(json.dumps({
-            "branchName": "kstrl/comp-a",
-            "allowedPaths": ["src/", "tests/"],
-            "userStories": [],
-        }))
+        prd.write_text(
+            json.dumps(
+                {
+                    "branchName": "kstrl/comp-a",
+                    "allowedPaths": ["src/", "tests/"],
+                    "userStories": [],
+                }
+            )
+        )
         scope = _component_scope(
-            self._component(prd_rel), tmp_path, KstrlConfig(),
+            self._component(prd_rel),
+            tmp_path,
+            KstrlConfig(),
         )
         assert scope == ["src/", "tests/"]
 
     def test_an_empty_run_wide_flag_no_longer_disables_the_guard(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The exact production condition: no --allowed-paths flag."""
         from kstrl.config import KstrlConfig
@@ -669,18 +808,23 @@ class TestInLoopGuardSeesTheComponentScope:
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
         prd.parent.mkdir(parents=True)
-        prd.write_text(json.dumps({
-            "branchName": "kstrl/comp-a",
-            "allowedPaths": ["hmac_signer/", "tests/"],
-            "userStories": [],
-        }))
+        prd.write_text(
+            json.dumps(
+                {
+                    "branchName": "kstrl/comp-a",
+                    "allowedPaths": ["hmac_signer/", "tests/"],
+                    "userStories": [],
+                }
+            )
+        )
         base = KstrlConfig()
         assert not base.allowed_paths, "precondition: run-wide flag unset"
         scope = _component_scope(self._component(prd_rel), tmp_path, base)
         assert scope, "guard would be inert with a falsy scope"
 
     def test_a_legacy_prd_falls_back_to_the_run_wide_flag(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
         from kstrl.factory import _component_scope
@@ -688,15 +832,21 @@ class TestInLoopGuardSeesTheComponentScope:
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
         prd.parent.mkdir(parents=True)
-        prd.write_text(json.dumps({
-            "branchName": "kstrl/comp-a", "userStories": [],
-        }))
+        prd.write_text(
+            json.dumps(
+                {
+                    "branchName": "kstrl/comp-a",
+                    "userStories": [],
+                }
+            )
+        )
         base = KstrlConfig(allowed_paths=["fallback/"])
         scope = _component_scope(self._component(prd_rel), tmp_path, base)
         assert scope == ["fallback/"]
 
     def test_an_unreadable_prd_fails_open_here_and_closed_at_phase_1(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Asymmetry by design: the tripwire yields, the gate does not.
 
@@ -712,7 +862,9 @@ class TestInLoopGuardSeesTheComponentScope:
         assert _component_scope(comp, tmp_path, KstrlConfig()) is None
 
         gate = check_diff_scope(
-            tmp_path, "main", None,
+            tmp_path,
+            "main",
+            None,
             allowed_paths_error="PRD not found: missing",
         )
         assert not gate.passed
@@ -726,11 +878,14 @@ class TestInLoopGuardSeesTheComponentScope:
         from kstrl.loop import LoopResult
 
         result = LoopResult(
-            completed=False, iterations=1, exit_code=1,
+            completed=False,
+            iterations=1,
+            exit_code=1,
             guard_violations=("uv.lock", "scripts/kstrl/progress.txt"),
         )
         assert result.guard_violations == (
-            "uv.lock", "scripts/kstrl/progress.txt",
+            "uv.lock",
+            "scripts/kstrl/progress.txt",
         )
 
 
@@ -748,7 +903,9 @@ class TestProgressWriterAndReaderAgree:
         ],
     )
     def test_one_setting_propagates_to_the_other(
-        self, writer: str | None, reader: str | None,
+        self,
+        writer: str | None,
+        reader: str | None,
         expected: tuple[str | None, str | None],
     ) -> None:
         from kstrl.config import reconcile_progress_paths
@@ -761,7 +918,8 @@ class TestProgressWriterAndReaderAgree:
         from kstrl.config import reconcile_progress_paths
 
         assert reconcile_progress_paths("a/p.txt", "b/p.txt") == (
-            "a/p.txt", "b/p.txt",
+            "a/p.txt",
+            "b/p.txt",
         )
 
 
@@ -775,7 +933,10 @@ _CUSTOM_PROGRESS = "docs/custom-progress.md"
 
 
 def _worker_write_path(
-    base_config: KstrlConfig, root: Path, wt_path: Path, prd_rel: str,
+    base_config: KstrlConfig,
+    root: Path,
+    wt_path: Path,
+    prd_rel: str,
 ) -> Path:
     """The file the engineer's worker actually writes.
 
@@ -790,11 +951,16 @@ def _worker_write_path(
     seen: list[KstrlConfig] = []
 
     def fake_run_loop(
-        config: KstrlConfig, *args: Any, **kwargs: Any,
+        config: KstrlConfig,
+        *args: Any,
+        **kwargs: Any,
     ) -> LoopResult:
         seen.append(config)
         return LoopResult(
-            completed=True, iterations=1, exit_code=0, duration_seconds=0.0,
+            completed=True,
+            iterations=1,
+            exit_code=0,
+            duration_seconds=0.0,
         )
 
     with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
@@ -805,10 +971,13 @@ def _worker_write_path(
             root_dir_str=str(root),
             prompt_file_str="scripts/kstrl/prompt.md",
             agent_cmd="echo test",
-            model=None, reasoning=None, agent_type=None,
+            model=None,
+            reasoning=None,
+            agent_type=None,
             sleep_seconds=0.0,
             progress_file_str=base_config.component_progress_file(
-                prd_rel, root,
+                prd_rel,
+                root,
             ),
             redirect_output=False,
         )
@@ -839,9 +1008,14 @@ class TestWriterAndReaderResolveToTheSameFILE:
         wt_path = tmp_path / "wt"
         prd_rel = f"{FEATURE_DIR}/prd.json"
         (wt_path / FEATURE_DIR).mkdir(parents=True)
-        (wt_path / prd_rel).write_text(json.dumps({
-            "branchName": "test", "userStories": [],
-        }))
+        (wt_path / prd_rel).write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [],
+                }
+            )
+        )
         return root, wt_path, prd_rel
 
     def _reconciled(self, root: Path) -> tuple[KstrlConfig, VerifyConfig]:
@@ -861,12 +1035,14 @@ class TestWriterAndReaderResolveToTheSameFILE:
         return base_config, v_config
 
     def test_writer_path_is_what_the_verification_reads(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """[paths] progress set alone: the file the worker writes is the
         file Phase 1 reads, and it is inside the WORKTREE."""
         root, wt_path, prd_rel = self._project(
-            tmp_path, f'[paths]\nprogress = "{_CUSTOM_PROGRESS}"\n',
+            tmp_path,
+            f'[paths]\nprogress = "{_CUSTOM_PROGRESS}"\n',
         )
         base_config, v_config = self._reconciled(root)
 
@@ -884,13 +1060,18 @@ class TestWriterAndReaderResolveToTheSameFILE:
         (root / _CUSTOM_PROGRESS).write_text("stale root copy, no critique\n")
 
         result = run_mechanical_verification(
-            wt_path, wt_path / prd_rel, "main", None, v_config,
+            wt_path,
+            wt_path / prd_rel,
+            "main",
+            None,
+            v_config,
         )
         check = _self_critique_check(result)
         assert check.passed, check.message
 
     def test_reader_only_configuration_agrees_too(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The symmetric case: [verify] progress_file_path set alone
         propagates to the writer in the same domain."""
@@ -906,12 +1087,17 @@ class TestWriterAndReaderResolveToTheSameFILE:
         write_path.parent.mkdir(parents=True, exist_ok=True)
         write_path.write_text(_SELF_CRITIQUE_ENTRY)
         result = run_mechanical_verification(
-            wt_path, wt_path / prd_rel, "main", None, v_config,
+            wt_path,
+            wt_path / prd_rel,
+            "main",
+            None,
+            v_config,
         )
         assert _self_critique_check(result).passed
 
     def test_both_set_differently_warns_and_overrides_neither(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root, _wt_path, _prd_rel = self._project(
             tmp_path,
@@ -958,14 +1144,19 @@ class TestShippedConfigsKeepTheProgressLogInScope:
     """
 
     @pytest.mark.parametrize(
-        "source", ["readme", "example"],
+        "source",
+        ["readme", "example"],
     )
     def test_a_copied_config_keeps_the_log_inside_component_scope(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        source: str,
     ) -> None:
         monkeypatch.delenv("PROGRESS_FILE", raising=False)
         toml_text = (
-            _generated_config_reference() if source == "readme"
+            _generated_config_reference()
+            if source == "readme"
             else (REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8")
         )
         (tmp_path / "kstrl.toml").write_text(toml_text, encoding="utf-8")
@@ -991,36 +1182,30 @@ class TestShippedConfigsKeepTheProgressLogInScope:
         assert 'progress = "scripts/kstrl/progress.txt"' not in block
 
     def test_config_show_reports_the_setting_as_unset(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """`ks config show` reported <root>/scripts/kstrl/progress.txt as
         the effective default - the obsolete path, presented as fact."""
         from kstrl.config_report import build_config_report
 
         report = build_config_report(tmp_path)
-        rows = [
-            r for r in report.rows
-            if r.section == "paths" and r.key == "progress"
-        ]
+        rows = [r for r in report.rows if r.section == "paths" and r.key == "progress"]
         assert len(rows) == 1
         assert rows[0].source == "default"
         assert "scripts/kstrl/progress.txt" not in rows[0].value
         assert "unset" in rows[0].value
 
     def test_config_show_still_reports_a_configured_path(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The unset rendering must not swallow a real setting."""
         from kstrl.config_report import build_config_report
 
-        (tmp_path / "kstrl.toml").write_text(
-            f'[paths]\nprogress = "{_CUSTOM_PROGRESS}"\n'
-        )
+        (tmp_path / "kstrl.toml").write_text(f'[paths]\nprogress = "{_CUSTOM_PROGRESS}"\n')
         report = build_config_report(tmp_path)
-        row = next(
-            r for r in report.rows
-            if r.section == "paths" and r.key == "progress"
-        )
+        row = next(r for r in report.rows if r.section == "paths" and r.key == "progress")
         assert row.source == "toml"
         assert row.value.endswith(_CUSTOM_PROGRESS)
 
@@ -1032,7 +1217,9 @@ class TestShippedConfigsKeepTheProgressLogInScope:
 
 def _git(*args: str, cwd: Path) -> None:
     subprocess.run(
-        ["git", "-C", str(cwd), *args], check=True, capture_output=True,
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -1041,16 +1228,15 @@ def _git_repo(root: Path) -> None:
     changes are the ones a test makes."""
     subprocess.run(
         ["git", "init", "-q", "-b", "main", str(root)],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     _git("config", "user.email", "t@t", cwd=root)
     _git("config", "user.name", "t", cwd=root)
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     (root / "src").mkdir(exist_ok=True)
     (root / "src" / "existing.py").write_text("x = 1\n")
     _git("add", "-A", cwd=root)
@@ -1081,7 +1267,9 @@ class _ScriptedChannel:
 
     def request(self, req: PromptRequest) -> PromptResponse:
         return PromptResponse(
-            request_id=req.request_id, choice=self.choice, answered=True,
+            request_id=req.request_id,
+            choice=self.choice,
+            answered=True,
         )
 
 
@@ -1099,7 +1287,10 @@ class _CommittingRogueAgent:
         return "committing-rogue"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         target = self._repo / self._rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1132,7 +1323,8 @@ class TestGuardSeesCommittedChanges:
         assert git.get_changed_files(tmp_path) == set()
 
     def test_a_committed_out_of_scope_edit_is_caught(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _git_repo(tmp_path)
         baseline = git.capture_workspace_baseline(tmp_path)
@@ -1151,7 +1343,8 @@ class TestGuardSeesCommittedChanges:
         assert violations == ["OUTSIDE.md"]
 
     def test_a_committed_in_scope_edit_is_not_a_violation(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The guard must not simply flag everything committed."""
         _git_repo(tmp_path)
@@ -1171,7 +1364,8 @@ class TestGuardSeesCommittedChanges:
         assert violations == []
 
     def test_no_baseline_keeps_the_historical_semantics(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Backwards compatibility, stated explicitly: a caller that
         supplies no baseline gets the index+worktree view it always got,
@@ -1190,7 +1384,8 @@ class TestGuardSeesCommittedChanges:
         assert violations == []
 
     def test_the_loop_catches_a_committing_agent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """End to end through run_loop, which is where the baseline is
         captured: an agent that commits out of scope halts the loop and
@@ -1217,7 +1412,8 @@ class TestGuardIgnoresPreExistingDirt:
         (tmp_path / "operator-notes.txt").write_text("my notes\n")
 
     def test_pre_existing_dirt_is_not_attributed_to_the_agent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         self._dirty_operator_file(tmp_path)
         baseline = git.capture_workspace_baseline(tmp_path)
@@ -1236,7 +1432,8 @@ class TestGuardIgnoresPreExistingDirt:
         assert violations == []
 
     def test_without_a_baseline_the_operator_is_blamed(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The false positive being fixed, pinned so the contrast is not
         a claim."""
@@ -1251,7 +1448,8 @@ class TestGuardIgnoresPreExistingDirt:
         assert violations == ["operator-notes.txt"]
 
     def test_the_loop_leaves_operator_work_alone(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Interactive "Revert and continue" must not reach a file the
         agent never touched - it is not in the violation list at all."""
@@ -1292,11 +1490,13 @@ class TestRevertUndoesCommittedViolations:
         # And the delta against the baseline no longer carries it, so the
         # next iteration does not re-detect the same violation.
         assert "OUTSIDE.md" not in git.get_changed_files_since(
-            baseline, tmp_path,
+            baseline,
+            tmp_path,
         )
 
     def test_a_committed_edit_to_a_tracked_file_is_rolled_back(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _git_repo(tmp_path)
         (tmp_path / "docs").mkdir()
@@ -1320,7 +1520,8 @@ class TestRevertUndoesCommittedViolations:
         assert violations == []
         assert (tmp_path / "docs" / "notes.md").read_text() == "original\n"
         assert "docs/notes.md" not in git.get_changed_files_since(
-            baseline, tmp_path,
+            baseline,
+            tmp_path,
         )
 
 
@@ -1341,12 +1542,15 @@ class TestUnreadablePrdIsCaught:
         return Component("comp-a", "A", "D", [], self.PRD_REL, "kstrl/comp-a")
 
     def test_a_prd_that_is_a_directory_falls_back(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / self.PRD_REL).mkdir(parents=True)
         base = KstrlConfig(allowed_paths=["fallback/"])
         assert _component_scope(
-            self._component(), tmp_path, base,
+            self._component(),
+            tmp_path,
+            base,
         ) == ["fallback/"]
 
     @pytest.mark.skipif(
@@ -1361,13 +1565,16 @@ class TestUnreadablePrdIsCaught:
         try:
             base = KstrlConfig(allowed_paths=["fallback/"])
             assert _component_scope(
-                self._component(), tmp_path, base,
+                self._component(),
+                tmp_path,
+                base,
             ) == ["fallback/"]
         finally:
             prd.chmod(0o644)
 
     def test_phase_1_turns_a_directory_prd_into_a_verification_result(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Fail-closed only works if the failure is CAUGHT: Phase 1 must
         hand check_diff_scope an allowed_paths_error, not raise."""
@@ -1381,12 +1588,18 @@ class TestUnreadablePrdIsCaught:
             return VerificationResult(passed=False, checks=[])
 
         pipeline = _pipeline(
-            tmp_path, comp, wt_path, run_mechanical_verification=fake_verify,
+            tmp_path,
+            comp,
+            wt_path,
+            run_mechanical_verification=fake_verify,
         )
         result = pipeline._phase_verify(
             comp,
             ComponentResult(
-                comp.id, success=True, iterations=1, duration_seconds=1.0,
+                comp.id,
+                success=True,
+                iterations=1,
+                duration_seconds=1.0,
             ),
             wt_path,
         )

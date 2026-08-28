@@ -126,8 +126,12 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
     try:
         result = subprocess.run(
             [
-                "gh", "pr", "merge", str(pr_number),
-                f"--{method}", "--auto",
+                "gh",
+                "pr",
+                "merge",
+                str(pr_number),
+                f"--{method}",
+                "--auto",
             ],
             cwd=cwd,
             capture_output=True,
@@ -138,7 +142,10 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
         if result.returncode != 0:
             result = subprocess.run(
                 [
-                    "gh", "pr", "merge", str(pr_number),
+                    "gh",
+                    "pr",
+                    "merge",
+                    str(pr_number),
                     f"--{method}",
                 ],
                 cwd=cwd,
@@ -149,10 +156,7 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
     except subprocess.TimeoutExpired:
         return f"gh pr merge #{pr_number} timed out after {GH_TIMEOUT}s"
     if result.returncode != 0:
-        return (
-            result.stderr.strip()
-            or f"gh pr merge #{pr_number} failed"
-        )
+        return result.stderr.strip() or f"gh pr merge #{pr_number} failed"
     return None
 
 
@@ -218,7 +222,10 @@ def close_pr_for_rerun(pr_number: int, branch: str, cwd: Path) -> str | None:
     try:
         result = subprocess.run(
             [
-                "gh", "pr", "close", str(pr_number),
+                "gh",
+                "pr",
+                "close",
+                str(pr_number),
                 "--comment",
                 "Superseded: merge conflict with base; the component is "
                 "re-run against the freshly merged base instead of "
@@ -244,10 +251,7 @@ def close_pr_for_rerun(pr_number: int, branch: str, cwd: Path) -> str | None:
     except subprocess.TimeoutExpired:
         return f"remote branch delete of {branch} timed out"
     if result.returncode != 0:
-        return (
-            result.stderr.strip()
-            or f"remote branch delete of {branch} failed"
-        )
+        return result.stderr.strip() or f"remote branch delete of {branch} failed"
     return None
 
 
@@ -297,10 +301,7 @@ def _delete_remote_branch(branch: str, cwd: Path) -> str | None:
     except subprocess.TimeoutExpired:
         return f"remote branch delete of {branch} timed out"
     if result.returncode != 0:
-        return (
-            result.stderr.strip()
-            or f"remote branch delete of {branch} failed"
-        )
+        return result.stderr.strip() or f"remote branch delete of {branch} failed"
     return None
 
 
@@ -337,15 +338,16 @@ def _merge_and_wait(
         # verdict counts; UNKNOWN/None fall through to normal failure.
         if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
             return PrOutcome(
-                pushed=True, pr_number=pr_number, pr_url=pr_url,
+                pushed=True,
+                pr_number=pr_number,
+                pr_url=pr_url,
                 merge_conflict=True,
-                error=(
-                    f"PR #{pr_number} conflicts with {base_branch}: "
-                    f"{merge_error}"
-                ),
+                error=(f"PR #{pr_number} conflicts with {base_branch}: {merge_error}"),
             )
         return PrOutcome(
-            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            pushed=True,
+            pr_number=pr_number,
+            pr_url=pr_url,
             error=f"merge failed for PR #{pr_number}: {merge_error}",
         )
 
@@ -372,14 +374,19 @@ def _merge_and_wait(
                 f"at setup"
             )
         return PrOutcome(
-            pushed=True, pr_number=pr_number, pr_url=pr_url,
-            merged=True, error=fetch_error,
+            pushed=True,
+            pr_number=pr_number,
+            pr_url=pr_url,
+            merged=True,
+            error=fetch_error,
         )
 
     if state == "closed":
         ui.warn(f"  PR #{pr_number} was closed without merging")
         return PrOutcome(
-            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            pushed=True,
+            pr_number=pr_number,
+            pr_url=pr_url,
             error=f"PR #{pr_number} closed without merge",
         )
 
@@ -388,12 +395,11 @@ def _merge_and_wait(
     if _pr_mergeable(pr_number, cwd) == "CONFLICTING":
         ui.warn(f"  PR #{pr_number} is CONFLICTING with {base_branch}")
         return PrOutcome(
-            pushed=True, pr_number=pr_number, pr_url=pr_url,
+            pushed=True,
+            pr_number=pr_number,
+            pr_url=pr_url,
             merge_conflict=True,
-            error=(
-                f"PR #{pr_number} conflicts with {base_branch}; merge "
-                f"cannot land"
-            ),
+            error=(f"PR #{pr_number} conflicts with {base_branch}; merge cannot land"),
         )
 
     ui.warn(
@@ -401,7 +407,9 @@ def _merge_and_wait(
         f"marked merge-pending; a factory re-run re-polls it"
     )
     return PrOutcome(
-        pushed=True, pr_number=pr_number, pr_url=pr_url,
+        pushed=True,
+        pr_number=pr_number,
+        pr_url=pr_url,
         merge_pending=True,
         error=f"PR #{pr_number} not merged within {merge_timeout}s",
     )
@@ -434,7 +442,8 @@ def push_create_and_merge_pr(
         pr_number = component.pr_number or pr_number_from_url(component.pr_url)
         if not pr_number:
             return PrOutcome(
-                pushed=True, pr_url=component.pr_url,
+                pushed=True,
+                pr_url=component.pr_url,
                 error=(
                     f"existing PR {component.pr_url} has no usable PR "
                     f"number; cannot verify merge state"
@@ -444,17 +453,26 @@ def push_create_and_merge_pr(
         state = _pr_state(pr_number, cwd)
         if state == "MERGED":
             return PrOutcome(
-                pushed=True, pr_number=pr_number, pr_url=component.pr_url,
+                pushed=True,
+                pr_number=pr_number,
+                pr_url=component.pr_url,
                 merged=True,
             )
         if state == "CLOSED":
             return PrOutcome(
-                pushed=True, pr_number=pr_number, pr_url=component.pr_url,
+                pushed=True,
+                pr_number=pr_number,
+                pr_url=component.pr_url,
                 error=f"PR #{pr_number} closed without merge",
             )
         return _merge_and_wait(
-            pr_number, component.pr_url, manifest.base_branch,
-            cwd, ui, merge_method, merge_timeout,
+            pr_number,
+            component.pr_url,
+            manifest.base_branch,
+            cwd,
+            ui,
+            merge_method,
+            merge_timeout,
             head_branch=component.branch_name,
         )
 
@@ -479,8 +497,13 @@ def push_create_and_merge_pr(
     ui.ok(f"  PR created: {pr_url}")
 
     return _merge_and_wait(
-        pr_number, pr_url, manifest.base_branch,
-        cwd, ui, merge_method, merge_timeout,
+        pr_number,
+        pr_url,
+        manifest.base_branch,
+        cwd,
+        ui,
+        merge_method,
+        merge_timeout,
         head_branch=component.branch_name,
     )
 
@@ -544,7 +567,8 @@ def _generate_pr_body(
     # journal and be invisible on the pull request, which for an
     # advisory-only gate is the same as not existing.
     callouts = [
-        f for f in component.findings
+        f
+        for f in component.findings
         if f.is_infrastructure_error
         or f.is_phase_skip
         or f.category == SETPOINT_DISAGREEMENT_CATEGORY
@@ -591,9 +615,13 @@ def create_component_pr(
     try:
         result = subprocess.run(
             [
-                "gh", "pr", "create",
-                "--title", title,
-                "--body", body,
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
                 f"--base={manifest.base_branch}",
                 f"--head={component.branch_name}",
             ],
@@ -604,8 +632,7 @@ def create_component_pr(
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError(
-            f"Failed to create PR for '{component.id}': gh pr create "
-            f"timed out after {GH_TIMEOUT}s"
+            f"Failed to create PR for '{component.id}': gh pr create timed out after {GH_TIMEOUT}s"
         ) from None
 
     if result.returncode != 0:
@@ -635,10 +662,7 @@ def create_prs_in_order(
         return []
 
     order = manifest.topological_order()
-    completed_ids = {
-        c.id for c in manifest.components
-        if c.status == "completed"
-    }
+    completed_ids = {c.id for c in manifest.components if c.status == "completed"}
 
     results: list[tuple[int, str]] = []
 
@@ -658,10 +682,7 @@ def create_prs_in_order(
         ui.info(f"  {comp_id}: pushing branch {component.branch_name}...")
         push_error = push_branch(component.branch_name, cwd)
         if push_error:
-            ui.warn(
-                f"  {comp_id}: failed to push branch ({push_error}), "
-                f"skipping PR"
-            )
+            ui.warn(f"  {comp_id}: failed to push branch ({push_error}), skipping PR")
             continue
 
         try:
@@ -692,9 +713,7 @@ def create_single_pr(
         return None
 
     # All components should be on the same branch in single-pr mode
-    branches = {
-        c.branch_name for c in manifest.components if c.status == "completed"
-    }
+    branches = {c.branch_name for c in manifest.components if c.status == "completed"}
     if not branches:
         ui.warn("No completed components. Skipping PR creation.")
         return None
@@ -734,9 +753,13 @@ def create_single_pr(
     try:
         result = subprocess.run(
             [
-                "gh", "pr", "create",
-                "--title", title,
-                "--body", body,
+                "gh",
+                "pr",
+                "create",
+                "--title",
+                title,
+                "--body",
+                body,
                 f"--base={manifest.base_branch}",
                 f"--head={branch}",
             ],

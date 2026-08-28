@@ -23,9 +23,7 @@ from pathlib import Path
 from kstrl import calibration
 from kstrl.calibration import Baseline, FixtureStats
 
-REPO_RESULTS_DIR = (
-    Path(__file__).parent / "adversarial_fixtures" / "_results"
-)
+REPO_RESULTS_DIR = Path(__file__).parent / "adversarial_fixtures" / "_results"
 
 
 def _fixture(
@@ -89,15 +87,21 @@ class TestConsistencyMath:
 
     def test_all_runs_errored_is_not_detected(self) -> None:
         fixture = _fixture(
-            "security", "sec-x", 0, runs_total=3, runs_errored=3,
+            "security",
+            "sec-x",
+            0,
+            runs_total=3,
+            runs_errored=3,
         )
         assert not fixture.detected
 
     def test_role_detection_rate_is_mean_consistency(self) -> None:
-        rate = calibration.role_detection_rate([
-            _fixture("architect", "a", 3),  # 1.0
-            _fixture("architect", "b", 1),  # 1/3
-        ])
+        rate = calibration.role_detection_rate(
+            [
+                _fixture("architect", "a", 3),  # 1.0
+                _fixture("architect", "b", 1),  # 1/3
+            ]
+        )
         assert rate == (1.0 + 1 / 3) / 2
 
     def test_role_detection_rate_empty_is_zero(self) -> None:
@@ -133,26 +137,24 @@ class TestBuildReport:
     def _report(self) -> dict:
         records = [
             # sec-a: 3 runs, 2 caught -> consistency 2/3, detected
-            _run_record("security", "sec-a", True, category="injection",
-                        cwe="CWE-89"),
-            _run_record("security", "sec-a", True, category="injection",
-                        cwe="CWE-89"),
-            _run_record("security", "sec-a", False, category="injection",
-                        cwe="CWE-89"),
+            _run_record("security", "sec-a", True, category="injection", cwe="CWE-89"),
+            _run_record("security", "sec-a", True, category="injection", cwe="CWE-89"),
+            _run_record("security", "sec-a", False, category="injection", cwe="CWE-89"),
             # sec-b: 1 caught, 1 missed, 1 errored -> consistency 1/2
-            _run_record("security", "sec-b", True, category="auth_bypass",
-                        cwe="CWE-347"),
-            _run_record("security", "sec-b", False, category="auth_bypass",
-                        cwe="CWE-347"),
-            _run_record("security", "sec-b", False, error=True,
-                        category="auth_bypass", cwe="CWE-347"),
+            _run_record("security", "sec-b", True, category="auth_bypass", cwe="CWE-347"),
+            _run_record("security", "sec-b", False, category="auth_bypass", cwe="CWE-347"),
+            _run_record(
+                "security", "sec-b", False, error=True, category="auth_bypass", cwe="CWE-347"
+            ),
             # architect fixture, no cwe
             _run_record("architect", "spec-a", False, category="spec_issues"),
             _run_record("architect", "spec-a", False, category="spec_issues"),
             _run_record("architect", "spec-a", True, category="spec_issues"),
         ]
         return calibration.build_report(
-            records, model="haiku", timestamp="20260718-120000",
+            records,
+            model="haiku",
+            timestamp="20260718-120000",
             runs_per_fixture=3,
         )
 
@@ -214,10 +216,8 @@ class TestLoadV1Baseline:
             "timestamp": "20260527-161822",
             "summary": {},
             "fixtures": [
-                {"role": "architect", "fixture_id": "spec-01",
-                 "caught": True, "detail": "..."},
-                {"role": "architect", "fixture_id": "spec-02",
-                 "caught": False, "detail": "..."},
+                {"role": "architect", "fixture_id": "spec-01", "caught": True, "detail": "..."},
+                {"role": "architect", "fixture_id": "spec-02", "caught": False, "detail": "..."},
             ],
         }
         path = tmp_path / "baseline-20260527-161822.json"
@@ -258,47 +258,50 @@ class TestLoadV1Baseline:
 
 class TestCompareBaselines:
     def test_improvement_passes(self) -> None:
-        old = _baseline(_fixture("architect", "spec-01", 2),
-                        _fixture("architect", "spec-02", 2))
-        new = _baseline(_fixture("architect", "spec-01", 3),
-                        _fixture("architect", "spec-02", 3))
+        old = _baseline(_fixture("architect", "spec-01", 2), _fixture("architect", "spec-02", 2))
+        new = _baseline(_fixture("architect", "spec-01", 3), _fixture("architect", "spec-02", 3))
         comparison = calibration.compare_baselines(old, new)
         assert comparison.passed
         assert comparison.failures == ()
 
     def test_role_drop_beyond_threshold_fails(self) -> None:
         # 1.0 -> 2/3 is a drop of 1/3 > MAX_ROLE_DETECTION_DROP
-        old = _baseline(_fixture("architect", "spec-01", 3),
-                        _fixture("architect", "spec-02", 3),
-                        _fixture("architect", "spec-03", 3))
-        new = _baseline(_fixture("architect", "spec-01", 3),
-                        _fixture("architect", "spec-02", 3),
-                        _fixture("architect", "spec-03", 0))
+        old = _baseline(
+            _fixture("architect", "spec-01", 3),
+            _fixture("architect", "spec-02", 3),
+            _fixture("architect", "spec-03", 3),
+        )
+        new = _baseline(
+            _fixture("architect", "spec-01", 3),
+            _fixture("architect", "spec-02", 3),
+            _fixture("architect", "spec-03", 0),
+        )
         comparison = calibration.compare_baselines(old, new)
         assert not comparison.passed
-        assert any("architect" in f and "dropped" in f
-                   for f in comparison.failures)
+        assert any("architect" in f and "dropped" in f for f in comparison.failures)
         assert "architect/spec-03" in comparison.newly_missed
 
     def test_single_run_flip_is_within_tolerance(self) -> None:
         """One run flipping on one fixture (drop 1/9 ~ 0.11) is
         run-to-run variance, not a regression."""
-        old = _baseline(_fixture("architect", "spec-01", 3),
-                        _fixture("architect", "spec-02", 3),
-                        _fixture("architect", "spec-03", 3))
-        new = _baseline(_fixture("architect", "spec-01", 3),
-                        _fixture("architect", "spec-02", 3),
-                        _fixture("architect", "spec-03", 2))
+        old = _baseline(
+            _fixture("architect", "spec-01", 3),
+            _fixture("architect", "spec-02", 3),
+            _fixture("architect", "spec-03", 3),
+        )
+        new = _baseline(
+            _fixture("architect", "spec-01", 3),
+            _fixture("architect", "spec-02", 3),
+            _fixture("architect", "spec-03", 2),
+        )
         comparison = calibration.compare_baselines(old, new)
         assert comparison.passed
 
     def test_new_rate_below_floor_fails_even_without_drop(self) -> None:
         """The absolute floor stops a slow slide across successive
         comparisons: old and new are equally bad, but the floor trips."""
-        old = _baseline(_fixture("security", "sec-01", 1),
-                        _fixture("security", "sec-02", 1))
-        new = _baseline(_fixture("security", "sec-01", 1),
-                        _fixture("security", "sec-02", 1))
+        old = _baseline(_fixture("security", "sec-01", 1), _fixture("security", "sec-02", 1))
+        new = _baseline(_fixture("security", "sec-01", 1), _fixture("security", "sec-02", 1))
         comparison = calibration.compare_baselines(old, new)
         assert not comparison.passed
         assert any("floor" in f for f in comparison.failures)
@@ -308,16 +311,10 @@ class TestCompareBaselines:
         role-level mean (drop 0.13, rate 0.87) stays inside both the
         role allowance and the floor: the per-category gate catches a
         regression the role-level averages would hide."""
-        old = _baseline(*[
-            _fixture("reviewer", f"c-{i}", 3, category=f"cat-{i}")
-            for i in "abcde"
-        ])
+        old = _baseline(*[_fixture("reviewer", f"c-{i}", 3, category=f"cat-{i}") for i in "abcde"])
         new = _baseline(
             _fixture("reviewer", "c-a", 1, category="cat-a"),
-            *[
-                _fixture("reviewer", f"c-{i}", 3, category=f"cat-{i}")
-                for i in "bcde"
-            ],
+            *[_fixture("reviewer", f"c-{i}", 3, category=f"cat-{i}") for i in "bcde"],
         )
         comparison = calibration.compare_baselines(old, new)
         assert not comparison.passed
@@ -341,8 +338,7 @@ class TestCompareBaselines:
     def test_role_missing_from_new_warns_but_passes(self) -> None:
         """Partial runs are legitimate (e.g. architect-only re-run
         after a DECOMPOSE_PROMPT edit): warn, do not fail."""
-        old = _baseline(_fixture("security", "sec-01", 3),
-                        _fixture("architect", "spec-01", 3))
+        old = _baseline(_fixture("security", "sec-01", 3), _fixture("architect", "spec-01", 3))
         new = _baseline(_fixture("architect", "spec-01", 3))
         comparison = calibration.compare_baselines(old, new)
         assert comparison.passed
@@ -401,29 +397,28 @@ class TestCompareBaselines:
 class TestCompareCli:
     def _write(self, tmp_path: Path, name: str, fixtures: list[dict]) -> Path:
         report = calibration.build_report(
-            fixtures, model="haiku", timestamp=name, runs_per_fixture=3,
+            fixtures,
+            model="haiku",
+            timestamp=name,
+            runs_per_fixture=3,
         )
         return calibration.save_report(report, tmp_path / name)
 
     def test_regression_exits_1(self, tmp_path: Path, capsys) -> None:
-        old = self._write(tmp_path, "old", [
-            _run_record("architect", "spec-01", True) for _ in range(3)
-        ])
-        new = self._write(tmp_path, "new", [
-            _run_record("architect", "spec-01", False) for _ in range(3)
-        ])
+        old = self._write(
+            tmp_path, "old", [_run_record("architect", "spec-01", True) for _ in range(3)]
+        )
+        new = self._write(
+            tmp_path, "new", [_run_record("architect", "spec-01", False) for _ in range(3)]
+        )
         code = calibration.main(["compare", str(old), str(new)])
         assert code == 1
         out = capsys.readouterr().out
         assert "FAIL" in out
 
     def test_improvement_exits_0(self, tmp_path: Path, capsys) -> None:
-        records_old = [
-            _run_record("architect", "spec-01", i > 0) for i in range(3)
-        ]
-        records_new = [
-            _run_record("architect", "spec-01", True) for _ in range(3)
-        ]
+        records_old = [_run_record("architect", "spec-01", i > 0) for i in range(3)]
+        records_new = [_run_record("architect", "spec-01", True) for _ in range(3)]
         old = self._write(tmp_path, "old", records_old)
         new = self._write(tmp_path, "new", records_new)
         code = calibration.main(["compare", str(old), str(new)])
@@ -432,9 +427,9 @@ class TestCompareCli:
         assert "PASS" in out
 
     def test_unreadable_baseline_exits_2(self, tmp_path: Path, capsys) -> None:
-        good = self._write(tmp_path, "old", [
-            _run_record("architect", "spec-01", True) for _ in range(3)
-        ])
+        good = self._write(
+            tmp_path, "old", [_run_record("architect", "spec-01", True) for _ in range(3)]
+        )
         bad = tmp_path / "bad.json"
         bad.write_text("{not json")
         code = calibration.main(["compare", str(good), str(bad)])
@@ -450,18 +445,27 @@ class TestCompareCli:
 
 class TestModelDrift:
     def _write_baseline(
-        self, results_dir: Path, timestamp: str, model: str,
+        self,
+        results_dir: Path,
+        timestamp: str,
+        model: str,
     ) -> Path:
         report = calibration.build_report(
             [_run_record("architect", "spec-01", True)],
-            model=model, timestamp=timestamp, runs_per_fixture=1,
+            model=model,
+            timestamp=timestamp,
+            runs_per_fixture=1,
         )
         return calibration.save_report(report, results_dir)
 
     def test_no_results_dir_is_silent(self, tmp_path: Path) -> None:
-        assert calibration.model_drift_message(
-            tmp_path / "missing", "haiku",
-        ) is None
+        assert (
+            calibration.model_drift_message(
+                tmp_path / "missing",
+                "haiku",
+            )
+            is None
+        )
 
     def test_no_baselines_is_silent(self, tmp_path: Path) -> None:
         assert calibration.model_drift_message(tmp_path, "haiku") is None
@@ -495,6 +499,10 @@ class TestModelDrift:
         """The checked-in baselines were captured with the default
         calibration model; if this fails, someone changed the default
         without re-calibrating (H2-extended)."""
-        assert calibration.model_drift_message(
-            REPO_RESULTS_DIR, "haiku",
-        ) is None
+        assert (
+            calibration.model_drift_message(
+                REPO_RESULTS_DIR,
+                "haiku",
+            )
+            is None
+        )

@@ -72,57 +72,76 @@ class TestSecurityMatcher:
     def test_matches_when_category_severity_and_path_all_match(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="critical",
+                category="injection",
+                severity="critical",
                 location="src/users.py:11-13",
                 explanation="raw sql in get_user",
             ),
         )
-        caught, detail = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-            "evidence_path_contains": "src/users.py",
-        })
+        caught, detail = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
+            },
+        )
         assert caught
         assert "critical injection at src/users.py:11-13" in detail
 
     def test_no_match_when_category_differs(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="xss", severity="critical",
-                location="src/users.py:11", explanation="...",
+                category="xss",
+                severity="critical",
+                location="src/users.py:11",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert not caught
 
     def test_no_match_when_severity_below_threshold(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="medium",
-                location="src/users.py:11", explanation="...",
+                category="injection",
+                severity="medium",
+                location="src/users.py:11",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert not caught
 
     def test_no_match_when_location_does_not_contain_expected_path(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="critical",
-                location="src/other.py:1", explanation="...",
+                category="injection",
+                severity="critical",
+                location="src/other.py:1",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-            "evidence_path_contains": "src/users.py",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
+            },
+        )
         assert not caught
 
     def test_path_optional_when_not_required(self) -> None:
@@ -130,14 +149,19 @@ class TestSecurityMatcher:
         the matcher accepts any location."""
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="critical",
-                location="anywhere.py", explanation="...",
+                category="injection",
+                severity="critical",
+                location="anywhere.py",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert caught
 
     def test_first_matching_finding_wins(self) -> None:
@@ -146,18 +170,25 @@ class TestSecurityMatcher:
         enough to flag the planted bug."""
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="high",
-                location="src/users.py:11", explanation="first",
+                category="injection",
+                severity="high",
+                location="src/users.py:11",
+                explanation="first",
             ),
             SecurityFinding(
-                category="injection", severity="critical",
-                location="src/users.py:42", explanation="second, more severe",
+                category="injection",
+                severity="critical",
+                location="src/users.py:42",
+                explanation="second, more severe",
             ),
         )
-        caught, detail = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, detail = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert caught
         # First match returned, NOT the more-severe second one.
         assert "high injection at src/users.py:11" in detail
@@ -165,27 +196,37 @@ class TestSecurityMatcher:
     def test_skips_non_matching_finding_and_keeps_searching(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="xss", severity="critical",
-                location="src/other.py:1", explanation="distractor",
+                category="xss",
+                severity="critical",
+                location="src/other.py:1",
+                explanation="distractor",
             ),
             SecurityFinding(
-                category="injection", severity="critical",
-                location="src/users.py:11", explanation="the planted bug",
+                category="injection",
+                severity="critical",
+                location="src/users.py:11",
+                explanation="the planted bug",
             ),
         )
-        caught, detail = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, detail = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert caught
         assert "src/users.py:11" in detail
 
     def test_no_match_against_empty_findings(self) -> None:
         result = _security_result()
-        caught, detail = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, detail = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert not caught
         assert detail == ""
 
@@ -196,14 +237,19 @@ class TestSecurityMatcher:
         cannot meet a non-trivial threshold."""
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="severe",  # not in taxonomy
-                location="src/users.py:1", explanation="...",
+                category="injection",
+                severity="severe",  # not in taxonomy
+                location="src/users.py:1",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category": "injection",
-            "severity_at_least": "high",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category": "injection",
+                "severity_at_least": "high",
+            },
+        )
         assert not caught
 
 
@@ -216,42 +262,56 @@ class TestReviewerMatcher:
     def test_matches_concern_with_correct_category_and_severity(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="fail",
+                category="dead_code",
+                severity="fail",
                 location="src/parser.py:15-31",
                 explanation="unused branch",
             ),
         )
-        caught, detail = reviewer_caught(result, {
-            "category": "dead_code",
-            "severity_at_least": "fail",
-        })
+        caught, detail = reviewer_caught(
+            result,
+            {
+                "category": "dead_code",
+                "severity_at_least": "fail",
+            },
+        )
         assert caught
         assert "fail dead_code" in detail
 
     def test_no_match_when_category_differs(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="scope_creep", severity="fail",
-                location="src/parser.py", explanation="...",
+                category="scope_creep",
+                severity="fail",
+                location="src/parser.py",
+                explanation="...",
             ),
         )
-        caught, _ = reviewer_caught(result, {
-            "category": "dead_code",
-            "severity_at_least": "fail",
-        })
+        caught, _ = reviewer_caught(
+            result,
+            {
+                "category": "dead_code",
+                "severity_at_least": "fail",
+            },
+        )
         assert not caught
 
     def test_no_match_when_fail_required_but_concern_is_advisory(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="advisory",
-                location="src/parser.py", explanation="...",
+                category="dead_code",
+                severity="advisory",
+                location="src/parser.py",
+                explanation="...",
             ),
         )
-        caught, _ = reviewer_caught(result, {
-            "category": "dead_code",
-            "severity_at_least": "fail",
-        })
+        caught, _ = reviewer_caught(
+            result,
+            {
+                "category": "dead_code",
+                "severity_at_least": "fail",
+            },
+        )
         assert not caught
 
     def test_advisory_severity_accepted_when_no_floor(self) -> None:
@@ -259,8 +319,10 @@ class TestReviewerMatcher:
         an advisory concern is acceptable."""
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="advisory",
-                location="src/parser.py", explanation="...",
+                category="dead_code",
+                severity="advisory",
+                location="src/parser.py",
+                explanation="...",
             ),
         )
         caught, _ = reviewer_caught(result, {"category": "dead_code"})
@@ -269,21 +331,26 @@ class TestReviewerMatcher:
     def test_path_filter_applied(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="test_quality", severity="fail",
+                category="test_quality",
+                severity="fail",
                 location="tests/test_other.py:1",
                 explanation="distractor",
             ),
             ReviewConcern(
-                category="test_quality", severity="fail",
+                category="test_quality",
+                severity="fail",
                 location="tests/test_calculator.py:6-8",
                 explanation="tautological",
             ),
         )
-        caught, detail = reviewer_caught(result, {
-            "category": "test_quality",
-            "severity_at_least": "fail",
-            "evidence_path_contains": "test_calculator.py",
-        })
+        caught, detail = reviewer_caught(
+            result,
+            {
+                "category": "test_quality",
+                "severity_at_least": "fail",
+                "evidence_path_contains": "test_calculator.py",
+            },
+        )
         assert caught
         assert "test_calculator.py" in detail
 
@@ -303,19 +370,24 @@ class TestArchitectMatcher:
     def test_matches_when_count_kinds_and_severity_all_satisfied(self) -> None:
         issues = [
             SpecIssue(
-                kind="missing_detail", severity="blocker",
+                kind="missing_detail",
+                severity="blocker",
                 summary="no auth story",
             ),
             SpecIssue(
-                kind="undefined_failure_mode", severity="major",
+                kind="undefined_failure_mode",
+                severity="major",
                 summary="missing error path",
             ),
         ]
-        caught, detail = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["missing_detail", "undefined_failure_mode"],
-            "blocker_or_major": True,
-        })
+        caught, detail = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["missing_detail", "undefined_failure_mode"],
+                "blocker_or_major": True,
+            },
+        )
         assert caught
         assert "2 issues" in detail
 
@@ -323,10 +395,13 @@ class TestArchitectMatcher:
         issues = [
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": [],
-        })
+        caught, _ = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": [],
+            },
+        )
         assert not caught
 
     def test_paraphrased_kind_within_synonym_family_is_a_hit(self) -> None:
@@ -340,10 +415,13 @@ class TestArchitectMatcher:
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
             SpecIssue(kind="ambiguity", severity="blocker", summary="..."),
         ]
-        caught, detail = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["undefined_failure_mode", "missing_detail"],
-        })
+        caught, detail = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["undefined_failure_mode", "missing_detail"],
+            },
+        )
         assert caught
         # The exact-label signal stays visible in the detail (non-gating).
         assert "exact_kind_match=False" in detail
@@ -356,11 +434,14 @@ class TestArchitectMatcher:
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
             SpecIssue(kind="missing_detail", severity="major", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["missing_detail", "unstated_assumption"],
-            "blocker_or_major": True,
-        })
+        caught, _ = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["missing_detail", "unstated_assumption"],
+                "blocker_or_major": True,
+            },
+        )
         assert caught
 
     def test_no_match_when_required_kind_outside_synonym_family(self) -> None:
@@ -371,22 +452,30 @@ class TestArchitectMatcher:
             SpecIssue(kind="missing_detail", severity="blocker", summary="..."),
             SpecIssue(kind="ambiguity", severity="blocker", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["contradiction"],
-        })
+        caught, _ = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["contradiction"],
+            },
+        )
         assert not caught
 
     def test_exact_kind_match_reported_true_when_labels_exact(self) -> None:
         issues = [
             SpecIssue(
-                kind="undefined_failure_mode", severity="blocker", summary="...",
+                kind="undefined_failure_mode",
+                severity="blocker",
+                summary="...",
             ),
         ]
-        caught, detail = architect_caught(issues, {
-            "spec_issues_min": 1,
-            "must_include_kind": ["undefined_failure_mode"],
-        })
+        caught, detail = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 1,
+                "must_include_kind": ["undefined_failure_mode"],
+            },
+        )
         assert caught
         assert "exact_kind_match=True" in detail
 
@@ -395,11 +484,14 @@ class TestArchitectMatcher:
             SpecIssue(kind="ambiguity", severity="minor", summary="..."),
             SpecIssue(kind="ambiguity", severity="minor", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["ambiguity"],
-            "blocker_or_major": True,
-        })
+        caught, _ = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["ambiguity"],
+                "blocker_or_major": True,
+            },
+        )
         assert not caught
 
     def test_matches_when_blocker_or_major_satisfied_by_either(self) -> None:
@@ -407,11 +499,14 @@ class TestArchitectMatcher:
             SpecIssue(kind="ambiguity", severity="major", summary="..."),
             SpecIssue(kind="ambiguity", severity="minor", summary="..."),
         ]
-        caught, _ = architect_caught(major_only, {
-            "spec_issues_min": 2,
-            "must_include_kind": ["ambiguity"],
-            "blocker_or_major": True,
-        })
+        caught, _ = architect_caught(
+            major_only,
+            {
+                "spec_issues_min": 2,
+                "must_include_kind": ["ambiguity"],
+                "blocker_or_major": True,
+            },
+        )
         assert caught
 
     def test_required_kinds_field_optional(self) -> None:
@@ -421,9 +516,12 @@ class TestArchitectMatcher:
             SpecIssue(kind="other", severity="blocker", summary="..."),
             SpecIssue(kind="ambiguity", severity="major", summary="..."),
         ]
-        caught, _ = architect_caught(issues, {
-            "spec_issues_min": 1,
-        })
+        caught, _ = architect_caught(
+            issues,
+            {
+                "spec_issues_min": 1,
+            },
+        )
         assert caught
 
     def test_no_match_against_empty_issues(self) -> None:
@@ -470,7 +568,8 @@ class TestKindSynonyms:
         for kind in ("ambiguity", "contradiction", "out_of_scope_creep", "other"):
             assert calibration.acceptable_kinds(kind) == frozenset({kind})
             assert not calibration.required_kinds_satisfied(
-                [kind], ["missing_detail"],
+                [kind],
+                ["missing_detail"],
             )
             assert calibration.required_kinds_satisfied([kind], [kind])
 
@@ -478,12 +577,14 @@ class TestKindSynonyms:
         """Ambiguity is about vague language that IS present, not
         absence: it deliberately stays outside the synonym family."""
         assert not calibration.required_kinds_satisfied(
-            ["ambiguity"], ["missing_detail", "unstated_assumption"],
+            ["ambiguity"],
+            ["missing_detail", "unstated_assumption"],
         )
 
     def test_all_required_kinds_must_be_satisfied(self) -> None:
         assert not calibration.required_kinds_satisfied(
-            ["missing_detail", "contradiction"], ["missing_detail"],
+            ["missing_detail", "contradiction"],
+            ["missing_detail"],
         )
         assert calibration.required_kinds_satisfied(
             ["missing_detail", "contradiction"],
@@ -496,10 +597,12 @@ class TestKindSynonyms:
 
     def test_exact_kinds_present_ignores_synonyms(self) -> None:
         assert not calibration.exact_kinds_present(
-            ["undefined_failure_mode"], ["missing_detail"],
+            ["undefined_failure_mode"],
+            ["missing_detail"],
         )
         assert calibration.exact_kinds_present(
-            ["undefined_failure_mode"], ["undefined_failure_mode"],
+            ["undefined_failure_mode"],
+            ["undefined_failure_mode"],
         )
 
     def test_synonym_groups_stay_within_decompose_taxonomy(self) -> None:
@@ -525,68 +628,93 @@ class TestCategoryAnyOf:
     def test_security_matches_any_listed_category(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="information_disclosure", severity="high",
-                location="src/webhooks/signing.py:20", explanation="timing",
+                category="information_disclosure",
+                severity="high",
+                location="src/webhooks/signing.py:20",
+                explanation="timing",
             ),
         )
-        caught, detail = security_caught(result, {
-            "category_any_of": ["broken_crypto", "information_disclosure"],
-            "severity_at_least": "medium",
-        })
+        caught, detail = security_caught(
+            result,
+            {
+                "category_any_of": ["broken_crypto", "information_disclosure"],
+                "severity_at_least": "medium",
+            },
+        )
         assert caught
         assert "information_disclosure" in detail
 
     def test_security_rejects_category_outside_the_list(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="xss", severity="critical",
-                location="src/webhooks/signing.py:20", explanation="...",
+                category="xss",
+                severity="critical",
+                location="src/webhooks/signing.py:20",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category_any_of": ["broken_crypto", "information_disclosure"],
-            "severity_at_least": "medium",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category_any_of": ["broken_crypto", "information_disclosure"],
+                "severity_at_least": "medium",
+            },
+        )
         assert not caught
 
     def test_security_any_of_still_honors_severity_floor(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="broken_crypto", severity="low",
-                location="src/webhooks/signing.py:20", explanation="...",
+                category="broken_crypto",
+                severity="low",
+                location="src/webhooks/signing.py:20",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category_any_of": ["broken_crypto", "information_disclosure"],
-            "severity_at_least": "high",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category_any_of": ["broken_crypto", "information_disclosure"],
+                "severity_at_least": "high",
+            },
+        )
         assert not caught
 
     def test_security_any_of_still_honors_path_filter(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="broken_crypto", severity="high",
-                location="src/other.py:1", explanation="...",
+                category="broken_crypto",
+                severity="high",
+                location="src/other.py:1",
+                explanation="...",
             ),
         )
-        caught, _ = security_caught(result, {
-            "category_any_of": ["broken_crypto"],
-            "severity_at_least": "high",
-            "evidence_path_contains": "src/webhooks/signing.py",
-        })
+        caught, _ = security_caught(
+            result,
+            {
+                "category_any_of": ["broken_crypto"],
+                "severity_at_least": "high",
+                "evidence_path_contains": "src/webhooks/signing.py",
+            },
+        )
         assert not caught
 
     def test_reviewer_matches_any_listed_category(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="scope_creep", severity="fail",
-                location="src/x.py:1", explanation="...",
+                category="scope_creep",
+                severity="fail",
+                location="src/x.py:1",
+                explanation="...",
             ),
         )
-        caught, _ = reviewer_caught(result, {
-            "category_any_of": ["dead_code", "scope_creep"],
-            "severity_at_least": "fail",
-        })
+        caught, _ = reviewer_caught(
+            result,
+            {
+                "category_any_of": ["dead_code", "scope_creep"],
+                "severity_at_least": "fail",
+            },
+        )
         assert caught
 
 
@@ -599,48 +727,66 @@ class TestSecurityFalsePositive:
     def test_forbidden_category_at_floor_is_fp(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="high",
-                location="src/search/query.py:40", explanation="...",
+                category="injection",
+                severity="high",
+                location="src/search/query.py:40",
+                explanation="...",
             ),
         )
-        is_fp, detail = security_false_positive(result, {
-            "categories": ["injection"],
-            "severity_at_least": "medium",
-        })
+        is_fp, detail = security_false_positive(
+            result,
+            {
+                "categories": ["injection"],
+                "severity_at_least": "medium",
+            },
+        )
         assert is_fp
         assert "injection" in detail
 
     def test_forbidden_category_below_floor_is_not_fp(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="low",
-                location="src/search/query.py:40", explanation="nit",
+                category="injection",
+                severity="low",
+                location="src/search/query.py:40",
+                explanation="nit",
             ),
         )
-        is_fp, _ = security_false_positive(result, {
-            "categories": ["injection"],
-            "severity_at_least": "high",
-        })
+        is_fp, _ = security_false_positive(
+            result,
+            {
+                "categories": ["injection"],
+                "severity_at_least": "high",
+            },
+        )
         assert not is_fp
 
     def test_non_forbidden_category_is_not_fp(self) -> None:
         result = _security_result(
             SecurityFinding(
-                category="other", severity="critical",
-                location="src/search/query.py:40", explanation="style",
+                category="other",
+                severity="critical",
+                location="src/search/query.py:40",
+                explanation="style",
             ),
         )
-        is_fp, _ = security_false_positive(result, {
-            "categories": ["injection"],
-            "severity_at_least": "medium",
-        })
+        is_fp, _ = security_false_positive(
+            result,
+            {
+                "categories": ["injection"],
+                "severity_at_least": "medium",
+            },
+        )
         assert not is_fp
 
     def test_empty_findings_is_not_fp(self) -> None:
-        is_fp, detail = security_false_positive(_security_result(), {
-            "categories": ["injection"],
-            "severity_at_least": "medium",
-        })
+        is_fp, detail = security_false_positive(
+            _security_result(),
+            {
+                "categories": ["injection"],
+                "severity_at_least": "medium",
+            },
+        )
         assert not is_fp
         assert detail == ""
 
@@ -649,8 +795,10 @@ class TestSecurityFalsePositive:
         the default 'high' floor and does not count."""
         result = _security_result(
             SecurityFinding(
-                category="injection", severity="medium",
-                location="src/x.py:1", explanation="...",
+                category="injection",
+                severity="medium",
+                location="src/x.py:1",
+                explanation="...",
             ),
         )
         assert not security_false_positive(result, {"categories": ["injection"]})[0]
@@ -660,61 +808,84 @@ class TestReviewerFalsePositive:
     def test_blocking_forbidden_concern_is_fp(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="fail",
-                location="src/sandbox/config.py:15", explanation="...",
+                category="dead_code",
+                severity="fail",
+                location="src/sandbox/config.py:15",
+                explanation="...",
             ),
         )
-        is_fp, detail = reviewer_false_positive(result, {
-            "categories": ["dead_code", "scope_creep"],
-            "severity_at_least": "fail",
-        })
+        is_fp, detail = reviewer_false_positive(
+            result,
+            {
+                "categories": ["dead_code", "scope_creep"],
+                "severity_at_least": "fail",
+            },
+        )
         assert is_fp
         assert "dead_code" in detail
 
     def test_advisory_forbidden_concern_not_fp_when_floor_is_fail(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="advisory",
-                location="src/sandbox/config.py:15", explanation="...",
+                category="dead_code",
+                severity="advisory",
+                location="src/sandbox/config.py:15",
+                explanation="...",
             ),
         )
-        is_fp, _ = reviewer_false_positive(result, {
-            "categories": ["dead_code"],
-            "severity_at_least": "fail",
-        })
+        is_fp, _ = reviewer_false_positive(
+            result,
+            {
+                "categories": ["dead_code"],
+                "severity_at_least": "fail",
+            },
+        )
         assert not is_fp
 
     def test_advisory_counts_when_floor_is_not_fail(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="dead_code", severity="advisory",
-                location="src/sandbox/config.py:15", explanation="...",
+                category="dead_code",
+                severity="advisory",
+                location="src/sandbox/config.py:15",
+                explanation="...",
             ),
         )
-        is_fp, _ = reviewer_false_positive(result, {
-            "categories": ["dead_code"],
-            "severity_at_least": "advisory",
-        })
+        is_fp, _ = reviewer_false_positive(
+            result,
+            {
+                "categories": ["dead_code"],
+                "severity_at_least": "advisory",
+            },
+        )
         assert is_fp
 
     def test_non_forbidden_concern_not_fp(self) -> None:
         result = _review_result(
             ReviewConcern(
-                category="test_quality", severity="fail",
-                location="tests/test_x.py:1", explanation="...",
+                category="test_quality",
+                severity="fail",
+                location="tests/test_x.py:1",
+                explanation="...",
             ),
         )
-        is_fp, _ = reviewer_false_positive(result, {
-            "categories": ["dead_code"],
-            "severity_at_least": "fail",
-        })
+        is_fp, _ = reviewer_false_positive(
+            result,
+            {
+                "categories": ["dead_code"],
+                "severity_at_least": "fail",
+            },
+        )
         assert not is_fp
 
     def test_empty_concerns_not_fp(self) -> None:
-        is_fp, detail = reviewer_false_positive(_review_result(), {
-            "categories": ["dead_code"],
-            "severity_at_least": "fail",
-        })
+        is_fp, detail = reviewer_false_positive(
+            _review_result(),
+            {
+                "categories": ["dead_code"],
+                "severity_at_least": "fail",
+            },
+        )
         assert not is_fp
         assert detail == ""
 
@@ -726,12 +897,12 @@ class TestReviewerFalsePositive:
 # ---------------------------------------------------------------------------
 
 
-def _fp_runs(role: str, fixture_id: str, flags: list[bool],
-             errors: list[bool] | None = None) -> list[dict]:
+def _fp_runs(
+    role: str, fixture_id: str, flags: list[bool], errors: list[bool] | None = None
+) -> list[dict]:
     errs = errors or [False] * len(flags)
     return [
-        {"role": role, "fixture_id": fixture_id,
-         "false_positive": f, "error": e, "detail": ""}
+        {"role": role, "fixture_id": fixture_id, "false_positive": f, "error": e, "detail": ""}
         for f, e in zip(flags, errs, strict=True)
     ]
 
@@ -769,7 +940,9 @@ class TestBuildFpSummary:
     def test_errored_runs_excluded_from_denominator(self) -> None:
         # one real flag, two infra errors -> completed=1, flagged=1 -> FP
         records = _fp_runs(
-            "reviewer_negative", "n1", [True, False, False],
+            "reviewer_negative",
+            "n1",
+            [True, False, False],
             errors=[False, True, True],
         )
         role = build_fp_summary(records)["roles"]["reviewer_negative"]
@@ -780,7 +953,9 @@ class TestBuildFpSummary:
 
     def test_all_errored_fixture_is_not_false_positive(self) -> None:
         records = _fp_runs(
-            "reviewer_negative", "n1", [False, False],
+            "reviewer_negative",
+            "n1",
+            [False, False],
             errors=[True, True],
         )
         role = build_fp_summary(records)["roles"]["reviewer_negative"]
@@ -788,15 +963,13 @@ class TestBuildFpSummary:
 
     def test_meets_threshold_flag(self) -> None:
         clean = build_fp_summary(
-            _fp_runs("n", "a", [False, False])
-            + _fp_runs("n", "b", [False, False])
+            _fp_runs("n", "a", [False, False]) + _fp_runs("n", "b", [False, False])
         )["roles"]["n"]
         assert clean["fp_rate"] == 0.0
         assert clean["meets_threshold"] is True
 
         noisy = build_fp_summary(
-            _fp_runs("n", "a", [True, True])
-            + _fp_runs("n", "b", [True, True])
+            _fp_runs("n", "a", [True, True]) + _fp_runs("n", "b", [True, True])
         )["roles"]["n"]
         assert noisy["fp_rate"] == 1.0
         assert noisy["meets_threshold"] is False
@@ -823,10 +996,12 @@ class TestRenderVerification:
         assert "tests: PASS" not in rendered
 
     def test_uses_fixture_supplied_checks(self) -> None:
-        meta = {"verification": [
-            {"name": "test_suite", "passed": False, "message": "2 failed"},
-            {"name": "typecheck", "passed": True, "message": "ok"},
-        ]}
+        meta = {
+            "verification": [
+                {"name": "test_suite", "passed": False, "message": "2 failed"},
+                {"name": "typecheck", "passed": True, "message": "ok"},
+            ]
+        }
         rendered = render_verification(meta)
         assert "- test_suite: FAIL - 2 failed" in rendered
         assert "- typecheck: PASS - ok" in rendered

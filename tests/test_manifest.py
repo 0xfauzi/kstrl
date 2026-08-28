@@ -134,65 +134,121 @@ class TestManifestValidateDAG:
         assert m.validate_dag() == []
 
     def test_no_dependencies(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", [], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", [], "b.json", "b/b"),
+            ],
+        )
         assert m.validate_dag() == []
 
     def test_valid_linear_chain(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["b"], "c.json", "b/c"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["b"], "c.json", "b/c"),
+            ],
+        )
         assert m.validate_dag() == []
 
     def test_valid_diamond(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["a"], "c.json", "b/c"),
-            Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["a"], "c.json", "b/c"),
+                Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
+            ],
+        )
         assert m.validate_dag() == []
 
     def test_missing_dependency(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", ["nonexistent"], "a.json", "b/a"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", ["nonexistent"], "a.json", "b/a"),
+            ],
+        )
         errors = m.validate_dag()
         assert any("nonexistent" in e for e in errors)
 
     def test_self_dependency_cycle(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", ["a"], "a.json", "b/a"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", ["a"], "a.json", "b/a"),
+            ],
+        )
         errors = m.validate_dag()
         assert any("cycle" in e.lower() for e in errors)
 
     def test_two_node_cycle(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", ["b"], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", ["b"], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         errors = m.validate_dag()
         assert any("cycle" in e.lower() for e in errors)
 
     def test_three_node_cycle(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", ["c"], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["b"], "c.json", "b/c"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", ["c"], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["b"], "c.json", "b/c"),
+            ],
+        )
         errors = m.validate_dag()
         assert any("cycle" in e.lower() for e in errors)
 
     def test_duplicate_ids(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("a", "A copy", "", [], "a2.json", "b/a2"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("a", "A copy", "", [], "a2.json", "b/a2"),
+            ],
+        )
         errors = m.validate_dag()
         assert any("Duplicate" in e for e in errors)
 
@@ -205,47 +261,82 @@ class TestTopologicalOrder:
         assert m.topological_order() == []
 
     def test_single(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+            ],
+        )
         assert m.topological_order() == ["a"]
 
     def test_linear_chain(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("c", "C", "", ["b"], "c.json", "b/c"),
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("c", "C", "", ["b"], "c.json", "b/c"),
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         order = m.topological_order()
         assert order.index("a") < order.index("b")
         assert order.index("b") < order.index("c")
 
     def test_diamond(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["a"], "c.json", "b/c"),
-            Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["a"], "c.json", "b/c"),
+                Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
+            ],
+        )
         order = m.topological_order()
         assert order[0] == "a"
         assert order.index("b") < order.index("d")
         assert order.index("c") < order.index("d")
 
     def test_independent_components(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", [], "b.json", "b/b"),
-            Component("c", "C", "", [], "c.json", "b/c"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", [], "b.json", "b/b"),
+                Component("c", "C", "", [], "c.json", "b/c"),
+            ],
+        )
         order = m.topological_order()
         assert sorted(order) == ["a", "b", "c"]
 
     def test_cycle_raises(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", ["b"], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", ["b"], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         with pytest.raises(ValueError, match="cycle"):
             m.topological_order()
 
@@ -254,57 +345,106 @@ class TestGetReadyComponents:
     """Tests for Manifest.get_ready_components."""
 
     def test_no_deps_all_ready(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", [], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", [], "b.json", "b/b"),
+            ],
+        )
         ready = m.get_ready_components()
         assert {c.id for c in ready} == {"a", "b"}
 
     def test_deps_not_met(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         ready = m.get_ready_components()
         assert [c.id for c in ready] == ["a"]
 
     def test_deps_satisfied(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="completed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="completed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         ready = m.get_ready_components()
         assert [c.id for c in ready] == ["b"]
 
     def test_running_not_ready(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="running"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="running"),
+            ],
+        )
         ready = m.get_ready_components()
         assert ready == []
 
     def test_completed_not_ready(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="completed"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="completed"),
+            ],
+        )
         ready = m.get_ready_components()
         assert ready == []
 
     def test_failed_not_ready(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+            ],
+        )
         ready = m.get_ready_components()
         assert ready == []
 
     def test_mixed_states(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="completed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b", status="running"),
-            Component("c", "C", "", ["a"], "c.json", "b/c"),
-            Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="completed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b", status="running"),
+                Component("c", "C", "", ["a"], "c.json", "b/c"),
+                Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
+            ],
+        )
         ready = m.get_ready_components()
         assert [c.id for c in ready] == ["c"]
 
@@ -313,54 +453,96 @@ class TestCascadeSkip:
     """Tests for Manifest.cascade_skip."""
 
     def test_no_dependents(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-            Component("b", "B", "", [], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+                Component("b", "B", "", [], "b.json", "b/b"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert skipped == []
 
     def test_single_dependent(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert skipped == ["b"]
         assert m.get_component("b").status == ComponentStatus.SKIPPED.value
 
     def test_chain_of_dependents(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["b"], "c.json", "b/c"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["b"], "c.json", "b/c"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert sorted(skipped) == ["b", "c"]
 
     def test_diamond_cascade(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-            Component("c", "C", "", ["a"], "c.json", "b/c"),
-            Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+                Component("c", "C", "", ["a"], "c.json", "b/c"),
+                Component("d", "D", "", ["b", "c"], "d.json", "b/d"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert sorted(skipped) == ["b", "c", "d"]
 
     def test_does_not_skip_completed(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b", status="completed"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b", status="completed"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert skipped == []
 
     def test_does_not_skip_already_skipped(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a", status="failed"),
-            Component("b", "B", "", ["a"], "b.json", "b/b", status="skipped"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b", status="skipped"),
+            ],
+        )
         skipped = m.cascade_skip("a")
         assert skipped == []
 
@@ -441,9 +623,16 @@ class TestGetComponent:
     """Tests for Manifest.get_component."""
 
     def test_found(self) -> None:
-        m = Manifest("1", "spec.md", "test", "main", False, [
-            Component("a", "A", "", [], "a.json", "b/a"),
-        ])
+        m = Manifest(
+            "1",
+            "spec.md",
+            "test",
+            "main",
+            False,
+            [
+                Component("a", "A", "", [], "a.json", "b/a"),
+            ],
+        )
         assert m.get_component("a") is not None
         assert m.get_component("a").title == "A"
 

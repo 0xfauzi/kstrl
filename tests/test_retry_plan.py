@@ -15,11 +15,17 @@ from kstrl.ui.plain import PlainUI
 
 def _failed_manifest() -> Manifest:
     manifest = Manifest(
-        version="1", spec_file="s", project_name="t",
-        base_branch="main", single_pr=False,
+        version="1",
+        spec_file="s",
+        project_name="t",
+        base_branch="main",
+        single_pr=False,
         components=[
             Component(
-                id=i, title=i, description="", dependencies=[],
+                id=i,
+                title=i,
+                description="",
+                dependencies=[],
                 prd_path=f"scripts/kstrl/feature/{i}/prd.json",
                 branch_name=f"kstrl/{i}",
             )
@@ -59,7 +65,8 @@ class TestPreview:
 
 class TestPrepare:
     def test_prepare_mutates_saves_and_narrates(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest = _failed_manifest()
         manifest_file = tmp_path / "manifest.json"
@@ -67,7 +74,11 @@ class TestPrepare:
         ui = PlainUI(no_color=True, file=stream)
 
         preview = prepare_retry(
-            manifest, "comp-a", manifest_file, tmp_path, ui,
+            manifest,
+            "comp-a",
+            manifest_file,
+            tmp_path,
+            ui,
         )
 
         assert preview.reset_dependents == ["comp-b"]
@@ -84,7 +95,8 @@ class TestPrepare:
         assert "comp-b" in out
 
     def test_single_pr_leaves_branch_and_warns(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest = _failed_manifest()
         manifest.single_pr = True
@@ -92,7 +104,10 @@ class TestPrepare:
         stream = io.StringIO()
 
         prepare_retry(
-            manifest, "comp-a", manifest_file, tmp_path,
+            manifest,
+            "comp-a",
+            manifest_file,
+            tmp_path,
             PlainUI(no_color=True, file=stream),
         )
 

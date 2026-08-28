@@ -31,7 +31,11 @@ from kstrl.ui.plain import PlainUI
 
 def _git(args: list[str], cwd: Path) -> None:
     subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        timeout=30,
     )
 
 
@@ -62,13 +66,12 @@ class TestBreakerConfig:
         assert config.test_timeout == 60.0
 
     def test_load_toml_and_env_precedence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(
-            "[breaker]\n"
-            "no_progress_iterations = 7\n"
-            'test_command = "toml-cmd"\n'
-            "test_timeout = 120\n"
+            '[breaker]\nno_progress_iterations = 7\ntest_command = "toml-cmd"\ntest_timeout = 120\n'
         )
         config = BreakerConfig.load(tmp_path)
         assert config.no_progress_iterations == 7
@@ -82,7 +85,8 @@ class TestBreakerConfig:
     def test_zero_disables(self, tmp_path: Path) -> None:
         _init_repo(tmp_path)
         breaker = NoProgressBreaker(
-            tmp_path, BreakerConfig(no_progress_iterations=0),
+            tmp_path,
+            BreakerConfig(no_progress_iterations=0),
         )
         assert breaker.enabled is False
         assert breaker.record_iteration() is False
@@ -132,9 +136,7 @@ class TestComputeDiffHash:
 class TestComputeTestSignature:
     def test_no_command_is_constant(self, tmp_path: Path) -> None:
         config = BreakerConfig(test_command=None)
-        assert compute_test_signature(tmp_path, config) == (
-            NO_TEST_COMMAND_SIGNATURE
-        )
+        assert compute_test_signature(tmp_path, config) == (NO_TEST_COMMAND_SIGNATURE)
 
     def test_masks_durations(self, tmp_path: Path) -> None:
         """Two runs of the same failing suite differ only in timings;
@@ -145,25 +147,27 @@ class TestComputeTestSignature:
         slow = BreakerConfig(
             test_command='echo "FAILED test_x in 4.56s"; exit 1',
         )
-        assert compute_test_signature(tmp_path, fast) == (
-            compute_test_signature(tmp_path, slow)
-        )
+        assert compute_test_signature(tmp_path, fast) == (compute_test_signature(tmp_path, slow))
 
     def test_distinguishes_failures(self, tmp_path: Path) -> None:
         sig_x = compute_test_signature(
-            tmp_path, BreakerConfig(test_command='echo "FAILED test_x"; exit 1'),
+            tmp_path,
+            BreakerConfig(test_command='echo "FAILED test_x"; exit 1'),
         )
         sig_y = compute_test_signature(
-            tmp_path, BreakerConfig(test_command='echo "FAILED test_y"; exit 1'),
+            tmp_path,
+            BreakerConfig(test_command='echo "FAILED test_y"; exit 1'),
         )
         assert sig_x != sig_y
 
     def test_distinguishes_return_codes(self, tmp_path: Path) -> None:
         sig_pass = compute_test_signature(
-            tmp_path, BreakerConfig(test_command="exit 0"),
+            tmp_path,
+            BreakerConfig(test_command="exit 0"),
         )
         sig_fail = compute_test_signature(
-            tmp_path, BreakerConfig(test_command="exit 1"),
+            tmp_path,
+            BreakerConfig(test_command="exit 1"),
         )
         assert sig_pass != sig_fail
 
@@ -180,7 +184,9 @@ class _ScriptedAgent:
         return "scripted"
 
     def run(
-        self, prompt: str, cwd: Path | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
         timeout: float | None = None,
     ) -> Iterator[str]:
         self.calls += 1
@@ -214,7 +220,10 @@ class TestRunLoopBreakerIntegration:
         config = _loop_config(tmp_path, max_iterations=10)
         agent = _ScriptedAgent()
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(no_progress_iterations=3),
         )
         assert result.no_progress is True
@@ -235,7 +244,10 @@ class TestRunLoopBreakerIntegration:
 
         agent = _ScriptedAgent(write_same)
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(no_progress_iterations=3),
         )
         assert result.no_progress is True
@@ -252,7 +264,10 @@ class TestRunLoopBreakerIntegration:
 
         agent = _ScriptedAgent(write_progress)
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(no_progress_iterations=3),
         )
         assert result.no_progress is False
@@ -260,7 +275,8 @@ class TestRunLoopBreakerIntegration:
         assert result.exit_code == 1
 
     def test_changing_test_signature_resets_streak(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Same tree but a different test outcome each probe (flaky or
         externally-progressing suite): the streak restarts, so the
@@ -277,9 +293,13 @@ class TestRunLoopBreakerIntegration:
         )
         agent = _ScriptedAgent()
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(
-                no_progress_iterations=2, test_command=probe,
+                no_progress_iterations=2,
+                test_command=probe,
             ),
         )
         assert result.no_progress is False
@@ -290,7 +310,10 @@ class TestRunLoopBreakerIntegration:
         config = _loop_config(tmp_path, max_iterations=10)
         agent = _ScriptedAgent()
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(
                 no_progress_iterations=2,
                 test_command='echo "FAILED test_stall"; exit 1',
@@ -305,7 +328,10 @@ class TestRunLoopBreakerIntegration:
         config = _loop_config(tmp_path, max_iterations=4)
         agent = _ScriptedAgent()
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
             breaker_config=BreakerConfig(no_progress_iterations=2),
         )
         assert result.no_progress is False
@@ -321,7 +347,9 @@ class TestPipelineRouting:
 
         pipeline, manifest, factory_result, _ = _make_pipeline(tmp_path)
         result = ComponentResult(
-            "comp-a", success=False, iterations=3,
+            "comp-a",
+            success=False,
+            iterations=3,
             error="no-progress circuit breaker tripped: 3 consecutive ...",
             no_progress=True,
         )
@@ -339,9 +367,7 @@ class TestPipelineRouting:
         ]
         assert pipeline.journal_path is not None
         events = read_progress_events(pipeline.journal_path)
-        tripped = [
-            e for e in events if e["event"] == "circuit_breaker_tripped"
-        ]
+        tripped = [e for e in events if e["event"] == "circuit_breaker_tripped"]
         assert len(tripped) == 1
         assert tripped[0]["component"] == "comp-a"
         assert tripped[0]["data"]["iterations"] == 3

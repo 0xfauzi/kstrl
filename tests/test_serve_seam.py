@@ -125,12 +125,16 @@ def _write_executable(path: Path, body: str) -> Path:
 
 
 def _install_stub_interpreter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *,
-    exit_code: int = 0, stdout: str = "",
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    exit_code: int = 0,
+    stdout: str = "",
 ) -> Path:
     """Replace ``sys.executable`` with the recorder; return the record path."""
     interpreter = _write_executable(
-        tmp_path / "stub_interpreter", _STUB_INTERPRETER,
+        tmp_path / "stub_interpreter",
+        _STUB_INTERPRETER,
     )
     record = tmp_path / "exec_record.json"
     monkeypatch.setenv("SEAM_RECORD", str(record))
@@ -141,7 +145,8 @@ def _install_stub_interpreter(
 
 
 def _install_fake_caffeinate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     """Put a fake ``caffeinate`` on PATH and make the platform look like
     macOS; return the marker path it touches when it runs.
@@ -196,7 +201,10 @@ def _exec_real_runner(
     to the shipping code and read back out of the child.
     """
     record = _install_stub_interpreter(
-        tmp_path, monkeypatch, exit_code=exit_code, stdout=stdout,
+        tmp_path,
+        monkeypatch,
+        exit_code=exit_code,
+        stdout=stdout,
     )
     root_dir = tmp_path / "root"
     root_dir.mkdir(exist_ok=True)
@@ -231,7 +239,9 @@ class TestTheRealRunnerExecsItsArgv:
     """The half that was only ever patched out."""
 
     def test_it_invokes_the_factory_as_a_module_of_this_interpreter(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Not a bare ``ks`` off PATH: an installed LaunchAgent has no
         guarantee about PATH, so the runner names the interpreter and the
@@ -240,17 +250,23 @@ class TestTheRealRunnerExecsItsArgv:
         assert ran.argv[:3] == ("-m", "kstrl", "factory")
 
     def test_it_passes_the_spec_project_and_root_it_was_given(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _, ran = _exec_real_runner(
-            tmp_path, monkeypatch, project_name="deckgen",
+            tmp_path,
+            monkeypatch,
+            project_name="deckgen",
         )
         assert ran.value_of("--project-name") == "deckgen"
         assert Path(ran.value_of("--spec")) == tmp_path / "spec.md"
         assert Path(ran.value_of("--root")) == tmp_path / "root"
 
     def test_it_forces_non_interactive_output(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A daemon-spawned factory has no terminal. If any of these
         regress the child blocks on a prompt or emits escape codes into
@@ -281,13 +297,17 @@ class TestTheRealRunnerExecsItsArgv:
         inherit the gate from its own kstrl.toml, because the queue
         item's merge disposition is what decided it."""
         _, ran = _exec_real_runner(
-            tmp_path, monkeypatch, pause_before_pr_merge=gate_on,
+            tmp_path,
+            monkeypatch,
+            pause_before_pr_merge=gate_on,
         )
         assert expected in ran.argv
         assert forbidden not in ran.argv
 
     def test_the_child_runs_in_the_target_root(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--root` and the cwd must agree; a factory that runs beside
         the repo it was pointed at would resolve every relative
@@ -297,24 +317,34 @@ class TestTheRealRunnerExecsItsArgv:
         assert Path(ran.value_of("--root")).resolve() == ran.cwd.resolve()
 
     def test_on_spawn_receives_the_pid_that_actually_ran(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The lease is adopted by this pid. If it is the daemon's own,
         a successor judges the lease dead and requeues a live run
         (#186 F1)."""
         seen: list[int] = []
         _, ran = _exec_real_runner(
-            tmp_path, monkeypatch, on_spawn=seen.append, caffeinate=False,
+            tmp_path,
+            monkeypatch,
+            on_spawn=seen.append,
+            caffeinate=False,
         )
         assert seen == [ran.pid]
 
     def test_the_childs_exit_code_and_output_reach_the_outcome(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The classifier reads both: exit 2 is only disambiguated by
         what the child printed (#186 F6)."""
         outcome, _ = _exec_real_runner(
-            tmp_path, monkeypatch, exit_code=2, stdout="halted: budget\n",
+            tmp_path,
+            monkeypatch,
+            exit_code=2,
+            stdout="halted: budget\n",
         )
         assert outcome.returncode == 2
         assert "halted: budget" in outcome.output_tail
@@ -322,7 +352,9 @@ class TestTheRealRunnerExecsItsArgv:
         assert outcome.launch_error == ""
 
     def test_a_missing_interpreter_is_a_launch_error_not_a_crash(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """An unlaunchable child must be a value the daemon can classify,
         never an exception that takes the loop down."""
@@ -341,7 +373,9 @@ class TestTheRealRunnerExecsItsArgv:
         assert outcome.launch_error
 
     def test_the_runner_actually_wraps_the_child_in_caffeinate(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Runs on every platform, because this wiring is invisible.
 
@@ -359,22 +393,24 @@ class TestTheRealRunnerExecsItsArgv:
         """
         marker = _install_fake_caffeinate(tmp_path, monkeypatch)
         outcome, ran = _exec_real_runner(
-            tmp_path, monkeypatch, caffeinate=True, exit_code=5,
+            tmp_path,
+            monkeypatch,
+            caffeinate=True,
+            exit_code=5,
         )
         assert marker.exists(), (
             "caffeinate was not in the child's exec chain, so runs are no "
             "longer holding the idle-sleep assertion"
         )
-        assert ran.argv[:3] == ("-m", "kstrl", "factory"), (
-            "the wrapper mangled the factory's argv"
-        )
+        assert ran.argv[:3] == ("-m", "kstrl", "factory"), "the wrapper mangled the factory's argv"
         assert outcome.returncode == 5, (
-            "the wrapper swallowed the factory's exit status; the "
-            "classifier reads it"
+            "the wrapper swallowed the factory's exit status; the classifier reads it"
         )
 
     def test_caffeinate_is_omitted_when_it_is_turned_off(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The control for the test above. Without it, a runner that
         wrapped unconditionally would look correct."""
@@ -383,11 +419,11 @@ class TestTheRealRunnerExecsItsArgv:
         assert not marker.exists(), "caffeinate = false still wrapped the run"
         assert ran.argv[:3] == ("-m", "kstrl", "factory")
 
-    @pytest.mark.skipif(
-        sys.platform != "darwin", reason="caffeinate is macOS-only"
-    )
+    @pytest.mark.skipif(sys.platform != "darwin", reason="caffeinate is macOS-only")
     def test_the_factory_still_runs_correctly_under_real_caffeinate(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The wrapper must not disturb the argv, the exit code, or the
         pid the lease is adopted by.
@@ -411,13 +447,15 @@ class TestTheRealRunnerExecsItsArgv:
             pytest.skip("caffeinate not installed")
         seen: list[int] = []
         outcome, ran = _exec_real_runner(
-            tmp_path, monkeypatch, caffeinate=True, exit_code=7,
+            tmp_path,
+            monkeypatch,
+            caffeinate=True,
+            exit_code=7,
             on_spawn=seen.append,
         )
         assert ran.argv[:3] == ("-m", "kstrl", "factory")
         assert outcome.returncode == 7, (
-            "caffeinate must pass the factory's exit status through; the "
-            "classifier reads it"
+            "caffeinate must pass the factory's exit status through; the classifier reads it"
         )
         assert seen == [ran.pid], (
             "caffeinate no longer execs in place, so the daemon's direct "
@@ -455,26 +493,36 @@ class TestTheArgvIsAcceptedByTheRealCli:
         return ctx
 
     def test_the_real_factory_command_accepts_the_runners_argv(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _, ran = _exec_real_runner(
-            tmp_path, monkeypatch, pause_before_pr_merge=True,
+            tmp_path,
+            monkeypatch,
+            pause_before_pr_merge=True,
         )
         ctx = self._parse(ran.argv)
         assert ctx.params["pause_before_pr_merge"] is True
         assert ctx.params["project_name"] == "seam-project"
 
     def test_the_negated_merge_gate_also_parses(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _, ran = _exec_real_runner(
-            tmp_path, monkeypatch, pause_before_pr_merge=False,
+            tmp_path,
+            monkeypatch,
+            pause_before_pr_merge=False,
         )
         ctx = self._parse(ran.argv)
         assert ctx.params["pause_before_pr_merge"] is False
 
     def test_the_control_an_unknown_flag_is_rejected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Without this the two tests above prove nothing: they would
         pass just as well against a command that accepted anything."""
@@ -503,8 +551,7 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
     @staticmethod
     def _argv_from(record: Path) -> list[str]:
         assert record.exists(), (
-            "no factory was launched, so the cycle never reached the "
-            "default runner"
+            "no factory was launched, so the cycle never reached the default runner"
         )
         raw: dict[str, Any] = json.loads(record.read_text(encoding="utf-8"))
         return list(raw["argv"])
@@ -527,13 +574,16 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
         serve_cycle(
             tmp_path,
             config=ServeConfig(
-                caffeinate=caffeinate, factory_timeout_seconds=60.0,
+                caffeinate=caffeinate,
+                factory_timeout_seconds=60.0,
             ),
         )
         return self._argv_from(record)
 
     def test_the_cycle_forwards_the_items_project_name(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The exact mutation that survived the first round of this PR."""
         argv = self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
@@ -541,18 +591,20 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
         assert argv[argv.index("--project-name") + 1] == "widget-svc"
 
     def test_the_cycle_points_the_factory_at_the_queued_spec(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         argv = self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
         spec = Path(argv[argv.index("--spec") + 1])
         assert spec.name == "spec.md"
-        assert tmp_path in spec.parents, (
-            f"the factory was pointed outside the queue root: {spec}"
-        )
+        assert tmp_path in spec.parents, f"the factory was pointed outside the queue root: {spec}"
         assert Path(argv[argv.index("--root") + 1]) == tmp_path
 
     def test_the_cycle_carries_the_merge_gate_into_the_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A queued item defaults to STOP_AT_PR, so the launched command
         must carry the gate ON. This is the flag whose rename nothing
@@ -562,24 +614,24 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
         assert "--no-pause-before-pr-merge" not in argv
 
     def test_serve_caffeinate_true_reaches_the_launched_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """``_default_runner`` is the ONLY place ``cfg.caffeinate`` is
         read, so nothing else can catch it being dropped or inverted."""
         marker = _install_fake_caffeinate(tmp_path, monkeypatch)
         self._run_cycle(tmp_path, monkeypatch, caffeinate=True)
-        assert marker.exists(), (
-            "serve.caffeinate = true did not reach the launched command"
-        )
+        assert marker.exists(), "serve.caffeinate = true did not reach the launched command"
 
     def test_serve_caffeinate_false_reaches_the_launched_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         marker = _install_fake_caffeinate(tmp_path, monkeypatch)
         self._run_cycle(tmp_path, monkeypatch, caffeinate=False)
-        assert not marker.exists(), (
-            "serve.caffeinate = false still wrapped the launched command"
-        )
+        assert not marker.exists(), "serve.caffeinate = false still wrapped the launched command"
 
 
 # --------------------------------------------------------------------------
@@ -589,16 +641,14 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
 
 def _enable_github_intake(root: Path) -> None:
     (root / "kstrl.toml").write_text(
-        "[intake_github]\n"
-        "enabled = true\n"
-        f'repo = "{REPO}"\n'
-        "comment_on_result = false\n",
+        f'[intake_github]\nenabled = true\nrepo = "{REPO}"\ncomment_on_result = false\n',
         encoding="utf-8",
     )
 
 
 def _recording_runner(
-    calls: list[dict[str, Any]], outcome: RunOutcome | None = None,
+    calls: list[dict[str, Any]],
+    outcome: RunOutcome | None = None,
 ) -> Any:
     """A factory stand-in for the composition tests.
 
@@ -621,16 +671,15 @@ def _recording_runner(
         # item out of running/ when the cycle finishes, so a path
         # captured here and read afterwards is already stale - which is
         # correct behaviour, and would otherwise read as a defect.
-        calls.append({
-            "spec_path": spec_path,
-            "spec_exists": spec_path.exists(),
-            "spec_text": (
-                spec_path.read_text(encoding="utf-8")
-                if spec_path.exists() else ""
-            ),
-            "project_name": project_name,
-            "pause_before_pr_merge": pause_before_pr_merge,
-        })
+        calls.append(
+            {
+                "spec_path": spec_path,
+                "spec_exists": spec_path.exists(),
+                "spec_text": (spec_path.read_text(encoding="utf-8") if spec_path.exists() else ""),
+                "project_name": project_name,
+                "pause_before_pr_merge": pause_before_pr_merge,
+            }
+        )
         return result
 
     return runner
@@ -654,15 +703,18 @@ class TestRemoteWorkSurvivesTheSeam:
     """
 
     def test_the_spec_handed_to_the_factory_is_the_issue_body(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The seam is only real if the content survives it. Existing
         tests assert the item reaches DONE, which a cycle that handed the
         factory an empty or missing spec would also satisfy."""
         _enable_github_intake(tmp_path)
-        gh = _GhStub(issues=_issue_payload(
-            _issue(7, title="Add a widget", body="Build the widget."),
-        ))
+        gh = _GhStub(
+            issues=_issue_payload(
+                _issue(7, title="Add a widget", body="Build the widget."),
+            )
+        )
         calls: list[dict[str, Any]] = []
         with patch("kstrl.intake_github.run_gh", gh):
             serve_cycle(tmp_path, runner=_recording_runner(calls))
@@ -675,7 +727,8 @@ class TestRemoteWorkSurvivesTheSeam:
         assert "Build the widget." in calls[0]["spec_text"]
 
     def test_a_remote_item_keeps_its_merge_gate_through_the_seam(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A remotely-triggered run may never auto-merge. That is decided
         at admission; this asserts it is still true at the point the

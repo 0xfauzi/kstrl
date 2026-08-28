@@ -468,6 +468,7 @@ def label_candidates(
     longest = order[0] if order else -1
     out: list[tuple[int, bool, Box]] = []
     cw, ch = canvas
+
     def keep(box: Box) -> bool:
         return not (box[0] < -20 or box[1] < -20 or box[0] + lw > cw + 20 or box[1] + lh > ch + 20)
 

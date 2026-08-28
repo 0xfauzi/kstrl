@@ -27,13 +27,18 @@ from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
     return KstrlTuiApp(
-        run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=0.05,
+        run_dir=run_dir,
+        root_dir=root,
+        mode=Mode.DASH,
+        poll_interval=0.05,
     )
 
 
 def _reason(source: str = "queue", detail: str = "paused") -> SafeModeReason:
     return SafeModeReason(
-        source=source, detail=detail, recovery=RECOVERY[source],
+        source=source,
+        detail=detail,
+        recovery=RECOVERY[source],
     )
 
 
@@ -65,10 +70,12 @@ class TestChipRendering:
             assert len(render_chip(reasons).plain) <= 6, reasons
 
     def test_the_banner_names_the_sources(self) -> None:
-        banner = render_banner([
-            _reason("queue", "paused"),
-            _reason("autonomy", "clamped"),
-        ])
+        banner = render_banner(
+            [
+                _reason("queue", "paused"),
+                _reason("autonomy", "clamped"),
+            ]
+        )
 
         assert "queue" in banner
         assert "autonomy" in banner
@@ -76,10 +83,12 @@ class TestChipRendering:
 
     def test_the_banner_names_repeated_sources_once(self) -> None:
         """Two skipped phases are one story on a one-line banner."""
-        banner = render_banner([
-            _reason("adversarial_skipped", "review did not run"),
-            _reason("adversarial_skipped", "security did not run"),
-        ])
+        banner = render_banner(
+            [
+                _reason("adversarial_skipped", "review did not run"),
+                _reason("adversarial_skipped", "security did not run"),
+            ]
+        )
 
         assert banner.count("adversarial_skipped") == 1
         assert "2 reason(s)" in banner
@@ -87,12 +96,14 @@ class TestChipRendering:
 
 class TestDashboardSurface:
     async def test_the_chip_reaches_the_run_masthead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The gap itself: this is where `ks status` and `ks dash` land."""
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
         Queue(tmp_path, QueueConfig()).pause(
-            reason="daily budget exhausted", actor="test",
+            reason="daily budget exhausted",
+            actor="test",
         )
         app = _app(tmp_path, run_dir)
 
@@ -113,7 +124,8 @@ class TestDashboardSurface:
         assert "press f2" in text
 
     async def test_a_clean_root_hides_the_banner(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Hiding it is safe here and only here: `m` is in the footer on
         every screen and the panel says which of the three states this
@@ -145,7 +157,8 @@ class TestDashboardSurface:
         assert "1 reason(s)" in titles[2]
 
     async def test_the_run_topbar_keeps_the_run_state_label(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Measured: header 41 cells + cost meter 79 already want 126 of
         120, so anything added to the topbar costs the run its own
@@ -164,13 +177,15 @@ class TestDashboardSurface:
         assert children == ["run-header", "cost-meter"]
 
     async def test_the_key_opens_the_panel_with_the_reasons(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The chip can only say how many. The panel says what, in the
         signal's own words, with the runbook anchor that recovers it."""
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         Queue(tmp_path, QueueConfig()).pause(
-            reason="poison breaker tripped", actor="test",
+            reason="poison breaker tripped",
+            actor="test",
         )
         app = _app(tmp_path, run_dir)
 
@@ -212,7 +227,9 @@ class TestTheCheckDoesNotRunOnThePollTimer:
         assert SAFE_MODE_INTERVAL_SECONDS >= DEFAULT_POLL_INTERVAL * 20
 
     async def test_a_worker_failure_does_not_strand_the_chip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A chip stuck on "checking" forever is the ambiguity this
         feature exists to remove, so the worker reports its own failure
@@ -241,15 +258,19 @@ class TestHomeShell:
     the run topbar has no width for."""
 
     async def test_the_chip_reaches_the_home_masthead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.tui.widgets.safe_mode_chip import SafeModeChip
 
         Queue(tmp_path, QueueConfig()).pause(
-            reason="daily budget exhausted", actor="test",
+            reason="daily budget exhausted",
+            actor="test",
         )
         app = KstrlTuiApp(
-            root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05,
+            root_dir=tmp_path,
+            mode=Mode.HOME,
+            poll_interval=0.05,
         )
 
         async with app.run_test(size=(120, 36)) as pilot:
@@ -264,14 +285,17 @@ class TestHomeShell:
         assert "1" in text
 
     async def test_the_home_chip_is_rendered_while_clean(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Where there IS room, the clean state is stated rather than
         left as an absence."""
         from kstrl.tui.widgets.safe_mode_chip import SafeModeChip
 
         app = KstrlTuiApp(
-            root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05,
+            root_dir=tmp_path,
+            mode=Mode.HOME,
+            poll_interval=0.05,
         )
 
         async with app.run_test(size=(120, 36)) as pilot:
@@ -291,7 +315,8 @@ class TestReviewFindings:
     on the merged implementation."""
 
     async def test_the_banners_do_not_overlap_each_other_or_the_topbar(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P1. `dock: top` siblings ALL reserve row zero and paint over
         each other, so the checkpoint banner hid the safe-mode warning
@@ -322,7 +347,8 @@ class TestReviewFindings:
         assert rows == sorted(rows)
 
     async def test_a_focused_text_input_does_not_swallow_the_key(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2, and the weak first attempt at this test. Asserting
         `len(key) > 1` passed for "slash", which Textual emits as the
@@ -335,10 +361,7 @@ class TestReviewFindings:
         from kstrl.tui.app import KstrlTuiApp as App
         from kstrl.tui.screens.safemode import SafeModePanel as Panel
 
-        keys = [
-            b.key for b in App.BINDINGS
-            if getattr(b, "action", "") == "safe_mode"
-        ]
+        keys = [b.key for b in App.BINDINGS if getattr(b, "action", "") == "safe_mode"]
         assert keys, "no safe-mode binding at all"
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
@@ -359,7 +382,8 @@ class TestReviewFindings:
         assert typed == "", f"{keys[0]!r} was typed into the field: {typed!r}"
 
     async def test_a_late_check_does_not_overwrite_a_newer_one(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2. exclusive=True cancels the asyncio wrapper, never the
         thread, so a superseded check still posts. A slow NOMINAL result
@@ -385,7 +409,8 @@ class TestReviewFindings:
         assert after, "a superseded check cleared a newer degradation"
 
     async def test_the_open_panel_updates_when_a_check_lands(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2. The panel took its reasons at construction and never
         looked again, so opening it before the first check finished left
@@ -413,8 +438,7 @@ class TestReviewFindings:
             )
             # And the broadcast path, for a check that lands while open.
             app.post_message(
-                SafeModeChecked([_reason("autonomy", "clamped later")],
-                                seq=99),
+                SafeModeChecked([_reason("autonomy", "clamped later")], seq=99),
             )
             await pilot.pause()
             await pilot.pause()
@@ -422,11 +446,12 @@ class TestReviewFindings:
                 app.screen.query_one("#safemode-body").render(),
             )
 
-        assert "paused now" in on_mount_body       # replayed on mount
-        assert "clamped later" in broadcast_body   # updated in place
+        assert "paused now" in on_mount_body  # replayed on mount
+        assert "clamped later" in broadcast_body  # updated in place
 
     async def test_a_screen_mounted_later_shows_the_active_warning(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2. on_mount hid the banner and nothing replayed the last
         completed check, so navigating home -> run made an active
@@ -452,7 +477,8 @@ class TestReviewFindings:
         assert shown, "a freshly mounted screen hid an active warning"
 
     async def test_the_panel_dialog_has_a_border_so_its_title_renders(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P3. border_title renders only with a border, and there was no
         #safemode-dialog rule at all, so the modal filled the screen
@@ -480,7 +506,8 @@ class TestGatingReviewFindings:
     that has happened on this repository."""
 
     async def test_a_dropped_tick_reruns_instead_of_being_lost(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2, introduced by the previous round's in-flight guard.
         safemode reads the queue BEFORE the expensive event stream, so a
@@ -504,17 +531,15 @@ class TestGatingReviewFindings:
         assert requested, "the tick was dropped, not remembered"
 
     async def test_the_binding_reaches_system_modals(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2. Textual's command palette is a SystemModalScreen and
         excludes non-priority app bindings, so the key did nothing there
         while the runbook promised the panel from any screen."""
         from kstrl.tui.app import KstrlTuiApp as App
 
-        safe_mode = [
-            b for b in App.BINDINGS
-            if getattr(b, "action", "") == "safe_mode"
-        ]
+        safe_mode = [b for b in App.BINDINGS if getattr(b, "action", "") == "safe_mode"]
 
         assert safe_mode
         for binding in safe_mode:
@@ -524,7 +549,8 @@ class TestGatingReviewFindings:
             )
 
     async def test_every_reason_is_reachable_in_a_short_terminal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """P2. The scroller laid out taller than the dialog, so the
         dialog clipped the overflow while max_scroll_y stayed 0: the
@@ -535,9 +561,7 @@ class TestGatingReviewFindings:
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
-        reasons = [
-            _reason("queue", f"reason number {index}") for index in range(4)
-        ]
+        reasons = [_reason("queue", f"reason number {index}") for index in range(4)]
 
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
@@ -550,12 +574,11 @@ class TestGatingReviewFindings:
             reachable = scroll.max_scroll_y
 
         assert hidden > 0, "the fixture no longer overflows; widen it"
-        assert reachable >= hidden, (
-            f"{hidden} rows overflow but only {reachable} are scrollable"
-        )
+        assert reachable >= hidden, f"{hidden} rows overflow but only {reachable} are scrollable"
 
     async def test_an_explicit_panel_keeps_the_reasons_it_was_given(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Found while measuring the one above, not by the review. The
         previous round's replay-on-mount was unconditional, so a panel
@@ -572,7 +595,7 @@ class TestGatingReviewFindings:
                 if app._safe_mode_reasons is not None:
                     break
                 await pilot.pause(0.05)
-            assert app._safe_mode_reasons == []      # the app is nominal
+            assert app._safe_mode_reasons == []  # the app is nominal
             app.push_screen(Panel([_reason("queue", "explicitly passed")]))
             await pilot.pause()
             body = str(app.screen.query_one("#safemode-body").render())

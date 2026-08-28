@@ -170,13 +170,21 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
     ItemState.QUEUED: frozenset({ItemState.LEASED, ItemState.POISON}),
     # A lease can be dropped back to queued by the reaper (owner died
     # before spending) or fail outright if the worker could not start.
-    ItemState.LEASED: frozenset({
-        ItemState.QUEUED, ItemState.RUNNING, ItemState.FAILED,
-        ItemState.POISON,
-    }),
-    ItemState.RUNNING: frozenset({
-        ItemState.DONE, ItemState.FAILED, ItemState.POISON,
-    }),
+    ItemState.LEASED: frozenset(
+        {
+            ItemState.QUEUED,
+            ItemState.RUNNING,
+            ItemState.FAILED,
+            ItemState.POISON,
+        }
+    ),
+    ItemState.RUNNING: frozenset(
+        {
+            ItemState.DONE,
+            ItemState.FAILED,
+            ItemState.POISON,
+        }
+    ),
     # Terminal-ish: a human (or the retry policy) can requeue, and a
     # failed item that exhausts its attempts is poisoned.
     ItemState.FAILED: frozenset({ItemState.QUEUED, ItemState.POISON}),
@@ -399,7 +407,9 @@ class QueueItem:
             state = ItemState.QUEUED
 
         raw_disposition = _as_str(
-            data, "merge_disposition", str(MergeDisposition.STOP_AT_PR),
+            data,
+            "merge_disposition",
+            str(MergeDisposition.STOP_AT_PR),
         )
         try:
             disposition = MergeDisposition(raw_disposition)
@@ -438,7 +448,9 @@ class QueueItem:
             poison_reason=_as_str(data, "poison_reason"),
             not_before=_as_str(data, "not_before"),
             schema_version=_as_int(
-                data, "schema_version", QUEUE_SCHEMA_VERSION,
+                data,
+                "schema_version",
+                QUEUE_SCHEMA_VERSION,
             ),
         )
 
@@ -461,14 +473,9 @@ class QueueConfig:
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
-            raise QueueError(
-                f"queue.max_attempts must be >= 1, got {self.max_attempts}"
-            )
+            raise QueueError(f"queue.max_attempts must be >= 1, got {self.max_attempts}")
         if self.lease_ttl_seconds <= 0:
-            raise QueueError(
-                "queue.lease_ttl_seconds must be > 0, got "
-                f"{self.lease_ttl_seconds}"
-            )
+            raise QueueError(f"queue.lease_ttl_seconds must be > 0, got {self.lease_ttl_seconds}")
 
     @classmethod
     def from_env(cls) -> QueueConfig:
@@ -476,12 +483,8 @@ class QueueConfig:
         attempts = os.environ.get("KSTRL_QUEUE_MAX_ATTEMPTS")
         ttl = os.environ.get("KSTRL_QUEUE_LEASE_TTL")
         return cls(
-            max_attempts=(
-                defaults.max_attempts if attempts is None else int(attempts)
-            ),
-            lease_ttl_seconds=(
-                defaults.lease_ttl_seconds if ttl is None else float(ttl)
-            ),
+            max_attempts=(defaults.max_attempts if attempts is None else int(attempts)),
+            lease_ttl_seconds=(defaults.lease_ttl_seconds if ttl is None else float(ttl)),
         )
 
     @classmethod
@@ -494,9 +497,7 @@ class QueueConfig:
         section = load_toml_section(resolve_config_file(root_dir), "queue")
         defaults = cls()
         max_attempts = (
-            int(section["max_attempts"])
-            if "max_attempts" in section
-            else defaults.max_attempts
+            int(section["max_attempts"]) if "max_attempts" in section else defaults.max_attempts
         )
         lease_ttl_seconds = (
             float(section["lease_ttl_seconds"])
@@ -508,7 +509,8 @@ class QueueConfig:
         if "KSTRL_QUEUE_LEASE_TTL" in os.environ:
             lease_ttl_seconds = float(os.environ["KSTRL_QUEUE_LEASE_TTL"])
         return cls(
-            max_attempts=max_attempts, lease_ttl_seconds=lease_ttl_seconds,
+            max_attempts=max_attempts,
+            lease_ttl_seconds=lease_ttl_seconds,
         )
 
 
@@ -590,7 +592,9 @@ def atomic_write(target: Path, content: str) -> None:
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
-        dir=str(target.parent), prefix=f".{target.name}-", suffix=".tmp",
+        dir=str(target.parent),
+        prefix=f".{target.name}-",
+        suffix=".tmp",
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -633,9 +637,7 @@ def queue_lock(root_dir: Path, *, blocking: bool = False) -> Iterator[None]:
         try:
             fcntl.flock(handle.fileno(), flags)
         except OSError as exc:
-            raise QueueLockedError(
-                f"queue is locked by another process ({lock_path})"
-            ) from exc
+            raise QueueLockedError(f"queue is locked by another process ({lock_path})") from exc
         try:
             yield
         finally:
@@ -711,11 +713,16 @@ class Queue:
                 shutil.rmtree(entry, ignore_errors=True)
                 swept += 1
         if swept:
-            self._journal(JournalEntry(
-                ts=_iso(_utc_now()), item_id="", from_state="staging",
-                to_state="swept", reason="abandoned mid-publish",
-                detail={"count": swept},
-            ))
+            self._journal(
+                JournalEntry(
+                    ts=_iso(_utc_now()),
+                    item_id="",
+                    from_state="staging",
+                    to_state="swept",
+                    reason="abandoned mid-publish",
+                    detail={"count": swept},
+                )
+            )
         return swept
 
     # ---------------------------------------------------------------- read
@@ -749,7 +756,8 @@ class Queue:
         item = QueueItem.from_dict(data)
         if item is None:
             _warn_rejected(
-                item_path, "missing/unsafe item_id or spec_filename",
+                item_path,
+                "missing/unsafe item_id or spec_filename",
             )
             return None
         # The DIRECTORY is authoritative for both identity and state; the
@@ -834,14 +842,10 @@ class Queue:
         """
         directory = self.item_dir(item)
         if not is_safe_component(item.spec_filename):
-            raise QueueError(
-                f"unsafe spec filename {item.spec_filename!r} on {item.item_id}"
-            )
+            raise QueueError(f"unsafe spec filename {item.spec_filename!r} on {item.item_id}")
         candidate = directory / item.spec_filename
         if directory.resolve() not in candidate.resolve().parents:
-            raise QueueError(
-                f"spec path for {item.item_id} escapes its item directory"
-            )
+            raise QueueError(f"spec path for {item.item_id} escapes its item directory")
         return candidate
 
     def read_spec(self, item: QueueItem) -> str:
@@ -865,8 +869,7 @@ class Queue:
                 handle.write(line + "\n")
         except OSError as exc:
             warnings.warn(
-                f"queue: journal append failed ({exc}); the transition "
-                "itself succeeded",
+                f"queue: journal append failed ({exc}); the transition itself succeeded",
                 RuntimeWarning,
                 stacklevel=3,
             )
@@ -936,18 +939,12 @@ class Queue:
         # "../../../escaped.md" wrote outside the queue while still
         # publishing a normal-looking item (#185 F2).
         if not is_safe_component(spec_filename):
-            raise QueueError(
-                f"spec filename must be a plain basename, got {spec_filename!r}"
-            )
-        resolved_attempts = (
-            self.config.max_attempts if max_attempts is None else max_attempts
-        )
+            raise QueueError(f"spec filename must be a plain basename, got {spec_filename!r}")
+        resolved_attempts = self.config.max_attempts if max_attempts is None else max_attempts
         # QueueConfig rejects this, but a per-item override bypassed it and
         # admitted an item with no execution budget at all (#185 F4).
         if resolved_attempts < 1:
-            raise QueueError(
-                f"max_attempts must be >= 1, got {resolved_attempts}"
-            )
+            raise QueueError(f"max_attempts must be >= 1, got {resolved_attempts}")
 
         now = _iso(_utc_now())
         item = QueueItem(
@@ -983,11 +980,18 @@ class Queue:
             shutil.rmtree(staging, ignore_errors=True)
             raise
 
-        self._journal(JournalEntry(
-            ts=now, item_id=item.item_id, from_state="", to_state=str(ItemState.QUEUED),
-            reason="added", actor=actor, attempts=item.attempts,
-            detail={"source": str(source), "source_ref": source_ref},
-        ))
+        self._journal(
+            JournalEntry(
+                ts=now,
+                item_id=item.item_id,
+                from_state="",
+                to_state=str(ItemState.QUEUED),
+                reason="added",
+                actor=actor,
+                attempts=item.attempts,
+                detail={"source": str(source), "source_ref": source_ref},
+            )
+        )
         return item
 
     def transition(
@@ -1019,15 +1023,12 @@ class Queue:
         source_dir = self.item_dir(item)
         if not source_dir.is_dir():
             raise QueueError(
-                f"queue item {item.item_id} is not in {from_state} "
-                f"(expected {source_dir})"
+                f"queue item {item.item_id} is not in {from_state} (expected {source_dir})"
             )
         target_dir = self.state_path(to_state) / item.item_id
         target_dir.parent.mkdir(parents=True, exist_ok=True)
         if target_dir.exists():
-            raise QueueError(
-                f"queue item {item.item_id} already exists in {to_state}"
-            )
+            raise QueueError(f"queue item {item.item_id} already exists in {to_state}")
 
         for key, value in updates.items():
             if not hasattr(item, key):
@@ -1052,22 +1053,36 @@ class Queue:
             item.state = from_state
             raise
 
-        self._journal(JournalEntry(
-            ts=item.updated_at, item_id=item.item_id,
-            from_state=str(from_state), to_state=str(to_state),
-            reason=reason, actor=actor, attempts=item.attempts,
-        ))
+        self._journal(
+            JournalEntry(
+                ts=item.updated_at,
+                item_id=item.item_id,
+                from_state=str(from_state),
+                to_state=str(to_state),
+                reason=reason,
+                actor=actor,
+                attempts=item.attempts,
+            )
+        )
         return item
 
     def lease(
-        self, item: QueueItem, *, pid: int = 0, host: str = "", actor: str = "",
+        self,
+        item: QueueItem,
+        *,
+        pid: int = 0,
+        host: str = "",
+        actor: str = "",
     ) -> QueueItem:
         """Claim a queued item for this worker. Spends nothing."""
         import socket
 
         expires = _utc_now() + timedelta(seconds=self.config.lease_ttl_seconds)
         return self.transition(
-            item, ItemState.LEASED, reason="leased", actor=actor,
+            item,
+            ItemState.LEASED,
+            reason="leased",
+            actor=actor,
             lease_pid=pid or os.getpid(),
             lease_host=host or socket.gethostname(),
             lease_expires_at=_iso(expires),
@@ -1094,8 +1109,12 @@ class Queue:
                 "refusing to start (poison it or reset attempts explicitly)"
             )
         return self.transition(
-            item, ItemState.RUNNING, reason="started", actor=actor,
-            charge_attempt=True, last_run_id=run_id,
+            item,
+            ItemState.RUNNING,
+            reason="started",
+            actor=actor,
+            charge_attempt=True,
+            last_run_id=run_id,
         )
 
     def adopt_lease(
@@ -1120,9 +1139,7 @@ class Queue:
         a queued item would invent one.
         """
         if item.state not in (ItemState.LEASED, ItemState.RUNNING):
-            raise QueueError(
-                f"cannot adopt a lease on {item.item_id} in state {item.state}"
-            )
+            raise QueueError(f"cannot adopt a lease on {item.item_id} in state {item.state}")
         import socket
 
         directory = self.item_dir(item)
@@ -1130,26 +1147,38 @@ class Queue:
             raise QueueError(f"queue item {item.item_id} is not at {directory}")
         item.lease_pid = pid
         item.lease_host = host or socket.gethostname()
-        item.lease_expires_at = _iso(
-            _utc_now() + timedelta(seconds=self.config.lease_ttl_seconds)
-        )
+        item.lease_expires_at = _iso(_utc_now() + timedelta(seconds=self.config.lease_ttl_seconds))
         item.updated_at = _iso(_utc_now())
         self._write_meta(item, directory)
-        self._journal(JournalEntry(
-            ts=item.updated_at, item_id=item.item_id,
-            from_state=str(item.state), to_state=str(item.state),
-            reason="lease adopted by the run process", actor=actor,
-            attempts=item.attempts, detail={"lease_pid": pid},
-        ))
+        self._journal(
+            JournalEntry(
+                ts=item.updated_at,
+                item_id=item.item_id,
+                from_state=str(item.state),
+                to_state=str(item.state),
+                reason="lease adopted by the run process",
+                actor=actor,
+                attempts=item.attempts,
+                detail={"lease_pid": pid},
+            )
+        )
         return item
 
     def finish_ok(self, item: QueueItem, *, actor: str = "") -> QueueItem:
         return self.transition(
-            item, ItemState.DONE, reason="completed", actor=actor, last_error="",
+            item,
+            ItemState.DONE,
+            reason="completed",
+            actor=actor,
+            last_error="",
         )
 
     def finish_failed(
-        self, item: QueueItem, *, error: str = "", actor: str = "",
+        self,
+        item: QueueItem,
+        *,
+        error: str = "",
+        actor: str = "",
     ) -> QueueItem:
         """Record a red finish that MAY be retried.
 
@@ -1158,11 +1187,19 @@ class Queue:
         ``failed/`` is not permission to retry.
         """
         return self.transition(
-            item, ItemState.FAILED, reason="failed", actor=actor, last_error=error,
+            item,
+            ItemState.FAILED,
+            reason="failed",
+            actor=actor,
+            last_error=error,
         )
 
     def poison(
-        self, item: QueueItem, *, reason: str, actor: str = "",
+        self,
+        item: QueueItem,
+        *,
+        reason: str,
+        actor: str = "",
     ) -> QueueItem:
         """Park an item that must never be retried automatically.
 
@@ -1173,7 +1210,10 @@ class Queue:
         if not reason.strip():
             raise QueueError("poison requires a reason")
         return self.transition(
-            item, ItemState.POISON, reason="poisoned", actor=actor,
+            item,
+            ItemState.POISON,
+            reason="poisoned",
+            actor=actor,
             poison_reason=reason,
         )
 
@@ -1193,7 +1233,9 @@ class Queue:
         can zero its own bound is not a bound.
         """
         updates: dict[str, Any] = {
-            "lease_pid": 0, "lease_host": "", "lease_expires_at": "",
+            "lease_pid": 0,
+            "lease_host": "",
+            "lease_expires_at": "",
         }
         if not_before is not None:
             updates["not_before"] = not_before
@@ -1204,7 +1246,11 @@ class Queue:
             # backoff computed for the automatic path.
             updates["not_before"] = ""
         return self.transition(
-            item, ItemState.QUEUED, reason=reason, actor=actor, **updates,
+            item,
+            ItemState.QUEUED,
+            reason=reason,
+            actor=actor,
+            **updates,
         )
 
     def remove(self, item: QueueItem, *, actor: str = "") -> None:
@@ -1215,9 +1261,7 @@ class Queue:
         spent.
         """
         if item.state is ItemState.RUNNING:
-            raise QueueError(
-                f"{item.item_id} is running; stop the run before removing it"
-            )
+            raise QueueError(f"{item.item_id} is running; stop the run before removing it")
         directory = self.item_dir(item)
         # NOT ignore_errors: that swallowed permission and filesystem
         # failures, after which this journaled a "removed" record and the
@@ -1225,14 +1269,18 @@ class Queue:
         # result AND a false audit trail (#185 F6).
         shutil.rmtree(directory)
         if directory.exists():
-            raise QueueError(
-                f"failed to remove {item.item_id}: {directory} still exists"
+            raise QueueError(f"failed to remove {item.item_id}: {directory} still exists")
+        self._journal(
+            JournalEntry(
+                ts=_iso(_utc_now()),
+                item_id=item.item_id,
+                from_state=str(item.state),
+                to_state="removed",
+                reason="removed",
+                actor=actor,
+                attempts=item.attempts,
             )
-        self._journal(JournalEntry(
-            ts=_iso(_utc_now()), item_id=item.item_id,
-            from_state=str(item.state), to_state="removed",
-            reason="removed", actor=actor, attempts=item.attempts,
-        ))
+        )
 
     # ---------------------------------------------------------------- pause
 
@@ -1255,7 +1303,8 @@ class Queue:
             return PauseState()
         except OSError as exc:
             return PauseState(
-                paused=True, reason=f"unreadable pause marker: {exc}",
+                paused=True,
+                reason=f"unreadable pause marker: {exc}",
             )
         try:
             data = json.loads(raw)
@@ -1272,10 +1321,16 @@ class Queue:
         return self.pause_state().active(now)
 
     def pause(
-        self, *, reason: str = "", actor: str = "", resume_after: str = "",
+        self,
+        *,
+        reason: str = "",
+        actor: str = "",
+        resume_after: str = "",
     ) -> PauseState:
         state = PauseState(
-            paused=True, reason=reason, since=_iso(_utc_now()),
+            paused=True,
+            reason=reason,
+            since=_iso(_utc_now()),
             resume_after=resume_after,
         )
         ensure_control_state(self.root_dir)
@@ -1286,11 +1341,17 @@ class Queue:
                 path,
                 json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
             )
-        self._journal(JournalEntry(
-            ts=state.since, item_id="", from_state="", to_state="paused",
-            reason=reason, actor=actor,
-            detail={"resume_after": resume_after},
-        ))
+        self._journal(
+            JournalEntry(
+                ts=state.since,
+                item_id="",
+                from_state="",
+                to_state="paused",
+                reason=reason,
+                actor=actor,
+                detail={"resume_after": resume_after},
+            )
+        )
         return state
 
     def resume(self, *, actor: str = "") -> PauseState:
@@ -1303,10 +1364,16 @@ class Queue:
                 path,
                 json.dumps(state.to_dict(), indent=2, ensure_ascii=False) + "\n",
             )
-        self._journal(JournalEntry(
-            ts=_iso(_utc_now()), item_id="", from_state="paused",
-            to_state="running", reason="resumed", actor=actor,
-        ))
+        self._journal(
+            JournalEntry(
+                ts=_iso(_utc_now()),
+                item_id="",
+                from_state="paused",
+                to_state="running",
+                reason="resumed",
+                actor=actor,
+            )
+        )
         return state
 
     # --------------------------------------------------------------- report
@@ -1339,7 +1406,5 @@ class Queue:
 
 def summarize(counts: dict[ItemState, int]) -> str:
     """One-line queue summary, omitting empty states."""
-    parts = [
-        f"{count} {state}" for state, count in counts.items() if count
-    ]
+    parts = [f"{count} {state}" for state, count in counts.items() if count]
     return ", ".join(parts) if parts else "empty"

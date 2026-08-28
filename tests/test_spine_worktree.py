@@ -95,7 +95,8 @@ def _worktree_registered(root: Path, worktree_path: Path) -> bool:
 
 class TestWorktreeLifecycle:
     def test_setup_creates_worktree_from_requested_base(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The worktree is cut from the requested base branch (develop),
         not the default branch, at the run-scoped path (R0.5 layout)."""
@@ -114,7 +115,8 @@ class TestWorktreeLifecycle:
         assert (wt / "dev.txt").exists()
 
     def test_setup_cuts_from_origin_base_not_stale_local(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """With a remote, the worktree is cut from origin/<base> even when
         the local base ref is stale (R0.2: dependents must build on the
@@ -129,8 +131,7 @@ class TestWorktreeLifecycle:
         # Advance origin/develop from a second clone; local develop is
         # now one commit behind the remote.
         clone = tmp_path / "clone"
-        git("clone", "-q", "-b", "develop", str(origin), str(clone),
-            cwd=tmp_path)
+        git("clone", "-q", "-b", "develop", str(origin), str(clone), cwd=tmp_path)
         git("config", "user.email", "other@test", cwd=clone)
         git("config", "user.name", "Other", cwd=clone)
         (clone / "remote.txt").write_text("landed remotely\n")
@@ -147,7 +148,8 @@ class TestWorktreeLifecycle:
         assert (wt / "remote.txt").exists()
 
     def test_cleanup_removes_worktree_and_registration(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Cleanup removes the directory and the git worktree entry; the
         component branch survives (it is only deleted at merge time)."""
@@ -162,7 +164,8 @@ class TestWorktreeLifecycle:
         assert git("branch", "--list", BRANCH, cwd=root).strip()
 
     def test_recreate_after_crash_resumes_branch_commits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A killed attempt leaves a dirty worktree and a stale
         index.lock under .git/worktrees/<comp>/. Recreating for the same
@@ -193,7 +196,8 @@ class TestWorktreeLifecycle:
         assert git("status", "--porcelain", cwd=wt2) == ""
 
     def test_recreate_fresh_from_base_discards_crashed_commits(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """fresh_from_base=True (timeout retry, R0.1) deletes the branch
         so the worktree is recut from the base, discarding the killed
@@ -207,7 +211,12 @@ class TestWorktreeLifecycle:
         crashed_sha = git("rev-parse", "HEAD", cwd=wt)
 
         wt2 = _setup_worktree(
-            COMP, BRANCH, "develop", root, RUN_ID, fresh_from_base=True,
+            COMP,
+            BRANCH,
+            "develop",
+            root,
+            RUN_ID,
+            fresh_from_base=True,
         )
 
         head = git("rev-parse", "HEAD", cwd=wt2)
@@ -216,7 +225,8 @@ class TestWorktreeLifecycle:
         assert not (wt2 / "poisoned.txt").exists()
 
     def test_recreate_when_crashed_worktree_dir_was_deleted(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A worktree directory deleted after a crash (tmp cleaner,
         operator rm -rf) leaves a registered-but-missing entry under
@@ -235,11 +245,13 @@ class TestWorktreeLifecycle:
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32", reason="flock is POSIX-only (documented degrade)",
+    sys.platform == "win32",
+    reason="flock is POSIX-only (documented degrade)",
 )
 class TestComponentLockTwoProcessExclusion:
     def test_component_lock_blocks_second_process_until_released(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """While a real second process holds the per-component flock,
         _setup_worktree in another process blocks; it completes only
@@ -254,7 +266,8 @@ class TestComponentLockTwoProcessExclusion:
 
         holder = subprocess.Popen(
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(lock_path)],
-            stdout=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            text=True,
         )
         child: subprocess.Popen[str] | None = None
         try:
@@ -262,18 +275,15 @@ class TestComponentLockTwoProcessExclusion:
             assert holder.stdout.readline().strip() == "locked"
 
             child = subprocess.Popen(
-                [sys.executable, "-c", _SETUP_CHILD_SCRIPT,
-                 str(root), str(ready), RUN_ID],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                [sys.executable, "-c", _SETUP_CHILD_SCRIPT, str(root), str(ready), RUN_ID],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
             deadline = time.monotonic() + 30
             while not ready.exists():
-                assert time.monotonic() < deadline, (
-                    "setup child never reached _setup_worktree"
-                )
-                assert child.poll() is None, (
-                    f"setup child died early: {child.communicate()}"
-                )
+                assert time.monotonic() < deadline, "setup child never reached _setup_worktree"
+                assert child.poll() is None, f"setup child died early: {child.communicate()}"
                 time.sleep(0.01)
 
             time.sleep(1.0)  # hold window: ~30x unlocked setup time
@@ -302,11 +312,14 @@ class TestComponentLockTwoProcessExclusion:
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32", reason="flock is POSIX-only (documented degrade)",
+    sys.platform == "win32",
+    reason="flock is POSIX-only (documented degrade)",
 )
 class TestRunLockTwoProcessExclusion:
     def test_run_lock_refuses_second_invocation_until_holder_exits(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """While a real process holds .kstrl/factory.lock, run_factory
         refuses to start (exit 2, nothing scheduled). Once the holder
@@ -320,7 +333,8 @@ class TestRunLockTwoProcessExclusion:
 
         holder = subprocess.Popen(
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(lock_path)],
-            stdout=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            text=True,
         )
         try:
             assert holder.stdout is not None
@@ -328,8 +342,11 @@ class TestRunLockTwoProcessExclusion:
 
             manifest = make_manifest([component(COMP)])
             refused = run_factory(
-                manifest, factory_config(), base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                factory_config(),
+                base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
             assert refused.exit_code == 2
@@ -341,8 +358,11 @@ class TestRunLockTwoProcessExclusion:
             holder.wait(timeout=10)
 
         rerun = run_factory(
-            make_manifest([component(COMP)]), factory_config(),
-            base_config(root), PlainUI(no_color=True), root,
+            make_manifest([component(COMP)]),
+            factory_config(),
+            base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
         assert rerun.exit_code == 0
         assert rerun.completed == [COMP]

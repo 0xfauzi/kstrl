@@ -15,18 +15,26 @@ from click.testing import CliRunner
 from kstrl.cli import cli
 
 ALL_SECTIONS = [
-    "[agent]", "[run]", "[paths]", "[git]", "[ui]",
-    "[factory]", "[verify]", "[security]", "[contract]",
-    "[feedforward]", "[knowledge]", "[evolution]", "[timeout]",
-    "[notify]", "[linear]",
+    "[agent]",
+    "[run]",
+    "[paths]",
+    "[git]",
+    "[ui]",
+    "[factory]",
+    "[verify]",
+    "[security]",
+    "[contract]",
+    "[feedforward]",
+    "[knowledge]",
+    "[evolution]",
+    "[timeout]",
+    "[notify]",
+    "[linear]",
 ]
 
 
 def _line_for(output: str, key: str) -> str:
-    matches = [
-        line for line in output.splitlines()
-        if line.strip().startswith(f"{key} = ")
-    ]
+    matches = [line for line in output.splitlines() if line.strip().startswith(f"{key} = ")]
     assert matches, f"no output line for key {key!r}:\n{output}"
     assert len(matches) == 1, f"ambiguous key {key!r}: {matches}"
     return matches[0]
@@ -35,13 +43,16 @@ def _line_for(output: str, key: str) -> str:
 class TestConfigShowSources:
     def _invoke(self, root: Path, *extra: str) -> str:
         result = CliRunner().invoke(
-            cli, ["config", "show", "--root", str(root), *extra],
+            cli,
+            ["config", "show", "--root", str(root), *extra],
         )
         assert result.exit_code == 0, result.output
         return result.output
 
     def test_toml_env_flag_default_sources(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(
             "[run]\nmax_iterations = 42\n\n[factory]\nmax_parallel = 9\n"
@@ -77,7 +88,9 @@ class TestConfigShowSources:
             assert section in output, f"missing section {section}"
 
     def test_phase_env_source_detected(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "123")
         monkeypatch.setenv("KSTRL_SECURITY_MODE", "advisory")
@@ -93,7 +106,9 @@ class TestConfigShowSources:
         assert "'advisory'" in line and "(env)" in line
 
     def test_env_does_not_leak_into_process(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The scrubbed-environ probe restores os.environ afterwards."""
         import os
@@ -105,7 +120,8 @@ class TestConfigShowSources:
     def test_malformed_toml_fails_cleanly(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[run\nmax_iterations = 1\n")
         result = CliRunner().invoke(
-            cli, ["config", "show", "--root", str(tmp_path)],
+            cli,
+            ["config", "show", "--root", str(tmp_path)],
         )
         assert result.exit_code == 1
         assert "error:" in result.output

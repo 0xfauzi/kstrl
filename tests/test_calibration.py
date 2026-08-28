@@ -104,7 +104,9 @@ REVIEWER_AGENT_TYPE, REVIEWER_MODEL = calibration.reviewer_override_from_env(
     os.environ,
 )
 REPORT_MODEL_LABEL = calibration.reviewer_override_label(
-    CALIBRATION_MODEL, REVIEWER_AGENT_TYPE, REVIEWER_MODEL,
+    CALIBRATION_MODEL,
+    REVIEWER_AGENT_TYPE,
+    REVIEWER_MODEL,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
@@ -196,9 +198,7 @@ def _security_fixtures() -> list[tuple[Path, dict]]:
 def _security_positive_easy_fixtures() -> list[tuple[Path, dict]]:
     """Textbook-trivial planted bugs (catastrophe detectors). A miss here
     is a real regression, so these go through the N-run consistency gate."""
-    return [
-        (a, m) for a, m in _security_fixtures() if m.get("difficulty") != "hard"
-    ]
+    return [(a, m) for a, m in _security_fixtures() if m.get("difficulty") != "hard"]
 
 
 def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
@@ -206,9 +206,7 @@ def _security_positive_hard_fixtures() -> list[tuple[Path, dict]]:
     injection, TOCTOU, timing oracle). Designed to be missable, so
     detection is MEASURED (recorded), not gated (see the hard-positive
     test docstring)."""
-    return [
-        (a, m) for a, m in _security_fixtures() if m.get("difficulty") == "hard"
-    ]
+    return [(a, m) for a, m in _security_fixtures() if m.get("difficulty") == "hard"]
 
 
 def _security_negative_fixtures() -> list[tuple[Path, dict]]:
@@ -236,10 +234,7 @@ def _halting_spec_fixtures() -> list[tuple[Path, dict]]:
     """Spec fixtures that grade architect spec-issue detection
     (``must_detect`` schema). Excludes non-halting fixtures whose
     grading is on ``allowedPaths`` emission, not issue detection."""
-    return [
-        (artifact, meta) for artifact, meta in _spec_fixtures()
-        if "must_detect" in meta
-    ]
+    return [(artifact, meta) for artifact, meta in _spec_fixtures() if "must_detect" in meta]
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +245,7 @@ def _halting_spec_fixtures() -> list[tuple[Path, dict]]:
 def _get_calibration_agent():
     """Return an agent suitable for calibration (fast, cheap)."""
     from kstrl.agents import get_agent
+
     return get_agent(
         agent_cmd=None,
         model=CALIBRATION_MODEL,
@@ -264,6 +260,7 @@ def _get_reviewer_calibration_agent():
     (KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
     family for the same-family vs cross-family baseline comparison."""
     from kstrl.agents import get_agent
+
     return get_agent(
         agent_cmd=None,
         model=REVIEWER_MODEL or CALIBRATION_MODEL,
@@ -324,7 +321,8 @@ def _acceptable_categories(requirement: dict) -> set[str]:
 
 
 def security_caught(
-    result: SecurityResult, requirement: dict,
+    result: SecurityResult,
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(caught, detail)`` for the security matcher.
 
@@ -349,7 +347,8 @@ def security_caught(
 
 
 def security_false_positive(
-    result: SecurityResult, requirement: dict,
+    result: SecurityResult,
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(is_false_positive, detail)`` for a security NEGATIVE
     fixture.
@@ -374,7 +373,8 @@ def security_false_positive(
 
 
 def reviewer_caught(
-    result: ReviewResult, requirement: dict,
+    result: ReviewResult,
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(caught, detail)`` for the reviewer matcher.
 
@@ -393,14 +393,13 @@ def reviewer_caught(
         if requirement.get("evidence_path_contains"):
             if requirement["evidence_path_contains"] not in concern.location:
                 continue
-        return True, (
-            f"{concern.severity} {concern.category} at {concern.location}"
-        )
+        return True, (f"{concern.severity} {concern.category} at {concern.location}")
     return False, ""
 
 
 def reviewer_false_positive(
-    result: ReviewResult, requirement: dict,
+    result: ReviewResult,
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(is_false_positive, detail)`` for a reviewer NEGATIVE
     fixture.
@@ -418,14 +417,13 @@ def reviewer_false_positive(
             continue
         if floor == "fail" and concern.severity != "fail":
             continue
-        return True, (
-            f"{concern.severity} {concern.category} at {concern.location}"
-        )
+        return True, (f"{concern.severity} {concern.category} at {concern.location}")
     return False, ""
 
 
 def architect_caught(
-    issues: list[SpecIssue], requirement: dict,
+    issues: list[SpecIssue],
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(caught, detail)`` for the architect spec-issue matcher.
 
@@ -446,8 +444,7 @@ def architect_caught(
         len(issues) >= min_count
         and calibration.required_kinds_satisfied(required_kinds, actual_kinds)
         and (
-            not must_be_major_or_blocker
-            or any(i.severity in {"blocker", "major"} for i in issues)
+            not must_be_major_or_blocker or any(i.severity in {"blocker", "major"} for i in issues)
         )
     )
     exact = calibration.exact_kinds_present(required_kinds, actual_kinds)
@@ -456,7 +453,6 @@ def architect_caught(
         f"{[(i.severity, i.kind) for i in issues]}"
     )
     return caught, detail
-
 
 
 def _is_within(entry: str, forbidden_dir: str) -> bool:
@@ -485,7 +481,8 @@ def _is_within(entry: str, forbidden_dir: str) -> bool:
 
 
 def architect_allowed_paths_caught(
-    decompose_output: dict, requirement: dict,
+    decompose_output: dict,
+    requirement: dict,
 ) -> tuple[bool, str]:
     """Return ``(caught, detail)`` for the architect ``allowedPaths``
     emission matcher.
@@ -517,10 +514,7 @@ def architect_allowed_paths_caught(
                 continue
             ap = c.get("allowedPaths")
             if not ap:
-                return False, (
-                    f"component {c.get('id', '?')} missing allowedPaths "
-                    f"(got {ap!r})"
-                )
+                return False, (f"component {c.get('id', '?')} missing allowedPaths (got {ap!r})")
 
     forbidden = requirement.get("excludes_harness_internals", [])
     if forbidden:
@@ -544,9 +538,7 @@ def architect_allowed_paths_caught(
             if not isinstance(c, dict):
                 continue
             entries = c.get("allowedPaths", []) or []
-            if not any(
-                isinstance(e, str) and e.startswith(test_root) for e in entries
-            ):
+            if not any(isinstance(e, str) and e.startswith(test_root) for e in entries):
                 return False, (
                     f"component {c.get('id', '?')} missing test-root "
                     f"prefix {test_root!r} in allowedPaths={entries!r}"
@@ -559,17 +551,13 @@ def architect_allowed_paths_caught(
             comp_id = c.get("id", "")
             expected = f"scripts/kstrl/feature/{comp_id}/"
             entries = c.get("allowedPaths", []) or []
-            if not any(
-                isinstance(e, str) and expected in e for e in entries
-            ):
+            if not any(isinstance(e, str) and expected in e for e in entries):
                 return False, (
                     f"component {comp_id} missing feature subtree "
                     f"{expected!r} in allowedPaths={entries!r}"
                 )
 
-    summary = ", ".join(
-        f"{c.get('id', '?')}={c.get('allowedPaths', [])}" for c in components
-    )
+    summary = ", ".join(f"{c.get('id', '?')}={c.get('allowedPaths', [])}" for c in components)
     return True, f"{len(components)} components, all gate-clean: {summary}"
 
 
@@ -579,7 +567,9 @@ def architect_allowed_paths_caught(
 
 
 def build_fp_summary(
-    fp_records: list[dict], *, fixture_threshold: float | None = None,
+    fp_records: list[dict],
+    *,
+    fixture_threshold: float | None = None,
 ) -> dict:
     """Aggregate per-run NEGATIVE-fixture records into a false-positive
     report block (R5.2).
@@ -594,8 +584,7 @@ def build_fp_summary(
     ``{"role","fixture_id","false_positive","error","detail"}``.
     """
     threshold = (
-        calibration.FIXTURE_DETECTION_THRESHOLD
-        if fixture_threshold is None else fixture_threshold
+        calibration.FIXTURE_DETECTION_THRESHOLD if fixture_threshold is None else fixture_threshold
     )
     grouped: dict[tuple[str, str], list[dict]] = {}
     order: list[tuple[str, str]] = []
@@ -609,29 +598,31 @@ def build_fp_summary(
     for role, fixture_id in order:
         runs = grouped[(role, fixture_id)]
         errored = sum(1 for r in runs if bool(r.get("error")))
-        flagged = sum(
-            1 for r in runs
-            if bool(r.get("false_positive")) and not bool(r.get("error"))
-        )
+        flagged = sum(1 for r in runs if bool(r.get("false_positive")) and not bool(r.get("error")))
         completed = len(runs) - errored
         fp_consistency = calibration.consistency(flagged, completed)
         is_fp = completed > 0 and fp_consistency >= threshold
-        block = roles.setdefault(role, {
-            "fixtures_total": 0,
-            "fixtures_false_positive": 0,
-            "fixtures": [],
-        })
+        block = roles.setdefault(
+            role,
+            {
+                "fixtures_total": 0,
+                "fixtures_false_positive": 0,
+                "fixtures": [],
+            },
+        )
         block["fixtures_total"] += 1
         if is_fp:
             block["fixtures_false_positive"] += 1
-        block["fixtures"].append({
-            "fixture_id": fixture_id,
-            "runs_total": len(runs),
-            "runs_errored": errored,
-            "runs_flagged": flagged,
-            "fp_consistency": fp_consistency,
-            "false_positive": is_fp,
-        })
+        block["fixtures"].append(
+            {
+                "fixture_id": fixture_id,
+                "runs_total": len(runs),
+                "runs_errored": errored,
+                "runs_flagged": flagged,
+                "fp_consistency": fp_consistency,
+                "false_positive": is_fp,
+            }
+        )
 
     for block in roles.values():
         total = block["fixtures_total"]
@@ -664,15 +655,17 @@ class _DetectionReport:
         cwe: str | None = None,
         error: bool = False,
     ) -> None:
-        self.records.append({
-            "role": role,
-            "fixture_id": fixture_id,
-            "category": category,
-            "cwe": cwe,
-            "caught": caught,
-            "error": error,
-            "detail": detail,
-        })
+        self.records.append(
+            {
+                "role": role,
+                "fixture_id": fixture_id,
+                "category": category,
+                "cwe": cwe,
+                "caught": caught,
+                "error": error,
+                "detail": detail,
+            }
+        )
 
     def record_fp(
         self,
@@ -684,13 +677,15 @@ class _DetectionReport:
         error: bool = False,
     ) -> None:
         """Record one RUN of a NEGATIVE fixture (R5.2)."""
-        self.fp_records.append({
-            "role": role,
-            "fixture_id": fixture_id,
-            "false_positive": false_positive,
-            "error": error,
-            "detail": detail,
-        })
+        self.fp_records.append(
+            {
+                "role": role,
+                "fixture_id": fixture_id,
+                "false_positive": false_positive,
+                "error": error,
+                "detail": detail,
+            }
+        )
 
     def save(self) -> Path | None:
         if not self.records and not self.fp_records:
@@ -775,8 +770,13 @@ def _gate_on_consistency(
             detected += 1
         details.append(f"run {run_index + 1}: caught={caught} {detail}")
         report.record(
-            role, fixture_id, caught, detail,
-            category=category, cwe=cwe, error=error,
+            role,
+            fixture_id,
+            caught,
+            detail,
+            category=category,
+            cwe=cwe,
+            error=error,
         )
     completed = CALIBRATION_RUNS - errored
     if completed == 0:
@@ -815,8 +815,13 @@ def _measure_detection(
             caught, detail, error = False, f"agent error: {exc}", True
             errored += 1
         report.record(
-            role, fixture_id, caught, detail,
-            category=category, cwe=cwe, error=error,
+            role,
+            fixture_id,
+            caught,
+            detail,
+            category=category,
+            cwe=cwe,
+            error=error,
         )
     if errored == CALIBRATION_RUNS:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
@@ -854,7 +859,9 @@ def _measure_false_positives(
 
 
 def _security_run_once(
-    meta: dict, diff_content: str, tmp_path: Path,
+    meta: dict,
+    diff_content: str,
+    tmp_path: Path,
 ) -> SecurityResult:
     """One security-reviewer run over a fixture diff with its real PRD."""
     prd_text = meta.get("prd", "(synthetic fixture; PRD intentionally omitted)")
@@ -872,11 +879,16 @@ def _security_run_once(
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _security_positive_easy_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _security_positive_easy_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_security_role_catches_planted_bug(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     """Catastrophe detector: the textbook-trivial bugs (sec-01..05) must
     be caught in a majority of runs. A miss is a real regression."""
@@ -887,17 +899,26 @@ def test_security_role_catches_planted_bug(
         return security_caught(result, meta["must_detect"])
 
     _gate_on_consistency(
-        "security", meta["fixture_id"], report, run_once,
-        category=meta["must_detect"].get("category"), cwe=meta.get("cwe"),
+        "security",
+        meta["fixture_id"],
+        report,
+        run_once,
+        category=meta["must_detect"].get("category"),
+        cwe=meta.get("cwe"),
     )
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _security_positive_hard_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _security_positive_hard_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_security_role_hard_positive(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     """Measure detection on the R5.2 HARD positives (multi-hop authz,
     second-order injection, TOCTOU, timing oracle).
@@ -916,17 +937,26 @@ def test_security_role_hard_positive(
         return security_caught(result, meta["must_detect"])
 
     _measure_detection(
-        "security_hard", meta["fixture_id"], report, run_once,
-        category=meta["must_detect"].get("category"), cwe=meta.get("cwe"),
+        "security_hard",
+        meta["fixture_id"],
+        report,
+        run_once,
+        category=meta["must_detect"].get("category"),
+        cwe=meta.get("cwe"),
     )
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _security_negative_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _security_negative_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_security_role_no_false_positive(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     """Measure the security reviewer's false-positive rate on clean-but-
     nontrivial diffs (R5.2). Records whether a forbidden category is
@@ -939,7 +969,10 @@ def test_security_role_no_false_positive(
         return security_false_positive(result, meta["must_not_flag"])
 
     _measure_false_positives(
-        "security_negative", meta["fixture_id"], report, run_once,
+        "security_negative",
+        meta["fixture_id"],
+        report,
+        run_once,
     )
 
 
@@ -949,7 +982,9 @@ def test_security_role_no_false_positive(
 
 
 def _reviewer_run_once(
-    meta: dict, diff_content: str, tmp_path: Path,
+    meta: dict,
+    diff_content: str,
+    tmp_path: Path,
 ) -> ReviewResult:
     """One reviewer run over a fixture diff with a real PRD + production-
     shaped verification context (R5.2)."""
@@ -973,11 +1008,16 @@ def _reviewer_run_once(
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _concern_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _concern_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_reviewer_role_catches_planted_concern(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     diff_content = artifact.read_text(encoding="utf-8")
 
@@ -986,17 +1026,25 @@ def test_reviewer_role_catches_planted_concern(
         return reviewer_caught(result, meta["must_detect"])
 
     _gate_on_consistency(
-        "reviewer", meta["fixture_id"], report, run_once,
+        "reviewer",
+        meta["fixture_id"],
+        report,
+        run_once,
         category=meta["must_detect"].get("category"),
     )
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _concern_negative_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _concern_negative_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_reviewer_role_no_false_positive(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     """Measure the reviewer's false-positive rate on clean-but-nontrivial
     diffs (R5.2): used-helper refactor, thorough tests, correct error
@@ -1010,7 +1058,10 @@ def test_reviewer_role_no_false_positive(
         return reviewer_false_positive(result, meta["must_not_flag"])
 
     _measure_false_positives(
-        "reviewer_negative", meta["fixture_id"], report, run_once,
+        "reviewer_negative",
+        meta["fixture_id"],
+        report,
+        run_once,
     )
 
 
@@ -1020,11 +1071,16 @@ def test_reviewer_role_no_false_positive(
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _halting_spec_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _halting_spec_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_architect_role_flags_vague_spec(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     spec_content = artifact.read_text(encoding="utf-8")
     prompt = build_decompose_prompt(meta["fixture_id"], spec_content)
@@ -1045,7 +1101,10 @@ def test_architect_role_flags_vague_spec(
         return architect_caught(issues, meta["must_detect"])
 
     _gate_on_consistency(
-        "architect", meta["fixture_id"], report, run_once,
+        "architect",
+        meta["fixture_id"],
+        report,
+        run_once,
         category="spec_issues",
     )
 
@@ -1064,17 +1123,21 @@ def _allowed_paths_fixtures() -> list[tuple[Path, dict]]:
     v1.2.0 rule #12.
     """
     return [
-        (artifact, meta) for artifact, meta in _spec_fixtures()
-        if "must_emit_allowed_paths" in meta
+        (artifact, meta) for artifact, meta in _spec_fixtures() if "must_emit_allowed_paths" in meta
     ]
 
 
 @_skip_unless_calibrating
-@pytest.mark.parametrize("artifact,meta", _allowed_paths_fixtures(),
-                         ids=lambda x: x.get("fixture_id", "unknown")
-                         if isinstance(x, dict) else x.stem)
+@pytest.mark.parametrize(
+    "artifact,meta",
+    _allowed_paths_fixtures(),
+    ids=lambda x: x.get("fixture_id", "unknown") if isinstance(x, dict) else x.stem,
+)
 def test_architect_emits_sensible_allowed_paths(
-    artifact: Path, meta: dict, tmp_path: Path, report: _DetectionReport,
+    artifact: Path,
+    meta: dict,
+    tmp_path: Path,
+    report: _DetectionReport,
 ) -> None:
     """Grade architect output on the allowedPaths emission rule.
 
@@ -1099,11 +1162,15 @@ def test_architect_emits_sensible_allowed_paths(
         except ValueError as exc:
             return False, f"json parse: {exc}"
         return architect_allowed_paths_caught(
-            data, meta["must_emit_allowed_paths"],
+            data,
+            meta["must_emit_allowed_paths"],
         )
 
     _gate_on_consistency(
-        "architect_allowed_paths", meta["fixture_id"], report, run_once,
+        "architect_allowed_paths",
+        meta["fixture_id"],
+        report,
+        run_once,
         category="allowed_paths",
     )
 
@@ -1129,16 +1196,16 @@ class TestFixtureStructure:
         ],
     )
     def test_every_fixture_has_metadata(
-        self, subdir: str, suffix: str,
+        self,
+        subdir: str,
+        suffix: str,
     ) -> None:
         # Remove the module-level skip for this static check
         for artifact in (FIXTURES_DIR / subdir).glob(f"*{suffix}"):
             meta_path = artifact.with_suffix(".meta.json")
             if not meta_path.exists():
                 meta_path = artifact.parent / f"{artifact.stem}.meta.json"
-            assert meta_path.exists(), (
-                f"Fixture {artifact} has no .meta.json partner"
-            )
+            assert meta_path.exists(), f"Fixture {artifact} has no .meta.json partner"
 
     def test_security_fixtures_count(self) -> None:
         # 5 planted-vuln + 1 R5.3 injection-efficacy + 4 R5.2 hard positives
@@ -1221,8 +1288,7 @@ class TestFixtureStructure:
                 assert "severity_at_least" in mnf
                 for cat in mnf["categories"]:
                     assert cat in taxonomy, (
-                        f"{meta['fixture_id']} forbidden category {cat!r} "
-                        "not in taxonomy"
+                        f"{meta['fixture_id']} forbidden category {cat!r} not in taxonomy"
                     )
 
     def test_verification_renders_for_every_fixture(self) -> None:
@@ -1249,8 +1315,7 @@ class TestFixtureStructure:
             # spec-issue detection) or ``must_emit_allowed_paths``
             # (non-halting fixtures that grade allowedPaths quality).
             assert "must_detect" in meta or "must_emit_allowed_paths" in meta, (
-                f"{meta['fixture_id']} has neither must_detect nor "
-                "must_emit_allowed_paths grading"
+                f"{meta['fixture_id']} has neither must_detect nor must_emit_allowed_paths grading"
             )
             if "must_detect" in meta:
                 assert "spec_issues_min" in meta["must_detect"]
@@ -1272,7 +1337,8 @@ class TestFixtureStructure:
         reviewer-family override) so a standing override does not warn
         against its own baselines - and a dropped override does."""
         message = calibration.model_drift_message(
-            RESULTS_DIR, REPORT_MODEL_LABEL,
+            RESULTS_DIR,
+            REPORT_MODEL_LABEL,
         )
         if message is not None:
             warnings.warn(
@@ -1300,7 +1366,9 @@ class TestMatchersResolveOnFixtures:
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_security_positive_matcher_resolves(
-        self, artifact: Path, meta: dict,
+        self,
+        artifact: Path,
+        meta: dict,
     ) -> None:
         md = meta["must_detect"]
         category = sorted(_acceptable_categories(md))[0]
@@ -1312,13 +1380,17 @@ class TestMatchersResolveOnFixtures:
             explanation="synthetic",
         )
         result = SecurityResult(
-            passed=False, mode=SecurityMode.HARD.value, findings=[finding],
+            passed=False,
+            mode=SecurityMode.HARD.value,
+            findings=[finding],
         )
         caught, _ = security_caught(result, md)
         assert caught, f"{meta['fixture_id']} matcher rejects a valid finding"
 
         empty = SecurityResult(
-            passed=True, mode=SecurityMode.HARD.value, findings=[],
+            passed=True,
+            mode=SecurityMode.HARD.value,
+            findings=[],
         )
         assert not security_caught(empty, md)[0]
 
@@ -1328,7 +1400,9 @@ class TestMatchersResolveOnFixtures:
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_security_negative_matcher_resolves(
-        self, artifact: Path, meta: dict,
+        self,
+        artifact: Path,
+        meta: dict,
     ) -> None:
         mnf = meta["must_not_flag"]
         forbidden = SecurityFinding(
@@ -1338,14 +1412,18 @@ class TestMatchersResolveOnFixtures:
             explanation="synthetic",
         )
         flagged = SecurityResult(
-            passed=False, mode=SecurityMode.HARD.value, findings=[forbidden],
+            passed=False,
+            mode=SecurityMode.HARD.value,
+            findings=[forbidden],
         )
         assert security_false_positive(flagged, mnf)[0], (
             f"{meta['fixture_id']} FP matcher misses a forbidden finding"
         )
 
         clean = SecurityResult(
-            passed=True, mode=SecurityMode.HARD.value, findings=[],
+            passed=True,
+            mode=SecurityMode.HARD.value,
+            findings=[],
         )
         assert not security_false_positive(clean, mnf)[0]
 
@@ -1355,7 +1433,9 @@ class TestMatchersResolveOnFixtures:
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_reviewer_positive_matcher_resolves(
-        self, artifact: Path, meta: dict,
+        self,
+        artifact: Path,
+        meta: dict,
     ) -> None:
         md = meta["must_detect"]
         category = sorted(_acceptable_categories(md))[0]
@@ -1376,7 +1456,9 @@ class TestMatchersResolveOnFixtures:
         ids=lambda x: x.get("fixture_id", "?") if isinstance(x, dict) else x.stem,
     )
     def test_reviewer_negative_matcher_resolves(
-        self, artifact: Path, meta: dict,
+        self,
+        artifact: Path,
+        meta: dict,
     ) -> None:
         mnf = meta["must_not_flag"]
         severity = "fail" if mnf.get("severity_at_least") == "fail" else "advisory"

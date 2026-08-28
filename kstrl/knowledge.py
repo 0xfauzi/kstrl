@@ -119,9 +119,7 @@ class KnowledgeConfig:
             if "max_sibling_tokens" in section:
                 config.max_sibling_tokens = int(section["max_sibling_tokens"])
             if "distill_timeout_seconds" in section:
-                config.distill_timeout_seconds = float(
-                    section["distill_timeout_seconds"]
-                )
+                config.distill_timeout_seconds = float(section["distill_timeout_seconds"])
             if "distill_model" in section:
                 config.distill_model = str(section["distill_model"])
             if "max_facts_per_distill" in section:
@@ -159,13 +157,9 @@ def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:
     if "KSTRL_KNOWLEDGE_MAX_CORE_TOKENS" in os.environ:
         config.max_core_tokens = int(os.environ["KSTRL_KNOWLEDGE_MAX_CORE_TOKENS"])
     if "KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS" in os.environ:
-        config.max_dependency_tokens = int(
-            os.environ["KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"]
-        )
+        config.max_dependency_tokens = int(os.environ["KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS"])
     if "KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS" in os.environ:
-        config.max_sibling_tokens = int(
-            os.environ["KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS"]
-        )
+        config.max_sibling_tokens = int(os.environ["KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS"])
     if "KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS" in os.environ:
         config.distill_timeout_seconds = float(
             os.environ["KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS"]
@@ -173,9 +167,7 @@ def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:
     if "KSTRL_KNOWLEDGE_DISTILL_MODEL" in os.environ:
         config.distill_model = os.environ["KSTRL_KNOWLEDGE_DISTILL_MODEL"]
     if "KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL" in os.environ:
-        config.max_facts_per_distill = int(
-            os.environ["KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL"]
-        )
+        config.max_facts_per_distill = int(os.environ["KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL"])
     if "KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE" in os.environ:
         config.dependency_scope = os.environ["KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE"]
 
@@ -192,9 +184,7 @@ def _apply_knowledge_env_overrides(config: KnowledgeConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-VALID_SCOPES = frozenset(
-    {"handler", "adapter", "schema", "contract", "invariant", "gotcha"}
-)
+VALID_SCOPES = frozenset({"handler", "adapter", "schema", "contract", "invariant", "gotcha"})
 # E5: confidence taxonomy.
 # - "review_passed" replaces "verified" - more honest about what the
 #   signal actually means (Phase 2 review LLM said pass; not "this is
@@ -206,9 +196,14 @@ VALID_SCOPES = frozenset(
 #   but no review or test confirmed it.
 # "verified" is kept as a backward-compat alias so old fact files on
 # disk continue to load. New facts should use review_passed.
-VALID_CONFIDENCES = frozenset({
-    "review_passed", "test_verified", "asserted", "verified",
-})
+VALID_CONFIDENCES = frozenset(
+    {
+        "review_passed",
+        "test_verified",
+        "asserted",
+        "verified",
+    }
+)
 # Map legacy values to the canonical name on read.
 _CONFIDENCE_ALIASES: dict[str, str] = {"verified": "review_passed"}
 
@@ -287,7 +282,7 @@ def _parse_fact_md(content: str) -> Fact:
     if not isinstance(meta, dict):
         raise ValueError("frontmatter must be a JSON object")
 
-    claim_lines = lines[closing_idx + 1:]
+    claim_lines = lines[closing_idx + 1 :]
     # Drop leading blank lines
     while claim_lines and not claim_lines[0].strip():
         claim_lines = claim_lines[1:]
@@ -385,10 +380,7 @@ def _run_dirs(component_root: Path) -> list[Path]:
     """
     if not component_root.is_dir():
         return []
-    candidates = [
-        d for d in component_root.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
-    ]
+    candidates = [d for d in component_root.iterdir() if d.is_dir() and not d.name.startswith("_")]
     candidates.sort(key=lambda p: p.name)
     return candidates
 
@@ -454,7 +446,9 @@ def write_facts(
         target = run_dir / f"{fact.id}.md"
         try:
             fd, tmp_path = tempfile.mkstemp(
-                dir=str(run_dir), suffix=".tmp", prefix=f".{fact.id}-",
+                dir=str(run_dir),
+                suffix=".tmp",
+                prefix=f".{fact.id}-",
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -520,7 +514,8 @@ def _sort_for_packing(facts: list[Fact]) -> list[Fact]:
 
 
 def _pack_facts_full(
-    facts: list[Fact], budget_tokens: int,
+    facts: list[Fact],
+    budget_tokens: int,
 ) -> tuple[list[Fact], bool]:
     """Pack facts into budget. Returns (kept_facts, overflowed).
 
@@ -554,9 +549,7 @@ def _pack_facts_full(
             remaining = budget_tokens - used - meta_cost
             if remaining > 30:
                 chars_available = remaining * 4
-                truncated_claim = (
-                    fact.claim[: chars_available - 20].rstrip() + "..."
-                )
+                truncated_claim = fact.claim[: chars_available - 20].rstrip() + "..."
                 kept.append(replace(fact, claim=truncated_claim))
                 used = budget_tokens
                 truncation_used = True
@@ -569,7 +562,8 @@ def _pack_facts_full(
 
 
 def _pack_facts_summary(
-    facts: list[Fact], budget_tokens: int,
+    facts: list[Fact],
+    budget_tokens: int,
 ) -> tuple[list[Fact], bool]:
     """Pack first-sentence summaries into budget.
 
@@ -643,9 +637,7 @@ def _format_section(title: str, facts: list[Fact]) -> str:
     lines: list[str] = [f"### {title}"]
     for fact in facts:
         scope_label = f"[{fact.scope}]" if fact.scope else ""
-        evidence_label = (
-            f" (evidence: {', '.join(fact.evidence)})" if fact.evidence else ""
-        )
+        evidence_label = f" (evidence: {', '.join(fact.evidence)})" if fact.evidence else ""
         confidence_label = f" {{{fact.confidence}}}"
         lines.append(
             f"- **{fact.component_id}**{scope_label}{confidence_label}: "
@@ -699,8 +691,7 @@ def build_knowledge_context(
         excluded_dep_ids = transitive_dep_ids - direct_dep_ids
         if excluded_dep_ids:
             withheld_facts = sum(
-                len(read_facts(knowledge_root, dep_id))
-                for dep_id in excluded_dep_ids
+                len(read_facts(knowledge_root, dep_id)) for dep_id in excluded_dep_ids
             )
             record_dependency_scope_gap(
                 component_id=component.id,
@@ -712,7 +703,8 @@ def build_knowledge_context(
     for dep_id in dep_ids:
         dep_facts.extend(read_facts(knowledge_root, dep_id))
     dep_kept, dep_overflow = _pack_facts_full(
-        dep_facts, config.max_dependency_tokens,
+        dep_facts,
+        config.max_dependency_tokens,
     )
 
     # Sibling: everything not in core or dep tiers. When dependency_scope
@@ -725,7 +717,8 @@ def build_knowledge_context(
             continue
         sibling_facts.extend(read_facts(knowledge_root, comp.id))
     sibling_kept, sibling_overflow = _pack_facts_summary(
-        sibling_facts, config.max_sibling_tokens,
+        sibling_facts,
+        config.max_sibling_tokens,
     )
 
     if not (core_kept or dep_kept or sibling_kept):
@@ -840,6 +833,7 @@ def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]
 
 def _telemetry_timestamp() -> str:
     from datetime import UTC, datetime
+
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -1046,10 +1040,11 @@ _INJECTION_PATTERNS = [
     re.compile(r"<\s*user\s*>", re.IGNORECASE),
     re.compile(r"<\|.*?\|>"),  # OpenAI-style special tokens
     re.compile(r"^\s*#{1,6}\s*instructions?\b", re.IGNORECASE | re.MULTILINE),
-    re.compile(r"\bignore\b.{0,30}\b(previous|prior|all)\b.{0,30}\binstructions?\b",
-               re.IGNORECASE | re.DOTALL),
-    re.compile(r"\bdisregard\b.{0,30}\binstructions?\b",
-               re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"\bignore\b.{0,30}\b(previous|prior|all)\b.{0,30}\binstructions?\b",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(r"\bdisregard\b.{0,30}\binstructions?\b", re.IGNORECASE | re.DOTALL),
     re.compile(r"\boverride\b.{0,30}\bsystem\b", re.IGNORECASE | re.DOTALL),
     re.compile(r"\bnew\s+(instructions?|task|goal)\b:", re.IGNORECASE),
 ]
@@ -1215,7 +1210,9 @@ def distill_facts(
 
     try:
         output_lines = collect_agent_output(
-            agent, prompt, cwd=worktree_path,
+            agent,
+            prompt,
+            cwd=worktree_path,
             timeout=config.distill_timeout_seconds,
             on_line=on_line,
         )
@@ -1240,16 +1237,16 @@ def distill_facts(
         underscore-prefixed dirs entirely). Best-effort; ignore disk
         errors."""
         try:
-            debug_dir = (
-                knowledge_root / component.id / _DEBUG_DIR_NAME / run_id
-            )
+            debug_dir = knowledge_root / component.id / _DEBUG_DIR_NAME / run_id
             debug_dir.mkdir(parents=True, exist_ok=True)
             (debug_dir / "_distill_raw.txt").write_text(
-                streamed_output, encoding="utf-8",
+                streamed_output,
+                encoding="utf-8",
             )
             if final_message and final_message != streamed_output:
                 (debug_dir / "_distill_final.txt").write_text(
-                    final_message, encoding="utf-8",
+                    final_message,
+                    encoding="utf-8",
                 )
             (debug_dir / "_distill_status.txt").write_text(label, encoding="utf-8")
         except OSError:
@@ -1263,7 +1260,10 @@ def distill_facts(
         return 0, "knowledge.no_facts"
 
     facts = _coerce_facts(
-        raw_facts, component.id, iteration_count, run_id,
+        raw_facts,
+        component.id,
+        iteration_count,
+        run_id,
         config.max_facts_per_distill,
     )
 

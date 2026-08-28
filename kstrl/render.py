@@ -69,7 +69,8 @@ class UIBackedRenderer:
 
 
 def plain_renderer(
-    no_color: bool = False, ascii_only: bool = False,
+    no_color: bool = False,
+    ascii_only: bool = False,
 ) -> UIBackedRenderer:
     """The CI/pipe/non-TTY surface: line output via PlainUI."""
     return UIBackedRenderer(PlainUI(no_color=no_color, ascii_only=ascii_only))

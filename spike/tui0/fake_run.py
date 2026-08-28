@@ -14,6 +14,7 @@ must never crash or drop records on this.
 
 This is a spike artifact: stdlib only, no kstrl imports.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,13 +62,18 @@ class RunWriter:
             self.log_fhs[comp] = open(d / "engineer.log", "a", buffering=1)
         return self.comp_fhs[comp], self.log_fhs[comp]
 
-    def emit(self, event: str, component: str = "", source: str = "orchestrator",
-             **data) -> None:
+    def emit(self, event: str, component: str = "", source: str = "orchestrator", **data) -> None:
         self.seq += 1
         rec = {
-            "schema": 2, "event": event, "ts": time.time(), "t_emit": time.time(),
-            "run_id": self.run_id, "component": component, "source": source,
-            "seq": self.seq, "data": data,
+            "schema": 2,
+            "event": event,
+            "ts": time.time(),
+            "t_emit": time.time(),
+            "run_id": self.run_id,
+            "component": component,
+            "source": source,
+            "seq": self.seq,
+            "data": data,
         }
         line = json.dumps(rec, separators=(",", ":"))
         if source == "worker" and component:
@@ -91,20 +97,36 @@ class RunWriter:
             log_fh.write(tpl.format(c=comp) + "\n")
 
 
-def generate(out: Path, components: int, rate: float, duration: float, seed: int,
-             torn_every: int, pause_after: float, checkpoint: bool,
-             churn: bool = False) -> None:
+def generate(
+    out: Path,
+    components: int,
+    rate: float,
+    duration: float,
+    seed: int,
+    torn_every: int,
+    pause_after: float,
+    checkpoint: bool,
+    churn: bool = False,
+) -> None:
     rng = random.Random(seed)
     run_id = f"factory-{time.strftime('%Y%m%d-%H%M%S')}.000000-spike"
     w = RunWriter(out, run_id, torn_every, seed)
     comps = [f"comp-{chr(ord('a') + i)}" for i in range(components)]
 
     w.emit("factory_started", project="spike-project", components=len(comps))
-    w.emit("run_plan", components=[
-        {"id": c, "title": f"Component {c.split('-')[1].upper()}",
-         "deps": [comps[i - 1]] if i else []}
-        for i, c in enumerate(comps)
-    ], max_total_tokens=5_000_000, max_adversarial_calls=40)
+    w.emit(
+        "run_plan",
+        components=[
+            {
+                "id": c,
+                "title": f"Component {c.split('-')[1].upper()}",
+                "deps": [comps[i - 1]] if i else [],
+            }
+            for i, c in enumerate(comps)
+        ],
+        max_total_tokens=5_000_000,
+        max_adversarial_calls=40,
+    )
 
     start = time.monotonic()
     comp_state = {c: {"phase_i": 0, "iteration": 0, "started": False} for c in comps}
@@ -130,40 +152,76 @@ def generate(out: Path, components: int, rate: float, duration: float, seed: int
             # heartbeat every ~15s/rate
             if now - last_heartbeat.get(c, 0) > 15.0 / rate:
                 last_heartbeat[c] = now
-                w.emit("worker_heartbeat", component=c, source="worker",
-                       pid=10000 + hash(c) % 1000, elapsed_seconds=round(now - start, 1))
+                w.emit(
+                    "worker_heartbeat",
+                    component=c,
+                    source="worker",
+                    pid=10000 + hash(c) % 1000,
+                    elapsed_seconds=round(now - start, 1),
+                )
             r = rng.random()
             if r < 0.35:
                 st["iteration"] += 1
-                w.emit("iteration_started", component=c, source="worker",
-                       iteration=st["iteration"], max_iterations=10)
+                w.emit(
+                    "iteration_started",
+                    component=c,
+                    source="worker",
+                    iteration=st["iteration"],
+                    max_iterations=10,
+                )
                 w.transcript(c, rng.randint(2, 5))
-                w.emit("iteration_completed", component=c, source="worker",
-                       iteration=st["iteration"],
-                       duration_seconds=round(rng.uniform(5, 40), 1),
-                       completed=False, timed_out=False)
+                w.emit(
+                    "iteration_completed",
+                    component=c,
+                    source="worker",
+                    iteration=st["iteration"],
+                    duration_seconds=round(rng.uniform(5, 40), 1),
+                    completed=False,
+                    timed_out=False,
+                )
             elif r < 0.55:
-                w.emit("component_usage", component=c, phase=rng.choice(PHASES[:3]),
-                       calls=1, known_calls=rng.choice([0, 1]), unreported_calls=0,
-                       input_tokens=rng.randint(1000, 90000),
-                       output_tokens=rng.randint(200, 9000),
-                       total_tokens=rng.randint(1200, 99000),
-                       cost_usd=round(rng.uniform(0.01, 0.9), 4),
-                       duration_seconds=round(rng.uniform(2, 60), 2))
+                w.emit(
+                    "component_usage",
+                    component=c,
+                    phase=rng.choice(PHASES[:3]),
+                    calls=1,
+                    known_calls=rng.choice([0, 1]),
+                    unreported_calls=0,
+                    input_tokens=rng.randint(1000, 90000),
+                    output_tokens=rng.randint(200, 9000),
+                    total_tokens=rng.randint(1200, 99000),
+                    cost_usd=round(rng.uniform(0.01, 0.9), 4),
+                    duration_seconds=round(rng.uniform(2, 60), 2),
+                )
             elif r < 0.65:
-                w.emit("finding_recorded", component=c, phase="review",
-                       category=rng.choice(CATEGORIES),
-                       severity=rng.choice(SEVERITIES),
-                       location=f"src/{c}/handler.py:{rng.randint(10, 300)}",
-                       explanation="Retry loop can spin without backoff cap.",
-                       attempt=1)
+                w.emit(
+                    "finding_recorded",
+                    component=c,
+                    phase="review",
+                    category=rng.choice(CATEGORIES),
+                    severity=rng.choice(SEVERITIES),
+                    location=f"src/{c}/handler.py:{rng.randint(10, 300)}",
+                    explanation="Retry loop can spin without backoff cap.",
+                    attempt=1,
+                )
             elif r < 0.72:
-                w.emit("log", component=c, severity=rng.choice(["info", "warn"]),
-                       kind="line", text=f"Phase note for {c} at t={round(now - start, 1)}")
+                w.emit(
+                    "log",
+                    component=c,
+                    severity=rng.choice(["info", "warn"]),
+                    kind="line",
+                    text=f"Phase note for {c} at t={round(now - start, 1)}",
+                )
             elif r < 0.82:
                 phase = PHASES[st["phase_i"]]
-                w.emit("phase_completed", component=c, phase=phase,
-                       passed=True, detail="", duration_seconds=round(rng.uniform(5, 120), 1))
+                w.emit(
+                    "phase_completed",
+                    component=c,
+                    phase=phase,
+                    passed=True,
+                    detail="",
+                    duration_seconds=round(rng.uniform(5, 120), 1),
+                )
                 st["phase_i"] += 1
                 if st["phase_i"] >= len(PHASES):
                     if churn:
@@ -171,28 +229,43 @@ def generate(out: Path, components: int, rate: float, duration: float, seed: int
                         # phase chain as a new attempt so event flow stays
                         # at the configured rate for the whole duration.
                         st["phase_i"] = 0
-                        w.emit("component_retrying", component=c,
-                               attempt=st["iteration"], reason="spike churn")
+                        w.emit(
+                            "component_retrying",
+                            component=c,
+                            attempt=st["iteration"],
+                            reason="spike churn",
+                        )
                         w.emit("phase_started", component=c, phase=PHASES[0], attempt=2)
                         continue
-                    w.emit("component_completed", component=c,
-                           duration_seconds=round(now - start, 1),
-                           iterations=st["iteration"])
+                    w.emit(
+                        "component_completed",
+                        component=c,
+                        duration_seconds=round(now - start, 1),
+                        iterations=st["iteration"],
+                    )
                     finished.add(c)
                 else:
                     nxt = PHASES[st["phase_i"]]
                     if checkpoint and nxt == "pr" and rng.random() < 0.5:
-                        w.emit("checkpoint_requested", component=c, kind="checkpoint",
-                               question=f"Approve PR creation and merge for {c}?")
+                        w.emit(
+                            "checkpoint_requested",
+                            component=c,
+                            kind="checkpoint",
+                            question=f"Approve PR creation and merge for {c}?",
+                        )
                     w.emit("phase_started", component=c, phase=nxt, attempt=1)
         time.sleep(tick)
 
     for c in comps:
         if c not in finished and comp_state[c]["started"]:
             w.emit("component_failed", component=c, error="spike ended before completion")
-    w.emit("factory_completed", completed=len(finished),
-           failed=len(comps) - len(finished), skipped=0,
-           duration_seconds=round(time.monotonic() - start, 1))
+    w.emit(
+        "factory_completed",
+        completed=len(finished),
+        failed=len(comps) - len(finished),
+        skipped=0,
+        duration_seconds=round(time.monotonic() - start, 1),
+    )
     print(f"run_id={run_id} events={w.lines_written} dir={w.run_dir}")
 
 
@@ -206,11 +279,21 @@ def main() -> None:
     p.add_argument("--torn-tail-every", type=int, default=50)
     p.add_argument("--pause-after", type=float, default=0.0)
     p.add_argument("--checkpoint", action="store_true")
-    p.add_argument("--churn", action="store_true",
-                   help="components never complete; sustained event flow")
+    p.add_argument(
+        "--churn", action="store_true", help="components never complete; sustained event flow"
+    )
     a = p.parse_args()
-    generate(a.out, a.components, a.rate, a.duration, a.seed,
-             a.torn_tail_every, a.pause_after, a.checkpoint, a.churn)
+    generate(
+        a.out,
+        a.components,
+        a.rate,
+        a.duration,
+        a.seed,
+        a.torn_tail_every,
+        a.pause_after,
+        a.checkpoint,
+        a.churn,
+    )
 
 
 if __name__ == "__main__":

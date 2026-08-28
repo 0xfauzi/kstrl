@@ -49,9 +49,7 @@ AGENT_TYPE_ALIASES: dict[str, str] = {
 }
 
 #: Accepted spellings for ``[agent] type``.
-VALID_AGENT_TYPES: tuple[str, ...] = tuple(
-    sorted(name for name in AGENT_TYPE_ALIASES if name)
-)
+VALID_AGENT_TYPES: tuple[str, ...] = tuple(sorted(name for name in AGENT_TYPE_ALIASES if name))
 
 
 def canonical_agent_type(agent_type: str | None) -> str | None:
@@ -115,24 +113,33 @@ def get_agent(
         agent_type = canonical
     if agent_type == "claude-code":
         return ClaudeCodeAgent(
-            model=model, effort=model_reasoning_effort, sandbox=sandbox,
+            model=model,
+            effort=model_reasoning_effort,
+            sandbox=sandbox,
         )
     if agent_type == "claude-sdk":
         return ClaudeSdkAgent(
-            model=model, effort=model_reasoning_effort, sandbox=sandbox,
+            model=model,
+            effort=model_reasoning_effort,
+            sandbox=sandbox,
             max_budget_usd=max_budget_usd,
         )
     if agent_type == "codex":
         return CodexAgent(
-            model=model, reasoning_effort=model_reasoning_effort,
+            model=model,
+            reasoning_effort=model_reasoning_effort,
             sandbox=sandbox,
         )
     # Auto-detect: prefer claude-code, fall back to codex
     if agent_type is None or agent_type == "auto":
         if ClaudeCodeAgent.is_available():
             return ClaudeCodeAgent(
-                model=model, effort=model_reasoning_effort, sandbox=sandbox,
+                model=model,
+                effort=model_reasoning_effort,
+                sandbox=sandbox,
             )
     return CodexAgent(
-        model=model, reasoning_effort=model_reasoning_effort, sandbox=sandbox,
+        model=model,
+        reasoning_effort=model_reasoning_effort,
+        sandbox=sandbox,
     )

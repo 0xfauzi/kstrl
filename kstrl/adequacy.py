@@ -59,6 +59,7 @@ from enum import StrEnum
 #: costs a note, while a false negative silently exempts a file.
 TEST_PATH_RE = re.compile(r"(^|/)(tests?/|test_[^/]*\.py$|[^/]*_test\.py$)")
 
+
 class OracleStrength(StrEnum):
     """How much a test file's assertions could actually catch.
 
@@ -72,9 +73,9 @@ class OracleStrength(StrEnum):
     through (WEAK). See :func:`_classify_expr` for the exact rule.
     """
 
-    STRONG = "strong"      # compares against an expected value or raises
-    WEAK = "weak"          # executes, asserts only shape or truthiness
-    NONE = "none"          # no assertion at all
+    STRONG = "strong"  # compares against an expected value or raises
+    WEAK = "weak"  # executes, asserts only shape or truthiness
+    NONE = "none"  # no assertion at all
 
 
 class FindingKind(StrEnum):
@@ -165,7 +166,8 @@ def _is_truthiness_call(node: ast.expr) -> bool:
     if not isinstance(node, ast.Call):
         return False
     arguments: list[ast.expr] = [
-        *node.args, *(kw.value for kw in node.keywords),
+        *node.args,
+        *(kw.value for kw in node.keywords),
     ]
     return not any(_contains_comparison(arg) for arg in arguments)
 
@@ -187,8 +189,10 @@ def _is_shape_only(node: ast.expr) -> bool:
         return False
     if isinstance(node, ast.Call):
         func = node.func
-        name = func.id if isinstance(func, ast.Name) else (
-            func.attr if isinstance(func, ast.Attribute) else ""
+        name = (
+            func.id
+            if isinstance(func, ast.Name)
+            else (func.attr if isinstance(func, ast.Attribute) else "")
         )
         if name in _SHAPE_CALLS:
             return True
@@ -221,9 +225,7 @@ def _classify_expr(node: ast.expr) -> OracleStrength:
         strengths = [_classify_expr(value) for value in node.values]
         if isinstance(node.op, ast.And):
             return (
-                OracleStrength.STRONG
-                if OracleStrength.STRONG in strengths
-                else OracleStrength.WEAK
+                OracleStrength.STRONG if OracleStrength.STRONG in strengths else OracleStrength.WEAK
             )
         return (
             OracleStrength.STRONG
@@ -245,31 +247,68 @@ def _classify_assert(node: ast.Assert) -> OracleStrength:
 #: a file written against `unittest` or `Mock` contains no bare `assert`
 #: statement at all, and reading it as "asserts nothing" is the worst
 #: false positive this layer can produce.
-_STRONG_ASSERT_METHODS = frozenset({
-    "assertEqual", "assertNotEqual", "assertAlmostEqual",
-    "assertNotAlmostEqual", "assertIn", "assertNotIn", "assertIs",
-    "assertIsNot", "assertListEqual", "assertDictEqual", "assertSetEqual",
-    "assertTupleEqual", "assertSequenceEqual", "assertMultiLineEqual",
-    "assertCountEqual", "assertDictContainsSubset", "assertRegex",
-    "assertNotRegex", "assertGreater", "assertGreaterEqual", "assertLess",
-    "assertLessEqual", "assertRaises", "assertRaisesRegex", "assertWarns",
-    "assertWarnsRegex", "assertLogs", "assertNoLogs",
-    # Mock: these name the arguments the call must have had, or that no
-    # call may have happened at all.
-    "assert_called_with", "assert_called_once_with", "assert_any_call",
-    "assert_has_calls", "assert_not_called", "assert_awaited_with",
-    "assert_awaited_once_with", "assert_any_await", "assert_has_awaits",
-    "assert_not_awaited",
-})
+_STRONG_ASSERT_METHODS = frozenset(
+    {
+        "assertEqual",
+        "assertNotEqual",
+        "assertAlmostEqual",
+        "assertNotAlmostEqual",
+        "assertIn",
+        "assertNotIn",
+        "assertIs",
+        "assertIsNot",
+        "assertListEqual",
+        "assertDictEqual",
+        "assertSetEqual",
+        "assertTupleEqual",
+        "assertSequenceEqual",
+        "assertMultiLineEqual",
+        "assertCountEqual",
+        "assertDictContainsSubset",
+        "assertRegex",
+        "assertNotRegex",
+        "assertGreater",
+        "assertGreaterEqual",
+        "assertLess",
+        "assertLessEqual",
+        "assertRaises",
+        "assertRaisesRegex",
+        "assertWarns",
+        "assertWarnsRegex",
+        "assertLogs",
+        "assertNoLogs",
+        # Mock: these name the arguments the call must have had, or that no
+        # call may have happened at all.
+        "assert_called_with",
+        "assert_called_once_with",
+        "assert_any_call",
+        "assert_has_calls",
+        "assert_not_called",
+        "assert_awaited_with",
+        "assert_awaited_once_with",
+        "assert_any_await",
+        "assert_has_awaits",
+        "assert_not_awaited",
+    }
+)
 
 #: Assertions satisfied by ANY value or ANY call: they catch a missing
 #: result, never a wrong one. Same tier as `assert x is not None`.
-_WEAK_ASSERT_METHODS = frozenset({
-    "assertTrue", "assertFalse", "assertIsNone", "assertIsNotNone",
-    "assertIsInstance", "assertNotIsInstance", "assertHasAttr",
-    "assert_called", "assert_called_once", "assert_awaited",
-    "assert_awaited_once",
-})
+_WEAK_ASSERT_METHODS = frozenset(
+    {
+        "assertTrue",
+        "assertFalse",
+        "assertIsNone",
+        "assertIsNotNone",
+        "assertIsInstance",
+        "assertNotIsInstance",
+        "assertHasAttr",
+        "assert_called",
+        "assert_called_once",
+        "assert_awaited",
+        "assert_awaited_once",
+    }
+)
 
 
 def _assertion_method_strengths(node: ast.AST) -> list[OracleStrength]:
@@ -307,8 +346,10 @@ def _has_raises_context(node: ast.AST) -> bool:
             call = item.context_expr
             if isinstance(call, ast.Call):
                 func = call.func
-                attr = func.attr if isinstance(func, ast.Attribute) else (
-                    func.id if isinstance(func, ast.Name) else ""
+                attr = (
+                    func.attr
+                    if isinstance(func, ast.Attribute)
+                    else (func.id if isinstance(func, ast.Name) else "")
                 )
                 if attr in {"raises", "warns", "assertRaises"}:
                     return True
@@ -318,9 +359,16 @@ def _has_raises_context(node: ast.AST) -> bool:
 #: Name segments that disable execution. Matched per dotted SEGMENT, not
 #: as a substring: `pytest.mark.skip` counts, `runner.skip_count` does
 #: not, and a test named `test_skip_behaviour` is not a skip.
-_SKIP_SEGMENTS = frozenset({
-    "skip", "skipif", "xfail", "skipTest", "skipIf", "skipUnless",
-})
+_SKIP_SEGMENTS = frozenset(
+    {
+        "skip",
+        "skipif",
+        "xfail",
+        "skipTest",
+        "skipIf",
+        "skipUnless",
+    }
+)
 
 
 def _is_skip_name(dotted: str) -> bool:
@@ -363,9 +411,7 @@ def _skip_reference(tree: ast.AST) -> str:
                     if name and _is_skip_name(name):
                         return name
         for decorator in getattr(child, "decorator_list", []):
-            target = (
-                decorator.func if isinstance(decorator, ast.Call) else decorator
-            )
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
             name = _dotted_name(target)
             if name and _is_skip_name(name):
                 return name
@@ -410,10 +456,7 @@ def _module_skip_marker(tree: ast.Module) -> str:
             targets = [node.target]
         else:
             continue
-        if not any(
-            isinstance(t, ast.Name) and t.id in _MODULE_MARKER_NAMES
-            for t in targets
-        ):
+        if not any(isinstance(t, ast.Name) and t.id in _MODULE_MARKER_NAMES for t in targets):
             continue
         value = node.value
         if value is None:
@@ -558,7 +601,8 @@ class DiffDiscipline:
         the same name; only the difference is a deletion.
         """
         return [
-            (path, name) for (path, name) in self.removed_tests
+            (path, name)
+            for (path, name) in self.removed_tests
             if (path, name) not in self.added_tests
         ]
 
@@ -627,9 +671,7 @@ def analyze_test_diff(diff_text: str) -> DiffDiscipline:
                 if _added_skip(body):
                     result.added_skips.append((current, body.strip()))
                 if _ASSERT_RE.match(body):
-                    result.added_assertions[current] = (
-                        result.added_assertions.get(current, 0) + 1
-                    )
+                    result.added_assertions[current] = result.added_assertions.get(current, 0) + 1
         prev = line
     return result
 
@@ -683,12 +725,8 @@ class AdequacyConfig:
         base = Path(root_dir) if root_dir is not None else Path.cwd()  # type: ignore[arg-type]
         section = load_toml_section(resolve_config_file(base), "adequacy")
         defaults = cls()
-        enabled = (
-            bool(section["enabled"]) if "enabled" in section else defaults.enabled
-        )
-        layer0 = (
-            str(section["layer0"]) if "layer0" in section else defaults.layer0
-        )
+        enabled = bool(section["enabled"]) if "enabled" in section else defaults.enabled
+        layer0 = str(section["layer0"]) if "layer0" in section else defaults.layer0
         require_strong = (
             bool(section["require_strong_oracle"])
             if "require_strong_oracle" in section
@@ -713,8 +751,7 @@ class AdequacyConfig:
     def __post_init__(self) -> None:
         if self.layer0 not in ("advisory", "block"):
             raise ValueError(
-                f"invalid [adequacy] layer0 {self.layer0!r}; "
-                "expected 'advisory' or 'block'"
+                f"invalid [adequacy] layer0 {self.layer0!r}; expected 'advisory' or 'block'"
             )
 
 
@@ -763,54 +800,60 @@ def evaluate_layer0(
     discipline = analyze_test_diff(diff_text)
 
     for path, name in discipline.deleted_tests():
-        findings.append(AdequacyFinding(
-            kind=FindingKind.TEST_DELETED, path=path, symbol=name,
-            detail=(
-                "test removed by this diff; deleting a test is a change to "
-                "what the suite guarantees and needs a spec-linked reason"
-            ),
-        ))
+        findings.append(
+            AdequacyFinding(
+                kind=FindingKind.TEST_DELETED,
+                path=path,
+                symbol=name,
+                detail=(
+                    "test removed by this diff; deleting a test is a change to "
+                    "what the suite guarantees and needs a spec-linked reason"
+                ),
+            )
+        )
     for path, marker in discipline.added_skips:
-        findings.append(AdequacyFinding(
-            kind=FindingKind.TEST_SKIPPED, path=path,
-            detail=f"skip/xfail added: {marker}",
-        ))
+        findings.append(
+            AdequacyFinding(
+                kind=FindingKind.TEST_SKIPPED,
+                path=path,
+                detail=f"skip/xfail added: {marker}",
+            )
+        )
     for path, lost in discipline.net_assertion_loss().items():
-        findings.append(AdequacyFinding(
-            kind=FindingKind.ASSERTION_REMOVED, path=path,
-            detail=(
-                f"{lost} more assertion line(s) removed than added; if this "
-                "is a consolidation say so, otherwise the suite got weaker"
-            ),
-        ))
+        findings.append(
+            AdequacyFinding(
+                kind=FindingKind.ASSERTION_REMOVED,
+                path=path,
+                detail=(
+                    f"{lost} more assertion line(s) removed than added; if this "
+                    "is a consolidation say so, otherwise the suite got weaker"
+                ),
+            )
+        )
 
     for path, source in sorted(test_sources.items()):
         report = lint_test_source(path, source)
         if report.parse_error or not report.tests:
             continue
         is_new = path in new_paths
-        if (
-            config.require_strong_oracle
-            and is_new
-            and report.strength is not OracleStrength.STRONG
-        ):
-            findings.append(AdequacyFinding(
-                kind=(
-                    FindingKind.NO_ORACLE
-                    if report.strength is OracleStrength.NONE
-                    else FindingKind.WEAK_ORACLE
-                ),
-                path=path,
-                detail=(
-                    f"new test file: {report.tests} test(s), none with a "
-                    "strong-oracle assertion (a comparison against an "
-                    "expected value, or an asserted exception). Shape-only "
-                    "checks like `is not None` pass for a wrong answer too"
-                ),
-            ))
-        added_here = {
-            name for (other, name) in discipline.added_tests if other == path
-        }
+        if config.require_strong_oracle and is_new and report.strength is not OracleStrength.STRONG:
+            findings.append(
+                AdequacyFinding(
+                    kind=(
+                        FindingKind.NO_ORACLE
+                        if report.strength is OracleStrength.NONE
+                        else FindingKind.WEAK_ORACLE
+                    ),
+                    path=path,
+                    detail=(
+                        f"new test file: {report.tests} test(s), none with a "
+                        "strong-oracle assertion (a comparison against an "
+                        "expected value, or an asserted exception). Shape-only "
+                        "checks like `is not None` pass for a wrong answer too"
+                    ),
+                )
+            )
+        added_here = {name for (other, name) in discipline.added_tests if other == path}
         if config.flag_assertionless_tests:
             # In a NEW file every test is this change's; in a modified one
             # only the defs this diff added are, and reporting the rest
@@ -818,20 +861,20 @@ def evaluate_layer0(
             silent = (
                 report.without_assertions
                 if is_new
-                else [
-                    name for name in report.without_assertions
-                    if name in added_here
-                ]
+                else [name for name in report.without_assertions if name in added_here]
             )
             if silent:
-                findings.append(AdequacyFinding(
-                    kind=FindingKind.NO_ORACLE, path=path,
-                    symbol=", ".join(silent[:5]),
-                    detail=(
-                        f"{len(silent)} test(s) assert nothing; they pass "
-                        "unless the code raises"
-                    ),
-                ))
+                findings.append(
+                    AdequacyFinding(
+                        kind=FindingKind.NO_ORACLE,
+                        path=path,
+                        symbol=", ".join(silent[:5]),
+                        detail=(
+                            f"{len(silent)} test(s) assert nothing; they pass "
+                            "unless the code raises"
+                        ),
+                    )
+                )
         # Collected skips were previously dropped on the floor. A skipped
         # test guarantees nothing, whether the skip arrived in this diff
         # (reported above, with the line as evidence) or was already
@@ -840,32 +883,31 @@ def evaluate_layer0(
             report.skipped
             if is_new
             else [
-                (name, marker) for (name, marker) in report.skipped
+                (name, marker)
+                for (name, marker) in report.skipped
                 # A module-wide marker counts on a modified file only when
                 # this diff added tests under it: those tests are dead on
                 # arrival. A pre-existing skip in a file you merely edited
                 # is not something this change did.
-                if name in added_here
-                or (name == _MODULE_SKIP_SYMBOL and added_here)
+                if name in added_here or (name == _MODULE_SKIP_SYMBOL and added_here)
             ]
         )
         if skips:
             names = [name for name, _ in skips]
             markers = ", ".join(sorted({marker for _, marker in skips}))
             what = (
-                f"module-level marker disables every test in this file "
-                f"({markers})"
+                f"module-level marker disables every test in this file ({markers})"
                 if _MODULE_SKIP_SYMBOL in names
                 else f"{len(names)} test(s) disabled in this file ({markers})"
             )
-            findings.append(AdequacyFinding(
-                kind=FindingKind.TEST_SKIPPED, path=path,
-                symbol=", ".join(names[:5]),
-                detail=(
-                    f"{what}; a skipped test is a guarantee the suite no "
-                    "longer makes"
-                ),
-            ))
+            findings.append(
+                AdequacyFinding(
+                    kind=FindingKind.TEST_SKIPPED,
+                    path=path,
+                    symbol=", ".join(names[:5]),
+                    detail=(f"{what}; a skipped test is a guarantee the suite no longer makes"),
+                )
+            )
     # Two detectors can see the same skip (the diff line and the file's
     # AST); identical findings collapse.
     unique: list[AdequacyFinding] = []

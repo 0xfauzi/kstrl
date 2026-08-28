@@ -29,14 +29,16 @@ class TestDocumentedSpellingsResolve:
     @pytest.mark.parametrize(
         "agent_type,expected",
         [
-            ("claude", ClaudeCodeAgent),      # the alias that used to give Codex
+            ("claude", ClaudeCodeAgent),  # the alias that used to give Codex
             ("claude-code", ClaudeCodeAgent),
             ("claude-sdk", ClaudeSdkAgent),
             ("codex", CodexAgent),
         ],
     )
     def test_type_selects_its_adapter(
-        self, agent_type: str, expected: type,
+        self,
+        agent_type: str,
+        expected: type,
     ) -> None:
         assert isinstance(get_agent(agent_type=agent_type), expected)
 
@@ -97,7 +99,8 @@ class TestOneVocabulary:
 
     @pytest.mark.parametrize("spelling", sorted(AGENT_TYPE_ALIASES))
     def test_every_alias_resolves_or_raises_deliberately(
-        self, spelling: str,
+        self,
+        spelling: str,
     ) -> None:
         """No alias may reach the fallthrough by accident.
 
@@ -132,18 +135,16 @@ class TestFamilyResolverMatchesTheAdapter:
     @staticmethod
     def _expected_family(agent_type: str | None) -> str:
         return (
-            "codex"
-            if isinstance(get_agent(agent_type=agent_type), CodexAgent)
-            else "claude-code"
+            "codex" if isinstance(get_agent(agent_type=agent_type), CodexAgent) else "claude-code"
         )
 
     @pytest.mark.parametrize(
         "agent_type",
-        ["claude", "CLAUDE", " claude-code ", "claude-code", "claude-sdk",
-         "codex", "auto", None],
+        ["claude", "CLAUDE", " claude-code ", "claude-code", "claude-sdk", "codex", "auto", None],
     )
     def test_family_agrees_with_the_constructed_adapter(
-        self, agent_type: str | None,
+        self,
+        agent_type: str | None,
     ) -> None:
         """Both sides must read the SAME environment.
 
@@ -158,7 +159,9 @@ class TestFamilyResolverMatchesTheAdapter:
 
         claude_available = ClaudeCodeAgent.is_available()
         assert _cli_family(
-            None, agent_type, claude_available,
+            None,
+            agent_type,
+            claude_available,
         ) == self._expected_family(agent_type)
 
     def test_claude_alias_is_the_claude_family(self) -> None:

@@ -58,6 +58,7 @@ def _cli_fixture_entry() -> dict[str, Any]:
         "expected": {"exit_code": 0, "stdout_contains": ["hi"]},
     }
 
+
 # ---------------------------------------------------------------------------
 # FixturesConfig defaults
 # ---------------------------------------------------------------------------
@@ -435,9 +436,7 @@ class TestFunctionFixtureSubprocess:
         assert "Expected 6, got 5" in result.message
 
     def test_expected_exception(self, tmp_path: Path) -> None:
-        (tmp_path / "boom.py").write_text(
-            "def explode():\n    raise ValueError('no')\n"
-        )
+        (tmp_path / "boom.py").write_text("def explode():\n    raise ValueError('no')\n")
         fixture = Fixture(
             description="explode raises",
             fixture_type="function",
@@ -460,7 +459,9 @@ class TestFunctionFixtureSubprocess:
         assert "Failed to import module" in result.message
 
     def test_env_scrubbed_inside_subprocess(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Plant a would-leak secret in the harness env; the fixture
         # subprocess must not see any *_API_KEY / *SECRET* name.
@@ -481,12 +482,11 @@ class TestFunctionFixtureSubprocess:
             expected={"returns": []},
         )
         result = run_function_fixture(fixture, tmp_path, timeout=60.0)
-        assert result.passed is True, (
-            f"secrets leaked into fixture subprocess: {result.actual}"
-        )
+        assert result.passed is True, f"secrets leaked into fixture subprocess: {result.actual}"
 
     def test_module_side_effects_cannot_touch_harness(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # The module runs arbitrary code at import time. It must run in
         # the SUBPROCESS: the sentinel file proves the code executed,
@@ -514,11 +514,7 @@ class TestFunctionFixtureSubprocess:
         assert "evil_side_effect" not in sys.modules
 
     def test_timeout_kills_subprocess(self, tmp_path: Path) -> None:
-        (tmp_path / "sleeper.py").write_text(
-            "import time\n"
-            "def nap():\n"
-            "    time.sleep(60)\n"
-        )
+        (tmp_path / "sleeper.py").write_text("import time\ndef nap():\n    time.sleep(60)\n")
         fixture = Fixture(
             description="sleeping function",
             fixture_type="function",
@@ -550,7 +546,9 @@ class TestFunctionFixtureSubprocess:
 class TestFileFixtureContainment:
     @pytest.mark.parametrize("bad_path", ["/etc/passwd", "../outside.txt"])
     def test_escaping_paths_rejected(
-        self, tmp_path: Path, bad_path: str,
+        self,
+        tmp_path: Path,
+        bad_path: str,
     ) -> None:
         fixture = Fixture(
             description="escape attempt",
@@ -586,33 +584,35 @@ class TestFileFixtureContainment:
 
 class TestPrdFixturesSchema:
     def test_readme_examples_accepted(self) -> None:
-        data = _prd_data(fixtures=[
-            {
-                "description": "Login returns token",
-                "fixture_type": "cli",
-                "input_data": {"command": "curl -s localhost:8000/api/login"},
-                "expected": {"exit_code": 0, "stdout_contains": ["token"]},
-            },
-            {
-                "description": "Config is importable",
-                "fixture_type": "function",
-                "input_data": {
-                    "module": "src.config",
-                    "function": "get_settings",
-                    "args": [],
+        data = _prd_data(
+            fixtures=[
+                {
+                    "description": "Login returns token",
+                    "fixture_type": "cli",
+                    "input_data": {"command": "curl -s localhost:8000/api/login"},
+                    "expected": {"exit_code": 0, "stdout_contains": ["token"]},
                 },
-                "expected": {"returns": {"debug": False}},
-            },
-            {
-                "description": "Migration file exists",
-                "fixture_type": "file",
-                "input_data": {"path": "migrations/001_users.sql"},
-                "expected": {
-                    "exists": True,
-                    "contains": ["CREATE TABLE users"],
+                {
+                    "description": "Config is importable",
+                    "fixture_type": "function",
+                    "input_data": {
+                        "module": "src.config",
+                        "function": "get_settings",
+                        "args": [],
+                    },
+                    "expected": {"returns": {"debug": False}},
                 },
-            },
-        ])
+                {
+                    "description": "Migration file exists",
+                    "fixture_type": "file",
+                    "input_data": {"path": "migrations/001_users.sql"},
+                    "expected": {
+                        "exists": True,
+                        "contains": ["CREATE TABLE users"],
+                    },
+                },
+            ]
+        )
         assert PRD.validate_schema(data) == []
 
     @pytest.mark.parametrize(
@@ -634,7 +634,9 @@ class TestPrdFixturesSchema:
         ],
     )
     def test_bad_cli_entries_rejected(
-        self, mutation: dict[str, Any], error_fragment: str,
+        self,
+        mutation: dict[str, Any],
+        error_fragment: str,
     ) -> None:
         entry = _cli_fixture_entry()
         entry.update(mutation)
@@ -700,15 +702,21 @@ class TestSnapshotWiring:
         ]
 
     def test_snapshot_saved_then_regression_detected(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / "out.txt").write_text("v1\n")
         config = FixturesConfig(
-            enabled=True, snapshot_dir=tmp_path / "snaps", timeout=10.0,
+            enabled=True,
+            snapshot_dir=tmp_path / "snaps",
+            timeout=10.0,
         )
 
         first = check_fixtures(
-            self._fixtures(), tmp_path, config, component_id="comp-a",
+            self._fixtures(),
+            tmp_path,
+            config,
+            component_id="comp-a",
         )
         assert first.passed is True
         assert (tmp_path / "snaps" / "comp-a.json").exists()
@@ -717,7 +725,10 @@ class TestSnapshotWiring:
         # snapshot comparison catches it.
         (tmp_path / "out.txt").write_text("v2\n")
         second = check_fixtures(
-            self._fixtures(), tmp_path, config, component_id="comp-a",
+            self._fixtures(),
+            tmp_path,
+            config,
+            component_id="comp-a",
         )
         assert second.passed is False
         assert any("REGRESSION" in d for d in second.details)
@@ -726,7 +737,9 @@ class TestSnapshotWiring:
     def test_no_component_id_means_no_snapshot(self, tmp_path: Path) -> None:
         (tmp_path / "out.txt").write_text("v1\n")
         config = FixturesConfig(
-            enabled=True, snapshot_dir=tmp_path / "snaps", timeout=10.0,
+            enabled=True,
+            snapshot_dir=tmp_path / "snaps",
+            timeout=10.0,
         )
         result = check_fixtures(self._fixtures(), tmp_path, config)
         assert result.passed is True
@@ -776,7 +789,9 @@ class TestFixturesConfigLoad:
         assert config.timeout == 12.5
 
     def test_env_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[fixtures]\nenabled = true\n")
         monkeypatch.setenv("KSTRL_FIXTURES_ENABLED", "0")
@@ -803,7 +818,9 @@ def _stub_verify_config() -> VerifyConfig:
 
 class TestPhase1Integration:
     def _write_prd(
-        self, worktree: Path, fixtures: list[dict[str, Any]],
+        self,
+        worktree: Path,
+        fixtures: list[dict[str, Any]],
     ) -> Path:
         prd_path = worktree / "prd.json"
         prd_path.write_text(json.dumps(_prd_data(fixtures=fixtures)))
@@ -811,21 +828,32 @@ class TestPhase1Integration:
 
     def test_fixtures_check_runs_when_enabled(self, tmp_path: Path) -> None:
         (tmp_path / "adder.py").write_text("def add(a, b):\n    return a + b\n")
-        prd_path = self._write_prd(tmp_path, [
-            _cli_fixture_entry(),
-            {
-                "description": "adder works",
-                "fixture_type": "function",
-                "input_data": {
-                    "module": "adder", "function": "add", "args": [2, 3],
+        prd_path = self._write_prd(
+            tmp_path,
+            [
+                _cli_fixture_entry(),
+                {
+                    "description": "adder works",
+                    "fixture_type": "function",
+                    "input_data": {
+                        "module": "adder",
+                        "function": "add",
+                        "args": [2, 3],
+                    },
+                    "expected": {"returns": 5},
                 },
-                "expected": {"returns": 5},
-            },
-        ])
+            ],
+        )
         result = run_mechanical_verification(
-            tmp_path, prd_path, "main", None, _stub_verify_config(),
+            tmp_path,
+            prd_path,
+            "main",
+            None,
+            _stub_verify_config(),
             fixtures_config=FixturesConfig(
-                enabled=True, snapshot_dir=tmp_path / "snaps", timeout=60.0,
+                enabled=True,
+                snapshot_dir=tmp_path / "snaps",
+                timeout=60.0,
             ),
             component_id="comp-x",
         )
@@ -839,25 +867,38 @@ class TestPhase1Integration:
         prd_path = self._write_prd(tmp_path, [_cli_fixture_entry()])
         for fixtures_config in (None, FixturesConfig(enabled=False)):
             result = run_mechanical_verification(
-                tmp_path, prd_path, "main", None, _stub_verify_config(),
+                tmp_path,
+                prd_path,
+                "main",
+                None,
+                _stub_verify_config(),
                 fixtures_config=fixtures_config,
                 component_id="comp-x",
             )
             assert "fixtures" not in {c.name for c in result.checks}
 
     def test_fixture_failure_yields_retry_context(self, tmp_path: Path) -> None:
-        prd_path = self._write_prd(tmp_path, [
-            {
-                "description": "output has magic token",
-                "fixture_type": "cli",
-                "input_data": {"command": "echo actual-output"},
-                "expected": {"stdout_contains": ["magic-token"]},
-            },
-        ])
+        prd_path = self._write_prd(
+            tmp_path,
+            [
+                {
+                    "description": "output has magic token",
+                    "fixture_type": "cli",
+                    "input_data": {"command": "echo actual-output"},
+                    "expected": {"stdout_contains": ["magic-token"]},
+                },
+            ],
+        )
         result = run_mechanical_verification(
-            tmp_path, prd_path, "main", None, _stub_verify_config(),
+            tmp_path,
+            prd_path,
+            "main",
+            None,
+            _stub_verify_config(),
             fixtures_config=FixturesConfig(
-                enabled=True, snapshot_dir=tmp_path / "snaps", timeout=60.0,
+                enabled=True,
+                snapshot_dir=tmp_path / "snaps",
+                timeout=60.0,
             ),
             component_id="comp-x",
         )
@@ -871,7 +912,9 @@ class TestPhase1Integration:
         prd_path = tmp_path / "prd.json"
         prd_path.write_text("{not json")
         check = check_fixtures_from_prd(
-            prd_path, tmp_path, FixturesConfig(enabled=True),
+            prd_path,
+            tmp_path,
+            FixturesConfig(enabled=True),
         )
         assert check.passed is False
         assert "failing closed" in check.message
@@ -882,7 +925,9 @@ class TestPhase1Integration:
         prd_path = tmp_path / "prd.json"
         prd_path.write_text(json.dumps(_prd_data(fixtures=[entry])))
         check = check_fixtures_from_prd(
-            prd_path, tmp_path, FixturesConfig(enabled=True),
+            prd_path,
+            tmp_path,
+            FixturesConfig(enabled=True),
         )
         assert check.passed is False
         assert "failing closed" in check.message
