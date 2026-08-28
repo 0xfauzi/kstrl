@@ -102,7 +102,6 @@ DataTable {
 }
 
 #safe-mode-banner {
-    dock: top;
     height: 1;
     background: $warning 18%;
     color: $warning;
@@ -111,7 +110,6 @@ DataTable {
 }
 
 #checkpoint-banner {
-    dock: top;
     height: 1;
     background: $accent 18%;
     color: $accent;
@@ -714,4 +712,32 @@ QuitModal {
     background: $error 85%;
     color: $background;
     text-style: bold;
+}
+
+
+/* ---- safe-mode panel --------------------------------------------------- */
+/* border_title renders ONLY when the container has a border, and without
+   these rules the dialog filled the screen titleless. The width bound is
+   measured: the nominal body is 189 cells and clipped at 80 columns. */
+#safemode-dialog {
+    width: 80%;
+    max-width: 96;
+    height: 70%;
+    margin: 2 4;
+    padding: 1 2;
+    background: $surface;
+    border: round $warning;
+}
+
+/* 1fr, not a fixed max-height: a scroller taller than its dialog is
+   clipped by the dialog while its own max_scroll_y stays 0, so the
+   overflow is both invisible AND unreachable. Measured at 80x24 with
+   four reasons: 15 content rows, 4 visible, max_scroll_y 0. */
+#safemode-scroll {
+    height: 1fr;
+}
+
+#safemode-body {
+    width: 100%;
+    height: auto;
 }

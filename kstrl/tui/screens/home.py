@@ -184,6 +184,7 @@ class HomeScreen(Screen[None]):
             chip.update_reasons(reasons)
 
     def on_mount(self) -> None:
+        self.update_safe_mode(getattr(self.app, "_safe_mode_reasons", None))
         root_dir = self._root_dir()
         self.query_one("#home-masthead", Static).update(_masthead(
             root_dir, _git_branch(root_dir), _project_name(root_dir),

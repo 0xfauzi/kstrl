@@ -300,7 +300,7 @@ its own, and each did so without a shared name.
 `kstrl/safemode.py` gives them one. `safe_mode_reasons(root_dir)` reads
 all four and returns a list of `SafeModeReason` (source, detail,
 recovery anchor); empty means nominal. Three surfaces read it: the plain
-`ks status` report, `ks serve --dry-run`, and the dashboard, where `m`
+`ks status` report, `ks serve --dry-run`, and the dashboard, where `f2`
 opens a panel from any screen, a banner appears under the run masthead
 when a signal degrades, and the home masthead carries a chip. The
 dashboard evaluates it on a slow background thread rather than on its

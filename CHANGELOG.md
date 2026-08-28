@@ -11,6 +11,44 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 [`docs/dark-factory-roadmap.md`](docs/dark-factory-roadmap.md) and the
 [R8 milestone](https://github.com/0xfauzi/kstrl/milestone/1).
 
+### Fixed
+
+- Safe mode on the dashboard: six defects an independent review
+  reproduced after the change merged. All three `dock: top` siblings
+  reserved row zero and painted over each other, so the checkpoint
+  banner hid the safe-mode warning and the warning hid the run header;
+  the banners now flow under the docked top bar, which also repairs a
+  pre-existing bug where a checkpoint banner covered the run header. The
+  panel key moved from `m` to `f2` because a text input consumes
+  printable keys before application bindings, so the advertised key
+  typed a letter into the launch, config, decompose and init fields
+  instead of opening the panel. The background check no longer relies on
+  `exclusive=True`, which cancels the asyncio wrapper and not the
+  thread: a superseded check still posted its answer, and a slow nominal
+  result landing after a fast degraded one cleared the warning, so
+  results now carry the sequence they started with and only one check
+  runs at a time. The panel and a freshly mounted screen both replay the
+  last completed check rather than starting from nothing, so opening the
+  panel early no longer left it reading "not checked yet" forever and
+  navigating between screens no longer hid an active warning. The panel
+  finally has CSS, without which its border title never rendered and the
+  dialog filled the screen (R10.4 follow-up).
+
+  A second review round on those fixes found four more, one of them a
+  defect the first round's own fix introduced: the in-flight guard
+  dropped a timer tick outright, and because the queue is sampled before
+  the expensive event-stream read, a check could sample a nominal queue,
+  spend seconds on the stream, and keep that stale answer authoritative
+  while the pause that arrived during the read was never sampled. A
+  dropped tick is now remembered and rerun. The panel binding is also
+  marked priority, without which it never reached Textual's command
+  palette, which is a system modal that excludes ordinary application
+  bindings. The panel's scroller laid out taller than its dialog, so
+  overflowing reasons were clipped while `max_scroll_y` stayed zero and
+  no key could reach them. And replay-on-mount was unconditional, so a
+  panel constructed with real findings rendered the app's nominal state
+  instead.
+
 ### Added
 
 - Safe mode: one name, and one question, for the four degraded states
@@ -24,7 +62,7 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   reads all four and returns a source, a detail sentence taken verbatim
   from the existing signal, and the runbook anchor that recovers it;
   the plain `ks status` report, `ks serve --dry-run` and the dashboard
-  read it. On the dashboard `m` opens a panel from any screen, a warning
+  read it. On the dashboard `f2` opens a panel from any screen, a warning
   banner appears under the run masthead when a signal degrades, and the
   home masthead carries a chip. The panel is what keeps three facts
   apart that a banner alone would merge: not checked yet, checked and
