@@ -63,28 +63,37 @@ class TestAdd:
         assert items[0].state is ItemState.QUEUED
 
     def test_add_defaults_to_stop_at_pr(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
         assert item.merge_disposition is MergeDisposition.STOP_AT_PR
-        assert "stop_at_pr" in _invoke(
-            ["queue", "show", item.item_id], tmp_path,
-        ).output
+        assert (
+            "stop_at_pr"
+            in _invoke(
+                ["queue", "show", item.item_id],
+                tmp_path,
+            ).output
+        )
 
     def test_auto_merge_must_be_typed(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file), "--auto-merge"], tmp_path)
         item = _queue(tmp_path).items()[0]
         assert item.merge_disposition is MergeDisposition.AUTO_MERGE
 
     def test_priority_and_max_attempts_are_carried(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(
-            ["queue", "add", str(spec_file), "--priority", "4",
-             "--max-attempts", "1"],
+            ["queue", "add", str(spec_file), "--priority", "4", "--max-attempts", "1"],
             tmp_path,
         )
         item = _queue(tmp_path).items()[0]
@@ -92,7 +101,9 @@ class TestAdd:
         assert item.max_attempts == 1
 
     def test_add_warns_while_paused(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "pause", "--reason", "budget"], tmp_path)
         result = _invoke(["queue", "add", str(spec_file)], tmp_path)
@@ -111,7 +122,9 @@ class TestAdd:
         assert "empty spec" in result.output
 
     def test_zero_max_attempts_is_rejected_by_the_option(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         """#185 F4: this used to exit 0 and admit an unrunnable item.
 
@@ -121,14 +134,17 @@ class TestAdd:
         option constraint removed and prove only the library guard.
         """
         result = _invoke(
-            ["queue", "add", str(spec_file), "--max-attempts", "0"], tmp_path,
+            ["queue", "add", str(spec_file), "--max-attempts", "0"],
+            tmp_path,
         )
         assert result.exit_code == 2, "click usage error, not a runtime error"
         assert "is not in the range" in result.output
         assert _queue(tmp_path).items() == []
 
     def test_add_sweeps_an_abandoned_staging_dir(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         """#185 F3: enqueue under the lock is the staging recovery point."""
         queue = _queue(tmp_path)
@@ -148,7 +164,9 @@ class TestLs:
         assert "empty" in result.output.lower()
 
     def test_lists_items_in_run_order(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file), "--title", "low"], tmp_path)
         _invoke(
@@ -162,19 +180,29 @@ class TestLs:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
         queue.finish_ok(queue.start(queue.lease(queue.items()[0])))
-        assert "empty" in _invoke(
-            ["queue", "ls", "--state", "queued"], tmp_path,
-        ).output.lower()
-        assert "done" in _invoke(
-            ["queue", "ls", "--state", "done"], tmp_path,
-        ).output
+        assert (
+            "empty"
+            in _invoke(
+                ["queue", "ls", "--state", "queued"],
+                tmp_path,
+            ).output.lower()
+        )
+        assert (
+            "done"
+            in _invoke(
+                ["queue", "ls", "--state", "done"],
+                tmp_path,
+            ).output
+        )
 
     def test_unknown_state_filter_is_an_error(self, tmp_path: Path) -> None:
         result = _invoke(["queue", "ls", "--state", "wat"], tmp_path)
         assert result.exit_code == 1
 
     def test_paused_queue_is_announced(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         _invoke(["queue", "pause", "--reason", "daily budget"], tmp_path)
@@ -185,7 +213,9 @@ class TestLs:
 
 class TestShow:
     def test_show_reports_the_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
@@ -195,7 +225,9 @@ class TestShow:
         assert "feature" in result.output
 
     def test_show_includes_transition_history(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
@@ -206,7 +238,9 @@ class TestShow:
         assert "leased -> running" in result.output
 
     def test_show_flags_an_expired_lease(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
@@ -224,7 +258,9 @@ class TestShow:
         assert "No queue item" in result.output
 
     def test_ambiguous_prefix_is_an_error(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         _invoke(["queue", "add", str(spec_file)], tmp_path)
@@ -235,7 +271,9 @@ class TestShow:
 
 class TestRetry:
     def test_retry_requeues_a_failed_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
@@ -247,7 +285,9 @@ class TestRetry:
         assert _queue(tmp_path).items()[0].state is ItemState.QUEUED
 
     def test_retry_does_not_reset_attempts(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
@@ -256,11 +296,14 @@ class TestRetry:
         assert _queue(tmp_path).items()[0].attempts == 1
 
     def test_exhausted_item_refuses_without_explicit_authorization(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         """Spending again after the budget is used up must be deliberate."""
         _invoke(
-            ["queue", "add", str(spec_file), "--max-attempts", "1"], tmp_path,
+            ["queue", "add", str(spec_file), "--max-attempts", "1"],
+            tmp_path,
         )
         queue = _queue(tmp_path)
         queue.finish_failed(queue.start(queue.lease(queue.items()[0])))
@@ -272,17 +315,21 @@ class TestRetry:
         assert _queue(tmp_path).items()[0].state is ItemState.FAILED
 
     def test_reset_attempts_authorizes_it(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(
-            ["queue", "add", str(spec_file), "--max-attempts", "1"], tmp_path,
+            ["queue", "add", str(spec_file), "--max-attempts", "1"],
+            tmp_path,
         )
         queue = _queue(tmp_path)
         queue.finish_failed(queue.start(queue.lease(queue.items()[0])))
         item = queue.items()[0]
 
         result = _invoke(
-            ["queue", "retry", item.item_id, "--reset-attempts"], tmp_path,
+            ["queue", "retry", item.item_id, "--reset-attempts"],
+            tmp_path,
         )
         assert result.exit_code == 0
         reread = _queue(tmp_path).items()[0]
@@ -290,7 +337,9 @@ class TestRetry:
         assert reread.attempts == 0
 
     def test_retry_refuses_a_queued_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
@@ -299,14 +348,17 @@ class TestRetry:
         assert "only failed or poisoned" in result.output
 
     def test_retry_of_a_poisoned_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
         queue.poison(queue.items()[0], reason="spec ambiguous")
         item = queue.items()[0]
         result = _invoke(
-            ["queue", "retry", item.item_id, "--reset-attempts"], tmp_path,
+            ["queue", "retry", item.item_id, "--reset-attempts"],
+            tmp_path,
         )
         assert result.exit_code == 0
         assert _queue(tmp_path).items()[0].poison_reason == ""
@@ -321,7 +373,9 @@ class TestRm:
         assert _queue(tmp_path).items() == []
 
     def test_rm_declined_leaves_the_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
@@ -334,7 +388,9 @@ class TestRm:
         assert len(_queue(tmp_path).items()) == 1
 
     def test_rm_reports_a_failed_deletion_as_failure(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         """#185 F6: the operator must not be told an item is gone."""
         _invoke(["queue", "add", str(spec_file)], tmp_path)
@@ -349,7 +405,9 @@ class TestRm:
         assert len(_queue(tmp_path).items()) == 1
 
     def test_rm_refuses_a_running_item(
-        self, tmp_path: Path, spec_file: Path,
+        self,
+        tmp_path: Path,
+        spec_file: Path,
     ) -> None:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         queue = _queue(tmp_path)
@@ -391,21 +449,35 @@ class TestQueueSync:
             head = args[:2]
             if head == ["repo", "view"]:
                 return GhResult(
-                    ok=True, stdout=_json.dumps({"nameWithOwner": checkout}),
+                    ok=True,
+                    stdout=_json.dumps({"nameWithOwner": checkout}),
                 )
             if head == ["issue", "list"]:
                 return GhResult(ok=True, stdout=issues)
             if head == ["api", "graphql"]:
-                return GhResult(ok=True, stdout=_json.dumps({"data": {
-                    "repository": {"issue": {
-                        "lastEditedAt": None,
-                        "timelineItems": {"nodes": [{
-                            "createdAt": "2026-07-30T10:00:00Z",
-                            "label": {"name": "kstrl:queued"},
-                            "actor": {"login": "o"},
-                        }]},
-                    }},
-                }}))
+                return GhResult(
+                    ok=True,
+                    stdout=_json.dumps(
+                        {
+                            "data": {
+                                "repository": {
+                                    "issue": {
+                                        "lastEditedAt": None,
+                                        "timelineItems": {
+                                            "nodes": [
+                                                {
+                                                    "createdAt": "2026-07-30T10:00:00Z",
+                                                    "label": {"name": "kstrl:queued"},
+                                                    "actor": {"login": "o"},
+                                                }
+                                            ]
+                                        },
+                                    }
+                                },
+                            }
+                        }
+                    ),
+                )
             return GhResult(ok=True)
 
         return fake
@@ -414,17 +486,22 @@ class TestQueueSync:
     def _issues(count: int) -> str:
         import json as _json
 
-        return _json.dumps([
-            {"number": n, "title": f"issue {n}", "body": "Build it.",
-             "url": f"https://github.com/o/r/issues/{n}",
-             "labels": [{"name": "kstrl:queued"}]}
-            for n in range(1, count + 1)
-        ])
+        return _json.dumps(
+            [
+                {
+                    "number": n,
+                    "title": f"issue {n}",
+                    "body": "Build it.",
+                    "url": f"https://github.com/o/r/issues/{n}",
+                    "labels": [{"name": "kstrl:queued"}],
+                }
+                for n in range(1, count + 1)
+            ]
+        )
 
     def _toml(self, root: Path, extra: str = "") -> None:
         (root / "kstrl.toml").write_text(
-            '[intake_github]\nenabled = true\nrepo = "o/r"\n'
-            "max_items_per_sync = 3\n" + extra
+            '[intake_github]\nenabled = true\nrepo = "o/r"\nmax_items_per_sync = 3\n' + extra
         )
 
     def test_sync_is_off_by_default(self, tmp_path: Path) -> None:
@@ -471,7 +548,8 @@ class TestQueueSync:
         assert _queue(tmp_path).items() == []
 
     def test_lock_contention_is_a_normal_error_not_a_traceback(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#187 F12: QueueLockedError escaped as an uncaught traceback."""
         pytest.importorskip("fcntl")
@@ -480,11 +558,13 @@ class TestQueueSync:
         self._toml(tmp_path)
         with queue_lock(tmp_path):
             with patch(
-                "kstrl.intake_github.run_gh", self._stub(self._issues(1)),
+                "kstrl.intake_github.run_gh",
+                self._stub(self._issues(1)),
             ):
                 result = _invoke(["queue", "sync"], tmp_path)
         assert result.exit_code == 1
         assert result.exception is None or isinstance(
-            result.exception, SystemExit,
+            result.exception,
+            SystemExit,
         ), "must not surface as a traceback"
         assert "retry shortly" in result.output

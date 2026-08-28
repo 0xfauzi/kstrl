@@ -56,13 +56,13 @@ class ItemKind(StrEnum):
     module; adding a kind means adding an emitter, never just a label.
     """
 
-    POLICY_EXCEPTION = "policy_exception"      # R8.1 envelope violation
-    MERGE_GATE = "merge_gate"                  # a merge awaiting approval
-    HALTED_RUN = "halted_run"                  # a component/run stopped
-    BUDGET_OVERRUN = "budget_overrun"          # a cap was hit
-    DEMOTION_NOTICE = "demotion_notice"        # R8.2 autonomy revoked
-    CALIBRATION_DRIFT = "calibration_drift"    # detection rate moved
-    TEST_ADEQUACY = "test_adequacy"            # R8.5 Layer 0 blocked a change
+    POLICY_EXCEPTION = "policy_exception"  # R8.1 envelope violation
+    MERGE_GATE = "merge_gate"  # a merge awaiting approval
+    HALTED_RUN = "halted_run"  # a component/run stopped
+    BUDGET_OVERRUN = "budget_overrun"  # a cap was hit
+    DEMOTION_NOTICE = "demotion_notice"  # R8.2 autonomy revoked
+    CALIBRATION_DRIFT = "calibration_drift"  # detection rate moved
+    TEST_ADEQUACY = "test_adequacy"  # R8.5 Layer 0 blocked a change
 
     @property
     def action_required(self) -> bool:
@@ -90,7 +90,7 @@ class ItemStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     SNOOZED = "snoozed"
-    RESOLVED = "resolved"     # actioned elsewhere / no longer relevant
+    RESOLVED = "resolved"  # actioned elsewhere / no longer relevant
 
 
 class Priority(StrEnum):
@@ -278,9 +278,7 @@ class InboxConfig:
         return cls(
             enabled=defaults.enabled if enabled is None else enabled == "1",
             open_item_cap=defaults.open_item_cap if cap is None else int(cap),
-            snooze_hours=(
-                defaults.snooze_hours if snooze is None else float(snooze)
-            ),
+            snooze_hours=(defaults.snooze_hours if snooze is None else float(snooze)),
             notify_action_required=(
                 defaults.notify_action_required if notify is None else notify == "1"
             ),
@@ -295,18 +293,12 @@ class InboxConfig:
             root_dir = Path.cwd()
         section = load_toml_section(resolve_config_file(root_dir), "inbox")
         defaults = cls()
-        enabled = (
-            bool(section["enabled"]) if "enabled" in section else defaults.enabled
-        )
+        enabled = bool(section["enabled"]) if "enabled" in section else defaults.enabled
         open_item_cap = (
-            int(section["open_item_cap"])
-            if "open_item_cap" in section
-            else defaults.open_item_cap
+            int(section["open_item_cap"]) if "open_item_cap" in section else defaults.open_item_cap
         )
         snooze_hours = (
-            float(section["snooze_hours"])
-            if "snooze_hours" in section
-            else defaults.snooze_hours
+            float(section["snooze_hours"]) if "snooze_hours" in section else defaults.snooze_hours
         )
         notify_action_required = (
             bool(section["notify_action_required"])
@@ -417,7 +409,7 @@ class Inbox:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
-                skipped += 1      # tolerate a torn tail; skip, never raise
+                skipped += 1  # tolerate a torn tail; skip, never raise
                 continue
             if isinstance(record, dict):
                 records.append(record)
@@ -450,7 +442,7 @@ class Inbox:
             item = InboxItem.from_dict(record)
             if item is None:
                 continue
-            folded[item.id] = item     # later lines supersede earlier ones
+            folded[item.id] = item  # later lines supersede earlier ones
         return list(folded.values())
 
     def items(self) -> list[InboxItem]:
@@ -577,7 +569,10 @@ class Inbox:
 
     def approve(self, item_id: str, *, actor: str, comment: str = "") -> InboxItem:
         return self._decide(
-            item_id, ItemStatus.APPROVED, actor=actor, comment=comment,
+            item_id,
+            ItemStatus.APPROVED,
+            actor=actor,
+            comment=comment,
         )
 
     def reject(self, item_id: str, *, actor: str, comment: str) -> InboxItem:
@@ -586,16 +581,26 @@ class Inbox:
         if not comment.strip():
             raise InboxError("rejection requires a comment explaining why")
         return self._decide(
-            item_id, ItemStatus.REJECTED, actor=actor, comment=comment,
+            item_id,
+            ItemStatus.REJECTED,
+            actor=actor,
+            comment=comment,
         )
 
     def resolve(self, item_id: str, *, actor: str = "system", comment: str = "") -> InboxItem:
         return self._decide(
-            item_id, ItemStatus.RESOLVED, actor=actor, comment=comment,
+            item_id,
+            ItemStatus.RESOLVED,
+            actor=actor,
+            comment=comment,
         )
 
     def snooze(
-        self, item_id: str, *, actor: str, hours: float | None = None,
+        self,
+        item_id: str,
+        *,
+        actor: str,
+        hours: float | None = None,
     ) -> InboxItem:
         ttl = self.config.snooze_hours if hours is None else hours
         if ttl <= 0:
@@ -631,18 +636,18 @@ class Inbox:
         path.parent.mkdir(parents=True, exist_ok=True)
         with control_lock(self.root_dir):
             fd, tmp_path = tempfile.mkstemp(
-                dir=str(path.parent), suffix=".tmp", prefix=".inbox-",
+                dir=str(path.parent),
+                suffix=".tmp",
+                prefix=".inbox-",
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     for item in items:
                         payload = {
-                            "schema_version": INBOX_SCHEMA_VERSION, **item.to_dict(),
+                            "schema_version": INBOX_SCHEMA_VERSION,
+                            **item.to_dict(),
                         }
-                        handle.write(
-                            json.dumps(payload, separators=(",", ":"), default=str)
-                            + "\n"
-                        )
+                        handle.write(json.dumps(payload, separators=(",", ":"), default=str) + "\n")
                 os.replace(tmp_path, str(path))
             except BaseException:
                 try:
@@ -673,7 +678,7 @@ def notifiable(items: Iterable[InboxItem]) -> list[InboxItem]:
     paging. Silence on success is what keeps the signal worth reading.
     """
     return [
-        item for item in items
-        if item.is_open
-        and (item.kind.action_required or item.kind is ItemKind.DEMOTION_NOTICE)
+        item
+        for item in items
+        if item.is_open and (item.kind.action_required or item.kind is ItemKind.DEMOTION_NOTICE)
     ]

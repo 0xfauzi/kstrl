@@ -97,15 +97,21 @@ class UiInteractionChannel:
     def request(self, req: PromptRequest) -> PromptResponse:
         if not self._ui.can_prompt():
             return PromptResponse(
-                request_id=req.request_id, choice=req.default, answered=False,
+                request_id=req.request_id,
+                choice=req.default,
+                answered=False,
             )
         choice = self._ui.choose(req.header, list(req.options), req.default)
         if isinstance(choice, bool) or not 0 <= choice < len(req.options):
             return PromptResponse(
-                request_id=req.request_id, choice=req.default, answered=False,
+                request_id=req.request_id,
+                choice=req.default,
+                answered=False,
             )
         return PromptResponse(
-            request_id=req.request_id, choice=choice, answered=True,
+            request_id=req.request_id,
+            choice=choice,
+            answered=True,
         )
 
 
@@ -151,7 +157,8 @@ class QueueInteractionChannel:
             notify = self._on_request
             if notify is None:
                 return PromptResponse(
-                    request_id=req.request_id, choice=req.default,
+                    request_id=req.request_id,
+                    choice=req.default,
                     answered=False,
                 )
             pending = _Pending(req)
@@ -162,17 +169,23 @@ class QueueInteractionChannel:
             with self._lock:
                 self._pending.pop(req.request_id, None)
             return PromptResponse(
-                request_id=req.request_id, choice=req.default, answered=False,
+                request_id=req.request_id,
+                choice=req.default,
+                answered=False,
             )
         pending.event.wait()
         with self._lock:
             self._pending.pop(req.request_id, None)
         if pending.choice is None:
             return PromptResponse(
-                request_id=req.request_id, choice=req.default, answered=False,
+                request_id=req.request_id,
+                choice=req.default,
+                answered=False,
             )
         return PromptResponse(
-            request_id=req.request_id, choice=pending.choice, answered=True,
+            request_id=req.request_id,
+            choice=pending.choice,
+            answered=True,
         )
 
     def resolve(self, request_id: str, choice: int) -> bool:
@@ -182,11 +195,7 @@ class QueueInteractionChannel:
             pending = self._pending.get(request_id)
             if pending is None or pending.event.is_set():
                 return False
-            if (
-                isinstance(choice, bool)
-                or choice < 0
-                or choice >= len(pending.request.options)
-            ):
+            if isinstance(choice, bool) or choice < 0 or choice >= len(pending.request.options):
                 return False
             pending.choice = choice
             pending.event.set()

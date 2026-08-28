@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
 
 def render_evidence(
-    comp: ComponentState, manifest_comp: Component | None,
+    comp: ComponentState,
+    manifest_comp: Component | None,
 ) -> Text:
     text = Text()
 
@@ -48,6 +49,8 @@ def render_evidence(
 
 class EvidencePanel(Static):
     def update_state(
-        self, comp: ComponentState, manifest_comp: Component | None,
+        self,
+        comp: ComponentState,
+        manifest_comp: Component | None,
     ) -> None:
         self.update(render_evidence(comp, manifest_comp))

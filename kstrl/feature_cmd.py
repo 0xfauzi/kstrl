@@ -95,7 +95,10 @@ def _log_path(params: FeatureParams, label: str, attempt: int | None = None) -> 
 
 
 def _build_repair_prd(
-    params: FeatureParams, root_dir: Path, log_file: Path, attempt: int,
+    params: FeatureParams,
+    root_dir: Path,
+    log_file: Path,
+    attempt: int,
 ) -> Path:
     repair_dir = params.feature_dir / "repairs"
     repair_dir.mkdir(parents=True, exist_ok=True)
@@ -183,26 +186,28 @@ def run_feature(
     def wrap(phase_agent: Agent) -> Agent:
         """Tee the phase agent onto the run transcript ON TOP of its
         legacy log (nested LoggingAgent: legacy bytes unchanged)."""
-        transcript = (
-            run.transcript_path(component) if run is not None else None
-        )
+        transcript = run.transcript_path(component) if run is not None else None
         if transcript is None:
             return phase_agent
         return LoggingAgent(phase_agent, transcript)
 
     def skip(reason: str) -> None:
         emit(ComponentSkipped(component=component, reason=reason))
-        emit(RunCompleted(
-            skipped=1,
-            duration_seconds=round(time.monotonic() - started, 2),
-        ))
+        emit(
+            RunCompleted(
+                skipped=1,
+                duration_seconds=round(time.monotonic() - started, 2),
+            )
+        )
 
     def fail(error: str) -> None:
         emit(ComponentFailed(component=component, error=error))
-        emit(RunCompleted(
-            failed=1,
-            duration_seconds=round(time.monotonic() - started, 2),
-        ))
+        emit(
+            RunCompleted(
+                failed=1,
+                duration_seconds=round(time.monotonic() - started, 2),
+            )
+        )
 
     def phase_detail(exit_code: int, completed: bool) -> str:
         if completed:
@@ -213,9 +218,7 @@ def run_feature(
 
     started = time.monotonic()
     emit(RunStarted(project=params.feature_name, components=1))
-    emit(RunPlan(components=(
-        {"id": component, "title": f"Feature: {component}", "deps": []},
-    )))
+    emit(RunPlan(components=({"id": component, "title": f"Feature: {component}", "deps": []},)))
     emit(ComponentStarted(component=component))
 
     # Feature understanding phase
@@ -224,9 +227,7 @@ def run_feature(
     if params.understand_prompt_file is not None:
         understand_config.prompt_file = params.understand_prompt_file
     understand_config.prd_file = params.prd_path
-    rel_feature_understand = (
-        params.feature_understand.relative_to(root_dir).as_posix()
-    )
+    rel_feature_understand = params.feature_understand.relative_to(root_dir).as_posix()
     understand_config.allowed_paths = [rel_feature_understand]
     if params.branch_override is not None:
         understand_config.kstrl_branch = params.branch_override
@@ -241,42 +242,57 @@ def run_feature(
     understand_agent = wrap(LoggingAgent(agent, understand_log))
     try:
         understand_result = run_loop(
-            understand_config, ui, understand_agent, root_dir,
-            timeouts=timeouts, breaker_config=breaker_config,
-            bus=bus, interaction=interaction, stop_check=stop_check,
+            understand_config,
+            ui,
+            understand_agent,
+            root_dir,
+            timeouts=timeouts,
+            breaker_config=breaker_config,
+            bus=bus,
+            interaction=interaction,
+            stop_check=stop_check,
             guard_ignored_paths=guard_ignored_paths,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
-        emit(PhaseCompleted(
-            component=component, phase="understand", passed=False,
-            detail=detail,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
-        ))
+        emit(
+            PhaseCompleted(
+                component=component,
+                phase="understand",
+                passed=False,
+                detail=detail,
+                duration_seconds=round(time.monotonic() - phase_start, 2),
+            )
+        )
         fail(detail)
         raise
-    understand_completed = (
-        understand_result.completed and understand_result.exit_code == 0
-    )
+    understand_completed = understand_result.completed and understand_result.exit_code == 0
     understand_detail = phase_detail(
-        understand_result.exit_code, understand_completed,
+        understand_result.exit_code,
+        understand_completed,
     )
-    emit(PhaseCompleted(
-        component=component, phase="understand",
-        passed=understand_completed,
-        detail=understand_detail,
-        duration_seconds=round(time.monotonic() - phase_start, 2),
-    ))
+    emit(
+        PhaseCompleted(
+            component=component,
+            phase="understand",
+            passed=understand_completed,
+            detail=understand_detail,
+            duration_seconds=round(time.monotonic() - phase_start, 2),
+        )
+    )
     if not understand_completed:
         if understand_result.exit_code == 0:
             skip("understand phase ended before completion")
         else:
             fail(f"understand phase exited {understand_result.exit_code}")
         return understand_result.exit_code
-    emit(ArtifactWritten(
-        component=component, label="understand_file",
-        path=rel_feature_understand,
-    ))
+    emit(
+        ArtifactWritten(
+            component=component,
+            label="understand_file",
+            path=rel_feature_understand,
+        )
+    )
 
     # Review gate
     ui.section("Feature understand review")
@@ -284,46 +300,57 @@ def run_feature(
     if params.implementation_auto_run:
         ui.info("IMPLEMENTATION_AUTO_RUN enabled: skipping review gate")
     else:
-        channel = (
-            interaction if interaction is not None
-            else UiInteractionChannel(ui)
-        )
-        gate_header = (
-            "Review the understand file and confirm implementation start:"
-        )
-        emit(CheckpointRequested(
-            component=component, kind="feature_gate", question=gate_header,
-        ))
-        if not channel.can_prompt():
-            ui.err(
-                "Interactive review required. Re-run with --implementation-auto-run."
+        channel = interaction if interaction is not None else UiInteractionChannel(ui)
+        gate_header = "Review the understand file and confirm implementation start:"
+        emit(
+            CheckpointRequested(
+                component=component,
+                kind="feature_gate",
+                question=gate_header,
             )
-            emit(CheckpointResolved(
-                component=component, kind="feature_gate",
-                decision="unavailable", decided_by="auto",
-            ))
+        )
+        if not channel.can_prompt():
+            ui.err("Interactive review required. Re-run with --implementation-auto-run.")
+            emit(
+                CheckpointResolved(
+                    component=component,
+                    kind="feature_gate",
+                    decision="unavailable",
+                    decided_by="auto",
+                )
+            )
             skip("feature review gate unavailable")
             return 2
 
-        response = channel.request(PromptRequest(
-            kind=PromptKind.CONFIRM,
-            header=gate_header,
-            options=("Start implementation", "Quit to amend"),
-            default=0,
-        ))
+        response = channel.request(
+            PromptRequest(
+                kind=PromptKind.CONFIRM,
+                header=gate_header,
+                options=("Start implementation", "Quit to amend"),
+                default=0,
+            )
+        )
         decided_by = "operator" if response.answered else "auto"
         if not response.answered or response.choice != 0:
             ui.info("Amend the understand file and re-run `ks feature`.")
-            emit(CheckpointResolved(
-                component=component, kind="feature_gate",
-                decision="quit_to_amend", decided_by=decided_by,
-            ))
+            emit(
+                CheckpointResolved(
+                    component=component,
+                    kind="feature_gate",
+                    decision="quit_to_amend",
+                    decided_by=decided_by,
+                )
+            )
             skip("operator quit to amend the understand file")
             return 0
-        emit(CheckpointResolved(
-            component=component, kind="feature_gate",
-            decision="start_implementation", decided_by=decided_by,
-        ))
+        emit(
+            CheckpointResolved(
+                component=component,
+                kind="feature_gate",
+                decision="start_implementation",
+                decided_by=decided_by,
+            )
+        )
 
     # Implementation phase
     run_config = copy.deepcopy(base_config)
@@ -346,40 +373,58 @@ def run_feature(
     run_agent = wrap(LoggingAgent(agent, run_log))
     try:
         result = run_loop(
-            run_config, ui, run_agent, root_dir,
-            timeouts=timeouts, breaker_config=breaker_config,
-            bus=bus, interaction=interaction, stop_check=stop_check,
+            run_config,
+            ui,
+            run_agent,
+            root_dir,
+            timeouts=timeouts,
+            breaker_config=breaker_config,
+            bus=bus,
+            interaction=interaction,
+            stop_check=stop_check,
             guard_ignored_paths=guard_ignored_paths,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
-        emit(PhaseCompleted(
-            component=component, phase="implement", passed=False,
-            detail=detail,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
-        ))
+        emit(
+            PhaseCompleted(
+                component=component,
+                phase="implement",
+                passed=False,
+                detail=detail,
+                duration_seconds=round(time.monotonic() - phase_start, 2),
+            )
+        )
         fail(detail)
         raise
     implementation_completed = result.completed and result.exit_code == 0
     implementation_detail = phase_detail(
-        result.exit_code, implementation_completed,
+        result.exit_code,
+        implementation_completed,
     )
-    emit(PhaseCompleted(
-        component=component, phase="implement",
-        passed=implementation_completed,
-        detail=implementation_detail,
-        duration_seconds=round(time.monotonic() - phase_start, 2),
-    ))
-    if implementation_completed:
-        emit(ComponentCompleted(
+    emit(
+        PhaseCompleted(
             component=component,
-            duration_seconds=round(time.monotonic() - started, 2),
-            iterations=result.iterations,
-        ))
-        emit(RunCompleted(
-            completed=1,
-            duration_seconds=round(time.monotonic() - started, 2),
-        ))
+            phase="implement",
+            passed=implementation_completed,
+            detail=implementation_detail,
+            duration_seconds=round(time.monotonic() - phase_start, 2),
+        )
+    )
+    if implementation_completed:
+        emit(
+            ComponentCompleted(
+                component=component,
+                duration_seconds=round(time.monotonic() - started, 2),
+                iterations=result.iterations,
+            )
+        )
+        emit(
+            RunCompleted(
+                completed=1,
+                duration_seconds=round(time.monotonic() - started, 2),
+            )
+        )
         return 0
     if result.exit_code == 0:
         skip("implementation ended before completion")
@@ -396,10 +441,13 @@ def run_feature(
             repair_prd_display = str(repair_prd.relative_to(root_dir))
         except ValueError:
             repair_prd_display = str(repair_prd)
-        emit(ArtifactWritten(
-            component=component, label="repair_prd",
-            path=repair_prd_display,
-        ))
+        emit(
+            ArtifactWritten(
+                component=component,
+                label="repair_prd",
+                path=repair_prd_display,
+            )
+        )
         repair_config = copy.deepcopy(base_config)
         repair_config.prd_file = repair_prd
         repair_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
@@ -409,9 +457,13 @@ def run_feature(
         repair_config.kstrl_branch = ""
         repair_config.kstrl_branch_explicit = True
 
-        emit(PhaseStarted(
-            component=component, phase=f"repair-{attempt}", attempt=1,
-        ))
+        emit(
+            PhaseStarted(
+                component=component,
+                phase=f"repair-{attempt}",
+                attempt=1,
+            )
+        )
         phase_start = time.monotonic()
         repair_log = _log_path(params, "repair", attempt)
         repair_agent_base = get_agent(
@@ -424,42 +476,58 @@ def run_feature(
         repair_agent = wrap(LoggingAgent(repair_agent_base, repair_log))
         try:
             repair_result = run_loop(
-                repair_config, ui, repair_agent, root_dir,
-                timeouts=timeouts, breaker_config=breaker_config,
-                bus=bus, interaction=interaction, stop_check=stop_check,
+                repair_config,
+                ui,
+                repair_agent,
+                root_dir,
+                timeouts=timeouts,
+                breaker_config=breaker_config,
+                bus=bus,
+                interaction=interaction,
+                stop_check=stop_check,
                 guard_ignored_paths=guard_ignored_paths,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
-            emit(PhaseCompleted(
-                component=component, phase=f"repair-{attempt}", passed=False,
-                detail=detail,
-                duration_seconds=round(time.monotonic() - phase_start, 2),
-            ))
+            emit(
+                PhaseCompleted(
+                    component=component,
+                    phase=f"repair-{attempt}",
+                    passed=False,
+                    detail=detail,
+                    duration_seconds=round(time.monotonic() - phase_start, 2),
+                )
+            )
             fail(detail)
             raise
-        repair_completed = (
-            repair_result.completed and repair_result.exit_code == 0
-        )
+        repair_completed = repair_result.completed and repair_result.exit_code == 0
         repair_detail = phase_detail(
-            repair_result.exit_code, repair_completed,
+            repair_result.exit_code,
+            repair_completed,
         )
-        emit(PhaseCompleted(
-            component=component, phase=f"repair-{attempt}",
-            passed=repair_completed,
-            detail=repair_detail,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
-        ))
-        if repair_completed:
-            emit(ComponentCompleted(
+        emit(
+            PhaseCompleted(
                 component=component,
-                duration_seconds=round(time.monotonic() - started, 2),
-                iterations=repair_result.iterations,
-            ))
-            emit(RunCompleted(
-                completed=1,
-                duration_seconds=round(time.monotonic() - started, 2),
-            ))
+                phase=f"repair-{attempt}",
+                passed=repair_completed,
+                detail=repair_detail,
+                duration_seconds=round(time.monotonic() - phase_start, 2),
+            )
+        )
+        if repair_completed:
+            emit(
+                ComponentCompleted(
+                    component=component,
+                    duration_seconds=round(time.monotonic() - started, 2),
+                    iterations=repair_result.iterations,
+                )
+            )
+            emit(
+                RunCompleted(
+                    completed=1,
+                    duration_seconds=round(time.monotonic() - started, 2),
+                )
+            )
             return 0
         if repair_result.exit_code == 0:
             skip(f"repair-{attempt} ended before completion")
@@ -467,7 +535,6 @@ def run_feature(
         last_log = repair_log
 
     fail(
-        f"repairs exhausted after {params.repair_max_runs} run(s) "
-        f"(exit {repair_result.exit_code})"
+        f"repairs exhausted after {params.repair_max_runs} run(s) (exit {repair_result.exit_code})"
     )
     return repair_result.exit_code

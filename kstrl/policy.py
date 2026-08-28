@@ -100,26 +100,48 @@ DEFAULT_SECRET_PATTERNS: tuple[str, ...] = (
 # deny-list) blocks until the operator explicitly adds it - the
 # "explicit allowlist" posture the roadmap specifies.
 DEFAULT_LICENSE_ALLOW: tuple[str, ...] = (
-    "MIT", "MIT-0", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0",
-    "ISC", "PSF-2.0", "Python-2.0", "Unlicense", "0BSD",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Apache-2.0",
+    "ISC",
+    "PSF-2.0",
+    "Python-2.0",
+    "Unlicense",
+    "0BSD",
 )
 
 # Substrings that deny a license outright (copyleft / source-available).
 # "GPL" also matches "LGPL"/"AGPL" by design: deny wins, and the operator
 # narrows it if a weak-copyleft dep is acceptable.
 DEFAULT_LICENSE_DENY_PARTIAL: tuple[str, ...] = (
-    "GPL", "AGPL", "SSPL", "Commons-Clause", "BUSL", "EUPL",
+    "GPL",
+    "AGPL",
+    "SSPL",
+    "Commons-Clause",
+    "BUSL",
+    "EUPL",
 )
 
 # Basenames of machine-generated lockfiles, excluded from the size caps:
 # a one-line dependency bump can rewrite hundreds of lockfile lines, so
 # counting them would make ``max_lines_changed`` meaningless. Lockfiles
 # remain subject to ``paths_deny`` and ``deps_allow_new``.
-LOCKFILE_BASENAMES: frozenset[str] = frozenset({
-    "uv.lock", "poetry.lock", "Pipfile.lock",
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "Cargo.lock", "go.sum", "composer.lock", "Gemfile.lock",
-})
+LOCKFILE_BASENAMES: frozenset[str] = frozenset(
+    {
+        "uv.lock",
+        "poetry.lock",
+        "Pipfile.lock",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "Cargo.lock",
+        "go.sum",
+        "composer.lock",
+        "Gemfile.lock",
+    }
+)
 
 _UVLOCK_NAME_RE = re.compile(r'^name = "([^"]+)"')
 _UVLOCK_VERSION_RE = re.compile(r'^version = "([^"]+)"')
@@ -281,7 +303,8 @@ def classify_license(
 
 
 def _scan_secrets(
-    added_lines: Sequence[tuple[str, str]], patterns: Sequence[str],
+    added_lines: Sequence[tuple[str, str]],
+    patterns: Sequence[str],
 ) -> set[str]:
     """Return paths whose added lines match any secret pattern.
 
@@ -294,9 +317,7 @@ def _scan_secrets(
         try:
             compiled.append(re.compile(pattern))
         except re.error as exc:
-            raise PolicyConfigError(
-                f"invalid secret_pattern {pattern!r}: {exc}"
-            ) from exc
+            raise PolicyConfigError(f"invalid secret_pattern {pattern!r}: {exc}") from exc
     hits: set[str] = set()
     for path, line in added_lines:
         for regex in compiled:
@@ -368,27 +389,26 @@ def evaluate_policy(
 
     # 1. Enforcement-machinery halt (non-overridable, reported first).
     # The configurable extras can only ADD to the hardcoded set.
-    machinery_patterns = (
-        list(ENFORCEMENT_MACHINERY_PATHS) + list(config.enforcement_paths_extra)
-    )
+    machinery_patterns = list(ENFORCEMENT_MACHINERY_PATHS) + list(config.enforcement_paths_extra)
     machinery = [f for f in changed_files if _match_glob(f, machinery_patterns)]
     machinery_hit = bool(machinery)
     if machinery_hit:
-        violations.append(PolicyViolation(
-            category="enforcement_machinery",
-            severity="critical",
-            location=", ".join(sorted(machinery)[:5]),
-            explanation=(
-                "HALT: enforcement-machinery paths modified (non-overridable, "
-                "blocks at every autonomy level): "
-                + ", ".join(sorted(machinery))
-            ),
-            suggestion=(
-                "Revert these paths. Changes to the policy file, CI "
-                "workflows, or verifier code must be made by a human, "
-                "never inside an automated run."
-            ),
-        ))
+        violations.append(
+            PolicyViolation(
+                category="enforcement_machinery",
+                severity="critical",
+                location=", ".join(sorted(machinery)[:5]),
+                explanation=(
+                    "HALT: enforcement-machinery paths modified (non-overridable, "
+                    "blocks at every autonomy level): " + ", ".join(sorted(machinery))
+                ),
+                suggestion=(
+                    "Revert these paths. Changes to the policy file, CI "
+                    "workflows, or verifier code must be made by a human, "
+                    "never inside an automated run."
+                ),
+            )
+        )
 
     # 2. Denied paths (configurable; machinery paths already reported).
     machinery_set = set(machinery)
@@ -400,12 +420,14 @@ def evaluate_policy(
         if pattern:
             deny_hits.append(f"{path} (deny '{pattern}')")
     if deny_hits:
-        violations.append(PolicyViolation(
-            category="paths_deny",
-            location=", ".join(sorted(p.split(" (")[0] for p in deny_hits)[:5]),
-            explanation="Denied paths modified: " + "; ".join(sorted(deny_hits)),
-            suggestion="Revert these paths or widen [policy] paths_deny.",
-        ))
+        violations.append(
+            PolicyViolation(
+                category="paths_deny",
+                location=", ".join(sorted(p.split(" (")[0] for p in deny_hits)[:5]),
+                explanation="Denied paths modified: " + "; ".join(sorted(deny_hits)),
+                suggestion="Revert these paths or widen [policy] paths_deny.",
+            )
+        )
 
     # 3. Size caps (lockfiles excluded from the count).
     counted = [
@@ -416,23 +438,27 @@ def evaluate_policy(
     n_files = len(counted)
     n_lines = sum((added or 0) + (removed or 0) for (added, removed, _p) in counted)
     if config.max_files_changed >= 0 and n_files > config.max_files_changed:
-        violations.append(PolicyViolation(
-            category="max_files_changed",
-            explanation=(
-                f"Too many files changed: {n_files} > max_files_changed "
-                f"{config.max_files_changed} (lockfiles excluded)"
-            ),
-            suggestion="Split the change into smaller components.",
-        ))
+        violations.append(
+            PolicyViolation(
+                category="max_files_changed",
+                explanation=(
+                    f"Too many files changed: {n_files} > max_files_changed "
+                    f"{config.max_files_changed} (lockfiles excluded)"
+                ),
+                suggestion="Split the change into smaller components.",
+            )
+        )
     if config.max_lines_changed >= 0 and n_lines > config.max_lines_changed:
-        violations.append(PolicyViolation(
-            category="max_lines_changed",
-            explanation=(
-                f"Too many lines changed: {n_lines} > max_lines_changed "
-                f"{config.max_lines_changed} (lockfiles excluded)"
-            ),
-            suggestion="Split the change into smaller components.",
-        ))
+        violations.append(
+            PolicyViolation(
+                category="max_lines_changed",
+                explanation=(
+                    f"Too many lines changed: {n_lines} > max_lines_changed "
+                    f"{config.max_lines_changed} (lockfiles excluded)"
+                ),
+                suggestion="Split the change into smaller components.",
+            )
+        )
 
     # 4. New dependencies (uv.lock). Detected regardless of deps_allow_new
     # so the verifier can license-check them; only blocked here when
@@ -444,47 +470,45 @@ def evaluate_policy(
         shown = ", ".join(names[:20])
         if len(names) > 20:
             shown += f", ... (+{len(names) - 20} more)"
-        violations.append(PolicyViolation(
-            category="deps_allow_new",
-            location="uv.lock",
-            explanation=(
-                f"New dependencies added while deps_allow_new=false: {shown}"
-            ),
-            suggestion=(
-                "Drop the dependency, or set [policy] deps_allow_new = true."
-            ),
-        ))
+        violations.append(
+            PolicyViolation(
+                category="deps_allow_new",
+                location="uv.lock",
+                explanation=(f"New dependencies added while deps_allow_new=false: {shown}"),
+                suggestion=("Drop the dependency, or set [policy] deps_allow_new = true."),
+            )
+        )
 
     # 5. Secret patterns over added lines (raises on a bad regex).
     secret_hits = _scan_secrets(added_lines, config.secret_patterns)
     if secret_hits:
-        violations.append(PolicyViolation(
-            category="secret_pattern",
-            location=", ".join(sorted(secret_hits)[:5]),
-            explanation=(
-                "Possible secrets in added lines: "
-                + ", ".join(sorted(secret_hits))
-            ),
-            suggestion=(
-                "Remove the credential and rotate it; load secrets from the "
-                "environment instead."
-            ),
-        ))
+        violations.append(
+            PolicyViolation(
+                category="secret_pattern",
+                location=", ".join(sorted(secret_hits)[:5]),
+                explanation=("Possible secrets in added lines: " + ", ".join(sorted(secret_hits))),
+                suggestion=(
+                    "Remove the credential and rotate it; load secrets from the "
+                    "environment instead."
+                ),
+            )
+        )
 
     details = [v.explanation for v in violations]
     ok = not any(v.blocking for v in violations)
     if ok:
-        summary = (
-            f"policy envelope satisfied ({n_files} files, {n_lines} lines, "
-            "within limits)"
-        )
+        summary = f"policy envelope satisfied ({n_files} files, {n_lines} lines, within limits)"
     else:
         summary = f"{len(details)} policy violation(s)"
         if machinery_hit:
             summary += " including enforcement-machinery halt"
     return PolicyEvaluation(
-        ok=ok, summary=summary, details=details, machinery_hit=machinery_hit,
-        new_dependencies=new_dependencies, violations=violations,
+        ok=ok,
+        summary=summary,
+        details=details,
+        machinery_hit=machinery_hit,
+        new_dependencies=new_dependencies,
+        violations=violations,
     )
 
 
@@ -499,15 +523,11 @@ class PolicyConfig:
     """
 
     enabled: bool = False
-    paths_deny: list[str] = field(
-        default_factory=lambda: list(DEFAULT_PATHS_DENY)
-    )
+    paths_deny: list[str] = field(default_factory=lambda: list(DEFAULT_PATHS_DENY))
     max_files_changed: int = 40
     max_lines_changed: int = 1500
     deps_allow_new: bool = False
-    secret_patterns: list[str] = field(
-        default_factory=lambda: list(DEFAULT_SECRET_PATTERNS)
-    )
+    secret_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
     # ADDITIVE ONLY: extra paths joined to ENFORCEMENT_MACHINERY_PATHS for
     # the non-overridable halt. A repo protects its own verifier/CI code
     # here; nothing in config can shrink the hardcoded set.
@@ -517,9 +537,7 @@ class PolicyConfig:
     # atom is in license_allow passes; anything else is unknown (blocked,
     # add it to license_allow to permit). Empty license_allow disables the
     # gate entirely.
-    license_allow: list[str] = field(
-        default_factory=lambda: list(DEFAULT_LICENSE_ALLOW)
-    )
+    license_allow: list[str] = field(default_factory=lambda: list(DEFAULT_LICENSE_ALLOW))
     license_deny_partial: list[str] = field(
         default_factory=lambda: list(DEFAULT_LICENSE_DENY_PARTIAL)
     )
@@ -558,25 +576,18 @@ class PolicyConfig:
         return cls(
             enabled=_env_bool("KSTRL_POLICY_ENABLED", defaults.enabled),
             paths_deny=list(defaults.paths_deny),
-            max_files_changed=_env_int(
-                "KSTRL_POLICY_MAX_FILES", defaults.max_files_changed
-            ),
-            max_lines_changed=_env_int(
-                "KSTRL_POLICY_MAX_LINES", defaults.max_lines_changed
-            ),
-            deps_allow_new=_env_bool(
-                "KSTRL_POLICY_DEPS_ALLOW_NEW", defaults.deps_allow_new
-            ),
+            max_files_changed=_env_int("KSTRL_POLICY_MAX_FILES", defaults.max_files_changed),
+            max_lines_changed=_env_int("KSTRL_POLICY_MAX_LINES", defaults.max_lines_changed),
+            deps_allow_new=_env_bool("KSTRL_POLICY_DEPS_ALLOW_NEW", defaults.deps_allow_new),
             secret_patterns=list(defaults.secret_patterns),
             enforcement_paths_extra=list(defaults.enforcement_paths_extra),
             license_allow=list(defaults.license_allow),
             license_deny_partial=list(defaults.license_deny_partial),
             license_unresolved=os.environ.get(
-                "KSTRL_POLICY_LICENSE_UNRESOLVED", defaults.license_unresolved,
+                "KSTRL_POLICY_LICENSE_UNRESOLVED",
+                defaults.license_unresolved,
             ),
-            license_use_network=_env_bool(
-                "KSTRL_POLICY_LICENSE_NET", defaults.license_use_network
-            ),
+            license_use_network=_env_bool("KSTRL_POLICY_LICENSE_NET", defaults.license_use_network),
             deploy=_env_bool("KSTRL_POLICY_DEPLOY", defaults.deploy),
         )
 
@@ -594,9 +605,7 @@ class PolicyConfig:
         section = load_toml_section(resolve_config_file(root_dir), "policy")
         defaults = cls()
 
-        enabled = (
-            bool(section["enabled"]) if "enabled" in section else defaults.enabled
-        )
+        enabled = bool(section["enabled"]) if "enabled" in section else defaults.enabled
         paths_deny = (
             [str(p) for p in section["paths_deny"]]
             if isinstance(section.get("paths_deny"), list)
@@ -647,9 +656,7 @@ class PolicyConfig:
             if "license_use_network" in section
             else defaults.license_use_network
         )
-        deploy = (
-            bool(section["deploy"]) if "deploy" in section else defaults.deploy
-        )
+        deploy = bool(section["deploy"]) if "deploy" in section else defaults.deploy
 
         # Env overrides (scalars/bools only; lists are toml-only).
         if "KSTRL_POLICY_ENABLED" in os.environ:

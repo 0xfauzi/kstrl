@@ -27,13 +27,19 @@ from tests.helpers.fake_run import (
 
 class TestComputeTiers:
     def test_chain_and_diamond(self) -> None:
-        assert compute_tiers({
-            "a": (), "b": ("a",), "c": ("a",), "d": ("b", "c"),
-        }) == {"a": 0, "b": 1, "c": 1, "d": 2}
+        assert compute_tiers(
+            {
+                "a": (),
+                "b": ("a",),
+                "c": ("a",),
+                "d": ("b", "c"),
+            }
+        ) == {"a": 0, "b": 1, "c": 1, "d": 2}
 
     def test_unknown_deps_ignored(self) -> None:
         assert compute_tiers({"a": ("ghost",), "b": ("a",)}) == {
-            "a": 0, "b": 1,
+            "a": 0,
+            "b": 1,
         }
 
     def test_cycle_marks_members_not_raises(self) -> None:
@@ -53,7 +59,9 @@ class TestDispatch:
         assert isinstance(understand[-1], ComponentScreen)
         assert understand[-1].component_id == "understand"
         feature = initial_screens_for_kind(
-            "feature", observe_only=False, component="demo",
+            "feature",
+            observe_only=False,
+            component="demo",
         )()
         assert isinstance(feature[-1], ComponentScreen)
         assert feature[-1].component_id == "demo"
@@ -65,17 +73,21 @@ class TestDispatch:
 
 def _decompose_app(root: Path, run_dir: Path) -> KstrlTuiApp:
     return KstrlTuiApp(
-        run_dir=run_dir, root_dir=root, mode=Mode.DASH,
+        run_dir=run_dir,
+        root_dir=root,
+        mode=Mode.DASH,
         poll_interval=0.05,
         screen_factory=initial_screens_for_kind(
-            "decompose", observe_only=True,
+            "decompose",
+            observe_only=True,
         ),
     )
 
 
 class TestDecomposeScreen:
     async def test_success_run_renders_dag_and_summary(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_decompose_run(tmp_path, attempts=2)
         app = _decompose_app(tmp_path, run_dir)
@@ -102,7 +114,8 @@ class TestDecomposeScreen:
             assert {key.value for key in table.rows} == {"database"}
 
     async def test_state_update_after_header_removed_is_safe(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # Regression: a late StateChanged or age-tick during teardown finds
         # RunHeader (composed first) already removed while `ready` (checks
@@ -119,7 +132,8 @@ class TestDecomposeScreen:
             screen.tick_ages(app.store.state)
 
     async def test_triage_shows_blocker_banner_and_detail(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_decompose_run(tmp_path, blockers=1, minors=1)
         app = _decompose_app(tmp_path, run_dir)
@@ -177,7 +191,8 @@ class TestStatusTui:
         return captured, fake_run
 
     def test_explicit_tui_opens_the_newest_run_with_kind_dispatch(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(tmp_path, run_id="factory-20260718-100000.000000-old")
         write_fake_decompose_run(tmp_path)
@@ -185,7 +200,8 @@ class TestStatusTui:
         runner = CliRunner()
         with patch.object(KstrlTuiApp, "run", fake_run):
             result = runner.invoke(
-                cli, ["status", "--root", str(tmp_path), "--tui"],
+                cli,
+                ["status", "--root", str(tmp_path), "--tui"],
             )
         assert result.exit_code == 0
         assert len(captured) == 1
@@ -196,11 +212,13 @@ class TestStatusTui:
         assert isinstance(stack[-1], DecomposeScreen)
 
     def test_tui_with_no_runs_falls_back_to_plain_guidance(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["status", "--root", str(tmp_path), "--tui"],
+            cli,
+            ["status", "--root", str(tmp_path), "--tui"],
         )
         assert result.exit_code == 1
         assert "No manifest found" in result.output

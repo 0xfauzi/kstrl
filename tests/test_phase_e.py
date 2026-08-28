@@ -27,21 +27,29 @@ from kstrl.verify import VerifyConfig
 
 class TestE5ConfidenceRename:
     def test_new_review_passed_accepted(self) -> None:
-        raw = [{
-            "id": "fact-001", "scope": "handler",
-            "confidence": "review_passed",
-            "evidence": ["x:1"], "claim": "ok",
-        }]
+        raw = [
+            {
+                "id": "fact-001",
+                "scope": "handler",
+                "confidence": "review_passed",
+                "evidence": ["x:1"],
+                "claim": "ok",
+            }
+        ]
         facts = _coerce_facts(raw, "c", 1, "r", 7)
         assert len(facts) == 1
         assert facts[0].confidence == "review_passed"
 
     def test_test_verified_tier_accepted(self) -> None:
-        raw = [{
-            "id": "fact-001", "scope": "handler",
-            "confidence": "test_verified",
-            "evidence": ["x:1"], "claim": "ok",
-        }]
+        raw = [
+            {
+                "id": "fact-001",
+                "scope": "handler",
+                "confidence": "test_verified",
+                "evidence": ["x:1"],
+                "claim": "ok",
+            }
+        ]
         facts = _coerce_facts(raw, "c", 1, "r", 7)
         assert facts[0].confidence == "test_verified"
 
@@ -75,22 +83,38 @@ class TestE4BudgetCap:
         )
         feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / comp_id
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "t",
-            "userStories": [{
-                "id": "US-1", "title": "t", "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "t",
+                    "userStories": [
+                        {
+                            "id": "US-1",
+                            "title": "t",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         return tmp_path
 
     def _make_manifest(self, ids: list[str]) -> Manifest:
         return Manifest(
-            version="1", spec_file="s", project_name="t",
-            base_branch="main", single_pr=False,
+            version="1",
+            spec_file="s",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
             components=[
                 Component(
-                    id=i, title=i, description="", dependencies=[],
+                    id=i,
+                    title=i,
+                    description="",
+                    dependencies=[],
                     prd_path=f"scripts/kstrl/feature/{i}/prd.json",
                     branch_name=f"kstrl/{i}",
                 )
@@ -102,9 +126,12 @@ class TestE4BudgetCap:
         return KstrlConfig(
             prompt_file=root / "scripts/kstrl/prompt.md",
             prd_file=root / "scripts/kstrl/prd.json",
-            sleep_seconds=0, agent_cmd="echo test",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            sleep_seconds=0,
+            agent_cmd="echo test",
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
     def test_budget_zero_means_unbounded(self, tmp_path: Path) -> None:
@@ -113,65 +140,108 @@ class TestE4BudgetCap:
         root = self._scaffold(tmp_path, "comp-a")
         manifest = self._make_manifest(["comp-a"])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            review_mode="hard", max_adversarial_calls=0,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            review_mode="hard",
+            max_adversarial_calls=0,
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         passing_review = ReviewResult(passed=True, mode="hard")
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_review", return_value=passing_review,
-        ) as mock_review, patch(
-            "kstrl.git.get_diff_content", return_value="",
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=passing_review,
+            ) as mock_review,
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
         ):
             run_factory(
-                manifest, config, self._base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                self._base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         # Unbounded budget means review fires
         assert mock_review.called
 
     def test_budget_one_skips_second_component_review(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = self._scaffold(tmp_path, "comp-a")
         feature_b = root / "scripts/kstrl/feature/comp-b"
         feature_b.mkdir(parents=True)
-        (feature_b / "prd.json").write_text(json.dumps({
-            "branchName": "t",
-            "userStories": [{
-                "id": "US-B", "title": "t", "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_b / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "t",
+                    "userStories": [
+                        {
+                            "id": "US-B",
+                            "title": "t",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         manifest = self._make_manifest(["comp-a", "comp-b"])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            review_mode="hard", max_adversarial_calls=1,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            review_mode="hard",
+            max_adversarial_calls=1,
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         passing_review = ReviewResult(passed=True, mode="hard")
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_review", return_value=passing_review,
-        ) as mock_review, patch(
-            "kstrl.git.get_diff_content", return_value="",
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                return_value=passing_review,
+            ) as mock_review,
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="",
+            ),
         ):
             run_factory(
-                manifest, config, self._base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                self._base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         # Budget=1; second component's review is budget-skipped
         assert mock_review.call_count == 1
@@ -193,55 +263,90 @@ class TestE6HitlCheckpoint:
         L1/L2 forces the gate on for."""
         from kstrl.factory import ComponentResult
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
+
         scaffold = tmp_path / "scripts" / "kstrl"
         scaffold.mkdir(parents=True)
         (scaffold / "prompt.md").write_text("p")
-        (scaffold / "prd.json").write_text(
-            '{"branchName": "t", "userStories": []}'
-        )
+        (scaffold / "prd.json").write_text('{"branchName": "t", "userStories": []}')
         feature_dir = scaffold / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "t",
-            "userStories": [{
-                "id": "US-1", "title": "t", "acceptanceCriteria": ["AC"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "t",
+                    "userStories": [
+                        {
+                            "id": "US-1",
+                            "title": "t",
+                            "acceptanceCriteria": ["AC"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         manifest = Manifest(
-            version="1", spec_file="s", project_name="t",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                id="comp-a", title="A", description="", dependencies=[],
-                prd_path="scripts/kstrl/feature/comp-a/prd.json",
-                branch_name="kstrl/a",
-            )],
+            version="1",
+            spec_file="s",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    id="comp-a",
+                    title="A",
+                    description="",
+                    dependencies=[],
+                    prd_path="scripts/kstrl/feature/comp-a/prd.json",
+                    branch_name="kstrl/a",
+                )
+            ],
         )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=True, max_parallel=1,
+            use_worktrees=False,
+            create_prs=True,
+            max_parallel=1,
             review_mode="skip",
             pause_before_pr_merge=True,
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         base = KstrlConfig(
             prompt_file=scaffold / "prompt.md",
             prd_file=scaffold / "prd.json",
-            sleep_seconds=0, agent_cmd="echo test",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            sleep_seconds=0,
+            agent_cmd="echo test",
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.pr.is_gh_available", return_value=False,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.pr.is_gh_available",
+                return_value=False,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, base, PlainUI(no_color=True), tmp_path,
+                manifest,
+                config,
+                base,
+                PlainUI(no_color=True),
+                tmp_path,
             )
         # PlainUI returns False for can_prompt(), so the gate cannot be
         # answered: the component is parked, not merged.
@@ -300,10 +405,14 @@ class TestE9ReviewInfrastructureError:
         assert result.infrastructure_error is True
 
     def test_clean_review_has_no_infrastructure_error(self) -> None:
-        result = parse_review_output(json.dumps({
-            "stories": [],
-            "concerns": [],
-            "exhaustively_searched": True,
-        }))
+        result = parse_review_output(
+            json.dumps(
+                {
+                    "stories": [],
+                    "concerns": [],
+                    "exhaustively_searched": True,
+                }
+            )
+        )
         assert result.passed is True
         assert result.infrastructure_error is False

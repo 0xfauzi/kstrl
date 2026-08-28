@@ -146,11 +146,7 @@ def check_routes(meta: dict[str, object]) -> tuple[list[str], int, int]:
 
 def check_type_size(svg: str) -> list[str]:
     small = sorted(
-        {
-            float(m)
-            for m in re.findall(r"font-size:\s*([0-9.]+)px", svg)
-            if float(m) < TEXT_PX
-        }
+        {float(m) for m in re.findall(r"font-size:\s*([0-9.]+)px", svg) if float(m) < TEXT_PX}
     )
     return [f"text set at {s}px, below {TEXT_PX}px" for s in small]
 

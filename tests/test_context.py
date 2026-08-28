@@ -57,7 +57,9 @@ class TestIterationContext:
     def test_add_review_finding(self) -> None:
         ctx = IterationContext()
         ctx.add_review_finding(
-            "US-001: missing index", attempt=1, phase="review",
+            "US-001: missing index",
+            attempt=1,
+            phase="review",
         )
         assert ctx.review_findings == ["US-001: missing index"]
 
@@ -90,13 +92,17 @@ class TestIterationContext:
         ctx = IterationContext()
         ctx.add_iteration(IterationRecord(1, False, "tests failed", attempt=1))
         ctx.add_verification_failure(
-            "- check_test_suite: FAIL - 2 errors", attempt=1,
+            "- check_test_suite: FAIL - 2 errors",
+            attempt=1,
         )
         ctx.add_review_finding(
-            "- US-001: FAIL - missing index", attempt=1, phase="review",
+            "- US-001: FAIL - missing index",
+            attempt=1,
+            phase="review",
         )
         ctx.add_contract_failure(
-            "- Integration test failed after merging api component", attempt=1,
+            "- Integration test failed after merging api component",
+            attempt=1,
         )
 
         text = ctx.format_for_prompt()
@@ -119,15 +125,18 @@ class TestIterationContext:
         """A plain engineer-loop failure records no dated entry, so the
         record's error is the only account of that attempt and stays."""
         ctx = IterationContext()
-        ctx.add_iteration(IterationRecord(
-            3, False, "agent stalled: no file changed", attempt=1,
-        ))
+        ctx.add_iteration(
+            IterationRecord(
+                3,
+                False,
+                "agent stalled: no file changed",
+                attempt=1,
+            )
+        )
         ctx.add_verification_failure("linter: E501", attempt=2)
 
         text = ctx.format_for_prompt()
-        assert section(text, HISTORY) == (
-            "- Attempt 1: FAILED - agent stalled: no file changed"
-        )
+        assert section(text, HISTORY) == ("- Attempt 1: FAILED - agent stalled: no file changed")
         assert "E501" in section(text, CURRENT)
 
     def test_format_attempt_number_increments(self) -> None:
@@ -219,7 +228,8 @@ class TestIterationContext:
         alone = IterationContext()
         alone.add_verification_failure("gamma", attempt=3)
         assert section(rendered, CURRENT) == section(
-            alone.format_for_prompt(), CURRENT,
+            alone.format_for_prompt(),
+            CURRENT,
         )
 
     def test_json_round_trip_preserves_attempt_and_phase(self) -> None:
@@ -232,7 +242,10 @@ class TestIterationContext:
         restored = IterationContext.from_json(ctx.to_json())
         assert restored.entries == ctx.entries
         assert [(e.attempt, e.phase) for e in restored.entries] == [
-            (1, "verification"), (2, "review"), (2, "security"), (3, "contract"),
+            (1, "verification"),
+            (2, "review"),
+            (2, "security"),
+            (3, "contract"),
         ]
         # The derived views still split the entries the pre-R10.2 way.
         assert restored.review_findings == ["criterion X", "sql injection"]
@@ -247,12 +260,14 @@ class TestIterationContext:
         An entry of unknown age supports no such inference, so
         ``_buckets`` special-cases attempt 0 ahead of the rank comparison.
         """
-        legacy = json.dumps({
-            "records": [],
-            "review_findings": ["old"],
-            "verification_failures": [],
-            "contract_failures": [],
-        })
+        legacy = json.dumps(
+            {
+                "records": [],
+                "review_findings": ["old"],
+                "verification_failures": [],
+                "contract_failures": [],
+            }
+        )
 
         bare = IterationContext.from_json(legacy)
         assert [(e.attempt, e.phase, e.text) for e in bare.entries] == [
@@ -270,20 +285,23 @@ class TestIterationContext:
             assert "(attempt unknown, review) old" in text, phase
 
     def test_legacy_record_history_falls_back_to_position(self) -> None:
-        legacy = json.dumps({
-            "records": [
-                {"iteration": 7, "success": False, "error": "boom"},
-            ],
-            "review_findings": [],
-            "verification_failures": [],
-            "contract_failures": [],
-        })
+        legacy = json.dumps(
+            {
+                "records": [
+                    {"iteration": 7, "success": False, "error": "boom"},
+                ],
+                "review_findings": [],
+                "verification_failures": [],
+                "contract_failures": [],
+            }
+        )
         ctx = IterationContext.from_json(legacy)
         assert ctx.records[0].attempt == 0
         # Position stands in for the missing attempt number, and the
         # engineer-loop iteration count (7) is not passed off as one.
         assert "- Attempt 1: FAILED - boom" in section(
-            ctx.format_for_prompt(), HISTORY,
+            ctx.format_for_prompt(),
+            HISTORY,
         )
 
     def test_skippable_phase_is_not_retired_by_a_later_gate(self) -> None:
@@ -321,7 +339,8 @@ class TestIterationContext:
         ctx.add_review_finding("sql injection", attempt=1, phase="security")
         ctx.add_contract_failure("tier 0 broke", attempt=2)
         assert "sql injection" in section(
-            ctx.format_for_prompt(), NOT_REMEASURED,
+            ctx.format_for_prompt(),
+            NOT_REMEASURED,
         )
 
     def test_engineer_only_attempt_retires_nothing(self) -> None:
@@ -330,9 +349,14 @@ class TestIterationContext:
         may be retired, and nothing earlier may be shown as current."""
         ctx = IterationContext()
         ctx.add_verification_failure("linter: E501", attempt=1)
-        ctx.add_iteration(IterationRecord(
-            4, False, "agent stalled: no file changed", attempt=2,
-        ))
+        ctx.add_iteration(
+            IterationRecord(
+                4,
+                False,
+                "agent stalled: no file changed",
+                attempt=2,
+            )
+        )
 
         text = ctx.format_for_prompt()
         assert "Attempt 3" in text
@@ -347,7 +371,9 @@ class TestIterationContext:
         failure is un-re-measured rather than superseded."""
         ctx = IterationContext()
         ctx.add_verification_failure(
-            "git diff against main failed: boom", attempt=1, phase="diff",
+            "git diff against main failed: boom",
+            attempt=1,
+            phase="diff",
         )
         ctx.add_verification_failure("linter: E501", attempt=2)
 
@@ -357,7 +383,8 @@ class TestIterationContext:
         assert section(text, RESOLVED) == ""
         # It still reads back through the pre-R10.2 view it used to fill.
         assert ctx.verification_failures == [
-            "git diff against main failed: boom", "linter: E501",
+            "git diff against main failed: boom",
+            "linter: E501",
         ]
 
     def test_diff_failure_is_retired_once_review_runs(self) -> None:
@@ -365,7 +392,9 @@ class TestIterationContext:
         review cannot run without it, and diff is not skippable."""
         ctx = IterationContext()
         ctx.add_verification_failure(
-            "git diff failed: boom", attempt=1, phase="diff",
+            "git diff failed: boom",
+            attempt=1,
+            phase="diff",
         )
         ctx.add_review_finding("criterion X", attempt=2, phase="review")
 
@@ -405,7 +434,9 @@ class TestIterationContext:
         ctx = IterationContext()
         ctx.add_review_finding("criterion X", attempt=1, phase="review")
         ctx.add_verification_failure(
-            "The diff is too large to review", attempt=2, phase="diff",
+            "The diff is too large to review",
+            attempt=2,
+            phase="diff",
         )
 
         text = ctx.format_for_prompt()
@@ -445,7 +476,9 @@ class TestIterationContext:
         ctx = IterationContext()
         ctx.add_engineer_failure("diff_scope: FAIL - evil.txt", attempt=1)
         ctx.add_verification_failure(
-            "The diff is too large to review", attempt=1, phase="diff",
+            "The diff is too large to review",
+            attempt=1,
+            phase="diff",
         )
         # Pre-R10.2 these were the other way round: the guard called
         # add_verification_failure and the unsplittable diff called
@@ -465,7 +498,9 @@ class TestIterationContext:
         ctx.add_review_finding("sql injection in /users", attempt=1, phase="security")
         ctx.add_review_finding(
             "Security review infrastructure error: model timed out",
-            attempt=2, phase="security", infrastructure=True,
+            attempt=2,
+            phase="security",
+            infrastructure=True,
         )
 
         text = ctx.format_for_prompt()
@@ -479,7 +514,9 @@ class TestIterationContext:
         ctx = IterationContext()
         ctx.add_verification_failure("linter: E501", attempt=1)
         ctx.add_review_finding(
-            "Security review crashed", attempt=2, phase="security",
+            "Security review crashed",
+            attempt=2,
+            phase="security",
             infrastructure=True,
         )
 
@@ -493,7 +530,10 @@ class TestIterationContext:
         ctx = IterationContext()
         ctx.add_review_finding("sql injection", attempt=1, phase="security")
         ctx.add_review_finding(
-            "crashed", attempt=2, phase="security", infrastructure=True,
+            "crashed",
+            attempt=2,
+            phase="security",
+            infrastructure=True,
         )
         ctx.add_review_finding("xss in /search", attempt=3, phase="security")
 
@@ -505,15 +545,17 @@ class TestIterationContext:
     def test_infrastructure_flag_survives_the_json_round_trip(self) -> None:
         ctx = IterationContext()
         ctx.add_verification_failure(
-            "git diff failed", attempt=1, phase="diff", infrastructure=True,
+            "git diff failed",
+            attempt=1,
+            phase="diff",
+            infrastructure=True,
         )
         ctx.add_verification_failure("linter: E501", attempt=1)
         restored = IterationContext.from_json(ctx.to_json())
         assert [e.infrastructure for e in restored.entries] == [True, False]
         # Entries written before the flag existed default to measured.
         legacy = IterationContext.from_json(
-            '{"records": [], "entries": ['
-            '{"attempt": 1, "phase": "review", "text": "x"}]}'
+            '{"records": [], "entries": [{"attempt": 1, "phase": "review", "text": "x"}]}'
         )
         assert legacy.entries[0].infrastructure is False
 
@@ -527,7 +569,8 @@ class TestIterationContext:
         """
         ctx = IterationContext()
         ctx.add_checkpoint_request(
-            "Human reviewer requested changes at PR checkpoint", attempt=1,
+            "Human reviewer requested changes at PR checkpoint",
+            attempt=1,
         )
         ctx.add_engineer_failure("agent exited non-zero", attempt=2)
 
@@ -570,7 +613,9 @@ class TestIterationContext:
         # The pre-R10.2 lists: engineer, review and security all landed in
         # review_findings.
         assert ctx.review_findings == [
-            "guard tripped", "criterion X", "sql injection",
+            "guard tripped",
+            "criterion X",
+            "sql injection",
         ]
         assert ctx.verification_failures == ["E501"]
         assert ctx.contract_failures == ["tier 0 broke"]
@@ -592,7 +637,9 @@ class TestBucketRuleSweep:
             ctx.entries.append(FailureEntry(0, "review", "legacy"))
         for attempt, phase in enumerate(sequence, start=1):
             ctx.add_review_finding(
-                f"{phase}-{attempt}", attempt=attempt, phase=phase,
+                f"{phase}-{attempt}",
+                attempt=attempt,
+                phase=phase,
             )
         return ctx
 
@@ -612,19 +659,15 @@ class TestBucketRuleSweep:
                     for e in b.not_remeasured:
                         rank = PHASE_RANK[e.phase]
                         assert e.attempt == 0 or (
-                            e.attempt < n and (
-                                rank > q
-                                or (rank < q and e.phase in SKIPPABLE_PHASES)
-                            )
+                            e.attempt < n
+                            and (rank > q or (rank < q and e.phase in SKIPPABLE_PHASES))
                         )
                     for e in b.resolved:
                         rank = PHASE_RANK[e.phase]
                         assert 0 < e.attempt < n
                         # Retired only when observed (same phase re-ran)
                         # or safely inferred (a phase that always runs).
-                        assert rank == q or (
-                            rank < q and e.phase not in SKIPPABLE_PHASES
-                        )
+                        assert rank == q or (rank < q and e.phase not in SKIPPABLE_PHASES)
                     cases += 1
         assert cases == 5600
 

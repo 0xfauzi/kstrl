@@ -35,18 +35,14 @@ class CheckpointBanner(Static):
 
     def update_state(self, state: RunState, *, observe_only: bool) -> None:
         open_components = [
-            comp.component_id
-            for comp in state.components.values() if comp.checkpoint_open
+            comp.component_id for comp in state.components.values() if comp.checkpoint_open
         ]
         if not open_components:
             self.display = False
             return
         self.display = True
         names = ", ".join(sorted(open_components))
-        hint = (
-            "answer in the `ks factory` terminal"
-            if observe_only else "press c to answer"
-        )
+        hint = "answer in the `ks factory` terminal" if observe_only else "press c to answer"
         self.update(f"◆ checkpoint pending: {names} - {hint}")
 
 
@@ -71,7 +67,8 @@ class OverviewScreen(Screen[None]):
         yield Footer()
 
     def update_safe_mode(
-        self, reasons: list[SafeModeReason] | None,
+        self,
+        reasons: list[SafeModeReason] | None,
     ) -> None:
         """Duck-typed contract the app calls; ignored while unmounted.
 
@@ -110,7 +107,8 @@ class OverviewScreen(Screen[None]):
             self.query_one(CostMeter).update_state(state)
             self.query_one(ComponentTable).update_state(state)
             self.query_one(CheckpointBanner).update_state(
-                state, observe_only=self.observe_only,
+                state,
+                observe_only=self.observe_only,
             )
         except NoMatches:
             # A late StateChanged can arrive while the screen is being torn

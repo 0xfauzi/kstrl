@@ -30,7 +30,10 @@ class CustomAgent:
         return f"custom ({self._command})"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         """Run command with prompt piped to stdin.
 
@@ -64,10 +67,12 @@ class CustomAgent:
         if streamer.timed_out:
             # Killed mid-run: partial output is not a trustworthy final
             # message, so leave it unset.
-            self._usage_records.append(UsageRecord(
-                duration_seconds=time.monotonic() - started,
-                source="timeout",
-            ))
+            self._usage_records.append(
+                UsageRecord(
+                    duration_seconds=time.monotonic() - started,
+                    source="timeout",
+                )
+            )
             yield timeout_message(timeout)
             return
 
@@ -75,10 +80,12 @@ class CustomAgent:
 
         # R3.1: an arbitrary shell command exposes no token accounting;
         # the fallback the roadmap mandates is call counts + wall time.
-        self._usage_records.append(UsageRecord(
-            duration_seconds=time.monotonic() - started,
-            source="unavailable",
-        ))
+        self._usage_records.append(
+            UsageRecord(
+                duration_seconds=time.monotonic() - started,
+                source="unavailable",
+            )
+        )
 
         # Store last output as "final message" for consistency
         if output_lines:

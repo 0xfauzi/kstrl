@@ -123,16 +123,12 @@ class TestLinearConfig:
         assert config.min_request_interval == 0.25
         assert config.auth_mode == "oauth"
 
-    def test_env_typo_surfaces(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_env_typo_surfaces(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_AUTH_MODE", "bearrer")
         with pytest.raises(ValueError, match="auth_mode"):
             LinearConfig.load(tmp_path)
 
-    def test_token_env_indirection(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_token_env_indirection(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN_ENV", "MY_LINEAR_SECRET")
         config = LinearConfig.load(tmp_path)
         assert config.token_env == "MY_LINEAR_SECRET"
@@ -166,9 +162,7 @@ class FakeResponse:
         return None
 
 
-def fake_transport(
-    monkeypatch: pytest.MonkeyPatch, payloads: list[Any]
-) -> list[Any]:
+def fake_transport(monkeypatch: pytest.MonkeyPatch, payloads: list[Any]) -> list[Any]:
     """Patch urlopen to pop canned payloads; returns the request log.
 
     A payload that is an Exception is raised; a dict becomes the JSON
@@ -207,35 +201,37 @@ class TestLinearClient:
             client_id=deterministic_uuid("k:comp"),
         )
         assert client.recorded == [
-            ("issueCreate", {
-                "input": {
-                    "id": deterministic_uuid("k:comp"),
-                    "teamId": TEAM_ID,
-                    "title": "T",
-                    "description": "D",
+            (
+                "issueCreate",
+                {
+                    "input": {
+                        "id": deterministic_uuid("k:comp"),
+                        "teamId": TEAM_ID,
+                        "title": "T",
+                        "description": "D",
+                    },
                 },
-            }),
+            ),
         ]
         assert ref.id == deterministic_uuid("k:comp")
         assert ref.identifier.startswith("DRY-")
 
-    def test_missing_token_names_var_not_value(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_token_names_var_not_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="KSTRL_LINEAR_TOKEN"):
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
 
-    def test_token_value_never_in_errors(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_token_value_never_in_errors(self, monkeypatch: pytest.MonkeyPatch) -> None:
         secret = "lin_api_supersecretvalue"
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", secret)
-        fake_transport(monkeypatch, [
-            {"errors": [{"message": "boom", "extensions": {"code": "X"}}]},
-        ])
+        fake_transport(
+            monkeypatch,
+            [
+                {"errors": [{"message": "boom", "extensions": {"code": "X"}}]},
+            ],
+        )
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError) as excinfo:
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
@@ -245,18 +241,11 @@ class TestLinearClient:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         assert LinearClient(dry_config())._auth_header() == "lin_api_abc"
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_oauth_xyz")
-        assert (
-            LinearClient(dry_config())._auth_header() == "Bearer lin_oauth_xyz"
-        )
+        assert LinearClient(dry_config())._auth_header() == "Bearer lin_oauth_xyz"
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
-        assert (
-            LinearClient(dry_config(auth_mode="oauth"))._auth_header()
-            == "Bearer lin_api_abc"
-        )
+        assert LinearClient(dry_config(auth_mode="oauth"))._auth_header() == "Bearer lin_api_abc"
 
-    def test_non_json_response_is_linear_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_non_json_response_is_linear_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
 
         class Garbage(FakeResponse):
@@ -266,58 +255,48 @@ class TestLinearClient:
         def fake_urlopen(request: Any, timeout: float = 0) -> FakeResponse:
             return Garbage()
 
-        monkeypatch.setattr(
-            "kstrl.linear.urllib.request.urlopen", fake_urlopen
-        )
+        monkeypatch.setattr("kstrl.linear.urllib.request.urlopen", fake_urlopen)
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="non-JSON"):
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
 
-    def test_malformed_success_payload_rejected(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_malformed_success_payload_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
-        fake_transport(monkeypatch, [
-            {"data": {"issueCreate": {"success": True, "issue": "not-a-dict"}}},
-            # get_issue recovery probe for the duplicate-id path:
-            {"data": {"issue": None}},
-        ])
+        fake_transport(
+            monkeypatch,
+            [
+                {"data": {"issueCreate": {"success": True, "issue": "not-a-dict"}}},
+                # get_issue recovery probe for the duplicate-id path:
+                {"data": {"issue": None}},
+            ],
+        )
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="malformed"):
             client.create_issue(TEAM_ID, "T", "D", deterministic_uuid("c"))
 
-    def test_ratelimited_retries_once_then_raises(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ratelimited_retries_once_then_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         sleeps: list[float] = []
-        monkeypatch.setattr(
-            "kstrl.linear.time.sleep", lambda s: sleeps.append(s)
-        )
-        limited = {
-            "errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]
-        }
-        requests = fake_transport(
-            monkeypatch, [http_error(limited), http_error(limited)]
-        )
+        monkeypatch.setattr("kstrl.linear.time.sleep", lambda s: sleeps.append(s))
+        limited = {"errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]}
+        requests = fake_transport(monkeypatch, [http_error(limited), http_error(limited)])
         client = LinearClient(dry_config(dry_run=False))
         with pytest.raises(LinearError, match="rate limited"):
             client.create_comment("issue-1", "body", deterministic_uuid("c"))
         assert len(requests) == 2
         assert sleeps  # backed off between attempts
 
-    def test_ratelimited_then_success(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ratelimited_then_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         monkeypatch.setattr("kstrl.linear.time.sleep", lambda s: None)
-        limited = {
-            "errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]
-        }
-        fake_transport(monkeypatch, [
-            http_error(limited),
-            {"data": {"commentCreate": {"success": True}}},
-        ])
+        limited = {"errors": [{"message": "rl", "extensions": {"code": "RATELIMITED"}}]}
+        fake_transport(
+            monkeypatch,
+            [
+                http_error(limited),
+                {"data": {"commentCreate": {"success": True}}},
+            ],
+        )
         client = LinearClient(dry_config(dry_run=False))
         client.create_comment("issue-1", "body", deterministic_uuid("c"))
 
@@ -327,13 +306,22 @@ class TestLinearClient:
         """Double-fired create converges on the already-created issue."""
         monkeypatch.setenv("KSTRL_LINEAR_TOKEN", "lin_api_abc")
         client_id = deterministic_uuid("k:comp")
-        fake_transport(monkeypatch, [
-            http_error({"errors": [{
-                "message": "id already exists",
-                "extensions": {"code": "INVALID_INPUT"},
-            }]}),
-            {"data": {"issue": {"id": client_id, "identifier": "EXC-7"}}},
-        ])
+        fake_transport(
+            monkeypatch,
+            [
+                http_error(
+                    {
+                        "errors": [
+                            {
+                                "message": "id already exists",
+                                "extensions": {"code": "INVALID_INPUT"},
+                            }
+                        ]
+                    }
+                ),
+                {"data": {"issue": {"id": client_id, "identifier": "EXC-7"}}},
+            ],
+        )
         client = LinearClient(dry_config(dry_run=False))
         ref = client.create_issue(TEAM_ID, "T", "D", client_id)
         assert ref == IssueRef(id=client_id, identifier="EXC-7")
@@ -406,7 +394,8 @@ class TestSyncDecompose:
             suggestion="Define acceptance",
         )
         _, client, _ = self.make_sync(
-            components=[comp_data("comp-a")], spec_issues=[issue],
+            components=[comp_data("comp-a")],
+            spec_issues=[issue],
         )
         op, variables = client.recorded[-1]
         assert op == "issueCreate"
@@ -443,9 +432,7 @@ class TestSyncDecompose:
             ) -> IssueRef:
                 if "comp-a" in description:
                     raise LinearError("boom")
-                return super().create_issue(
-                    team_id, title, description, client_id, project_id
-                )
+                return super().create_issue(team_id, title, description, client_id, project_id)
 
         client = FlakyClient(config, warn=warn)
         sync = sync_decompose(
@@ -543,12 +530,14 @@ class TestLinearSink:
 
     def test_budget_exceeded_maps_to_comment(self) -> None:
         sink, client, _ = self.make_sink()
-        sink.handle_event({
-            "ts": "2026-07-19T12:00:00Z",
-            "event": "budget_exceeded",
-            "component": "comp-a",
-            "data": {"total_tokens": 900, "max_total_tokens": 800},
-        })
+        sink.handle_event(
+            {
+                "ts": "2026-07-19T12:00:00Z",
+                "event": "budget_exceeded",
+                "component": "comp-a",
+                "data": {"total_tokens": 900, "max_total_tokens": 800},
+            }
+        )
         assert len(client.recorded) == 1
         assert "900" in client.recorded[0][1]["input"]["body"]
 
@@ -564,13 +553,20 @@ class TestLinearSink:
     def test_lifecycle_events_not_mirrored(self) -> None:
         sink, client, _ = self.make_sink()
         for event_type in (
-            "component_started", "component_completed",
-            "verification_result", "review_result", "factory_completed",
+            "component_started",
+            "component_completed",
+            "verification_result",
+            "review_result",
+            "factory_completed",
         ):
-            sink.handle_event({
-                "ts": "t", "event": event_type,
-                "component": "comp-a", "data": {"passed": True},
-            })
+            sink.handle_event(
+                {
+                    "ts": "t",
+                    "event": event_type,
+                    "component": "comp-a",
+                    "data": {"passed": True},
+                }
+            )
         assert client.recorded == []
 
     def test_unmapped_component_ignored(self) -> None:
@@ -582,9 +578,7 @@ class TestLinearSink:
         warn = Warnings()
 
         class DeadClient(LinearClient):
-            def create_comment(
-                self, issue_id: str, body: str, client_id: str
-            ) -> None:
+            def create_comment(self, issue_id: str, body: str, client_id: str) -> None:
                 raise LinearError("api down")
 
         sink = LinearSink(
@@ -603,10 +597,7 @@ class TestLinearSink:
         sink_two, client_two, _ = self.make_sink()
         sink_one.handle_event(self.failed_event())
         sink_two.handle_event(self.failed_event())
-        assert (
-            client_one.recorded[0][1]["input"]["id"]
-            == client_two.recorded[0][1]["input"]["id"]
-        )
+        assert client_one.recorded[0][1]["input"]["id"] == client_two.recorded[0][1]["input"]["id"]
 
 
 class TestProgressLogFanout:
@@ -706,18 +697,14 @@ class TestManifestPersistenceAndRetry:
         assert loaded.components[0].linear_issue_id == ""
         assert loaded.linear_sync_key == ""
 
-    def test_retry_reuses_issue_no_duplicate_creates(
-        self, tmp_path: Path
-    ) -> None:
+    def test_retry_reuses_issue_no_duplicate_creates(self, tmp_path: Path) -> None:
         """The `ks retry` interaction: after a failure, reset, and
         reload, the sink comments on the ORIGINAL issue and nothing
         creates a second one."""
         manifest = self.make_mapped_manifest()
         manifest.components[0].status = ComponentStatus.FAILED.value
         manifest.reset_for_retry("comp-a")
-        assert (
-            manifest.components[0].status == ComponentStatus.PENDING.value
-        )
+        assert manifest.components[0].status == ComponentStatus.PENDING.value
         # Linear mapping survives the reset...
         assert manifest.components[0].linear_issue_id == "issue-uuid-a"
         manifest.save(tmp_path / "manifest.json")
@@ -727,7 +714,10 @@ class TestManifestPersistenceAndRetry:
         # persisted issue: zero creates across the retry.
         warn = Warnings()
         sink = build_linear_sink(
-            reloaded, dry_config(), run_id="run-2", warn=warn,
+            reloaded,
+            dry_config(),
+            run_id="run-2",
+            warn=warn,
         )
         assert sink is not None
         log_path = tmp_path / "p.jsonl"
@@ -762,16 +752,17 @@ class TestBuildLinearSink:
         assert sink is None
         assert any("sink inactive" in m for m in warn.messages)
 
-    def test_live_mode_without_token_warns_inactive(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_live_mode_without_token_warns_inactive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         monkeypatch.delenv("KSTRL_LINEAR_TOKEN", raising=False)
         manifest = make_manifest([component("comp-a")])
         manifest.components[0].linear_issue_id = "issue-uuid-a"
         warn = Warnings()
         sink = build_linear_sink(
-            manifest, dry_config(dry_run=False), run_id="r", warn=warn,
+            manifest,
+            dry_config(dry_run=False),
+            run_id="r",
+            warn=warn,
         )
         assert sink is None
         assert any("KSTRL_LINEAR_TOKEN" in m for m in warn.messages)

@@ -49,9 +49,7 @@ def _count_cmd(count_file: Path) -> str:
 def _lines(count_file: Path) -> list[str]:
     if not count_file.exists():
         return []
-    return [
-        line for line in count_file.read_text().splitlines() if line.strip()
-    ]
+    return [line for line in count_file.read_text().splitlines() if line.strip()]
 
 
 class TestNotifyConfig:
@@ -78,11 +76,12 @@ class TestNotifyConfig:
         assert config.hook_timeout == 5.0
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(
-            '[notify]\non_complete = "from-toml"\n'
-            'on_inbox_item = "inbox-toml"\n'
+            '[notify]\non_complete = "from-toml"\non_inbox_item = "inbox-toml"\n'
         )
         monkeypatch.setenv("KSTRL_NOTIFY_ON_COMPLETE", "from-env")
         monkeypatch.setenv("KSTRL_NOTIFY_ON_FIRST_FAILURE", "fail-env")
@@ -104,7 +103,8 @@ class TestNotifyHooksOnce:
         count = tmp_path / "count.txt"
         hooks = NotifyHooks(
             NotifyConfig(on_first_failure=_count_cmd(count)),
-            run_id="r1", project="demo",
+            run_id="r1",
+            project="demo",
         )
         hooks.fire_first_failure("comp-a", "boom")
         hooks.fire_first_failure("comp-b", "boom again")
@@ -118,7 +118,8 @@ class TestNotifyHooksOnce:
         assert _lines(count) == ["run_complete "]
 
     def test_merge_pending_fires_once_and_is_distinct(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """merge_pending uses the on_first_failure command but is its own
         once-per-run condition: a later real failure still notifies."""
@@ -138,16 +139,16 @@ class TestNotifyHooksOnce:
         out = tmp_path / "env.txt"
         cmd = (
             'echo "$KSTRL_NOTIFY_EVENT|$KSTRL_NOTIFY_RUN_ID'
-            '|$KSTRL_NOTIFY_PROJECT|$KSTRL_NOTIFY_COMPONENT'
+            "|$KSTRL_NOTIFY_PROJECT|$KSTRL_NOTIFY_COMPONENT"
             f"|$KSTRL_NOTIFY_DETAIL\" > '{out}'"
         )
         hooks = NotifyHooks(
-            NotifyConfig(on_first_failure=cmd), run_id="r9", project="demo",
+            NotifyConfig(on_first_failure=cmd),
+            run_id="r9",
+            project="demo",
         )
         hooks.fire_first_failure("comp-a", "tests failed")
-        assert out.read_text().strip() == (
-            "first_failure|r9|demo|comp-a|tests failed"
-        )
+        assert out.read_text().strip() == ("first_failure|r9|demo|comp-a|tests failed")
 
     def test_empty_command_is_noop(self, tmp_path: Path) -> None:
         hooks = NotifyHooks(NotifyConfig())
@@ -163,7 +164,8 @@ class TestNotifyHooksNonFatal:
     def test_nonzero_exit_warns(self) -> None:
         warnings: list[str] = []
         hooks = NotifyHooks(
-            NotifyConfig(on_complete="exit 3"), warn=warnings.append,
+            NotifyConfig(on_complete="exit 3"),
+            warn=warnings.append,
         )
         hooks.fire_complete()
         assert len(warnings) == 1
@@ -196,7 +198,8 @@ class TestNotifyHooksNonFatal:
         cmd = f"echo x >> '{count}'; exit 1"
         warnings: list[str] = []
         hooks = NotifyHooks(
-            NotifyConfig(on_first_failure=cmd), warn=warnings.append,
+            NotifyConfig(on_first_failure=cmd),
+            warn=warnings.append,
         )
         hooks.fire_first_failure("comp-a", "boom")
         hooks.fire_first_failure("comp-b", "boom")
@@ -205,8 +208,12 @@ class TestNotifyHooksNonFatal:
 
 def _plain_factory_config(**overrides: object) -> FactoryConfig:
     config = FactoryConfig(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         skip_verification=True,
     )
     for key, value in overrides.items():
@@ -218,9 +225,7 @@ def _setup_plain_project(tmp_path: Path) -> Path:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     return tmp_path
 
 
@@ -228,16 +233,22 @@ def _plain_base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
         prd_file=root / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
 def _two_component_manifest() -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="demo",
-        base_branch="main", single_pr=False,
+        version="1",
+        spec_file="spec.md",
+        project_name="demo",
+        base_branch="main",
+        single_pr=False,
         components=[
             Component("a", "A", "", [], "a.json", "b/a"),
             Component("b", "B", "", [], "b.json", "b/b"),
@@ -252,8 +263,11 @@ class TestFactoryProgressLogDefaultOn:
         root = _setup_plain_project(tmp_path)
         manifest = make_manifest([])
         result = run_factory(
-            manifest, _plain_factory_config(), _plain_base_config(root),
-            PlainUI(no_color=True), root,
+            manifest,
+            _plain_factory_config(),
+            _plain_base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
         assert result.exit_code == 0
 
@@ -261,7 +275,8 @@ class TestFactoryProgressLogDefaultOn:
         assert log_path.exists()
         events = read_progress_events(log_path)
         assert [e["event"] for e in events] == [
-            "factory_started", "factory_completed",
+            "factory_started",
+            "factory_completed",
         ]
         assert latest_run_id(events) != ""
 
@@ -270,7 +285,9 @@ class TestFactoryProgressLogDefaultOn:
         result = run_factory(
             make_manifest([]),
             _plain_factory_config(progress_log_enabled=False),
-            _plain_base_config(root), PlainUI(no_color=True), root,
+            _plain_base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
         assert result.exit_code == 0
         assert not (root / ".kstrl" / "progress.jsonl").exists()
@@ -281,7 +298,9 @@ class TestFactoryProgressLogDefaultOn:
         run_factory(
             make_manifest([]),
             _plain_factory_config(progress_log_path=custom),
-            _plain_base_config(root), PlainUI(no_color=True), root,
+            _plain_base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
         assert custom.exists()
         assert not (root / ".kstrl" / "progress.jsonl").exists()
@@ -290,8 +309,11 @@ class TestFactoryProgressLogDefaultOn:
         root = _setup_plain_project(tmp_path)
         for _ in range(2):
             run_factory(
-                make_manifest([]), _plain_factory_config(),
-                _plain_base_config(root), PlainUI(no_color=True), root,
+                make_manifest([]),
+                _plain_factory_config(),
+                _plain_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         events = read_progress_events(root / ".kstrl" / "progress.jsonl")
         run_ids = {e["run_id"] for e in events}
@@ -302,25 +324,33 @@ class TestFactoryFiresHooks:
     """R3.2 requirement 3 through real run_factory calls."""
 
     def test_failing_run_fires_first_failure_and_complete_once(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_plain_project(tmp_path)
         fail_count = tmp_path / "fail-count.txt"
         complete_count = tmp_path / "complete-count.txt"
-        config = _plain_factory_config(notify_config=NotifyConfig(
-            on_first_failure=_count_cmd(fail_count),
-            on_complete=_count_cmd(complete_count),
-        ))
+        config = _plain_factory_config(
+            notify_config=NotifyConfig(
+                on_first_failure=_count_cmd(fail_count),
+                on_complete=_count_cmd(complete_count),
+            )
+        )
 
         def fake_run(
-            component_id: str, *args: object, **kwargs: object,
+            component_id: str,
+            *args: object,
+            **kwargs: object,
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
         with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
-                _two_component_manifest(), config, _plain_base_config(root),
-                PlainUI(no_color=True), root,
+                _two_component_manifest(),
+                config,
+                _plain_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         # Two independent components both failed; the hook fired once.
@@ -331,7 +361,8 @@ class TestFactoryFiresHooks:
         assert _lines(complete_count) == ["run_complete "]
 
     def test_inbox_hook_is_silent_until_opted_in(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R8.3 + review #5: a failing run raises inbox items, but with
         on_inbox_item unset (the default) nothing extra is pushed."""
@@ -339,19 +370,26 @@ class TestFactoryFiresHooks:
 
         root = _setup_plain_project(tmp_path)
         inbox_count = tmp_path / "inbox-count.txt"
-        config = _plain_factory_config(notify_config=NotifyConfig(
-            on_first_failure=_count_cmd(tmp_path / "fail-count.txt"),
-        ))
+        config = _plain_factory_config(
+            notify_config=NotifyConfig(
+                on_first_failure=_count_cmd(tmp_path / "fail-count.txt"),
+            )
+        )
 
         def fake_run(
-            component_id: str, *args: object, **kwargs: object,
+            component_id: str,
+            *args: object,
+            **kwargs: object,
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
         with patch("kstrl.factory._run_component", side_effect=fake_run):
             run_factory(
-                _two_component_manifest(), config, _plain_base_config(root),
-                PlainUI(no_color=True), root,
+                _two_component_manifest(),
+                config,
+                _plain_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         # Items were genuinely raised, so the silence is a decision and
@@ -360,27 +398,35 @@ class TestFactoryFiresHooks:
         assert _lines(inbox_count) == []
 
     def test_opted_in_inbox_hook_fires_without_doubling_the_failure_hook(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Opting in adds an inbox push; it does not fire the failure
         hook a second time for the same event."""
         root = _setup_plain_project(tmp_path)
         fail_count = tmp_path / "fail-count.txt"
         inbox_count = tmp_path / "inbox-count.txt"
-        config = _plain_factory_config(notify_config=NotifyConfig(
-            on_first_failure=_count_cmd(fail_count),
-            on_inbox_item=_count_cmd(inbox_count),
-        ))
+        config = _plain_factory_config(
+            notify_config=NotifyConfig(
+                on_first_failure=_count_cmd(fail_count),
+                on_inbox_item=_count_cmd(inbox_count),
+            )
+        )
 
         def fake_run(
-            component_id: str, *args: object, **kwargs: object,
+            component_id: str,
+            *args: object,
+            **kwargs: object,
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
         with patch("kstrl.factory._run_component", side_effect=fake_run):
             run_factory(
-                _two_component_manifest(), config, _plain_base_config(root),
-                PlainUI(no_color=True), root,
+                _two_component_manifest(),
+                config,
+                _plain_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert _lines(fail_count) == ["first_failure a"]
@@ -392,14 +438,19 @@ class TestFactoryFiresHooks:
         root = _setup_plain_project(tmp_path)
         fail_count = tmp_path / "fail-count.txt"
         complete_count = tmp_path / "complete-count.txt"
-        config = _plain_factory_config(notify_config=NotifyConfig(
-            on_first_failure=_count_cmd(fail_count),
-            on_complete=_count_cmd(complete_count),
-        ))
+        config = _plain_factory_config(
+            notify_config=NotifyConfig(
+                on_first_failure=_count_cmd(fail_count),
+                on_complete=_count_cmd(complete_count),
+            )
+        )
 
         result = run_factory(
-            make_manifest([]), config, _plain_base_config(root),
-            PlainUI(no_color=True), root,
+            make_manifest([]),
+            config,
+            _plain_base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
         assert result.exit_code == 0
         assert _lines(fail_count) == []
@@ -407,20 +458,27 @@ class TestFactoryFiresHooks:
 
     def test_hook_failure_never_affects_the_run(self, tmp_path: Path) -> None:
         root = _setup_plain_project(tmp_path)
-        config = _plain_factory_config(notify_config=NotifyConfig(
-            on_complete="/nonexistent/kstrl-hook-xyz",
-            on_first_failure="exit 7",
-        ))
+        config = _plain_factory_config(
+            notify_config=NotifyConfig(
+                on_complete="/nonexistent/kstrl-hook-xyz",
+                on_first_failure="exit 7",
+            )
+        )
 
         def fake_run(
-            component_id: str, *args: object, **kwargs: object,
+            component_id: str,
+            *args: object,
+            **kwargs: object,
         ) -> ComponentResult:
             return ComponentResult(component_id, success=False, error="boom")
 
         with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
-                _two_component_manifest(), config, _plain_base_config(root),
-                PlainUI(no_color=True), root,
+                _two_component_manifest(),
+                config,
+                _plain_base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         # Failure exit code comes from the failed components, not hooks.
@@ -436,23 +494,28 @@ def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     for cid in comp_ids:
         feature = kstrl_dir / "feature" / cid
         feature.mkdir(parents=True)
-        (feature / "prd.json").write_text(json.dumps({
-            "branchName": f"kstrl/factory/{cid}",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
-    (root / ".gitignore").write_text(
-        ".kstrl/\nscripts/kstrl/manifest.json\n"
-    )
+        (feature / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": f"kstrl/factory/{cid}",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
+    (root / ".gitignore").write_text(".kstrl/\nscripts/kstrl/manifest.json\n")
     git("init", "-q", "-b", "main", cwd=root)
     git("config", "user.email", "notify@test", cwd=root)
     git("config", "user.name", "Notify Test", cwd=root)
@@ -470,34 +533,43 @@ class TestMergePendingFiresHook:
     gh whose `pr view` never reports MERGED)."""
 
     def test_merge_pending_park_fires_hook(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = _make_pr_repo(tmp_path, ("alpha",))
         bin_dir = tmp_path / "stub-bin"
         bin_dir.mkdir()
         write_stub_gh(bin_dir)
         monkeypatch.setenv(
-            "PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "PATH",
+            f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
         )
         monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
 
         count = tmp_path / "count.txt"
         config = factory_config(
-            create_prs=True, merge_timeout=1.0,
+            create_prs=True,
+            merge_timeout=1.0,
             notify_config=NotifyConfig(on_first_failure=_count_cmd(count)),
         )
         manifest = make_manifest([component("alpha")])
 
         def fake_run(
-            component_id: str, *args: object, **kwargs: object,
+            component_id: str,
+            *args: object,
+            **kwargs: object,
         ) -> ComponentResult:
             return ComponentResult(component_id, success=True, iterations=1)
 
         with patch("kstrl.factory._run_component", side_effect=fake_run):
             result = run_factory(
-                manifest, config, base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         alpha = manifest.get_component("alpha")
@@ -518,9 +590,10 @@ class TestNotifyStubIsCounted:
         count = tmp_path / "count.txt"
         for _ in range(3):
             subprocess.run(
-                _count_cmd(count), shell=True, check=True,
-                env={**os.environ, "KSTRL_NOTIFY_EVENT": "e",
-                     "KSTRL_NOTIFY_COMPONENT": "c"},
+                _count_cmd(count),
+                shell=True,
+                check=True,
+                env={**os.environ, "KSTRL_NOTIFY_EVENT": "e", "KSTRL_NOTIFY_COMPONENT": "c"},
             )
         assert len(_lines(count)) == 3
 
@@ -530,8 +603,11 @@ def test_progress_log_survives_manifest_json_shape(tmp_path: Path) -> None:
     dicts (json round-trip, one object per line)."""
     root = _setup_plain_project(tmp_path)
     run_factory(
-        make_manifest([]), _plain_factory_config(),
-        _plain_base_config(root), PlainUI(no_color=True), root,
+        make_manifest([]),
+        _plain_factory_config(),
+        _plain_base_config(root),
+        PlainUI(no_color=True),
+        root,
     )
     raw = (root / ".kstrl" / "progress.jsonl").read_text().splitlines()
     for line in raw:

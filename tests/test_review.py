@@ -31,7 +31,10 @@ class MockReviewAgent:
         return "mock-reviewer"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         yield from self._output.splitlines()
 
@@ -40,29 +43,31 @@ class MockReviewAgent:
         return self._final_message
 
 
-VALID_REVIEW_OUTPUT = json.dumps({
-    "stories": [
-        {
-            "storyId": "US-001",
-            "storyTitle": "Create users table",
-            "criteria": [
-                {
-                    "criterion": "Users table exists",
-                    "verdict": "pass",
-                    "explanation": "CREATE TABLE users found in migration",
-                    "suggestion": "",
-                },
-                {
-                    "criterion": "Email index exists",
-                    "verdict": "fail",
-                    "explanation": "No index on email column found in diff",
-                    "suggestion": "Add CREATE UNIQUE INDEX idx_users_email",
-                },
-            ],
-        }
-    ],
-    "overallNotes": "Migration looks incomplete",
-})
+VALID_REVIEW_OUTPUT = json.dumps(
+    {
+        "stories": [
+            {
+                "storyId": "US-001",
+                "storyTitle": "Create users table",
+                "criteria": [
+                    {
+                        "criterion": "Users table exists",
+                        "verdict": "pass",
+                        "explanation": "CREATE TABLE users found in migration",
+                        "suggestion": "",
+                    },
+                    {
+                        "criterion": "Email index exists",
+                        "verdict": "fail",
+                        "explanation": "No index on email column found in diff",
+                        "suggestion": "Add CREATE UNIQUE INDEX idx_users_email",
+                    },
+                ],
+            }
+        ],
+        "overallNotes": "Migration looks incomplete",
+    }
+)
 
 
 class TestParseReviewOutput:
@@ -74,12 +79,25 @@ class TestParseReviewOutput:
         assert result.overall_notes == "Migration looks incomplete"
 
     def test_passed_when_no_failures(self) -> None:
-        data = json.dumps({
-            "stories": [{"storyId": "US-001", "storyTitle": "Test", "criteria": [
-                {"criterion": "AC1", "verdict": "pass", "explanation": "ok", "suggestion": ""},
-            ]}],
-            "overallNotes": "",
-        })
+        data = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "US-001",
+                        "storyTitle": "Test",
+                        "criteria": [
+                            {
+                                "criterion": "AC1",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            },
+                        ],
+                    }
+                ],
+                "overallNotes": "",
+            }
+        )
         result = parse_review_output(data)
         assert result.passed is True
 
@@ -148,25 +166,27 @@ class TestConcerns:
     """Tests for the new cross-cutting reviewer concerns surface."""
 
     def test_parse_extracts_concerns(self) -> None:
-        output = json.dumps({
-            "stories": [],
-            "concerns": [
-                {
-                    "category": "security_concern",
-                    "severity": "fail",
-                    "location": "src/auth.py:42-58",
-                    "explanation": "Password compared with == (timing oracle)",
-                    "suggestion": "Use hmac.compare_digest",
-                },
-                {
-                    "category": "test_quality",
-                    "severity": "advisory",
-                    "location": "tests/test_auth.py:101",
-                    "explanation": "assert True - tautological",
-                },
-            ],
-            "exhaustively_searched": True,
-        })
+        output = json.dumps(
+            {
+                "stories": [],
+                "concerns": [
+                    {
+                        "category": "security_concern",
+                        "severity": "fail",
+                        "location": "src/auth.py:42-58",
+                        "explanation": "Password compared with == (timing oracle)",
+                        "suggestion": "Use hmac.compare_digest",
+                    },
+                    {
+                        "category": "test_quality",
+                        "severity": "advisory",
+                        "location": "tests/test_auth.py:101",
+                        "explanation": "assert True - tautological",
+                    },
+                ],
+                "exhaustively_searched": True,
+            }
+        )
         result = parse_review_output(output)
         assert len(result.concerns) == 2
         assert result.concerns[0].category == "security_concern"
@@ -174,84 +194,106 @@ class TestConcerns:
         assert result.passed is False  # one concern is fail-severity
 
     def test_concern_fail_blocks_overall_pass(self) -> None:
-        output = json.dumps({
-            "stories": [{
-                "storyId": "US-001",
-                "storyTitle": "x",
-                "criteria": [{
-                    "criterion": "AC1",
-                    "verdict": "pass",
-                    "explanation": "ok",
-                    "suggestion": "",
-                }],
-            }],
-            "concerns": [{
-                "category": "dead_code",
-                "severity": "fail",
-                "location": "src/x.py:10",
-                "explanation": "Function f never called",
-            }],
-        })
+        output = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "US-001",
+                        "storyTitle": "x",
+                        "criteria": [
+                            {
+                                "criterion": "AC1",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            }
+                        ],
+                    }
+                ],
+                "concerns": [
+                    {
+                        "category": "dead_code",
+                        "severity": "fail",
+                        "location": "src/x.py:10",
+                        "explanation": "Function f never called",
+                    }
+                ],
+            }
+        )
         result = parse_review_output(output)
         assert result.passed is False
         assert result.fail_count == 1
         assert result.advisory_count == 0
 
     def test_advisory_concerns_do_not_block(self) -> None:
-        output = json.dumps({
-            "stories": [{
-                "storyId": "US-001",
-                "storyTitle": "x",
-                "criteria": [{
-                    "criterion": "AC1",
-                    "verdict": "pass",
-                    "explanation": "ok",
-                    "suggestion": "",
-                }],
-            }],
-            "concerns": [{
-                "category": "copy_paste",
-                "severity": "advisory",
-                "location": "src/x.py:10",
-                "explanation": "Duplicates helper foo()",
-            }],
-        })
+        output = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "US-001",
+                        "storyTitle": "x",
+                        "criteria": [
+                            {
+                                "criterion": "AC1",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            }
+                        ],
+                    }
+                ],
+                "concerns": [
+                    {
+                        "category": "copy_paste",
+                        "severity": "advisory",
+                        "location": "src/x.py:10",
+                        "explanation": "Duplicates helper foo()",
+                    }
+                ],
+            }
+        )
         result = parse_review_output(output)
         assert result.passed is True
         assert result.advisory_count == 1
 
     def test_invalid_concern_categories_dropped(self) -> None:
-        output = json.dumps({
-            "stories": [],
-            "concerns": [
-                {
-                    "category": "made_up_category",
-                    "severity": "fail",
-                    "location": "x:1",
-                    "explanation": "bogus",
-                },
-                {
-                    "category": "security_concern",
-                    "severity": "fail",
-                    "location": "x:2",
-                    "explanation": "legit",
-                },
-            ],
-        })
+        output = json.dumps(
+            {
+                "stories": [],
+                "concerns": [
+                    {
+                        "category": "made_up_category",
+                        "severity": "fail",
+                        "location": "x:1",
+                        "explanation": "bogus",
+                    },
+                    {
+                        "category": "security_concern",
+                        "severity": "fail",
+                        "location": "x:2",
+                        "explanation": "legit",
+                    },
+                ],
+            }
+        )
         result = parse_review_output(output)
         assert len(result.concerns) == 1
         assert result.concerns[0].category == "security_concern"
 
     def test_invalid_severity_dropped(self) -> None:
-        output = json.dumps({
-            "stories": [],
-            "concerns": [{
-                "category": "dead_code",
-                "severity": "blocker",  # not a valid severity
-                "location": "x:1",
-                "explanation": "x",
-            }],
-        })
+        output = json.dumps(
+            {
+                "stories": [],
+                "concerns": [
+                    {
+                        "category": "dead_code",
+                        "severity": "blocker",  # not a valid severity
+                        "location": "x:1",
+                        "explanation": "x",
+                    }
+                ],
+            }
+        )
         result = parse_review_output(output)
         assert result.concerns == []
 
@@ -283,35 +325,53 @@ class TestConcerns:
         assert "1 additional concerns" in body
 
     def test_advisory_mode_downgrades_concern_failures(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         prd_path = tmp_path / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"], "priority": 1,
-                "passes": True, "notes": "",
-            }],
-        }))
-        output = json.dumps({
-            "stories": [{
-                "storyId": "US-001",
-                "storyTitle": "x",
-                "criteria": [{
-                    "criterion": "AC1",
-                    "verdict": "pass",
-                    "explanation": "ok",
-                    "suggestion": "",
-                }],
-            }],
-            "concerns": [{
-                "category": "security_concern",
-                "severity": "fail",
-                "location": "x:1",
-                "explanation": "bug",
-            }],
-        })
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
+        output = json.dumps(
+            {
+                "stories": [
+                    {
+                        "storyId": "US-001",
+                        "storyTitle": "x",
+                        "criteria": [
+                            {
+                                "criterion": "AC1",
+                                "verdict": "pass",
+                                "explanation": "ok",
+                                "suggestion": "",
+                            }
+                        ],
+                    }
+                ],
+                "concerns": [
+                    {
+                        "category": "security_concern",
+                        "severity": "fail",
+                        "location": "x:1",
+                        "explanation": "bug",
+                    }
+                ],
+            }
+        )
         agent = MockReviewAgent(output)
         ui = PlainUI(no_color=True)
         verification = VerificationResult(
@@ -319,8 +379,13 @@ class TestConcerns:
             checks=[CheckResult("test_suite", True, "ok")],
         )
         result = run_review(
-            agent, prd_path, tmp_path, "main",
-            verification, ReviewMode.ADVISORY, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            verification,
+            ReviewMode.ADVISORY,
+            ui,
             diff_content="+change\n",
         )
         # Concern was downgraded; review passes; concern survives as advisory
@@ -335,8 +400,13 @@ class TestRunReview:
         verification = VerificationResult(passed=True, checks=[])
 
         result = run_review(
-            agent, tmp_path / "prd.json", tmp_path, "main",
-            verification, ReviewMode.SKIP, ui,
+            agent,
+            tmp_path / "prd.json",
+            tmp_path,
+            "main",
+            verification,
+            ReviewMode.SKIP,
+            ui,
         )
         assert result.passed is True
         assert result.mode == "skip"
@@ -344,14 +414,23 @@ class TestRunReview:
     def test_hard_mode_with_failures(self, tmp_path: Path) -> None:
         # Create valid PRD for prompt building
         prd_path = tmp_path / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"], "priority": 1,
-                "passes": True, "notes": "",
-            }],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         agent = MockReviewAgent(VALID_REVIEW_OUTPUT)
         ui = PlainUI(no_color=True)
@@ -361,8 +440,13 @@ class TestRunReview:
         )
 
         result = run_review(
-            agent, prd_path, tmp_path, "main",
-            verification, ReviewMode.HARD, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            verification,
+            ReviewMode.HARD,
+            ui,
             diff_content="+change\n",
         )
         assert result.passed is False
@@ -370,14 +454,23 @@ class TestRunReview:
 
     def test_advisory_mode_downgrades_failures(self, tmp_path: Path) -> None:
         prd_path = tmp_path / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"], "priority": 1,
-                "passes": True, "notes": "",
-            }],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         agent = MockReviewAgent(VALID_REVIEW_OUTPUT)
         ui = PlainUI(no_color=True)
@@ -387,8 +480,13 @@ class TestRunReview:
         )
 
         result = run_review(
-            agent, prd_path, tmp_path, "main",
-            verification, ReviewMode.ADVISORY, ui,
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
+            verification,
+            ReviewMode.ADVISORY,
+            ui,
             diff_content="+change\n",
         )
         assert result.passed is True

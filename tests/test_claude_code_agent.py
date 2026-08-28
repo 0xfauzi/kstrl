@@ -133,26 +133,32 @@ class TestClaudeCodeAgent:
         """When a result event arrives, stop reading stdout and set final_message."""
         import json
 
-        assistant_event = json.dumps({
-            "type": "assistant",
-            "message": {"content": [{"type": "text", "text": "working..."}]},
-        })
-        result_event = json.dumps({
-            "type": "result",
-            "subtype": "success",
-            "result": "All done",
-            "duration_ms": 1000,
-        })
+        assistant_event = json.dumps(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "working..."}]},
+            }
+        )
+        result_event = json.dumps(
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "All done",
+                "duration_ms": 1000,
+            }
+        )
         # Lines after result should never be read
         unreachable = "THIS SHOULD NOT BE YIELDED\n"
 
         mock_proc = MagicMock()
         mock_proc.stdin = MagicMock()
-        mock_proc.stdout = iter([
-            assistant_event + "\n",
-            result_event + "\n",
-            unreachable,
-        ])
+        mock_proc.stdout = iter(
+            [
+                assistant_event + "\n",
+                result_event + "\n",
+                unreachable,
+            ]
+        )
         mock_proc.wait.return_value = 0
 
         with patch("subprocess.Popen", return_value=mock_proc):
@@ -169,10 +175,12 @@ class TestClaudeCodeAgent:
         import json
         import subprocess
 
-        result_event = json.dumps({
-            "type": "result",
-            "result": "done",
-        })
+        result_event = json.dumps(
+            {
+                "type": "result",
+                "result": "done",
+            }
+        )
 
         mock_proc = MagicMock()
         mock_proc.stdin = MagicMock()

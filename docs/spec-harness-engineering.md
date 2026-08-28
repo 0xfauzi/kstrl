@@ -135,7 +135,7 @@ def build_feedforward_context(
     config: FeedforwardConfig,
 ) -> str:
     """Build pre-execution context string for prompt injection.
-    
+
     Returns a formatted string to prepend to the agent prompt.
     All analysis is computational (no LLM calls).
     """
@@ -318,27 +318,27 @@ Inspired by AutoResearchClaw's evolution directory. A structured JSONL file that
 ```python
 class EvolutionJournal:
     """Persistent learning journal across factory runs."""
-    
+
     def __init__(self, path: Path): ...
-    
+
     def record_run(self, manifest: Manifest, factory_result: FactoryResult) -> None:
         """Extract and record patterns from a completed factory run."""
-    
+
     def extract_failure_patterns(
         self, manifest: Manifest, min_frequency: int = 2
     ) -> list[FailurePattern]:
         """Identify recurring failures across components."""
-    
+
     def get_recurring_patterns(
         self, lookback_runs: int = 10
     ) -> list[FailurePattern]:
         """Get patterns that recur across multiple factory runs."""
-    
+
     def propose_harness_improvements(
         self, patterns: list[FailurePattern]
     ) -> list[HarnessProposal]:
         """Generate concrete harness improvement proposals.
-        
+
         Computational proposals (new rules, config changes) are generated
         deterministically. Complex proposals (CLAUDE.md updates, prompt
         changes) use an LLM call.

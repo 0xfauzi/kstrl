@@ -34,10 +34,7 @@ class OptionsModal(ModalScreen[int | None]):
     # focus, so Enter presses it - a screen binding would double-fire.
     BINDINGS = [
         Binding("escape", "leave_pending", "Later"),
-        *[
-            Binding(str(n + 1), f"decide({n})", show=False)
-            for n in range(MAX_KEYED_OPTIONS)
-        ],
+        *[Binding(str(n + 1), f"decide({n})", show=False) for n in range(MAX_KEYED_OPTIONS)],
     ]
 
     def __init__(self, request: PromptRequest) -> None:

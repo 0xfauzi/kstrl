@@ -37,15 +37,15 @@ FOREGROUND = "#ece5d8"
 ACCENT = "#e5a84f"
 
 # State vocabulary (status only - never chrome):
-SUCCESS = "#8fc470"   # completed
-ERROR = "#e26d5a"     # failed
-STEEL = "#82a7ba"     # verifying (adversarial phases in flight)
-VIOLET = "#b48ec9"    # merge parked (waiting on the outside world)
-WARNING = "#d9b036"   # banners/caution copy only
+SUCCESS = "#8fc470"  # completed
+ERROR = "#e26d5a"  # failed
+STEEL = "#82a7ba"  # verifying (adversarial phases in flight)
+VIOLET = "#b48ec9"  # merge parked (waiting on the outside world)
+WARNING = "#d9b036"  # banners/caution copy only
 
-MUTED = "#a2967f"     # dim ink for secondary text (>=4.5:1 on BACKGROUND)
+MUTED = "#a2967f"  # dim ink for secondary text (>=4.5:1 on BACKGROUND)
 
-EMPTY_CELL = "·"      # dim placeholder; a "-" column reads as broken
+EMPTY_CELL = "·"  # dim placeholder; a "-" column reads as broken
 
 KSTRL_THEME = Theme(
     name="kstrl",

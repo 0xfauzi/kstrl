@@ -20,7 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _load_gen_docs() -> ModuleType:
     spec = importlib.util.spec_from_file_location(
-        "gen_docs", REPO_ROOT / "scripts" / "gen_docs.py",
+        "gen_docs",
+        REPO_ROOT / "scripts" / "gen_docs.py",
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -41,8 +42,7 @@ class TestReadmeCurrent:
         """The committed README equals its own regeneration (the drift gate)."""
         current = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         assert gen_docs.render_readme(current) == current, (
-            "README.md generated sections are stale; "
-            "run: uv run python scripts/gen_docs.py"
+            "README.md generated sections are stale; run: uv run python scripts/gen_docs.py"
         )
 
     def test_generation_is_idempotent(self, gen_docs: ModuleType) -> None:
@@ -99,9 +99,7 @@ class TestConfigProbing:
         import tomllib
 
         reference = gen_docs.build_config_reference()
-        example = tomllib.loads(
-            (REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8")
-        )
+        example = tomllib.loads((REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8"))
         generated_sections = {s.section for s in gen_docs._section_specs()}
         assert set(example) == generated_sections
         for section in generated_sections:
@@ -111,13 +109,9 @@ class TestConfigProbing:
         """kstrl.toml.example must not name keys the loaders ignore."""
         import tomllib
 
-        example = tomllib.loads(
-            (REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8")
-        )
+        example = tomllib.loads((REPO_ROOT / "kstrl.toml.example").read_text(encoding="utf-8"))
         documented = {
-            (spec.section, key)
-            for spec in gen_docs._section_specs()
-            for key in spec.keys
+            (spec.section, key) for spec in gen_docs._section_specs() for key in spec.keys
         }
         for section, values in example.items():
             for key in values:
@@ -144,7 +138,7 @@ class TestExampleProjectContract:
             REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prd_prompt.txt"
         ).read_text(encoding="utf-8")
         assert "allowedPaths" in text
-        assert "exactly these keys: \"branchName\", \"userStories\"" not in text
+        assert 'exactly these keys: "branchName", "userStories"' not in text
 
 
 class TestSectionSpecShape:

@@ -39,9 +39,9 @@ if TYPE_CHECKING:
 
 
 class SecurityMode(StrEnum):
-    HARD = "hard"      # block on critical findings
+    HARD = "hard"  # block on critical findings
     ADVISORY = "advisory"  # surface findings but never block
-    SKIP = "skip"      # skip the phase entirely
+    SKIP = "skip"  # skip the phase entirely
 
 
 # Security category taxonomy. Each category maps to an OWASP Top 10
@@ -134,9 +134,7 @@ class SecurityResult:
             return ""
         lines = ["Security findings to address:"]
         for f in self.findings:
-            lines.append(
-                f"- [{f.severity}] {f.category} at {f.location}: {f.explanation}"
-            )
+            lines.append(f"- [{f.severity}] {f.category} at {f.location}: {f.explanation}")
             if f.suggestion:
                 lines.append(f"  Suggestion: {f.suggestion}")
         if self.overall_notes:
@@ -147,12 +145,10 @@ class SecurityResult:
         partial_note = (
             "\n\n**PARTIAL SECURITY REVIEW (R1.4): the diff exceeded the "
             "prompt size cap; only a truncated prefix was reviewed**"
-            if self.partial else ""
+            if self.partial
+            else ""
         )
-        model_note = (
-            f"\n\n**Reviewer model**: {self.reviewer_model}"
-            if self.reviewer_model else ""
-        )
+        model_note = f"\n\n**Reviewer model**: {self.reviewer_model}" if self.reviewer_model else ""
         if not self.findings:
             return (
                 "## Security Review\n\n"
@@ -167,8 +163,7 @@ class SecurityResult:
         med = sum(1 for f in self.findings if f.severity == "medium")
         low = sum(1 for f in self.findings if f.severity == "low")
         lines.append(
-            f"**{crit} critical, {high} high, {med} medium, {low} low "
-            f"({self.mode} mode)**"
+            f"**{crit} critical, {high} high, {med} medium, {low} low ({self.mode} mode)**"
         )
         if self.reviewer_model:
             lines.append("")
@@ -181,9 +176,7 @@ class SecurityResult:
             )
         lines.append("")
         for f in self.findings:
-            lines.append(
-                f"- [{f.severity}] **{f.category}** at `{f.location}`"
-            )
+            lines.append(f"- [{f.severity}] **{f.category}** at `{f.location}`")
             lines.append(f"  - {f.explanation}")
             if f.suggestion:
                 lines.append(f"  - Suggestion: {f.suggestion}")
@@ -214,16 +207,18 @@ class SecurityResult:
         R7.1: every returned Finding is tagged ``model:<reviewer_model>``
         when the reviewing model identity is known."""
         if self.infrastructure_error:
-            return [tag_finding_with_model(
-                Finding.infrastructure_error(
-                    phase="security",
-                    explanation=(
-                        self.overall_notes
-                        or "Security reviewer agent did not produce parseable output"
+            return [
+                tag_finding_with_model(
+                    Finding.infrastructure_error(
+                        phase="security",
+                        explanation=(
+                            self.overall_notes
+                            or "Security reviewer agent did not produce parseable output"
+                        ),
                     ),
-                ),
-                self.reviewer_model,
-            )]
+                    self.reviewer_model,
+                )
+            ]
         return [
             tag_finding_with_model(
                 Finding.from_security_finding(
@@ -270,8 +265,7 @@ class SecurityConfig:
         # any signal).
         if self.mode not in {m.value for m in SecurityMode}:
             raise ValueError(
-                f"Invalid SecurityConfig.mode {self.mode!r}; "
-                f"must be one of skip|advisory|hard"
+                f"Invalid SecurityConfig.mode {self.mode!r}; must be one of skip|advisory|hard"
             )
         if self.fail_threshold not in VALID_SEVERITIES:
             raise ValueError(
@@ -294,6 +288,7 @@ class SecurityConfig:
     def load(cls, root_dir: Path | None = None) -> SecurityConfig:
         """Load security config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -514,7 +509,8 @@ def parse_security_output(
         data = _extract_json(raw_output)
     except ValueError:
         return _infra(
-            "Failed to parse security reviewer output as JSON", "no_json",
+            "Failed to parse security reviewer output as JSON",
+            "no_json",
         )
 
     if not isinstance(data, dict):
@@ -539,13 +535,15 @@ def parse_security_output(
                 continue
             if not explanation:
                 continue
-            findings.append(SecurityFinding(
-                category=category,
-                severity=severity,
-                location=location,
-                explanation=explanation,
-                suggestion=str(f.get("suggestion", "")).strip(),
-            ))
+            findings.append(
+                SecurityFinding(
+                    category=category,
+                    severity=severity,
+                    location=location,
+                    explanation=explanation,
+                    suggestion=str(f.get("suggestion", "")).strip(),
+                )
+            )
 
     exhaustively_searched = bool(data.get("exhaustively_searched", False))
     overall_notes = str(data.get("overallNotes", ""))
@@ -564,7 +562,9 @@ _SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
 
 
 def _passes_threshold(
-    findings: list[SecurityFinding], mode: str, fail_threshold: str,
+    findings: list[SecurityFinding],
+    mode: str,
+    fail_threshold: str,
 ) -> bool:
     """Decide whether the result passes given the mode and threshold."""
     if mode == SecurityMode.SKIP.value:
@@ -573,10 +573,7 @@ def _passes_threshold(
         return True
     # HARD mode: fail if any finding meets or exceeds the threshold.
     threshold_rank = _SEVERITY_ORDER.get(fail_threshold, 2)  # default "high"
-    blocking = [
-        f for f in findings
-        if _SEVERITY_ORDER.get(f.severity, 0) >= threshold_rank
-    ]
+    blocking = [f for f in findings if _SEVERITY_ORDER.get(f.severity, 0) >= threshold_rank]
     return not blocking
 
 
@@ -624,7 +621,10 @@ def run_security_review(
 
     try:
         output_lines = collect_agent_output(
-            agent, prompt, cwd=worktree_path, timeout=config.timeout_seconds,
+            agent,
+            prompt,
+            cwd=worktree_path,
+            timeout=config.timeout_seconds,
             on_line=on_line,
         )
     except (AgentOutputTooLarge, Exception) as exc:  # noqa: BLE001
@@ -654,7 +654,9 @@ def run_security_review(
             result.passed = True
     else:
         result.passed = _passes_threshold(
-            result.findings, mode, config.fail_threshold,
+            result.findings,
+            mode,
+            config.fail_threshold,
         )
 
     if truncated and not result.infrastructure_error:
@@ -663,21 +665,23 @@ def run_security_review(
         # body, findings stream, and retry context all say "partial"
         # (low never trips the hard-mode threshold on its own).
         result.partial = True
-        result.findings.append(SecurityFinding(
-            category="other",
-            severity="low",
-            location="",
-            explanation=(
-                "Partial security review (R1.4): the diff exceeded the "
-                f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
-                "cap and only the truncated prefix was reviewed; "
-                "anything past the cut is unreviewed."
-            ),
-            suggestion=(
-                "Split the component or reduce the diff so the full "
-                "change fits one review pass."
-            ),
-        ))
+        result.findings.append(
+            SecurityFinding(
+                category="other",
+                severity="low",
+                location="",
+                explanation=(
+                    "Partial security review (R1.4): the diff exceeded the "
+                    f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
+                    "cap and only the truncated prefix was reviewed; "
+                    "anything past the cut is unreviewed."
+                ),
+                suggestion=(
+                    "Split the component or reduce the diff so the full "
+                    "change fits one review pass."
+                ),
+            )
+        )
         if mode == SecurityMode.HARD.value:
             # Backstop, not the primary path: the factory chunks
             # oversized diffs before calling us
@@ -704,7 +708,8 @@ def run_security_review(
 
 
 def merge_security_results(
-    results: list[SecurityResult], mode: str,
+    results: list[SecurityResult],
+    mode: str,
 ) -> SecurityResult:
     """R1.4: merge the per-chunk results of a chunked security review.
 
@@ -718,9 +723,7 @@ def merge_security_results(
     concatenated findings stay visible via ``as_pr_body_section``.
     """
     if not results:
-        raise ValueError(
-            "merge_security_results requires at least one result"
-        )
+        raise ValueError("merge_security_results requires at least one result")
     n = len(results)
     merged = SecurityResult(
         passed=all(r.passed for r in results),
@@ -732,10 +735,7 @@ def merge_security_results(
         # first chunk's identity is the merged review's identity.
         reviewer_model=results[0].reviewer_model,
     )
-    notes = [
-        f"Chunked security review: {n} passes over an oversized diff "
-        "(R1.4)."
-    ]
+    notes = [f"Chunked security review: {n} passes over an oversized diff (R1.4)."]
     raw_parts: list[str] = []
     for i, r in enumerate(results, 1):
         merged.findings.extend(r.findings)
@@ -773,9 +773,7 @@ def run_chunked_security_review(
     """
     n = len(diff_chunks)
     if n == 0:
-        raise ValueError(
-            "run_chunked_security_review requires at least one chunk"
-        )
+        raise ValueError("run_chunked_security_review requires at least one chunk")
     if budget_remaining is not None and budget_remaining < n:
         return SecurityResult(
             passed=False,
@@ -798,12 +796,19 @@ def run_chunked_security_review(
                 on_line(f"--- chunk {i}/{n} ---")
             except Exception:  # noqa: BLE001 - transcripts never gate
                 on_line = None
-        results.append(run_security_review(
-            agent, prd_path, worktree_path, base_branch, config, ui,
-            diff_content=chunk,
-            # Per-chunk subdir: dump_raw_debug writes fixed filenames,
-            # so sharing one dir would overwrite earlier chunks' dumps.
-            debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
-            on_line=on_line,
-        ))
+        results.append(
+            run_security_review(
+                agent,
+                prd_path,
+                worktree_path,
+                base_branch,
+                config,
+                ui,
+                diff_content=chunk,
+                # Per-chunk subdir: dump_raw_debug writes fixed filenames,
+                # so sharing one dir would overwrite earlier chunks' dumps.
+                debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+                on_line=on_line,
+            )
+        )
     return merge_security_results(results, config.mode)

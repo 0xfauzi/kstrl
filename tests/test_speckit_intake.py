@@ -42,13 +42,17 @@ class TestLoadSpecInput:
         assert load_spec_input(spec) == "# My spec\n\nbody\n"
 
     def test_full_artifact_set_concatenates_in_order(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
-        spec_dir = _speckit_dir(tmp_path, {
-            "spec.md": "SPEC-BODY",
-            "plan.md": "PLAN-BODY",
-            "tasks.md": "TASKS-BODY",
-        })
+        spec_dir = _speckit_dir(
+            tmp_path,
+            {
+                "spec.md": "SPEC-BODY",
+                "plan.md": "PLAN-BODY",
+                "tasks.md": "TASKS-BODY",
+            },
+        )
         content = load_spec_input(spec_dir)
         for body in ("SPEC-BODY", "PLAN-BODY", "TASKS-BODY"):
             assert body in content
@@ -68,7 +72,8 @@ class TestLoadSpecInput:
         assert "tasks.md" not in content
 
     def test_directory_without_spec_md_is_rejected(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         spec_dir = _speckit_dir(tmp_path, {"plan.md": "PLAN-ONLY"})
         with pytest.raises(ValueError, match="no.*spec\\.md"):
@@ -86,20 +91,22 @@ class TestEarsDirective:
         assert 'EARS form: "WHEN <condition> THE SYSTEM' in DECOMPOSE_PROMPT
         assert "SHALL <behavior>" in DECOMPOSE_PROMPT
         # The JSON example itself models the form.
-        assert "WHEN <typical valid input or trigger> THE SYSTEM SHALL" in (
-            DECOMPOSE_PROMPT
-        )
+        assert "WHEN <typical valid input or trigger> THE SYSTEM SHALL" in (DECOMPOSE_PROMPT)
 
 
 class TestDecomposeSpecIntegration:
     def test_speckit_directory_reaches_the_architect_prompt(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
-        spec_dir = _speckit_dir(tmp_path, {
-            "spec.md": "SPEC-BODY-UNIQUE",
-            "plan.md": "PLAN-BODY-UNIQUE",
-            "tasks.md": "TASKS-BODY-UNIQUE",
-        })
+        spec_dir = _speckit_dir(
+            tmp_path,
+            {
+                "spec.md": "SPEC-BODY-UNIQUE",
+                "plan.md": "PLAN-BODY-UNIQUE",
+                "tasks.md": "TASKS-BODY-UNIQUE",
+            },
+        )
         root = tmp_path / "project"
         root.mkdir()
         agent = SequenceAgent([_single_component_output([_story()])])
@@ -117,7 +124,9 @@ class TestDecomposeSpecIntegration:
         assert len(manifest.components) == 1
         prompt = agent.prompts[0]
         for body in (
-            "SPEC-BODY-UNIQUE", "PLAN-BODY-UNIQUE", "TASKS-BODY-UNIQUE",
+            "SPEC-BODY-UNIQUE",
+            "PLAN-BODY-UNIQUE",
+            "TASKS-BODY-UNIQUE",
         ):
             assert body in prompt
         # The artifact set sits INSIDE the injection-separation

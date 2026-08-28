@@ -53,7 +53,8 @@ def _preflight_agent(config: KstrlConfig) -> None:
     from kstrl.cli import _agent_preflight
 
     canonical, error, hint = _agent_preflight(
-        config.agent_cmd, config.agent_type,
+        config.agent_cmd,
+        config.agent_type,
     )
     if error is not None:
         detail = f"{error} - {hint}" if hint is not None else error
@@ -111,8 +112,10 @@ def start_run_session(
     run_paths.root.mkdir(parents=True, exist_ok=True)
 
     log_fh = open(
-        run_paths.root / "orchestrator.log", "a",
-        buffering=1, encoding="utf-8",
+        run_paths.root / "orchestrator.log",
+        "a",
+        buffering=1,
+        encoding="utf-8",
     )
     renderer = UIBackedRenderer(PlainUI(no_color=True, file=log_fh))
     bus = EventBus(CallbackSink(renderer.handle))
@@ -123,7 +126,8 @@ def start_run_session(
 
     root_logger = logging.getLogger()
     log_handler = logging.FileHandler(
-        run_paths.root / "orchestrator.log", encoding="utf-8",
+        run_paths.root / "orchestrator.log",
+        encoding="utf-8",
     )
     previous = _install_exclusive_root_handler(root_logger, log_handler)
 
@@ -132,18 +136,22 @@ def start_run_session(
         lambda: log_handler.close(),
         lambda: _restore_root_handlers(root_logger, log_handler, previous),
     ]
+
     def guarded_target() -> int:
         try:
             return target()
         except BaseException:
             logging.getLogger(__name__).exception(
-                "%s launch worker failed", kind,
+                "%s launch worker failed",
+                kind,
             )
             raise
 
     try:
         handle = start_command_thread(
-            guarded_target, stop=stop, name=f"kstrl-{kind}",
+            guarded_target,
+            stop=stop,
+            name=f"kstrl-{kind}",
         )
     except BaseException:
         for cleanup in reversed(cleanups):
@@ -169,10 +177,7 @@ PreparedLaunch = Callable[
 def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
     from kstrl.manifest import Manifest
 
-    manifest_file = (
-        spec.manifest_path
-        or root_dir / "scripts" / "kstrl" / "manifest.json"
-    )
+    manifest_file = spec.manifest_path or root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_file.exists():
         raise LaunchError(
             f"no manifest at {manifest_file} - decompose a spec first",
@@ -184,7 +189,8 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
 
     try:
         factory_config, base_config = assemble_factory_configs(
-            root_dir, single_pr=manifest.single_pr,
+            root_dir,
+            single_pr=manifest.single_pr,
         )
     except (OSError, ValueError) as exc:
         raise LaunchError(f"failed to load configuration: {exc}") from exc
@@ -204,7 +210,11 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
             from kstrl.factory import run_factory
 
             return run_factory(
-                manifest, factory_config, base_config, ui, root_dir,
+                manifest,
+                factory_config,
+                base_config,
+                ui,
+                root_dir,
                 manifest_path=manifest_file,
                 interaction=channel,
                 stop=stop,
@@ -218,13 +228,12 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
 
 
 def _prepare_decompose(
-    spec: DecomposeLaunch, root_dir: Path,
+    spec: DecomposeLaunch,
+    root_dir: Path,
 ) -> PreparedLaunch:
     from kstrl.agents import get_agent
-    spec_path = (
-        spec.spec_path if spec.spec_path.is_absolute()
-        else root_dir / spec.spec_path
-    )
+
+    spec_path = spec.spec_path if spec.spec_path.is_absolute() else root_dir / spec.spec_path
     if not spec_path.exists():
         raise LaunchError(f"spec not found: {spec_path}")
     if not spec.project_name.strip():
@@ -236,7 +245,9 @@ def _prepare_decompose(
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(config)
     agent = get_agent(
-        config.agent_cmd, config.model, config.model_reasoning_effort,
+        config.agent_cmd,
+        config.model,
+        config.model_reasoning_effort,
         config.agent_type,
     )
 
@@ -252,8 +263,11 @@ def _prepare_decompose(
             from kstrl.decompose import SpecBlockerError, decompose_spec
 
             command_run = open_command_run(
-                ui, root_dir, "decompose",
-                component="architect", run_id=run_id,
+                ui,
+                root_dir,
+                "decompose",
+                component="architect",
+                run_id=run_id,
             )
             try:
                 try:
@@ -268,17 +282,12 @@ def _prepare_decompose(
                         bus=command_run.bus,
                         transcript=command_run.transcript_writer("architect"),
                     )
-                    ui.ok(
-                        f"Decomposed into {len(manifest.components)} "
-                        "components"
-                    )
+                    ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0
                 except SpecBlockerError as exc:
                     ui.err(str(exc))
                     if exc.artifact_path is not None:
-                        ui.info(
-                            f"Spec issues written to: {exc.artifact_path}"
-                        )
+                        ui.info(f"Spec issues written to: {exc.artifact_path}")
                     return 2
                 except ValueError as exc:
                     ui.err(str(exc))

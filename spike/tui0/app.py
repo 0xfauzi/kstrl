@@ -17,6 +17,7 @@ Flags exercise the risky mechanisms the real TUI will rely on:
 
 Run: uv run --with 'textual>=3,<6' python spike/tui0/app.py --root DIR
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,7 +32,6 @@ SPIKE_DIR = Path(__file__).parent
 sys.path.insert(0, str(SPIKE_DIR))
 
 from tailer import RunTailer, TextTailer  # noqa: E402
-
 from textual.app import App, ComposeResult  # noqa: E402
 from textual.binding import Binding  # noqa: E402
 from textual.containers import Vertical  # noqa: E402
@@ -80,8 +80,15 @@ class SpikeApp(App[int]):
     #transcript { height: 12; border-top: solid $accent; }
     """
 
-    def __init__(self, root: Path, poll: float, chatter: bool, subproc_chatter: bool,
-                 prompt_demo: bool, crash_after: float) -> None:
+    def __init__(
+        self,
+        root: Path,
+        poll: float,
+        chatter: bool,
+        subproc_chatter: bool,
+        prompt_demo: bool,
+        crash_after: float,
+    ) -> None:
         super().__init__()
         self.run_dir = newest_run_dir(root)
         self.tailer = RunTailer(self.run_dir)
@@ -134,7 +141,9 @@ class SpikeApp(App[int]):
 
     def _spawn_subproc_chatter(self) -> None:
         # Inherits our fds like a notify hook would: expected to corrupt.
-        subprocess.Popen(["sh", "-c", "for i in 1 2 3 4 5; do echo SUBPROC-$i >&2; sleep 0.3; done"])
+        subprocess.Popen(
+            ["sh", "-c", "for i in 1 2 3 4 5; do echo SUBPROC-$i >&2; sleep 0.3; done"]
+        )
 
     def _prompt_thread(self) -> None:
         while not self._stop_threads.is_set():
@@ -143,10 +152,17 @@ class SpikeApp(App[int]):
             done = threading.Event()
             result: list[int | None] = [None]
 
-            def _open() -> None:
+            # Bound as defaults so a callback that arrives after done.wait()
+            # times out writes to ITS OWN iteration's event and slot, not to
+            # the next iteration's.
+            def _open(
+                done: threading.Event = done,
+                result: list[int | None] = result,
+            ) -> None:
                 def _cb(choice: int | None) -> None:
                     result[0] = choice
                     done.set()
+
                 self.push_screen(PromptModal("Approve component (spike)?"), _cb)
 
             try:
@@ -179,7 +195,8 @@ class SpikeApp(App[int]):
             comp = rec.get("component") or ""
             if comp:
                 st = self.components.setdefault(
-                    comp, {"phase": "", "iter": 0, "events": 0, "last_ts": 0.0})
+                    comp, {"phase": "", "iter": 0, "events": 0, "last_ts": 0.0}
+                )
                 st["events"] += 1
                 st["last_ts"] = rec.get("ts", now)
                 ev = rec.get("event")
@@ -210,8 +227,7 @@ class SpikeApp(App[int]):
         if not comp_root.is_dir():
             return
         for d in comp_root.iterdir():
-            t = self.transcript_tailers.setdefault(
-                d.name, TextTailer(d / "engineer.log"))
+            t = self.transcript_tailers.setdefault(d.name, TextTailer(d / "engineer.log"))
             for line in t.poll():
                 log.write(f"[{d.name}] {line}")
 
@@ -241,11 +257,13 @@ def main() -> None:
     p.add_argument("--subproc-chatter", action="store_true")
     p.add_argument("--prompt-demo", action="store_true")
     p.add_argument("--crash-after", type=float, default=0.0)
-    p.add_argument("--no-transcript", action="store_true",
-                   help="disable transcript pane rendering (isolation test)")
+    p.add_argument(
+        "--no-transcript",
+        action="store_true",
+        help="disable transcript pane rendering (isolation test)",
+    )
     a = p.parse_args()
-    app = SpikeApp(a.root, a.poll, a.chatter, a.subproc_chatter,
-                   a.prompt_demo, a.crash_after)
+    app = SpikeApp(a.root, a.poll, a.chatter, a.subproc_chatter, a.prompt_demo, a.crash_after)
     if a.no_transcript:
         app._refresh_transcript = lambda: None  # type: ignore[method-assign]
     try:

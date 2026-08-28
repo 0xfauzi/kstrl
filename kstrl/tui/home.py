@@ -27,7 +27,9 @@ def run_home_shell(root_dir: Path) -> int:
         config_report = None  # the screen renders the guidance line
 
     app = KstrlTuiApp(
-        root_dir=root_dir, mode=Mode.HOME, config_report=config_report,
+        root_dir=root_dir,
+        mode=Mode.HOME,
+        config_report=config_report,
     )
     try:
         code = app.run()

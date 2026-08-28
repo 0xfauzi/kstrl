@@ -28,7 +28,10 @@ class FormField(Horizontal):
     DEFAULT_CLASSES = "form-field"
 
     def __init__(
-        self, label: str, control: Widget, hint: str = "",
+        self,
+        label: str,
+        control: Widget,
+        hint: str = "",
     ) -> None:
         super().__init__()
         self._label = label
@@ -54,7 +57,10 @@ class PathField(Horizontal):
     DEFAULT_CLASSES = "form-field"
 
     def __init__(
-        self, value: str = "", *, placeholder: str = "",
+        self,
+        value: str = "",
+        *,
+        placeholder: str = "",
         input_id: str = "",
     ) -> None:
         super().__init__()
@@ -65,7 +71,8 @@ class PathField(Horizontal):
     def compose(self) -> ComposeResult:
         kwargs = {"id": self._input_id} if self._input_id else {}
         yield Input(
-            value=self._value, placeholder=self._placeholder,
+            value=self._value,
+            placeholder=self._placeholder,
             **kwargs,  # type: ignore[arg-type]
         )
         yield Static(classes="path-marker")

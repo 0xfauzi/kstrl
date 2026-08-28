@@ -28,12 +28,16 @@ def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
     # Poll interval high enough that no timer fires between the pilot
     # settling and the snapshot capture (determinism).
     return KstrlTuiApp(
-        run_dir=run_dir, root_dir=root, mode=Mode.DASH, poll_interval=60.0,
+        run_dir=run_dir,
+        root_dir=root,
+        mode=Mode.DASH,
+        poll_interval=60.0,
     )
 
 
 def test_overview_snapshot(
-    snap_compare: Any, fixed_run: tuple[Path, Path],
+    snap_compare: Any,
+    fixed_run: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The activity feed stamps wall-clock times; freeze for determinism.
@@ -45,7 +49,8 @@ def test_overview_snapshot(
 
 
 def test_component_detail_snapshot(
-    snap_compare: Any, fixed_run: tuple[Path, Path],
+    snap_compare: Any,
+    fixed_run: tuple[Path, Path],
 ) -> None:
     root, run_dir = fixed_run
 
@@ -54,5 +59,7 @@ def test_component_detail_snapshot(
         await pilot.pause()
 
     assert snap_compare(
-        _app(root, run_dir), terminal_size=SIZE, run_before=open_detail,
+        _app(root, run_dir),
+        terminal_size=SIZE,
+        run_before=open_detail,
     )

@@ -134,50 +134,77 @@ class ProgressLog:
                 sink.handle_event(event)
             except Exception as exc:  # noqa: BLE001 - isolation contract
                 self._warn(
-                    f"progress sink {type(sink).__name__} failed on "
-                    f"{event_type}: {exc} (non-fatal)"
+                    f"progress sink {type(sink).__name__} failed on {event_type}: {exc} (non-fatal)"
                 )
 
     def factory_started(self, project_name: str, component_count: int) -> None:
-        self.emit("factory_started", data={
-            "project": project_name,
-            "components": component_count,
-        })
+        self.emit(
+            "factory_started",
+            data={
+                "project": project_name,
+                "components": component_count,
+            },
+        )
 
     def component_started(self, component_id: str) -> None:
         self.emit("component_started", component_id=component_id)
 
     def component_completed(
-        self, component_id: str, duration: float, iterations: int,
+        self,
+        component_id: str,
+        duration: float,
+        iterations: int,
     ) -> None:
-        self.emit("component_completed", component_id=component_id, data={
-            "duration_seconds": round(duration, 2),
-            "iterations": iterations,
-        })
+        self.emit(
+            "component_completed",
+            component_id=component_id,
+            data={
+                "duration_seconds": round(duration, 2),
+                "iterations": iterations,
+            },
+        )
 
     def component_failed(self, component_id: str, error: str) -> None:
-        self.emit("component_failed", component_id=component_id, data={
-            "error": error,
-        })
+        self.emit(
+            "component_failed",
+            component_id=component_id,
+            data={
+                "error": error,
+            },
+        )
 
     def circuit_breaker_tripped(
-        self, component_id: str, iterations: int, error: str,
+        self,
+        component_id: str,
+        iterations: int,
+        error: str,
     ) -> None:
         """R7.5: the engineer loop halted on the no-progress breaker.
         Emitted IN ADDITION to component_failed so a stall stays
         distinguishable from an ordinary engineer failure in the log."""
-        self.emit("circuit_breaker_tripped", component_id=component_id, data={
-            "iterations": iterations,
-            "error": error,
-        })
+        self.emit(
+            "circuit_breaker_tripped",
+            component_id=component_id,
+            data={
+                "iterations": iterations,
+                "error": error,
+            },
+        )
 
     def component_retrying(
-        self, component_id: str, attempt: int, reason: str,
+        self,
+        component_id: str,
+        attempt: int,
+        reason: str,
     ) -> None:
-        self.emit("component_retrying", component_id=component_id, data={
-            "attempt": attempt,
-            "reason": reason,
-        })
+        self.emit(
+            "component_retrying",
+            component_id=component_id,
+            data={
+                "attempt": attempt,
+                "reason": reason,
+            },
+        )
 
     def verification_result(
         self,
@@ -187,12 +214,16 @@ class ProgressLog:
         failures: list[str] | None = None,
         duration: float = 0.0,
     ) -> None:
-        self.emit("verification_result", component_id=component_id, data={
-            "passed": passed,
-            "checks": check_names or [],
-            "failures": failures or [],
-            "duration_seconds": round(duration, 2),
-        })
+        self.emit(
+            "verification_result",
+            component_id=component_id,
+            data={
+                "passed": passed,
+                "checks": check_names or [],
+                "failures": failures or [],
+                "duration_seconds": round(duration, 2),
+            },
+        )
 
     def review_result(
         self,
@@ -203,13 +234,17 @@ class ProgressLog:
         advisory_count: int = 0,
         duration: float = 0.0,
     ) -> None:
-        self.emit("review_result", component_id=component_id, data={
-            "passed": passed,
-            "mode": mode,
-            "fail_count": fail_count,
-            "advisory_count": advisory_count,
-            "duration_seconds": round(duration, 2),
-        })
+        self.emit(
+            "review_result",
+            component_id=component_id,
+            data={
+                "passed": passed,
+                "mode": mode,
+                "fail_count": fail_count,
+                "advisory_count": advisory_count,
+                "duration_seconds": round(duration, 2),
+            },
+        )
 
     def component_usage(
         self,
@@ -220,10 +255,14 @@ class ProgressLog:
         """R3.1: one event per (component, phase) usage capture. ``usage``
         is a UsageTotals.to_dict() - token/cost values are CLI
         self-reports and lower bounds when ``unreported_calls`` > 0."""
-        self.emit("component_usage", component_id=component_id, data={
-            "phase": phase,
-            **usage,
-        })
+        self.emit(
+            "component_usage",
+            component_id=component_id,
+            data={
+                "phase": phase,
+                **usage,
+            },
+        )
 
     def budget_exceeded(
         self,
@@ -256,16 +295,20 @@ class ProgressLog:
         sinks agreed. Every field added here must be added there too;
         ``TestBothSinksCarryTheSameBudgetHalt`` fails otherwise.
         """
-        self.emit("budget_exceeded", component_id=component_id, data={
-            "total_tokens": total_tokens,
-            "max_total_tokens": max_total_tokens,
-            "cost_usd": cost_usd,
-            "max_cost_usd": max_cost_usd,
-            "ceiling": ceiling,
-            "condition": condition,
-            "ceilings": list(ceilings),
-            "coverage": [dict(entry) for entry in coverage],
-        })
+        self.emit(
+            "budget_exceeded",
+            component_id=component_id,
+            data={
+                "total_tokens": total_tokens,
+                "max_total_tokens": max_total_tokens,
+                "cost_usd": cost_usd,
+                "max_cost_usd": max_cost_usd,
+                "ceiling": ceiling,
+                "condition": condition,
+                "ceilings": list(ceilings),
+                "coverage": [dict(entry) for entry in coverage],
+            },
+        )
 
     def budget_coverage(
         self,
@@ -286,16 +329,19 @@ class ProgressLog:
         than at the halt, because a coverage fact an operator learns
         after the spend is a post-mortem, not a control.
         """
-        self.emit("budget_coverage", data={
-            "ceiling": ceiling,
-            "axis": axis,
-            "calls": calls,
-            "covered_calls": covered_calls,
-            "uncovered_calls": uncovered_calls,
-            "uncovered_tokens": uncovered_tokens,
-            "uncovered_roles": list(uncovered_roles),
-            "detail": detail,
-        })
+        self.emit(
+            "budget_coverage",
+            data={
+                "ceiling": ceiling,
+                "axis": axis,
+                "calls": calls,
+                "covered_calls": covered_calls,
+                "uncovered_calls": uncovered_calls,
+                "uncovered_tokens": uncovered_tokens,
+                "uncovered_roles": list(uncovered_roles),
+                "detail": detail,
+            },
+        )
 
     def contract_result(
         self,
@@ -304,12 +350,15 @@ class ProgressLog:
         breaker: str | None = None,
         duration: float = 0.0,
     ) -> None:
-        self.emit("contract_result", data={
-            "tier": tier,
-            "passed": passed,
-            "breaker": breaker,
-            "duration_seconds": round(duration, 2),
-        })
+        self.emit(
+            "contract_result",
+            data={
+                "tier": tier,
+                "passed": passed,
+                "breaker": breaker,
+                "duration_seconds": round(duration, 2),
+            },
+        )
 
     def factory_completed(
         self,
@@ -318,12 +367,15 @@ class ProgressLog:
         skipped: int,
         duration: float = 0.0,
     ) -> None:
-        self.emit("factory_completed", data={
-            "completed": completed,
-            "failed": failed,
-            "skipped": skipped,
-            "duration_seconds": round(duration, 2),
-        })
+        self.emit(
+            "factory_completed",
+            data={
+                "completed": completed,
+                "failed": failed,
+                "skipped": skipped,
+                "duration_seconds": round(duration, 2),
+            },
+        )
 
     def read_events(self) -> list[dict[str, Any]]:
         """Read all events from the log. Useful for testing."""
@@ -444,7 +496,8 @@ def _as_int_field(data: dict[str, Any], key: str) -> int:
 
 
 def summarize_events(
-    events: list[dict[str, Any]], run_id: str = "",
+    events: list[dict[str, Any]],
+    run_id: str = "",
 ) -> RunActivity:
     """Fold progress-log events into a per-component activity summary.
 
@@ -466,7 +519,8 @@ def summarize_events(
         if not isinstance(comp_id, str) or not comp_id:
             continue
         comp = activity.components.setdefault(
-            comp_id, ComponentActivity(component_id=comp_id),
+            comp_id,
+            ComponentActivity(component_id=comp_id),
         )
         comp.last_event = etype
         comp.last_event_ts = ts
@@ -600,8 +654,10 @@ class NotifyHooks:
 
     def fire_first_failure(self, component_id: str, error: str) -> None:
         self._fire(
-            "first_failure", self._config.on_first_failure,
-            component_id=component_id, detail=error,
+            "first_failure",
+            self._config.on_first_failure,
+            component_id=component_id,
+            detail=error,
         )
 
     def fire_inbox_item(self, kind: str, title: str, component_id: str = "") -> None:
@@ -616,14 +672,18 @@ class NotifyHooks:
         reach here, so success stays silent.
         """
         self._fire(
-            f"inbox_{kind}", self._config.on_inbox_item,
-            component_id=component_id, detail=title,
+            f"inbox_{kind}",
+            self._config.on_inbox_item,
+            component_id=component_id,
+            detail=title,
         )
 
     def fire_merge_pending(self, component_id: str, detail: str = "") -> None:
         self._fire(
-            "merge_pending", self._config.on_first_failure,
-            component_id=component_id, detail=detail,
+            "merge_pending",
+            self._config.on_first_failure,
+            component_id=component_id,
+            detail=detail,
         )
 
     def _fire(
@@ -654,23 +714,20 @@ class NotifyHooks:
         try:
             sink = subprocess.DEVNULL if self.capture_output else None
             proc = subprocess.run(
-                command, shell=True, env=env,
+                command,
+                shell=True,
+                env=env,
                 stdin=subprocess.DEVNULL,
-                stdout=sink, stderr=sink,
+                stdout=sink,
+                stderr=sink,
                 timeout=self._config.hook_timeout,
             )
             if proc.returncode != 0:
-                self._warn(
-                    f"notify hook '{condition}' exited "
-                    f"{proc.returncode} (non-fatal)"
-                )
+                self._warn(f"notify hook '{condition}' exited {proc.returncode} (non-fatal)")
         except subprocess.TimeoutExpired:
             self._warn(
                 f"notify hook '{condition}' timed out after "
                 f"{self._config.hook_timeout}s (non-fatal)"
             )
         except OSError as exc:
-            self._warn(
-                f"notify hook '{condition}' failed to launch: {exc} "
-                f"(non-fatal)"
-            )
+            self._warn(f"notify hook '{condition}' failed to launch: {exc} (non-fatal)")

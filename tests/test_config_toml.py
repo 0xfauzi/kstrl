@@ -163,7 +163,8 @@ foo = "bar"
 
 
 def test_load_env_overrides_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     toml_path = tmp_path / "kstrl.toml"
     _write_toml(
@@ -184,7 +185,8 @@ model = "sonnet"
 
 
 def test_load_toml_wins_over_defaults_when_env_unset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Clear env vars that might leak from the test environment
     for var in ("MAX_ITERATIONS", "MODEL", "SLEEP_SECONDS", "INTERACTIVE"):
@@ -202,12 +204,20 @@ max_iterations = 25
 
 
 def test_load_defaults_when_no_toml_and_no_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in (
-        "MAX_ITERATIONS", "MODEL", "SLEEP_SECONDS", "INTERACTIVE",
-        "ALLOWED_PATHS", "AGENT_CMD", "MODEL_REASONING_EFFORT",
-        "KSTRL_AGENT_TYPE", "KSTRL_BRANCH", "KSTRL_ASCII",
+        "MAX_ITERATIONS",
+        "MODEL",
+        "SLEEP_SECONDS",
+        "INTERACTIVE",
+        "ALLOWED_PATHS",
+        "AGENT_CMD",
+        "MODEL_REASONING_EFFORT",
+        "KSTRL_AGENT_TYPE",
+        "KSTRL_BRANCH",
+        "KSTRL_ASCII",
     ):
         monkeypatch.delenv(var, raising=False)
     config = KstrlConfig.load(tmp_path)
@@ -220,7 +230,8 @@ def test_load_defaults_when_no_toml_and_no_env(
 
 
 def test_load_auto_discovers_kstrl_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)
@@ -236,7 +247,8 @@ max_iterations = 7
 
 
 def test_load_missing_toml_falls_back_silently(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)
@@ -245,7 +257,8 @@ def test_load_missing_toml_falls_back_silently(
 
 
 def test_load_env_branch_marks_explicit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("KSTRL_BRANCH", "")
     config = KstrlConfig.load(tmp_path)
@@ -254,7 +267,8 @@ def test_load_env_branch_marks_explicit(
 
 
 def test_load_env_paths_resolved_against_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROMPT_FILE", "custom/prompt.md")
     config = KstrlConfig.load(tmp_path)
@@ -262,7 +276,8 @@ def test_load_env_paths_resolved_against_root(
 
 
 def test_load_toml_empty_branch_does_not_mark_explicit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """kstrl.toml.example documents `branch = ""` as 'empty = use PRD
     branchName'. An empty TOML branch must therefore NOT mark explicit,
@@ -284,7 +299,8 @@ branch = ""
 
 
 def test_load_toml_nonempty_branch_marks_explicit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("KSTRL_BRANCH",):
         monkeypatch.delenv(var, raising=False)
@@ -306,7 +322,8 @@ branch = "feature/foo"
 
 
 def test_from_env_still_works(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("MAX_ITERATIONS", "13")
     monkeypatch.setenv("MODEL", "haiku")
@@ -317,7 +334,8 @@ def test_from_env_still_works(
 
 
 def test_from_env_does_not_read_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in ("MAX_ITERATIONS",):
         monkeypatch.delenv(var, raising=False)

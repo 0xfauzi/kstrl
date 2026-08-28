@@ -44,27 +44,31 @@ class ReviewMode(StrEnum):
     SKIP = "skip"
 
 
-VALID_CONCERN_CATEGORIES = frozenset({
-    "scope_creep",
-    "security_concern",
-    "test_quality",
-    "unrelated_change",
-    "dead_code",
-    "error_handling",
-    "copy_paste",
-    "other",
-})
+VALID_CONCERN_CATEGORIES = frozenset(
+    {
+        "scope_creep",
+        "security_concern",
+        "test_quality",
+        "unrelated_change",
+        "dead_code",
+        "error_handling",
+        "copy_paste",
+        "other",
+    }
+)
 
 # R1.1: whitelist of criterion verdicts accepted from the reviewer,
 # compared case-insensitively after stripping. The prompt schema
 # promises pass|fail|advisory; anything else ("Blocked", "n/a", a
 # missing key) is a parse failure - infrastructure error, never a
 # silently non-blocking advisory.
-VALID_CRITERION_VERDICTS = frozenset({
-    ReviewVerdict.PASS.value,
-    ReviewVerdict.FAIL.value,
-    ReviewVerdict.ADVISORY.value,
-})
+VALID_CRITERION_VERDICTS = frozenset(
+    {
+        ReviewVerdict.PASS.value,
+        ReviewVerdict.FAIL.value,
+        ReviewVerdict.ADVISORY.value,
+    }
+)
 
 
 # R10.3: story ids are compared case-insensitively after stripping.
@@ -169,15 +173,12 @@ class ReviewResult:
         lines: list[str] = []
         for cr in self.criteria:
             if cr.verdict != ReviewVerdict.PASS.value:
-                lines.append(f"- {cr.verdict.upper()}: \"{cr.criterion}\"")
+                lines.append(f'- {cr.verdict.upper()}: "{cr.criterion}"')
                 lines.append(f"  Explanation: {cr.explanation}")
                 if cr.suggestion:
                     lines.append(f"  Suggestion: {cr.suggestion}")
         for concern in self.concerns:
-            lines.append(
-                f"- {concern.severity.upper()} {concern.category}: "
-                f"{concern.location}"
-            )
+            lines.append(f"- {concern.severity.upper()} {concern.category}: {concern.location}")
             lines.append(f"  Explanation: {concern.explanation}")
             if concern.suggestion:
                 lines.append(f"  Suggestion: {concern.suggestion}")
@@ -192,15 +193,9 @@ class ReviewResult:
         # the same-named instance properties (which sum criteria +
         # concerns). The header line below describes criteria; concerns
         # are summarized separately as "additional concerns".
-        criterion_pass = sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.PASS.value
-        )
-        criterion_fail = sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value
-        )
-        criterion_adv = sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
-        )
+        criterion_pass = sum(1 for c in self.criteria if c.verdict == ReviewVerdict.PASS.value)
+        criterion_fail = sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value)
+        criterion_adv = sum(1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value)
         lines.append(
             f"**{criterion_pass} criteria passed, {criterion_fail} failed, "
             f"{criterion_adv} advisory; "
@@ -235,9 +230,7 @@ class ReviewResult:
             lines.append("### Reviewer concerns (beyond PRD)")
             for concern in self.concerns:
                 icon = "FAIL" if concern.severity == "fail" else "advisory"
-                lines.append(
-                    f"- [{icon}] **{concern.category}** at `{concern.location}`"
-                )
+                lines.append(f"- [{icon}] **{concern.category}** at `{concern.location}`")
                 lines.append(f"  - {concern.explanation}")
                 if concern.suggestion:
                     lines.append(f"  - Suggestion: {concern.suggestion}")
@@ -250,15 +243,11 @@ class ReviewResult:
 
     @property
     def criterion_fail_count(self) -> int:
-        return sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value
-        )
+        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value)
 
     @property
     def criterion_advisory_count(self) -> int:
-        return sum(
-            1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value
-        )
+        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value)
 
     @property
     def concern_fail_count(self) -> int:
@@ -331,10 +320,7 @@ class ReviewResult:
         followed since R1.1.
         """
         key = normalize_story_id(story_id)
-        return [
-            cr for cr in self.criteria
-            if normalize_story_id(cr.story_id) == key
-        ]
+        return [cr for cr in self.criteria if normalize_story_id(cr.story_id) == key]
 
     def judged_criterion_count(self, story_id: str) -> int:
         """How many DISTINCT criteria the reviewer judged for a story.
@@ -368,10 +354,7 @@ class ReviewResult:
         suggestion text and for the note written into a reverted PRD
         story, so both read the same evidence.
         """
-        return [
-            cr for cr in self.criteria_for(story_id)
-            if cr.verdict != ReviewVerdict.PASS.value
-        ]
+        return [cr for cr in self.criteria_for(story_id) if cr.verdict != ReviewVerdict.PASS.value]
 
     def as_findings(self) -> list[Finding]:
         """E3: typed representation of every non-PASS criterion + every
@@ -394,43 +377,49 @@ class ReviewResult:
         reviewed the diff.
         """
         if self.infrastructure_error:
-            return [tag_finding_with_model(
-                Finding.infrastructure_error(
-                    phase="review",
-                    explanation=(
-                        self.overall_notes
-                        or "Reviewer agent did not produce parseable output"
+            return [
+                tag_finding_with_model(
+                    Finding.infrastructure_error(
+                        phase="review",
+                        explanation=(
+                            self.overall_notes or "Reviewer agent did not produce parseable output"
+                        ),
                     ),
-                ),
-                self.reviewer_model,
-            )]
+                    self.reviewer_model,
+                )
+            ]
         out: list[Finding] = []
         for cr in self.criteria:
             if cr.verdict == ReviewVerdict.PASS.value:
                 continue
             sev = "fail" if cr.verdict == ReviewVerdict.FAIL.value else "advisory"
-            out.append(Finding.from_review_concern(
-                category="prd_criterion",
-                severity=sev,
-                location="",
-                explanation=f"{cr.criterion}: {cr.explanation}",
-                suggestion=cr.suggestion,
-            ))
+            out.append(
+                Finding.from_review_concern(
+                    category="prd_criterion",
+                    severity=sev,
+                    location="",
+                    explanation=f"{cr.criterion}: {cr.explanation}",
+                    suggestion=cr.suggestion,
+                )
+            )
         for concern in self.concerns:
-            out.append(Finding.from_review_concern(
-                category=concern.category,
-                severity=concern.severity,
-                location=concern.location,
-                explanation=concern.explanation,
-                suggestion=concern.suggestion,
-            ))
-        return [
-            tag_finding_with_model(f, self.reviewer_model) for f in out
-        ]
+            out.append(
+                Finding.from_review_concern(
+                    category=concern.category,
+                    severity=concern.severity,
+                    location=concern.location,
+                    explanation=concern.explanation,
+                    suggestion=concern.suggestion,
+                )
+            )
+        return [tag_finding_with_model(f, self.reviewer_model) for f in out]
 
 
 def setpoint_disagreements(
-    prd: PRD, review: ReviewResult, *, severity: str,
+    prd: PRD,
+    review: ReviewResult,
+    *,
+    severity: str,
 ) -> list[Finding]:
     """R10.3: one Finding per story where the two sensors disagree.
 
@@ -494,30 +483,32 @@ def setpoint_disagreements(
             # story" and "the reviewer passed the part of it that it
             # looked at" are different facts, and only the first
             # confirms the engineer's claim.
-            reads = (
-                f"pass on only {judged} of {expected} acceptance criteria"
-            )
+            reads = f"pass on only {judged} of {expected} acceptance criteria"
             gap = (
                 f"The reviewer returned {judged} verdict(s) for "
                 f"{expected} acceptance criteria, so the story is "
                 "unconfirmed rather than judged unmet."
             )
-        out.append(Finding.from_review_concern(
-            category=SETPOINT_DISAGREEMENT_CATEGORY,
-            severity=severity,
-            location=story.id,
-            explanation=(
-                f"Story {story.id} is marked passes=true by the engineer "
-                f"but the reviewer's verdict is {reads}"
-            ),
-            suggestion="; ".join(cr.criterion for cr in unmet) or gap,
-        ))
+        out.append(
+            Finding.from_review_concern(
+                category=SETPOINT_DISAGREEMENT_CATEGORY,
+                severity=severity,
+                location=story.id,
+                explanation=(
+                    f"Story {story.id} is marked passes=true by the engineer "
+                    f"but the reviewer's verdict is {reads}"
+                ),
+                suggestion="; ".join(cr.criterion for cr in unmet) or gap,
+            )
+        )
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 
 
 def setpoint_retry_context(
-    disagreements: list[Finding], review: ReviewResult,
-    *, reverted: bool = True,
+    disagreements: list[Finding],
+    review: ReviewResult,
+    *,
+    reverted: bool = True,
 ) -> str:
     """R10.3: the set-point findings as text for the engineer's retry.
 
@@ -539,8 +530,8 @@ def setpoint_retry_context(
         return ""
     did = (
         "Their `passes` flags have been reset to false in the PRD."
-        if reverted else
-        "Their `passes` flags could NOT be reset automatically: set each "
+        if reverted
+        else "Their `passes` flags could NOT be reset automatically: set each "
         "one back to false yourself before doing anything else."
     )
     lines = [
@@ -552,9 +543,7 @@ def setpoint_retry_context(
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")
         judged = review.criteria_for(finding.location)
-        unmet = [
-            cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value
-        ]
+        unmet = [cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value]
         if not unmet:
             # Two different situations reach here and the agent must not
             # be handed the wrong one. "Nothing was judged" and
@@ -566,8 +555,8 @@ def setpoint_retry_context(
                 "  - Every criterion the reviewer judged passed, but it "
                 "did not judge them all. Nothing here says the story is "
                 "wrong; it says the story is unconfirmed."
-                if judged else
-                "  - The reviewer returned no verdict for this story, so "
+                if judged
+                else "  - The reviewer returned no verdict for this story, so "
                 "there is no criterion-level evidence to act on. Check "
                 "the story against its acceptance criteria yourself."
             )
@@ -582,8 +571,11 @@ def setpoint_retry_context(
 
 
 def revert_unconfirmed_stories(
-    prd: PRD, review: ReviewResult, disagreements: list[Finding],
-    *, attempt: int,
+    prd: PRD,
+    review: ReviewResult,
+    disagreements: list[Finding],
+    *,
+    attempt: int,
 ) -> list[str]:
     """R10.3: reset ``passes`` on every story in *disagreements*.
 
@@ -606,9 +598,7 @@ def revert_unconfirmed_stories(
         if normalize_story_id(story.id) not in wanted:
             continue
         unmet = review.non_pass_criteria(story.id)
-        detail = (
-            unmet[0].criterion if unmet else "story not covered by review"
-        )
+        detail = unmet[0].criterion if unmet else "story not covered by review"
         note = f"reverted by reviewer (attempt {attempt}): {detail}"
         story.passes = False
         story.notes = f"{story.notes}\n{note}" if story.notes else note
@@ -902,21 +892,21 @@ def parse_review_output(
             # and became a non-blocking advisory-alike.
             verdict = str(crit_data.get("verdict", "")).strip().lower()
             if verdict not in VALID_CRITERION_VERDICTS:
-                invalid_verdicts.append(
-                    str(crit_data.get("verdict", ""))[:40] or "<missing>"
-                )
+                invalid_verdicts.append(str(crit_data.get("verdict", ""))[:40] or "<missing>")
                 continue
-            criteria.append(CriterionReview(
-                criterion=str(crit_data.get("criterion", "")),
-                verdict=verdict,
-                explanation=str(crit_data.get("explanation", "")),
-                suggestion=str(crit_data.get("suggestion", "")),
-                # R10.3: keep the story this verdict belongs to. The id
-                # was already read above and thrown away; the set-point
-                # check needs it to compare the reviewer's verdict
-                # against the engineer's passes flag per story.
-                story_id=story_id,
-            ))
+            criteria.append(
+                CriterionReview(
+                    criterion=str(crit_data.get("criterion", "")),
+                    verdict=verdict,
+                    explanation=str(crit_data.get("explanation", "")),
+                    suggestion=str(crit_data.get("suggestion", "")),
+                    # R10.3: keep the story this verdict belongs to. The id
+                    # was already read above and thrown away; the set-point
+                    # check needs it to compare the reviewer's verdict
+                    # against the engineer's passes flag per story.
+                    story_id=story_id,
+                )
+            )
             if story_id:
                 covered_story_ids.add(normalize_story_id(story_id))
 
@@ -930,8 +920,7 @@ def parse_review_output(
 
     if expected_story_ids:
         missing = [
-            sid for sid in expected_story_ids
-            if normalize_story_id(sid) not in covered_story_ids
+            sid for sid in expected_story_ids if normalize_story_id(sid) not in covered_story_ids
         ]
         if missing:
             return _infra(
@@ -958,19 +947,19 @@ def parse_review_output(
                 continue
             if not explanation:
                 continue
-            concerns.append(ReviewConcern(
-                category=category,
-                severity=severity,
-                location=location,
-                explanation=explanation,
-                suggestion=str(c.get("suggestion", "")),
-            ))
+            concerns.append(
+                ReviewConcern(
+                    category=category,
+                    severity=severity,
+                    location=location,
+                    explanation=explanation,
+                    suggestion=str(c.get("suggestion", "")),
+                )
+            )
 
     exhaustively_searched = bool(data.get("exhaustively_searched", False))
 
-    has_criterion_failures = any(
-        c.verdict == ReviewVerdict.FAIL.value for c in criteria
-    )
+    has_criterion_failures = any(c.verdict == ReviewVerdict.FAIL.value for c in criteria)
     has_concern_failures = any(c.severity == "fail" for c in concerns)
     overall_notes = str(data.get("overallNotes", ""))
 
@@ -1029,16 +1018,20 @@ def run_review(
         # R1.4: anything past the cap is invisible to the reviewer.
         truncated = len(diff_content) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         prompt = build_review_prompt(
-            prd_path, worktree_path, base_branch, verification_result,
+            prd_path,
+            worktree_path,
+            base_branch,
+            verification_result,
             diff_content=diff_content,
         )
         # R1.1: the coverage gate needs the ground-truth story ids from
         # the PRD, not whatever ids the reviewer chose to mention.
-        expected_story_ids = [
-            story.id for story in PRD.load(prd_path).user_stories
-        ]
+        expected_story_ids = [story.id for story in PRD.load(prd_path).user_stories]
         output_lines = collect_agent_output(
-            agent, prompt, cwd=worktree_path, timeout=timeout,
+            agent,
+            prompt,
+            cwd=worktree_path,
+            timeout=timeout,
             on_line=on_line,
         )
     except AgentOutputTooLarge as exc:
@@ -1072,7 +1065,9 @@ def run_review(
 
     raw_output = _select_agent_output(agent, output_lines)
     result = parse_review_output(
-        raw_output, expected_story_ids, debug_dir=debug_dir,
+        raw_output,
+        expected_story_ids,
+        debug_dir=debug_dir,
     )
     result.mode = mode.value
     result.reviewer_model = reviewer_model
@@ -1084,21 +1079,23 @@ def run_review(
         # advisory concern so the PR body, findings stream, and retry
         # context all say "partial".
         result.partial = True
-        result.concerns.append(ReviewConcern(
-            category="other",
-            severity="advisory",
-            location="",
-            explanation=(
-                "Partial review (R1.4): the diff exceeded the "
-                f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
-                "cap and only the truncated prefix was reviewed; "
-                "anything past the cut is unreviewed."
-            ),
-            suggestion=(
-                "Split the component or reduce the diff so the full "
-                "change fits one review pass."
-            ),
-        ))
+        result.concerns.append(
+            ReviewConcern(
+                category="other",
+                severity="advisory",
+                location="",
+                explanation=(
+                    "Partial review (R1.4): the diff exceeded the "
+                    f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}KB prompt "
+                    "cap and only the truncated prefix was reviewed; "
+                    "anything past the cut is unreviewed."
+                ),
+                suggestion=(
+                    "Split the component or reduce the diff so the full "
+                    "change fits one review pass."
+                ),
+            )
+        )
         if mode == ReviewMode.HARD:
             # Backstop, not the primary path: the factory chunks
             # oversized diffs before calling us (run_chunked_review).
@@ -1135,7 +1132,8 @@ def run_review(
 
 
 def merge_review_results(
-    results: list[ReviewResult], mode: str,
+    results: list[ReviewResult],
+    mode: str,
 ) -> ReviewResult:
     """R1.4: merge the per-chunk results of a chunked review into one.
 
@@ -1228,14 +1226,21 @@ def run_chunked_review(
                 on_line(f"--- chunk {i}/{n} ---")
             except Exception:  # noqa: BLE001 - transcripts never gate
                 on_line = None
-        results.append(run_review(
-            agent, prd_path, worktree_path, base_branch,
-            verification_result, mode, ui,
-            timeout=timeout,
-            diff_content=chunk,
-            # Per-chunk subdir: dump_raw_debug writes fixed filenames,
-            # so sharing one dir would overwrite earlier chunks' dumps.
-            debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
-            on_line=on_line,
-        ))
+        results.append(
+            run_review(
+                agent,
+                prd_path,
+                worktree_path,
+                base_branch,
+                verification_result,
+                mode,
+                ui,
+                timeout=timeout,
+                diff_content=chunk,
+                # Per-chunk subdir: dump_raw_debug writes fixed filenames,
+                # so sharing one dir would overwrite earlier chunks' dumps.
+                debug_dir=debug_dir / f"chunk-{i}" if debug_dir else None,
+                on_line=on_line,
+            )
+        )
     return merge_review_results(results, mode.value)

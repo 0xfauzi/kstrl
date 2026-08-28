@@ -72,20 +72,33 @@ class State:
         if self.cooldown > 0:
             out.append(f"demotion cool-down active: {self.cooldown} more decisive run(s) required")
         if self.decisive_runs < MIN_DECISIVE_RUNS:
-            out.append(f"insufficient evidence: {self.decisive_runs} decisive run(s), need {MIN_DECISIVE_RUNS}")
+            out.append(
+                f"insufficient evidence: {self.decisive_runs} decisive run(s), "
+                f"need {MIN_DECISIVE_RUNS}"
+            )
         if self.policy_violations:
             out.append(f"{self.policy_violations} policy violation(s) at this level; need zero")
         if target == 2 and self.components_merged < L2_MERGED_COMPONENTS_REQUIRED:
-            out.append(f"{self.components_merged}/{L2_MERGED_COMPONENTS_REQUIRED} components merged at L1")
+            out.append(
+                f"{self.components_merged}/{L2_MERGED_COMPONENTS_REQUIRED} components merged at L1"
+            )
         elif target == 3 and self.clean_merges < L3_CLEAN_MERGES_REQUIRED:
-            out.append(f"{self.clean_merges}/{L3_CLEAN_MERGES_REQUIRED} consecutive merges approved without edits")
+            out.append(
+                f"{self.clean_merges}/{L3_CLEAN_MERGES_REQUIRED} consecutive merges "
+                "approved without edits"
+            )
         elif target == 4 and self.components_merged < L4_MERGED_COMPONENTS_REQUIRED:
-            out.append(f"{self.components_merged}/{L4_MERGED_COMPONENTS_REQUIRED} components merged while holding L3")
+            out.append(
+                f"{self.components_merged}/{L4_MERGED_COMPONENTS_REQUIRED} components "
+                "merged while holding L3"
+            )
         return out
 
     def promote(self, ack: bool) -> str:
         if not ack:
-            return "refused: promotion requires an explicit acknowledgement (and a named human actor)"
+            return (
+                "refused: promotion requires an explicit acknowledgement (and a named human actor)"
+            )
         if self.level >= 4:
             return "refused: already at the highest level (L4 Deploy)"
         blockers = self.blockers()
@@ -98,19 +111,26 @@ class State:
 
     def demote(self, trigger: str) -> str:
         if self.level == 1:
-            return f"{trigger}: already at L1, the floor; nothing to revoke (violation still counted)"
+            return (
+                f"{trigger}: already at L1, the floor; nothing to revoke (violation still counted)"
+            )
         self.level -= 1
         self.reset_counters()
         self.cooldown = DEMOTION_COOLDOWN_RUNS
         self.history.append(f"demote ({trigger}) -> {LABELS[self.level]}")
-        return f"{trigger}: demoted to {LABELS[self.level]}; counters reset; cool-down {DEMOTION_COOLDOWN_RUNS} decisive runs"
+        return (
+            f"{trigger}: demoted to {LABELS[self.level]}; counters reset; "
+            f"cool-down {DEMOTION_COOLDOWN_RUNS} decisive runs"
+        )
 
     def act(self, action: str, *, demote_on_calibration: bool = False) -> str:
         if action == "run":
             self.decisive_runs += 1
             if self.cooldown > 0:
                 self.cooldown -= 1
-            return "decisive run recorded" + (f"; cool-down now {self.cooldown}" if self.cooldown else "")
+            return "decisive run recorded" + (
+                f"; cool-down now {self.cooldown}" if self.cooldown else ""
+            )
         if action == "merge":
             self.components_merged += 1
             self.clean_merges += 1
@@ -124,8 +144,13 @@ class State:
             return self.demote("policy violation")
         if action == "calibration":
             if demote_on_calibration:
-                return "calibration regression: inbox item opened; " + self.demote("calibration regression")
-            return "calibration regression: inbox item opened (calibration_drift); level unchanged (advisory)"
+                return "calibration regression: inbox item opened; " + self.demote(
+                    "calibration regression"
+                )
+            return (
+                "calibration regression: inbox item opened (calibration_drift); "
+                "level unchanged (advisory)"
+            )
         if action == "promote":
             return self.promote(ack=True)
         if action == "promote_noack":
@@ -133,7 +158,9 @@ class State:
         raise ValueError(action)
 
 
-def runtime_level(level: int, max_level: int, policy_enabled: bool, control_external: bool) -> tuple[int, list[str]]:
+def runtime_level(
+    level: int, max_level: int, policy_enabled: bool, control_external: bool
+) -> tuple[int, list[str]]:
     notes: list[str] = []
     out = level
     if out > max_level:
@@ -153,8 +180,10 @@ def override_note(level: int, configured_merge_gate: bool | None) -> str:
     bundle = flag_bundle(level)
     if configured_merge_gate is None or configured_merge_gate == bundle["pause_before_pr_merge"]:
         return ""
-    return (f"[factory] pause_before_pr_merge={configured_merge_gate} contradicts "
-            f"{LABELS[level]} (bundle: {bundle['pause_before_pr_merge']}); bundle wins")
+    return (
+        f"[factory] pause_before_pr_merge={configured_merge_gate} contradicts "
+        f"{LABELS[level]} (bundle: {bundle['pause_before_pr_merge']}); bundle wins"
+    )
 
 
 SEQUENCES: list[tuple[str, list[str], bool]] = [
@@ -162,13 +191,43 @@ SEQUENCES: list[tuple[str, list[str], bool]] = [
     ("eight runs, no merges", ["run"] * 8 + ["promote"], False),
     ("eight runs, five merges", ["run"] * 8 + ["merge"] * 5 + ["promote"], False),
     ("earn L2 then a violation", ["run"] * 8 + ["merge"] * 5 + ["promote", "violation"], False),
-    ("cool-down burns down", ["run"] * 8 + ["merge"] * 5 + ["promote", "violation"] + ["run"] * 10 + ["merge"] * 5 + ["promote"], False),
+    (
+        "cool-down burns down",
+        ["run"] * 8
+        + ["merge"] * 5
+        + ["promote", "violation"]
+        + ["run"] * 10
+        + ["merge"] * 5
+        + ["promote"],
+        False,
+    ),
     ("promote without an ack", ["run"] * 8 + ["merge"] * 5 + ["promote_noack"], False),
-    ("calibration regression, advisory", ["run"] * 8 + ["merge"] * 5 + ["promote", "calibration"], False),
-    ("calibration regression, demotion on", ["run"] * 8 + ["merge"] * 5 + ["promote", "calibration"], True),
+    (
+        "calibration regression, advisory",
+        ["run"] * 8 + ["merge"] * 5 + ["promote", "calibration"],
+        False,
+    ),
+    (
+        "calibration regression, demotion on",
+        ["run"] * 8 + ["merge"] * 5 + ["promote", "calibration"],
+        True,
+    ),
     ("violation at the floor", ["violation", "violation"], False),
-    ("edited merge resets the streak", ["run"] * 8 + ["merge"] * 5 + ["promote"] + ["run"] * 8 + ["merge"] * 14 + ["merge_edited", "promote"], False),
-    ("L3 earned", ["run"] * 8 + ["merge"] * 5 + ["promote"] + ["run"] * 8 + ["merge"] * 15 + ["promote"], False),
+    (
+        "edited merge resets the streak",
+        ["run"] * 8
+        + ["merge"] * 5
+        + ["promote"]
+        + ["run"] * 8
+        + ["merge"] * 14
+        + ["merge_edited", "promote"],
+        False,
+    ),
+    (
+        "L3 earned",
+        ["run"] * 8 + ["merge"] * 5 + ["promote"] + ["run"] * 8 + ["merge"] * 15 + ["promote"],
+        False,
+    ),
 ]
 
 
@@ -176,19 +235,34 @@ def trace(name: str, actions: list[str], demote_on_calibration: bool) -> dict[st
     s = State()
     lines = [s.act(a, demote_on_calibration=demote_on_calibration) for a in actions]
     return {
-        "name": name, "actions": actions, "demote_on_calibration": demote_on_calibration,
-        "lines": lines, "level": s.level, "cooldown": s.cooldown,
+        "name": name,
+        "actions": actions,
+        "demote_on_calibration": demote_on_calibration,
+        "lines": lines,
+        "level": s.level,
+        "cooldown": s.cooldown,
         "counters": [s.decisive_runs, s.components_merged, s.clean_merges, s.policy_violations],
-        "bundle": flag_bundle(s.level), "blockers": s.blockers(),
+        "bundle": flag_bundle(s.level),
+        "blockers": s.blockers(),
     }
 
 
 def sweep() -> dict[str, object]:
     clamps = []
-    for level, max_level, policy, external in product((1, 2, 3, 4), (1, 2, 3, 4), (True, False), (True, False)):
+    for level, max_level, policy, external in product(
+        (1, 2, 3, 4), (1, 2, 3, 4), (True, False), (True, False)
+    ):
         rl, notes = runtime_level(level, max_level, policy, external)
-        clamps.append({"level": level, "max_level": max_level, "policy": policy,
-                       "external": external, "runtime": rl, "notes": notes})
+        clamps.append(
+            {
+                "level": level,
+                "max_level": max_level,
+                "policy": policy,
+                "external": external,
+                "runtime": rl,
+                "notes": notes,
+            }
+        )
     return {"traces": [trace(*s) for s in SEQUENCES], "clamps": clamps}
 
 
@@ -198,56 +272,106 @@ def main() -> None:
         json.dump(data, sys.stdout)
         return
     for t in data["traces"]:  # type: ignore[union-attr]
-        print(f"{t['name']}: ends at {LABELS[t['level']]}, cool-down {t['cooldown']}, "  # type: ignore[index]
-              f"counters {t['counters']}")  # type: ignore[index]
+        print(
+            f"{t['name']}: ends at {LABELS[t['level']]}, cool-down {t['cooldown']}, "  # type: ignore[index]
+            f"counters {t['counters']}"
+        )  # type: ignore[index]
         print(f"   last line: {t['lines'][-1]}")  # type: ignore[index]
     traces = {t["name"]: t for t in data["traces"]}  # type: ignore[union-attr]
     print()
-    print("claim 1: a fresh state cannot promote (evidence first) ->",
-          "holds" if traces["fresh state, promote at once"]["level"] == 1 else "fails")
-    print("claim 2: eight decisive runs and five merges earn L2; eight runs alone do not ->",
-          "holds" if traces["eight runs, five merges"]["level"] == 2
-          and traces["eight runs, no merges"]["level"] == 1 else "fails")
-    print("claim 3: a policy violation demotes one level, resets counters, starts a 10-run cool-down ->",
-          "holds" if traces["earn L2 then a violation"]["level"] == 1
-          and traces["earn L2 then a violation"]["cooldown"] == 10
-          and traces["earn L2 then a violation"]["counters"] == [0, 0, 0, 0] else "fails")
-    print("claim 4: after the cool-down elapses and the evidence is re-earned, L2 is offered again ->",
-          "holds" if traces["cool-down burns down"]["level"] == 2 else "fails")
-    print("claim 5: no ack, no promotion, whatever the evidence ->",
-          "holds" if traces["promote without an ack"]["level"] == 1 else "fails")
-    print("claim 6: a calibration regression is advisory by default and demotes only when switched on ->",
-          "holds" if traces["calibration regression, advisory"]["level"] == 2
-          and traces["calibration regression, demotion on"]["level"] == 1 else "fails")
-    print("claim 7: demotion at L1 is a no-op ->",
-          "holds" if traces["violation at the floor"]["level"] == 1 else "fails")
-    print("claim 8: one human-edited merge resets the clean streak, so L3 is refused ->",
-          "holds" if traces["edited merge resets the streak"]["level"] == 2 else "fails")
-    print("claim 9: L3 is earned by fifteen clean merges after eight runs at L2 ->",
-          "holds" if traces["L3 earned"]["level"] == 3 else "fails")
+    print(
+        "claim 1: a fresh state cannot promote (evidence first) ->",
+        "holds" if traces["fresh state, promote at once"]["level"] == 1 else "fails",
+    )
+    print(
+        "claim 2: eight decisive runs and five merges earn L2; eight runs alone do not ->",
+        "holds"
+        if traces["eight runs, five merges"]["level"] == 2
+        and traces["eight runs, no merges"]["level"] == 1
+        else "fails",
+    )
+    print(
+        "claim 3: a policy violation demotes one level, resets counters, "
+        "starts a 10-run cool-down ->",
+        "holds"
+        if traces["earn L2 then a violation"]["level"] == 1
+        and traces["earn L2 then a violation"]["cooldown"] == 10
+        and traces["earn L2 then a violation"]["counters"] == [0, 0, 0, 0]
+        else "fails",
+    )
+    print(
+        "claim 4: after the cool-down elapses and the evidence is re-earned, "
+        "L2 is offered again ->",
+        "holds" if traces["cool-down burns down"]["level"] == 2 else "fails",
+    )
+    print(
+        "claim 5: no ack, no promotion, whatever the evidence ->",
+        "holds" if traces["promote without an ack"]["level"] == 1 else "fails",
+    )
+    print(
+        "claim 6: a calibration regression is advisory by default and demotes "
+        "only when switched on ->",
+        "holds"
+        if traces["calibration regression, advisory"]["level"] == 2
+        and traces["calibration regression, demotion on"]["level"] == 1
+        else "fails",
+    )
+    print(
+        "claim 7: demotion at L1 is a no-op ->",
+        "holds" if traces["violation at the floor"]["level"] == 1 else "fails",
+    )
+    print(
+        "claim 8: one human-edited merge resets the clean streak, so L3 is refused ->",
+        "holds" if traces["edited merge resets the streak"]["level"] == 2 else "fails",
+    )
+    print(
+        "claim 9: L3 is earned by fifteen clean merges after eight runs at L2 ->",
+        "holds" if traces["L3 earned"]["level"] == 3 else "fails",
+    )
+
     def permissions(lv: int) -> list[bool]:
         b = flag_bundle(lv)
         # pause_before_pr_merge is a restriction; its absence is the permission.
-        return [not b["pause_before_pr_merge"], bool(b["auto_accept_plan"]),
-                bool(b["deps_allow_new_permitted"]), bool(b["auto_merge_when_green"]),
-                bool(b["deploy_permitted"])]
+        return [
+            not b["pause_before_pr_merge"],
+            bool(b["auto_accept_plan"]),
+            bool(b["deps_allow_new_permitted"]),
+            bool(b["auto_merge_when_green"]),
+            bool(b["deploy_permitted"]),
+        ]
 
     monotone = all(
         all(a <= b for a, b in zip(permissions(lv), permissions(lv + 1), strict=True))
         for lv in (1, 2, 3)
     )
-    print("claim 10: every permission in the bundle is monotone in the level; review stays hard ->",
-          "holds" if monotone and all(flag_bundle(lv)["review_mode"] == "hard" for lv in (1, 2, 3, 4))
-          else "fails")
+    print(
+        "claim 10: every permission in the bundle is monotone in the level; review stays hard ->",
+        "holds"
+        if monotone and all(flag_bundle(lv)["review_mode"] == "hard" for lv in (1, 2, 3, 4))
+        else "fails",
+    )
     clamps = data["clamps"]  # type: ignore[assignment]
-    print("claim 11: the runtime level never exceeds the earned level (clamps only withhold) ->",
-          "holds" if all(c["runtime"] <= c["level"] for c in clamps) else "fails")  # type: ignore[index]
-    print("claim 12: without a policy envelope or with control state in the tree, L3 and L4 run as L2 ->",
-          "holds" if all(c["runtime"] <= 2 for c in clamps  # type: ignore[index]
-                         if not c["policy"] or not c["external"]) else "fails")  # type: ignore[index]
-    print("claim 13: a config that switches the merge gate off at L1 is recorded, not honoured ->",
-          "holds" if "bundle wins" in override_note(1, False) and override_note(3, False) == ""
-          else "fails")
+    print(
+        "claim 11: the runtime level never exceeds the earned level (clamps only withhold) ->",
+        "holds" if all(c["runtime"] <= c["level"] for c in clamps) else "fails",
+    )  # type: ignore[index]
+    print(
+        "claim 12: without a policy envelope or with control state in the tree, "
+        "L3 and L4 run as L2 ->",
+        "holds"
+        if all(
+            c["runtime"] <= 2
+            for c in clamps  # type: ignore[index]
+            if not c["policy"] or not c["external"]
+        )
+        else "fails",
+    )  # type: ignore[index]
+    print(
+        "claim 13: a config that switches the merge gate off at L1 is recorded, not honoured ->",
+        "holds"
+        if "bundle wins" in override_note(1, False) and override_note(3, False) == ""
+        else "fails",
+    )
 
 
 if __name__ == "__main__":

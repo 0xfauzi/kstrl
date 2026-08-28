@@ -68,7 +68,10 @@ def _git_branch(root_dir: Path) -> str:
     try:
         probe = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=root_dir, capture_output=True, text=True, timeout=5,
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -140,10 +143,7 @@ def _stats_line(stats: HomeStats) -> Text:
 class HomeScreen(Screen[None]):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
-        *[
-            Binding(str(n + 1), f"command({n})", show=False)
-            for n in range(len(HOME_COMMANDS))
-        ],
+        *[Binding(str(n + 1), f"command({n})", show=False) for n in range(len(HOME_COMMANDS))],
     ]
 
     def __init__(self) -> None:
@@ -176,7 +176,8 @@ class HomeScreen(Screen[None]):
         return next(iter(self.query(RunTable)), None) is not None
 
     def update_safe_mode(
-        self, reasons: list[SafeModeReason] | None,
+        self,
+        reasons: list[SafeModeReason] | None,
     ) -> None:
         """Duck-typed contract the app calls; ignored while unmounted."""
         chip = next(iter(self.query(SafeModeChip)), None)
@@ -186,9 +187,13 @@ class HomeScreen(Screen[None]):
     def on_mount(self) -> None:
         self.update_safe_mode(getattr(self.app, "_safe_mode_reasons", None))
         root_dir = self._root_dir()
-        self.query_one("#home-masthead", Static).update(_masthead(
-            root_dir, _git_branch(root_dir), _project_name(root_dir),
-        ))
+        self.query_one("#home-masthead", Static).update(
+            _masthead(
+                root_dir,
+                _git_branch(root_dir),
+                _project_name(root_dir),
+            )
+        )
         commands = self.query_one(OptionList)
         for index, command in enumerate(HOME_COMMANDS):
             label = Text()
@@ -211,8 +216,7 @@ class HomeScreen(Screen[None]):
         self.query_one(RunTable).update_runs(refs, self._summaries)
         title = Text("runs", style=f"bold {theme.MUTED}")
         if not refs:
-            title.append("  none yet - run a command below",
-                         style=theme.MUTED)
+            title.append("  none yet - run a command below", style=theme.MUTED)
         self.query_one("#home-runs-title", Static).update(title)
         if not self._summarizing:
             # Folding every listed run is file IO + reducer work: off
@@ -224,12 +228,15 @@ class HomeScreen(Screen[None]):
             )
 
     def _compute_summaries(
-        self, refs: list[RunRef], root_dir: Path,
+        self,
+        refs: list[RunRef],
+        root_dir: Path,
     ) -> None:
         try:
             summaries = self._cache.refresh(refs)
             stats = gather_stats(
-                root_dir, summaries,
+                root_dir,
+                summaries,
                 refs[0].run_id if refs else "",
             )
         except Exception:  # noqa: BLE001 - a broken run dir must not kill home
@@ -241,7 +248,8 @@ class HomeScreen(Screen[None]):
         self._summaries = message.summaries
         if self.ready:
             self.query_one(RunTable).update_runs(
-                list(self._refs.values()), self._summaries,
+                list(self._refs.values()),
+                self._summaries,
             )
             self.query_one("#home-stats", Static).update(
                 _stats_line(message.stats),
@@ -270,7 +278,8 @@ class HomeScreen(Screen[None]):
             open_run(ref)
 
     def on_data_table_row_highlighted(
-        self, event: DataTable.RowHighlighted,
+        self,
+        event: DataTable.RowHighlighted,
     ) -> None:
         if event.data_table.id != "home-runs":
             return
@@ -290,10 +299,12 @@ class HomeScreen(Screen[None]):
         title = Text("run preview", style=f"bold {theme.MUTED}")
         if not run_id:
             table.display = False
-            meta.update(Text(
-                "nothing to preview - launch a command to record a run",
-                style=theme.MUTED,
-            ))
+            meta.update(
+                Text(
+                    "nothing to preview - launch a command to record a run",
+                    style=theme.MUTED,
+                )
+            )
             self.query_one("#home-preview-title", Static).update(title)
             return
         ref = self._refs.get(run_id)
@@ -320,15 +331,12 @@ class HomeScreen(Screen[None]):
             line.append("in flight", style=theme.ACCENT)
         if summary is not None:
             line.append(
-                f" · {summary.components_done}/{summary.components_total}"
-                " components",
+                f" · {summary.components_done}/{summary.components_total} components",
                 style=theme.MUTED,
             )
         counts = state.spec_issue_counts
         if counts:
-            parts = " ".join(
-                f"{n} {sev}" for sev, n in sorted(counts.items())
-            )
+            parts = " ".join(f"{n} {sev}" for sev, n in sorted(counts.items()))
             line.append(f" · spec issues: {parts}", style=theme.WARNING)
         line.append("  enter opens the board", style=theme.MUTED)
         meta.update(line)
@@ -336,7 +344,8 @@ class HomeScreen(Screen[None]):
     # -- dispatch ------------------------------------------------------------
 
     def on_data_table_row_selected(
-        self, event: DataTable.RowSelected,
+        self,
+        event: DataTable.RowSelected,
     ) -> None:
         event.stop()
         if event.data_table.id == "home-preview":
@@ -351,7 +360,8 @@ class HomeScreen(Screen[None]):
             self._dispatch(HOME_COMMANDS[index].command_id)
 
     def on_option_list_option_selected(
-        self, event: OptionList.OptionSelected,
+        self,
+        event: OptionList.OptionSelected,
     ) -> None:
         event.stop()
         if event.option_id is not None:

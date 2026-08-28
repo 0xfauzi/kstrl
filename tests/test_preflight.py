@@ -24,14 +24,13 @@ from kstrl.factory import FactoryResult
 
 
 def _availability(
-    monkeypatch: pytest.MonkeyPatch, *, claude: bool, codex: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    claude: bool,
+    codex: bool,
 ) -> None:
-    monkeypatch.setattr(
-        ClaudeCodeAgent, "is_available", classmethod(lambda cls: claude)
-    )
-    monkeypatch.setattr(
-        CodexAgent, "is_available", classmethod(lambda cls: codex)
-    )
+    monkeypatch.setattr(ClaudeCodeAgent, "is_available", classmethod(lambda cls: claude))
+    monkeypatch.setattr(CodexAgent, "is_available", classmethod(lambda cls: codex))
 
 
 def _stub_run_loop(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -77,7 +76,8 @@ class TestAgentPreflightResolver:
     """Unit matrix for _agent_preflight."""
 
     def test_claude_only_type_claude_passes(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         canonical, error, _ = _agent_preflight(None, "claude")
@@ -85,7 +85,8 @@ class TestAgentPreflightResolver:
         assert canonical == "claude-code"
 
     def test_claude_only_type_claude_code_passes(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         canonical, error, _ = _agent_preflight(None, "claude-code")
@@ -93,7 +94,8 @@ class TestAgentPreflightResolver:
         assert canonical == "claude-code"
 
     def test_codex_only_type_codex_passes(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         canonical, error, _ = _agent_preflight(None, "codex")
@@ -101,7 +103,8 @@ class TestAgentPreflightResolver:
         assert canonical == "codex"
 
     def test_claude_only_type_codex_errors_naming_codex(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         _, error, _ = _agent_preflight(None, "codex")
@@ -110,7 +113,8 @@ class TestAgentPreflightResolver:
         assert "claude not found" not in error
 
     def test_codex_only_type_claude_errors_naming_claude(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         _, error, _ = _agent_preflight(None, "claude")
@@ -119,7 +123,8 @@ class TestAgentPreflightResolver:
         assert "codex not found" not in error
 
     def test_auto_accepts_claude_only_machine(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         canonical, error, _ = _agent_preflight(None, None)
@@ -127,7 +132,8 @@ class TestAgentPreflightResolver:
         assert canonical == "auto"
 
     def test_auto_neither_available_names_both(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=False)
         _, error, _ = _agent_preflight(None, "auto")
@@ -135,14 +141,16 @@ class TestAgentPreflightResolver:
         assert "codex" in error and "claude" in error
 
     def test_custom_command_skips_path_check(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=False)
         _, error, _ = _agent_preflight("echo hi", "custom")
         assert error is None
 
     def test_custom_type_without_command_errors(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=True)
         _, error, hint = _agent_preflight(None, "custom")
@@ -151,7 +159,8 @@ class TestAgentPreflightResolver:
         assert hint is not None and "--agent-cmd" in hint
 
     def test_unknown_type_errors_loudly(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=True)
         _, error, _ = _agent_preflight(None, "gemini")
@@ -163,7 +172,9 @@ class TestUnderstandPreflightWiring:
     """CLI-level matrix through `ks understand` (run_loop stubbed)."""
 
     def test_claude_only_toml_type_claude_passes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         calls = _stub_run_loop(monkeypatch)
@@ -171,7 +182,8 @@ class TestUnderstandPreflightWiring:
         (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         result = CliRunner().invoke(
-            cli, ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
+            cli,
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
         )
 
         assert result.exit_code == 0, result.output
@@ -179,7 +191,9 @@ class TestUnderstandPreflightWiring:
         assert len(calls) == 1
 
     def test_codex_only_env_type_codex_passes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
@@ -187,14 +201,17 @@ class TestUnderstandPreflightWiring:
         monkeypatch.setenv("KSTRL_AGENT_TYPE", "codex")
 
         result = CliRunner().invoke(
-            cli, ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
+            cli,
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
         )
 
         assert result.exit_code == 0, result.output
         assert len(calls) == 1
 
     def test_claude_only_type_codex_blocks_naming_codex(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=True, codex=False)
         calls = _stub_run_loop(monkeypatch)
@@ -203,8 +220,7 @@ class TestUnderstandPreflightWiring:
 
         result = CliRunner().invoke(
             cli,
-            ["understand", "1", "--root", str(tmp_path), "--ui", "plain",
-             "--no-color"],
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain", "--no-color"],
         )
 
         assert result.exit_code == 1
@@ -212,7 +228,9 @@ class TestUnderstandPreflightWiring:
         assert calls == []
 
     def test_codex_only_type_claude_blocks_naming_claude(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
@@ -221,8 +239,7 @@ class TestUnderstandPreflightWiring:
 
         result = CliRunner().invoke(
             cli,
-            ["understand", "1", "--root", str(tmp_path), "--ui", "plain",
-             "--no-color"],
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain", "--no-color"],
         )
 
         assert result.exit_code == 1
@@ -232,7 +249,9 @@ class TestUnderstandPreflightWiring:
 
 class TestFeaturePreflightWiring:
     def test_codex_only_type_claude_blocks_before_agent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _availability(monkeypatch, claude=False, codex=True)
         calls = _stub_run_loop(monkeypatch)
@@ -241,9 +260,16 @@ class TestFeaturePreflightWiring:
 
         result = CliRunner().invoke(
             cli,
-            ["feature", "--root", str(tmp_path),
-             "--prd", str(kstrl_dir / "prd.json"),
-             "--ui", "plain", "--no-color"],
+            [
+                "feature",
+                "--root",
+                str(tmp_path),
+                "--prd",
+                str(kstrl_dir / "prd.json"),
+                "--ui",
+                "plain",
+                "--no-color",
+            ],
         )
 
         assert result.exit_code == 1
@@ -255,7 +281,8 @@ class TestRunPrdPreflight:
     """`ks run` gates on prd.json BEFORE the factory/agent starts."""
 
     def _stub_run_factory(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
 
@@ -271,13 +298,23 @@ class TestRunPrdPreflight:
         # agent, the marker file appears.
         return CliRunner().invoke(
             cli,
-            ["run", "1", "--root", str(root),
-             "--agent-cmd", f"touch {marker}",
-             "--ui", "plain", "--no-color"],
+            [
+                "run",
+                "1",
+                "--root",
+                str(root),
+                "--agent-cmd",
+                f"touch {marker}",
+                "--ui",
+                "plain",
+                "--no-color",
+            ],
         )
 
     def test_missing_prd_blocks_before_agent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         factory_calls = self._stub_run_factory(monkeypatch)
         _scaffold(tmp_path, prd=None)
@@ -291,7 +328,9 @@ class TestRunPrdPreflight:
         assert not marker.exists()
 
     def test_invalid_json_blocks_before_agent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         factory_calls = self._stub_run_factory(monkeypatch)
         _scaffold(tmp_path, prd="{not json")
@@ -305,7 +344,9 @@ class TestRunPrdPreflight:
         assert not marker.exists()
 
     def test_schema_error_blocks_with_per_field_message(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         factory_calls = self._stub_run_factory(monkeypatch)
         bad_prd = {
@@ -324,7 +365,9 @@ class TestRunPrdPreflight:
         assert not marker.exists()
 
     def test_valid_prd_reaches_factory(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         factory_calls = self._stub_run_factory(monkeypatch)
         _scaffold(tmp_path)
@@ -336,7 +379,9 @@ class TestRunPrdPreflight:
         assert len(factory_calls) == 1
 
     def test_run_accepts_claude_only_machine(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The old preflight exited 'codex not found in PATH' here."""
         _availability(monkeypatch, claude=True, codex=False)
@@ -345,8 +390,7 @@ class TestRunPrdPreflight:
 
         result = CliRunner().invoke(
             cli,
-            ["run", "1", "--root", str(tmp_path), "--ui", "plain",
-             "--no-color"],
+            ["run", "1", "--root", str(tmp_path), "--ui", "plain", "--no-color"],
         )
 
         assert result.exit_code == 0, result.output
@@ -366,7 +410,9 @@ class TestFactoryPreflightWiring:
     detection along the way."""
 
     def test_factory_canonicalizes_toml_claude_alias(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.manifest import Component, Manifest
 
@@ -377,26 +423,38 @@ class TestFactoryPreflightWiring:
         (root / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="p",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                "alpha", "Alpha", "First", [],
-                "scripts/kstrl/feature/alpha/prd.json",
-                "kstrl/factory/alpha",
-            )],
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "alpha",
+                    "Alpha",
+                    "First",
+                    [],
+                    "scripts/kstrl/feature/alpha/prd.json",
+                    "kstrl/factory/alpha",
+                )
+            ],
         )
         manifest_file = tmp_path / "manifest.json"
         manifest_file.write_text("{}")  # click existence check only
         monkeypatch.setattr(
-            cli_mod.Manifest, "load",
+            cli_mod.Manifest,
+            "load",
             classmethod(lambda cls, path: manifest),
         )
 
         captured: dict[str, Any] = {}
 
         def fake_run_factory(
-            manifest_arg: Any, factory_config: Any, base_config: Any,
-            *args: Any, **kwargs: Any,
+            manifest_arg: Any,
+            factory_config: Any,
+            base_config: Any,
+            *args: Any,
+            **kwargs: Any,
         ) -> SimpleNamespace:
             captured["agent_type"] = base_config.agent_type
             return SimpleNamespace(exit_code=0)
@@ -407,8 +465,12 @@ class TestFactoryPreflightWiring:
         result = runner.invoke(
             cli,
             [
-                "factory", "--manifest", str(manifest_file),
-                "--root", str(root), "--yes",
+                "factory",
+                "--manifest",
+                str(manifest_file),
+                "--root",
+                str(root),
+                "--yes",
             ],
             catch_exceptions=False,
         )
@@ -416,7 +478,9 @@ class TestFactoryPreflightWiring:
         assert captured.get("agent_type") == "claude-code", result.output
 
     def test_factory_blocks_unknown_agent_type_loudly(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The other half of the fallthrough hazard: a typo'd type must
         exit with the R2.4 error, never reach a codex engineer."""
@@ -429,24 +493,34 @@ class TestFactoryPreflightWiring:
         from kstrl.manifest import Component, Manifest
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="p",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                "alpha", "Alpha", "First", [],
-                "scripts/kstrl/feature/alpha/prd.json",
-                "kstrl/factory/alpha",
-            )],
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "alpha",
+                    "Alpha",
+                    "First",
+                    [],
+                    "scripts/kstrl/feature/alpha/prd.json",
+                    "kstrl/factory/alpha",
+                )
+            ],
         )
         manifest_file = tmp_path / "manifest.json"
         manifest_file.write_text("{}")
         monkeypatch.setattr(
-            cli_mod.Manifest, "load",
+            cli_mod.Manifest,
+            "load",
             classmethod(lambda cls, path: manifest),
         )
 
         called: list[bool] = []
         monkeypatch.setattr(
-            cli_mod, "run_factory",
+            cli_mod,
+            "run_factory",
             lambda *a, **k: called.append(True) or SimpleNamespace(exit_code=0),
         )
 
@@ -454,8 +528,12 @@ class TestFactoryPreflightWiring:
         result = runner.invoke(
             cli,
             [
-                "factory", "--manifest", str(manifest_file),
-                "--root", str(root), "--yes",
+                "factory",
+                "--manifest",
+                str(manifest_file),
+                "--root",
+                str(root),
+                "--yes",
             ],
         )
 

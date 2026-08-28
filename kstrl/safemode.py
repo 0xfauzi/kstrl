@@ -101,7 +101,9 @@ class SafeModeReason:
 
 def _reason(source: str, detail: str) -> SafeModeReason:
     return SafeModeReason(
-        source=source, detail=detail, recovery=RECOVERY[source],
+        source=source,
+        detail=detail,
+        recovery=RECOVERY[source],
     )
 
 
@@ -147,8 +149,7 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
         reasons.extend(
             _reason(
                 "autonomy",
-                f"running at L{int(level)}, earned level is "
-                f"L{state.level}: {note}",
+                f"running at L{int(level)}, earned level is L{state.level}: {note}",
             )
             for note in notes
         )
@@ -189,16 +190,20 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
         # two opens comes back as [], which reads as "nothing skipped".
         raw = events_path.read_bytes()
     except FileNotFoundError:
-        return [_reason(
-            "adversarial_skipped",
-            f"could not read run {run_dir.name}: no event stream "
-            "(is [factory] progress_log_enabled false?)",
-        )], False
+        return [
+            _reason(
+                "adversarial_skipped",
+                f"could not read run {run_dir.name}: no event stream "
+                "(is [factory] progress_log_enabled false?)",
+            )
+        ], False
     except OSError as exc:
-        return [_reason(
-            "adversarial_skipped",
-            f"could not read run {run_dir.name}: {exc}",
-        )], False
+        return [
+            _reason(
+                "adversarial_skipped",
+                f"could not read run {run_dir.name}: {exc}",
+            )
+        ], False
 
     skipped: dict[str, set[str]] = {phase: set() for phase in GATED_PHASES}
     finished = False
@@ -223,18 +228,20 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
     reasons = [
         _reason(
             "adversarial_skipped",
-            f"{phase} did not run for {len(skipped[phase])} component(s) "
-            f"in run {run_dir.name}",
+            f"{phase} did not run for {len(skipped[phase])} component(s) in run {run_dir.name}",
         )
-        for phase in GATED_PHASES if skipped[phase]
+        for phase in GATED_PHASES
+        if skipped[phase]
     ]
     if torn:
-        reasons.append(_reason(
-            "adversarial_skipped",
-            f"could not read run {run_dir.name}: {torn} unparseable "
-            "line(s) in the event stream, so a skipped phase could be "
-            "hidden in the damage",
-        ))
+        reasons.append(
+            _reason(
+                "adversarial_skipped",
+                f"could not read run {run_dir.name}: {torn} unparseable "
+                "line(s) in the event stream, so a skipped phase could be "
+                "hidden in the damage",
+            )
+        )
         # Damaged, so it has not answered: the caller keeps looking back.
         finished = False
     return reasons, finished
@@ -249,8 +256,7 @@ def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
     # started afterwards becomes "the newest run", finishes clean because
     # it has no phases at all, and clears a factory run's skip.
     factory_runs = [
-        d for d in run_dirs_newest_first(root_dir)
-        if run_kind(d.name) == _SKIPPING_RUN_KIND
+        d for d in run_dirs_newest_first(root_dir) if run_kind(d.name) == _SKIPPING_RUN_KIND
     ]
     runs = factory_runs[:_LOOKBACK_RUNS]
     if not runs:
@@ -275,12 +281,14 @@ def _adversarial_reasons(root_dir: Path) -> list[SafeModeReason]:
         # The walk hit the backstop with no finished run behind it, and
         # there are older runs it did not open. Silence here would be a
         # verdict the search never reached.
-        reasons.append(_reason(
-            "adversarial_skipped",
-            f"could not determine whether the adversarial gates ran: no "
-            f"finished factory run among the {_LOOKBACK_RUNS} most "
-            f"recent of {len(factory_runs)}",
-        ))
+        reasons.append(
+            _reason(
+                "adversarial_skipped",
+                f"could not determine whether the adversarial gates ran: no "
+                f"finished factory run among the {_LOOKBACK_RUNS} most "
+                f"recent of {len(factory_runs)}",
+            )
+        )
     return reasons
 
 
@@ -324,9 +332,12 @@ def safe_mode_reasons(root_dir: Path) -> list[SafeModeReason]:
         try:
             found = read(root_dir)
         except Exception as exc:  # noqa: BLE001 - a failed read IS a reason
-            found = [_reason(
-                source, f"could not read the {source} signal: {exc}",
-            )]
+            found = [
+                _reason(
+                    source,
+                    f"could not read the {source} signal: {exc}",
+                )
+            ]
         if source == "control_dir":
             control_details = {reason.detail for reason in found}
         for reason in found:

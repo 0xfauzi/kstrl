@@ -72,10 +72,10 @@ STATE_SCHEMA_VERSION = 1
 class AutonomyLevel(IntEnum):
     """Ordered autonomy levels, defined by the human's remaining role."""
 
-    L1_SUPERVISED = 1        # human approves the plan AND the merge
-    L2_GATED_MERGE = 2       # plans auto-accepted; human still gates merge
-    L3_ENVELOPED_AUTO = 3    # merge auto when fully green AND inside envelope
-    L4_DEPLOY = 4            # L3 plus the release stage (R8.7)
+    L1_SUPERVISED = 1  # human approves the plan AND the merge
+    L2_GATED_MERGE = 2  # plans auto-accepted; human still gates merge
+    L3_ENVELOPED_AUTO = 3  # merge auto when fully green AND inside envelope
+    L4_DEPLOY = 4  # L3 plus the release stage (R8.7)
 
     @property
     def label(self) -> str:
@@ -90,11 +90,11 @@ class AutonomyLevel(IntEnum):
 class DemotionTrigger(IntEnum):
     """Why a level was revoked. Each demotion drops exactly one level."""
 
-    POLICY_VIOLATION = 1          # R8.1 envelope breach
-    CALIBRATION_REGRESSION = 2    # adversarial detection rate fell
-    HEALTH_BREACH = 3             # R8.4 control-limit breach
+    POLICY_VIOLATION = 1  # R8.1 envelope breach
+    CALIBRATION_REGRESSION = 2  # adversarial detection rate fell
+    HEALTH_BREACH = 3  # R8.4 control-limit breach
     HUMAN_REJECTED_AUTO_MERGE = 4  # a human rejected an L3 candidate
-    MANUAL = 5                    # operator demoted by hand
+    MANUAL = 5  # operator demoted by hand
 
     @property
     def label(self) -> str:
@@ -151,10 +151,7 @@ def _warn_rejected_state(path: Path, reason: str) -> str:
     string, two consumers: a second copy of the wording could drift from
     the warning an operator actually sees.
     """
-    message = (
-        f"autonomy: rejected ladder state {path} ({reason}); "
-        "failing closed to L1 Supervised"
-    )
+    message = f"autonomy: rejected ladder state {path} ({reason}); failing closed to L1 Supervised"
     warnings.warn(message, RuntimeWarning, stacklevel=3)
     return message
 
@@ -188,16 +185,18 @@ def _parse_history(raw: Any) -> list[Transition]:
         for text_key in ("at", "direction", "actor", "reason", "trigger"):
             if text_key in item and not isinstance(item[text_key], str):
                 raise ValueError(f"history {text_key} must be a string")
-        history.append(Transition(
-            at=str(item.get("at", "")),
-            from_level=_require_int(item, "from_level", 1),
-            to_level=_require_int(item, "to_level", 1),
-            direction=str(item.get("direction", "")),
-            actor=str(item.get("actor", "")),
-            reason=str(item.get("reason", "")),
-            trigger=str(item.get("trigger", "")),
-            evidence=evidence,
-        ))
+        history.append(
+            Transition(
+                at=str(item.get("at", "")),
+                from_level=_require_int(item, "from_level", 1),
+                to_level=_require_int(item, "to_level", 1),
+                direction=str(item.get("direction", "")),
+                actor=str(item.get("actor", "")),
+                reason=str(item.get("reason", "")),
+                trigger=str(item.get("trigger", "")),
+                evidence=evidence,
+            )
+        )
     return history
 
 
@@ -286,10 +285,10 @@ class Transition:
     at: str
     from_level: int
     to_level: int
-    direction: str           # "promote" | "demote"
-    actor: str               # human identity for promotions; "system" for auto
+    direction: str  # "promote" | "demote"
+    actor: str  # human identity for promotions; "system" for auto
     reason: str
-    trigger: str = ""        # DemotionTrigger label, demotions only
+    trigger: str = ""  # DemotionTrigger label, demotions only
     evidence: dict[str, Any] = field(default_factory=dict)
 
 
@@ -364,13 +363,15 @@ class AutonomyState:
         except (OSError, json.JSONDecodeError) as exc:
             return cls(
                 degraded_reason=_warn_rejected_state(
-                    path, f"unreadable: {exc}",
+                    path,
+                    f"unreadable: {exc}",
                 ),
             )
         if not isinstance(data, dict):
             return cls(
                 degraded_reason=_warn_rejected_state(
-                    path, "top-level value is not an object",
+                    path,
+                    "top-level value is not an object",
                 ),
             )
         try:
@@ -386,15 +387,21 @@ class AutonomyState:
                 level=level,
                 since=since or _utc_now_iso(),
                 components_merged_at_level=_require_int(
-                    data, "components_merged_at_level", 0,
+                    data,
+                    "components_merged_at_level",
+                    0,
                 ),
                 clean_merges_at_level=_require_int(data, "clean_merges_at_level", 0),
                 policy_violations_at_level=_require_int(
-                    data, "policy_violations_at_level", 0,
+                    data,
+                    "policy_violations_at_level",
+                    0,
                 ),
                 decisive_runs_at_level=_require_int(data, "decisive_runs_at_level", 0),
                 cooldown_runs_remaining=_require_int(
-                    data, "cooldown_runs_remaining", 0,
+                    data,
+                    "cooldown_runs_remaining",
+                    0,
                 ),
                 last_promoted_by=promoted_by,
                 history=history,
@@ -422,7 +429,9 @@ class AutonomyState:
         }
         with control_lock(root_dir):
             fd, tmp_path = tempfile.mkstemp(
-                dir=str(path.parent), suffix=".tmp", prefix=".autonomy-",
+                dir=str(path.parent),
+                suffix=".tmp",
+                prefix=".autonomy-",
             )
             try:
                 with os.fdopen(fd, "w") as handle:
@@ -456,9 +465,7 @@ class AutonomyState:
             blockers.append(f"already at {current.label}")
             return blockers
         if int(target) > int(current) + 1:
-            blockers.append(
-                f"cannot skip levels: {current.label} -> {target.label}"
-            )
+            blockers.append(f"cannot skip levels: {current.label} -> {target.label}")
         if self.cooldown_runs_remaining > 0:
             blockers.append(
                 f"demotion cool-down active: {self.cooldown_runs_remaining} "
@@ -471,8 +478,7 @@ class AutonomyState:
             )
         if self.policy_violations_at_level:
             blockers.append(
-                f"{self.policy_violations_at_level} policy violation(s) at "
-                "this level; need zero"
+                f"{self.policy_violations_at_level} policy violation(s) at this level; need zero"
             )
         if target is AutonomyLevel.L2_GATED_MERGE:
             if self.components_merged_at_level < L2_MERGED_COMPONENTS_REQUIRED:
@@ -512,13 +518,9 @@ class AutonomyState:
         criteria were bypassed rather than met.
         """
         if not actor.strip():
-            raise AutonomyError(
-                "promotion requires an actor: agents cannot promote themselves"
-            )
+            raise AutonomyError("promotion requires an actor: agents cannot promote themselves")
         if not ack.strip():
-            raise AutonomyError(
-                "promotion requires an explicit acknowledgement of the evidence"
-            )
+            raise AutonomyError("promotion requires an explicit acknowledgement of the evidence")
         current = self.autonomy_level
         if current is AutonomyLevel.L4_DEPLOY:
             raise AutonomyError("already at the highest level (L4 Deploy)")
@@ -526,8 +528,7 @@ class AutonomyState:
         blockers = self.promotion_blockers(target)
         if blockers and not force:
             raise AutonomyError(
-                f"cannot promote {current.label} -> {target.label}: "
-                + "; ".join(blockers)
+                f"cannot promote {current.label} -> {target.label}: " + "; ".join(blockers)
             )
         record = Transition(
             at=_utc_now_iso(),
@@ -598,7 +599,8 @@ class AutonomyState:
         self.decisive_runs_at_level += count
         if self.cooldown_runs_remaining > 0:
             self.cooldown_runs_remaining = max(
-                0, self.cooldown_runs_remaining - count,
+                0,
+                self.cooldown_runs_remaining - count,
             )
 
     def record_merged_component(self, *, human_edited: bool = False) -> None:
@@ -650,14 +652,8 @@ class AutonomyConfig:
             root_dir = Path.cwd()
         section = load_toml_section(resolve_config_file(root_dir), "autonomy")
         defaults = cls()
-        enabled = (
-            bool(section["enabled"]) if "enabled" in section else defaults.enabled
-        )
-        max_level = (
-            int(section["max_level"])
-            if "max_level" in section
-            else defaults.max_level
-        )
+        enabled = bool(section["enabled"]) if "enabled" in section else defaults.enabled
+        max_level = int(section["max_level"]) if "max_level" in section else defaults.max_level
         if "KSTRL_AUTONOMY_ENABLED" in os.environ:
             enabled = os.environ["KSTRL_AUTONOMY_ENABLED"] == "1"
         if "KSTRL_AUTONOMY_MAX_LEVEL" in os.environ:
@@ -668,8 +664,7 @@ class AutonomyConfig:
         valid = {int(level) for level in AutonomyLevel}
         if self.max_level not in valid:
             raise AutonomyError(
-                f"invalid max_level {self.max_level}; expected one of "
-                f"{sorted(valid)}"
+                f"invalid max_level {self.max_level}; expected one of {sorted(valid)}"
             )
 
 
@@ -691,9 +686,7 @@ def envelope_ceiling(policy_enabled: bool) -> AutonomyLevel:
     auto-merge inside nothing. L2 (human gates the merge) is then the
     ceiling regardless of the level the ladder has awarded.
     """
-    return (
-        AutonomyLevel.L4_DEPLOY if policy_enabled else AutonomyLevel.L2_GATED_MERGE
-    )
+    return AutonomyLevel.L4_DEPLOY if policy_enabled else AutonomyLevel.L2_GATED_MERGE
 
 
 def resolve_runtime_level(
@@ -727,10 +720,7 @@ def resolve_runtime_level(
         )
         level = ceiling
     ensure_control_state(root_dir)
-    if (
-        int(level) >= int(AutonomyLevel.L3_ENVELOPED_AUTO)
-        and not control_is_external(root_dir)
-    ):
+    if int(level) >= int(AutonomyLevel.L3_ENVELOPED_AUTO) and not control_is_external(root_dir):
         notes.append(
             "clamped to L2 Gated-merge: L3+ requires control state outside "
             "the agent-reachable tree (R8.9); leftover `.kstrl/` control "
@@ -742,7 +732,9 @@ def resolve_runtime_level(
 
 
 def control_relocation_error(
-    root_dir: Path, *, target_level: AutonomyLevel,
+    root_dir: Path,
+    *,
+    target_level: AutonomyLevel,
 ) -> str | None:
     """Why L3+ is refused for control-state placement, or None if allowed."""
     if int(target_level) < int(AutonomyLevel.L3_ENVELOPED_AUTO):
@@ -831,14 +823,16 @@ def commit_transition(
     if bus is not None:
         from kstrl.events import AutonomyTransition
 
-        bus.emit(AutonomyTransition(
-            direction=record.direction,
-            from_level=record.from_level,
-            to_level=record.to_level,
-            actor=record.actor,
-            trigger=record.trigger,
-            reason=record.reason,
-        ))
+        bus.emit(
+            AutonomyTransition(
+                direction=record.direction,
+                from_level=record.from_level,
+                to_level=record.to_level,
+                actor=record.actor,
+                trigger=record.trigger,
+                reason=record.reason,
+            )
+        )
 
 
 def manual_override_notes(
@@ -864,10 +858,7 @@ def manual_override_notes(
             f"contradicts {bundle.level.label} "
             f"(bundle: {bundle.pause_before_pr_merge}); bundle wins"
         )
-    if (
-        configured_review_mode is not None
-        and configured_review_mode != bundle.review_mode
-    ):
+    if configured_review_mode is not None and configured_review_mode != bundle.review_mode:
         notes.append(
             f"[factory] review_mode={configured_review_mode!r} contradicts "
             f"{bundle.level.label} (bundle: {bundle.review_mode!r}); bundle wins"

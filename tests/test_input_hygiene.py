@@ -214,7 +214,8 @@ class TestManifestSchemaHygiene:
 class TestFromPrdHygiene:
     def test_legitimate_branch_accepted(self, tmp_path: Path) -> None:
         manifest = Manifest.from_prd(
-            prd_path=tmp_path / "prd.json", branch="kstrl/auth",
+            prd_path=tmp_path / "prd.json",
+            branch="kstrl/auth",
         )
         assert manifest.components[0].branch_name == "kstrl/auth"
 
@@ -233,29 +234,33 @@ class TestFromPrdHygiene:
 
 
 def _decompose_output(comp_id: str) -> str:
-    return json.dumps({
-        "components": [
-            {
-                "id": comp_id,
-                "title": "Component",
-                "description": "A component",
-                "dependencies": [],
-                "allowedPaths": [
-                    "src/", "tests/", f"scripts/kstrl/feature/{comp_id}/",
-                ],
-                "userStories": [
-                    {
-                        "id": "US-001",
-                        "title": "Story",
-                        "acceptanceCriteria": ["Works", "Tests pass"],
-                        "priority": 1,
-                        "passes": False,
-                        "notes": "",
-                    }
-                ],
-            }
-        ]
-    })
+    return json.dumps(
+        {
+            "components": [
+                {
+                    "id": comp_id,
+                    "title": "Component",
+                    "description": "A component",
+                    "dependencies": [],
+                    "allowedPaths": [
+                        "src/",
+                        "tests/",
+                        f"scripts/kstrl/feature/{comp_id}/",
+                    ],
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Story",
+                            "acceptanceCriteria": ["Works", "Tests pass"],
+                            "priority": 1,
+                            "passes": False,
+                            "notes": "",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
 
 
 class SequenceAgent:
@@ -285,7 +290,8 @@ class SequenceAgent:
 
 class TestDecomposeValidationHygiene:
     @pytest.mark.parametrize(
-        "comp_id", ["../../repo", "foo/bar", "-foo", "Uppercase", ".."],
+        "comp_id",
+        ["../../repo", "foo/bar", "-foo", "Uppercase", ".."],
     )
     def test_bad_id_rejected(self, comp_id: str) -> None:
         data = json.loads(_decompose_output(comp_id))
@@ -303,10 +309,12 @@ class TestDecomposeValidationHygiene:
         spec_file.write_text("# Feature")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        agent = SequenceAgent([
-            _decompose_output("../../repo"),
-            _decompose_output("auth-service"),
-        ])
+        agent = SequenceAgent(
+            [
+                _decompose_output("../../repo"),
+                _decompose_output("auth-service"),
+            ]
+        )
         manifest = decompose_spec(
             spec_path=spec_file,
             project_name="test-project",
@@ -324,7 +332,8 @@ class TestDecomposeValidationHygiene:
         assert manifest.components[0].branch_name == "kstrl/factory/auth-service"
 
     def test_unsafe_project_name_rejected_in_single_pr(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """single_pr derives the branch from project_name (user input);
         an unsafe name is rejected, not sanitized."""
@@ -359,10 +368,13 @@ def git_repo_with_origin(tmp_path: Path) -> Path:
     origin = tmp_path / "origin.git"
     subprocess.run(
         ["git", "clone", "-q", "--bare", str(repo), str(origin)],
-        cwd=tmp_path, check=True,
+        cwd=tmp_path,
+        check=True,
     )
     subprocess.run(
-        ["git", "remote", "add", "origin", str(origin)], cwd=repo, check=True,
+        ["git", "remote", "add", "origin", str(origin)],
+        cwd=repo,
+        check=True,
     )
     return repo
 
@@ -375,13 +387,15 @@ class TestGitArgvSeparators:
         repo = git_repo_with_origin
         subprocess.run(
             ["git", "checkout", "-qb", "kstrl/factory/comp-a"],
-            cwd=repo, check=True,
+            cwd=repo,
+            check=True,
         )
         # R0.2: push_branch returns None on success, an error otherwise.
         assert push_branch("kstrl/factory/comp-a", repo) is None
 
     def test_push_branch_option_shape_fails_closed(
-        self, git_repo_with_origin: Path,
+        self,
+        git_repo_with_origin: Path,
     ) -> None:
         # With "--", "-evil" is an unknown refspec, not a push option.
         assert push_branch("-evil", git_repo_with_origin) is not None
@@ -396,7 +410,8 @@ class TestGitArgvSeparators:
         assert merge_branch("feat", cwd=repo) is True
 
     def test_merge_branch_option_shape_fails_closed(
-        self, git_repo_with_origin: Path,
+        self,
+        git_repo_with_origin: Path,
     ) -> None:
         assert merge_branch("-evil", cwd=git_repo_with_origin) is False
 
@@ -406,12 +421,14 @@ class TestGitArgvSeparators:
         assert delete_branch("doomed", cwd=repo, force=True) is True
 
     def test_delete_branch_option_shape_fails_closed(
-        self, git_repo_with_origin: Path,
+        self,
+        git_repo_with_origin: Path,
     ) -> None:
         assert delete_branch("-evil", cwd=git_repo_with_origin, force=True) is False
 
     def test_checkout_and_create_branch_from(
-        self, git_repo_with_origin: Path,
+        self,
+        git_repo_with_origin: Path,
     ) -> None:
         repo = git_repo_with_origin
         assert create_branch_from("kstrl/factory/api", "main", cwd=repo) is True
@@ -436,14 +453,17 @@ class TestPrArgvShapes:
     branch values to their flags."""
 
     def test_create_component_pr_uses_equals_form(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         captured: list[list[str]] = []
 
         def fake_run(argv: list[str], **kwargs: object) -> object:
             captured.append(argv)
             return type(
-                "R", (),
+                "R",
+                (),
                 {
                     "returncode": 0,
                     "stdout": "https://github.com/o/r/pull/7\n",
@@ -471,7 +491,9 @@ class TestPrArgvShapes:
         )
 
         pr_number, pr_url = pr_module.create_component_pr(
-            component, manifest, tmp_path,
+            component,
+            manifest,
+            tmp_path,
         )
 
         assert pr_number == 7
@@ -481,7 +503,9 @@ class TestPrArgvShapes:
         assert "--base=main" in argv
 
     def test_push_branch_uses_separator(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         captured: list[list[str]] = []
 

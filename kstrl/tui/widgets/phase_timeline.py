@@ -41,13 +41,10 @@ def render_timeline(comp: ComponentState) -> Text:
         text.append("  ")
     current = comp.phase
     current_finished = any(
-        entry.get("phase") == current
-        and entry.get("attempt") == comp.attempt
+        entry.get("phase") == current and entry.get("attempt") == comp.attempt
         for entry in comp.phase_history
     )
-    if current and comp.status in ("running", "verifying") and (
-        not current_finished
-    ):
+    if current and comp.status in ("running", "verifying") and (not current_finished):
         chip = Text()
         chip.append(f" {current} ", style=f"bold {theme.BACKGROUND}")
         chip.append("● ", style=theme.BACKGROUND)

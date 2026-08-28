@@ -41,8 +41,7 @@ class RunRef:
     @property
     def live(self) -> bool:
         return not self.completed and (
-            self.lock_held or
-            time.time() - self.mtime < LIVE_MTIME_WINDOW_SECONDS
+            self.lock_held or time.time() - self.mtime < LIVE_MTIME_WINDOW_SECONDS
         )
 
 
@@ -103,7 +102,9 @@ def factory_lock_held(root_dir: Path) -> bool:
 
 
 def discover_runs(
-    root_dir: Path, *, kinds: tuple[str, ...] | None = None,
+    root_dir: Path,
+    *,
+    kinds: tuple[str, ...] | None = None,
 ) -> list[RunRef]:
     """All runs with an events.jsonl, newest first.
 
@@ -115,9 +116,7 @@ def discover_runs(
     refs: list[RunRef] = []
     lock_held = factory_lock_held(root_dir)
     try:
-        candidates = sorted(runs_root.iterdir(),
-                            key=lambda d: run_sort_key(d.name),
-                            reverse=True)
+        candidates = sorted(runs_root.iterdir(), key=lambda d: run_sort_key(d.name), reverse=True)
     except OSError:
         return []
     for run_dir in candidates:
@@ -132,20 +131,24 @@ def discover_runs(
         holds_lock = lock_held and kind == "factory"
         if holds_lock:
             lock_held = False
-        refs.append(RunRef(
-            run_id=run_dir.name,
-            run_dir=run_dir,
-            events_path=events_path,
-            mtime=mtime,
-            completed=_run_completed(events_path),
-            lock_held=holds_lock,
-            kind=kind,
-        ))
+        refs.append(
+            RunRef(
+                run_id=run_dir.name,
+                run_dir=run_dir,
+                events_path=events_path,
+                mtime=mtime,
+                completed=_run_completed(events_path),
+                lock_held=holds_lock,
+                kind=kind,
+            )
+        )
     return refs
 
 
 def latest_run(
-    root_dir: Path, *, kinds: tuple[str, ...] | None = None,
+    root_dir: Path,
+    *,
+    kinds: tuple[str, ...] | None = None,
 ) -> RunRef | None:
     refs = discover_runs(root_dir, kinds=kinds)
     return refs[0] if refs else None

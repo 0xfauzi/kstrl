@@ -42,11 +42,7 @@ class Proposal:
     @property
     def is_convention(self) -> bool:
         """Whether the automated apply path covers this proposal."""
-        return (
-            self.type == "computational"
-            and self.target == "claude_md"
-            and bool(self.convention)
-        )
+        return self.type == "computational" and self.target == "claude_md" and bool(self.convention)
 
 
 @dataclass(frozen=True)
@@ -74,7 +70,10 @@ def existing_proposal_titles(proposals_dir: Path) -> set[str]:
 def parse_proposal_file(path: Path) -> Proposal:
     """Parse the structured fields save_proposals writes."""
     parsed = {
-        "id": "", "title": "", "type": "", "target": "",
+        "id": "",
+        "title": "",
+        "type": "",
+        "target": "",
         "applied": "",
     }
     convention_lines: list[str] = []
@@ -117,7 +116,9 @@ def list_proposals(proposals_dir: Path) -> list[Proposal]:
 
 
 def append_to_agent_learnings(
-    claude_md: Path, proposal_id: str, convention: str,
+    claude_md: Path,
+    proposal_id: str,
+    convention: str,
 ) -> bool:
     """Append one convention bullet to the end of the "## Agent
     Learnings" section of the project CLAUDE.md. Returns False (no

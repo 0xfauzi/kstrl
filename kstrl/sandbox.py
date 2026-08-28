@@ -60,8 +60,15 @@ from pathlib import Path
 # Bash requests. Network tools (WebFetch, WebSearch) are deliberately
 # absent - this mode exists to deny network.
 _CLAUDE_SANDBOXED_TOOL_ALLOW = [
-    "Read", "Write", "Edit", "MultiEdit", "NotebookEdit",
-    "Glob", "Grep", "LS", "TodoWrite",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Glob",
+    "Grep",
+    "LS",
+    "TodoWrite",
 ]
 
 
@@ -85,9 +92,7 @@ class SandboxConfig:
 
         return cls(
             enabled=_parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED")),
-            allow_network=_parse_bool(
-                os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
-            ),
+            allow_network=_parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")),
         )
 
     @classmethod
@@ -110,9 +115,7 @@ class SandboxConfig:
         if "KSTRL_SANDBOX_ENABLED" in os.environ:
             enabled = _parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED"))
         if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
-            allow_network = _parse_bool(
-                os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK")
-            )
+            allow_network = _parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
         return cls(enabled=enabled, allow_network=allow_network)
 
 
@@ -128,8 +131,10 @@ def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:
         return []
     network = "true" if config.allow_network else "false"
     return [
-        "--sandbox", "workspace-write",
-        "-c", f"sandbox_workspace_write.network_access={network}",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        f"sandbox_workspace_write.network_access={network}",
     ]
 
 

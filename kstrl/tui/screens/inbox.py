@@ -121,7 +121,8 @@ class InboxScreen(Screen[None]):
             lines.append(f"seen {item.occurrences}x\n")
         if item.decided_by:
             lines.append(
-                f"decided by {item.decided_by} at {item.decided_at}\n", style="dim",
+                f"decided by {item.decided_by} at {item.decided_at}\n",
+                style="dim",
             )
         if item.decision_comment:
             lines.append(f"comment: {item.decision_comment}\n", style="dim")
@@ -184,12 +185,14 @@ class InboxScreen(Screen[None]):
                 self._decide("reject", comment=reasons[choice])
 
         self.app.push_screen(
-            OptionsModal(PromptRequest(
-                kind=PromptKind.GUARD,
-                header=f"Reject: {item.title}",
-                options=reasons,
-                default=0,
-            )),
+            OptionsModal(
+                PromptRequest(
+                    kind=PromptKind.GUARD,
+                    header=f"Reject: {item.title}",
+                    options=reasons,
+                    default=0,
+                )
+            ),
             _handle,
         )
 

@@ -20,13 +20,15 @@ from pathlib import Path
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_project(root: Path) -> None:
     """Scaffold a tiny but real Python project in *root*."""
     # Package
     pkg = root / "src" / "myapp"
     pkg.mkdir(parents=True)
     (pkg / "__init__.py").write_text("")
-    (pkg / "models.py").write_text(textwrap.dedent("""\
+    (pkg / "models.py").write_text(
+        textwrap.dedent("""\
         class User:
             def __init__(self, name: str, email: str) -> None:
                 self.name = name
@@ -38,8 +40,10 @@ def _create_project(root: Path) -> None:
 
         def create_user(name: str, email: str) -> User:
             return User(name=name, email=email)
-    """))
-    (pkg / "api.py").write_text(textwrap.dedent("""\
+    """)
+    )
+    (pkg / "api.py").write_text(
+        textwrap.dedent("""\
         from myapp.models import User, create_user
 
         def register(name: str, email: str) -> User:
@@ -47,19 +51,23 @@ def _create_project(root: Path) -> None:
 
         def health() -> dict:
             return {"status": "ok"}
-    """))
-    (pkg / "utils.py").write_text(textwrap.dedent("""\
+    """)
+    )
+    (pkg / "utils.py").write_text(
+        textwrap.dedent("""\
         import json
 
         def to_json(obj: object) -> str:
             return json.dumps(obj, default=str)
-    """))
+    """)
+    )
 
     # Tests
     tests = root / "tests"
     tests.mkdir()
     (tests / "__init__.py").write_text("")
-    (tests / "test_models.py").write_text(textwrap.dedent("""\
+    (tests / "test_models.py").write_text(
+        textwrap.dedent("""\
         from myapp.models import User, create_user
 
         def test_create_user():
@@ -70,10 +78,12 @@ def _create_project(root: Path) -> None:
         def test_user_missing_arg():
             # intentionally wrong - tests the parser when this fails
             user = User("bob")  # type: ignore
-    """))
+    """)
+    )
 
     # pyproject.toml
-    (root / "pyproject.toml").write_text(textwrap.dedent("""\
+    (root / "pyproject.toml").write_text(
+        textwrap.dedent("""\
         [project]
         name = "myapp"
         version = "0.1.0"
@@ -85,12 +95,14 @@ def _create_project(root: Path) -> None:
 
         [tool.ruff.lint]
         select = ["E", "F", "W"]
-    """))
+    """)
+    )
 
 
 # ---------------------------------------------------------------------------
 # 1. Feedforward
 # ---------------------------------------------------------------------------
+
 
 class TestFeedforward:
     def test_module_map(self, tmp_path: Path) -> None:
@@ -147,6 +159,7 @@ class TestFeedforward:
 # ---------------------------------------------------------------------------
 # 2. Parsers - real tool output
 # ---------------------------------------------------------------------------
+
 
 class TestParsersIntegration:
     def test_parse_real_pytest_failure(self) -> None:
@@ -224,7 +237,9 @@ class TestParsersIntegration:
         from kstrl.parsers import ParsedFailure, generate_fix_hint
 
         # Missing argument
-        f = ParsedFailure(message="TypeError: create_user() missing 1 required positional argument: 'email'")
+        f = ParsedFailure(
+            message="TypeError: create_user() missing 1 required positional argument: 'email'"
+        )
         hint = generate_fix_hint(f)
         assert hint != ""
         assert "argument" in hint.lower() or "parameter" in hint.lower()
@@ -261,6 +276,7 @@ class TestParsersIntegration:
 # ---------------------------------------------------------------------------
 # 3. Fixtures
 # ---------------------------------------------------------------------------
+
 
 class TestFixturesIntegration:
     def test_cli_fixture_passes(self, tmp_path: Path) -> None:
@@ -394,8 +410,10 @@ class TestFixturesIntegration:
         )
 
         fixture = Fixture(
-            description="test", fixture_type="cli",
-            input_data={}, expected={},
+            description="test",
+            fixture_type="cli",
+            input_data={},
+            expected={},
         )
         results = [
             FixtureResult(fixture=fixture, passed=True, actual="ok", message="passed"),
@@ -418,6 +436,7 @@ class TestFixturesIntegration:
 # 4. Evolution
 # ---------------------------------------------------------------------------
 
+
 class TestEvolutionIntegration:
     def test_record_and_extract(self, tmp_path: Path) -> None:
         from kstrl.evolution import EvolutionConfig, EvolutionJournal
@@ -425,12 +444,18 @@ class TestEvolutionIntegration:
         from kstrl.manifest import Component, ComponentStatus, Manifest
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="test-project",
-            base_branch="main", single_pr=False,
+            version="1",
+            spec_file="spec.md",
+            project_name="test-project",
+            base_branch="main",
+            single_pr=False,
             components=[
                 Component(
-                    id="auth", title="Auth", description="",
-                    dependencies=[], prd_path="prd.json",
+                    id="auth",
+                    title="Auth",
+                    description="",
+                    dependencies=[],
+                    prd_path="prd.json",
                     branch_name="kstrl/auth",
                     status=ComponentStatus.FAILED.value,
                     error="Tests failed (exit code 1)",
@@ -439,8 +464,11 @@ class TestEvolutionIntegration:
                     duration_seconds=120.0,
                 ),
                 Component(
-                    id="api", title="API", description="",
-                    dependencies=["auth"], prd_path="prd.json",
+                    id="api",
+                    title="API",
+                    description="",
+                    dependencies=["auth"],
+                    prd_path="prd.json",
                     branch_name="kstrl/api",
                     status=ComponentStatus.COMPLETED.value,
                     error="",
@@ -449,8 +477,11 @@ class TestEvolutionIntegration:
                     duration_seconds=60.0,
                 ),
                 Component(
-                    id="db", title="DB", description="",
-                    dependencies=[], prd_path="prd.json",
+                    id="db",
+                    title="DB",
+                    description="",
+                    dependencies=[],
+                    prd_path="prd.json",
                     branch_name="kstrl/db",
                     status=ComponentStatus.FAILED.value,
                     error="Tests failed (exit code 1)",
@@ -461,7 +492,9 @@ class TestEvolutionIntegration:
             ],
         )
         factory_result = FactoryResult(
-            completed=["api"], failed=["auth", "db"], skipped=[],
+            completed=["api"],
+            failed=["auth", "db"],
+            skipped=[],
         )
 
         config = EvolutionConfig(
@@ -509,12 +542,18 @@ class TestEvolutionIntegration:
         # Record 3 runs to see trends
         for i in range(3):
             m = Manifest(
-                version="1", spec_file="spec.md", project_name="proj",
-                base_branch="main", single_pr=False,
+                version="1",
+                spec_file="spec.md",
+                project_name="proj",
+                base_branch="main",
+                single_pr=False,
                 components=[
                     Component(
-                        id=f"comp-{i}", title="C", description="",
-                        dependencies=[], prd_path="prd.json",
+                        id=f"comp-{i}",
+                        title="C",
+                        description="",
+                        dependencies=[],
+                        prd_path="prd.json",
                         branch_name=f"kstrl/c{i}",
                         status=ComponentStatus.COMPLETED.value,
                     ),
@@ -567,15 +606,20 @@ class TestEvolutionIntegration:
 # 5. Manifest.from_prd
 # ---------------------------------------------------------------------------
 
+
 class TestManifestFromPrd:
     def test_creates_valid_manifest(self, tmp_path: Path) -> None:
         from kstrl.manifest import Manifest
 
         prd_path = tmp_path / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": "kstrl/auth-feature",
-            "userStories": [],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": "kstrl/auth-feature",
+                    "userStories": [],
+                }
+            )
+        )
 
         m = Manifest.from_prd(
             prd_path=prd_path,

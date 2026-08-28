@@ -46,7 +46,8 @@ def _home_app(root: Path) -> KstrlTuiApp:
 class TestHomeScreen:
     async def test_renders_runs_and_identity(self, tmp_path: Path) -> None:
         write_fake_run(
-            tmp_path, FakeRunSpec(components=1),
+            tmp_path,
+            FakeRunSpec(components=1),
             run_id="factory-20260718-100000.000000-old",
         )
         write_fake_decompose_run(tmp_path)
@@ -77,7 +78,8 @@ class TestHomeScreen:
             assert table.cursor_row == 2
 
     async def test_missing_toml_warns_in_masthead(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -88,7 +90,8 @@ class TestHomeScreen:
             assert "run ks init" in masthead
 
     async def test_enter_opens_run_with_kind_dispatch_and_escape_returns(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_decompose_run(tmp_path)
         app = _home_app(tmp_path)
@@ -110,7 +113,8 @@ class TestHomeScreen:
             assert app.run_context is None
 
     async def test_q_over_a_run_pops_home_not_exit(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _home_app(tmp_path)
@@ -128,7 +132,8 @@ class TestHomeScreen:
         assert app.return_value == 0
 
     async def test_dash_command_opens_newest_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _home_app(tmp_path)
@@ -138,16 +143,15 @@ class TestHomeScreen:
 
             commands = app.screen.query_one("#home-commands")
             commands.focus()
-            dash_index = [
-                c.command_id for c in HOME_COMMANDS
-            ].index("dash")
+            dash_index = [c.command_id for c in HOME_COMMANDS].index("dash")
             commands.highlighted = dash_index  # type: ignore[attr-defined]
             await pilot.press("enter")
             await pilot.pause(0.2)
             assert isinstance(app.screen, OverviewScreen)
 
     async def test_digit_hotkey_opens_matching_command(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -157,10 +161,12 @@ class TestHomeScreen:
             assert isinstance(app.screen, FactoryLaunchForm)
 
     async def test_preview_tracks_highlight_and_enter_opens_that_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(
-            tmp_path, FakeRunSpec(components=1),
+            tmp_path,
+            FakeRunSpec(components=1),
             run_id="factory-20260718-100000.000000-old",
         )
         write_fake_decompose_run(tmp_path)
@@ -182,7 +188,8 @@ class TestHomeScreen:
             assert isinstance(app.screen, OverviewScreen)
 
     async def test_empty_state_renders_guidance(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
@@ -195,11 +202,14 @@ class TestHomeScreen:
 
 class TestDashUnchanged:
     async def test_standalone_dash_q_still_detaches(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = KstrlTuiApp(
-            run_dir=run_dir, root_dir=tmp_path, mode=Mode.DASH,
+            run_dir=run_dir,
+            root_dir=tmp_path,
+            mode=Mode.DASH,
             poll_interval=0.05,
         )
         async with app.run_test(size=(120, 40)) as pilot:

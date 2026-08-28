@@ -35,7 +35,11 @@ class FakeSession:
     factory run and optionally blocks on one CONFIRM prompt."""
 
     def __init__(
-        self, root: Path, *, ask: bool = False, exit_code: int = 0,
+        self,
+        root: Path,
+        *,
+        ask: bool = False,
+        exit_code: int = 0,
         run_id: str = "factory-20260720-170000.000000-fake",
     ) -> None:
         from kstrl import events as ev
@@ -52,17 +56,16 @@ class FakeSession:
             bus.emit(ev.ComponentStarted(component="comp-a"))
             if ask:
                 deadline = time.monotonic() + 5
-                while (
-                    not self.channel.can_prompt()
-                    and time.monotonic() < deadline
-                ):
+                while not self.channel.can_prompt() and time.monotonic() < deadline:
                     time.sleep(0.01)
-                self.channel.request(PromptRequest(
-                    kind=PromptKind.CONFIRM,
-                    header="Proceed with the fake run?",
-                    options=("Proceed", "Stop"),
-                    default=0,
-                ))
+                self.channel.request(
+                    PromptRequest(
+                        kind=PromptKind.CONFIRM,
+                        header="Proceed with the fake run?",
+                        options=("Proceed", "Stop"),
+                        default=0,
+                    )
+                )
             bus.emit(ev.RunCompleted(completed=1))
             bus.close()
             return exit_code
@@ -81,7 +84,8 @@ def _home_app(tmp_path: Path) -> KstrlTuiApp:
 
 class TestLaunchSeam:
     async def test_launch_puts_the_board_up_and_finishes_in_place(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         sessions: list[FakeSession] = []
@@ -118,7 +122,8 @@ class TestLaunchSeam:
             assert sessions[0].closed
 
     async def test_in_flight_guards_block_escape_and_second_launch(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         session = FakeSession(tmp_path, ask=True)  # blocks on the prompt
@@ -153,7 +158,8 @@ class TestLaunchSeam:
         session.handle.join(timeout=2)
 
     async def test_launch_error_notifies_and_stays_home(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
 
@@ -171,7 +177,8 @@ class TestLaunchSeam:
 
 class TestStartRunSession:
     def test_factory_without_manifest_raises_before_any_thread(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with pytest.raises(LaunchError, match="no manifest"):
             start_run_session(FactoryLaunch(), tmp_path)
@@ -184,16 +191,22 @@ class TestStartRunSession:
             start_run_session(LoopLaunch(), tmp_path)
 
     def test_invalid_agent_config_fails_before_run_state(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest_dir = tmp_path / "scripts" / "kstrl"
         manifest_dir.mkdir(parents=True)
         Manifest(
-            version="1", spec_file="s", project_name="demo",
-            base_branch="main", single_pr=False, components=[],
+            version="1",
+            spec_file="s",
+            project_name="demo",
+            base_branch="main",
+            single_pr=False,
+            components=[],
         ).save(manifest_dir / "manifest.json")
         (tmp_path / "kstrl.toml").write_text(
-            '[agent]\ntype = "gemini"\n', encoding="utf-8",
+            '[agent]\ntype = "gemini"\n',
+            encoding="utf-8",
         )
 
         with pytest.raises(LaunchError, match="Unknown agent type"):
@@ -204,13 +217,15 @@ class TestStartRunSession:
         )
 
     def test_decompose_canonicalizes_agent_alias(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.", encoding="utf-8")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         (tmp_path / "kstrl.toml").write_text(
-            '[agent]\ntype = "claude"\n', encoding="utf-8",
+            '[agent]\ntype = "claude"\n',
+            encoding="utf-8",
         )
         with (
             patch("kstrl.cli.ClaudeCodeAgent.is_available", return_value=True),
@@ -231,7 +246,8 @@ class TestStartRunSession:
         assert get_agent.call_args.args[3] == "claude-code"
 
     def test_worker_exception_is_written_to_run_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         class ExplodingAgent:
             def run(self, *args: object, **kwargs: object) -> object:
@@ -242,7 +258,8 @@ class TestStartRunSession:
         spec_file.write_text("# Spec\nBuild it.", encoding="utf-8")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         (tmp_path / "kstrl.toml").write_text(
-            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+            '[agent]\ncommand = "fake-agent"\n',
+            encoding="utf-8",
         )
         with patch("kstrl.agents.get_agent", return_value=ExplodingAgent()):
             session = start_run_session(
@@ -253,16 +270,17 @@ class TestStartRunSession:
         session.close()
 
         assert session.handle.exit_code == 1
-        assert "architect exploded" in (
-            session.run_dir / "orchestrator.log"
-        ).read_text(encoding="utf-8")
+        assert "architect exploded" in (session.run_dir / "orchestrator.log").read_text(
+            encoding="utf-8"
+        )
 
     def test_decompose_session_runs_end_to_end(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         (tmp_path / "kstrl.toml").write_text(
-            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+            '[agent]\ncommand = "fake-agent"\n',
+            encoding="utf-8",
         )
         with patch(
             "kstrl.agents.get_agent",
@@ -288,7 +306,8 @@ class TestStartRunSession:
 
 class TestLaunchForms:
     async def test_factory_form_validates_then_launches(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         specs: list[Any] = []
@@ -315,8 +334,11 @@ class TestLaunchForms:
             manifest_dir = tmp_path / "scripts" / "kstrl"
             manifest_dir.mkdir(parents=True)
             Manifest(
-                version="1", spec_file="s", project_name="demo",
-                base_branch="main", single_pr=False,
+                version="1",
+                spec_file="s",
+                project_name="demo",
+                base_branch="main",
+                single_pr=False,
                 components=[],
             ).save(manifest_dir / "manifest.json")
             form.query_one("#factory-parallel", Input).value = "2"
@@ -326,13 +348,12 @@ class TestLaunchForms:
             assert specs[0].max_parallel == 2
 
     async def test_decompose_form_requires_spec_and_project(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         app = _home_app(tmp_path)
         specs: list[Any] = []
-        app.start_session = lambda spec: (
-            specs.append(spec) or FakeSession(tmp_path)
-        )
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.2)
             app.push_screen(DecomposeLaunchForm())
@@ -359,20 +380,30 @@ class TestRetryScreen:
         manifest_dir = tmp_path / "scripts" / "kstrl"
         manifest_dir.mkdir(parents=True)
         manifest = Manifest(
-            version="1", spec_file="s", project_name="demo",
-            base_branch="main", single_pr=False,
+            version="1",
+            spec_file="s",
+            project_name="demo",
+            base_branch="main",
+            single_pr=False,
             components=[
                 Component(
-                    id="comp-a", title="A", description="",
-                    dependencies=[], prd_path="p.json",
+                    id="comp-a",
+                    title="A",
+                    description="",
+                    dependencies=[],
+                    prd_path="p.json",
                     branch_name="kstrl/comp-a",
                     status=ComponentStatus.FAILED.value,
-                    failed_phase="review", failed_check="criteria",
+                    failed_phase="review",
+                    failed_check="criteria",
                     error="review found blocking issues",
                 ),
                 Component(
-                    id="comp-b", title="B", description="",
-                    dependencies=[], prd_path="p.json",
+                    id="comp-b",
+                    title="B",
+                    description="",
+                    dependencies=[],
+                    prd_path="p.json",
                     branch_name="kstrl/comp-b",
                     status=ComponentStatus.COMPLETED.value,
                 ),
@@ -382,14 +413,13 @@ class TestRetryScreen:
         return manifest_dir / "manifest.json"
 
     async def test_lists_failed_and_launches_after_confirm(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest_file = self._failed_manifest(tmp_path)
         app = _home_app(tmp_path)
         specs: list[Any] = []
-        app.start_session = lambda spec: (
-            specs.append(spec) or FakeSession(tmp_path)
-        )
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
         async with app.run_test(size=(130, 40)) as pilot:
             await pilot.pause(0.2)
             app.push_screen(RetryScreen())
@@ -424,14 +454,13 @@ class TestRetryScreen:
             assert "nothing to retry" in detail
 
     async def test_confirmation_does_not_overwrite_changed_manifest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest_file = self._failed_manifest(tmp_path)
         app = _home_app(tmp_path)
         specs: list[Any] = []
-        app.start_session = lambda spec: (
-            specs.append(spec) or FakeSession(tmp_path)
-        )
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
         async with app.run_test(size=(130, 40)) as pilot:
             await pilot.pause(0.2)
             app.push_screen(RetryScreen())
@@ -457,14 +486,16 @@ class TestRetryScreen:
 
 class TestDecomposeSessionOnBoard:
     async def test_launched_decompose_opens_the_rich_screen(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The real session + the real board, driven by a fake agent."""
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         (tmp_path / "kstrl.toml").write_text(
-            '[agent]\ncommand = "fake-agent"\n', encoding="utf-8",
+            '[agent]\ncommand = "fake-agent"\n',
+            encoding="utf-8",
         )
         app = _home_app(tmp_path)
         with patch(
@@ -473,9 +504,12 @@ class TestDecomposeSessionOnBoard:
         ):
             async with app.run_test(size=(130, 45)) as pilot:
                 await pilot.pause(0.2)
-                app.launch(DecomposeLaunch(
-                    spec_path=spec_file, project_name="demo",
-                ))
+                app.launch(
+                    DecomposeLaunch(
+                        spec_path=spec_file,
+                        project_name="demo",
+                    )
+                )
                 await pilot.pause(0.2)
                 assert isinstance(app.screen, DecomposeScreen)
                 run = app.run_context

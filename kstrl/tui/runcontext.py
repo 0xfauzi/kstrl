@@ -40,7 +40,11 @@ class RunContext:
 
     @classmethod
     def observe(
-        cls, run_dir: Path, root_dir: Path, *, owns_app_exit: bool = True,
+        cls,
+        run_dir: Path,
+        root_dir: Path,
+        *,
+        owns_app_exit: bool = True,
     ) -> RunContext:
         return cls(
             run_dir=run_dir,

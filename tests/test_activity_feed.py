@@ -9,10 +9,14 @@ from kstrl.tui.widgets.activity import humanize
 
 class TestSpecIssueLines:
     def test_blocker_reads_as_error(self) -> None:
-        line = humanize(ev.SpecIssueRecorded(
-            severity="blocker", kind="ambiguity",
-            summary="Spec contradicts itself", location="spec.md:12",
-        ))
+        line = humanize(
+            ev.SpecIssueRecorded(
+                severity="blocker",
+                kind="ambiguity",
+                summary="Spec contradicts itself",
+                location="spec.md:12",
+            )
+        )
         assert line is not None
         text = line.plain
         assert "spec issue" in text
@@ -31,8 +35,7 @@ class TestSpecIssueLines:
         assert theme.ERROR not in styles
 
     def test_long_summary_truncated(self) -> None:
-        line = humanize(ev.SpecIssueRecorded(severity="major",
-                                             summary="x" * 200))
+        line = humanize(ev.SpecIssueRecorded(severity="major", summary="x" * 200))
         assert line is not None
         assert "x" * 200 not in line.plain
 
@@ -44,9 +47,12 @@ class TestSpecIssueLines:
 
 class TestArtifactLines:
     def test_label_and_path(self) -> None:
-        line = humanize(ev.ArtifactWritten(
-            label="manifest", path="scripts/kstrl/manifest.json",
-        ))
+        line = humanize(
+            ev.ArtifactWritten(
+                label="manifest",
+                path="scripts/kstrl/manifest.json",
+            )
+        )
         assert line is not None
         assert "manifest written" in line.plain
         assert "scripts/kstrl/manifest.json" in line.plain
@@ -73,11 +79,14 @@ class TestBudgetCoverageLine:
 
     def _event(self) -> ev.BudgetCoverage:
         return ev.BudgetCoverage(
-            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
-            uncovered_calls=5, uncovered_tokens=193_633,
+            ceiling="max_cost_usd",
+            axis="cost",
+            calls=13,
+            covered_calls=8,
+            uncovered_calls=5,
+            uncovered_tokens=193_633,
             uncovered_roles=("review",),
-            detail="cost coverage is PARTIAL: 8 of 13 metered call(s) "
-                   "reported a cost",
+            detail="cost coverage is PARTIAL: 8 of 13 metered call(s) reported a cost",
         )
 
     def test_the_gap_is_narrated(self) -> None:
@@ -96,8 +105,13 @@ class TestBudgetCoverageLine:
         assert "$" not in line.plain
 
     def test_a_ceilingless_gap_still_names_its_axis(self) -> None:
-        line = humanize(ev.BudgetCoverage(
-            axis="token", calls=2, covered_calls=0, uncovered_calls=2,
-        ))
+        line = humanize(
+            ev.BudgetCoverage(
+                axis="token",
+                calls=2,
+                covered_calls=0,
+                uncovered_calls=2,
+            )
+        )
         assert line is not None
         assert "token" in line.plain

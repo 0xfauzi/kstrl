@@ -31,27 +31,49 @@ def _sample_events() -> list[ev.Event]:
         ev.CircuitBreakerTripped(component="comp-b", iterations=5, error="no progress"),
         ev.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"),
         ev.VerificationResultEvent(
-            component="comp-a", passed=True, checks=("tests", "lint"),
-            failures=(), duration_seconds=3.5,
+            component="comp-a",
+            passed=True,
+            checks=("tests", "lint"),
+            failures=(),
+            duration_seconds=3.5,
         ),
         ev.ReviewResultEvent(
-            component="comp-a", passed=False, mode="hard", fail_count=2,
-            advisory_count=1, duration_seconds=60.0,
+            component="comp-a",
+            passed=False,
+            mode="hard",
+            fail_count=2,
+            advisory_count=1,
+            duration_seconds=60.0,
         ),
         ev.ComponentUsage(
-            component="comp-a", phase="engineer", calls=3, known_calls=2,
-            unreported_calls=1, input_tokens=100, output_tokens=50,
-            cache_read_tokens=10, cache_creation_tokens=5, total_tokens=165,
-            cost_usd=0.123456, duration_seconds=42.0,
+            component="comp-a",
+            phase="engineer",
+            calls=3,
+            known_calls=2,
+            unreported_calls=1,
+            input_tokens=100,
+            output_tokens=50,
+            cache_read_tokens=10,
+            cache_creation_tokens=5,
+            total_tokens=165,
+            cost_usd=0.123456,
+            duration_seconds=42.0,
         ),
         ev.BudgetExceeded(
-            component="comp-a", total_tokens=100, max_total_tokens=50,
+            component="comp-a",
+            total_tokens=100,
+            max_total_tokens=50,
             coverage=({"ceiling": "max_cost_usd", "covered_calls": 8},),
         ),
         ev.BudgetCoverage(
-            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
-            uncovered_calls=5, uncovered_tokens=193633,
-            uncovered_roles=("review",), detail="cost coverage is PARTIAL",
+            ceiling="max_cost_usd",
+            axis="cost",
+            calls=13,
+            covered_calls=8,
+            uncovered_calls=5,
+            uncovered_tokens=193633,
+            uncovered_roles=("review",),
+            detail="cost coverage is PARTIAL",
         ),
         ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.9),
         ev.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0),
@@ -62,48 +84,79 @@ def _sample_events() -> list[ev.Event]:
         ev.DiffChunked(component="comp-a", chunks=3, diff_chars=50000),
         ev.ChunkBudgetInsufficient(component="comp-a", phase="review", chunks=4, remaining=2),
         ev.AdversarialAgentSelected(
-            phase="review", agent_source="config", identity="codex (gpt-5)",
-            agent_type="codex", model="gpt-5", homogeneous=True,
+            phase="review",
+            agent_source="config",
+            identity="codex (gpt-5)",
+            agent_type="codex",
+            model="gpt-5",
+            homogeneous=True,
         ),
         ev.RunPlan(
             components=({"id": "comp-a", "title": "A", "deps": []},),
-            max_total_tokens=1000, max_adversarial_calls=10,
+            max_total_tokens=1000,
+            max_adversarial_calls=10,
         ),
         ev.PhaseStarted(component="comp-a", phase="review", attempt=1),
-        ev.PhaseCompleted(component="comp-a", phase="review", passed=True,
-                          detail="", duration_seconds=30.0),
+        ev.PhaseCompleted(
+            component="comp-a", phase="review", passed=True, detail="", duration_seconds=30.0
+        ),
         ev.IterationStarted(component="comp-a", iteration=1, max_iterations=10),
-        ev.IterationCompleted(component="comp-a", iteration=1,
-                              duration_seconds=20.0, completed=False, timed_out=False),
+        ev.IterationCompleted(
+            component="comp-a", iteration=1, duration_seconds=20.0, completed=False, timed_out=False
+        ),
         ev.WorkerHeartbeat(component="comp-a", pid=123, elapsed_seconds=45.0),
-        ev.CheckpointRequested(component="comp-a", kind="checkpoint",
-                               question="Approve?"),
-        ev.CheckpointResolved(component="comp-a", kind="checkpoint",
-                              decision="approved", decided_by="operator"),
+        ev.CheckpointRequested(component="comp-a", kind="checkpoint", question="Approve?"),
+        ev.CheckpointResolved(
+            component="comp-a", kind="checkpoint", decision="approved", decided_by="operator"
+        ),
         ev.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
         ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7"),
         ev.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
         ev.DistillResult(component="comp-a", facts_written=3, duration_seconds=12.0),
-        ev.FactUtilizationMeasured(component="comp-a", measured=True, injected=5,
-                                   referenced=2, reason="", core_injected=2,
-                                   core_referenced=2, dependency_injected=1,
-                                   dependency_referenced=0, sibling_injected=2,
-                                   sibling_referenced=0),
-        ev.FindingRecorded(component="comp-a", phase="review", category="test_quality",
-                           severity="fail", location="a.py:10",
-                           explanation="weak assert", attempt=1),
-        ev.SpecIssueRecorded(severity="blocker", kind="ambiguity",
-                             summary="Spec contradicts itself",
-                             location="spec.md:12", suggestion="pick one"),
-        ev.ArtifactWritten(component="comp-a", label="prd",
-                           path="scripts/kstrl/feature/comp-a/prd.json"),
+        ev.FactUtilizationMeasured(
+            component="comp-a",
+            measured=True,
+            injected=5,
+            referenced=2,
+            reason="",
+            core_injected=2,
+            core_referenced=2,
+            dependency_injected=1,
+            dependency_referenced=0,
+            sibling_injected=2,
+            sibling_referenced=0,
+        ),
+        ev.FindingRecorded(
+            component="comp-a",
+            phase="review",
+            category="test_quality",
+            severity="fail",
+            location="a.py:10",
+            explanation="weak assert",
+            attempt=1,
+        ),
+        ev.SpecIssueRecorded(
+            severity="blocker",
+            kind="ambiguity",
+            summary="Spec contradicts itself",
+            location="spec.md:12",
+            suggestion="pick one",
+        ),
+        ev.ArtifactWritten(
+            component="comp-a", label="prd", path="scripts/kstrl/feature/comp-a/prd.json"
+        ),
         ev.Log(severity="warn", kind="kv", key="Root", text="/tmp/x"),
         ev.AutonomyTransition(
-            direction="demote", from_level=3, to_level=2, actor="system",
-            trigger="policy_violation", reason="envelope breach",
+            direction="demote",
+            from_level=3,
+            to_level=2,
+            actor="system",
+            trigger="policy_violation",
+            reason="envelope breach",
         ),
         ev.AutonomyLevelApplied(
-            level=1, label="L1 Supervised",
+            level=1,
+            label="L1 Supervised",
             flags=("merge gate: ON (human approves)",),
             overrides=("[factory] pause_before_pr_merge=False contradicts L1",),
         ),
@@ -134,9 +187,16 @@ class TestRoundTrip:
 
 class TestTolerantDecode:
     def test_unknown_event_name(self) -> None:
-        obj = {"schema": 2, "event": "flux_capacitor", "ts": 1.0, "run_id": "r",
-               "component": "c", "source": "orchestrator", "seq": 3,
-               "data": {"x": 1}}
+        obj = {
+            "schema": 2,
+            "event": "flux_capacitor",
+            "ts": 1.0,
+            "run_id": "r",
+            "component": "c",
+            "source": "orchestrator",
+            "seq": 3,
+            "data": {"x": 1},
+        }
         event = ev.event_from_dict(obj)
         assert isinstance(event, ev.UnknownEvent)
         assert event.type_name == "flux_capacitor"
@@ -156,12 +216,14 @@ class TestTolerantDecode:
         assert event.iterations == 0
 
     def test_mistyped_values_degrade_to_defaults(self) -> None:
-        obj = {"event": "component_completed",
-               "data": {"duration_seconds": "fast", "iterations": 3}}
+        obj = {
+            "event": "component_completed",
+            "data": {"duration_seconds": "fast", "iterations": 3},
+        }
         event = ev.event_from_dict(obj)
         assert isinstance(event, ev.ComponentCompleted)
         assert event.duration_seconds == 0.0  # mistyped -> default
-        assert event.iterations == 3          # well-typed -> kept
+        assert event.iterations == 3  # well-typed -> kept
 
     def test_bool_not_accepted_as_int(self) -> None:
         obj = {"event": "component_completed", "data": {"iterations": True}}
@@ -182,8 +244,7 @@ class TestTolerantDecode:
         must decode as UNMEASURED, never as a measured zero - reading a
         default 0 as evidence would make the L2+ gate look permanently
         unsatisfiable."""
-        obj = {"event": "fact_utilization_measured",
-               "data": {"injected": 3}}
+        obj = {"event": "fact_utilization_measured", "data": {"injected": 3}}
         event = ev.event_from_dict(obj)
         assert isinstance(event, ev.FactUtilizationMeasured)
         assert event.measured is False
@@ -191,8 +252,7 @@ class TestTolerantDecode:
 
     def test_mistyped_utilization_flag_degrades_to_unmeasured(self) -> None:
         """The flag degrades toward "no evidence", the safe direction."""
-        obj = {"event": "fact_utilization_measured",
-               "data": {"measured": "yes", "referenced": 4}}
+        obj = {"event": "fact_utilization_measured", "data": {"measured": "yes", "referenced": 4}}
         event = ev.event_from_dict(obj)
         assert isinstance(event, ev.FactUtilizationMeasured)
         assert event.measured is False
@@ -210,9 +270,15 @@ class TestTolerantDecode:
         assert ev.parse_event_line('{"event": "log", "data"') is None  # torn
 
     def test_mangled_envelope_never_raises(self) -> None:
-        obj: dict[str, Any] = {"event": "log", "ts": "yesterday", "seq": "first",
-                               "run_id": 7, "component": None, "source": 3,
-                               "data": None}
+        obj: dict[str, Any] = {
+            "event": "log",
+            "ts": "yesterday",
+            "seq": "first",
+            "run_id": 7,
+            "component": None,
+            "source": 3,
+            "data": None,
+        }
         event = ev.event_from_dict(obj)
         assert event.ts == 0.0
         assert event.seq == 0
@@ -311,29 +377,39 @@ class TestV1CompatGoldenParity:
         bus.emit(ev.ComponentStarted(component="comp-a"))
 
         direct.component_completed("comp-a", 12.339, 4)
-        bus.emit(ev.ComponentCompleted(component="comp-a",
-                                       duration_seconds=12.339, iterations=4))
+        bus.emit(ev.ComponentCompleted(component="comp-a", duration_seconds=12.339, iterations=4))
 
         direct.component_failed("comp-b", "boom")
         bus.emit(ev.ComponentFailed(component="comp-b", error="boom"))
 
         direct.circuit_breaker_tripped("comp-b", 5, "stall")
-        bus.emit(ev.CircuitBreakerTripped(component="comp-b", iterations=5,
-                                          error="stall"))
+        bus.emit(ev.CircuitBreakerTripped(component="comp-b", iterations=5, error="stall"))
 
         direct.component_retrying("comp-b", 2, "verify failed")
-        bus.emit(ev.ComponentRetrying(component="comp-b", attempt=2,
-                                      reason="verify failed"))
+        bus.emit(ev.ComponentRetrying(component="comp-b", attempt=2, reason="verify failed"))
 
         direct.verification_result("comp-a", True, ["tests"], [], 3.456)
-        bus.emit(ev.VerificationResultEvent(
-            component="comp-a", passed=True, checks=("tests",), failures=(),
-            duration_seconds=3.456))
+        bus.emit(
+            ev.VerificationResultEvent(
+                component="comp-a",
+                passed=True,
+                checks=("tests",),
+                failures=(),
+                duration_seconds=3.456,
+            )
+        )
 
         direct.review_result("comp-a", False, "hard", 2, 1, 60.0)
-        bus.emit(ev.ReviewResultEvent(
-            component="comp-a", passed=False, mode="hard", fail_count=2,
-            advisory_count=1, duration_seconds=60.0))
+        bus.emit(
+            ev.ReviewResultEvent(
+                component="comp-a",
+                passed=False,
+                mode="hard",
+                fail_count=2,
+                advisory_count=1,
+                duration_seconds=60.0,
+            )
+        )
 
         # Mirrors UsageTotals.to_dict() verbatim, which is the documented
         # contract of ProgressLog.component_usage. R8 added token_calls
@@ -341,70 +417,92 @@ class TestV1CompatGoldenParity:
         # and the cost ceiling added cost_calls (its mirror), so both
         # sides of the parity carry both. Every reader of this payload
         # looks keys up defensively, so older files simply lack them.
-        usage = {"calls": 3, "known_calls": 2, "token_calls": 1,
-                 "cost_calls": 2, "unreported_calls": 1,
-                 "input_tokens": 100, "output_tokens": 50,
-                 "cache_read_tokens": 10, "cache_creation_tokens": 5,
-                 "total_tokens": 165, "cost_usd": 0.123456,
-                 "duration_seconds": 42.0}
+        usage = {
+            "calls": 3,
+            "known_calls": 2,
+            "token_calls": 1,
+            "cost_calls": 2,
+            "unreported_calls": 1,
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_tokens": 10,
+            "cache_creation_tokens": 5,
+            "total_tokens": 165,
+            "cost_usd": 0.123456,
+            "duration_seconds": 42.0,
+        }
         direct.component_usage("comp-a", "engineer", dict(usage))
         bus.emit(ev.ComponentUsage(component="comp-a", phase="engineer", **usage))
 
         direct.budget_exceeded("comp-a", 100, 50)
-        bus.emit(ev.BudgetExceeded(component="comp-a", total_tokens=100,
-                                   max_total_tokens=50))
+        bus.emit(ev.BudgetExceeded(component="comp-a", total_tokens=100, max_total_tokens=50))
 
         coverage_kwargs: dict[str, Any] = {
-            "ceiling": "max_cost_usd", "axis": "cost", "calls": 13,
-            "covered_calls": 8, "uncovered_calls": 5,
-            "uncovered_tokens": 193633, "detail": "cost coverage is PARTIAL",
+            "ceiling": "max_cost_usd",
+            "axis": "cost",
+            "calls": 13,
+            "covered_calls": 8,
+            "uncovered_calls": 5,
+            "uncovered_tokens": 193633,
+            "detail": "cost coverage is PARTIAL",
         }
         direct.budget_coverage(uncovered_roles=["review"], **coverage_kwargs)
-        bus.emit(ev.BudgetCoverage(
-            uncovered_roles=("review",), **coverage_kwargs,
-        ))
+        bus.emit(
+            ev.BudgetCoverage(
+                uncovered_roles=("review",),
+                **coverage_kwargs,
+            )
+        )
 
         direct.contract_result(1, False, "comp-a", 9.876)
-        bus.emit(ev.ContractResult(tier=1, passed=False, breaker="comp-a",
-                                   duration_seconds=9.876))
+        bus.emit(ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.876))
 
         direct.factory_completed(2, 1, 0, 100.0)
-        bus.emit(ev.RunCompleted(completed=2, failed=1, skipped=0,
-                                 duration_seconds=100.0))
+        bus.emit(ev.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0))
 
-        direct.emit("merge_pending", "comp-a",
-                    {"pr_url": "http://pr/1", "error": "not confirmed"})
-        bus.emit(ev.MergePendingV1(component="comp-a", pr_url="http://pr/1",
-                                   error="not confirmed"))
+        direct.emit("merge_pending", "comp-a", {"pr_url": "http://pr/1", "error": "not confirmed"})
+        bus.emit(ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"))
 
-        direct.emit("phase_skipped", "comp-a",
-                    {"phase": "security", "reason": "budget"})
-        bus.emit(ev.PhaseSkipped(component="comp-a", phase="security",
-                                 reason="budget"))
+        direct.emit("phase_skipped", "comp-a", {"phase": "security", "reason": "budget"})
+        bus.emit(ev.PhaseSkipped(component="comp-a", phase="security", reason="budget"))
 
         direct.emit("diff_fetch_failed", "comp-a", {"error": "git failed"})
         bus.emit(ev.DiffFetchFailed(component="comp-a", error="git failed"))
 
-        direct.emit("diff_unsplittable", "comp-a",
-                    {"error": "one hunk", "diff_chars": 99999})
-        bus.emit(ev.DiffUnsplittable(component="comp-a", error="one hunk",
-                                     diff_chars=99999))
+        direct.emit("diff_unsplittable", "comp-a", {"error": "one hunk", "diff_chars": 99999})
+        bus.emit(ev.DiffUnsplittable(component="comp-a", error="one hunk", diff_chars=99999))
 
         direct.emit("diff_chunked", "comp-a", {"chunks": 3, "diff_chars": 50000})
         bus.emit(ev.DiffChunked(component="comp-a", chunks=3, diff_chars=50000))
 
-        direct.emit("chunk_budget_insufficient", "comp-a",
-                    {"phase": "review", "chunks": 4, "remaining": 2})
-        bus.emit(ev.ChunkBudgetInsufficient(component="comp-a", phase="review",
-                                            chunks=4, remaining=2))
+        direct.emit(
+            "chunk_budget_insufficient", "comp-a", {"phase": "review", "chunks": 4, "remaining": 2}
+        )
+        bus.emit(
+            ev.ChunkBudgetInsufficient(component="comp-a", phase="review", chunks=4, remaining=2)
+        )
 
-        direct.emit("adversarial_agent_selected", data={
-            "phase": "review", "source": "config", "identity": "codex (gpt-5)",
-            "agent_type": "codex", "model": "gpt-5", "homogeneous": True,
-        })
-        bus.emit(ev.AdversarialAgentSelected(
-            phase="review", agent_source="config", identity="codex (gpt-5)",
-            agent_type="codex", model="gpt-5", homogeneous=True))
+        direct.emit(
+            "adversarial_agent_selected",
+            data={
+                "phase": "review",
+                "source": "config",
+                "identity": "codex (gpt-5)",
+                "agent_type": "codex",
+                "model": "gpt-5",
+                "homogeneous": True,
+            },
+        )
+        bus.emit(
+            ev.AdversarialAgentSelected(
+                phase="review",
+                agent_source="config",
+                identity="codex (gpt-5)",
+                agent_type="codex",
+                model="gpt-5",
+                homogeneous=True,
+            )
+        )
 
         direct_lines = [_strip_ts(e) for e in read_progress_events(direct_path)]
         compat_lines = [_strip_ts(e) for e in read_progress_events(compat_path)]
@@ -413,8 +511,7 @@ class TestV1CompatGoldenParity:
 
     def test_v2_only_events_are_dropped(self, tmp_path: Path) -> None:
         compat_path = tmp_path / "compat.jsonl"
-        bus = ev.EventBus(ev.V1CompatSink(ProgressLog(compat_path, run_id="r")),
-                          run_id="r")
+        bus = ev.EventBus(ev.V1CompatSink(ProgressLog(compat_path, run_id="r")), run_id="r")
         bus.emit(ev.RunPlan(components=({"id": "a", "title": "A", "deps": []},)))
         bus.emit(ev.PhaseStarted(component="a", phase="verify", attempt=1))
         bus.emit(ev.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=1.0))
@@ -481,7 +578,8 @@ class TestBothSinksCarryTheSameBudgetHalt:
 
     @staticmethod
     def _emit_both(
-        tmp_path: Path, event: ev.BudgetExceeded,
+        tmp_path: Path,
+        event: ev.BudgetExceeded,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         from kstrl.observability import ProgressLog
 
@@ -502,47 +600,78 @@ class TestBothSinksCarryTheSameBudgetHalt:
         return payload(durable_path), payload(progress_path)
 
     def test_a_breach_reaches_both_sinks_identically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
-        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
-            component="comp-a", total_tokens=4017316, max_total_tokens=0,
-            cost_usd=5.123713, max_cost_usd=5.0, ceiling="max_cost_usd",
-            condition="breached", ceilings=("max_cost_usd",),
-        ))
+        durable, progress = self._emit_both(
+            tmp_path,
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=4017316,
+                max_total_tokens=0,
+                cost_usd=5.123713,
+                max_cost_usd=5.0,
+                ceiling="max_cost_usd",
+                condition="breached",
+                ceilings=("max_cost_usd",),
+            ),
+        )
         assert durable == progress
 
     def test_an_unenforceable_halt_reaches_both_sinks_identically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The multi-ceiling case is where a single-value field loses
         the most, so it is the one most worth pinning."""
-        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
-            component="comp-a", total_tokens=0, max_total_tokens=500,
-            cost_usd=0.0, max_cost_usd=100.0,
-            ceiling="max_total_tokens, max_cost_usd",
-            condition="unenforceable",
-            ceilings=("max_total_tokens", "max_cost_usd"),
-        ))
+        durable, progress = self._emit_both(
+            tmp_path,
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=0,
+                max_total_tokens=500,
+                cost_usd=0.0,
+                max_cost_usd=100.0,
+                ceiling="max_total_tokens, max_cost_usd",
+                condition="unenforceable",
+                ceilings=("max_total_tokens", "max_cost_usd"),
+            ),
+        )
         assert durable == progress
         assert progress["ceilings"] == ["max_total_tokens", "max_cost_usd"]
         assert progress["condition"] == "unenforceable"
 
     def test_a_partially_covered_halt_reaches_both_sinks_identically(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R8: the coverage a ceiling had when it halted is part of the
         halt record, on BOTH sinks. Payload is the measured run's."""
-        durable, progress = self._emit_both(tmp_path, ev.BudgetExceeded(
-            component="comp-a", total_tokens=26522034, max_total_tokens=0,
-            cost_usd=28.7545, max_cost_usd=25.0, ceiling="max_cost_usd",
-            condition="breached", ceilings=("max_cost_usd",),
-            coverage=({
-                "ceiling": "max_cost_usd", "axis": "cost", "calls": 13,
-                "covered_calls": 8, "uncovered_calls": 5,
-                "uncovered_tokens": 193633, "uncovered_roles": ["review"],
-                "roles": [],
-            },),
-        ))
+        durable, progress = self._emit_both(
+            tmp_path,
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=26522034,
+                max_total_tokens=0,
+                cost_usd=28.7545,
+                max_cost_usd=25.0,
+                ceiling="max_cost_usd",
+                condition="breached",
+                ceilings=("max_cost_usd",),
+                coverage=(
+                    {
+                        "ceiling": "max_cost_usd",
+                        "axis": "cost",
+                        "calls": 13,
+                        "covered_calls": 8,
+                        "uncovered_calls": 5,
+                        "uncovered_tokens": 193633,
+                        "uncovered_roles": ["review"],
+                        "roles": [],
+                    },
+                ),
+            ),
+        )
         assert durable == progress
         assert progress["coverage"][0]["uncovered_roles"] == ["review"]
 
@@ -550,27 +679,37 @@ class TestBothSinksCarryTheSameBudgetHalt:
         """events.jsonl is append-only: a payload written before the
         coverage field must still decode, to an empty tuple rather than
         to a fabricated claim of full coverage."""
-        event = ev.event_from_dict({
-            "event": "budget_exceeded",
-            "data": {"total_tokens": 5, "max_total_tokens": 10,
-                     "cost_usd": 9.0, "max_cost_usd": 8.0,
-                     "ceiling": "max_cost_usd"},
-        })
+        event = ev.event_from_dict(
+            {
+                "event": "budget_exceeded",
+                "data": {
+                    "total_tokens": 5,
+                    "max_total_tokens": 10,
+                    "cost_usd": 9.0,
+                    "max_cost_usd": 8.0,
+                    "ceiling": "max_cost_usd",
+                },
+            }
+        )
         assert isinstance(event, ev.BudgetExceeded)
         assert event.coverage == ()
         assert event.ceiling == "max_cost_usd"
 
     def test_a_legacy_coverage_payload_decodes_with_defaults(self) -> None:
-        event = ev.event_from_dict({
-            "event": "budget_coverage", "data": {"ceiling": "max_cost_usd"},
-        })
+        event = ev.event_from_dict(
+            {
+                "event": "budget_coverage",
+                "data": {"ceiling": "max_cost_usd"},
+            }
+        )
         assert isinstance(event, ev.BudgetCoverage)
         assert event.ceiling == "max_cost_usd"
         assert event.uncovered_roles == ()
         assert event.uncovered_tokens == 0
 
     def test_every_coverage_field_survives_the_progress_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The same generic guard for the new run-scoped event."""
         import dataclasses
@@ -578,9 +717,14 @@ class TestBothSinksCarryTheSameBudgetHalt:
         from kstrl.observability import ProgressLog
 
         event = ev.BudgetCoverage(
-            ceiling="max_cost_usd", axis="cost", calls=13, covered_calls=8,
-            uncovered_calls=5, uncovered_tokens=193633,
-            uncovered_roles=("review",), detail="cost coverage is PARTIAL",
+            ceiling="max_cost_usd",
+            axis="cost",
+            calls=13,
+            covered_calls=8,
+            uncovered_calls=5,
+            uncovered_tokens=193633,
+            uncovered_roles=("review",),
+            detail="cost coverage is PARTIAL",
         )
         durable_path = tmp_path / "events.jsonl"
         progress_path = tmp_path / "progress.jsonl"
@@ -597,9 +741,7 @@ class TestBothSinksCarryTheSameBudgetHalt:
         durable, progress = payload(durable_path), payload(progress_path)
         assert durable == progress
         base = {f.name for f in dataclasses.fields(ev.Event)}
-        payload_fields = {
-            f.name for f in dataclasses.fields(event)
-        } - base - {"type"}
+        payload_fields = {f.name for f in dataclasses.fields(event)} - base - {"type"}
         missing = payload_fields - progress.keys()
         assert not missing, (
             f"BudgetCoverage fields missing from progress.jsonl: {missing}. "
@@ -608,7 +750,8 @@ class TestBothSinksCarryTheSameBudgetHalt:
         )
 
     def test_every_event_field_survives_the_progress_log(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Generic guard: any field added to BudgetExceeded later must
         appear in BOTH sinks. This is the assertion whose absence let a
@@ -616,17 +759,20 @@ class TestBothSinksCarryTheSameBudgetHalt:
         import dataclasses
 
         event = ev.BudgetExceeded(
-            component="comp-a", total_tokens=1, max_total_tokens=2,
-            cost_usd=3.0, max_cost_usd=4.0, ceiling="max_cost_usd",
-            condition="breached", ceilings=("max_cost_usd",),
+            component="comp-a",
+            total_tokens=1,
+            max_total_tokens=2,
+            cost_usd=3.0,
+            max_cost_usd=4.0,
+            ceiling="max_cost_usd",
+            condition="breached",
+            ceilings=("max_cost_usd",),
             coverage=({"ceiling": "max_cost_usd", "covered_calls": 8},),
         )
         durable, progress = self._emit_both(tmp_path, event)
 
         base = {f.name for f in dataclasses.fields(ev.Event)}
-        payload_fields = {
-            f.name for f in dataclasses.fields(event)
-        } - base - {"type"}
+        payload_fields = {f.name for f in dataclasses.fields(event)} - base - {"type"}
         missing = payload_fields - progress.keys()
         assert not missing, (
             f"BudgetExceeded fields missing from progress.jsonl: {missing}. "

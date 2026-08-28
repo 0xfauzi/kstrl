@@ -102,16 +102,15 @@ def _check(result: Any, name: str) -> Any:
 
 class TestTautologicalTestCaught:
     def test_tautological_test_passes_pytest_but_fixture_fails_component(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Agent ships a broken add() plus `assert True` tests. Its own
         suite is green; the function fixture calls add(2, 2) in a
         sandboxed subprocess and fails the component."""
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_app.py").write_text(
-            "def test_add_exists():\n"
-            "    import app\n"
-            "    assert True\n"
+            "def test_add_exists():\n    import app\n    assert True\n"
         )
         prd_path = _write_prd(tmp_path)
 
@@ -128,7 +127,8 @@ class TestTautologicalTestCaught:
 
 class TestConftestDeselectCaught:
     def test_conftest_deselect_hides_failing_test_but_fixture_fails(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Agent writes a real (failing) test, then hides it with a
         conftest collect_ignore plus a dummy green test so pytest exits 0.
@@ -136,16 +136,10 @@ class TestConftestDeselectCaught:
         conftest cannot deselect it."""
         (tmp_path / "app.py").write_text("def add(a, b):\n    return 0\n")
         (tmp_path / "test_real.py").write_text(
-            "import app\n"
-            "def test_add():\n"
-            "    assert app.add(2, 2) == 4\n"
+            "import app\ndef test_add():\n    assert app.add(2, 2) == 4\n"
         )
-        (tmp_path / "test_dummy.py").write_text(
-            "def test_ok():\n    assert True\n"
-        )
-        (tmp_path / "conftest.py").write_text(
-            'collect_ignore = ["test_real.py"]\n'
-        )
+        (tmp_path / "test_dummy.py").write_text("def test_ok():\n    assert True\n")
+        (tmp_path / "conftest.py").write_text('collect_ignore = ["test_real.py"]\n')
         prd_path = _write_prd(tmp_path)
 
         result = _run(tmp_path, prd_path)

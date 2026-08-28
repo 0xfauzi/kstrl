@@ -104,21 +104,24 @@ def _crash_factory(
     """
     proc = subprocess.Popen(
         [
-            sys.executable, "-c", _DRIVER_SCRIPT,
-            str(root), str(manifest_path), verify_cmd, agent_cmd,
+            sys.executable,
+            "-c",
+            _DRIVER_SCRIPT,
+            str(root),
+            str(manifest_path),
+            verify_cmd,
+            agent_cmd,
         ],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
         start_new_session=True,
     )
     try:
         deadline = time.monotonic() + 60
         while not marker.exists():
-            assert time.monotonic() < deadline, (
-                "factory run never reached the phase under test"
-            )
-            assert proc.poll() is None, (
-                f"factory run died early: {proc.communicate()[0]}"
-            )
+            assert time.monotonic() < deadline, "factory run never reached the phase under test"
+            assert proc.poll() is None, f"factory run died early: {proc.communicate()[0]}"
             time.sleep(0.05)
         os.killpg(proc.pid, signal.SIGKILL)
         proc.wait(timeout=10)
@@ -129,7 +132,9 @@ def _crash_factory(
 
 
 def _assert_crashed_state(
-    root: Path, manifest_path: Path, expected_status: str,
+    root: Path,
+    manifest_path: Path,
+    expected_status: str,
 ) -> Path:
     """The kill really landed inside the intended phase: the manifest
     persisted the intermediate status and the run-scoped worktree
@@ -182,22 +187,24 @@ class TestCrashRecovery:
 
         _crash_factory(root, manifest_path, marker, agent_cmd, verify_cmd)
         stale_worktree = _assert_crashed_state(
-            root, manifest_path, crashed_status,
+            root,
+            manifest_path,
+            crashed_status,
         )
 
         out = io.StringIO()
         restarted = Manifest.load(manifest_path)
         result = run_factory(
-            restarted, factory_config(), base_config(root),
-            PlainUI(no_color=True, file=out), root,
+            restarted,
+            factory_config(),
+            base_config(root),
+            PlainUI(no_color=True, file=out),
+            root,
             manifest_path=manifest_path,
         )
         ui_output = out.getvalue()
 
-        assert (
-            f"Resetting '{COMP}' from {crashed_status} to PENDING"
-            in ui_output
-        )
+        assert f"Resetting '{COMP}' from {crashed_status} to PENDING" in ui_output
         assert "Pruned 1 stale worktree(s) from previous runs" in ui_output
         assert f"Deleted stale branch '{BRANCH}'" in ui_output
 
@@ -206,10 +213,9 @@ class TestCrashRecovery:
         assert not stale_worktree.exists()
         assert _no_worktree_dirs_left(root)
         listing = git("worktree", "list", "--porcelain", cwd=root)
-        assert [
-            line for line in listing.splitlines()
-            if line.startswith("worktree ")
-        ] == [f"worktree {root}"]
+        assert [line for line in listing.splitlines() if line.startswith("worktree ")] == [
+            f"worktree {root}"
+        ]
 
         # The persisted manifest is consistent after recovery.
         final = Manifest.load(manifest_path)
@@ -217,7 +223,9 @@ class TestCrashRecovery:
         assert final.components[0].error == ""
 
     def test_restart_refuses_crashed_branch_with_commits_then_operator_recovers(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Crashed attempt COMMITTED work before dying: the restart still
         resets state and prunes the stale worktree, but refuses to run
@@ -231,23 +239,30 @@ class TestCrashRecovery:
         make_manifest([component(COMP)]).save(manifest_path)
         committing_agent = (
             "echo progress > progress.txt && git add progress.txt && "
-            "git commit -q -m 'crashed attempt progress' && "
-            + COMPLETE_LINE
+            "git commit -q -m 'crashed attempt progress' && " + COMPLETE_LINE
         )
 
         marker = tmp_path / "verify-started"
         _crash_factory(
-            root, manifest_path, marker, committing_agent,
+            root,
+            manifest_path,
+            marker,
+            committing_agent,
             f"touch '{marker}' && sleep 45",
         )
         stale_worktree = _assert_crashed_state(
-            root, manifest_path, ComponentStatus.VERIFYING.value,
+            root,
+            manifest_path,
+            ComponentStatus.VERIFYING.value,
         )
 
         out = io.StringIO()
         refused = run_factory(
-            Manifest.load(manifest_path), factory_config(),
-            base_config(root), PlainUI(no_color=True, file=out), root,
+            Manifest.load(manifest_path),
+            factory_config(),
+            base_config(root),
+            PlainUI(no_color=True, file=out),
+            root,
             manifest_path=manifest_path,
         )
         ui_output = out.getvalue()
@@ -261,17 +276,26 @@ class TestCrashRecovery:
         assert not stale_worktree.exists()
         # The crashed attempt's commits were preserved, not destroyed.
         assert git("branch", "--list", BRANCH, cwd=root).strip()
-        assert "progress.txt" in git(
-            "ls-tree", "--name-only", BRANCH, cwd=root,
-        ).splitlines()
+        assert (
+            "progress.txt"
+            in git(
+                "ls-tree",
+                "--name-only",
+                BRANCH,
+                cwd=root,
+            ).splitlines()
+        )
 
         # Operator path from the refusal message: delete the branch and
         # re-run; recovery then completes and the manifest is consistent.
         git("branch", "-D", BRANCH, cwd=root)
         rerun = run_factory(
-            Manifest.load(manifest_path), factory_config(),
-            base_config(root), PlainUI(no_color=True, file=io.StringIO()),
-            root, manifest_path=manifest_path,
+            Manifest.load(manifest_path),
+            factory_config(),
+            base_config(root),
+            PlainUI(no_color=True, file=io.StringIO()),
+            root,
+            manifest_path=manifest_path,
         )
         assert rerun.exit_code == 0
         assert rerun.completed == [COMP]

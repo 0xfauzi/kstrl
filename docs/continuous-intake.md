@@ -37,7 +37,7 @@ original afterwards cannot change what runs. Locks (`queue.lock`,
 (`${XDG_STATE_HOME:-~/.local/state}/kstrl/<repo-id>/`) so a worktree agent
 cannot edit them. First use migrates any legacy in-tree copies and writes
 `.kstrl/control_relocated` pointing at the new location. Clones that share
-the same `origin` remote share one control dir — do not run two `ks serve`
+the same `origin` remote share one control dir: do not run two `ks serve`
 daemons against that ledger at once.
 
 `ks queue pause` stops new work being claimed; it does not touch a run

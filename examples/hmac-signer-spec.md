@@ -6,10 +6,10 @@ validation target for the kstrl factory pipeline.
 
 ## Functional requirements
 
-1. **`sign(message: str, secret: str) -> str`** — returns a hex-encoded HMAC-SHA256
+1. **`sign(message: str, secret: str) -> str`** - returns a hex-encoded HMAC-SHA256
    signature of `message` keyed by `secret`. Both inputs are UTF-8 strings.
 
-2. **`verify(message: str, secret: str, signature: str) -> bool`** — returns `True`
+2. **`verify(message: str, secret: str, signature: str) -> bool`** - returns `True`
    when the signature matches what `sign(message, secret)` would produce, otherwise
    `False`. Comparison MUST use `hmac.compare_digest` (constant-time) to avoid
    leaking the signature through a timing side channel.

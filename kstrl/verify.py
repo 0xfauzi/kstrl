@@ -53,17 +53,19 @@ from kstrl.prd import PRD
 # (uv locates its cache via HOME); the rest are the locale, venv, uv, and
 # CPython knobs a project's own commands legitimately consume, plus the
 # XDG cache/data paths uv honors when set.
-SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset({
-    "PATH",
-    "HOME",
-    "LANG",
-    "TMPDIR",
-    "TERM",
-    "VIRTUAL_ENV",
-    "CI",
-    "XDG_CACHE_HOME",
-    "XDG_DATA_HOME",
-})
+SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "LANG",
+        "TMPDIR",
+        "TERM",
+        "VIRTUAL_ENV",
+        "CI",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+    }
+)
 SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_", "UV_", "PYTHON")
 
 # Belt over the allowlist's braces: an allowed prefix must never smuggle a
@@ -82,9 +84,7 @@ def scrubbed_subprocess_env() -> dict[str, str]:
     """Allowlist-filtered copy of ``os.environ`` for verification subprocesses."""
     env: dict[str, str] = {}
     for name, value in os.environ.items():
-        if name not in SCRUB_ENV_ALLOWED_NAMES and not name.startswith(
-            SCRUB_ENV_ALLOWED_PREFIXES
-        ):
+        if name not in SCRUB_ENV_ALLOWED_NAMES and not name.startswith(SCRUB_ENV_ALLOWED_PREFIXES):
             continue
         if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
             continue
@@ -169,7 +169,10 @@ def run_scrubbed(
         except subprocess.TimeoutExpired:
             stdout, stderr = "", ""
         raise subprocess.TimeoutExpired(
-            cmd, timeout, output=stdout, stderr=stderr,
+            cmd,
+            timeout,
+            output=stdout,
+            stderr=stderr,
         ) from None
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
@@ -250,15 +253,9 @@ class VerifyConfig:
             dead_code_cleanup=os.environ.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
             dead_code_command=os.environ.get("KSTRL_DEAD_CODE_CMD"),
             mutation_testing=os.environ.get("KSTRL_MUTATION_TESTING", "") == "1",
-            mutation_threshold=float(
-                os.environ.get("KSTRL_MUTATION_THRESHOLD", "50")
-            ),
-            mutation_timeout=float(
-                os.environ.get("KSTRL_MUTATION_TIMEOUT", "600")
-            ),
-            subprocess_timeout=float(
-                os.environ.get("KSTRL_TIMEOUT_VERIFY", "300")
-            ),
+            mutation_threshold=float(os.environ.get("KSTRL_MUTATION_THRESHOLD", "50")),
+            mutation_timeout=float(os.environ.get("KSTRL_MUTATION_TIMEOUT", "600")),
+            subprocess_timeout=float(os.environ.get("KSTRL_TIMEOUT_VERIFY", "300")),
             require_self_critique=os.environ.get("KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE", "") == "1",
             self_critique_min_bullets=int(
                 os.environ.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
@@ -270,6 +267,7 @@ class VerifyConfig:
     def load(cls, root_dir: Path | None = None) -> VerifyConfig:
         """Load verify config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -299,9 +297,7 @@ class VerifyConfig:
         if "require_self_critique" in section:
             config.require_self_critique = bool(section["require_self_critique"])
         if "self_critique_min_bullets" in section:
-            config.self_critique_min_bullets = int(
-                section["self_critique_min_bullets"]
-            )
+            config.self_critique_min_bullets = int(section["self_critique_min_bullets"])
         if "progress_file_path" in section:
             config.progress_file_path = str(section["progress_file_path"]) or None
         # Env overrides. Each var is applied only when it is explicitly
@@ -333,11 +329,11 @@ class VerifyConfig:
 
 # Patterns that suggest secrets in source code
 SECRET_PATTERNS = [
-    re.compile(r"AKIA[0-9A-Z]{16}"),                     # AWS access key
-    re.compile(r"sk-[a-zA-Z0-9]{20,}"),                  # OpenAI/Stripe key
-    re.compile(r"ghp_[a-zA-Z0-9]{36}"),                  # GitHub PAT
+    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key
+    re.compile(r"sk-[a-zA-Z0-9]{20,}"),  # OpenAI/Stripe key
+    re.compile(r"ghp_[a-zA-Z0-9]{36}"),  # GitHub PAT
     re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----"),  # Private keys
-    re.compile(r"xox[bpoas]-[a-zA-Z0-9-]+"),             # Slack tokens
+    re.compile(r"xox[bpoas]-[a-zA-Z0-9-]+"),  # Slack tokens
 ]
 
 
@@ -392,7 +388,8 @@ _ENTRY_SEPARATOR_RE = re.compile(r"^-{3,}$")
 
 
 def check_self_critique(
-    progress_path: Path, min_bullets: int = 3,
+    progress_path: Path,
+    min_bullets: int = 3,
 ) -> CheckResult:
     """Confirm the CURRENT (latest) progress.txt entry contains a
     Self-Critique block with at least ``min_bullets`` bullet points.
@@ -484,7 +481,7 @@ def check_self_critique(
     # bullet section (e.g. `- **Interpretations:**`).
     bullet_count = 0
     bullet_lines: list[str] = []
-    for line in lines[heading_idx + 1:]:
+    for line in lines[heading_idx + 1 :]:
         stripped = line.strip()
         # Stop at next major heading
         if stripped.startswith("##"):
@@ -509,8 +506,7 @@ def check_self_critique(
             name="self_critique",
             passed=False,
             message=(
-                f"Self-Critique block has {bullet_count} bullets; "
-                f"minimum required is {min_bullets}"
+                f"Self-Critique block has {bullet_count} bullets; minimum required is {min_bullets}"
             ),
             details=bullet_lines,
             duration_seconds=time.monotonic() - start,
@@ -556,7 +552,9 @@ def check_prd_stories(prd_path: Path) -> CheckResult:
 
 
 def check_test_suite(
-    cwd: Path, command: str | None = None, timeout: float = 300.0,
+    cwd: Path,
+    command: str | None = None,
+    timeout: float = 300.0,
 ) -> CheckResult:
     """Run the project's test suite independently."""
     start = time.monotonic()
@@ -637,7 +635,9 @@ def _default_typecheck_command(cwd: Path) -> str:
 
 
 def check_typecheck(
-    cwd: Path, command: str | None = None, timeout: float = 300.0,
+    cwd: Path,
+    command: str | None = None,
+    timeout: float = 300.0,
 ) -> CheckResult:
     """Run typecheck independently."""
     start = time.monotonic()
@@ -678,7 +678,9 @@ def check_typecheck(
 
 
 def check_linter(
-    cwd: Path, command: str | None = None, timeout: float = 300.0,
+    cwd: Path,
+    command: str | None = None,
+    timeout: float = 300.0,
 ) -> CheckResult:
     """Run linter independently."""
     start = time.monotonic()
@@ -775,9 +777,7 @@ def check_diff_scope(
         shown = violations[:15]
         violation_lines = [f"  - {v}" for v in shown]
         if len(violations) > len(shown):
-            violation_lines.append(
-                f"  ... and {len(violations) - len(shown)} more"
-            )
+            violation_lines.append(f"  ... and {len(violations) - len(shown)} more")
         details = [
             f"Base branch: {base_branch} "
             f"(scope is judged on `git diff {base_branch}...HEAD`; "
@@ -849,9 +849,7 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
             # Secret patterns
             for pattern in SECRET_PATTERNS:
                 if pattern.search(content):
-                    issues.append(
-                        f"{rel_path}: possible secret/credential detected"
-                    )
+                    issues.append(f"{rel_path}: possible secret/credential detected")
                     break
 
     if issues:
@@ -872,7 +870,9 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
 
 
 def check_policy_envelope(
-    cwd: Path, base_branch: str, config: PolicyConfig,
+    cwd: Path,
+    base_branch: str,
+    config: PolicyConfig,
 ) -> CheckResult:
     """R8.1: enforce the declarative ``[policy]`` envelope from artifacts.
 
@@ -906,9 +906,12 @@ def check_policy_envelope(
                 "The change cannot be proven within policy; do not treat "
                 "this as permission to merge.",
             ],
-            findings=[Finding.infrastructure_error(
-                "policy", f"policy envelope could not read the diff: {exc}",
-            )],
+            findings=[
+                Finding.infrastructure_error(
+                    "policy",
+                    f"policy envelope could not read the diff: {exc}",
+                )
+            ],
             duration_seconds=time.monotonic() - start,
         )
 
@@ -920,9 +923,12 @@ def check_policy_envelope(
             passed=False,
             message="policy envelope is misconfigured; failing closed",
             details=[f"Error: {exc}"],
-            findings=[Finding.infrastructure_error(
-                "policy", f"policy envelope is misconfigured: {exc}",
-            )],
+            findings=[
+                Finding.infrastructure_error(
+                    "policy",
+                    f"policy envelope is misconfigured: {exc}",
+                )
+            ],
             duration_seconds=time.monotonic() - start,
         )
 
@@ -930,7 +936,8 @@ def check_policy_envelope(
     # license and classify it. Runs only when configured (license_allow
     # non-empty).
     violations = list(evaluation.violations) + _check_licenses(
-        evaluation.new_dependencies, config,
+        evaluation.new_dependencies,
+        config,
     )
     blocking = [v for v in violations if v.blocking]
     advisories = [v for v in violations if not v.blocking]
@@ -947,9 +954,7 @@ def check_policy_envelope(
     ]
     # Blocking violations first: as_context() slices details[:10] into the
     # retry prompt, and advisories must never crowd out a real failure.
-    details = [v.explanation for v in blocking] + [
-        v.explanation for v in advisories
-    ]
+    details = [v.explanation for v in blocking] + [v.explanation for v in advisories]
 
     if not blocking:
         message = evaluation.summary
@@ -977,7 +982,8 @@ def check_policy_envelope(
 
 
 def _check_licenses(
-    new_dependencies: list[tuple[str, str]], config: PolicyConfig,
+    new_dependencies: list[tuple[str, str]],
+    config: PolicyConfig,
 ) -> list[PolicyViolation]:
     """Resolve + classify the licenses of newly-added dependencies.
 
@@ -993,7 +999,8 @@ def _check_licenses(
     violations: list[PolicyViolation] = []
     for name, version in new_dependencies:
         resolved = licensing.resolve_license(
-            name, version,
+            name,
+            version,
             uv_cache=uv_cache,
             use_pypi=config.license_use_network,
         )
@@ -1004,48 +1011,51 @@ def _check_licenses(
                 if config.license_use_network
                 else "uv cache missed; network resolution disabled"
             )
-            violations.append(PolicyViolation(
-                category="license_unresolved",
-                location=f"{name} {version}",
-                severity="advisory" if advisory else "high",
-                explanation=(
-                    f"license could not be resolved for {name} {version} "
-                    f"({source})"
-                    + ("; recorded as advisory" if advisory else "")
-                ),
-                suggestion=(
-                    "Warm the uv cache (`uv sync`) or allow network "
-                    "resolution; set [policy] license_unresolved = "
-                    '"advisory" to accept unprovable licenses.'
-                ),
-            ))
+            violations.append(
+                PolicyViolation(
+                    category="license_unresolved",
+                    location=f"{name} {version}",
+                    severity="advisory" if advisory else "high",
+                    explanation=(
+                        f"license could not be resolved for {name} {version} "
+                        f"({source})" + ("; recorded as advisory" if advisory else "")
+                    ),
+                    suggestion=(
+                        "Warm the uv cache (`uv sync`) or allow network "
+                        "resolution; set [policy] license_unresolved = "
+                        '"advisory" to accept unprovable licenses.'
+                    ),
+                )
+            )
             continue
         verdict = classify_license(
-            resolved, config.license_allow, config.license_deny_partial,
+            resolved,
+            config.license_allow,
+            config.license_deny_partial,
         )
         if verdict == "denied":
-            violations.append(PolicyViolation(
-                category="license_denied",
-                location=f"{name} {version}",
-                explanation=(
-                    f"denied license '{resolved}' for dependency "
-                    f"{name} {version}"
-                ),
-                suggestion="Drop the dependency or find a permissive alternative.",
-            ))
+            violations.append(
+                PolicyViolation(
+                    category="license_denied",
+                    location=f"{name} {version}",
+                    explanation=(f"denied license '{resolved}' for dependency {name} {version}"),
+                    suggestion="Drop the dependency or find a permissive alternative.",
+                )
+            )
         elif verdict == "unknown":
-            violations.append(PolicyViolation(
-                category="license_not_allowed",
-                location=f"{name} {version}",
-                explanation=(
-                    f"license '{resolved}' for {name} {version} is not in "
-                    "license_allow"
-                ),
-                suggestion=(
-                    f"Add '{resolved}' to [policy] license_allow if it is "
-                    "acceptable for this repo."
-                ),
-            ))
+            violations.append(
+                PolicyViolation(
+                    category="license_not_allowed",
+                    location=f"{name} {version}",
+                    explanation=(
+                        f"license '{resolved}' for {name} {version} is not in license_allow"
+                    ),
+                    suggestion=(
+                        f"Add '{resolved}' to [policy] license_allow if it is "
+                        "acceptable for this repo."
+                    ),
+                )
+            )
     return violations
 
 
@@ -1085,9 +1095,12 @@ def check_test_adequacy(
                 "(infrastructure error, not an adequacy pass)"
             ),
             details=[f"Error: {exc}"],
-            findings=[Finding.infrastructure_error(
-                "adequacy", f"adequacy could not read the diff: {exc}",
-            )],
+            findings=[
+                Finding.infrastructure_error(
+                    "adequacy",
+                    f"adequacy could not read the diff: {exc}",
+                )
+            ],
             duration_seconds=time.monotonic() - start,
         )
 
@@ -1097,7 +1110,7 @@ def check_test_adequacy(
             continue
         full = cwd / rel
         if not full.exists():
-            continue          # deleted; the diff analysis covers it
+            continue  # deleted; the diff analysis covers it
         try:
             sources[rel] = full.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -1106,12 +1119,12 @@ def check_test_adequacy(
     # Only status "A" is new content. A rename/copy destination ("R"/"C")
     # carries tests that already existed, so it is not held to the
     # new-file oracle floor.
-    new_paths = {
-        path for status, path in records
-        if status.startswith("A") and path in sources
-    }
+    new_paths = {path for status, path in records if status.startswith("A") and path in sources}
     adequacy_findings = evaluate_layer0(
-        diff_text, sources, config, new_paths=new_paths,
+        diff_text,
+        sources,
+        config,
+        new_paths=new_paths,
     )
     blocking = layer0_blocks(config, autonomy_level)
     severity = "high" if blocking else "advisory"
@@ -1129,10 +1142,7 @@ def check_test_adequacy(
         return CheckResult(
             name="test_adequacy",
             passed=True,
-            message=(
-                f"test adequacy: {len(sources)} changed test file(s), "
-                "no weakening signals"
-            ),
+            message=(f"test adequacy: {len(sources)} changed test file(s), no weakening signals"),
             duration_seconds=time.monotonic() - start,
         )
     details = [f.render() for f in adequacy_findings]
@@ -1140,9 +1150,7 @@ def check_test_adequacy(
     return CheckResult(
         name="test_adequacy",
         passed=not blocking,
-        message=(
-            f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]"
-        ),
+        message=(f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]"),
         details=details,
         findings=findings,
         duration_seconds=time.monotonic() - start,
@@ -1177,8 +1185,7 @@ def check_mutation_score(
             name="mutation_testing",
             passed=True,
             message=(
-                "Skipped: mutation testing rewrites the files it mutates "
-                "and cannot run read-only"
+                "Skipped: mutation testing rewrites the files it mutates and cannot run read-only"
             ),
             duration_seconds=time.monotonic() - start,
         )
@@ -1361,7 +1368,8 @@ def check_dead_code(
                 run_scrubbed("git add -A", cwd=cwd, timeout=30)
                 run_scrubbed(
                     'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
-                    cwd=cwd, timeout=30,
+                    cwd=cwd,
+                    timeout=30,
                 )
             except subprocess.TimeoutExpired:
                 pass  # Non-fatal
@@ -1424,10 +1432,9 @@ def check_dead_code(
         lines = output.splitlines()
         # Filter out common false positives (e.g., __all__, __init__)
         real_issues = [
-            line for line in lines
-            if line.strip()
-            and not line.strip().startswith("#")
-            and "__all__" not in line
+            line
+            for line in lines
+            if line.strip() and not line.strip().startswith("#") and "__all__" not in line
         ]
         if real_issues:
             prefix = f"{ruff_note}; " if ruff_touched else ""
@@ -1494,23 +1501,39 @@ def run_mechanical_verification(
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path))
 
-    checks.append(check_test_suite(
-        worktree_path, config.test_command, config.subprocess_timeout,
-    ))
+    checks.append(
+        check_test_suite(
+            worktree_path,
+            config.test_command,
+            config.subprocess_timeout,
+        )
+    )
 
-    checks.append(check_typecheck(
-        worktree_path, config.typecheck_command, config.subprocess_timeout,
-    ))
+    checks.append(
+        check_typecheck(
+            worktree_path,
+            config.typecheck_command,
+            config.subprocess_timeout,
+        )
+    )
 
-    checks.append(check_linter(
-        worktree_path, config.lint_command, config.subprocess_timeout,
-    ))
+    checks.append(
+        check_linter(
+            worktree_path,
+            config.lint_command,
+            config.subprocess_timeout,
+        )
+    )
 
     if config.check_diff_scope:
-        checks.append(check_diff_scope(
-            worktree_path, base_branch, allowed_paths,
-            allowed_paths_error=allowed_paths_error,
-        ))
+        checks.append(
+            check_diff_scope(
+                worktree_path,
+                base_branch,
+                allowed_paths,
+                allowed_paths_error=allowed_paths_error,
+            )
+        )
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))
@@ -1518,31 +1541,48 @@ def run_mechanical_verification(
     # R8.1 policy envelope: opt-in ([policy] enabled). When disabled the
     # check is not appended, so existing runs are unchanged.
     if policy_config is not None and policy_config.enabled:
-        checks.append(check_policy_envelope(
-            worktree_path, base_branch, policy_config,
-        ))
+        checks.append(
+            check_policy_envelope(
+                worktree_path,
+                base_branch,
+                policy_config,
+            )
+        )
 
     # R8.5 Layer 0: opt-in ([adequacy] enabled), advisory unless the
     # level or config says block. Runs before the expensive layers so a
     # suite-weakening diff is reported even when mutation is off.
     if adequacy_config is not None and adequacy_config.enabled:
-        checks.append(check_test_adequacy(
-            worktree_path, base_branch, adequacy_config, autonomy_level,
-        ))
+        checks.append(
+            check_test_adequacy(
+                worktree_path,
+                base_branch,
+                adequacy_config,
+                autonomy_level,
+            )
+        )
 
     if config.dead_code_cleanup:
-        checks.append(check_dead_code(
-            worktree_path, base_branch,
-            config.dead_code_command, config.subprocess_timeout,
-            read_only=read_only,
-        ))
+        checks.append(
+            check_dead_code(
+                worktree_path,
+                base_branch,
+                config.dead_code_command,
+                config.subprocess_timeout,
+                read_only=read_only,
+            )
+        )
 
     if config.mutation_testing:
-        checks.append(check_mutation_score(
-            worktree_path, base_branch,
-            config.mutation_threshold, config.mutation_timeout,
-            read_only=read_only,
-        ))
+        checks.append(
+            check_mutation_score(
+                worktree_path,
+                base_branch,
+                config.mutation_threshold,
+                config.mutation_timeout,
+                read_only=read_only,
+            )
+        )
 
     if config.require_self_critique:
         # Read the log the engineer was actually pointed at: a factory
@@ -1560,26 +1600,30 @@ def run_mechanical_verification(
             progress_path = worktree_path / Path(config.progress_file_path)
         elif prd_path is not None:
             progress_path = worktree_path / component_progress_path(
-                prd_path, None,
+                prd_path,
+                None,
             )
         if progress_path is not None:
-            checks.append(check_self_critique(
-                progress_path, config.self_critique_min_bullets,
-            ))
+            checks.append(
+                check_self_critique(
+                    progress_path,
+                    config.self_critique_min_bullets,
+                )
+            )
 
-    if (
-        prd_path is not None
-        and fixtures_config is not None
-        and fixtures_config.enabled
-    ):
+    if prd_path is not None and fixtures_config is not None and fixtures_config.enabled:
         # Imported lazily: fixtures.py imports CheckResult/run_scrubbed
         # from this module, so a module-level import would be a cycle.
         from kstrl.fixtures import check_fixtures_from_prd
 
-        checks.append(check_fixtures_from_prd(
-            prd_path, worktree_path, fixtures_config,
-            component_id=component_id,
-        ))
+        checks.append(
+            check_fixtures_from_prd(
+                prd_path,
+                worktree_path,
+                fixtures_config,
+                component_id=component_id,
+            )
+        )
 
     passed = all(c.passed for c in checks)
     return VerificationResult(passed=passed, checks=checks)

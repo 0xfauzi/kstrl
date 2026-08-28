@@ -78,9 +78,7 @@ class FixturesConfig:
             snapshot_on_success=_parse_bool(
                 os.environ.get("KSTRL_FIXTURES_SNAPSHOT_ON_SUCCESS", "1")
             ),
-            snapshot_dir=Path(
-                os.environ.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".kstrl/snapshots")
-            ),
+            snapshot_dir=Path(os.environ.get("KSTRL_FIXTURES_SNAPSHOT_DIR", ".kstrl/snapshots")),
             timeout=float(os.environ.get("KSTRL_FIXTURES_TIMEOUT", "30")),
         )
 
@@ -123,7 +121,9 @@ class FixturesConfig:
 
 
 def run_cli_fixture(
-    fixture: Fixture, cwd: Path, timeout: float,
+    fixture: Fixture,
+    cwd: Path,
+    timeout: float,
 ) -> FixtureResult:
     """Run a CLI fixture by executing a command and checking output expectations.
 
@@ -181,9 +181,7 @@ def run_cli_fixture(
     if "exit_code" in fixture.expected:
         expected_code = fixture.expected["exit_code"]
         if result.returncode != expected_code:
-            failures.append(
-                f"exit code: expected {expected_code}, got {result.returncode}"
-            )
+            failures.append(f"exit code: expected {expected_code}, got {result.returncode}")
 
     # Check stdout_contains
     for substring in fixture.expected.get("stdout_contains", []):
@@ -224,8 +222,10 @@ _RESULT_MARKER = "KSTRL-FIXTURE-RESULT-V1:"
 # expected exception, unexpected exception, expected return, no expected
 # return (vacuous pass - rejected earlier by PRD validation).
 _FUNCTION_FIXTURE_RUNNER = (
-    "_MARKER = " + repr(_RESULT_MARKER) + "\n"
-    + '''
+    "_MARKER = "
+    + repr(_RESULT_MARKER)
+    + "\n"
+    + """
 import importlib
 import json
 import sys
@@ -292,7 +292,7 @@ def _main():
 
 
 _main()
-'''
+"""
 )
 
 
@@ -301,7 +301,7 @@ def _parse_runner_result(stdout: str) -> dict[str, Any] | None:
     for line in reversed(stdout.splitlines()):
         if line.startswith(_RESULT_MARKER):
             try:
-                payload = json.loads(line[len(_RESULT_MARKER):])
+                payload = json.loads(line[len(_RESULT_MARKER) :])
             except json.JSONDecodeError:
                 return None
             if isinstance(payload, dict):
@@ -311,7 +311,9 @@ def _parse_runner_result(stdout: str) -> dict[str, Any] | None:
 
 
 def run_function_fixture(
-    fixture: Fixture, cwd: Path, timeout: float,
+    fixture: Fixture,
+    cwd: Path,
+    timeout: float,
 ) -> FixtureResult:
     """Run a function fixture in a subprocess and check its reported result.
 
@@ -380,7 +382,11 @@ def run_function_fixture(
     # `ks sense` (R10.1) promises to leave the tree it measures alone;
     # the cache would never be reused anyway, since the process exits.
     argv = [
-        sys.executable, "-B", "-c", _FUNCTION_FIXTURE_RUNNER, spec_json,
+        sys.executable,
+        "-B",
+        "-c",
+        _FUNCTION_FIXTURE_RUNNER,
+        spec_json,
     ]
     try:
         result = run_scrubbed(argv, cwd=cwd, timeout=timeout)
@@ -439,10 +445,7 @@ def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
         return FixtureResult(
             fixture=fixture,
             passed=False,
-            message=(
-                f"Path {rel_path!r} must be relative to the worktree "
-                "with no '..' components"
-            ),
+            message=(f"Path {rel_path!r} must be relative to the worktree with no '..' components"),
         )
 
     full_path = cwd / rel
@@ -519,7 +522,9 @@ def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
 
 
 def _dispatch_fixture(
-    fixture: Fixture, cwd: Path, timeout: float,
+    fixture: Fixture,
+    cwd: Path,
+    timeout: float,
 ) -> FixtureResult:
     """Dispatch a fixture to the appropriate runner."""
     if fixture.fixture_type == "cli":
@@ -586,12 +591,12 @@ def check_fixtures(
 
     if component_id is not None:
         snapshot_dir = (
-            config.snapshot_dir
-            if config.snapshot_dir.is_absolute()
-            else cwd / config.snapshot_dir
+            config.snapshot_dir if config.snapshot_dir.is_absolute() else cwd / config.snapshot_dir
         )
         regressions = check_snapshot_regression(
-            component_id, results, snapshot_dir,
+            component_id,
+            results,
+            snapshot_dir,
         )
         if regressions:
             all_passed = False
@@ -636,10 +641,7 @@ def check_fixtures_from_prd(
         return CheckResult(
             name="fixtures",
             passed=False,
-            message=(
-                "PRD could not be read for the fixtures check "
-                "(failing closed)"
-            ),
+            message=("PRD could not be read for the fixtures check (failing closed)"),
             details=[f"Error: {exc}"],
             duration_seconds=time.monotonic() - start,
         )
@@ -684,9 +686,7 @@ def load_fixtures_from_prd_data(prd_data: dict[str, Any]) -> list[Fixture]:
                 expected=entry.get("expected", {}),
             )
         except KeyError as exc:
-            raise ValueError(
-                f"fixtures[{i}]: missing required key {exc.args[0]!r}"
-            ) from exc
+            raise ValueError(f"fixtures[{i}]: missing required key {exc.args[0]!r}") from exc
         fixtures.append(fixture)
 
     return fixtures
@@ -710,11 +710,13 @@ def save_snapshot(
     snapshot_entries = []
     for fixture, result in zip(fixtures, results, strict=True):
         if result.passed:
-            snapshot_entries.append({
-                "description": fixture.description,
-                "fixture_type": fixture.fixture_type,
-                "actual": result.actual,
-            })
+            snapshot_entries.append(
+                {
+                    "description": fixture.description,
+                    "fixture_type": fixture.fixture_type,
+                    "actual": result.actual,
+                }
+            )
 
     snapshot_data = {
         "component_id": component_id,
@@ -723,7 +725,9 @@ def save_snapshot(
     }
 
     fd, tmp_name = tempfile.mkstemp(
-        dir=snapshot_dir, prefix=f".{component_id}-", suffix=".tmp",
+        dir=snapshot_dir,
+        prefix=f".{component_id}-",
+        suffix=".tmp",
     )
     try:
         with os.fdopen(fd, "w") as fh:
@@ -758,10 +762,7 @@ def check_snapshot_regression(
     except (json.JSONDecodeError, OSError):
         return ["Failed to read snapshot file - cannot check for regressions"]
 
-    previous_entries = {
-        entry["description"]: entry
-        for entry in snapshot_data.get("entries", [])
-    }
+    previous_entries = {entry["description"]: entry for entry in snapshot_data.get("entries", [])}
 
     regressions: list[str] = []
 
@@ -776,8 +777,7 @@ def check_snapshot_regression(
         # Previously passed but now fails
         if not result.passed:
             regressions.append(
-                f"Regression in '{description}': previously passed, now fails "
-                f"- {result.message}"
+                f"Regression in '{description}': previously passed, now fails - {result.message}"
             )
             continue
 

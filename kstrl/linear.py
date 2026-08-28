@@ -111,9 +111,7 @@ class LinearConfig:
         if self.timeout_seconds <= 0:
             raise ValueError("LinearConfig.timeout_seconds must be positive")
         if self.min_request_interval < 0:
-            raise ValueError(
-                "LinearConfig.min_request_interval must not be negative"
-            )
+            raise ValueError("LinearConfig.min_request_interval must not be negative")
 
     @classmethod
     def from_env(cls) -> LinearConfig:
@@ -125,9 +123,7 @@ class LinearConfig:
             api_url=os.environ.get("KSTRL_LINEAR_API_URL", "https://api.linear.app/graphql"),
             dry_run=_parse_bool(os.environ.get("KSTRL_LINEAR_DRY_RUN")),
             timeout_seconds=float(os.environ.get("KSTRL_LINEAR_TIMEOUT", "30")),
-            min_request_interval=float(
-                os.environ.get("KSTRL_LINEAR_MIN_INTERVAL", "0.5")
-            ),
+            min_request_interval=float(os.environ.get("KSTRL_LINEAR_MIN_INTERVAL", "0.5")),
         )
 
     @classmethod
@@ -169,9 +165,7 @@ class LinearConfig:
         if "KSTRL_LINEAR_TIMEOUT" in os.environ:
             config.timeout_seconds = float(os.environ["KSTRL_LINEAR_TIMEOUT"])
         if "KSTRL_LINEAR_MIN_INTERVAL" in os.environ:
-            config.min_request_interval = float(
-                os.environ["KSTRL_LINEAR_MIN_INTERVAL"]
-            )
+            config.min_request_interval = float(os.environ["KSTRL_LINEAR_MIN_INTERVAL"])
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
         return config
@@ -242,8 +236,7 @@ class LinearClient:
         token = os.environ.get(self.config.token_env) or ""
         if not token:
             raise LinearError(
-                f"linear: env var {self.config.token_env} is unset or "
-                "empty; cannot authenticate"
+                f"linear: env var {self.config.token_env} is unset or empty; cannot authenticate"
             )
         return token
 
@@ -302,9 +295,7 @@ class LinearClient:
                 )
         return payload
 
-    def _post(
-        self, operation: str, query: str, variables: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    def _post(self, operation: str, query: str, variables: dict[str, Any]) -> dict[str, Any] | None:
         """One HTTP round trip. None means RATELIMITED (retryable)."""
         self._throttle()
         body = json.dumps({"query": query, "variables": variables})
@@ -319,9 +310,7 @@ class LinearClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(
-                request, timeout=self.config.timeout_seconds
-            ) as response:
+            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raw = exc.read()
@@ -335,29 +324,22 @@ class LinearClient:
                 codes=codes,
             ) from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise LinearError(
-                f"linear: {operation} transport failure: {exc}"
-            ) from exc
+            raise LinearError(f"linear: {operation} transport failure: {exc}") from exc
         parsed = self._parse_body(raw)
         if parsed is None:
-            raise LinearError(
-                f"linear: {operation} returned a non-JSON response"
-            )
+            raise LinearError(f"linear: {operation} returned a non-JSON response")
         codes = self._error_codes(parsed)
         if _RATELIMITED in codes:
             return None
         errors = parsed.get("errors")
         if isinstance(errors, list) and errors:
             raise LinearError(
-                f"linear: {operation} returned errors: "
-                f"{self._error_summary(parsed, raw)}",
+                f"linear: {operation} returned errors: {self._error_summary(parsed, raw)}",
                 codes=codes,
             )
         data = parsed.get("data")
         if not isinstance(data, dict):
-            raise LinearError(
-                f"linear: {operation} response has no data object"
-            )
+            raise LinearError(f"linear: {operation} response has no data object")
         return data
 
     @staticmethod
@@ -389,11 +371,7 @@ class LinearClient:
     @staticmethod
     def _error_summary(parsed: dict[str, Any] | None, raw: bytes) -> str:
         if parsed is not None and isinstance(parsed.get("errors"), list):
-            messages = [
-                str(e.get("message", ""))
-                for e in parsed["errors"]
-                if isinstance(e, dict)
-            ]
+            messages = [str(e.get("message", "")) for e in parsed["errors"] if isinstance(e, dict)]
             summary = "; ".join(m for m in messages if m)
             if summary:
                 return summary[:_MAX_ERROR_BODY_CHARS]
@@ -401,9 +379,7 @@ class LinearClient:
 
     # -- typed operations ---------------------------------------------
 
-    def create_project(
-        self, name: str, team_id: str, client_id: str, description: str = ""
-    ) -> str:
+    def create_project(self, name: str, team_id: str, client_id: str, description: str = "") -> str:
         """Create a project under one team; returns the project UUID."""
         query = (
             "mutation ProjectCreate($input: ProjectCreateInput!) {"
@@ -432,9 +408,7 @@ class LinearClient:
         if not isinstance(payload, dict) or not payload.get("success"):
             raise LinearError("linear: projectCreate did not report success")
         project = payload.get("project")
-        if not isinstance(project, dict) or not isinstance(
-            project.get("id"), str
-        ):
+        if not isinstance(project, dict) or not isinstance(project.get("id"), str):
             raise LinearError("linear: projectCreate returned no project id")
         return str(project["id"])
 
@@ -489,9 +463,7 @@ class LinearClient:
             }
         }
         try:
-            data = self.execute(
-                "issueCreate", query, {"input": issue_input}, dry_data
-            )
+            data = self.execute("issueCreate", query, {"input": issue_input}, dry_data)
         except LinearError:
             existing = self.get_issue(client_id)
             if existing is not None:
@@ -499,9 +471,7 @@ class LinearClient:
             raise
         return self._issue_ref(data, "issueCreate")
 
-    def update_issue(
-        self, issue_id: str, title: str, description: str
-    ) -> IssueRef:
+    def update_issue(self, issue_id: str, title: str, description: str) -> IssueRef:
         """Update an existing issue's title and description."""
         query = (
             "mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) {"
@@ -531,10 +501,7 @@ class LinearClient:
         - the caller re-raises the original create failure when the
         issue genuinely does not exist.
         """
-        query = (
-            "query Issue($id: String!) {"
-            " issue(id: $id) { id identifier } }"
-        )
+        query = "query Issue($id: String!) { issue(id: $id) { id identifier } }"
         try:
             data = self.execute(
                 "issue",
@@ -583,9 +550,7 @@ class LinearClient:
             or not isinstance(issue.get("id"), str)
             or not isinstance(issue.get("identifier"), str)
         ):
-            raise LinearError(
-                f"linear: {operation} returned a malformed issue object"
-            )
+            raise LinearError(f"linear: {operation} returned a malformed issue object")
         return IssueRef(id=str(issue["id"]), identifier=str(issue["identifier"]))
 
 
@@ -653,8 +618,7 @@ def sync_decompose(
             team_id=config.team_id,
             client_id=deterministic_uuid(project_key),
             description=(
-                f"ks factory run for spec '{project_name}'."
-                f"{_external_key_footer(project_key)}"
+                f"ks factory run for spec '{project_name}'.{_external_key_footer(project_key)}"
             ),
         )
     except LinearError as exc:
@@ -693,10 +657,7 @@ def sync_decompose(
         # triage-enabled team routes there automatically, and no
         # projectId - spec problems are about the spec, not a component.
         external_key = f"{sync_key}:spec:{index}"
-        body = (
-            f"Severity: {issue.severity}\nKind: {issue.kind}\n\n"
-            f"{issue.summary}"
-        )
+        body = f"Severity: {issue.severity}\nKind: {issue.kind}\n\n{issue.summary}"
         if issue.location:
             body += f"\n\nLocation: {issue.location}"
         if issue.suggestion:
@@ -810,9 +771,7 @@ class LinearSink:
             client_id=deterministic_uuid(f"{self._run_id}:{dedupe_key}"),
         )
 
-    def _comment_body(
-        self, event_type: str, data: dict[str, Any]
-    ) -> str | None:
+    def _comment_body(self, event_type: str, data: dict[str, Any]) -> str | None:
         if event_type == "component_failed":
             error = str(data.get("error", ""))[:2000]
             return f"ks run `{self._run_id}`: component failed.\n\n{error}"
@@ -824,7 +783,8 @@ class LinearSink:
             # then the only honest reading.
             ceilings = data.get("ceilings") or ()
             kind = budget_halt_kind(
-                str(data.get("condition", "")), ceilings,
+                str(data.get("condition", "")),
+                ceilings,
                 str(data.get("ceiling", "")),
             )
             if kind == "unenforceable":
@@ -867,9 +827,7 @@ def build_linear_sink(
     if not config.enabled:
         return None
     issue_ids = {
-        comp.id: comp.linear_issue_id
-        for comp in manifest.components
-        if comp.linear_issue_id
+        comp.id: comp.linear_issue_id for comp in manifest.components if comp.linear_issue_id
     }
     if not issue_ids:
         warn(
@@ -878,9 +836,7 @@ def build_linear_sink(
         )
         return None
     if not config.dry_run and not (os.environ.get(config.token_env) or ""):
-        warn(
-            f"linear: env var {config.token_env} is unset; sink inactive"
-        )
+        warn(f"linear: env var {config.token_env} is unset; sink inactive")
         return None
     client = LinearClient(config, warn=warn)
     return LinearSink(client, issue_ids, run_id=run_id, warn=warn)

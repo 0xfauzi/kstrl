@@ -55,7 +55,8 @@ class TestStopController:
         seconds: list[bool] = []
         before = signal.getsignal(signal.SIGTERM)
         uninstall = install_signal_handlers(
-            stop, on_second=lambda: seconds.append(True),
+            stop,
+            on_second=lambda: seconds.append(True),
         )
         try:
             handler = signal.getsignal(signal.SIGTERM)
@@ -94,7 +95,10 @@ class TestWaitInterruptible:
         threading.Thread(target=_later).start()
         started = time.monotonic()
         done, stopped = _wait_interruptible(
-            {future}, 30.0, stop, slice_seconds=0.2,
+            {future},
+            30.0,
+            stop,
+            slice_seconds=0.2,
         )
         elapsed = time.monotonic() - started
         assert stopped is True
@@ -107,7 +111,10 @@ class TestWaitInterruptible:
         future: Future[Any] = Future()
         stop = StopController()
         done, stopped = _wait_interruptible(
-            {future}, 0.2, stop, slice_seconds=0.1,
+            {future},
+            0.2,
+            stop,
+            slice_seconds=0.1,
         )
         assert stopped is False
         assert done == set()
@@ -151,7 +158,11 @@ class TestAbortInflight:
         stop.request("second")
 
         _abort_inflight(
-            executor, {}, Mock(), Mock(), stop,  # type: ignore[arg-type]
+            executor,
+            {},
+            Mock(),
+            Mock(),
+            stop,  # type: ignore[arg-type]
             term_grace=30.0,
         )
 
@@ -166,7 +177,11 @@ class TestAbortInflight:
         stop.request("first")
 
         _abort_inflight(
-            executor, {}, Mock(), Mock(), stop,  # type: ignore[arg-type]
+            executor,
+            {},
+            Mock(),
+            Mock(),
+            stop,  # type: ignore[arg-type]
             term_grace=30.0,
         )
 
@@ -179,7 +194,9 @@ class TestAgentGroupKill:
         """A live DeadlineStreamer child (own session) dies on the
         shutdown group-kill; nothing is orphaned."""
         streamer = DeadlineStreamer(
-            ["sh", "-c", "sleep 60"], timeout=60.0, term_grace=1.0,
+            ["sh", "-c", "sleep 60"],
+            timeout=60.0,
+            term_grace=1.0,
         )
         pid = streamer._proc.pid
         time.sleep(0.1)
@@ -206,12 +223,19 @@ class TestFactoryShutdown:
             launched.append(comp_id)
             return ComponentResult(comp_id, success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
                 stop=stop,
             )
         assert launched == []  # nothing started after the stop
@@ -219,7 +243,8 @@ class TestFactoryShutdown:
         assert manifest.completed_at  # terminal state stamped
 
     def test_stop_mid_run_aborts_inflight_and_records(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Two components; the stop fires while comp-a's worker runs.
         comp-a is recorded aborted, comp-b never launches, cleanup and
@@ -235,12 +260,19 @@ class TestFactoryShutdown:
             return ComponentResult(comp_id, success=True, iterations=1)
 
         buf = io.StringIO()
-        with patch(
-            "kstrl.factory._run_component", side_effect=slow_component,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=slow_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True, file=buf), root,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=buf),
+                root,
                 stop=stop,
             )
 
@@ -259,17 +291,23 @@ class TestFactoryShutdown:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         result = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(
-                manifest, _factory_config(root), _make_base_config(root),
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
                 run_id="factory-20260720-999999.000000-fixed",
             )
         assert (
-            root / ".kstrl" / "runs" / "factory-20260720-999999.000000-fixed"
-            / "events.jsonl"
+            root / ".kstrl" / "runs" / "factory-20260720-999999.000000-fixed" / "events.jsonl"
         ).exists()
 
 
@@ -286,8 +324,9 @@ class TestLoopStopCheck:
             def name(self) -> str:
                 return "counting"
 
-            def run(self, prompt: str, cwd: Path | None = None,
-                    timeout: float | None = None) -> Any:
+            def run(
+                self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+            ) -> Any:
                 self.runs += 1
                 yield "line"
 
@@ -307,16 +346,22 @@ class TestLoopStopCheck:
 
         agent = CountingAgent()
         config = KstrlConfig(
-            max_iterations=5, sleep_seconds=0,
+            max_iterations=5,
+            sleep_seconds=0,
             prompt_file=tmp_path / "prompt.md",
             prd_file=tmp_path / "prd.json",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
         (tmp_path / "prompt.md").write_text("p")
         result = run_loop(
-            config, PlainUI(no_color=True, file=io.StringIO()), agent,
-            tmp_path, stop_check=stop_after_first,
+            config,
+            PlainUI(no_color=True, file=io.StringIO()),
+            agent,
+            tmp_path,
+            stop_check=stop_after_first,
         )
         assert agent.runs == 1
         assert result.exit_code == 130
@@ -326,7 +371,8 @@ class TestLoopStopCheck:
 @pytest.mark.spine
 class TestWorkerSigterm:
     def test_pool_worker_sigterm_kills_agent_group(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A REAL pool worker running a sleeping agent: SIGTERM to the
         worker must kill the agent's process group (no orphans) and the
@@ -344,7 +390,8 @@ class TestWorkerSigterm:
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 out = subprocess.run(
-                    ["pgrep", "-f", "sleep 60"], capture_output=True,
+                    ["pgrep", "-f", "sleep 60"],
+                    capture_output=True,
                 )
                 if out.returncode == 0:
                     break
@@ -354,8 +401,11 @@ class TestWorkerSigterm:
         threading.Thread(target=stop_soon).start()
         with patch("kstrl.git.get_diff_content", return_value=""):
             result = run_factory(
-                manifest, config, base,
-                PlainUI(no_color=True, file=io.StringIO()), root,
+                manifest,
+                config,
+                base,
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
                 stop=stop,
             )
         assert result.exit_code == 130
@@ -363,7 +413,8 @@ class TestWorkerSigterm:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             out = subprocess.run(
-                ["pgrep", "-f", "sleep 60"], capture_output=True,
+                ["pgrep", "-f", "sleep 60"],
+                capture_output=True,
             )
             if out.returncode != 0:
                 break

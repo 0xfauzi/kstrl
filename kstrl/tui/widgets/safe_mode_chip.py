@@ -53,10 +53,7 @@ def render_banner(reasons: list[SafeModeReason], *, key: str = "f2") -> str:
     for reason in reasons:
         if reason.source not in seen:
             seen.append(reason.source)
-    return (
-        f"▲ safe mode: {len(reasons)} reason(s) - {', '.join(seen)} "
-        f"- press {key} for why"
-    )
+    return f"▲ safe mode: {len(reasons)} reason(s) - {', '.join(seen)} - press {key} for why"
 
 
 class SafeModeChip(Static):

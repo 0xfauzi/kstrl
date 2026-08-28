@@ -102,17 +102,19 @@ def load_runs(path: Path) -> list[RunRecord]:
         for row in csv.DictReader(handle, delimiter="\t"):
             if not row.get("run_id"):
                 continue
-            runs.append(RunRecord(
-                run_id=row.get("run_id", ""),
-                timestamp=row.get("timestamp", ""),
-                project=row.get("project", ""),
-                components_total=_as_int(row.get("components_total", "0")),
-                completed=_as_int(row.get("completed", "0")),
-                failed=_as_int(row.get("failed", "0")),
-                skipped=_as_int(row.get("skipped", "0")),
-                retry_rate=_as_float(row.get("retry_rate", "0")),
-                common_failure=(row.get("common_failure") or "").strip(),
-            ))
+            runs.append(
+                RunRecord(
+                    run_id=row.get("run_id", ""),
+                    timestamp=row.get("timestamp", ""),
+                    project=row.get("project", ""),
+                    components_total=_as_int(row.get("components_total", "0")),
+                    completed=_as_int(row.get("completed", "0")),
+                    failed=_as_int(row.get("failed", "0")),
+                    skipped=_as_int(row.get("skipped", "0")),
+                    retry_rate=_as_float(row.get("retry_rate", "0")),
+                    common_failure=(row.get("common_failure") or "").strip(),
+                )
+            )
     return runs
 
 
@@ -148,32 +150,33 @@ class ReplayReport:
             "",
             "Thresholds replayed (ALL UNMEASURED PLACEHOLDERS):",
         ]
+        lines.extend(f"  {name:<34} {value}" for name, value in sorted(self.thresholds.items()))
         lines.extend(
-            f"  {name:<34} {value}"
-            for name, value in sorted(self.thresholds.items())
+            [
+                "",
+                f"Would-have-promoted:  {len(self.would_promote)}",
+                *(f"  + {entry}" for entry in self.would_promote),
+                f"Would-have-demoted:   {len(self.would_demote)}",
+                *(f"  - {entry}" for entry in self.would_demote),
+                "",
+                f"Final level after replay: L{self.final_level}",
+                "",
+            ]
         )
-        lines.extend([
-            "",
-            f"Would-have-promoted:  {len(self.would_promote)}",
-            *(f"  + {entry}" for entry in self.would_promote),
-            f"Would-have-demoted:   {len(self.would_demote)}",
-            *(f"  - {entry}" for entry in self.would_demote),
-            "",
-            f"Final level after replay: L{self.final_level}",
-            "",
-        ])
         if not self.sufficient_data:
-            lines.extend([
-                "VERDICT: INSUFFICIENT DATA.",
-                f"  {self.decisive_runs} decisive run(s) against a "
-                f"MIN_DECISIVE_RUNS floor of {MIN_DECISIVE_RUNS}.",
-                "  No threshold above can be calibrated from this sample, and",
-                "  none should gate a real transition yet. The ladder is safe",
-                "  to run - L1 grants nothing - but promotion beyond L1 rests",
-                "  on evidence that does not exist yet.",
-                "  Required: more real factory runs (see docs/dark-factory-roadmap.md,",
-                "  'User-run measurements required').",
-            ])
+            lines.extend(
+                [
+                    "VERDICT: INSUFFICIENT DATA.",
+                    f"  {self.decisive_runs} decisive run(s) against a "
+                    f"MIN_DECISIVE_RUNS floor of {MIN_DECISIVE_RUNS}.",
+                    "  No threshold above can be calibrated from this sample, and",
+                    "  none should gate a real transition yet. The ladder is safe",
+                    "  to run - L1 grants nothing - but promotion beyond L1 rests",
+                    "  on evidence that does not exist yet.",
+                    "  Required: more real factory runs (see docs/dark-factory-roadmap.md,",
+                    "  'User-run measurements required').",
+                ]
+            )
         else:
             lines.append(
                 "VERDICT: sample meets the minimum; thresholds may be tuned "
@@ -220,10 +223,7 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
                     f"L{record.from_level} -> L{record.to_level} "
                     f"({record.trigger})"
                 )
-        if (
-            state.autonomy_level is not AutonomyLevel.L4_DEPLOY
-            and not state.promotion_blockers()
-        ):
+        if state.autonomy_level is not AutonomyLevel.L4_DEPLOY and not state.promotion_blockers():
             # Advance the SIMULATED level, not just the report. Recording
             # eligibility without moving would pin the replay at L1
             # forever: it would re-report the same L2 opportunity on every

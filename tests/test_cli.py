@@ -88,9 +88,7 @@ class TestCliValidation:
         kstrl_dir = project / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
@@ -122,9 +120,7 @@ class TestCliValidation:
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "understand_prompt.md").write_text("test prompt")
         (kstrl_dir / "codebase_map.md").write_text("# Map\n")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
@@ -150,9 +146,7 @@ class TestCliValidation:
         feature_dir.mkdir(parents=True)
         (kstrl_dir / "feature_understand_prompt.md").write_text("test prompt")
         (kstrl_dir / "codebase_map.md").write_text("# Map\n")
-        (feature_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (feature_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         runner = CliRunner()
         monkeypatch.chdir(tmp_path)
@@ -197,14 +191,10 @@ class TestRunStructuralOverrideNotices:
     def test_pause_before_pr_merge_not_handled_pre_resolution(self) -> None:
         """The gate flag resolves only after the autonomy ladder runs, so
         the pre-resolution notices deliberately ignore it (review P1)."""
-        assert _run_structural_override_notices(
-            FactoryConfig(pause_before_pr_merge=True)
-        ) == []
+        assert _run_structural_override_notices(FactoryConfig(pause_before_pr_merge=True)) == []
 
     def test_non_default_structural_field_is_named(self) -> None:
-        notices = _run_structural_override_notices(
-            FactoryConfig(max_parallel=8, single_pr=True)
-        )
+        notices = _run_structural_override_notices(FactoryConfig(max_parallel=8, single_pr=True))
         assert any("max_parallel = 8" in n for n in notices)
         assert any("single_pr = true" in n for n in notices)
         assert len(notices) == 2
@@ -212,9 +202,10 @@ class TestRunStructuralOverrideNotices:
     def test_default_valued_fields_stay_silent(self) -> None:
         """create_prs defaults to True and is forced to False on every
         `ks run`; warning about the default would fire unconditionally."""
-        assert _run_structural_override_notices(
-            FactoryConfig(create_prs=True, use_worktrees=True)
-        ) == []
+        assert (
+            _run_structural_override_notices(FactoryConfig(create_prs=True, use_worktrees=True))
+            == []
+        )
 
     def _scaffold_project(self, tmp_path: Path, toml_body: str = "") -> Path:
         """A real git repo shaped like a kstrl project: the run must be
@@ -225,9 +216,7 @@ class TestRunStructuralOverrideNotices:
         kstrl_dir = project / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
         if toml_body:
             (project / "kstrl.toml").write_text(toml_body)
         spine_git("init", "-q", "-b", "main", cwd=project)
@@ -244,18 +233,20 @@ class TestRunStructuralOverrideNotices:
             [
                 "run",
                 max_iterations,
-                "--root", str(project),
-                "--agent-cmd", "printf '<promise>COMPLETE</promise>\\n'",
-                "--sleep", "0",
+                "--root",
+                str(project),
+                "--agent-cmd",
+                "printf '<promise>COMPLETE</promise>\\n'",
+                "--sleep",
+                "0",
                 "--no-verify",
-                "--ui", "plain",
+                "--ui",
+                "plain",
                 "--no-color",
             ],
         )
 
-    def test_run_emits_notice_when_toml_sets_merge_gate(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_run_emits_notice_when_toml_sets_merge_gate(self, tmp_path: Path, monkeypatch) -> None:
         # review_mode=skip keeps the run LLM-free: without it the review
         # phase auto-detects a real agent CLI and makes a paid call.
         monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
@@ -269,14 +260,10 @@ class TestRunStructuralOverrideNotices:
         assert "pause_before_pr_merge" in result.output
         assert "merge gate" in result.output
 
-    def test_run_stays_silent_when_merge_gate_unset(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_run_stays_silent_when_merge_gate_unset(self, tmp_path: Path, monkeypatch) -> None:
         monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
         monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
-        project = self._scaffold_project(
-            tmp_path, '[factory]\nreview_mode = "skip"\n'
-        )
+        project = self._scaffold_project(tmp_path, '[factory]\nreview_mode = "skip"\n')
         result = self._invoke_run(project)
         assert result.exit_code == 0, result.output
         assert "pause_before_pr_merge" not in result.output
@@ -297,24 +284,18 @@ class TestRunStructuralOverrideNotices:
         """
         monkeypatch.delenv("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE", raising=False)
         monkeypatch.delenv("KSTRL_AUTONOMY_ENABLED", raising=False)
-        project = self._scaffold_project(
-            tmp_path, "[autonomy]\nenabled = true\n"
-        )
+        project = self._scaffold_project(tmp_path, "[autonomy]\nenabled = true\n")
         result = self._invoke_run(project, max_iterations="0")
         assert result.exit_code == 1, result.output
         assert "Autonomy" in result.output
-        assert "pause_before_pr_merge is on but create_prs is off" in (
-            result.output
-        )
+        assert "pause_before_pr_merge is on but create_prs is off" in (result.output)
         assert "merge gate can never run" in result.output
 
 
 class TestDecomposeBlockerOutput:
     """R1.7: the CLI points the user at the persisted spec-issues file."""
 
-    def test_prints_artifact_path_on_halt(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_prints_artifact_path_on_halt(self, tmp_path: Path, monkeypatch) -> None:
         import kstrl.cli as cli_mod
         from kstrl.decompose import SpecBlockerError, SpecIssue
 
@@ -324,11 +305,13 @@ class TestDecomposeBlockerOutput:
 
         def fake_decompose(**kwargs: object) -> None:
             raise SpecBlockerError(
-                [SpecIssue(
-                    severity="blocker",
-                    kind="ambiguity",
-                    summary="spec is too vague",
-                )],
+                [
+                    SpecIssue(
+                        severity="blocker",
+                        kind="ambiguity",
+                        summary="spec is too vague",
+                    )
+                ],
                 artifact_path=artifact,
             )
 
@@ -339,14 +322,17 @@ class TestDecomposeBlockerOutput:
             cli,
             [
                 "decompose",
-                "--spec", str(spec_file),
-                "--project-name", "test",
-                "--agent-cmd", "true",
-                "--ui", "plain",
+                "--spec",
+                str(spec_file),
+                "--project-name",
+                "test",
+                "--agent-cmd",
+                "true",
+                "--ui",
+                "plain",
                 "--no-color",
             ],
         )
         assert result.exit_code == 2
         assert "spec is too vague" in result.output
         assert str(artifact) in result.output
-

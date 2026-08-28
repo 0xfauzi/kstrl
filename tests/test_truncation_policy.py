@@ -63,7 +63,8 @@ from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 UI = PlainUI(no_color=True)
 
 _VERIFICATION = VerificationResult(
-    passed=True, checks=[CheckResult("test_suite", True, "ok")],
+    passed=True,
+    checks=[CheckResult("test_suite", True, "ok")],
 )
 
 
@@ -82,7 +83,10 @@ class CountingAgent:
         return "counting-agent"
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         idx = min(self.calls, len(self._outputs) - 1)
         self.calls += 1
@@ -98,67 +102,75 @@ def _story(story_id: str, verdict: str) -> dict[str, object]:
     return {
         "storyId": story_id,
         "storyTitle": f"Story {story_id}",
-        "criteria": [{
-            "criterion": "AC1",
-            "verdict": verdict,
-            "explanation": "checked",
-            "suggestion": "",
-        }],
+        "criteria": [
+            {
+                "criterion": "AC1",
+                "verdict": verdict,
+                "explanation": "checked",
+                "suggestion": "",
+            }
+        ],
     }
 
 
 def _review_json(verdict: str = "pass") -> str:
-    return json.dumps({
-        "stories": [_story("US-001", verdict)],
-        "concerns": [],
+    return json.dumps(
+        {
+            "stories": [_story("US-001", verdict)],
+            "concerns": [],
+            "exhaustively_searched": True,
+            "overallNotes": "",
+        }
+    )
+
+
+_CLEAN_SECURITY_JSON = json.dumps(
+    {
+        "findings": [],
         "exhaustively_searched": True,
         "overallNotes": "",
-    })
-
-
-_CLEAN_SECURITY_JSON = json.dumps({
-    "findings": [],
-    "exhaustively_searched": True,
-    "overallNotes": "",
-})
+    }
+)
 
 
 def _write_prd(path: Path, story_ids: list[str]) -> None:
-    path.write_text(json.dumps({
-        "branchName": "test",
-        "userStories": [
+    path.write_text(
+        json.dumps(
             {
-                "id": sid, "title": f"Story {sid}",
-                "acceptanceCriteria": ["AC1"], "priority": 1,
-                "passes": True, "notes": "",
+                "branchName": "test",
+                "userStories": [
+                    {
+                        "id": sid,
+                        "title": f"Story {sid}",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                    for sid in story_ids
+                ],
             }
-            for sid in story_ids
-        ],
-    }))
+        )
+    )
 
 
 def _file_segment(name: str, payload_chars: int) -> str:
     """One per-file segment of a synthetic unified diff, ~payload_chars
     long."""
-    header = (
-        f"diff --git a/{name} b/{name}\n"
-        f"--- a/{name}\n"
-        f"+++ b/{name}\n"
-        "@@ -0,0 +1 @@\n"
-    )
+    header = f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n@@ -0,0 +1 @@\n"
     line = "+" + "x" * 98 + "\n"
     n_lines = max(1, (payload_chars - len(header)) // 100)
     return header + line * n_lines
 
 
 def _synthetic_diff(n_files: int, payload_chars: int) -> str:
-    return "".join(
-        _file_segment(f"src/f{i}.py", payload_chars) for i in range(n_files)
-    )
+    return "".join(_file_segment(f"src/f{i}.py", payload_chars) for i in range(n_files))
 
 
 def _multi_hunk_segment(
-    name: str, n_hunks: int, hunk_payload_chars: int,
+    name: str,
+    n_hunks: int,
+    hunk_payload_chars: int,
 ) -> str:
     """One file's diff carrying ``n_hunks`` hunks.
 
@@ -167,16 +179,11 @@ def _multi_hunk_segment(
     per-chunk budget on its own, but which has plenty of internal hunk
     boundaries to split on.
     """
-    header = (
-        f"diff --git a/{name} b/{name}\n"
-        f"--- a/{name}\n"
-        f"+++ b/{name}\n"
-    )
+    header = f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n"
     line = "+" + "x" * 98 + "\n"
     n_lines = max(1, hunk_payload_chars // 100)
     hunks = "".join(
-        f"@@ -{i * 50 + 1},0 +{i * 50 + 1},{n_lines} @@ def test_{i}()\n"
-        + line * n_lines
+        f"@@ -{i * 50 + 1},0 +{i * 50 + 1},{n_lines} @@ def test_{i}()\n" + line * n_lines
         for i in range(n_hunks)
     )
     return header + hunks
@@ -213,7 +220,8 @@ _CONTINUED_PART_RE = re.compile(
     re.MULTILINE,
 )
 _FIRST_PART_RE = re.compile(
-    r"^# \[kstrl R1\.4\] file part \d+ of \d+: [^\n]*\n", re.MULTILINE,
+    r"^# \[kstrl R1\.4\] file part \d+ of \d+: [^\n]*\n",
+    re.MULTILINE,
 )
 
 
@@ -272,9 +280,7 @@ class TestSplitDiffForPrompt:
         assert len(chunks) >= 2
         for i, chunk in enumerate(chunks, 1):
             assert len(chunk) <= 1000
-            assert chunk.startswith(
-                f"# [kstrl R1.4] diff chunk {i} of {len(chunks)}"
-            )
+            assert chunk.startswith(f"# [kstrl R1.4] diff chunk {i} of {len(chunks)}")
         # Reassembly invariant: dropping each chunk's header line
         # reproduces the input exactly - chunking never loses content.
         reassembled = "".join(c.split("\n", 1)[1] for c in chunks)
@@ -299,9 +305,7 @@ class TestSplitDiffForPrompt:
             split_diff_for_prompt(diff, limit=1000)
 
     def test_oversized_file_without_hunks_raises(self) -> None:
-        diff = (
-            "diff --git a/x.bin b/x.bin\nBinary files differ\n" + "x" * 2000
-        )
+        diff = "diff --git a/x.bin b/x.bin\nBinary files differ\n" + "x" * 2000
         with pytest.raises(DiffUnsplittableError, match="no '@@ ' hunk"):
             split_diff_for_prompt(diff, limit=1000)
 
@@ -378,10 +382,7 @@ class TestSplitWithinFile:
         diff = self._production_shape()
         chunks = split_diff_for_prompt(diff)
         for chunk in chunks:
-            assert (
-                "diff --git a/tests/test_purity.py b/tests/test_purity.py"
-                in chunk
-            )
+            assert "diff --git a/tests/test_purity.py b/tests/test_purity.py" in chunk
             assert "--- a/tests/test_purity.py" in chunk
             assert "+++ b/tests/test_purity.py" in chunk
 
@@ -391,10 +392,7 @@ class TestSplitWithinFile:
         chunks = split_diff_for_prompt(diff)
         n = len(chunks)
         for i, chunk in enumerate(chunks, 1):
-            assert (
-                f"# [kstrl R1.4] file part {i} of {n}: tests/test_purity.py"
-                in chunk
-            )
+            assert f"# [kstrl R1.4] file part {i} of {n}: tests/test_purity.py" in chunk
             # The chunk header states the true split granularity.
             assert chunk.startswith(
                 f"# [kstrl R1.4] diff chunk {i} of {n}: oversized diff "
@@ -454,9 +452,7 @@ class TestPartMarkerWidthFromPartCount:
     """
 
     PATH = "xx.py"
-    HEADER = (
-        f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
-    )
+    HEADER = f"diff --git a/{PATH} b/{PATH}\n--- a/{PATH}\n+++ b/{PATH}\n"
 
     def _reviewer_case(self) -> str:
         """The reviewer's reproduction: ONE 49,706-char hunk followed by
@@ -510,9 +506,7 @@ class TestPartMarkerWidthFromPartCount:
         costs 2 chars per part - just enough to stop two hunks sharing a
         part, doubling the reviewer passes (100 chunks instead of 50).
         """
-        diff = self.HEADER + "".join(
-            _hunk_of_size(i + 1, 2352) for i in range(100)
-        )
+        diff = self.HEADER + "".join(_hunk_of_size(i + 1, 2352) for i in range(100))
         chunks = split_diff_for_prompt(diff, limit=5000)
         assert len(chunks) == 50
         for chunk in chunks:
@@ -526,9 +520,7 @@ class TestPartMarkerWidthFromPartCount:
         is ever reached the diff must fail closed like any other
         unsplittable diff - never spin, never emit parts whose markers
         disagree with the rendered part count."""
-        diff = self.HEADER + "".join(
-            _hunk_of_size(i + 1, 2352) for i in range(100)
-        )
+        diff = self.HEADER + "".join(_hunk_of_size(i + 1, 2352) for i in range(100))
         # This shape needs two rounds (assume 1 part -> pack 50 -> 50),
         # so a one-round budget cannot settle it.
         with patch("kstrl.git._PART_COUNT_FIXED_POINT_ROUNDS", 1):
@@ -539,8 +531,10 @@ class TestPartMarkerWidthFromPartCount:
         """The residual floor is unchanged: a hunk over the budget that
         even a 1-part rendering could not hold still fails closed. The
         fix must not paper over it by shrinking the marker away."""
-        diff = self.HEADER + _hunk_of_size(1, 60_000) + "".join(
-            _hunk_of_size(i + 2, 30) for i in range(999)
+        diff = (
+            self.HEADER
+            + _hunk_of_size(1, 60_000)
+            + "".join(_hunk_of_size(i + 2, 30) for i in range(999))
         )
         with pytest.raises(DiffUnsplittableError, match="single hunk"):
             split_diff_for_prompt(diff)
@@ -557,7 +551,8 @@ class TestMergeResults:
 
     def test_all_chunks_pass_merges_to_pass(self) -> None:
         merged = merge_review_results(
-            [self._result(True), self._result(True)], "hard",
+            [self._result(True), self._result(True)],
+            "hard",
         )
         assert merged.passed is True
         assert merged.infrastructure_error is False
@@ -565,18 +560,25 @@ class TestMergeResults:
 
     def test_any_chunk_failure_fails(self) -> None:
         merged = merge_review_results(
-            [self._result(True), self._result(False)], "hard",
+            [self._result(True), self._result(False)],
+            "hard",
         )
         assert merged.passed is False
 
     def test_findings_concatenate(self) -> None:
         from kstrl.review import CriterionReview, ReviewConcern
+
         a = self._result(True)
         a.criteria.append(CriterionReview("AC1", "pass", "ok"))
         b = self._result(False)
-        b.concerns.append(ReviewConcern(
-            "dead_code", "fail", "x.py:1", "unused",
-        ))
+        b.concerns.append(
+            ReviewConcern(
+                "dead_code",
+                "fail",
+                "x.py:1",
+                "unused",
+            )
+        )
         merged = merge_review_results([a, b], "hard")
         assert len(merged.criteria) == 1
         assert len(merged.concerns) == 1
@@ -610,12 +612,20 @@ class TestMergeResults:
 
     def test_security_merge_mirrors_policy(self) -> None:
         from kstrl.security import SecurityFinding
+
         a = SecurityResult(passed=True, mode="hard")
-        a.findings.append(SecurityFinding(
-            "injection", "low", "x.py:1", "meh",
-        ))
+        a.findings.append(
+            SecurityFinding(
+                "injection",
+                "low",
+                "x.py:1",
+                "meh",
+            )
+        )
         b = SecurityResult(
-            passed=False, mode="hard", infrastructure_error=True,
+            passed=False,
+            mode="hard",
+            infrastructure_error=True,
         )
         merged = merge_security_results([a, b], "hard")
         assert merged.passed is False
@@ -643,8 +653,13 @@ class TestRunChunkedReview:
 
         chunks = ["chunk-a", "chunk-b", "chunk-c"]
         result = run_chunked_review(
-            agent, self._prd(tmp_path), tmp_path, "main",
-            _VERIFICATION, ReviewMode.HARD, UI,
+            agent,
+            self._prd(tmp_path),
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
             diff_chunks=chunks,
             budget_remaining=3,
             consume_budget=consume,
@@ -658,12 +673,21 @@ class TestRunChunkedReview:
             assert chunk in prompt
 
     def test_failing_chunk_fails_merged_verdict(self, tmp_path: Path) -> None:
-        agent = CountingAgent([
-            _review_json("pass"), _review_json("fail"), _review_json("pass"),
-        ])
+        agent = CountingAgent(
+            [
+                _review_json("pass"),
+                _review_json("fail"),
+                _review_json("pass"),
+            ]
+        )
         result = run_chunked_review(
-            agent, self._prd(tmp_path), tmp_path, "main",
-            _VERIFICATION, ReviewMode.HARD, UI,
+            agent,
+            self._prd(tmp_path),
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
             diff_chunks=["a", "b", "c"],
         )
         assert agent.calls == 3
@@ -671,12 +695,18 @@ class TestRunChunkedReview:
         assert result.infrastructure_error is False
 
     def test_insufficient_budget_is_infra_fail_with_zero_passes(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         agent = CountingAgent([_review_json("pass")])
         result = run_chunked_review(
-            agent, self._prd(tmp_path), tmp_path, "main",
-            _VERIFICATION, ReviewMode.HARD, UI,
+            agent,
+            self._prd(tmp_path),
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
             diff_chunks=["a", "b", "c"],
             budget_remaining=2,
         )
@@ -691,7 +721,12 @@ class TestRunChunkedReview:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         result = run_chunked_security_review(
-            agent, prd, tmp_path, "main", config, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            config,
+            UI,
             diff_chunks=["a", "b"],
             budget_remaining=2,
         )
@@ -700,7 +735,12 @@ class TestRunChunkedReview:
 
         starved = CountingAgent([_CLEAN_SECURITY_JSON])
         result = run_chunked_security_review(
-            starved, prd, tmp_path, "main", config, UI,
+            starved,
+            prd,
+            tmp_path,
+            "main",
+            config,
+            UI,
             diff_chunks=["a", "b"],
             budget_remaining=1,
         )
@@ -723,15 +763,18 @@ class TestAdvisoryPartial:
         _write_prd(prd, ["US-001"])
         agent = CountingAgent([_review_json("pass")])
         result = run_review(
-            agent, prd, tmp_path, "main", _VERIFICATION,
-            ReviewMode.ADVISORY, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.ADVISORY,
+            UI,
             diff_content=self._oversized(),
         )
         assert result.passed is True
         assert result.partial is True
-        partial_concerns = [
-            c for c in result.concerns if "Partial review" in c.explanation
-        ]
+        partial_concerns = [c for c in result.concerns if "Partial review" in c.explanation]
         assert len(partial_concerns) == 1
         assert partial_concerns[0].severity == "advisory"
         assert "PARTIAL REVIEW" in result.as_pr_body_section()
@@ -741,8 +784,13 @@ class TestAdvisoryPartial:
         _write_prd(prd, ["US-001"])
         agent = CountingAgent([_review_json("pass")])
         result = run_review(
-            agent, prd, tmp_path, "main", _VERIFICATION,
-            ReviewMode.ADVISORY, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.ADVISORY,
+            UI,
             diff_content="+small diff\n",
         )
         assert result.partial is False
@@ -755,8 +803,13 @@ class TestAdvisoryPartial:
         _write_prd(prd, ["US-001"])
         agent = CountingAgent([_review_json("pass")])
         result = run_review(
-            agent, prd, tmp_path, "main", _VERIFICATION,
-            ReviewMode.HARD, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            _VERIFICATION,
+            ReviewMode.HARD,
+            UI,
             diff_content=self._oversized(),
         )
         assert result.passed is False
@@ -769,15 +822,17 @@ class TestAdvisoryPartial:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         result = run_security_review(
-            agent, prd, tmp_path, "main", config, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            config,
+            UI,
             diff_content=self._oversized(),
         )
         assert result.passed is True
         assert result.partial is True
-        markers = [
-            f for f in result.findings
-            if "Partial security review" in f.explanation
-        ]
+        markers = [f for f in result.findings if "Partial security review" in f.explanation]
         assert len(markers) == 1
         assert markers[0].severity == "low"
         assert "PARTIAL SECURITY REVIEW" in result.as_pr_body_section()
@@ -788,7 +843,12 @@ class TestAdvisoryPartial:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         result = run_security_review(
-            agent, prd, tmp_path, "main", config, UI,
+            agent,
+            prd,
+            tmp_path,
+            "main",
+            config,
+            UI,
             diff_content=self._oversized(),
         )
         assert result.passed is False
@@ -803,7 +863,8 @@ class TestAdvisoryPartial:
 
 class TestSelfCritiqueStripParity:
     def test_security_prompt_contains_no_self_critique(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """String-level proof on the BUILT prompt via the fetch-fallback
         path (diff_content=None)."""
@@ -831,8 +892,13 @@ class TestSelfCritiqueStripParity:
             return_value=_SELF_CRITIQUE_DIFF,
         ):
             run_review(
-                agent, prd, tmp_path, "main", _VERIFICATION,
-                ReviewMode.ADVISORY, UI,
+                agent,
+                prd,
+                tmp_path,
+                "main",
+                _VERIFICATION,
+                ReviewMode.ADVISORY,
+                UI,
             )
         assert len(agent.prompts) == 1
         assert "Self-Critique" not in agent.prompts[0]
@@ -859,11 +925,17 @@ def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
 
 def _make_manifest(ids: list[str]) -> Manifest:
     return Manifest(
-        version="1", spec_file="s", project_name="t",
-        base_branch="main", single_pr=False,
+        version="1",
+        spec_file="s",
+        project_name="t",
+        base_branch="main",
+        single_pr=False,
         components=[
             Component(
-                id=i, title=i, description="", dependencies=[],
+                id=i,
+                title=i,
+                description="",
+                dependencies=[],
                 prd_path=f"scripts/kstrl/feature/{i}/prd.json",
                 branch_name=f"kstrl/{i}",
             )
@@ -876,20 +948,30 @@ def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts/kstrl/prompt.md",
         prd_file=root / "scripts/kstrl/prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
 def _factory_config(**overrides: object) -> FactoryConfig:
     defaults: dict[str, object] = dict(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
     )
     defaults.update(overrides)
@@ -912,28 +994,39 @@ def _oversized_component_diff() -> str:
 
 class TestFactoryChunkedReview:
     def test_hard_mode_oversized_diff_runs_one_pass_per_chunk(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         log_path = tmp_path / "progress.jsonl"
         config = _factory_config(
-            review_mode="hard", max_adversarial_calls=3,
+            review_mode="hard",
+            max_adversarial_calls=3,
             progress_log_path=log_path,
         )
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content",
-            return_value=_oversized_component_diff(),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=_oversized_component_diff(),
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.completed
         assert agent.calls == 3
@@ -943,7 +1036,8 @@ class TestFactoryChunkedReview:
         assert chunk_events[0]["data"]["chunks"] == 3  # type: ignore[index]
 
     def test_insufficient_budget_fails_component_without_retry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
@@ -951,29 +1045,42 @@ class TestFactoryChunkedReview:
         # 3 chunks needed, budget 2; retries available but must NOT be
         # used - the budget can only shrink, so retrying is pure waste.
         config = _factory_config(
-            review_mode="hard", max_adversarial_calls=2, max_retries=2,
+            review_mode="hard",
+            max_adversarial_calls=2,
+            max_retries=2,
             progress_log_path=log_path,
         )
         agent = CountingAgent([_review_json("pass")])
         run_component_calls = {"n": 0}
 
         def fake_run_component(
-            comp_id: str, *a: object, **k: object,
+            comp_id: str,
+            *a: object,
+            **k: object,
         ) -> ComponentResult:
             run_component_calls["n"] += 1
             return ComponentResult(comp_id, success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content",
-            return_value=_oversized_component_diff(),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=_oversized_component_diff(),
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.failed
         assert agent.calls == 0
@@ -982,43 +1089,50 @@ class TestFactoryChunkedReview:
         assert comp is not None
         assert comp.error is not None
         assert "Review infrastructure error" in comp.error
-        infra = [
-            f for f in comp.findings
-            if f.is_infrastructure_error and f.phase == "review"
-        ]
+        infra = [f for f in comp.findings if f.is_infrastructure_error and f.phase == "review"]
         assert len(infra) == 1
         assert "refusing" in infra[0].explanation
         events = _read_events(log_path)
-        assert any(
-            e["event"] == "chunk_budget_insufficient" for e in events
-        )
+        assert any(e["event"] == "chunk_budget_insufficient" for e in events)
 
     def test_security_hard_mode_chunks_too(self, tmp_path: Path) -> None:
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         config = _factory_config(
-            review_mode="skip", max_adversarial_calls=3,
+            review_mode="skip",
+            max_adversarial_calls=3,
             security_config=SecurityConfig(mode=SecurityMode.HARD.value),
         )
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content",
-            return_value=_oversized_component_diff(),
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=_oversized_component_diff(),
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.completed
         assert agent.calls == 3
 
     def test_oversized_single_file_is_reviewed_not_bounced(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """R8 end-to-end: the production shape (one 55KB test file with
         many hunks) used to fail the component and buy a full engineer
@@ -1030,23 +1144,34 @@ class TestFactoryChunkedReview:
         manifest = _make_manifest(["comp-a"])
         log_path = tmp_path / "progress.jsonl"
         config = _factory_config(
-            review_mode="hard", max_adversarial_calls=5,
+            review_mode="hard",
+            max_adversarial_calls=5,
             progress_log_path=log_path,
         )
         one_big_file = _multi_hunk_segment("tests/test_purity.py", 12, 4600)
         assert len(one_big_file) > DEFAULT_PROMPT_DIFF_CHAR_LIMIT
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value=one_big_file,
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=one_big_file,
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.completed
         events = _read_events(log_path)
@@ -1067,25 +1192,37 @@ class TestFactoryChunkedReview:
         manifest = _make_manifest(["comp-a"])
         log_path = tmp_path / "progress.jsonl"
         config = _factory_config(
-            review_mode="hard", progress_log_path=log_path,
+            review_mode="hard",
+            progress_log_path=log_path,
         )
         # One file, ONE hunk, bigger than the cap: nothing to split on.
         big_single_file = _file_segment(
-            "src/huge.py", DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 10_000,
+            "src/huge.py",
+            DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 10_000,
         )
         assert len(_hunk_headers(big_single_file)) == 1
         agent = CountingAgent([_review_json("pass")])
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value=big_single_file,
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=big_single_file,
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.failed
         assert agent.calls == 0
@@ -1099,7 +1236,9 @@ class TestFactoryChunkedReview:
 
 class TestSinglePassSecurityBudget:
     def test_single_pass_security_consumes_exactly_one_call(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Regression: the R1.4 refactor briefly double-consumed the
         budget for non-chunked security passes, which would silently
@@ -1109,7 +1248,8 @@ class TestSinglePassSecurityBudget:
         root = _scaffold(tmp_path, ["comp-a", "comp-b"])
         manifest = _make_manifest(["comp-a", "comp-b"])
         config = _factory_config(
-            review_mode="skip", max_adversarial_calls=2,
+            review_mode="skip",
+            max_adversarial_calls=2,
             security_config=SecurityConfig(
                 mode=SecurityMode.ADVISORY.value,
             ),
@@ -1117,42 +1257,53 @@ class TestSinglePassSecurityBudget:
         agent = CountingAgent([_CLEAN_SECURITY_JSON])
 
         def fake_run_component(
-            comp_id: str, *a: object, **k: object,
+            comp_id: str,
+            *a: object,
+            **k: object,
         ) -> ComponentResult:
             return ComponentResult(comp_id, success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", side_effect=fake_run_component,
-        ), patch(
-            "kstrl.agents.get_agent", return_value=agent,
-        ), patch(
-            "kstrl.git.get_diff_content", return_value="+small\n",
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_run_component,
+            ),
+            patch(
+                "kstrl.agents.get_agent",
+                return_value=agent,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value="+small\n",
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert set(result.completed) == {"comp-a", "comp-b"}
         assert agent.calls == 2
         for comp_id in ("comp-a", "comp-b"):
             comp = manifest.get_component(comp_id)
             assert comp is not None
-            assert not any(
-                f.is_phase_skip and f.phase == "security"
-                for f in comp.findings
-            )
+            assert not any(f.is_phase_skip and f.phase == "security" for f in comp.findings)
 
 
 class TestFactoryStripOnce:
     def test_both_reviewers_receive_stripped_diff(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R1.4 requirement 3: the factory strips the Self-Critique
         block once and shares the result with Phase 2 AND Phase 2.5."""
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         config = _factory_config(
-            review_mode="advisory", max_adversarial_calls=2,
+            review_mode="advisory",
+            max_adversarial_calls=2,
             security_config=SecurityConfig(
                 mode=SecurityMode.ADVISORY.value,
             ),
@@ -1160,32 +1311,44 @@ class TestFactoryStripOnce:
         captured: dict[str, str] = {}
 
         def fake_run_review(
-            *args: object, **kwargs: object,
+            *args: object,
+            **kwargs: object,
         ) -> ReviewResult:
             captured["review"] = str(kwargs.get("diff_content"))
             return ReviewResult(passed=True, mode="advisory")
 
         def fake_run_security(
-            *args: object, **kwargs: object,
+            *args: object,
+            **kwargs: object,
         ) -> SecurityResult:
             captured["security"] = str(kwargs.get("diff_content"))
             return SecurityResult(passed=True, mode="advisory")
 
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_review", side_effect=fake_run_review,
-        ), patch(
-            "kstrl.factory.run_security_review",
-            side_effect=fake_run_security,
-        ), patch(
-            "kstrl.git.get_diff_content",
-            return_value=_SELF_CRITIQUE_DIFF,
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                side_effect=fake_run_review,
+            ),
+            patch(
+                "kstrl.factory.run_security_review",
+                side_effect=fake_run_security,
+            ),
+            patch(
+                "kstrl.git.get_diff_content",
+                return_value=_SELF_CRITIQUE_DIFF,
+            ),
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert "comp-a" in result.completed
         assert "Self-Critique" not in captured["review"]
@@ -1215,8 +1378,7 @@ class TestChunkHeadersMatchTheReviewContract:
         header = "diff --git a/big.py b/big.py\n--- a/big.py\n+++ b/big.py\n"
         hunks = "".join(
             f"@@ -{i * 10 + 1},3 +{i * 10 + 1},4 @@ def f{i}():\n"
-            f"     a = {i}\n+    b = {i}\n     return a\n"
-            + "+" + "x" * 900 + "\n"
+            f"     a = {i}\n+    b = {i}\n     return a\n" + "+" + "x" * 900 + "\n"
             for i in range(90)
         )
         return header + hunks
@@ -1233,7 +1395,8 @@ class TestChunkHeadersMatchTheReviewContract:
         ids=["reviewer", "security"],
     )
     def test_the_prompt_describes_the_granularity_it_will_receive(
-        self, prompt: str,
+        self,
+        prompt: str,
     ) -> None:
         chunks = split_diff_for_prompt(self._within_file_diff())
         partial = next(c for c in chunks if "file part" in c)
@@ -1251,7 +1414,8 @@ class TestChunkHeadersMatchTheReviewContract:
         ids=["reviewer", "security"],
     )
     def test_the_prompt_names_same_file_omission_not_only_cross_file(
-        self, prompt: str,
+        self,
+        prompt: str,
     ) -> None:
         """The substance of the finding: scoping the blindness to
         'other files' is the part that was actively false."""
@@ -1267,7 +1431,8 @@ class TestChunkHeadersMatchTheReviewContract:
         ids=["reviewer", "security"],
     )
     def test_the_file_boundary_case_is_still_described(
-        self, prompt: str,
+        self,
+        prompt: str,
     ) -> None:
         """The common case did not stop existing; both must be covered."""
         assert "split on file boundaries" in prompt

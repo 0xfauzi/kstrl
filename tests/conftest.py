@@ -87,9 +87,7 @@ def _clear_kstrl_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def isolate_kstrl_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def isolate_kstrl_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect every evolution/experiments/knowledge write path to tmp_path.
 
     Why chdir is the mechanism: the bare ``EvolutionConfig()``
@@ -149,9 +147,7 @@ def snapshot_kstrl_dir(kstrl_dir: Path) -> dict[str, str]:
     return snapshot
 
 
-def describe_snapshot_diff(
-    before: dict[str, str], after: dict[str, str]
-) -> str:
+def describe_snapshot_diff(before: dict[str, str], after: dict[str, str]) -> str:
     """Human-readable created/deleted/modified summary of two snapshots."""
     lines: list[str] = []
     for rel in sorted(after.keys() - before.keys()):
@@ -214,9 +210,7 @@ def temp_project(tmp_path: Path) -> Generator[Path, None, None]:
     (kstrl_dir / "prompt.md").write_text("Test prompt\n")
 
     # Create minimal prd.json
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test-branch", "userStories": []}\n'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test-branch", "userStories": []}\n')
 
     # Save current directory
     original_dir = os.getcwd()

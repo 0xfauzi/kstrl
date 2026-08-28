@@ -55,14 +55,22 @@ time.sleep(60)
 
 def _git(*args: str, cwd: Path) -> None:
     subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        timeout=30,
     )
 
 
 def _git_out(*args: str, cwd: Path) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True,
-        text=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
     ).stdout.strip()
 
 
@@ -80,49 +88,64 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
 
     kstrl_dir = root / "scripts" / "kstrl"
     (kstrl_dir / "feature").mkdir(parents=True)
-    (kstrl_dir / "prompt.md").write_text(
-        "Read the PRD at $prd_path and implement one story.\n"
-    )
+    (kstrl_dir / "prompt.md").write_text("Read the PRD at $prd_path and implement one story.\n")
     for comp_id in comp_ids:
         feature_dir = kstrl_dir / "feature" / comp_id
         feature_dir.mkdir(parents=True)
         prd: dict[str, object] = {
             "branchName": f"kstrl/factory/{comp_id}",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
+            "userStories": [
+                {
+                    "id": "US-001",
+                    "title": "Test",
+                    "acceptanceCriteria": ["AC1"],
+                    "priority": 1,
+                    "passes": True,
+                    "notes": "",
+                }
+            ],
         }
         (feature_dir / "prd.json").write_text(json.dumps(prd))
 
 
 def _component(comp_id: str, branch: str | None = None) -> Component:
     return Component(
-        id=comp_id, title=comp_id.upper(), description="", dependencies=[],
+        id=comp_id,
+        title=comp_id.upper(),
+        description="",
+        dependencies=[],
         prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
         branch_name=branch or f"kstrl/factory/{comp_id}",
     )
 
 
 def _manifest(
-    components: list[Component] | None = None, single_pr: bool = False,
+    components: list[Component] | None = None,
+    single_pr: bool = False,
 ) -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="t",
-        base_branch="main", single_pr=single_pr,
-        components=components if components is not None
-        else [_component("comp-a")],
+        version="1",
+        spec_file="spec.md",
+        project_name="t",
+        base_branch="main",
+        single_pr=single_pr,
+        components=components if components is not None else [_component("comp-a")],
     )
 
 
 def _factory_config(**overrides: Any) -> FactoryConfig:
     kwargs: dict[str, Any] = dict(
-        use_worktrees=True, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=True,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_bad_patterns=False,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_bad_patterns=False,
             subprocess_timeout=30.0,
         ),
     )
@@ -134,9 +157,12 @@ def _base_config(root: Path, agent_cmd: str = COMPLETE_LINE) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
         prd_file=root / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0, agent_cmd=agent_cmd,
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd=agent_cmd,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
@@ -167,7 +193,8 @@ class _HeldLock:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.proc = subprocess.Popen(
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(self.lock_path)],
-            stdout=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            text=True,
         )
         assert self.proc.stdout is not None
         line = self.proc.stdout.readline().strip()
@@ -180,11 +207,14 @@ class _HeldLock:
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32", reason="flock is POSIX-only (documented degrade)",
+    sys.platform == "win32",
+    reason="flock is POSIX-only (documented degrade)",
 )
 class TestRunLockContention:
     def test_second_invocation_refused_while_lock_held(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """While a real second process holds the flock, run_factory
@@ -210,7 +240,9 @@ class TestRunLockContention:
         assert "--force-lock" in text
 
     def test_force_lock_overrides_held_lock(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         root = tmp_path / "repo"
@@ -227,7 +259,9 @@ class TestRunLockContention:
         assert "--force-lock" in text
 
     def test_lock_released_after_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A completed run releases the flock so the next invocation can
         acquire it."""
@@ -249,7 +283,9 @@ class TestRunLockContention:
 
 class TestManifestPathFidelity:
     def test_custom_manifest_path_round_trip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """State saves to the same custom path the manifest was loaded
         from, not the hardcoded scripts/kstrl/manifest.json (H-15)."""
@@ -272,7 +308,9 @@ class TestManifestPathFidelity:
         )
 
     def test_default_manifest_path_preserved(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
@@ -287,7 +325,9 @@ class TestManifestPathFidelity:
         assert saved["components"][0]["status"] == "completed"
 
     def test_cli_run_uses_run_manifest_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`ks run` wires its own run-manifest.json into run_factory
         so it cannot clobber a factory's resumable manifest.json."""
@@ -295,9 +335,7 @@ class TestManifestPathFidelity:
         kstrl_dir = project / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")
-        (kstrl_dir / "prd.json").write_text(
-            '{"branchName": "test", "userStories": []}'
-        )
+        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
 
         captured: dict[str, Any] = {}
 
@@ -311,9 +349,12 @@ class TestManifestPathFidelity:
         result = runner.invoke(
             cli,
             [
-                "run", "0",
-                "--agent-cmd", COMPLETE_LINE,
-                "--sleep", "0",
+                "run",
+                "0",
+                "--agent-cmd",
+                COMPLETE_LINE,
+                "--sleep",
+                "0",
                 "--no-verify",
                 "--force-lock",
             ],
@@ -324,13 +365,13 @@ class TestManifestPathFidelity:
         )
 
         assert result.exit_code == 0, result.output
-        assert captured["manifest_path"] == (
-            kstrl_dir / "run-manifest.json"
-        )
+        assert captured["manifest_path"] == (kstrl_dir / "run-manifest.json")
         assert captured["factory_config"].force_lock is True
 
     def test_cli_factory_passes_custom_manifest_path(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`ks factory --manifest /x.json` hands that exact path to
         run_factory as the save path."""
@@ -352,9 +393,12 @@ class TestManifestPathFidelity:
             cli,
             [
                 "factory",
-                "--manifest", str(custom),
-                "--root", str(root),
-                "--agent-cmd", COMPLETE_LINE,
+                "--manifest",
+                str(custom),
+                "--root",
+                str(root),
+                "--agent-cmd",
+                COMPLETE_LINE,
                 "--yes",
             ],
         )
@@ -366,7 +410,9 @@ class TestManifestPathFidelity:
 
 class TestSinglePrParallelism:
     def test_single_pr_forces_sequential(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """single_pr with max_parallel>1 downgrades to sequential with a
@@ -397,7 +443,9 @@ class TestSinglePrParallelism:
 
 class TestStaleBranchPolicy:
     def test_unmerged_stale_branch_refuses_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """A leftover component branch with commits not merged into base
@@ -424,15 +472,22 @@ class TestStaleBranchPolicy:
         assert result.completed == []
         assert manifest.components[0].status == "pending"
         # The branch is untouched, not deleted and not built upon.
-        assert _git_out(
-            "rev-parse", "kstrl/factory/comp-a", cwd=root,
-        ) == stale_tip
+        assert (
+            _git_out(
+                "rev-parse",
+                "kstrl/factory/comp-a",
+                cwd=root,
+            )
+            == stale_tip
+        )
         text = capsys.readouterr().err
         assert "kstrl/factory/comp-a" in text
         assert "not merged" in text
 
     def test_merged_stale_branch_deleted_and_run_proceeds(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """A leftover branch fully merged into base is deleted at
@@ -455,7 +510,9 @@ class TestStaleBranchPolicy:
 
 class TestStaleWorktreePrune:
     def test_stale_worktrees_pruned_at_start(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Worktrees from crashed runs - run-scoped dirs from other run
         ids AND pre-R0.5 flat-layout dirs - are removed when the run lock
@@ -469,11 +526,21 @@ class TestStaleWorktreePrune:
         old_run_wt = worktree_root / "20250101-000000-000000-dead" / "comp-x"
         legacy_wt = worktree_root / "legacy-comp"
         _git(
-            "worktree", "add", str(old_run_wt), "-b", "tmp/old-run", "main",
+            "worktree",
+            "add",
+            str(old_run_wt),
+            "-b",
+            "tmp/old-run",
+            "main",
             cwd=root,
         )
         _git(
-            "worktree", "add", str(legacy_wt), "-b", "tmp/legacy", "main",
+            "worktree",
+            "add",
+            str(legacy_wt),
+            "-b",
+            "tmp/legacy",
+            "main",
             cwd=root,
         )
 
@@ -484,9 +551,11 @@ class TestStaleWorktreePrune:
         assert not legacy_wt.exists()
         # The completed run's own worktree dir is gone too; only lock
         # files may remain at the top level.
-        leftovers = [
-            p for p in worktree_root.iterdir() if not p.name.endswith(".lock")
-        ] if worktree_root.exists() else []
+        leftovers = (
+            [p for p in worktree_root.iterdir() if not p.name.endswith(".lock")]
+            if worktree_root.exists()
+            else []
+        )
         assert leftovers == []
         # git's worktree bookkeeping agrees (no stale registrations).
         listed = _git_out("worktree", "list", "--porcelain", cwd=root)

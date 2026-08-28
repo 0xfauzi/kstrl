@@ -56,7 +56,8 @@ def _synthetic_manifest() -> Manifest:
 
 def _invoke_status(*args: str) -> tuple[int, str]:
     result = CliRunner().invoke(
-        cli, ["status", *args, "--ui", "plain", "--no-color"],
+        cli,
+        ["status", *args, "--ui", "plain", "--no-color"],
     )
     return result.exit_code, result.output
 
@@ -91,7 +92,8 @@ class TestStatusCommand:
         assert "comp-a: completed" in output
 
     def test_prefers_factory_manifest_over_run_manifest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         factory_manifest = _synthetic_manifest()
         factory_manifest.project_name = "factory-project"
@@ -111,7 +113,10 @@ class TestStatusCommand:
         _synthetic_manifest().save(manifest_path)
 
         exit_code, output = _invoke_status(
-            "--root", str(tmp_path), "--manifest", str(manifest_path),
+            "--root",
+            str(tmp_path),
+            "--manifest",
+            str(manifest_path),
         )
 
         assert exit_code == 0
@@ -144,10 +149,17 @@ def _write_progress_log(root: Path, run_id: str = "run-2") -> Path:
     log = ProgressLog(log_path, run_id=run_id)
     log.factory_started("demo", 2)
     log.component_started("comp-a")
-    log.component_usage("comp-a", "engineer", {
-        "calls": 4, "known_calls": 4, "unreported_calls": 0,
-        "total_tokens": 5000, "cost_usd": 1.25,
-    })
+    log.component_usage(
+        "comp-a",
+        "engineer",
+        {
+            "calls": 4,
+            "known_calls": 4,
+            "unreported_calls": 0,
+            "total_tokens": 5000,
+            "cost_usd": 1.25,
+        },
+    )
     log.verification_result("comp-a", passed=True)
     log.review_result("comp-a", passed=True, mode="hard")
     log.component_started("comp-b")
@@ -206,9 +218,12 @@ class TestStatusProgressLogJoin:
         assert str(worktree) in output
         assert str(debug_dir) in output
         # No evidence line for paths that do not exist.
-        assert str(
-            tmp_path / ".kstrl" / "debug" / "run-2" / "comp-a",
-        ) not in output
+        assert (
+            str(
+                tmp_path / ".kstrl" / "debug" / "run-2" / "comp-a",
+            )
+            not in output
+        )
 
     def test_run_state_line(self, tmp_path: Path) -> None:
         _synthetic_manifest().save(
@@ -220,7 +235,9 @@ class TestStatusProgressLogJoin:
         assert "in flight" in output
 
         ProgressLog(log_path, run_id="run-2").factory_completed(
-            completed=2, failed=0, skipped=0,
+            completed=2,
+            failed=0,
+            skipped=0,
         )
         _, output = _invoke_status("--root", str(tmp_path))
         assert "finished" in output
@@ -233,7 +250,10 @@ class TestStatusProgressLogJoin:
         ProgressLog(custom, run_id="run-x").component_started("comp-a")
 
         exit_code, output = _invoke_status(
-            "--root", str(tmp_path), "--progress-log", str(custom),
+            "--root",
+            str(tmp_path),
+            "--progress-log",
+            str(custom),
         )
 
         assert exit_code == 0
@@ -257,39 +277,59 @@ class TestStatusProgressLogJoin:
 class TestStatusV2Layout:
     """Chunk 8: status renders from the v2 run-dir stream when present."""
 
-    def _write_v2_run(self, root: Path, run_id: str = "factory-20260720-000005.000000-t",
-                      checkpoint_open: bool = False) -> None:
+    def _write_v2_run(
+        self,
+        root: Path,
+        run_id: str = "factory-20260720-000005.000000-t",
+        checkpoint_open: bool = False,
+    ) -> None:
         from kstrl import events as ev
 
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
         bus.emit(ev.RunStarted(project="demo", components=2))
-        bus.emit(ev.RunPlan(
-            components=(
-                {"id": "comp-a", "title": "A", "deps": []},
-                {"id": "comp-b", "title": "B", "deps": ["comp-a"]},
-            ),
-            max_total_tokens=100000, max_adversarial_calls=10,
-        ))
+        bus.emit(
+            ev.RunPlan(
+                components=(
+                    {"id": "comp-a", "title": "A", "deps": []},
+                    {"id": "comp-b", "title": "B", "deps": ["comp-a"]},
+                ),
+                max_total_tokens=100000,
+                max_adversarial_calls=10,
+            )
+        )
         bus.emit(ev.ComponentStarted(component="comp-a"))
         bus.emit(ev.PhaseStarted(component="comp-a", phase="engineer", attempt=1))
         bus.emit(ev.PhaseCompleted(component="comp-a", phase="engineer", passed=True))
         bus.emit(ev.PhaseStarted(component="comp-a", phase="review", attempt=1))
-        bus.emit(ev.ComponentUsage(
-            component="comp-a", phase="engineer", calls=3, known_calls=2,
-            unreported_calls=1, total_tokens=7000, cost_usd=2.5,
-        ))
+        bus.emit(
+            ev.ComponentUsage(
+                component="comp-a",
+                phase="engineer",
+                calls=3,
+                known_calls=2,
+                unreported_calls=1,
+                total_tokens=7000,
+                cost_usd=2.5,
+            )
+        )
         bus.emit(ev.PrCreated(component="comp-a", pr_number=9, pr_url="http://pr/9"))
         bus.emit(ev.PrMerged(component="comp-a", pr_number=9, pr_url="http://pr/9"))
         bus.emit(ev.ComponentStarted(component="comp-b"))
         bus.emit(ev.PhaseStarted(component="comp-b", phase="engineer", attempt=1))
         if checkpoint_open:
-            bus.emit(ev.CheckpointRequested(
-                component="comp-b", kind="pr_merge", question="ok?",
-            ))
+            bus.emit(
+                ev.CheckpointRequested(
+                    component="comp-b",
+                    kind="pr_merge",
+                    question="ok?",
+                )
+            )
         worker = ev.EventBus(
             ev.JsonlSink(paths.engineer_events("comp-b")),
-            run_id=run_id, source="worker", component="comp-b",
+            run_id=run_id,
+            source="worker",
+            component="comp-b",
         )
         worker.emit(ev.WorkerHeartbeat(pid=1, elapsed_seconds=5.0))
         bus.close()
@@ -308,7 +348,8 @@ class TestStatusV2Layout:
         self._manifest_with_running_b(tmp_path, run_id)
         # A stale v1 log must lose to the v2 dir:
         ProgressLog(
-            tmp_path / ".kstrl" / "progress.jsonl", run_id="old-run",
+            tmp_path / ".kstrl" / "progress.jsonl",
+            run_id="old-run",
         ).factory_started("stale-project", 1)
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -347,7 +388,8 @@ class TestStatusV2Layout:
         assert new_id not in output
 
     def test_stale_manifest_run_id_falls_back_to_newest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         real_id = "factory-20260720-000009.000000-t"
         self._write_v2_run(tmp_path, real_id)
@@ -365,7 +407,10 @@ class TestStatusV2Layout:
         log.factory_started("demo", 2)
         log.component_started("comp-a")
         exit_code, output = _invoke_status(
-            "--root", str(tmp_path), "--progress-log", str(v1),
+            "--root",
+            str(tmp_path),
+            "--progress-log",
+            str(v1),
         )
         assert exit_code == 0
         assert "pinned-run" in output
@@ -387,26 +432,49 @@ class TestStatusPerAxisCoverage:
         paths = ev.RunPaths.for_run(root, run_id)
         bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
         bus.emit(ev.RunStarted(project="demo", components=1))
-        bus.emit(ev.RunPlan(
-            components=({"id": "comp-a", "title": "A", "deps": []},),
-            max_cost_usd=10.0,
-        ))
+        bus.emit(
+            ev.RunPlan(
+                components=({"id": "comp-a", "title": "A", "deps": []},),
+                max_cost_usd=10.0,
+            )
+        )
         bus.emit(ev.ComponentStarted(component="comp-a"))
-        bus.emit(ev.ComponentUsage(
-            component="comp-a", phase="engineer", calls=1, known_calls=1,
-            token_calls=1, cost_calls=1, total_tokens=500, cost_usd=5.0,
-        ))
-        bus.emit(ev.ComponentUsage(
-            component="comp-a", phase="review", calls=1, known_calls=1,
-            token_calls=1, cost_calls=0, total_tokens=500, cost_usd=0.0,
-        ))
-        bus.emit(ev.BudgetCoverage(
-            ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
-            uncovered_calls=1, uncovered_tokens=500,
-            uncovered_roles=("review",),
-            detail="cost coverage is PARTIAL: 1 of 2 metered call(s) "
-                   "reported a cost",
-        ))
+        bus.emit(
+            ev.ComponentUsage(
+                component="comp-a",
+                phase="engineer",
+                calls=1,
+                known_calls=1,
+                token_calls=1,
+                cost_calls=1,
+                total_tokens=500,
+                cost_usd=5.0,
+            )
+        )
+        bus.emit(
+            ev.ComponentUsage(
+                component="comp-a",
+                phase="review",
+                calls=1,
+                known_calls=1,
+                token_calls=1,
+                cost_calls=0,
+                total_tokens=500,
+                cost_usd=0.0,
+            )
+        )
+        bus.emit(
+            ev.BudgetCoverage(
+                ceiling="max_cost_usd",
+                axis="cost",
+                calls=2,
+                covered_calls=1,
+                uncovered_calls=1,
+                uncovered_tokens=500,
+                uncovered_roles=("review",),
+                detail="cost coverage is PARTIAL: 1 of 2 metered call(s) reported a cost",
+            )
+        )
         bus.close()
 
     def test_only_the_uncovered_axis_is_marked(self, tmp_path: Path) -> None:
@@ -417,9 +485,9 @@ class TestStatusPerAxisCoverage:
         manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
         exit_code, output = _invoke_status("--root", str(tmp_path))
         assert exit_code == 0
-        assert "1000 tokens" in output      # token axis fully covered
+        assert "1000 tokens" in output  # token axis fully covered
         assert "1000+ tokens" not in output
-        assert "$5.0000+" in output         # cost axis is not
+        assert "$5.0000+" in output  # cost axis is not
         assert "cost coverage is PARTIAL" in output
 
 
@@ -448,7 +516,8 @@ class TestSafeModeLine:
             tmp_path / "scripts" / "kstrl" / "manifest.json",
         )
         Queue(tmp_path, QueueConfig()).pause(
-            reason="daily budget exhausted", actor="test",
+            reason="daily budget exhausted",
+            actor="test",
         )
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
@@ -461,7 +530,8 @@ class TestSafeModeLine:
         assert "nominal" not in output
 
     def test_it_is_answerable_without_a_manifest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A repo that has never completed a run still has a control
         directory, a ladder and a queue. Withholding the answer until a
@@ -470,17 +540,19 @@ class TestSafeModeLine:
         from kstrl.workqueue import Queue, QueueConfig
 
         Queue(tmp_path, QueueConfig()).pause(
-            reason="poison breaker tripped", actor="test",
+            reason="poison breaker tripped",
+            actor="test",
         )
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
-        assert exit_code == 1          # the manifest really is missing
+        assert exit_code == 1  # the manifest really is missing
         assert "No manifest found" in output
         assert "[queue] poison breaker tripped" in output
 
     def test_it_is_answerable_with_a_broken_manifest(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The predicate does not read the manifest, so a corrupt one
         must not hide a paused queue either."""
@@ -508,8 +580,7 @@ class TestSafeModeLine:
         _, output = _invoke_status("--root", str(tmp_path))
 
         safe_lines = [
-            line for line in output.splitlines()
-            if "safe mode:" in line or "[queue]" in line
+            line for line in output.splitlines() if "safe mode:" in line or "[queue]" in line
         ]
         assert len(safe_lines) == 2
         assert not any("\x1b[" in line for line in safe_lines)

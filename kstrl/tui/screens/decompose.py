@@ -61,10 +61,12 @@ def _issue_strip(state: RunState) -> Text:
     parts: list[tuple[str, str]] = []
     for severity in ("blocker", "major", "minor"):
         if counts.get(severity):
-            parts.append((
-                f"{counts[severity]} {severity}",
-                _SEVERITY_STYLES[severity],
-            ))
+            parts.append(
+                (
+                    f"{counts[severity]} {severity}",
+                    _SEVERITY_STYLES[severity],
+                )
+            )
     for other, n in sorted(counts.items()):
         if other not in _SEVERITY_ORDER:
             parts.append((f"{n} {other}", theme.MUTED))
@@ -86,10 +88,7 @@ def _attempt_strip(state: RunState) -> Text:
     text.append(f"{glyph} ", style=f"bold {color}")
     text.append("architect ", style="bold")
     text.append(architect.status, style=color)
-    attempts = [
-        p for p in architect.phase_history
-        if p.get("phase") == "decompose"
-    ]
+    attempts = [p for p in architect.phase_history if p.get("phase") == "decompose"]
     failed = sum(1 for p in attempts if not p.get("passed"))
     attempt = max(architect.attempt, 1)
     text.append(
@@ -112,14 +111,14 @@ def _summary(state: RunState) -> Text | None:
     planned = [c for c in state.plan_order if c != ARCHITECT_ID]
     prds = [a for a in state.artifacts if a.get("label") == "prd"]
     manifest = next(
-        (a for a in state.artifacts if a.get("label") == "manifest"), None,
+        (a for a in state.artifacts if a.get("label") == "manifest"),
+        None,
     )
     text.append("✓ ", style=f"bold {theme.SUCCESS}")
     text.append(f"{len(planned)} component(s)", style="bold")
     text.append(f" · {len(prds)} PRD(s)", style=theme.MUTED)
     if manifest is not None:
-        text.append(f" · manifest {manifest.get('path', '')}",
-                    style=theme.MUTED)
+        text.append(f" · manifest {manifest.get('path', '')}", style=theme.MUTED)
     return text
 
 
@@ -163,7 +162,9 @@ class DecomposeScreen(Screen[None]):
             self.refresh_state(store.state, store.manifest())
 
     def refresh_state(
-        self, state: RunState, manifest: Manifest | None,
+        self,
+        state: RunState,
+        manifest: Manifest | None,
     ) -> None:
         del manifest  # the folded plan is the source; no manifest join
         if not self.ready:
@@ -207,7 +208,8 @@ class DecomposeScreen(Screen[None]):
             title.append("  ⏸ paused", style=theme.MUTED)
         title.append("  (f toggles)", style=theme.MUTED)
         self.query_one(
-            "#decompose-transcript-title", Static,
+            "#decompose-transcript-title",
+            Static,
         ).update(title)
 
     def action_toggle_follow(self) -> None:
@@ -261,19 +263,21 @@ class SpecTriageScreen(Screen[None]):
         architect = state.components.get(ARCHITECT_ID)
         halted = (
             bool(state.spec_issue_counts.get("blocker"))
-            and architect is not None and architect.status == "failed"
+            and architect is not None
+            and architect.status == "failed"
         )
         if halted:
             artifact = next(
-                (a.get("path", "") for a in state.artifacts
-                 if a.get("label") == "spec_issues"),
+                (a.get("path", "") for a in state.artifacts if a.get("label") == "spec_issues"),
                 "scripts/kstrl/spec-issues.json",
             )
             banner.display = True
-            banner.update(Text(
-                f"✗ decompose halted - resolve the spec and re-run · {artifact}",
-                style=f"bold {theme.ERROR}",
-            ))
+            banner.update(
+                Text(
+                    f"✗ decompose halted - resolve the spec and re-run · {artifact}",
+                    style=f"bold {theme.ERROR}",
+                )
+            )
         else:
             banner.display = False
         table = self.query_one(DataTable)
@@ -281,12 +285,13 @@ class SpecTriageScreen(Screen[None]):
         for issue in self._issues:
             severity = issue.get("severity", "")
             table.add_row(
-                Text(severity,
-                     style=_SEVERITY_STYLES.get(severity, theme.MUTED)),
-                Text(issue["kind"]) if issue.get("kind")
+                Text(severity, style=_SEVERITY_STYLES.get(severity, theme.MUTED)),
+                Text(issue["kind"])
+                if issue.get("kind")
                 else Text(theme.EMPTY_CELL, style=theme.MUTED),
                 Text(issue.get("summary", "")),
-                Text(issue["location"]) if issue.get("location")
+                Text(issue["location"])
+                if issue.get("location")
                 else Text(theme.EMPTY_CELL, style=theme.MUTED),
             )
         if self._issues:
@@ -297,7 +302,8 @@ class SpecTriageScreen(Screen[None]):
             )
 
     def on_data_table_row_highlighted(
-        self, event: DataTable.RowHighlighted,
+        self,
+        event: DataTable.RowHighlighted,
     ) -> None:
         if event.cursor_row is not None and event.cursor_row >= 0:
             self._show_detail(event.cursor_row)

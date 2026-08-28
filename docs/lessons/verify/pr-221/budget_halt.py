@@ -47,9 +47,17 @@ def sweep() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for cap, n, mode, new in product(range(0, 6), range(1, 7), ("hard", "advisory"), (False, True)):
         out = run(cap, n, mode, new)
-        rows.append({"cap": cap, "n": n, "mode": mode, "new_rule": new, "outcome": out,
-                     "unreviewed": sum(1 for o in out if o.startswith("skipped")),
-                     "halted": sum(1 for o in out if o.startswith("HALTED"))})
+        rows.append(
+            {
+                "cap": cap,
+                "n": n,
+                "mode": mode,
+                "new_rule": new,
+                "outcome": out,
+                "unreviewed": sum(1 for o in out if o.startswith("skipped")),
+                "halted": sum(1 for o in out if o.startswith("HALTED")),
+            }
+        )
     return rows
 
 
@@ -72,17 +80,41 @@ def main() -> None:
             print(f"{cap:3d}  {n}  {mode:9s} {label:4s} | {short}")
     print()
     print(f"components merged unreviewed under the old rule, all modes: {unreviewed_merges_old}")
-    print(f"components merged unreviewed under the new rule in hard mode: {unreviewed_merges_new_hard}")
-    print("claim: with the default cap (0) nothing changes ->",
-          "holds" if all(run(0, n, m, False) == run(0, n, m, True)
-                         for n in range(1, 5) for m in ("hard", "advisory")) else "fails")
-    print("claim: advisory mode is byte-identical old and new ->",
-          "holds" if all(run(c, n, 'advisory', False) == run(c, n, 'advisory', True)
-                         for c in range(4) for n in range(1, 5)) else "fails")
-    print("claim: issue #226 test 1 (cap 1, two components, hard) halts the second ->",
-          "holds" if run(1, 2, 'hard', True) == ['reviewed', 'HALTED: infrastructure_error, check=adversarial_budget'] else "fails")
-    print("claim: the new hard rule never merges an unreviewed component ->",
-          "holds" if unreviewed_merges_new_hard == 0 else "fails")
+    print(
+        "components merged unreviewed under the new rule in hard mode: "
+        f"{unreviewed_merges_new_hard}"
+    )
+    print(
+        "claim: with the default cap (0) nothing changes ->",
+        "holds"
+        if all(
+            run(0, n, m, False) == run(0, n, m, True)
+            for n in range(1, 5)
+            for m in ("hard", "advisory")
+        )
+        else "fails",
+    )
+    print(
+        "claim: advisory mode is byte-identical old and new ->",
+        "holds"
+        if all(
+            run(c, n, "advisory", False) == run(c, n, "advisory", True)
+            for c in range(4)
+            for n in range(1, 5)
+        )
+        else "fails",
+    )
+    print(
+        "claim: issue #226 test 1 (cap 1, two components, hard) halts the second ->",
+        "holds"
+        if run(1, 2, "hard", True)
+        == ["reviewed", "HALTED: infrastructure_error, check=adversarial_budget"]
+        else "fails",
+    )
+    print(
+        "claim: the new hard rule never merges an unreviewed component ->",
+        "holds" if unreviewed_merges_new_hard == 0 else "fails",
+    )
 
 
 if __name__ == "__main__":

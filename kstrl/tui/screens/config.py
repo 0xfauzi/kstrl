@@ -67,6 +67,7 @@ def display_value(raw: str, root: str) -> Text:
         return Text(text, style=theme.MUTED)
     return Text(text)
 
+
 SOURCE_STYLES = {
     "flag": f"bold {theme.ACCENT}",
     "env": theme.STEEL,
@@ -87,8 +88,7 @@ class ConfigScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield ContextBar("config", "resolved values and their sources")
         with Vertical(id="config-root"):
-            yield Input(placeholder="/ filter by key, section, source...",
-                        id="config-filter")
+            yield Input(placeholder="/ filter by key, section, source...", id="config-filter")
             yield Static("resolved config", id="config-title")
             yield DataTable(id="config-table")
             yield Static(id="config-hint")
@@ -126,11 +126,12 @@ class ConfigScreen(Screen[None]):
         report = self._report()
         hint = self.query_one("#config-hint", Static)
         if report is None:
-            hint.update(Text(
-                "config could not be resolved - run `ks config show` "
-                "for the error",
-                style=theme.WARNING,
-            ))
+            hint.update(
+                Text(
+                    "config could not be resolved - run `ks config show` for the error",
+                    style=theme.WARNING,
+                )
+            )
             return
         needle = needle.strip().lower()
         root = str(report.root_dir)
@@ -149,7 +150,8 @@ class ConfigScreen(Screen[None]):
             )
         title = Text("resolved config", style=f"bold {theme.MUTED}")
         title.append(
-            f"  {shown}/{len(report.rows)} value(s)", style=theme.MUTED,
+            f"  {shown}/{len(report.rows)} value(s)",
+            style=theme.MUTED,
         )
         self.query_one("#config-title", Static).update(title)
         self._update_hint()
@@ -176,7 +178,8 @@ class ConfigScreen(Screen[None]):
             if row_key is not None:
                 section, _, key = str(row_key.value).partition(".")
                 text.append(
-                    f"   [{section}] {key} = ...", style=theme.STEEL,
+                    f"   [{section}] {key} = ...",
+                    style=theme.STEEL,
                 )
         hint.update(text)
 
@@ -184,7 +187,8 @@ class ConfigScreen(Screen[None]):
         self._render_report(event.value)
 
     def on_data_table_row_highlighted(
-        self, event: DataTable.RowHighlighted,
+        self,
+        event: DataTable.RowHighlighted,
     ) -> None:
         del event
         self._update_hint()
@@ -221,7 +225,6 @@ class ConfigScreen(Screen[None]):
                 build_config_report(root_dir)
             )
         except ValueError as exc:
-            self.app.notify(f"config failed to resolve: {exc}",
-                            severity="error")
+            self.app.notify(f"config failed to resolve: {exc}", severity="error")
             return
         self._render_report(self.query_one(Input).value)

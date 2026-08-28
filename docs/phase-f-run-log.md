@@ -9,7 +9,7 @@ Roadmap item: F2-F3 (run + capture)
 
 Decompose phase only. The full implementation pass (Phase 1 → 2 → 2.5 → 3 across 6 components, ~20 minutes per component) was deliberately not driven to completion in-session because:
 
-1. The architect's red-team output is the single most-valuable Phase F signal — it directly grades the new `DECOMPOSE_PROMPT` from PR #36 against a real ambiguous spec.
+1. The architect's red-team output is the single most-valuable Phase F signal: it directly grades the new `DECOMPOSE_PROMPT` from PR #36 against a real ambiguous spec.
 2. The implementing-agent + reviewer + security + distillation passes would burn substantial LLM tokens against a sandbox project that the user is unlikely to ship. The infrastructure exists; the user can drive it when they choose a target.
 3. F4 (independent ultra-review by the user) is the gating step before merge anyway. Until F4 runs, generating more output is just more work for that step.
 
@@ -37,12 +37,12 @@ The DECOMPOSE_PROMPT's red-team surfaced 11 `spec_issues` (8 major + 3 minor) on
 | # | Severity | Kind | Summary | Planted? |
 |---|---|---|---|---|
 | 1 | major | missing_detail | JWT verification key source and algorithm allowlist not specified | yes (planted) |
-| 2 | major | unstated_assumption | user_id from JWT sub used as directory name — path traversal if attacker-controlled | yes (planted) |
+| 2 | major | unstated_assumption | user_id from JWT sub used as directory name: path traversal if attacker-controlled | yes (planted) |
 | 3 | major | undefined_failure_mode | Content-Type validation relies on client-declared header only | yes (planted) |
 | 4 | major | ambiguity | 413 size-limit timing not specified; no streaming mandate | yes (planted) |
-| 5 | major | ambiguity | Pagination cursor described only as "opaque" — naive offset cursor leaks across users | yes (planted) |
+| 5 | major | ambiguity | Pagination cursor described only as "opaque": naive offset cursor leaks across users | yes (planted) |
 | 6 | major | missing_detail | Soft-delete cleanup mechanism / ownership undefined | yes (planted) |
-| 7 | major | undefined_failure_mode | Original filename in Content-Disposition — header/filename injection risk | extra (NOT planted) |
+| 7 | major | undefined_failure_mode | Original filename in Content-Disposition: header/filename injection risk | extra (NOT planted) |
 | 8 | minor | missing_detail | Atomic-rename temp-file naming strategy unspecified | yes (planted) |
 | 9 | minor | missing_detail | 4xx error response body shape unspecified | extra |
 | 10 | minor | missing_detail | SQLite schema columns/indexes undefined | extra |
@@ -62,12 +62,12 @@ This is one run with one model; the calibration suite in Phase D will turn this 
 
 The architect decomposed into 6 components in topological order:
 
-1. `config` — settings load + validation, JWT alg allowlist excludes "none"
-2. `jwt-auth` — verifier, expiry/sub/UUID checks, FastAPI dependency
-3. `metadata-db` — schema init, insert/get/list/soft-delete, opaque per-user cursor
-4. `upload-endpoint` — POST /api/files with size and content-type validation
-5. `download-endpoint` — GET /api/files/{id} with 404 leak-prevention
-6. `delete-endpoint` — soft-delete with 404 leak-prevention
+1. `config`: settings load + validation, JWT alg allowlist excludes "none"
+2. `jwt-auth`: verifier, expiry/sub/UUID checks, FastAPI dependency
+3. `metadata-db`: schema init, insert/get/list/soft-delete, opaque per-user cursor
+4. `upload-endpoint`: POST /api/files with size and content-type validation
+5. `download-endpoint`: GET /api/files/{id} with 404 leak-prevention
+6. `delete-endpoint`: soft-delete with 404 leak-prevention
 
 The decomposition itself is a meaningful artifact: every spec issue surfaced above is reflected in concrete acceptance criteria (e.g. US-002 says "A token signed with alg=none ... is rejected with an InvalidTokenError and never decoded as valid"). The implementer therefore inherits the architect's red-team findings.
 

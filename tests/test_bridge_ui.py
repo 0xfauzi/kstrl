@@ -63,11 +63,16 @@ class TestEventMapping:
         ]
         assert len(captured) == len(expected)
         for event, (kind, severity, key, text) in zip(
-            captured, expected, strict=True,
+            captured,
+            expected,
+            strict=True,
         ):
             assert isinstance(event, Log)
             assert (event.kind, event.severity, event.key, event.text) == (
-                kind, severity, key, text,
+                kind,
+                severity,
+                key,
+                text,
             )
 
 
@@ -110,8 +115,7 @@ class TestPrompterDelegation:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, list[str], int]] = []
 
-            def choose(self, header: str, options: list[str],
-                       default: int = 0) -> int:
+            def choose(self, header: str, options: list[str], default: int = 0) -> int:
                 self.calls.append((header, options, default))
                 return 2
 

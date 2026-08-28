@@ -82,7 +82,11 @@ def _read_pid(pidfile: Path, timeout: float = 5.0) -> int:
 
 def _git(*args: str, cwd: Path) -> None:
     subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        timeout=30,
     )
 
 
@@ -96,14 +100,23 @@ def _init_repo(root: Path) -> None:
     (kstrl_dir / "prompt.md").write_text("test prompt\n")
     feature_dir = kstrl_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
-    (feature_dir / "prd.json").write_text(json.dumps({
-        "branchName": "kstrl/factory/a",
-        "userStories": [{
-            "id": "US-001", "title": "Test",
-            "acceptanceCriteria": ["AC1"],
-            "priority": 1, "passes": True, "notes": "",
-        }],
-    }))
+    (feature_dir / "prd.json").write_text(
+        json.dumps(
+            {
+                "branchName": "kstrl/factory/a",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Test",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                ],
+            }
+        )
+    )
     _git("add", "-A", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
@@ -134,8 +147,7 @@ class TestCustomAgentDeadline:
         child_pidfile = tmp_path / "child.pid"
         grandchild_pidfile = tmp_path / "grandchild.pid"
         agent = CustomAgent(
-            f"sh -c 'echo $$ > {child_pidfile}; "
-            f"sleep 300 & echo $! > {grandchild_pidfile}; wait'"
+            f"sh -c 'echo $$ > {child_pidfile}; sleep 300 & echo $! > {grandchild_pidfile}; wait'"
         )
 
         start = time.monotonic()
@@ -172,7 +184,8 @@ class TestCustomAgentDeadline:
         assert agent.final_message == "done"
 
     def test_agent_ignoring_stdin_does_not_block_on_large_prompt(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A child that never reads stdin must not deadlock the harness on
         a prompt bigger than the pipe buffer (stdin is written on its own
@@ -195,21 +208,15 @@ class TestClaudeCodeAgentDeadline:
     `claude` executable on PATH."""
 
     def test_hang_after_stream_event_is_killed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         bindir = tmp_path / "bin"
         bindir.mkdir()
         pidfile = tmp_path / "claude.pid"
-        event = (
-            '{"type":"assistant","message":'
-            '{"content":[{"type":"text","text":"working"}]}}'
-        )
-        script = (
-            "#!/bin/sh\n"
-            f"echo '{event}'\n"
-            f"echo $$ > {pidfile}\n"
-            "exec sleep 300\n"
-        )
+        event = '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}'
+        script = f"#!/bin/sh\necho '{event}'\necho $$ > {pidfile}\nexec sleep 300\n"
         fake = bindir / "claude"
         fake.write_text(script)
         fake.chmod(0o755)
@@ -231,7 +238,9 @@ class TestCodexAgentDeadline:
     `codex` executable on PATH."""
 
     def test_silent_hang_is_killed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         bindir = tmp_path / "bin"
         bindir.mkdir()
@@ -297,7 +306,8 @@ class TestClaudeSdkAgentDeadline:
         initialize timeout never gets the chance to matter."""
         pidfile = tmp_path / "cli.pid"
         cli = self._fake_cli(
-            tmp_path, f"echo $$ > {pidfile}\nexec sleep 300\n",
+            tmp_path,
+            f"echo $$ > {pidfile}\nexec sleep 300\n",
         )
         agent = self._agent(cli)
         start = time.monotonic()
@@ -318,8 +328,7 @@ class TestClaudeSdkAgentDeadline:
         pidfile = tmp_path / "cli.pid"
         cli = self._fake_cli(
             tmp_path,
-            f"echo fake-cli-started 1>&2\n"
-            f"echo $$ > {pidfile}\nexec sleep 300\n",
+            f"echo fake-cli-started 1>&2\necho $$ > {pidfile}\nexec sleep 300\n",
         )
         agent = self._agent(cli)
         start = time.monotonic()
@@ -349,7 +358,9 @@ class TestClaudeSdkAgentDeadline:
         assert _wait_pid_dead(_read_pid(grandchild_pidfile))
 
     def test_missing_sdk_fails_fast_with_install_hint(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Without the sdk extra the runner emits the install hint and
         exits - no hang, no timeout, no traceback spew."""
@@ -367,9 +378,7 @@ class TestClaudeSdkAgentDeadline:
 
         assert elapsed < KILL_BOUND_SECONDS
         assert any("claude-agent-sdk is not installed" in line for line in lines)
-        assert not any(
-            line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines
-        )
+        assert not any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.usage_records[-1].source == "unavailable"
 
 
@@ -399,13 +408,16 @@ class TestSignalGroupSafety:
 
     @pytest.mark.parametrize("bad_pid", [None, 0, 1, -1])
     def test_never_killpg_for_unsafe_pids(
-        self, bad_pid: object, monkeypatch: pytest.MonkeyPatch,
+        self,
+        bad_pid: object,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import signal as _signal
 
         killpg_calls: list[tuple[int, int]] = []
         monkeypatch.setattr(
-            os, "killpg",
+            os,
+            "killpg",
             lambda pgid, sig: killpg_calls.append((pgid, sig)),
         )
         streamer, fake_proc = self._streamer_with_fake_proc(bad_pid)
@@ -416,7 +428,8 @@ class TestSignalGroupSafety:
         fake_proc.terminate.assert_called_once()
 
     def test_mock_pid_falls_back_to_terminate(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The exact CI-killer shape: MagicMock pid (coerces to 1)."""
         import signal as _signal
@@ -424,7 +437,8 @@ class TestSignalGroupSafety:
 
         killpg_calls: list[tuple[int, int]] = []
         monkeypatch.setattr(
-            os, "killpg",
+            os,
+            "killpg",
             lambda pgid, sig: killpg_calls.append((pgid, sig)),
         )
         streamer, fake_proc = self._streamer_with_fake_proc(MagicMock())
@@ -435,14 +449,16 @@ class TestSignalGroupSafety:
         fake_proc.terminate.assert_called_once()
 
     def test_own_process_group_is_never_group_killed(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A pid resolving to the harness's own pgid must not be killpg'd."""
         import signal as _signal
 
         killpg_calls: list[tuple[int, int]] = []
         monkeypatch.setattr(
-            os, "killpg",
+            os,
+            "killpg",
             lambda pgid, sig: killpg_calls.append((pgid, sig)),
         )
         monkeypatch.setattr(os, "getpgid", lambda pid: os.getpgrp())
@@ -461,14 +477,19 @@ class _RecordingAgent:
     final_message: str | None = None
 
     def __init__(
-        self, sleep_seconds: float = 0.0, lines: list[str] | None = None,
+        self,
+        sleep_seconds: float = 0.0,
+        lines: list[str] | None = None,
     ) -> None:
         self.received_timeouts: list[float | None] = []
         self._sleep_seconds = sleep_seconds
         self._lines = lines if lines is not None else ["working"]
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         self.received_timeouts.append(timeout)
         if self._sleep_seconds:
@@ -480,9 +501,7 @@ def _loop_config(tmp_path: Path, max_iterations: int) -> KstrlConfig:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     return KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=kstrl_dir / "prompt.md",
@@ -507,7 +526,8 @@ class TestLoopTimeouts:
         assert agent.received_timeouts == [123.0]
 
     def test_iteration_timeout_capped_by_component_budget(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         config = _loop_config(tmp_path, max_iterations=1)
         agent = _RecordingAgent()
@@ -526,7 +546,11 @@ class TestLoopTimeouts:
         timeouts = TimeoutConfig(agent_iteration=0, component_total=0.3)
 
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path, timeouts=timeouts,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
+            timeouts=timeouts,
         )
 
         assert result.completed is False
@@ -540,7 +564,11 @@ class TestLoopTimeouts:
         timeouts = TimeoutConfig(agent_iteration=0, component_total=0)
 
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path, timeouts=timeouts,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
+            timeouts=timeouts,
         )
 
         assert result.iterations == 3
@@ -553,7 +581,11 @@ class TestLoopTimeouts:
         timeouts = TimeoutConfig(agent_iteration=60.0, component_total=0)
 
         result = run_loop(
-            config, PlainUI(no_color=True), agent, tmp_path, timeouts=timeouts,
+            config,
+            PlainUI(no_color=True),
+            agent,
+            tmp_path,
+            timeouts=timeouts,
         )
 
         assert result.timed_out_iterations == 2
@@ -563,7 +595,9 @@ class TestFactoryComponentTimeout:
     """A sleep-forever fake agent times out and the component is FAILED."""
 
     def test_component_failed_on_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(tmp_path)
         kstrl_dir = tmp_path / "scripts" / "kstrl"
@@ -571,28 +605,52 @@ class TestFactoryComponentTimeout:
         (kstrl_dir / "prompt.md").write_text("test prompt")
         feature_dir = kstrl_dir / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         pidfile = tmp_path / "agent.pid"
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="t",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json", "b/a",
-            )],
+            version="1",
+            spec_file="spec.md",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    "scripts/kstrl/feature/a/prd.json",
+                    "b/a",
+                )
+            ],
         )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             timeout_config=TimeoutConfig(
-                agent_iteration=0.5, component_total=1.0,
+                agent_iteration=0.5,
+                component_total=1.0,
             ),
         )
         base = KstrlConfig(
@@ -600,13 +658,19 @@ class TestFactoryComponentTimeout:
             prd_file=kstrl_dir / "prd.json",
             sleep_seconds=0,
             agent_cmd=f"echo $$ > {pidfile}; exec sleep 300",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         start = time.monotonic()
         result = run_factory(
-            manifest, config, base, PlainUI(no_color=True), tmp_path,
+            manifest,
+            config,
+            base,
+            PlainUI(no_color=True),
+            tmp_path,
         )
         elapsed = time.monotonic() - start
 
@@ -620,7 +684,9 @@ class TestFactoryComponentTimeout:
         assert _wait_pid_dead(_read_pid(pidfile))
 
     def test_timeout_retry_notes_recreate_from_base(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A timeout retry must say it recreates the worktree from base in
         the retry error string (R0.1 requirement 5)."""
@@ -629,19 +695,33 @@ class TestFactoryComponentTimeout:
         log_path = tmp_path / "progress.jsonl"
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="t",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json",
-                "kstrl/factory/a",
-            )],
+            version="1",
+            spec_file="spec.md",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    "scripts/kstrl/feature/a/prd.json",
+                    "kstrl/factory/a",
+                )
+            ],
         )
         config = FactoryConfig(
-            use_worktrees=True, create_prs=False, max_parallel=1,
-            max_retries=1, retry_delay=0, review_mode="skip",
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=1,
+            retry_delay=0,
+            review_mode="skip",
             progress_log_path=log_path,
             timeout_config=TimeoutConfig(
-                agent_iteration=0.3, component_total=0.5,
+                agent_iteration=0.3,
+                component_total=0.5,
             ),
         )
         base = KstrlConfig(
@@ -649,12 +729,18 @@ class TestFactoryComponentTimeout:
             prd_file=tmp_path / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="exec sleep 300",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         result = run_factory(
-            manifest, config, base, PlainUI(no_color=True), tmp_path,
+            manifest,
+            config,
+            base,
+            PlainUI(no_color=True),
+            tmp_path,
         )
 
         assert "a" in result.failed
@@ -662,9 +748,7 @@ class TestFactoryComponentTimeout:
         assert comp is not None
         assert comp.retries == 1
 
-        events = [
-            json.loads(line) for line in log_path.read_text().splitlines()
-        ]
+        events = [json.loads(line) for line in log_path.read_text().splitlines()]
         retry_events = [e for e in events if e["event"] == "component_retrying"]
         assert retry_events, "expected a component_retrying event"
         reason = retry_events[0]["data"]["reason"]
@@ -686,12 +770,18 @@ class TestWorktreeTimeoutHygiene:
         _git("add", "-A", cwd=wt)
         _git("commit", "-q", "-m", "partial work", cwd=wt)
         branch_tip = subprocess.run(
-            ["git", "rev-parse", "b/a"], cwd=tmp_path,
-            capture_output=True, text=True, timeout=30,
+            ["git", "rev-parse", "b/a"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         ).stdout.strip()
         main_tip = subprocess.run(
-            ["git", "rev-parse", "main"], cwd=tmp_path,
-            capture_output=True, text=True, timeout=30,
+            ["git", "rev-parse", "main"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         ).stdout.strip()
         assert branch_tip != main_tip
 
@@ -701,12 +791,20 @@ class TestWorktreeTimeoutHygiene:
         lock.write_text("")
 
         wt2 = _setup_worktree(
-            "a", "b/a", "main", tmp_path, "run1", fresh_from_base=True,
+            "a",
+            "b/a",
+            "main",
+            tmp_path,
+            "run1",
+            fresh_from_base=True,
         )
 
         new_tip = subprocess.run(
-            ["git", "rev-parse", "b/a"], cwd=tmp_path,
-            capture_output=True, text=True, timeout=30,
+            ["git", "rev-parse", "b/a"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         ).stdout.strip()
         assert new_tip == main_tip, "branch was not recreated from base"
         assert not (wt2 / "leftover.txt").exists()
@@ -721,15 +819,21 @@ class TestWorktreeTimeoutHygiene:
         _git("add", "-A", cwd=wt)
         _git("commit", "-q", "-m", "progress", cwd=wt)
         branch_tip = subprocess.run(
-            ["git", "rev-parse", "b/a"], cwd=tmp_path,
-            capture_output=True, text=True, timeout=30,
+            ["git", "rev-parse", "b/a"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         ).stdout.strip()
 
         _setup_worktree("a", "b/a", "main", tmp_path, "run1")
 
         new_tip = subprocess.run(
-            ["git", "rev-parse", "b/a"], cwd=tmp_path,
-            capture_output=True, text=True, timeout=30,
+            ["git", "rev-parse", "b/a"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
         ).stdout.strip()
         assert new_tip == branch_tip
 
@@ -765,14 +869,18 @@ class TestSchedulerBackstop:
 
         assert _next_backstop_wait({f1: "a"}, {}, now=0.0) is None
         wait_s = _next_backstop_wait(
-            {f1: "a", f2: "b"}, {f1: 50.0, f2: 30.0}, now=10.0,
+            {f1: "a", f2: "b"},
+            {f1: 50.0, f2: 30.0},
+            now=10.0,
         )
         assert wait_s == 20.0
         # A deadline already in the past floors at zero (poll immediately).
         assert _next_backstop_wait({f1: "a"}, {f1: 5.0}, now=10.0) == 0.0
 
     def test_backstop_fails_component_and_continues(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A worker hung OUTSIDE the loop/adapter enforcement (here: a
         stuck scaffold command) is abandoned at component_total + margin:
@@ -783,18 +891,33 @@ class TestSchedulerBackstop:
         _init_repo(tmp_path)
 
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="t",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                "a", "A", "", [], "scripts/kstrl/feature/a/prd.json",
-                "kstrl/factory/a", scaffold="sleep 5",
-            )],
+            version="1",
+            spec_file="spec.md",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    "scripts/kstrl/feature/a/prd.json",
+                    "kstrl/factory/a",
+                    scaffold="sleep 5",
+                )
+            ],
         )
         config = FactoryConfig(
-            use_worktrees=True, create_prs=False, max_parallel=2,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=2,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             timeout_config=TimeoutConfig(
-                agent_iteration=5.0, component_total=0.5,
+                agent_iteration=5.0,
+                component_total=0.5,
                 scheduler_backstop_margin=0.5,
             ),
         )
@@ -803,13 +926,19 @@ class TestSchedulerBackstop:
             prd_file=tmp_path / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo done",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         start = time.monotonic()
         result = run_factory(
-            manifest, config, base, PlainUI(no_color=True), tmp_path,
+            manifest,
+            config,
+            base,
+            PlainUI(no_color=True),
+            tmp_path,
         )
         elapsed = time.monotonic() - start
 
@@ -831,18 +960,18 @@ class TestTimeoutConfigLoading:
     """TimeoutConfig is the single source: toml [timeout] + env overlay."""
 
     def test_load_reads_toml_section(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_AGENT_ITERATION",
+            "KSTRL_TIMEOUT_COMPONENT",
             "KSTRL_TIMEOUT_BACKSTOP_MARGIN",
         ):
             monkeypatch.delenv(var, raising=False)
         (tmp_path / "kstrl.toml").write_text(
-            "[timeout]\n"
-            "agent_iteration = 11\n"
-            "component_total = 22\n"
-            "scheduler_backstop_margin = 5\n"
+            "[timeout]\nagent_iteration = 11\ncomponent_total = 22\nscheduler_backstop_margin = 5\n"
         )
         config = TimeoutConfig.load(tmp_path)
         assert config.agent_iteration == 11.0
@@ -852,7 +981,9 @@ class TestTimeoutConfigLoading:
         assert config.git_operation == 30.0
 
     def test_env_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(
             "[timeout]\nagent_iteration = 11\ncomponent_total = 22\n"
@@ -863,10 +994,13 @@ class TestTimeoutConfigLoading:
         assert config.component_total == 22.0
 
     def test_missing_toml_uses_defaults(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_AGENT_ITERATION",
+            "KSTRL_TIMEOUT_COMPONENT",
         ):
             monkeypatch.delenv(var, raising=False)
         config = TimeoutConfig.load(tmp_path)
@@ -889,18 +1023,24 @@ class TestCliTimeoutFlags:
 
     def _write_manifest(self, tmp_path: Path) -> Path:
         manifest_path = tmp_path / "manifest.json"
-        manifest_path.write_text(json.dumps({
-            "version": "1",
-            "specFile": "spec.md",
-            "projectName": "t",
-            "baseBranch": "main",
-            "singlePr": False,
-            "components": [],
-        }))
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "version": "1",
+                    "specFile": "spec.md",
+                    "projectName": "t",
+                    "baseBranch": "main",
+                    "singlePr": False,
+                    "components": [],
+                }
+            )
+        )
         return manifest_path
 
     def _invoke_factory(
-        self, tmp_path: Path, extra_args: list[str],
+        self,
+        tmp_path: Path,
+        extra_args: list[str],
     ) -> FactoryConfig:
         from unittest.mock import patch
 
@@ -913,14 +1053,20 @@ class TestCliTimeoutFlags:
         runner = CliRunner()
         with patch("kstrl.cli.run_factory") as mock_run:
             mock_run.return_value = FactoryResult()
-            result = runner.invoke(cli, [
-                "factory",
-                "--manifest", str(manifest_path),
-                "--root", str(tmp_path),
-                "--agent-cmd", "echo hi",
-                "--yes",
-                *extra_args,
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "factory",
+                    "--manifest",
+                    str(manifest_path),
+                    "--root",
+                    str(tmp_path),
+                    "--agent-cmd",
+                    "echo hi",
+                    "--yes",
+                    *extra_args,
+                ],
+            )
             assert result.exit_code == 0, result.output
             factory_config = mock_run.call_args[0][1]
         assert isinstance(factory_config, FactoryConfig)
@@ -936,10 +1082,13 @@ class TestCliTimeoutFlags:
         assert factory_config.timeout_config.component_total == 222.0
 
     def test_toml_used_when_flags_absent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         for var in (
-            "KSTRL_TIMEOUT_AGENT_ITERATION", "KSTRL_TIMEOUT_COMPONENT",
+            "KSTRL_TIMEOUT_AGENT_ITERATION",
+            "KSTRL_TIMEOUT_COMPONENT",
         ):
             monkeypatch.delenv(var, raising=False)
         (tmp_path / "kstrl.toml").write_text(
@@ -951,14 +1100,15 @@ class TestCliTimeoutFlags:
         assert factory_config.timeout_config.component_total == 55.0
 
     def test_flag_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("KSTRL_TIMEOUT_AGENT_ITERATION", raising=False)
-        (tmp_path / "kstrl.toml").write_text(
-            "[timeout]\nagent_iteration = 44\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[timeout]\nagent_iteration = 44\n")
         factory_config = self._invoke_factory(
-            tmp_path, ["--agent-timeout", "111"],
+            tmp_path,
+            ["--agent-timeout", "111"],
         )
         assert factory_config.timeout_config is not None
         assert factory_config.timeout_config.agent_iteration == 111.0
@@ -992,11 +1142,13 @@ class TestSubprocessTimeoutAudit:
     """
 
     SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
-    POPEN_ALLOWLIST = frozenset({
-        "kstrl/agents/proc.py",
-        "kstrl/serve.py",
-        "kstrl/verify.py",
-    })
+    POPEN_ALLOWLIST = frozenset(
+        {
+            "kstrl/agents/proc.py",
+            "kstrl/serve.py",
+            "kstrl/verify.py",
+        }
+    )
 
     @staticmethod
     def _subprocess_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
@@ -1056,8 +1208,7 @@ class TestSubprocessTimeoutAudit:
         )
         assert not violations, (
             "subprocess calls without an explicit timeout= (add one, or "
-            "route through a deadline-managed runner):\n  "
-            + "\n  ".join(violations)
+            "route through a deadline-managed runner):\n  " + "\n  ".join(violations)
         )
         assert not popen_violations, (
             "Popen outside the deadline-managed allowlist (see class "

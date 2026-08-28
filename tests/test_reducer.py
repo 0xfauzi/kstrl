@@ -22,24 +22,27 @@ def _stamped(events: list[ev.Event], run_id: str = "run-1") -> list[ev.Event]:
 
 class TestLifecycleFold:
     def test_component_lifecycle_v2(self) -> None:
-        events = _stamped([
-            ev.RunStarted(project="proj", components=2),
-            ev.RunPlan(
-                components=(
-                    {"id": "a", "title": "Alpha", "deps": []},
-                    {"id": "b", "title": "Beta", "deps": ["a"]},
+        events = _stamped(
+            [
+                ev.RunStarted(project="proj", components=2),
+                ev.RunPlan(
+                    components=(
+                        {"id": "a", "title": "Alpha", "deps": []},
+                        {"id": "b", "title": "Beta", "deps": ["a"]},
+                    ),
+                    max_total_tokens=1000,
+                    max_adversarial_calls=7,
                 ),
-                max_total_tokens=1000, max_adversarial_calls=7,
-            ),
-            ev.ComponentStarted(component="a"),
-            ev.PhaseStarted(component="a", phase="engineer", attempt=1),
-            ev.IterationStarted(component="a", iteration=1, max_iterations=10),
-            ev.IterationCompleted(component="a", iteration=1, duration_seconds=5.0),
-            ev.PhaseCompleted(component="a", phase="engineer", passed=True),
-            ev.PhaseStarted(component="a", phase="review", attempt=1),
-            ev.ComponentCompleted(component="a", duration_seconds=60.0, iterations=3),
-            ev.RunCompleted(completed=1, failed=0, skipped=0),
-        ])
+                ev.ComponentStarted(component="a"),
+                ev.PhaseStarted(component="a", phase="engineer", attempt=1),
+                ev.IterationStarted(component="a", iteration=1, max_iterations=10),
+                ev.IterationCompleted(component="a", iteration=1, duration_seconds=5.0),
+                ev.PhaseCompleted(component="a", phase="engineer", passed=True),
+                ev.PhaseStarted(component="a", phase="review", attempt=1),
+                ev.ComponentCompleted(component="a", duration_seconds=60.0, iterations=3),
+                ev.RunCompleted(completed=1, failed=0, skipped=0),
+            ]
+        )
         state = reducer.fold(events, run_id="run-1")
         assert state.project == "proj"
         assert state.finished is True
@@ -57,31 +60,37 @@ class TestLifecycleFold:
         assert b.deps == ("a",)
 
     def test_explicit_phase_beats_inference(self) -> None:
-        events = _stamped([
-            ev.ComponentStarted(component="a"),
-            ev.PhaseStarted(component="a", phase="verify", attempt=1),
-            # v1-style usage event would infer "engineer"; must NOT win.
-            ev.ComponentUsage(component="a", phase="engineer", calls=1),
-        ])
+        events = _stamped(
+            [
+                ev.ComponentStarted(component="a"),
+                ev.PhaseStarted(component="a", phase="verify", attempt=1),
+                # v1-style usage event would infer "engineer"; must NOT win.
+                ev.ComponentUsage(component="a", phase="engineer", calls=1),
+            ]
+        )
         state = reducer.fold(events)
         assert state.components["a"].phase == "verify"
         assert state.components["a"].status == "verifying"
 
     def test_v1_inference_without_phase_events(self) -> None:
-        events = _stamped([
-            ev.ComponentStarted(component="a"),
-            ev.VerificationResultEvent(component="a", passed=True),
-            ev.ReviewResultEvent(component="a", passed=True, mode="security-hard"),
-        ])
+        events = _stamped(
+            [
+                ev.ComponentStarted(component="a"),
+                ev.VerificationResultEvent(component="a", passed=True),
+                ev.ReviewResultEvent(component="a", passed=True, mode="security-hard"),
+            ]
+        )
         state = reducer.fold(events)
         assert state.components["a"].phase == "security"
 
     def test_failure_and_retry(self) -> None:
-        events = _stamped([
-            ev.ComponentStarted(component="a"),
-            ev.ComponentFailed(component="a", error="tests failed"),
-            ev.ComponentRetrying(component="a", attempt=2, reason="tests failed"),
-        ])
+        events = _stamped(
+            [
+                ev.ComponentStarted(component="a"),
+                ev.ComponentFailed(component="a", error="tests failed"),
+                ev.ComponentRetrying(component="a", attempt=2, reason="tests failed"),
+            ]
+        )
         state = reducer.fold(events)
         a = state.components["a"]
         assert a.status == "running"  # back in flight after retry
@@ -89,24 +98,38 @@ class TestLifecycleFold:
         assert a.error == "tests failed"
 
     def test_component_skipped_is_terminal(self) -> None:
-        state = reducer.fold(_stamped([
-            ev.ComponentStarted(component="a"),
-            ev.ComponentSkipped(component="a", reason="operator stopped"),
-            ev.RunCompleted(skipped=1),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.ComponentStarted(component="a"),
+                    ev.ComponentSkipped(component="a", reason="operator stopped"),
+                    ev.RunCompleted(skipped=1),
+                ]
+            )
+        )
         assert state.finished
         assert state.components["a"].status == "skipped"
         assert state.components["a"].error == "operator stopped"
 
     def test_usage_accumulates_component_and_run(self) -> None:
-        events = _stamped([
-            ev.ComponentUsage(component="a", phase="engineer", calls=2,
-                              unreported_calls=1, total_tokens=100, cost_usd=0.5),
-            ev.ComponentUsage(component="a", phase="review", calls=1,
-                              total_tokens=50, cost_usd=0.25),
-            ev.ComponentUsage(component="b", phase="engineer", calls=1,
-                              total_tokens=10, cost_usd=0.1),
-        ])
+        events = _stamped(
+            [
+                ev.ComponentUsage(
+                    component="a",
+                    phase="engineer",
+                    calls=2,
+                    unreported_calls=1,
+                    total_tokens=100,
+                    cost_usd=0.5,
+                ),
+                ev.ComponentUsage(
+                    component="a", phase="review", calls=1, total_tokens=50, cost_usd=0.25
+                ),
+                ev.ComponentUsage(
+                    component="b", phase="engineer", calls=1, total_tokens=10, cost_usd=0.1
+                ),
+            ]
+        )
         state = reducer.fold(events)
         assert state.components["a"].total_tokens == 150
         assert state.components["a"].usage_calls == 3
@@ -115,17 +138,22 @@ class TestLifecycleFold:
         assert state.unreported_calls == 1
 
     def test_pr_states_and_checkpoint(self) -> None:
-        events = _stamped([
-            ev.CheckpointRequested(component="a", kind="checkpoint", question="ok?"),
-        ])
+        events = _stamped(
+            [
+                ev.CheckpointRequested(component="a", kind="checkpoint", question="ok?"),
+            ]
+        )
         state = reducer.fold(events)
         assert state.components["a"].checkpoint_open == "checkpoint"
-        more = _stamped([
-            ev.CheckpointResolved(component="a", kind="checkpoint",
-                                  decision="approved", decided_by="operator"),
-            ev.PrCreated(component="a", pr_number=5, pr_url="u5"),
-            ev.PrMerged(component="a", pr_number=5, pr_url="u5"),
-        ])
+        more = _stamped(
+            [
+                ev.CheckpointResolved(
+                    component="a", kind="checkpoint", decision="approved", decided_by="operator"
+                ),
+                ev.PrCreated(component="a", pr_number=5, pr_url="u5"),
+                ev.PrMerged(component="a", pr_number=5, pr_url="u5"),
+            ]
+        )
         for event in more:
             reducer.apply(state, event)
         a = state.components["a"]
@@ -134,10 +162,12 @@ class TestLifecycleFold:
         assert a.pr_number == 5
 
     def test_merge_pending_v1_twin_does_not_regress_v2(self) -> None:
-        events = _stamped([
-            ev.PrMergePending(component="a", pr_url="u", error="pending"),
-            ev.MergePendingV1(component="a", pr_url="", error=""),
-        ])
+        events = _stamped(
+            [
+                ev.PrMergePending(component="a", pr_url="u", error="pending"),
+                ev.MergePendingV1(component="a", pr_url="", error=""),
+            ]
+        )
         state = reducer.fold(events)
         a = state.components["a"]
         assert a.pr_state == "merge_pending"
@@ -145,53 +175,77 @@ class TestLifecycleFold:
         assert a.status == "merge_pending"
 
     def test_findings_bounded(self) -> None:
-        events = _stamped([
-            ev.FindingRecorded(component="a", phase="review", category="c",
-                               severity="fail", location=f"f.py:{i}",
-                               explanation="x", attempt=1)
-            for i in range(reducer.MAX_RECENT_FINDINGS + 10)
-        ])
+        events = _stamped(
+            [
+                ev.FindingRecorded(
+                    component="a",
+                    phase="review",
+                    category="c",
+                    severity="fail",
+                    location=f"f.py:{i}",
+                    explanation="x",
+                    attempt=1,
+                )
+                for i in range(reducer.MAX_RECENT_FINDINGS + 10)
+            ]
+        )
         state = reducer.fold(events)
         a = state.components["a"]
         assert a.findings_count == reducer.MAX_RECENT_FINDINGS + 10
         assert len(a.recent_findings) == reducer.MAX_RECENT_FINDINGS
-        assert a.recent_findings[-1]["location"] == (
-            f"f.py:{reducer.MAX_RECENT_FINDINGS + 9}"
-        )
+        assert a.recent_findings[-1]["location"] == (f"f.py:{reducer.MAX_RECENT_FINDINGS + 9}")
 
     def test_heartbeat_freshness(self) -> None:
-        events = _stamped([
-            ev.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=10.0),
-        ])
+        events = _stamped(
+            [
+                ev.WorkerHeartbeat(component="a", pid=1, elapsed_seconds=10.0),
+            ]
+        )
         state = reducer.fold(events)
         assert state.components["a"].last_heartbeat_ts > 0
 
     def test_contract_result_attributed_to_breaker(self) -> None:
-        events = _stamped([
-            ev.ContractResult(tier=1, passed=False, breaker="a",
-                              duration_seconds=3.0),
-        ])
+        events = _stamped(
+            [
+                ev.ContractResult(tier=1, passed=False, breaker="a", duration_seconds=3.0),
+            ]
+        )
         state = reducer.fold(events)
         assert "contract failed at tier 1" in state.components["a"].error
 
     def test_unknown_events_counted_not_fatal(self) -> None:
-        events: list[ev.Event] = list(_stamped([
-            ev.ComponentStarted(component="a"),
-        ]))
-        events.append(ev.event_from_dict({
-            "event": "from_the_future", "ts": time.time(),
-            "component": "a", "data": {"x": 1},
-        }))
-        events.extend(_stamped([
-            ev.ComponentCompleted(component="a", iterations=1),
-        ]))
+        events: list[ev.Event] = list(
+            _stamped(
+                [
+                    ev.ComponentStarted(component="a"),
+                ]
+            )
+        )
+        events.append(
+            ev.event_from_dict(
+                {
+                    "event": "from_the_future",
+                    "ts": time.time(),
+                    "component": "a",
+                    "data": {"x": 1},
+                }
+            )
+        )
+        events.extend(
+            _stamped(
+                [
+                    ev.ComponentCompleted(component="a", iterations=1),
+                ]
+            )
+        )
         state = reducer.fold(events)
         assert state.unknown_events == 1
         assert state.components["a"].status == "completed"
 
     def test_run_id_filter(self) -> None:
-        mixed = _stamped([ev.ComponentStarted(component="a")], run_id="r1") + \
-            _stamped([ev.ComponentStarted(component="b")], run_id="r2")
+        mixed = _stamped([ev.ComponentStarted(component="a")], run_id="r1") + _stamped(
+            [ev.ComponentStarted(component="b")], run_id="r2"
+        )
         state = reducer.fold(mixed, run_id="r1")
         assert "a" in state.components
         assert "b" not in state.components
@@ -199,31 +253,46 @@ class TestLifecycleFold:
 
 class TestDecomposeVocabulary:
     def test_spec_issues_folded_with_counts(self) -> None:
-        state = reducer.fold(_stamped([
-            ev.SpecIssueRecorded(severity="blocker", kind="ambiguity",
-                                 summary="A or B?", location="spec.md:3",
-                                 suggestion="pick one"),
-            ev.SpecIssueRecorded(severity="minor", kind="style",
-                                 summary="nit"),
-            ev.SpecIssueRecorded(severity="minor", kind="style",
-                                 summary="nit 2"),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.SpecIssueRecorded(
+                        severity="blocker",
+                        kind="ambiguity",
+                        summary="A or B?",
+                        location="spec.md:3",
+                        suggestion="pick one",
+                    ),
+                    ev.SpecIssueRecorded(severity="minor", kind="style", summary="nit"),
+                    ev.SpecIssueRecorded(severity="minor", kind="style", summary="nit 2"),
+                ]
+            )
+        )
         assert state.spec_issue_counts == {"blocker": 1, "minor": 2}
         assert state.spec_issues[0] == {
-            "severity": "blocker", "kind": "ambiguity",
-            "summary": "A or B?", "location": "spec.md:3",
+            "severity": "blocker",
+            "kind": "ambiguity",
+            "summary": "A or B?",
+            "location": "spec.md:3",
             "suggestion": "pick one",
         }
 
     def test_artifacts_recorded_run_level_with_component(self) -> None:
-        state = reducer.fold(_stamped([
-            ev.ArtifactWritten(label="spec_issues",
-                               path="scripts/kstrl/spec-issues.json"),
-            ev.ArtifactWritten(component="comp-a", label="prd",
-                               path="scripts/kstrl/feature/comp-a/prd.json"),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.ArtifactWritten(label="spec_issues", path="scripts/kstrl/spec-issues.json"),
+                    ev.ArtifactWritten(
+                        component="comp-a",
+                        label="prd",
+                        path="scripts/kstrl/feature/comp-a/prd.json",
+                    ),
+                ]
+            )
+        )
         assert [a["label"] for a in state.artifacts] == [
-            "spec_issues", "prd",
+            "spec_issues",
+            "prd",
         ]
         assert state.artifacts[1]["component"] == "comp-a"
         # Run-scoped: the component stamp does not create a component.
@@ -232,11 +301,12 @@ class TestDecomposeVocabulary:
     def test_lists_bounded_counts_complete(self) -> None:
         overflow = reducer.MAX_SPEC_ISSUES + 20
         pool: list[ev.Event] = [
-            ev.SpecIssueRecorded(severity="minor", summary=f"issue {i}")
-            for i in range(overflow)
+            ev.SpecIssueRecorded(severity="minor", summary=f"issue {i}") for i in range(overflow)
         ]
-        pool.extend(ev.ArtifactWritten(label="prd", path=f"p{i}.json")
-                    for i in range(reducer.MAX_ARTIFACTS + 20))
+        pool.extend(
+            ev.ArtifactWritten(label="prd", path=f"p{i}.json")
+            for i in range(reducer.MAX_ARTIFACTS + 20)
+        )
         state = reducer.fold(_stamped(pool))
         assert len(state.spec_issues) == reducer.MAX_SPEC_ISSUES
         # FIFO trim: the oldest fell off, the count stays honest.
@@ -250,10 +320,11 @@ class TestDecomposeVocabulary:
         assert state.spec_issues[0]["severity"] == "unknown"
 
     def test_unrecognised_severities_share_the_unknown_bucket(self) -> None:
-        state = reducer.fold(_stamped([
-            ev.SpecIssueRecorded(severity=f"future-{i}", summary="s")
-            for i in range(200)
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [ev.SpecIssueRecorded(severity=f"future-{i}", summary="s") for i in range(200)]
+            )
+        )
         assert state.spec_issue_counts == {"unknown": 200}
         assert {i["severity"] for i in state.spec_issues} == {"unknown"}
 
@@ -265,24 +336,40 @@ class TestFoldApplyEquivalence:
         comps = ["a", "b", "c"]
         for _ in range(300):
             c = rng.choice(comps)
-            pool.append(rng.choice([
-                ev.ComponentStarted(component=c),
-                ev.PhaseStarted(component=c, phase=rng.choice(
-                    ["engineer", "verify", "review"]), attempt=1),
-                ev.ComponentUsage(component=c, phase="engineer", calls=1,
-                                  total_tokens=rng.randint(1, 100)),
-                ev.FindingRecorded(component=c, phase="review", category="x",
-                                   severity="fail", location="f:1",
-                                   explanation="e", attempt=1),
-                ev.ComponentCompleted(component=c, iterations=rng.randint(1, 5)),
-                ev.ComponentFailed(component=c, error="err"),
-                ev.WorkerHeartbeat(component=c, pid=1, elapsed_seconds=1.0),
-                ev.SpecIssueRecorded(
-                    severity=rng.choice(["blocker", "major", "minor"]),
-                    kind="ambiguity", summary="s", location="spec.md:1",
-                ),
-                ev.ArtifactWritten(component=c, label="prd", path="p.json"),
-            ]))
+            pool.append(
+                rng.choice(
+                    [
+                        ev.ComponentStarted(component=c),
+                        ev.PhaseStarted(
+                            component=c,
+                            phase=rng.choice(["engineer", "verify", "review"]),
+                            attempt=1,
+                        ),
+                        ev.ComponentUsage(
+                            component=c, phase="engineer", calls=1, total_tokens=rng.randint(1, 100)
+                        ),
+                        ev.FindingRecorded(
+                            component=c,
+                            phase="review",
+                            category="x",
+                            severity="fail",
+                            location="f:1",
+                            explanation="e",
+                            attempt=1,
+                        ),
+                        ev.ComponentCompleted(component=c, iterations=rng.randint(1, 5)),
+                        ev.ComponentFailed(component=c, error="err"),
+                        ev.WorkerHeartbeat(component=c, pid=1, elapsed_seconds=1.0),
+                        ev.SpecIssueRecorded(
+                            severity=rng.choice(["blocker", "major", "minor"]),
+                            kind="ambiguity",
+                            summary="s",
+                            location="spec.md:1",
+                        ),
+                        ev.ArtifactWritten(component=c, label="prd", path="p.json"),
+                    ]
+                )
+            )
         stamped = _stamped(pool)
         folded = reducer.fold(stamped, run_id="run-1")
         incremental = reducer.RunState(run_id="run-1")
@@ -296,12 +383,22 @@ class TestV1Upconversion:
         log = ProgressLog(path, run_id="run-9")
         log.factory_started("proj", 2)
         log.component_started("a")
-        log.component_usage("a", "engineer", {
-            "calls": 2, "known_calls": 1, "unreported_calls": 1,
-            "input_tokens": 10, "output_tokens": 5, "cache_read_tokens": 0,
-            "cache_creation_tokens": 0, "total_tokens": 15,
-            "cost_usd": 0.05, "duration_seconds": 3.0,
-        })
+        log.component_usage(
+            "a",
+            "engineer",
+            {
+                "calls": 2,
+                "known_calls": 1,
+                "unreported_calls": 1,
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "total_tokens": 15,
+                "cost_usd": 0.05,
+                "duration_seconds": 3.0,
+            },
+        )
         log.verification_result("a", True, ["tests"], [], 2.0)
         log.review_result("a", True, "standard", 0, 1, 30.0)
         log.component_retrying("a", 2, "flaky")
@@ -329,18 +426,31 @@ class TestV1Upconversion:
             assert comp.last_event == comp_activity.last_event, cid
 
     def test_adversarial_source_key_renamed(self) -> None:
-        event = reducer.upconvert_v1({
-            "ts": "2026-07-20T12:00:00Z", "event": "adversarial_agent_selected",
-            "run_id": "r", "data": {"phase": "review", "source": "config",
-                                    "identity": "i", "agent_type": "t",
-                                    "model": "m", "homogeneous": False},
-        })
+        event = reducer.upconvert_v1(
+            {
+                "ts": "2026-07-20T12:00:00Z",
+                "event": "adversarial_agent_selected",
+                "run_id": "r",
+                "data": {
+                    "phase": "review",
+                    "source": "config",
+                    "identity": "i",
+                    "agent_type": "t",
+                    "model": "m",
+                    "homogeneous": False,
+                },
+            }
+        )
         assert isinstance(event, ev.AdversarialAgentSelected)
         assert event.agent_source == "config"
 
     def test_junk_never_raises(self) -> None:
-        for obj in [{}, {"event": None}, {"event": 7, "ts": object()},
-                    {"event": "component_failed", "data": "not-a-dict"}]:
+        for obj in [
+            {},
+            {"event": None},
+            {"event": 7, "ts": object()},
+            {"event": "component_failed", "data": "not-a-dict"},
+        ]:
             out = reducer.upconvert_v1(obj)  # type: ignore[arg-type]
             assert isinstance(out, ev.Event)
 
@@ -353,7 +463,9 @@ class TestLoadRunState:
         bus.emit(ev.ComponentStarted(component="a"))
         worker = ev.EventBus(
             ev.JsonlSink(paths.engineer_events("a")),
-            run_id=run_id, source="worker", component="a",
+            run_id=run_id,
+            source="worker",
+            component="a",
         )
         worker.emit(ev.IterationStarted(iteration=1, max_iterations=5))
         bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0))
@@ -396,8 +508,7 @@ class TestLoadRunState:
     def test_explicit_run_id(self, tmp_path: Path) -> None:
         self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "older")
         self._write_v2(tmp_path, "factory-20260720-000009.000000-x", "newer")
-        state, _ = reducer.load_run_state(
-            tmp_path, "factory-20260720-000001.000000-x")
+        state, _ = reducer.load_run_state(tmp_path, "factory-20260720-000001.000000-x")
         assert state.project == "older"
 
     def test_neither(self, tmp_path: Path) -> None:
@@ -406,7 +517,8 @@ class TestLoadRunState:
         assert state.components == {}
 
     def test_run_dirs_newest_first_orders_and_agrees_with_the_fold(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """R10.4 exposed this listing so a caller can scan a run's raw
         stream instead of folding it. The two must not be able to
@@ -424,20 +536,21 @@ class TestLoadRunState:
         assert source is not None and dirs[0] == source.parent
 
     def test_run_dirs_newest_first_is_empty_without_runs(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         assert reducer.run_dirs_newest_first(tmp_path) == []
 
     def test_run_dirs_newest_first_includes_a_run_with_no_events(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A run with [factory] progress_log_enabled = false writes its
         accounting files and no events. Filtering it out would hide the
         newest run behind an older one, and safe mode would report a
         stale verdict as though it were current."""
         self._write_v2(tmp_path, "factory-20260720-000001.000000-x", "real")
-        (tmp_path / ".kstrl" / "runs" / "factory-20260720-000009.000000-x"
-         ).mkdir(parents=True)
+        (tmp_path / ".kstrl" / "runs" / "factory-20260720-000009.000000-x").mkdir(parents=True)
 
         dirs = reducer.run_dirs_newest_first(tmp_path)
 
@@ -451,7 +564,8 @@ class TestLoadRunState:
         ]
 
     def test_a_tie_resolves_the_same_way_it_did_before(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Two kinds can share a run_sort_key (same stamp, same nonce).
         sorted(reverse=True) keeps ties in their original order, so
@@ -462,14 +576,13 @@ class TestLoadRunState:
         self._write_v2(tmp_path, "decompose-20260720-000001.000000-x", "dec")
 
         ordered = reducer._v2_run_dirs(tmp_path)
-        listed = [
-            d for d in (tmp_path / ".kstrl" / "runs").iterdir() if d.is_dir()
-        ]
+        listed = [d for d in (tmp_path / ".kstrl" / "runs").iterdir() if d.is_dir()]
 
         assert [d.name for d in ordered] == [d.name for d in listed]
 
     def test_run_dirs_newest_first_does_not_swallow_a_read_error(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """_v2_run_dirs answers an unreadable runs/ with "no runs", which
         reads as "nothing was skipped". This listing must not."""
@@ -479,7 +592,7 @@ class TestLoadRunState:
 
         with pytest.raises(OSError):
             reducer.run_dirs_newest_first(tmp_path)
-        assert reducer._v2_run_dirs(tmp_path) == []   # unchanged contract
+        assert reducer._v2_run_dirs(tmp_path) == []  # unchanged contract
 
     def test_torn_tail_in_run_dir(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-000003.000000-x"
@@ -504,16 +617,32 @@ class TestPerAxisCoverageFold:
     def test_axis_call_counts_reach_run_and_component_state(self) -> None:
         # The reviewer's shape: two metered calls, both reported tokens,
         # only one reported a cost.
-        state = reducer.fold(_stamped([
-            ev.ComponentUsage(
-                component="a", phase="engineer", calls=1, known_calls=1,
-                token_calls=1, cost_calls=1, total_tokens=500, cost_usd=5.0,
-            ),
-            ev.ComponentUsage(
-                component="a", phase="review", calls=1, known_calls=1,
-                token_calls=1, cost_calls=0, total_tokens=500, cost_usd=0.0,
-            ),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.ComponentUsage(
+                        component="a",
+                        phase="engineer",
+                        calls=1,
+                        known_calls=1,
+                        token_calls=1,
+                        cost_calls=1,
+                        total_tokens=500,
+                        cost_usd=5.0,
+                    ),
+                    ev.ComponentUsage(
+                        component="a",
+                        phase="review",
+                        calls=1,
+                        known_calls=1,
+                        token_calls=1,
+                        cost_calls=0,
+                        total_tokens=500,
+                        cost_usd=0.0,
+                    ),
+                ]
+            )
+        )
         assert state.usage_calls == 2
         assert state.token_calls == 2
         assert state.cost_calls == 1
@@ -530,12 +659,20 @@ class TestPerAxisCoverageFold:
         it identifies a legacy one. Those calls are coverage-UNKNOWN, not
         coverage-MISSING - inventing a gap is the same class of lie as
         hiding one."""
-        state = reducer.fold(_stamped([
-            ev.ComponentUsage(
-                component="a", phase="engineer", calls=2, known_calls=2,
-                total_tokens=100, cost_usd=1.0,
-            ),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.ComponentUsage(
+                        component="a",
+                        phase="engineer",
+                        calls=2,
+                        known_calls=2,
+                        total_tokens=100,
+                        cost_usd=1.0,
+                    ),
+                ]
+            )
+        )
         assert state.coverage_unknown_calls == 2
         assert state.tokens_are_lower_bound is False
         assert state.cost_is_lower_bound is False
@@ -543,23 +680,41 @@ class TestPerAxisCoverageFold:
     def test_a_legacy_payloads_unreported_calls_still_mark_both_axes(
         self,
     ) -> None:
-        state = reducer.fold(_stamped([
-            ev.ComponentUsage(
-                component="a", phase="engineer", calls=3, known_calls=2,
-                unreported_calls=1, total_tokens=100, cost_usd=1.0,
-            ),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.ComponentUsage(
+                        component="a",
+                        phase="engineer",
+                        calls=3,
+                        known_calls=2,
+                        unreported_calls=1,
+                        total_tokens=100,
+                        cost_usd=1.0,
+                    ),
+                ]
+            )
+        )
         assert state.tokens_are_lower_bound is True
         assert state.cost_is_lower_bound is True
 
     def test_budget_coverage_is_run_scoped_state(self) -> None:
-        state = reducer.fold(_stamped([
-            ev.BudgetCoverage(
-                ceiling="max_cost_usd", axis="cost", calls=2,
-                covered_calls=1, uncovered_calls=1, uncovered_tokens=40_000,
-                uncovered_roles=("review",), detail="cost coverage is PARTIAL",
-            ),
-        ]))
+        state = reducer.fold(
+            _stamped(
+                [
+                    ev.BudgetCoverage(
+                        ceiling="max_cost_usd",
+                        axis="cost",
+                        calls=2,
+                        covered_calls=1,
+                        uncovered_calls=1,
+                        uncovered_tokens=40_000,
+                        uncovered_roles=("review",),
+                        detail="cost coverage is PARTIAL",
+                    ),
+                ]
+            )
+        )
         gap = state.coverage_gaps.get("cost")
         assert gap is not None
         assert gap.ceiling == "max_cost_usd"
@@ -568,25 +723,44 @@ class TestPerAxisCoverageFold:
         assert state.cost_is_lower_bound is True
 
     def test_budget_coverage_survives_the_v1_upconversion(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """progress.jsonl is the other sink (#181 parity): the same fact
         must reach the same state through the v1 path."""
         log = ProgressLog(tmp_path / "progress.jsonl", run_id="run-9")
         log.budget_coverage(
-            ceiling="max_cost_usd", axis="cost", calls=2, covered_calls=1,
-            uncovered_calls=1, uncovered_tokens=40_000,
-            uncovered_roles=["review"], detail="cost coverage is PARTIAL",
+            ceiling="max_cost_usd",
+            axis="cost",
+            calls=2,
+            covered_calls=1,
+            uncovered_calls=1,
+            uncovered_tokens=40_000,
+            uncovered_roles=["review"],
+            detail="cost coverage is PARTIAL",
         )
-        log.component_usage("a", "review", {
-            "calls": 1, "known_calls": 1, "token_calls": 1, "cost_calls": 0,
-            "unreported_calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "cache_read_tokens": 0, "cache_creation_tokens": 0,
-            "total_tokens": 500, "cost_usd": 0.0, "duration_seconds": 1.0,
-        })
+        log.component_usage(
+            "a",
+            "review",
+            {
+                "calls": 1,
+                "known_calls": 1,
+                "token_calls": 1,
+                "cost_calls": 0,
+                "unreported_calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_creation_tokens": 0,
+                "total_tokens": 500,
+                "cost_usd": 0.0,
+                "duration_seconds": 1.0,
+            },
+        )
         raw = read_progress_events(tmp_path / "progress.jsonl")
         state = reducer.fold(
-            [reducer.upconvert_v1(e) for e in raw], run_id="run-9",
+            [reducer.upconvert_v1(e) for e in raw],
+            run_id="run-9",
         )
         assert state.token_calls == 1
         assert state.cost_calls == 0

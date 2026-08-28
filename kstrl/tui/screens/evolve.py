@@ -63,11 +63,9 @@ def _proposal_detail(proposal: Proposal, root_dir: Path) -> Text:
         text.append("\n\nsuggested change\n", style=f"bold {theme.ACCENT}")
         text.append(proposal.convention)
     if proposal.applied:
-        text.append(f"\n\n✓ applied {proposal.applied}",
-                    style=f"bold {theme.SUCCESS}")
+        text.append(f"\n\n✓ applied {proposal.applied}", style=f"bold {theme.SUCCESS}")
     elif proposal.is_convention:
-        text.append("\n\n(a) apply - appends to CLAUDE.md Agent Learnings",
-                    style=theme.MUTED)
+        text.append("\n\n(a) apply - appends to CLAUDE.md Agent Learnings", style=theme.MUTED)
     else:
         text.append(
             "\n\nautomated apply only covers convention-type proposals "
@@ -135,11 +133,13 @@ class EvolveScreen(Screen[None]):
         if pending:
             right.append(f"▲ {pending} pending", style=theme.WARNING)
             right.append(
-                f" of {len(self._proposals)} proposal(s)", style=theme.MUTED,
+                f" of {len(self._proposals)} proposal(s)",
+                style=theme.MUTED,
             )
         else:
             right.append(
-                f"{len(self._proposals)} proposal(s)", style=theme.MUTED,
+                f"{len(self._proposals)} proposal(s)",
+                style=theme.MUTED,
             )
         self.query_one(ContextBar).set_right(right)
 
@@ -156,9 +156,9 @@ class EvolveScreen(Screen[None]):
             table.add_row(
                 Text(proposal.display_id, style="bold"),
                 Text(proposal.title),
-                Text(proposal.type) if proposal.type
-                else Text(theme.EMPTY_CELL, style=theme.MUTED),
-                Text(proposal.target) if proposal.target
+                Text(proposal.type) if proposal.type else Text(theme.EMPTY_CELL, style=theme.MUTED),
+                Text(proposal.target)
+                if proposal.target
                 else Text(theme.EMPTY_CELL, style=theme.MUTED),
                 applied,
                 key=proposal.path.name,
@@ -167,11 +167,12 @@ class EvolveScreen(Screen[None]):
         if self._proposals:
             self._show_detail(0)
         else:
-            detail.update(Text(
-                "no proposals yet - run `ks evolve` after a few factory "
-                "runs to generate them",
-                style=theme.MUTED,
-            ))
+            detail.update(
+                Text(
+                    "no proposals yet - run `ks evolve` after a few factory runs to generate them",
+                    style=theme.MUTED,
+                )
+            )
 
     def _load_patterns_and_trends(self, root_dir: Path) -> None:
         journal = EvolutionJournal(EvolutionConfig.load(root_dir))
@@ -195,8 +196,7 @@ class EvolveScreen(Screen[None]):
         def _num(key: str) -> Text:
             value = str(row.get(key, "") or "")
             if not value:
-                return Text(theme.EMPTY_CELL, style=theme.MUTED,
-                            justify="right")
+                return Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right")
             return Text(value, justify="right")
 
         run_id = str(row.get("run_id", ""))
@@ -219,11 +219,12 @@ class EvolveScreen(Screen[None]):
             Text(short, style="bold"),
             _num("completed"),
             _num("failed"),
-            Text(f"{retry_bar(rate)} {rate:.2f}" if rate else theme.EMPTY_CELL,
-                 justify="right"),
-            Text(f"{tokens}{marker}", justify="right") if tokens
+            Text(f"{retry_bar(rate)} {rate:.2f}" if rate else theme.EMPTY_CELL, justify="right"),
+            Text(f"{tokens}{marker}", justify="right")
+            if tokens
             else Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right"),
-            Text(f"${cost}{marker}", justify="right") if cost
+            Text(f"${cost}{marker}", justify="right")
+            if cost
             else Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right"),
         )
 
@@ -245,7 +246,8 @@ class EvolveScreen(Screen[None]):
             )
 
     def on_data_table_row_highlighted(
-        self, event: DataTable.RowHighlighted,
+        self,
+        event: DataTable.RowHighlighted,
     ) -> None:
         if event.data_table.id != "proposals-table":
             return
@@ -263,8 +265,7 @@ class EvolveScreen(Screen[None]):
             return
         if proposal.applied:
             self.app.notify(
-                f"{proposal.display_id} already applied at "
-                f"{proposal.applied}",
+                f"{proposal.display_id} already applied at {proposal.applied}",
             )
             return
         if not proposal.is_convention:
@@ -281,24 +282,27 @@ class EvolveScreen(Screen[None]):
                 return
             # The modal WAS the confirmation.
             outcome = apply_proposal(
-                proposal, self._root_dir(), confirm=lambda _: True,
+                proposal,
+                self._root_dir(),
+                confirm=lambda _: True,
             )
             self.app.notify(
                 outcome.message,
-                severity="information" if outcome.status == "applied"
-                else "error",
+                severity="information" if outcome.status == "applied" else "error",
             )
             self._load_proposals(self._root_dir())
 
         self.app.push_screen(
-            OptionsModal(PromptRequest(
-                kind=PromptKind.CONFIRM,
-                header=(
-                    f"{proposal.display_id}: append this convention to "
-                    f"CLAUDE.md Agent Learnings?  \"{proposal.convention}\""
-                ),
-                options=("Apply", "Cancel"),
-                default=1,
-            )),
+            OptionsModal(
+                PromptRequest(
+                    kind=PromptKind.CONFIRM,
+                    header=(
+                        f"{proposal.display_id}: append this convention to "
+                        f'CLAUDE.md Agent Learnings?  "{proposal.convention}"'
+                    ),
+                    options=("Apply", "Cancel"),
+                    default=1,
+                )
+            ),
             _resolved,
         )

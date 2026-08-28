@@ -139,7 +139,7 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
         o.append(
             f'<button type="button" class="seg__b" data-layer-btn="{layer["id"]}" '
             f'aria-pressed="false" style="--c:{T["layers"][layer["id"]]}">'
-            f'<i></i>{esc(layer["label"])}</button>'
+            f"<i></i>{esc(layer['label'])}</button>"
         )
     o.append(
         '<button type="button" class="seg__b" data-layer-btn="all" aria-pressed="false">'
@@ -235,8 +235,10 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append("</section>")
 
     # ---------------- index by region ----------------
-    o.append('<section class="list" id="components"><h2>Components <span>by region; '
-             "click one to focus it</span></h2>")
+    o.append(
+        '<section class="list" id="components"><h2>Components <span>by region; '
+        "click one to focus it</span></h2>"
+    )
     by_region: dict[str, list[dict[str, Any]]] = {}
     for c in COMPONENTS:
         by_region.setdefault(c.get("region") or "outside", []).append(c)
@@ -258,8 +260,10 @@ def build(atlas: dict[str, Any], ch: dict[str, Any]) -> str:
     o.append("</div></section>")
 
     # ---------------- invariants ----------------
-    o.append('<section class="list" id="invariants"><h2>Invariants <span>the rules the '
-             "chips in the panel point at</span></h2>")
+    o.append(
+        '<section class="list" id="invariants"><h2>Invariants <span>the rules the '
+        "chips in the panel point at</span></h2>"
+    )
     o.append('<ol class="rules">')
     for n in sorted(INVARIANTS):
         ids = sorted(k for k, v in GOVERNED_BY.items() if n in v)
@@ -691,7 +695,12 @@ def main() -> int:
         ch = change_mod.compute(repo, args.base, atlas, args.head)
         ch["pr"] = change_mod.pr_meta(repo, args.pr)
     out = Path(args.out)
-    page = build(atlas, ch)
+    # A committed text file ends with a newline, and end-of-file-fixer enforces
+    # that on every file in the repo. Emitting it here is what stops that hook
+    # and this --check contradicting each other. Measured: without it the hook
+    # appended the newline and --check then called the page stale on every run,
+    # with refresh.sh stripping it straight back off.
+    page = build(atlas, ch) + "\n"
 
     if args.check:
         current = out.read_text(encoding="utf-8") if out.is_file() else ""

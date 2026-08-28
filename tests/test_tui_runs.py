@@ -56,7 +56,8 @@ class TestDiscovery:
     def test_incomplete_run_is_live_when_fresh(self, tmp_path: Path) -> None:
         run_id = "factory-20260720-150000.000000-live"
         write_fake_run(
-            tmp_path, FakeRunSpec(components=1, complete=False),
+            tmp_path,
+            FakeRunSpec(components=1, complete=False),
             run_id=run_id,
         )
         ref = find_run(tmp_path, run_id)
@@ -74,10 +75,15 @@ class TestDiscovery:
         run_id = "factory-20260720-150000.000000-log"
         run_dir = tmp_path / ".kstrl" / "runs" / run_id
         run_dir.mkdir(parents=True)
-        (run_dir / "events.jsonl").write_text(json.dumps({
-            "event": "log",
-            "data": {"text": 'waiting for "factory_completed"'},
-        }) + "\n")
+        (run_dir / "events.jsonl").write_text(
+            json.dumps(
+                {
+                    "event": "log",
+                    "data": {"text": 'waiting for "factory_completed"'},
+                }
+            )
+            + "\n"
+        )
 
         ref = find_run(tmp_path, run_id)
 
@@ -85,13 +91,15 @@ class TestDiscovery:
         assert ref.completed is False
 
     def test_held_lock_keeps_newest_incomplete_run_live(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         import fcntl
 
         run_id = "factory-20260720-150000.000000-locked"
         write_fake_run(
-            tmp_path, FakeRunSpec(components=1, complete=False),
+            tmp_path,
+            FakeRunSpec(components=1, complete=False),
             run_id=run_id,
         )
         events = tmp_path / ".kstrl" / "runs" / run_id / "events.jsonl"

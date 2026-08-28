@@ -275,7 +275,8 @@ def tag_finding_with_attempt(finding: Finding, attempt: int) -> Finding:
     if any(t.startswith(ATTEMPT_TAG_PREFIX) for t in finding.tags):
         return finding
     return replace(
-        finding, tags=finding.tags + (f"{ATTEMPT_TAG_PREFIX}{attempt}",),
+        finding,
+        tags=finding.tags + (f"{ATTEMPT_TAG_PREFIX}{attempt}",),
     )
 
 
@@ -291,7 +292,8 @@ def tag_finding_with_model(finding: Finding, model_id: str) -> Finding:
     if any(t.startswith(MODEL_TAG_PREFIX) for t in finding.tags):
         return finding
     return replace(
-        finding, tags=finding.tags + (f"{MODEL_TAG_PREFIX}{model_id}",),
+        finding,
+        tags=finding.tags + (f"{MODEL_TAG_PREFIX}{model_id}",),
     )
 
 
@@ -301,7 +303,7 @@ def finding_model(finding: Finding) -> str | None:
     without a reviewer having run)."""
     for tag in finding.tags:
         if tag.startswith(MODEL_TAG_PREFIX):
-            return tag[len(MODEL_TAG_PREFIX):] or None
+            return tag[len(MODEL_TAG_PREFIX) :] or None
     return None
 
 
@@ -311,7 +313,7 @@ def finding_attempt(finding: Finding) -> int | None:
     for tag in finding.tags:
         if tag.startswith(ATTEMPT_TAG_PREFIX):
             try:
-                return int(tag[len(ATTEMPT_TAG_PREFIX):])
+                return int(tag[len(ATTEMPT_TAG_PREFIX) :])
             except ValueError:
                 return None
     return None
@@ -338,7 +340,8 @@ def dump_raw_debug(
         raw_path = debug_dir / f"_{phase}_raw.txt"
         raw_path.write_text(raw_output, encoding="utf-8")
         (debug_dir / f"_{phase}_status.txt").write_text(
-            label, encoding="utf-8",
+            label,
+            encoding="utf-8",
         )
         return str(raw_path)
     except OSError:
@@ -371,10 +374,7 @@ def render_findings_markdown(findings: list[Finding]) -> str:
         items = by_phase[phase]
         infra = [f for f in items if f.is_infrastructure_error]
         skipped = [f for f in items if f.is_phase_skip]
-        real = [
-            f for f in items
-            if not f.is_infrastructure_error and not f.is_phase_skip
-        ]
+        real = [f for f in items if not f.is_infrastructure_error and not f.is_phase_skip]
 
         lines.append(f"### {phase.capitalize()} ({len(real)} findings)")
         lines.append("")
@@ -394,8 +394,7 @@ def render_findings_markdown(findings: list[Finding]) -> str:
         if skipped:
             for f in skipped:
                 lines.append(
-                    f"- **PHASE SKIPPED**: {f.explanation} "
-                    "(this role did not run for this PR)"
+                    f"- **PHASE SKIPPED**: {f.explanation} (this role did not run for this PR)"
                 )
             lines.append("")
         for f in real:
@@ -404,9 +403,7 @@ def render_findings_markdown(findings: list[Finding]) -> str:
             if f.owasp or f.cwe:
                 pieces = [p for p in (f.owasp, f.cwe) if p]
                 tax = f" [{', '.join(pieces)}]"
-            lines.append(
-                f"- [{f.severity}] **{f.category}**{loc}{tax}"
-            )
+            lines.append(f"- [{f.severity}] **{f.category}**{loc}{tax}")
             lines.append(f"  - {f.explanation}")
             if f.suggestion:
                 lines.append(f"  - Suggestion: {f.suggestion}")

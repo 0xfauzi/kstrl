@@ -42,22 +42,33 @@ COMP = "comp-a"
 
 class TestRetryContextPropagation:
     def test_diff_scope_failure_details_reach_attempt_two_prompt(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
         # PRD with an allowedPaths scope: only src/ may change.
         prd_path = root / "scripts" / "kstrl" / "feature" / COMP / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": f"kstrl/factory/{COMP}",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-            "allowedPaths": ["src/"],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": f"kstrl/factory/{COMP}",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                    "allowedPaths": ["src/"],
+                }
+            )
+        )
 
         cap_dir = tmp_path / "prompts"
         cap_dir.mkdir()
@@ -91,9 +102,12 @@ class TestRetryContextPropagation:
                 max_retries=1,
                 progress_log_path=progress_path,
                 verify_config=VerifyConfig(
-                    test_command="true", typecheck_command="true",
-                    lint_command="true", check_diff_scope=True,
-                    check_bad_patterns=False, subprocess_timeout=10.0,
+                    test_command="true",
+                    typecheck_command="true",
+                    lint_command="true",
+                    check_diff_scope=True,
+                    check_bad_patterns=False,
+                    subprocess_timeout=10.0,
                 ),
             ),
             base_config(root, engineer),
@@ -130,21 +144,18 @@ class TestRetryContextPropagation:
         # The journal agrees with the prompts: one failed verification,
         # one retry, one passing verification.
         events = [
-            json.loads(line)
-            for line in progress_path.read_text().splitlines()
-            if line.strip()
+            json.loads(line) for line in progress_path.read_text().splitlines() if line.strip()
         ]
-        verifications = [
-            e["data"]["passed"] for e in events
-            if e["event"] == "verification_result"
-        ]
+        verifications = [e["data"]["passed"] for e in events if e["event"] == "verification_result"]
         assert verifications == [False, True]
         retries = [e for e in events if e["event"] == "component_retrying"]
         assert len(retries) == 1
         assert retries[0]["data"]["reason"] == "Mechanical verification failed"
 
     def test_fixed_failure_is_not_re_rendered_on_the_next_attempt(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """R10.2 (#223): three attempts, two different failures.
 
@@ -161,15 +172,24 @@ class TestRetryContextPropagation:
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
         prd_path = root / "scripts" / "kstrl" / "feature" / COMP / "prd.json"
-        prd_path.write_text(json.dumps({
-            "branchName": f"kstrl/factory/{COMP}",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-            "allowedPaths": ["src/"],
-        }))
+        prd_path.write_text(
+            json.dumps(
+                {
+                    "branchName": f"kstrl/factory/{COMP}",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                    "allowedPaths": ["src/"],
+                }
+            )
+        )
 
         cap_dir = tmp_path / "prompts"
         cap_dir.mkdir()
@@ -201,8 +221,7 @@ class TestRetryContextPropagation:
         # Fails only while the marker file is committed, so attempt 2
         # trips the linter and attempt 3 does not.
         lint = (
-            "if [ -f src/LINTFAIL ]; then "
-            "echo 'src/LINTFAIL:1:1: E501 line too long'; exit 1; fi"
+            "if [ -f src/LINTFAIL ]; then echo 'src/LINTFAIL:1:1: E501 line too long'; exit 1; fi"
         )
 
         manifest = make_manifest([component(COMP)])
@@ -211,9 +230,12 @@ class TestRetryContextPropagation:
             factory_config(
                 max_retries=2,
                 verify_config=VerifyConfig(
-                    test_command="true", typecheck_command="true",
-                    lint_command=lint, check_diff_scope=True,
-                    check_bad_patterns=False, subprocess_timeout=10.0,
+                    test_command="true",
+                    typecheck_command="true",
+                    lint_command=lint,
+                    check_diff_scope=True,
+                    check_bad_patterns=False,
+                    subprocess_timeout=10.0,
                 ),
             ),
             base_config(root, engineer),

@@ -89,17 +89,22 @@ class TestLoadAllowedPaths:
     def test_load_present_populates_field(self, tmp_path: Path) -> None:
         path = tmp_path / "prd.json"
         path.write_text(
-            json.dumps(_make_prd_payload(
-                allowedPaths=["src/", "tests/", "scripts/kstrl/feature/x/"],
-            )),
+            json.dumps(
+                _make_prd_payload(
+                    allowedPaths=["src/", "tests/", "scripts/kstrl/feature/x/"],
+                )
+            ),
         )
         prd = PRD.load(path)
         assert prd.allowed_paths == [
-            "src/", "tests/", "scripts/kstrl/feature/x/",
+            "src/",
+            "tests/",
+            "scripts/kstrl/feature/x/",
         ]
 
     def test_load_with_invalid_allowed_paths_rejected_at_load(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An invalid allowedPaths (e.g. empty array) makes PRD.load
         raise ValueError. The factory's per-component lookup tolerates

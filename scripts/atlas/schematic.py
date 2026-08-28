@@ -126,12 +126,6 @@ def mix(a: str, b: str, t: float) -> str:
     return f"#{r:02X}{g:02X}{bl:02X}"
 
 
-
-
-
-
-
-
 def lives_in(modules: list[str]) -> str:
     """One muted line for a contributor: the file, or the package when many.
 
@@ -459,9 +453,7 @@ def label_svg(
     )
 
 
-def badge_svg(
-    L: TextStyles, T: dict[str, Any], i: int, n: str, bx: float, by: float
-) -> str:
+def badge_svg(L: TextStyles, T: dict[str, Any], i: int, n: str, bx: float, by: float) -> str:
     """A journey step number in a filled accent circle, centred at (bx, by)."""
     r = 8.5 + 3.2 * (len(n) - 1)
     return (
@@ -646,15 +638,25 @@ def render(
         hot = i in traced
         flow_parts.append(
             flow_svg(
-                svg_id, i, src, dst, artifact, kind, layer_, route.points, colour, marker,
-                ghost=ghost, off=bool(off), hot=hot, art_hot=art_hot,
+                svg_id,
+                i,
+                src,
+                dst,
+                artifact,
+                kind,
+                layer_,
+                route.points,
+                colour,
+                marker,
+                ghost=ghost,
+                off=bool(off),
+                hot=hot,
+                art_hot=art_hot,
             )
         )
         seat = seats[i]
         if seat.cost > 0:
-            collisions.append(
-                f"'{artifact}' ({src} -> {dst}) overlaps {', '.join(seat.hits[:3])}"
-            )
+            collisions.append(f"'{artifact}' ({src} -> {dst}) overlaps {', '.join(seat.hits[:3])}")
         if not seat.on_longest:
             notes.append(f"'{artifact}' ({src} -> {dst}) sits on a shorter segment")
         lbox = seat.box
@@ -668,8 +670,18 @@ def render(
             }
         )
         label_parts[i] = label_svg(
-            L, i, src, dst, kind, layer_, artifact, lbox, colour,
-            ghost=ghost, off=bool(off), hot=hot,
+            L,
+            i,
+            src,
+            dst,
+            kind,
+            layer_,
+            artifact,
+            lbox,
+            colour,
+            ghost=ghost,
+            off=bool(off),
+            hot=hot,
         )
         if hot:
             # The step number sits just left of the edge's label, on the
@@ -709,7 +721,14 @@ def render(
 
         g: list[str] = [
             card_svg(
-                L, T, cid, kind, state, boxes[cid], fill, stroke,
+                L,
+                T,
+                cid,
+                kind,
+                state,
+                boxes[cid],
+                fill,
+                stroke,
                 classes=f"{state_class}{marks}" + (f" node--{tier}" if change_mode else ""),
                 region=c.get("region") or c.get("container") or "",
                 state_label=state_label,
@@ -804,9 +823,7 @@ def render(
 
     meta = {
         "_meta": {
-            "layers": [
-                {**layer, "colour": LAYER_COLOUR[layer["id"]]} for layer in LAYERS
-            ],
+            "layers": [{**layer, "colour": LAYER_COLOUR[layer["id"]]} for layer in LAYERS],
             "edges": edges_meta,
             "journeys": journeys_meta,
             "regions": [

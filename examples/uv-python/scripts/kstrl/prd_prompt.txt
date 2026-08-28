@@ -100,5 +100,3 @@ CONTEXT - Fill in the sections below, then feed this entire file to an LLM
 
 ## Additional Notes
 <!-- Anything else the LLM should know? Edge cases, error handling, etc. -->
-
-

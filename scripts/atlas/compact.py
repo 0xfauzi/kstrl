@@ -324,12 +324,38 @@ def render(
         ghost = states[src] == "planned" or states[dst] == "planned"
         hot = i in traced
         flow_parts.append(
-            flow_svg(svg_id, i, src, dst, artifact, kind, layer_, route.points, colour, layer_,
-                     ghost=ghost, off=False, hot=hot)
+            flow_svg(
+                svg_id,
+                i,
+                src,
+                dst,
+                artifact,
+                kind,
+                layer_,
+                route.points,
+                colour,
+                layer_,
+                ghost=ghost,
+                off=False,
+                hot=hot,
+            )
         )
         label_parts.append(
-            label_svg(L, i, src, dst, kind, layer_, artifact, seat.box, colour,
-                      ghost=ghost, off=False, hot=hot, label_px=LABEL_PX)
+            label_svg(
+                L,
+                i,
+                src,
+                dst,
+                kind,
+                layer_,
+                artifact,
+                seat.box,
+                colour,
+                ghost=ghost,
+                off=False,
+                hot=hot,
+                label_px=LABEL_PX,
+            )
         )
         label_boxes.append(
             {"from": src, "to": dst, "artifact": artifact, "box": [round(v, 1) for v in seat.box]}
@@ -370,8 +396,22 @@ def render(
         if journey is not None:
             classes += (" acts" if cid in acts else "") + (" meas" if cid in meas else "")
         card_parts.append(
-            card_svg(L, T, cid, kind, state, cards[cid], fill, stroke, classes, region_of[cid],
-                     state_label, PLAIN.get(cid, ""), name_px=NAME_PX, text_px=TEXT_PX)
+            card_svg(
+                L,
+                T,
+                cid,
+                kind,
+                state,
+                cards[cid],
+                fill,
+                stroke,
+                classes,
+                region_of[cid],
+                state_label,
+                PLAIN.get(cid, ""),
+                name_px=NAME_PX,
+                text_px=TEXT_PX,
+            )
             + "</g>"
         )
 

@@ -83,7 +83,7 @@ If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "a
 
 **Diagnose**: the merged tier branch's tests failed; Phase 3 attributes the failure to a "breaker" component (the most recent one merged into that tier). The breaker gets reset to PENDING and re-runs.
 
-**Resolve**: the system handles this automatically up to `max_retries`. If it keeps breaking, the integration is genuinely broken — inspect the merged tier branch, fix the spec or the components' contracts, re-run.
+**Resolve**: the system handles this automatically up to `max_retries`. If it keeps breaking, the integration is genuinely broken: inspect the merged tier branch, fix the spec or the components' contracts, re-run.
 
 ## Knowledge layer reports `no_valid_facts`
 
@@ -109,7 +109,7 @@ If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "a
 
 **Diagnose**: on POSIX, Phase A4's `fcntl.flock` on `.kstrl/worktrees/<comp_id>.lock` should prevent this. On Windows there is no flock and the runs race.
 
-**Resolve**: avoid running concurrent factory invocations against the same `root_dir` on Windows. On POSIX, the lock serializes worktree setup but doesn't prevent two runs from doing different work on the same component — use distinct `root_dir`s for distinct factory invocations.
+**Resolve**: avoid running concurrent factory invocations against the same `root_dir` on Windows. On POSIX, the lock serializes worktree setup but doesn't prevent two runs from doing different work on the same component. Use distinct `root_dir`s for distinct factory invocations.
 
 ## Adversarial budget exhausted mid-run
 
@@ -125,7 +125,7 @@ If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "a
 
 **Diagnose**: the architect's red-team pass found blocker-severity issues. The pipeline halts rather than implementing against a vague spec.
 
-**Resolve**: read the surfaced issues, edit the spec to address them, re-run. There is no override flag; that's deliberate — the alternative was producing brittle code from ambiguous instructions.
+**Resolve**: read the surfaced issues, edit the spec to address them, re-run. There is no override flag; that's deliberate: the alternative was producing brittle code from ambiguous instructions.
 
 ## Calibration suite reports a regression
 
@@ -133,7 +133,7 @@ If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "a
 
 **Diagnose**: the prompt change made the role miss a planted bug it previously caught.
 
-**Resolve**: either revert the prompt change or update the fixture's `must_detect` if the change deliberately narrowed scope. Do not just unskip the test — a calibration regression is the signal you wrote the system to produce.
+**Resolve**: either revert the prompt change or update the fixture's `must_detect` if the change deliberately narrowed scope. Do not just unskip the test: a calibration regression is the signal you wrote the system to produce.
 
 ## The dashboard (TUI)
 

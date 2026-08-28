@@ -115,7 +115,10 @@ class ClaudeSdkAgent:
         return importlib.util.find_spec("claude_agent_sdk") is not None
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         """Run the SDK runner subprocess with the prompt on stdin.
 
@@ -135,9 +138,7 @@ class ClaudeSdkAgent:
             "model": self._model,
             "effort": self._effort,
             "settings": claude_sandbox_settings(self._sandbox),
-            "bypass_permissions": not claude_sandbox_drops_skip_permissions(
-                self._sandbox
-            ),
+            "bypass_permissions": not claude_sandbox_drops_skip_permissions(self._sandbox),
             "max_budget_usd": self._max_budget_usd,
             "workspace_guard": self._workspace_guard,
             "cwd": str(cwd) if cwd else None,
@@ -146,7 +147,10 @@ class ClaudeSdkAgent:
 
         cmd = [sys.executable, "-u", "-m", "kstrl.agents.sdk_runner"]
         streamer = DeadlineStreamer(
-            cmd, cwd=cwd, stdin_text=json.dumps(config), timeout=timeout,
+            cmd,
+            cwd=cwd,
+            stdin_text=json.dumps(config),
+            timeout=timeout,
         )
 
         for line in streamer.lines():
@@ -159,18 +163,23 @@ class ClaudeSdkAgent:
             yield line
 
         if streamer.timed_out:
-            self._usage_records.append(UsageRecord(
-                duration_seconds=time.monotonic() - started,
-                source="timeout",
-            ))
+            self._usage_records.append(
+                UsageRecord(
+                    duration_seconds=time.monotonic() - started,
+                    source="timeout",
+                )
+            )
             yield timeout_message(timeout)
             return
 
         streamer.finish()
 
-        self._usage_records.append(_usage_record_from_payload(
-            usage_payload, duration_seconds=time.monotonic() - started,
-        ))
+        self._usage_records.append(
+            _usage_record_from_payload(
+                usage_payload,
+                duration_seconds=time.monotonic() - started,
+            )
+        )
         if result_payload is not None:
             result_text = result_payload.get("result")
             if isinstance(result_text, str) and result_text:
@@ -188,12 +197,13 @@ class ClaudeSdkAgent:
 
 
 def _parse_contract_line(
-    line: str, prefix: str,
+    line: str,
+    prefix: str,
 ) -> dict[str, Any] | None:
     """Parse a prefixed contract line; malformed payloads degrade to
     None (the meter must never gate correctness - R3.1)."""
     try:
-        payload = json.loads(line[len(prefix):])
+        payload = json.loads(line[len(prefix) :])
     except (json.JSONDecodeError, ValueError):
         logger.warning("Malformed sdk-runner contract line: %.120s", line)
         return None
@@ -203,7 +213,9 @@ def _parse_contract_line(
 
 
 def _usage_record_from_payload(
-    payload: dict[str, Any] | None, *, duration_seconds: float,
+    payload: dict[str, Any] | None,
+    *,
+    duration_seconds: float,
 ) -> UsageRecord:
     """Map the runner's usage payload onto a UsageRecord.
 
@@ -215,7 +227,8 @@ def _usage_record_from_payload(
     """
     if payload is None:
         return UsageRecord(
-            duration_seconds=duration_seconds, source="unavailable",
+            duration_seconds=duration_seconds,
+            source="unavailable",
         )
     tokens = {
         name: _opt_int(payload.get(name))

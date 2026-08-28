@@ -69,9 +69,7 @@ class SpecBlockerError(Exception):
     instead of scrollback.
     """
 
-    def __init__(
-        self, issues: list[SpecIssue], artifact_path: Path | None = None
-    ):
+    def __init__(self, issues: list[SpecIssue], artifact_path: Path | None = None):
         self.issues = issues
         self.artifact_path = artifact_path
         summary_lines = [f"- [{i.severity}/{i.kind}] {i.summary}" for i in issues]
@@ -79,6 +77,7 @@ class SpecBlockerError(Exception):
             "Spec has blocker-severity issues; resolve before re-running:\n"
             + "\n".join(summary_lines),
         )
+
 
 # R5.3 injection separation: every adversarial prompt wraps its untrusted
 # input sections between delimiter lines carrying a per-run random token,
@@ -477,15 +476,17 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 # compared after normalization (leading `./` and trailing `/` removed)
 # so `.kstrl`, `.kstrl/` and `./.kstrl/` all match. Keep this set in
 # sync with the prompt body (which only Session 8C may edit).
-_ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset({
-    ".kstrl",          # harness runtime state
-    ".github",         # CI configuration
-    "kstrl",           # harness package
-    "scripts/kstrl",   # bare prefix exposes the manifest + sibling features
-    "pyproject.toml",  # repo-root build manifests
-    "package.json",
-    "Cargo.toml",
-})
+_ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset(
+    {
+        ".kstrl",  # harness runtime state
+        ".github",  # CI configuration
+        "kstrl",  # harness package
+        "scripts/kstrl",  # bare prefix exposes the manifest + sibling features
+        "pyproject.toml",  # repo-root build manifests
+        "package.json",
+        "Cargo.toml",
+    }
+)
 
 
 def _validate_allowed_path_entry(entry: str) -> str | None:
@@ -503,15 +504,9 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
                 f"entry '{entry}' grants whole-repo scope; list specific "
                 "source/test/feature path prefixes instead"
             )
-        return (
-            f"entry '{entry}' is an absolute path; entries must be "
-            "repo-relative prefixes"
-        )
+        return f"entry '{entry}' is an absolute path; entries must be repo-relative prefixes"
     if ".." in PurePosixPath(stripped).parts:
-        return (
-            f"entry '{entry}' contains '..'; path traversal outside the "
-            "worktree is not allowed"
-        )
+        return f"entry '{entry}' contains '..'; path traversal outside the worktree is not allowed"
     normalized = stripped
     while normalized.startswith("./"):
         normalized = normalized[2:]
@@ -562,15 +557,16 @@ def _validate_decompose_output(data: Any) -> list[str]:
         if isinstance(spec_issues, list) and any(
             isinstance(s, dict)
             and s.get("severity") == "blocker"
-            and isinstance(s.get("kind"), str) and s["kind"] in _VALID_KINDS
-            and isinstance(s.get("summary"), str) and s["summary"].strip()
+            and isinstance(s.get("kind"), str)
+            and s["kind"] in _VALID_KINDS
+            and isinstance(s.get("summary"), str)
+            and s["summary"].strip()
             for s in spec_issues
         ):
             # Architect explicitly halted - this is a valid outcome.
             return []
         return [
-            "'components' must not be empty (no well-formed blocker "
-            "spec_issues to justify halt)"
+            "'components' must not be empty (no well-formed blocker spec_issues to justify halt)"
         ]
 
     seen_ids: set[str] = set()
@@ -640,9 +636,7 @@ def _validate_decompose_output(data: Any) -> list[str]:
                     "array silently disables diff-scope enforcement"
                 )
             elif not all(isinstance(p, str) and p for p in ap):
-                errors.append(
-                    f"{prefix}.allowedPaths: all items must be non-empty strings"
-                )
+                errors.append(f"{prefix}.allowedPaths: all items must be non-empty strings")
             else:
                 # R1.5 / H-4: content validation. Without this, only
                 # the SHAPE was checked and the architect could emit
@@ -704,23 +698,23 @@ def _validate_decompose_output(data: Any) -> list[str]:
         comp_id = comp.get("id", "?")
         for dep in comp.get("dependencies", []):
             if isinstance(dep, str) and dep not in seen_ids:
-                errors.append(
-                    f"Component '{comp_id}' depends on unknown component '{dep}'"
-                )
+                errors.append(f"Component '{comp_id}' depends on unknown component '{dep}'")
 
     return errors
 
 
 _VALID_SEVERITIES = frozenset({"blocker", "major", "minor"})
-_VALID_KINDS = frozenset({
-    "ambiguity",
-    "missing_detail",
-    "contradiction",
-    "unstated_assumption",
-    "undefined_failure_mode",
-    "out_of_scope_creep",
-    "other",
-})
+_VALID_KINDS = frozenset(
+    {
+        "ambiguity",
+        "missing_detail",
+        "contradiction",
+        "unstated_assumption",
+        "undefined_failure_mode",
+        "out_of_scope_creep",
+        "other",
+    }
+)
 
 
 def _parse_spec_issues(data: Any) -> list[SpecIssue]:
@@ -748,13 +742,15 @@ def _parse_spec_issues(data: Any) -> list[SpecIssue]:
             continue
         if not summary:
             continue
-        issues.append(SpecIssue(
-            severity=severity,
-            kind=kind,
-            summary=summary,
-            location=str(entry.get("location", "")).strip(),
-            suggestion=str(entry.get("suggestion", "")).strip(),
-        ))
+        issues.append(
+            SpecIssue(
+                severity=severity,
+                kind=kind,
+                summary=summary,
+                location=str(entry.get("location", "")).strip(),
+                suggestion=str(entry.get("suggestion", "")).strip(),
+            )
+        )
     return issues
 
 
@@ -792,9 +788,7 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     """Atomic JSON write: temp file in the same directory then
     ``os.replace`` (same pattern as ``Manifest.save`` and
     ``knowledge.write_facts``)."""
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-"
-    )
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(payload, f, indent=2)
@@ -823,8 +817,7 @@ def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
 
 def _issue_counts(issues: list[SpecIssue]) -> dict[str, int]:
     return {
-        sev: sum(1 for i in issues if i.severity == sev)
-        for sev in ("blocker", "major", "minor")
+        sev: sum(1 for i in issues if i.severity == sev) for sev in ("blocker", "major", "minor")
     }
 
 
@@ -947,9 +940,7 @@ def _generate_component_prd(
 
     errors = PRD.validate_schema(prd_data)
     if errors:
-        raise ValueError(
-            f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}"
-        )
+        raise ValueError(f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}")
 
     feature_dir: Path = root_dir / "scripts" / "kstrl" / "feature" / comp_id
     feature_dir.mkdir(parents=True, exist_ok=True)
@@ -997,6 +988,7 @@ def _decompose_spec_impl(
     Returns:
         Manifest with generated components and PRD files
     """
+
     def emit(event: Event) -> None:
         if bus is not None:
             bus.emit(event)
@@ -1009,19 +1001,19 @@ def _decompose_spec_impl(
 
     run_started = time.monotonic()
     emit(RunStarted(project=project_name, components=0))
-    emit(RunPlan(components=(
-        {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team",
-         "deps": []},
-    )))
+    emit(
+        RunPlan(
+            components=(
+                {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team", "deps": []},
+            )
+        )
+    )
     emit(ComponentStarted(component=ARCHITECT_COMPONENT))
 
     ui.section("Spec Decomposition")
     ui.kv("Spec", str(spec_path))
     if spec_path.is_dir():
-        present = [
-            name for name, _ in SPECKIT_ARTIFACTS
-            if (spec_path / name).is_file()
-        ]
+        present = [name for name, _ in SPECKIT_ARTIFACTS if (spec_path / name).is_file()]
         ui.kv("SpecKit artifacts", ", ".join(present) or "<none>")
     ui.kv("Project", project_name)
 
@@ -1035,17 +1027,25 @@ def _decompose_spec_impl(
     for attempt in range(1, max_retries + 1):
         attempts_used = attempt
         ui.info(f"Decomposition attempt {attempt}/{max_retries}")
-        emit(PhaseStarted(
-            component=ARCHITECT_COMPONENT, phase="decompose", attempt=attempt,
-        ))
+        emit(
+            PhaseStarted(
+                component=ARCHITECT_COMPONENT,
+                phase="decompose",
+                attempt=attempt,
+            )
+        )
         phase_start = time.monotonic()
 
         def attempt_failed(detail: str, *, started_at: float) -> None:
-            emit(PhaseCompleted(
-                component=ARCHITECT_COMPONENT, phase="decompose",
-                passed=False, detail=detail[:200],
-                duration_seconds=round(time.monotonic() - started_at, 2),
-            ))
+            emit(
+                PhaseCompleted(
+                    component=ARCHITECT_COMPONENT,
+                    phase="decompose",
+                    passed=False,
+                    detail=detail[:200],
+                    duration_seconds=round(time.monotonic() - started_at, 2),
+                )
+            )
 
         if last_error:
             retry_prompt = (
@@ -1076,7 +1076,8 @@ def _decompose_spec_impl(
                     break
         except BaseException as exc:
             attempt_failed(
-                f"{type(exc).__name__}: {exc}", started_at=phase_start,
+                f"{type(exc).__name__}: {exc}",
+                started_at=phase_start,
             )
             raise
 
@@ -1111,8 +1112,7 @@ def _decompose_spec_impl(
             schema_errors = PRD.validate_schema(_build_prd_data(comp_data, branch))
             if schema_errors:
                 prd_errors.append(
-                    f"component '{comp_data['id']}' PRD schema: "
-                    + "; ".join(schema_errors)
+                    f"component '{comp_data['id']}' PRD schema: " + "; ".join(schema_errors)
                 )
         if prd_errors:
             last_error = "; ".join(prd_errors)
@@ -1122,18 +1122,21 @@ def _decompose_spec_impl(
             continue
 
         last_error = None
-        emit(PhaseCompleted(
-            component=ARCHITECT_COMPONENT, phase="decompose", passed=True,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
-        ))
+        emit(
+            PhaseCompleted(
+                component=ARCHITECT_COMPONENT,
+                phase="decompose",
+                passed=True,
+                duration_seconds=round(time.monotonic() - phase_start, 2),
+            )
+        )
         break
 
     if data is None:
         # No files were written in the retry loop, so terminal failure
         # leaves no partial state behind (R1.8).
         raise ValueError(
-            f"Failed to decompose spec after {max_retries} attempts. "
-            f"Last error: {last_error}"
+            f"Failed to decompose spec after {max_retries} attempts. Last error: {last_error}"
         )
 
     # Surface AND persist red-team findings before doing any further
@@ -1141,18 +1144,26 @@ def _decompose_spec_impl(
     # success, and clean-audit outcomes alike. If any issue is a
     # blocker, halt before generating PRDs - the architect explicitly
     # judged the spec un-decomposable.
-    emit(PhaseStarted(
-        component=ARCHITECT_COMPONENT, phase="audit", attempt=1,
-    ))
+    emit(
+        PhaseStarted(
+            component=ARCHITECT_COMPONENT,
+            phase="audit",
+            attempt=1,
+        )
+    )
     audit_start = time.monotonic()
     spec_issues = _parse_spec_issues(data)
     _surface_spec_issues(spec_issues, ui)
     for issue in spec_issues:
-        emit(SpecIssueRecorded(
-            severity=issue.severity, kind=issue.kind,
-            summary=issue.summary, location=issue.location,
-            suggestion=issue.suggestion,
-        ))
+        emit(
+            SpecIssueRecorded(
+                severity=issue.severity,
+                kind=issue.kind,
+                summary=issue.summary,
+                location=issue.location,
+                suggestion=issue.suggestion,
+            )
+        )
     blockers = [i for i in spec_issues if i.severity == "blocker"]
     artifact_path: Path | None = None
     try:
@@ -1164,9 +1175,12 @@ def _decompose_spec_impl(
             halted=bool(blockers),
         )
         ui.ok(f"Spec audit written: {artifact_path}")
-        emit(ArtifactWritten(
-            label="spec_issues", path=rel_display(artifact_path),
-        ))
+        emit(
+            ArtifactWritten(
+                label="spec_issues",
+                path=rel_display(artifact_path),
+            )
+        )
     except OSError as exc:
         # Loud but non-masking: the blocker halt (or the decompose
         # result) matters more than the artifact write failing.
@@ -1179,36 +1193,50 @@ def _decompose_spec_impl(
         halted=bool(blockers),
         ui=ui,
     )
-    emit(PhaseCompleted(
-        component=ARCHITECT_COMPONENT, phase="audit",
-        passed=not blockers,
-        detail=f"{len(blockers)} blocker(s)" if blockers else "",
-        duration_seconds=round(time.monotonic() - audit_start, 2),
-    ))
+    emit(
+        PhaseCompleted(
+            component=ARCHITECT_COMPONENT,
+            phase="audit",
+            passed=not blockers,
+            detail=f"{len(blockers)} blocker(s)" if blockers else "",
+            duration_seconds=round(time.monotonic() - audit_start, 2),
+        )
+    )
     if blockers:
         # The run dir must read as FINISHED, not dead: the halt is the
         # architect's judgment, delivered before the error propagates.
-        emit(ComponentFailed(
-            component=ARCHITECT_COMPONENT,
-            error=f"spec halted: {len(blockers)} blocker-severity issue(s)",
-        ))
-        emit(RunCompleted(
-            completed=0, failed=1,
-            duration_seconds=round(time.monotonic() - run_started, 2),
-        ))
+        emit(
+            ComponentFailed(
+                component=ARCHITECT_COMPONENT,
+                error=f"spec halted: {len(blockers)} blocker-severity issue(s)",
+            )
+        )
+        emit(
+            RunCompleted(
+                completed=0,
+                failed=1,
+                duration_seconds=round(time.monotonic() - run_started, 2),
+            )
+        )
         raise SpecBlockerError(blockers, artifact_path=artifact_path)
 
     # The forming DAG, the moment it is known (C5's board draws from
     # this - no manifest read needed). The architect row stays first.
-    emit(RunPlan(components=(
-        {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team",
-         "deps": []},
-        *(
-            {"id": comp_data["id"], "title": comp_data["title"],
-             "deps": comp_data.get("dependencies", [])}
-            for comp_data in data["components"]
-        ),
-    )))
+    emit(
+        RunPlan(
+            components=(
+                {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team", "deps": []},
+                *(
+                    {
+                        "id": comp_data["id"],
+                        "title": comp_data["title"],
+                        "deps": comp_data.get("dependencies", []),
+                    }
+                    for comp_data in data["components"]
+                ),
+            )
+        )
+    )
 
     # R7.4: Linear hook - one project per manifest, one issue per
     # component, non-blocker spec findings into Triage. Runs BEFORE
@@ -1229,10 +1257,7 @@ def _decompose_spec_impl(
             warn=ui.warn,
         )
         if linear_sync is not None:
-            ui.ok(
-                f"Linear project created with {len(linear_sync.issues)} "
-                f"component issue(s)"
-            )
+            ui.ok(f"Linear project created with {len(linear_sync.issues)} component issue(s)")
         if linear_sync is not None and single_pr:
             # All components share one branch in single-PR mode, so a
             # per-component identifier cannot ride the branch name.
@@ -1252,9 +1277,7 @@ def _decompose_spec_impl(
         comp_id = comp_data["id"]
         branch = _component_branch(comp_id, project_name, single_pr)
         issue_ref = (
-            linear_sync.issues.get(comp_id)
-            if linear_sync is not None and not single_pr
-            else None
+            linear_sync.issues.get(comp_id) if linear_sync is not None and not single_pr else None
         )
         if issue_ref is not None:
             linear_branch = linear_branch_name(issue_ref.identifier, comp_id)
@@ -1273,8 +1296,7 @@ def _decompose_spec_impl(
         branch_error = validate_branch_name(branch)
         if branch_error:
             raise ValueError(
-                f"Cannot derive a git branch for component '{comp_id}': "
-                f"{branch_error}"
+                f"Cannot derive a git branch for component '{comp_id}': {branch_error}"
             )
         component_branches[comp_id] = branch
 
@@ -1304,11 +1326,7 @@ def _decompose_spec_impl(
             written_prds.append(prd_path)
             rel_prd = prd_path.relative_to(root_dir).as_posix()
 
-            issue_ref = (
-                linear_sync.issues.get(comp_id)
-                if linear_sync is not None
-                else None
-            )
+            issue_ref = linear_sync.issues.get(comp_id) if linear_sync is not None else None
             manifest_components.append(
                 Component(
                     id=comp_id,
@@ -1319,9 +1337,7 @@ def _decompose_spec_impl(
                     branch_name=branch,
                     status=ComponentStatus.PENDING.value,
                     linear_issue_id=issue_ref.id if issue_ref else "",
-                    linear_issue_identifier=(
-                        issue_ref.identifier if issue_ref else ""
-                    ),
+                    linear_issue_identifier=(issue_ref.identifier if issue_ref else ""),
                 )
             )
             ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
@@ -1333,12 +1349,8 @@ def _decompose_spec_impl(
             base_branch=base_branch,
             single_pr=single_pr,
             components=manifest_components,
-            linear_project_id=(
-                linear_sync.project_id if linear_sync is not None else ""
-            ),
-            linear_sync_key=(
-                linear_sync.sync_key if linear_sync is not None else ""
-            ),
+            linear_project_id=(linear_sync.project_id if linear_sync is not None else ""),
+            linear_sync_key=(linear_sync.sync_key if linear_sync is not None else ""),
         )
 
         # Validate DAG
@@ -1361,9 +1373,7 @@ def _decompose_spec_impl(
                 pass
         # Deepest-first so children go before parents; rmdir refuses
         # non-empty directories, which protects anything user-owned.
-        for created in sorted(
-            set(created_dirs), key=lambda p: len(p.parts), reverse=True
-        ):
+        for created in sorted(set(created_dirs), key=lambda p: len(p.parts), reverse=True):
             try:
                 created.rmdir()
             except OSError:
@@ -1374,29 +1384,37 @@ def _decompose_spec_impl(
     # write set commits. If a later write failed, the cleanup above
     # removed the PRDs and the event stream must not claim they exist.
     for component_data, prd_file in zip(
-        data["components"], written_prds, strict=True,
+        data["components"],
+        written_prds,
+        strict=True,
     ):
-        emit(ArtifactWritten(
-            component=component_data["id"], label="prd",
-            path=rel_display(prd_file),
-        ))
-    emit(ArtifactWritten(
-        label="manifest", path=rel_display(manifest_path),
-    ))
+        emit(
+            ArtifactWritten(
+                component=component_data["id"],
+                label="prd",
+                path=rel_display(prd_file),
+            )
+        )
+    emit(
+        ArtifactWritten(
+            label="manifest",
+            path=rel_display(manifest_path),
+        )
+    )
 
     ui.section("Decomposition Summary")
     ui.kv("Components", str(len(manifest.components)))
-    total_stories = sum(
-        len(comp_data.get("userStories", []))
-        for comp_data in data["components"]
-    )
+    total_stories = sum(len(comp_data.get("userStories", [])) for comp_data in data["components"])
     ui.kv("Total stories", str(total_stories))
 
     duration = round(time.monotonic() - run_started, 2)
-    emit(ComponentCompleted(
-        component=ARCHITECT_COMPONENT, duration_seconds=duration,
-        iterations=attempts_used,
-    ))
+    emit(
+        ComponentCompleted(
+            component=ARCHITECT_COMPONENT,
+            duration_seconds=duration,
+            iterations=attempts_used,
+        )
+    )
     # completed counts THIS run's work item (the architect); the
     # planned components are the FACTORY run's job.
     emit(RunCompleted(completed=1, duration_seconds=duration))
@@ -1439,11 +1457,16 @@ def decompose_spec(
     except BaseException as exc:
         if bus is not None:
             detail = f"{type(exc).__name__}: {exc}"
-            bus.emit(ComponentFailed(
-                component=ARCHITECT_COMPONENT, error=detail,
-            ))
-            bus.emit(RunCompleted(
-                failed=1,
-                duration_seconds=round(time.monotonic() - started, 2),
-            ))
+            bus.emit(
+                ComponentFailed(
+                    component=ARCHITECT_COMPONENT,
+                    error=detail,
+                )
+            )
+            bus.emit(
+                RunCompleted(
+                    failed=1,
+                    duration_seconds=round(time.monotonic() - started, 2),
+                )
+            )
         raise

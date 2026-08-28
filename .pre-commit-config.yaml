@@ -24,7 +24,14 @@ repos:
       - id: trailing-whitespace
         # Captured model output is evidence: reformatting it destroys the
         # provenance a spike's findings rest on. Linted as evidence, never source.
-        exclude: &evidence ^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/
+        #
+        # tests/__snapshots__/ is the same rule reached by a different route: those
+        # .raw files are SVG frames Rich renders, and pytest-textual-snapshot
+        # compares them BYTE FOR BYTE. Measured: stripping one whitespace-only line
+        # from each of two of them failed test_overview_snapshot and
+        # test_component_detail_snapshot. Regenerating cannot settle it either, since
+        # the renderer writes that padding straight back on the next capture.
+        exclude: &evidence ^experiments/(taste-spike|walking-skeleton)/out/|^fixtures/sources/|^tests/__snapshots__/
       - id: end-of-file-fixer
         exclude: *evidence
       - id: check-yaml
@@ -142,7 +149,11 @@ repos:
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.11.29
     hooks:
-      # Skips cleanly in a repo with no uv.lock.
+      # Skips ONLY where there is no pyproject.toml. Where a pyproject exists but a
+      # uv.lock does not, this CREATES one rather than skipping: measured, a 3-line
+      # empty lock in a repo whose pyproject holds nothing but tool settings. An
+      # earlier version of this comment claimed it always skipped, which was tested
+      # in a scratch repo with no pyproject and so only ever exercised half the rule.
       - id: uv-lock
 
   # --- shell ----------------------------------------------------------------

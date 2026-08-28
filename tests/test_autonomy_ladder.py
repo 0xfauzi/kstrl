@@ -55,22 +55,24 @@ class TestFlagBundles:
     def test_l2_auto_accepts_plans_but_gates_merge(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L2_GATED_MERGE)
         assert bundle.auto_accept_plan is True
-        assert bundle.pause_before_pr_merge is True   # human still gates merge
+        assert bundle.pause_before_pr_merge is True  # human still gates merge
         assert bundle.auto_merge_when_green is False
 
     def test_l3_drops_the_merge_gate(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO)
         assert bundle.pause_before_pr_merge is False
         assert bundle.auto_merge_when_green is True
-        assert bundle.deploy_permitted is False       # deploy is L4 only
+        assert bundle.deploy_permitted is False  # deploy is L4 only
 
     def test_l4_adds_deploy_only(self) -> None:
         l3 = flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO)
         l4 = flag_bundle_for(AutonomyLevel.L4_DEPLOY)
         assert l4.deploy_permitted is True
         for attr in (
-            "pause_before_pr_merge", "auto_accept_plan",
-            "auto_merge_when_green", "deps_allow_new_permitted",
+            "pause_before_pr_merge",
+            "auto_accept_plan",
+            "auto_merge_when_green",
+            "deps_allow_new_permitted",
         ):
             assert getattr(l4, attr) == getattr(l3, attr)
 
@@ -110,7 +112,7 @@ class TestPromotion:
             state.promote(actor="human", ack="   ")
 
     def test_blocked_without_evidence(self) -> None:
-        state = AutonomyState()          # fresh: no runs, no merges
+        state = AutonomyState()  # fresh: no runs, no merges
         with pytest.raises(AutonomyError, match="cannot promote"):
             state.promote(actor="human", ack="trust me")
         assert state.level == int(AutonomyLevel.L1_SUPERVISED)
@@ -148,7 +150,7 @@ class TestPromotion:
         assert any("policy violation" in b for b in blockers)
 
     def test_force_records_the_override(self) -> None:
-        state = AutonomyState()          # no evidence at all
+        state = AutonomyState()  # no evidence at all
         record = state.promote(actor="human", ack="accepting risk", force=True)
         assert state.level == int(AutonomyLevel.L2_GATED_MERGE)
         assert record.evidence["forced_over_blockers"]
@@ -174,7 +176,9 @@ PLANTED_TRIGGERS = [
 class TestDemotion:
     @pytest.mark.parametrize("trigger,reason", PLANTED_TRIGGERS)
     def test_each_trigger_drops_exactly_one_level(
-        self, trigger: DemotionTrigger, reason: str,
+        self,
+        trigger: DemotionTrigger,
+        reason: str,
     ) -> None:
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         record = state.demote(trigger, reason)
@@ -253,10 +257,7 @@ class TestEvidence:
         state.decisive_runs_at_level = MIN_DECISIVE_RUNS
         state.record_merged_component()
         blockers = state.promotion_blockers()
-        assert any(
-            f"1/{L2_MERGED_COMPONENTS_REQUIRED} components merged" in b
-            for b in blockers
-        )
+        assert any(f"1/{L2_MERGED_COMPONENTS_REQUIRED} components merged" in b for b in blockers)
 
 
 # --------------------------------------------------------------------------
@@ -307,14 +308,14 @@ class TestConfig:
         assert AutonomyConfig().enabled is False
 
     def test_load_reads_section(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[autonomy]\nenabled = true\nmax_level = 2\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = true\nmax_level = 2\n")
         config = AutonomyConfig.load(tmp_path)
         assert config.enabled is True and config.max_level == 2
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = false\n")
         monkeypatch.setenv("KSTRL_AUTONOMY_ENABLED", "1")
@@ -334,19 +335,22 @@ class TestConfig:
         bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
         notes = manual_override_notes(
             bundle,
-            configured_pause_before_pr_merge=False,   # contradicts L1
-            configured_review_mode="advisory",        # contradicts hard
+            configured_pause_before_pr_merge=False,  # contradicts L1
+            configured_review_mode="advisory",  # contradicts hard
         )
         assert len(notes) == 2
         assert all("bundle wins" in n for n in notes)
 
     def test_agreeing_config_produces_no_notes(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
-        assert manual_override_notes(
-            bundle,
-            configured_pause_before_pr_merge=True,
-            configured_review_mode="hard",
-        ) == []
+        assert (
+            manual_override_notes(
+                bundle,
+                configured_pause_before_pr_merge=True,
+                configured_review_mode="hard",
+            )
+            == []
+        )
 
 
 # --------------------------------------------------------------------------
@@ -354,9 +358,15 @@ class TestConfig:
 # --------------------------------------------------------------------------
 def _run(**kwargs: object) -> RunRecord:
     base = dict(
-        run_id="r1", timestamp="2026-07-20T00:00:00Z", project="demo",
-        components_total=1, completed=1, failed=0, skipped=0,
-        retry_rate=0.0, common_failure="",
+        run_id="r1",
+        timestamp="2026-07-20T00:00:00Z",
+        project="demo",
+        components_total=1,
+        completed=1,
+        failed=0,
+        skipped=0,
+        retry_rate=0.0,
+        common_failure="",
     )
     base.update(kwargs)
     return RunRecord(**base)  # type: ignore[arg-type]
@@ -391,10 +401,12 @@ class TestReplay:
     def test_judgement_failure_would_demote(self) -> None:
         # Needs a level above L1 to have somewhere to fall to; the replay
         # starts at L1, so a demote is a no-op and must not be reported.
-        report = replay([
-            _run(run_id="r1", completed=0, failed=1, common_failure="review:x"),
-        ])
-        assert report.would_demote == []   # already at the floor
+        report = replay(
+            [
+                _run(run_id="r1", completed=0, failed=1, common_failure="review:x"),
+            ]
+        )
+        assert report.would_demote == []  # already at the floor
         assert report.final_level == int(AutonomyLevel.L1_SUPERVISED)
 
     def test_missing_experiments_file_is_not_an_error(self, tmp_path: Path) -> None:
@@ -421,7 +433,7 @@ class TestReplay:
         )
         runs = load_runs(path)
         assert len(runs) == 2
-        assert runs[0].infra_aborted is True     # pr: prefix
+        assert runs[0].infra_aborted is True  # pr: prefix
         assert runs[1].decisive is True
         report = replay(runs)
         assert report.decisive_runs == 1
@@ -439,7 +451,11 @@ def _init_git_repo(root: Path) -> None:
 
     def run(*args: str) -> None:
         subprocess.run(
-            ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+            ["git", *args],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     run("init")
@@ -452,9 +468,14 @@ def _init_git_repo(root: Path) -> None:
 
 
 def _run_factory_with_autonomy(
-    tmp_path: Path, level: AutonomyLevel, *, enabled: bool,
-    configured_pause: bool, policy_enabled: bool = True,
-    findings: list[object] | None = None, succeed: bool = True,
+    tmp_path: Path,
+    level: AutonomyLevel,
+    *,
+    enabled: bool,
+    configured_pause: bool,
+    policy_enabled: bool = True,
+    findings: list[object] | None = None,
+    succeed: bool = True,
 ) -> object:
     """Run the factory against a stored level; return the FactoryConfig."""
     from kstrl.config import KstrlConfig
@@ -474,27 +495,47 @@ def _run_factory_with_autonomy(
     AutonomyState(level=int(level)).save(tmp_path)
 
     manifest = Manifest(
-        version="1", spec_file="spec.md", project_name="test",
-        base_branch="main", single_pr=False,
-        components=[Component(
-            "comp-a", "Component A", "Desc", [],
-            "scripts/kstrl/feature/comp-a/prd.json", "kstrl/factory/comp-a",
-        )],
+        version="1",
+        spec_file="spec.md",
+        project_name="test",
+        base_branch="main",
+        single_pr=False,
+        components=[
+            Component(
+                "comp-a",
+                "Component A",
+                "Desc",
+                [],
+                "scripts/kstrl/feature/comp-a/prd.json",
+                "kstrl/factory/comp-a",
+            )
+        ],
     )
     config = FactoryConfig(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         pause_before_pr_merge=configured_pause,
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_bad_patterns=False,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_bad_patterns=False,
             subprocess_timeout=5.0,
         ),
     )
     base = KstrlConfig(
-        prompt_file=kstrl_dir / "prompt.md", prd_file=kstrl_dir / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test", kstrl_branch="",
-        kstrl_branch_explicit=True, ui_mode="plain", no_color=True,
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
     result = ComponentResult("comp-a", success=succeed, iterations=1)
     # Findings reach the component the way they do in production: a
@@ -502,20 +543,22 @@ def _run_factory_with_autonomy(
     # the finding stream (R8.1). Pre-seeding the manifest would not
     # survive - begin_attempt clears that stream.
     if findings:
-        blocking = [
-            f for f in findings
-            if getattr(f, "severity", "") != "advisory"
-        ]
+        blocking = [f for f in findings if getattr(f, "severity", "") != "advisory"]
         verification = VerificationResult(
             passed=not blocking,
-            checks=[CheckResult(
-                "policy_envelope", not blocking, "policy",
-                findings=list(findings),  # type: ignore[arg-type]
-            )],
+            checks=[
+                CheckResult(
+                    "policy_envelope",
+                    not blocking,
+                    "policy",
+                    findings=list(findings),  # type: ignore[arg-type]
+                )
+            ],
         )
     else:
         verification = VerificationResult(
-            passed=True, checks=[CheckResult("diff_scope", True, "ok")],
+            passed=True,
+            checks=[CheckResult("diff_scope", True, "ok")],
         )
     # The ladder forces review_mode="hard" at every level, so the review
     # phase always runs; stub it green so these tests measure the LADDER,
@@ -539,32 +582,40 @@ def _run_factory_with_autonomy(
 
 class TestFactoryWiring:
     def test_level_drives_flags_over_contradicting_config(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # L1 demands the merge gate ON; config says off. Bundle must win.
         config = _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L1_SUPERVISED,
-            enabled=True, configured_pause=False,
+            tmp_path,
+            AutonomyLevel.L1_SUPERVISED,
+            enabled=True,
+            configured_pause=False,
         )
-        assert config.pause_before_pr_merge is True   # type: ignore[attr-defined]
-        assert config.review_mode == "hard"           # type: ignore[attr-defined]
+        assert config.pause_before_pr_merge is True  # type: ignore[attr-defined]
+        assert config.review_mode == "hard"  # type: ignore[attr-defined]
 
     def test_l3_drops_the_merge_gate(self, tmp_path: Path) -> None:
         config = _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO,
-            enabled=True, configured_pause=True,
+            tmp_path,
+            AutonomyLevel.L3_ENVELOPED_AUTO,
+            enabled=True,
+            configured_pause=True,
         )
         assert config.pause_before_pr_merge is False  # type: ignore[attr-defined]
 
     def test_disabled_ladder_leaves_config_untouched(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # Opt-in: with [autonomy] off, the stored level changes nothing.
         config = _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO,
-            enabled=False, configured_pause=True,
+            tmp_path,
+            AutonomyLevel.L3_ENVELOPED_AUTO,
+            enabled=False,
+            configured_pause=True,
         )
-        assert config.pause_before_pr_merge is True   # type: ignore[attr-defined]
+        assert config.pause_before_pr_merge is True  # type: ignore[attr-defined]
 
 
 # --------------------------------------------------------------------------
@@ -574,27 +625,33 @@ class TestEnvelopeCeiling:
     """L3 is *Enveloped* auto-merge: no envelope, no auto-merge."""
 
     def test_l3_clamps_to_l2_without_policy_envelope(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True),
-            policy_enabled=False, root_dir=tmp_path,
+            state,
+            AutonomyConfig(enabled=True),
+            policy_enabled=False,
+            root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L2_GATED_MERGE
         assert any("requires the R8.1 policy envelope" in n for n in notes)
 
     def test_l4_clamps_to_l2_without_policy_envelope(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.autonomy import resolve_runtime_level
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, _ = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True),
-            policy_enabled=False, root_dir=tmp_path,
+            state,
+            AutonomyConfig(enabled=True),
+            policy_enabled=False,
+            root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L2_GATED_MERGE
 
@@ -603,8 +660,10 @@ class TestEnvelopeCeiling:
 
         state = AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO))
         level, notes = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True),
-            policy_enabled=True, root_dir=tmp_path,
+            state,
+            AutonomyConfig(enabled=True),
+            policy_enabled=True,
+            root_dir=tmp_path,
         )
         assert level is AutonomyLevel.L3_ENVELOPED_AUTO
         assert notes == []
@@ -614,20 +673,26 @@ class TestEnvelopeCeiling:
 
         state = AutonomyState(level=int(AutonomyLevel.L4_DEPLOY))
         level, notes = resolve_runtime_level(
-            state, AutonomyConfig(enabled=True, max_level=3),
-            policy_enabled=False, root_dir=tmp_path,
+            state,
+            AutonomyConfig(enabled=True, max_level=3),
+            policy_enabled=False,
+            root_dir=tmp_path,
         )
-        assert level is AutonomyLevel.L2_GATED_MERGE   # envelope beats max_level
+        assert level is AutonomyLevel.L2_GATED_MERGE  # envelope beats max_level
         assert len(notes) == 2
 
     def test_merge_gate_stays_on_when_envelope_disabled(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # The end-to-end version: an L3 repo with [policy] off must NOT
         # get auto-merge.
         config = _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO,
-            enabled=True, configured_pause=False, policy_enabled=False,
+            tmp_path,
+            AutonomyLevel.L3_ENVELOPED_AUTO,
+            enabled=True,
+            configured_pause=False,
+            policy_enabled=False,
         )
         assert config.pause_before_pr_merge is True  # type: ignore[attr-defined]
 
@@ -641,27 +706,25 @@ class TestBundleClampsPolicy:
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
         (tmp_path / "scripts" / "kstrl" / "prompt.md").write_text("p")
         (tmp_path / "kstrl.toml").write_text(
-            "[autonomy]\nenabled = true\n[policy]\nenabled = true\n"
-            "deps_allow_new = true\n"
+            "[autonomy]\nenabled = true\n[policy]\nenabled = true\ndeps_allow_new = true\n"
         )
         AutonomyState(level=int(AutonomyLevel.L1_SUPERVISED)).save(tmp_path)
         assert PolicyConfig.load(tmp_path).deps_allow_new is True
 
         config = _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L1_SUPERVISED,
-            enabled=True, configured_pause=True, policy_enabled=True,
+            tmp_path,
+            AutonomyLevel.L1_SUPERVISED,
+            enabled=True,
+            configured_pause=True,
+            policy_enabled=True,
         )
         # kstrl.toml is rewritten by the helper, so assert via the bundle:
-        assert flag_bundle_for(
-            AutonomyLevel.L1_SUPERVISED
-        ).deps_allow_new_permitted is False
-        assert config.policy_config is not None       # type: ignore[attr-defined]
+        assert flag_bundle_for(AutonomyLevel.L1_SUPERVISED).deps_allow_new_permitted is False
+        assert config.policy_config is not None  # type: ignore[attr-defined]
         assert config.policy_config.deps_allow_new is False  # type: ignore[attr-defined]
 
     def test_l3_permits_new_dependencies(self) -> None:
-        assert flag_bundle_for(
-            AutonomyLevel.L3_ENVELOPED_AUTO
-        ).deps_allow_new_permitted is True
+        assert flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO).deps_allow_new_permitted is True
 
 
 class TestRunOutcomesReachState:
@@ -669,8 +732,10 @@ class TestRunOutcomesReachState:
 
     def test_successful_run_records_evidence(self, tmp_path: Path) -> None:
         _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L1_SUPERVISED,
-            enabled=True, configured_pause=True,
+            tmp_path,
+            AutonomyLevel.L1_SUPERVISED,
+            enabled=True,
+            configured_pause=True,
         )
         reloaded = AutonomyState.load(tmp_path)
         assert reloaded.decisive_runs_at_level == 1
@@ -680,8 +745,10 @@ class TestRunOutcomesReachState:
     def test_evidence_accumulates_across_runs(self, tmp_path: Path) -> None:
         for _ in range(3):
             _run_factory_with_autonomy(
-                tmp_path, AutonomyLevel.L1_SUPERVISED,
-                enabled=True, configured_pause=True,
+                tmp_path,
+                AutonomyLevel.L1_SUPERVISED,
+                enabled=True,
+                configured_pause=True,
             )
             # Helper rewrites state each call, so re-seed from disk:
             state = AutonomyState.load(tmp_path)
@@ -690,8 +757,10 @@ class TestRunOutcomesReachState:
 
     def test_disabled_ladder_records_nothing(self, tmp_path: Path) -> None:
         _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L1_SUPERVISED,
-            enabled=False, configured_pause=True,
+            tmp_path,
+            AutonomyLevel.L1_SUPERVISED,
+            enabled=False,
+            configured_pause=True,
         )
         assert AutonomyState.load(tmp_path).decisive_runs_at_level == 0
 
@@ -699,11 +768,15 @@ class TestRunOutcomesReachState:
         from kstrl.findings import Finding
 
         violation = Finding.policy_violation(
-            category="paths_deny", explanation="touched a denied path",
+            category="paths_deny",
+            explanation="touched a denied path",
         )
         _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO,
-            enabled=True, configured_pause=False, policy_enabled=True,
+            tmp_path,
+            AutonomyLevel.L3_ENVELOPED_AUTO,
+            enabled=True,
+            configured_pause=False,
+            policy_enabled=True,
             findings=[violation],
         )
         reloaded = AutonomyState.load(tmp_path)
@@ -719,17 +792,19 @@ class TestRunOutcomesReachState:
         from kstrl.findings import Finding
 
         advisory = Finding.policy_violation(
-            category="license_unresolved", explanation="unknown license",
+            category="license_unresolved",
+            explanation="unknown license",
             severity="advisory",
         )
         _run_factory_with_autonomy(
-            tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO,
-            enabled=True, configured_pause=False, policy_enabled=True,
+            tmp_path,
+            AutonomyLevel.L3_ENVELOPED_AUTO,
+            enabled=True,
+            configured_pause=False,
+            policy_enabled=True,
             findings=[advisory],
         )
-        assert AutonomyState.load(tmp_path).level == int(
-            AutonomyLevel.L3_ENVELOPED_AUTO
-        )
+        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L3_ENVELOPED_AUTO)
 
 
 class TestTransitionAudit:
@@ -746,12 +821,11 @@ class TestTransitionAudit:
         assert '"direction":"promote"' in journal
         assert '"actor":"human"' in journal
         # State was saved too, not just journaled.
-        assert AutonomyState.load(tmp_path).level == int(
-            AutonomyLevel.L2_GATED_MERGE
-        )
+        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
 
     def test_commit_transition_emits_event_when_in_a_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         from kstrl.autonomy import commit_transition
         from kstrl.events import AutonomyTransition, EventBus
@@ -778,13 +852,15 @@ class TestTransitionAudit:
 
         state = _eligible_state()
         record = state.promote(actor="human", ack="ok")
-        with patch(
-            "kstrl.autonomy.open", side_effect=OSError("disk full"),
-        ), pytest.warns(RuntimeWarning, match="journal append failed"):
+        with (
+            patch(
+                "kstrl.autonomy.open",
+                side_effect=OSError("disk full"),
+            ),
+            pytest.warns(RuntimeWarning, match="journal append failed"),
+        ):
             commit_transition(state, record, tmp_path)
-        assert AutonomyState.load(tmp_path).level == int(
-            AutonomyLevel.L2_GATED_MERGE
-        )
+        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
 
 
 class TestPromotionAuthority:
@@ -829,7 +905,10 @@ class TestPromotionAuthority:
             "kstrl/statedir.py",
         ):
             result = evaluate_policy(
-                [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+                [path],
+                [(1, 0, path)],
+                "",
+                PolicyConfig(paths_deny=[]),
             )
             assert result.machinery_hit, path
 
@@ -840,9 +919,15 @@ class TestReplayAdvancesLevels:
     @staticmethod
     def _clean(index: int) -> RunRecord:
         return RunRecord(
-            run_id=f"r{index}", timestamp=f"2026-07-{(index % 28) + 1:02d}T00:00:00Z",
-            project="p", components_total=1, completed=1, failed=0, skipped=0,
-            retry_rate=0.0, common_failure="",
+            run_id=f"r{index}",
+            timestamp=f"2026-07-{(index % 28) + 1:02d}T00:00:00Z",
+            project="p",
+            components_total=1,
+            completed=1,
+            failed=0,
+            skipped=0,
+            retry_rate=0.0,
+            common_failure="",
         )
 
     def test_level_advances_past_l1(self) -> None:
@@ -857,15 +942,23 @@ class TestReplayAdvancesLevels:
     def test_traverses_multiple_levels(self) -> None:
         report = replay([self._clean(i) for i in range(60)])
         assert report.final_level == int(AutonomyLevel.L4_DEPLOY)
-        assert len(report.would_promote) == 3      # L1->L2->L3->L4
+        assert len(report.would_promote) == 3  # L1->L2->L3->L4
 
     def test_demotes_after_reaching_a_higher_level(self) -> None:
         runs = [self._clean(i) for i in range(60)]
-        runs.append(RunRecord(
-            run_id="bad", timestamp="2026-07-28T00:00:00Z", project="p",
-            components_total=1, completed=0, failed=1, skipped=0,
-            retry_rate=1.0, common_failure="review:prd_criterion",
-        ))
+        runs.append(
+            RunRecord(
+                run_id="bad",
+                timestamp="2026-07-28T00:00:00Z",
+                project="p",
+                components_total=1,
+                completed=0,
+                failed=1,
+                skipped=0,
+                retry_rate=1.0,
+                common_failure="review:prd_criterion",
+            )
+        )
         report = replay(runs)
         assert report.would_demote
         assert report.final_level == int(AutonomyLevel.L3_ENVELOPED_AUTO)

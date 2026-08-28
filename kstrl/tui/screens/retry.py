@@ -100,15 +100,19 @@ class RetryScreen(Screen[None]):
         self.query_one(ContextBar).set_right(right)
         detail = self.query_one("#retry-detail", Static)
         if manifest is None:
-            detail.update(Text(
-                f"no manifest at {manifest_file} - nothing to retry",
-                style=theme.MUTED,
-            ))
+            detail.update(
+                Text(
+                    f"no manifest at {manifest_file} - nothing to retry",
+                    style=theme.MUTED,
+                )
+            )
         elif not self._failed:
-            detail.update(Text(
-                "no failed components - nothing to retry",
-                style=theme.MUTED,
-            ))
+            detail.update(
+                Text(
+                    "no failed components - nothing to retry",
+                    style=theme.MUTED,
+                )
+            )
         elif self._failed:
             self._show_detail(0)
 
@@ -127,13 +131,17 @@ class RetryScreen(Screen[None]):
             if value:
                 detail.append(f"\n{label}  ", style=f"bold {theme.ACCENT}")
                 detail.append(value)
-        detail.append("\n(r) retry - resets the component, removes the "
-                      "failed attempt's worktree/branch, re-enters the "
-                      "factory", style=theme.MUTED)
+        detail.append(
+            "\n(r) retry - resets the component, removes the "
+            "failed attempt's worktree/branch, re-enters the "
+            "factory",
+            style=theme.MUTED,
+        )
         self.query_one("#retry-detail", Static).update(detail)
 
     def on_data_table_row_highlighted(
-        self, event: DataTable.RowHighlighted,
+        self,
+        event: DataTable.RowHighlighted,
     ) -> None:
         if event.cursor_row is not None and event.cursor_row >= 0:
             self._show_detail(event.cursor_row)
@@ -153,10 +161,7 @@ class RetryScreen(Screen[None]):
         except ValueError as exc:
             self.app.notify(str(exc), severity="error")
             return
-        dependents = (
-            ", ".join(preview.reset_dependents)
-            if preview.reset_dependents else "none"
-        )
+        dependents = ", ".join(preview.reset_dependents) if preview.reset_dependents else "none"
         header = (
             f"Retry '{comp.id}'? Resets it (+ dependents: {dependents}), "
             "removes the failed attempt's worktree and branch, and "
@@ -181,7 +186,8 @@ class RetryScreen(Screen[None]):
                 latest_preview = preview_retry(latest, comp.id)
             except ValueError as exc:
                 self.app.notify(
-                    f"retry plan changed: {exc}", severity="warning",
+                    f"retry plan changed: {exc}",
+                    severity="warning",
                 )
                 self.reload()
                 return
@@ -197,11 +203,17 @@ class RetryScreen(Screen[None]):
             narration = io.StringIO()
             try:
                 prepare_retry(
-                    latest, comp.id, latest_file,
-                    self._root_dir(), PlainUI(no_color=True, file=narration),
+                    latest,
+                    comp.id,
+                    latest_file,
+                    self._root_dir(),
+                    PlainUI(no_color=True, file=narration),
                 )
             except (
-                OSError, ValueError, RetryError, subprocess.SubprocessError,
+                OSError,
+                ValueError,
+                RetryError,
+                subprocess.SubprocessError,
             ) as exc:
                 self.app.notify(f"retry failed: {exc}", severity="error")
                 self.reload()
@@ -211,11 +223,13 @@ class RetryScreen(Screen[None]):
                 launch(FactoryLaunch(manifest_path=latest_file))
 
         self.app.push_screen(
-            OptionsModal(PromptRequest(
-                kind=PromptKind.CONFIRM,
-                header=header,
-                options=("Start retry", "Cancel"),
-                default=1,
-            )),
+            OptionsModal(
+                PromptRequest(
+                    kind=PromptKind.CONFIRM,
+                    header=header,
+                    options=("Start retry", "Cancel"),
+                    default=1,
+                )
+            ),
             _resolved,
         )

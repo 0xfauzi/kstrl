@@ -9,9 +9,7 @@ def _validate_separator(separator: str) -> None:
     if not separator:
         raise ValueError("separator must be a non-empty string")
     if any(char.isalnum() for char in separator):
-        raise ValueError(
-            f"separator must not contain alphanumeric characters, got {separator!r}"
-        )
+        raise ValueError(f"separator must not contain alphanumeric characters, got {separator!r}")
 
 
 def _strip_separator(value: str, separator: str) -> str:

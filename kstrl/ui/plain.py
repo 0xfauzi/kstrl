@@ -61,6 +61,7 @@ class PlainUI:
         # Try to get terminal width
         try:
             import shutil
+
             self._width = shutil.get_terminal_size().columns
         except Exception:
             pass

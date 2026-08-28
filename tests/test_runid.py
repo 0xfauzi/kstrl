@@ -74,21 +74,27 @@ class TestMixedKindDiscovery:
         refs = discover_runs(tmp_path)
         assert [r.run_id for r in refs] == list(reversed(MIXED_IDS))
         assert [r.kind for r in refs] == [
-            "feature", "understand", "factory", "decompose", "factory",
+            "feature",
+            "understand",
+            "factory",
+            "decompose",
+            "factory",
         ]
 
     def test_kinds_filter(self, tmp_path: Path) -> None:
         self._write_mixed(tmp_path)
         factory_only = discover_runs(tmp_path, kinds=("factory",))
         assert [r.run_id for r in factory_only] == [
-            MIXED_IDS[2], MIXED_IDS[0],
+            MIXED_IDS[2],
+            MIXED_IDS[0],
         ]
         ref = latest_run(tmp_path, kinds=("decompose",))
         assert ref is not None and ref.run_id == MIXED_IDS[1]
         assert latest_run(tmp_path, kinds=("nope",)) is None
 
     def test_held_lock_attributed_to_newest_factory_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         import fcntl
 
@@ -103,15 +109,14 @@ class TestMixedKindDiscovery:
         assert held == [MIXED_IDS[2]]
 
     def test_load_run_state_resolves_newest_of_any_kind(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         self._write_mixed(tmp_path)
         state, source = load_run_state(tmp_path)
         assert state.run_id == MIXED_IDS[-1]
         assert state.kind == "feature"
-        assert source == (
-            tmp_path / ".kstrl" / "runs" / MIXED_IDS[-1] / "events.jsonl"
-        )
+        assert source == (tmp_path / ".kstrl" / "runs" / MIXED_IDS[-1] / "events.jsonl")
 
 
 class TestRunStateKind:

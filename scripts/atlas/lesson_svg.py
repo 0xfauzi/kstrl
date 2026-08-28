@@ -244,7 +244,9 @@ def main() -> int:
         ]
     else:
         rows = legend_rows(legend_mode)
-    out = figure(svg, caption, rows, args.svg_id, detail if args.interactive else None)
+    # Trailing newline so end-of-file-fixer has nothing to add: without it the
+    # hook appends one and refresh.sh strips it back off on the next run.
+    out = figure(svg, caption, rows, args.svg_id, detail if args.interactive else None) + "\n"
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         print(f"wrote {args.out} ({len(out) / 1024:.0f} KB)")

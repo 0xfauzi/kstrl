@@ -121,10 +121,17 @@ def _make_run_dir(root: Path, run_id: str) -> Path:
 
 
 def _component(
-    comp_id: str, status: str, findings: list[Finding] | None = None,
+    comp_id: str,
+    status: str,
+    findings: list[Finding] | None = None,
 ) -> Component:
     component = Component(
-        comp_id, comp_id, "", [], f"{comp_id}.json", f"branch/{comp_id}",
+        comp_id,
+        comp_id,
+        "",
+        [],
+        f"{comp_id}.json",
+        f"branch/{comp_id}",
     )
     component.status = ComponentStatus(status)
     component.findings = list(findings or [])
@@ -172,12 +179,14 @@ def _stub_runner(
         on_spawn: object = None,
     ) -> RunOutcome:
         if calls is not None:
-            calls.append({
-                "spec_path": spec_path,
-                "project_name": project_name,
-                "pause_before_pr_merge": pause_before_pr_merge,
-                "timeout_seconds": timeout_seconds,
-            })
+            calls.append(
+                {
+                    "spec_path": spec_path,
+                    "project_name": project_name,
+                    "pause_before_pr_merge": pause_before_pr_merge,
+                    "timeout_seconds": timeout_seconds,
+                }
+            )
         if child_pid is not None and callable(on_spawn):
             on_spawn(child_pid)
         if make_run_dir:
@@ -196,7 +205,8 @@ def _no_spend(monkeypatch: pytest.MonkeyPatch):
     way of the classification tests.
     """
     monkeypatch.setattr(
-        "kstrl.serve.read_run_spend", lambda root, run_id: RunSpend(),
+        "kstrl.serve.read_run_spend",
+        lambda root, run_id: RunSpend(),
     )
 
 
@@ -210,7 +220,8 @@ class TestClassifierRetriesOnlyWithEvidence:
 
     def test_exit_zero_is_success(self, tmp_path: Path) -> None:
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=0),
+            tmp_path,
+            run=RunOutcome(returncode=0),
             manifest_path=tmp_path / "m.json",
         )
         assert outcome.verdict is Verdict.SUCCESS
@@ -219,7 +230,9 @@ class TestClassifierRetriesOnlyWithEvidence:
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.RETRY_INFRA
         assert "comp-a" in outcome.reason
@@ -227,18 +240,24 @@ class TestClassifierRetriesOnlyWithEvidence:
     def test_one_judged_failure_blocks_the_retry(self, tmp_path: Path) -> None:
         """A mixed run is a SPEC failure: the spec failure is the verdict."""
         path = tmp_path / "m.json"
-        _manifest(path, [
-            _component("comp-a", "failed", [_infra_finding()]),
-            _component("comp-b", "failed", [_spec_finding()]),
-        ])
+        _manifest(
+            path,
+            [
+                _component("comp-a", "failed", [_infra_finding()]),
+                _component("comp-b", "failed", [_spec_finding()]),
+            ],
+        )
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.SPEC_FAILURE
         assert "comp-b" in outcome.reason
 
     def test_a_failure_with_no_findings_is_UNCLASSIFIABLE(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Corrected by the first live run.
 
@@ -255,13 +274,16 @@ class TestClassifierRetriesOnlyWithEvidence:
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [])])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.UNCLASSIFIABLE
         assert not outcome.verdict.may_retry, "still must not retry"
 
     def test_an_unevidenced_failure_surfaces_the_component_error(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The operator needs the actual cause, not a guess about it."""
         path = tmp_path / "m.json"
@@ -269,34 +291,45 @@ class TestClassifierRetriesOnlyWithEvidence:
         comp.error = "Failed to create worktree: fatal: invalid reference"
         _manifest(path, [comp])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert "invalid reference" in outcome.reason
         assert outcome.evidence["component_errors"]["comp-a"] == comp.error
 
     def test_a_findings_backed_failure_is_still_a_spec_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The positive case must keep its stronger, accurate label."""
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [_spec_finding()])])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.SPEC_FAILURE
         assert "on their own merits" in outcome.reason
 
     def test_a_spec_finding_outweighs_an_unevidenced_sibling(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Real evidence beats the absence of it."""
         path = tmp_path / "m.json"
-        _manifest(path, [
-            _component("comp-a", "failed", []),
-            _component("comp-b", "failed", [_spec_finding()]),
-        ])
+        _manifest(
+            path,
+            [
+                _component("comp-a", "failed", []),
+                _component("comp-b", "failed", [_spec_finding()]),
+            ],
+        )
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.SPEC_FAILURE
         assert "comp-b" in outcome.reason
@@ -305,32 +338,39 @@ class TestClassifierRetriesOnlyWithEvidence:
         path = tmp_path / "m.json"
         path.write_text("{not json")
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.UNCLASSIFIABLE
         assert not outcome.verdict.may_retry
 
     def test_a_missing_manifest_does_not_retry(self, tmp_path: Path) -> None:
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1),
+            tmp_path,
+            run=RunOutcome(returncode=1),
             manifest_path=tmp_path / "absent.json",
         )
         assert outcome.verdict is Verdict.UNCLASSIFIABLE
 
     def test_nonzero_exit_with_nothing_failed_does_not_retry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Merge-pending / contract failure: resumable, but not by us."""
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "completed")])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.UNCLASSIFIABLE
         assert "no failed component" in outcome.reason
 
     def test_exit_two_with_a_spec_blocker_marker_is_a_spec_failure(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The architect halted on a blocker; re-running spends the same."""
         outcome = classify_run(
@@ -345,7 +385,8 @@ class TestClassifierRetriesOnlyWithEvidence:
         assert "architect" in outcome.reason
 
     def test_exit_two_from_lock_contention_retries(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#186 F6: exit 2 also means "another run holds the lock".
 
@@ -365,7 +406,8 @@ class TestClassifierRetriesOnlyWithEvidence:
         assert outcome.evidence["cause"] == "lock_contention"
 
     def test_exit_two_with_no_marker_is_unclassifiable(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Neither refusal named: refuse to guess which one it was."""
         outcome = classify_run(
@@ -377,11 +419,14 @@ class TestClassifierRetriesOnlyWithEvidence:
         assert not outcome.verdict.may_retry
 
     def test_a_manifest_this_invocation_does_not_own_is_unclassifiable(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#186 F2: never classify from another run's artifacts."""
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=None,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=None,
         )
         assert outcome.verdict is Verdict.UNCLASSIFIABLE
         assert "no run artifacts of its own" in outcome.reason
@@ -389,7 +434,8 @@ class TestClassifierRetriesOnlyWithEvidence:
     def test_a_signal_kill_retries(self, tmp_path: Path) -> None:
         """SIGKILL is evidence of an external cause, not a spec verdict."""
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=-9),
+            tmp_path,
+            run=RunOutcome(returncode=-9),
             manifest_path=tmp_path / "m.json",
         )
         assert outcome.verdict is Verdict.RETRY_INFRA
@@ -397,7 +443,8 @@ class TestClassifierRetriesOnlyWithEvidence:
 
     def test_a_timeout_retries(self, tmp_path: Path) -> None:
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=-9, timed_out=True),
+            tmp_path,
+            run=RunOutcome(returncode=-9, timed_out=True),
             manifest_path=tmp_path / "m.json",
         )
         assert outcome.verdict is Verdict.RETRY_INFRA
@@ -448,9 +495,7 @@ class TestClassifierRetriesOnlyWithEvidence:
             def __init__(self, findings: list[Finding]) -> None:
                 self.findings = findings
 
-        assert _infra_casualty(
-            _Comp([Finding.infrastructure_error("review", "cli died")])
-        )
+        assert _infra_casualty(_Comp([Finding.infrastructure_error("review", "cli died")]))
         assert not _infra_casualty(_Comp([]))
 
 
@@ -472,19 +517,24 @@ class TestBackoff:
         assert backoff_seconds(0) == 0.0
 
     def test_an_item_inside_its_backoff_is_not_claimed(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
         future = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
         queue.transition(
-            item, ItemState.LEASED, reason="t", not_before=future,  # type: ignore[arg-type]
+            item,
+            ItemState.LEASED,
+            reason="t",
+            not_before=future,  # type: ignore[arg-type]
         )
         queue.requeue(queue.items()[0], not_before=future)
         assert queue.next_ready() is None
 
     def test_a_backed_off_item_does_not_starve_the_others(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A flaking item must not block the ones that would succeed."""
         queue = _queue(tmp_path)
@@ -543,20 +593,25 @@ class TestSpendLedger:
         assert spend.total_calls == 5
 
     def test_an_unmetered_phase_makes_the_total_a_floor(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#186 F3: the architect spends and reports nothing at all."""
         ledger = SpendLedger(tmp_path)
         spend = ledger.charge(
-            1.0, covered_calls=2, total_calls=2,
-            unmetered_phases=("architect",), today="d",
+            1.0,
+            covered_calls=2,
+            total_calls=2,
+            unmetered_phases=("architect",),
+            today="d",
         )
         assert spend.uncovered_calls == 0
         assert spend.lower_bound, "an unmetered phase is unmeasured spend"
         assert "architect" in spend.unmetered_phases
 
     def test_a_launch_failure_is_not_counted_as_a_metered_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ledger = SpendLedger(tmp_path)
         spend = ledger.charge(0.0, metered_run=False, today="d")
@@ -583,7 +638,9 @@ class TestSpendLedger:
         ledger = SpendLedger(tmp_path)
         ledger.charge(9.0, covered_calls=1, total_calls=1)
         with patch.object(
-            Path, "read_text", side_effect=PermissionError("denied"),
+            Path,
+            "read_text",
+            side_effect=PermissionError("denied"),
         ):
             with pytest.raises(ServeStateError, match="cannot read"):
                 ledger.read()
@@ -593,7 +650,8 @@ class TestSpendLedger:
         assert SpendLedger(tmp_path).read("d").spent_usd == 0.0
 
     def test_a_corrupt_ledger_blocks_the_budget_gate(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ledger = SpendLedger(tmp_path)
         ledger.charge(9.0, covered_calls=1, total_calls=1)
@@ -638,25 +696,31 @@ class TestBudgetGate:
         assert admission.resume_after, "the pause must clear itself"
 
     def test_the_pause_targets_the_next_local_midnight(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ledger = SpendLedger(tmp_path)
         ledger.charge(20.0, covered_calls=1, total_calls=1, today="d")
         admission = check_budget(
-            ledger, ServeConfig(daily_budget_usd=20.0), today="d",
+            ledger,
+            ServeConfig(daily_budget_usd=20.0),
+            today="d",
         )
         deadline = datetime.fromisoformat(admission.resume_after)
         assert deadline > datetime.now(UTC)
         assert deadline <= datetime.now(UTC) + timedelta(days=1, minutes=1)
 
     def test_a_floor_total_is_labelled_in_the_reason(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """H4: the operator must not read a floor as a measurement."""
         ledger = SpendLedger(tmp_path)
         ledger.charge(20.0, covered_calls=1, total_calls=5, today="d")
         admission = check_budget(
-            ledger, ServeConfig(daily_budget_usd=20.0), today="d",
+            ledger,
+            ServeConfig(daily_budget_usd=20.0),
+            today="d",
         )
         assert "FLOOR" in admission.reason
         assert "4 call(s) reported no cost" in admission.reason
@@ -676,14 +740,16 @@ class TestCostCoverageGate:
     """
 
     def test_no_budget_means_no_coverage_requirement(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ledger = SpendLedger(tmp_path)
         ledger.charge(0.0, covered_calls=0, total_calls=4, today="d")
         assert check_cost_coverage(ledger, ServeConfig(), today="d").allowed
 
     def test_a_fully_covered_zero_dollar_run_is_allowed(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The false-positive #186 F9 reported."""
         ledger = SpendLedger(tmp_path)
@@ -698,7 +764,8 @@ class TestCostCoverageGate:
         assert check_cost_coverage(ledger, config, today="d").allowed
 
     def test_partial_coverage_is_allowed_as_a_lower_bound_cap(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A cap that fires late is still a cap; it is labelled a floor."""
         ledger = SpendLedger(tmp_path)
@@ -708,7 +775,8 @@ class TestCostCoverageGate:
         assert ledger.read("d").lower_bound
 
     def test_zero_coverage_blocks_BEFORE_the_first_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#186 F8: this used to be discovered only after a run had spent."""
         ledger = SpendLedger(tmp_path)
@@ -725,18 +793,23 @@ class TestCostCoverageGate:
         assert check_cost_coverage(ledger, config, today="2026-07-31").allowed
 
     def test_the_reason_does_not_estimate_the_missing_spend(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Never convert unreported calls into a dollar figure (H4)."""
         admission = check_cost_coverage(
-            SpendLedger(tmp_path), ServeConfig(daily_budget_usd=10.0), today="d",
+            SpendLedger(tmp_path),
+            ServeConfig(daily_budget_usd=10.0),
+            today="d",
         )
         assert "NOT estimated" in admission.reason
 
     def test_the_override_is_explicit(self, tmp_path: Path) -> None:
         config = ServeConfig(daily_budget_usd=10.0, allow_uncovered_cost=True)
         assert check_cost_coverage(
-            SpendLedger(tmp_path), config, today="d",
+            SpendLedger(tmp_path),
+            config,
+            today="d",
         ).allowed
 
 
@@ -767,7 +840,8 @@ class TestPoisonBreaker:
         assert consecutive_poison_count(ledger) == 0
 
     def test_the_streak_survives_losing_the_journal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The whole reason it moved off the journal.
 
@@ -784,7 +858,8 @@ class TestPoisonBreaker:
         queue.journal_path.write_text("")
         assert consecutive_poison_count(ledger) == 3
         assert not check_poison_breaker(
-            ledger, ServeConfig(max_consecutive_poison=3),
+            ledger,
+            ServeConfig(max_consecutive_poison=3),
         ).allowed
 
     def test_the_streak_survives_a_new_day(self, tmp_path: Path) -> None:
@@ -801,7 +876,8 @@ class TestPoisonBreaker:
         for _ in range(3):
             ledger.record_terminal(poisoned=True)
         admission = check_poison_breaker(
-            ledger, ServeConfig(max_consecutive_poison=3),
+            ledger,
+            ServeConfig(max_consecutive_poison=3),
         )
         assert not admission.allowed
         assert "systemic" in admission.pause_reason
@@ -810,11 +886,13 @@ class TestPoisonBreaker:
         ledger = SpendLedger(tmp_path)
         ledger.record_terminal(poisoned=True)
         assert check_poison_breaker(
-            ledger, ServeConfig(max_consecutive_poison=3),
+            ledger,
+            ServeConfig(max_consecutive_poison=3),
         ).allowed
 
     def test_the_breaker_pause_does_not_auto_resume(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Unlike the budget: something systemic needs a human, not a clock."""
         ledger = SpendLedger(tmp_path)
@@ -823,7 +901,8 @@ class TestPoisonBreaker:
         assert check_poison_breaker(ledger, ServeConfig()).resume_after == ""
 
     def test_an_unreadable_state_file_fails_closed(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ledger = SpendLedger(tmp_path)
         ledger.record_terminal(poisoned=True)
@@ -853,9 +932,7 @@ class TestInboxCapGate:
             monkeypatch.delenv(var, raising=False)
 
     def _inbox(self, tmp_path: Path, cap: int) -> Inbox:
-        (tmp_path / "kstrl.toml").write_text(
-            f"[inbox]\nopen_item_cap = {cap}\n"
-        )
+        (tmp_path / "kstrl.toml").write_text(f"[inbox]\nopen_item_cap = {cap}\n")
         return Inbox(tmp_path, InboxConfig.load(tmp_path))
 
     def test_open_items_below_the_cap_admit(self, tmp_path: Path) -> None:
@@ -864,7 +941,8 @@ class TestInboxCapGate:
         assert check_inbox_cap(tmp_path).allowed
 
     def test_a_garbled_line_counts_toward_the_cap(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Same backlog as above plus one torn line: admission refused."""
         box = self._inbox(tmp_path, cap=2)
@@ -878,7 +956,8 @@ class TestInboxCapGate:
         assert len(box.open_items()) == 1
 
     def test_garbled_lines_alone_can_fill_the_cap(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """No readable open items at all - the fold reads an empty inbox -
         yet the gate must refuse: every torn line MIGHT be an open item."""
@@ -890,7 +969,9 @@ class TestInboxCapGate:
         assert box.open_items() == []
 
     def test_unreadable_inbox_refuses_regardless_of_cap(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Review P1: collapsing a whole-file read failure to one skipped
         line admitted under the default cap of 50. Unreadable is its own
@@ -910,7 +991,8 @@ class TestInboxCapGate:
         assert "unreadable" in admission.reason
 
     def test_invalid_utf8_refuses_admission(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Review P1: ``read_text`` raised UnicodeDecodeError on a torn
         multibyte write, escaping the gate entirely."""
@@ -922,7 +1004,9 @@ class TestInboxCapGate:
         assert "unreadable" in admission.reason
 
     def test_gate_uses_one_scan_snapshot(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Review P1: unparseable_line_count() and open_items() each
         scanned the log. A torn append between those calls produced
@@ -948,7 +1032,9 @@ class TestInboxCapGate:
         assert scans == 1
 
     def test_interleaved_append_cannot_split_gate_counts(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Deterministic reproduction of the dual-scan race: after the
         first scan returns, inject a torn line. A second scan would see
@@ -990,7 +1076,8 @@ class TestInboxCapGate:
 
 class TestReaper:
     def test_a_dead_leased_item_returns_to_queued_for_free(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Leasing spends nothing, so recovery costs nothing."""
         queue = _queue(tmp_path)
@@ -1009,7 +1096,8 @@ class TestReaper:
         assert queue.items()[0].state is ItemState.LEASED
 
     def test_an_expired_lease_is_reaped_even_with_a_live_pid(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path, lease_ttl_seconds=1)
         queue.lease(_add(queue), pid=os.getpid())  # type: ignore[arg-type]
@@ -1018,7 +1106,8 @@ class TestReaper:
         assert len(result.requeued) == 1
 
     def test_a_dead_running_item_retries_with_backoff(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The sleep/crash path: the attempt is spent, the cause is external."""
         queue = _queue(tmp_path, max_attempts=3)
@@ -1031,7 +1120,8 @@ class TestReaper:
         assert reread.not_before, "a reaped retry waits out a backoff"
 
     def test_a_dead_running_item_poisons_when_out_of_attempts(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path, max_attempts=1)
         item = queue.start(queue.lease(_add(queue), pid=999999))  # type: ignore[arg-type]
@@ -1042,7 +1132,8 @@ class TestReaper:
         assert "no attempts left" in reread.poison_reason
 
     def test_a_foreign_host_lease_is_not_reaped_on_pid(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """We cannot probe a foreign pid; the TTL is the only signal."""
         queue = _queue(tmp_path)
@@ -1056,7 +1147,8 @@ class TestReaper:
         assert len(reap_leases(queue, now=future).requeued) == 1
 
     def test_the_reaper_records_why_in_the_journal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         item = queue.lease(_add(queue), pid=999999)  # type: ignore[arg-type]
@@ -1085,7 +1177,9 @@ class TestMergeGate:
         assert not gate.pause_before_pr_merge
 
     def test_the_ladder_withholds_auto_merge_at_l1(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The ladder may always withhold a permission."""
         monkeypatch.setenv("KSTRL_AUTONOMY_ENABLED", "1")
@@ -1100,7 +1194,9 @@ class TestMergeGate:
         """Continuous intake must not silently delete the merge gate."""
         queue = _queue(tmp_path)
         item = _add(
-            queue, source=ItemSource.GITHUB, source_ref="o/r#1",
+            queue,
+            source=ItemSource.GITHUB,
+            source_ref="o/r#1",
         )
         gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
         assert gate.pause_before_pr_merge
@@ -1144,12 +1240,15 @@ class TestServeConfig:
         assert config.caffeinate
         assert not config.allow_uncovered_cost
 
-    @pytest.mark.parametrize("kwargs", [
-        {"poll_interval_seconds": 0},
-        {"daily_budget_usd": -1},
-        {"max_consecutive_poison": 0},
-        {"factory_timeout_seconds": -1},
-    ])
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"poll_interval_seconds": 0},
+            {"daily_budget_usd": -1},
+            {"max_consecutive_poison": 0},
+            {"factory_timeout_seconds": -1},
+        ],
+    )
     def test_invalid_values_are_rejected(self, kwargs: dict[str, float]) -> None:
         with pytest.raises(ServeError):
             ServeConfig(**kwargs)  # type: ignore[arg-type]
@@ -1170,7 +1269,9 @@ class TestServeConfig:
         assert config.max_consecutive_poison == 5
 
     def test_env_beats_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[serve]\ndaily_budget_usd = 12.0\n")
         monkeypatch.setenv("KSTRL_SERVE_DAILY_BUDGET_USD", "3.0")
@@ -1244,7 +1345,8 @@ class TestServeCycle:
         assert len(calls) == 1
 
     def test_a_spec_failure_poisons_without_retrying(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path, max_attempts=3)
         _add(queue)
@@ -1259,7 +1361,8 @@ class TestServeCycle:
         assert item.attempts == 1, "poisoned after ONE attempt, not three"
 
     def test_an_infra_failure_retries_with_backoff(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path, max_attempts=3)
         _add(queue)
@@ -1274,7 +1377,8 @@ class TestServeCycle:
         assert item.not_before, "the retry waits out a backoff"
 
     def test_an_infra_failure_poisons_once_attempts_run_out(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Even a legitimately retryable failure is bounded."""
         queue = _queue(tmp_path, max_attempts=1)
@@ -1296,7 +1400,8 @@ class TestServeCycle:
         assert queue.items()[0].state is ItemState.POISON
 
     def test_the_attempt_is_charged_before_the_run(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         _add(queue)
@@ -1333,7 +1438,8 @@ class TestServeCycle:
         assert "paused" in result.skipped
 
     def test_an_elapsed_pause_window_resumes_itself(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """What makes the daily-budget stop self-healing.
 
@@ -1356,7 +1462,8 @@ class TestServeCycle:
         ), "the resume must be journaled"
 
     def test_an_exhausted_budget_pauses_before_spending(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         _add(queue)
@@ -1372,7 +1479,8 @@ class TestServeCycle:
         assert queue.is_paused()
 
     def test_repeated_poisons_pause_the_queue_on_their_own(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """End to end: serve must RECORD each poison, not just read a count.
 
@@ -1385,14 +1493,18 @@ class TestServeCycle:
         config = ServeConfig(max_consecutive_poison=3)
         for _ in range(3):
             serve_cycle(
-                tmp_path, config=config, runner=_stub_runner(RunOutcome(1)),
+                tmp_path,
+                config=config,
+                runner=_stub_runner(RunOutcome(1)),
             )
         assert consecutive_poison_count(SpendLedger(tmp_path)) == 3
 
         _add(queue)
         calls: list[dict[str, object]] = []
         result = serve_cycle(
-            tmp_path, config=config, runner=_stub_runner(RunOutcome(0), calls),
+            tmp_path,
+            config=config,
+            runner=_stub_runner(RunOutcome(0), calls),
         )
         assert calls == [], "the breaker must stop the fourth run"
         assert result.paused
@@ -1416,7 +1528,8 @@ class TestServeCycle:
         assert queue.is_paused()
 
     def test_a_held_factory_lock_waits_without_charging(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Someone else owns the repo; that is not the item's fault."""
         queue = _queue(tmp_path)
@@ -1424,7 +1537,8 @@ class TestServeCycle:
         calls: list[dict[str, object]] = []
         with patch("kstrl.serve.factory_lock_held", return_value=True):
             result = serve_cycle(
-                tmp_path, runner=_stub_runner(RunOutcome(0), calls),
+                tmp_path,
+                runner=_stub_runner(RunOutcome(0), calls),
             )
         assert calls == []
         assert "already holds" in result.skipped
@@ -1477,7 +1591,8 @@ class TestServeCycle:
 
             gate.return_value = Admission(allowed=False, reason="inbox full")
             result = serve_cycle(
-                tmp_path, runner=_stub_runner(RunOutcome(0), calls),
+                tmp_path,
+                runner=_stub_runner(RunOutcome(0), calls),
             )
         assert calls == []
         assert result.skipped == "inbox full"
@@ -1529,7 +1644,9 @@ class TestServeLoop:
     def test_once_does_not_sleep(self, tmp_path: Path) -> None:
         slept: list[float] = []
         serve(
-            tmp_path, once=True, runner=_stub_runner(RunOutcome(0)),
+            tmp_path,
+            once=True,
+            runner=_stub_runner(RunOutcome(0)),
             sleeper=slept.append,
         )
         assert slept == []
@@ -1560,14 +1677,16 @@ class TestProcessGroupSupervision:
         proc = subprocess.Popen(
             ["sh", "-c", "sleep 20 & echo $! ; sleep 20"],
             start_new_session=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         assert proc.stdout is not None
         grandchild = int(proc.stdout.readline().strip())
         pgid = os.getpgid(proc.pid)
         leaked = False
         try:
-            proc.terminate()          # what subprocess.run's timeout does
+            proc.terminate()  # what subprocess.run's timeout does
             proc.wait(timeout=10)
             try:
                 os.kill(grandchild, 0)
@@ -1591,7 +1710,9 @@ class TestProcessGroupSupervision:
         proc = subprocess.Popen(
             ["sh", "-c", "sh -c 'sleep 20' & sleep 20"],
             start_new_session=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         pgid = os.getpgid(proc.pid)
         assert terminate_process_group(proc) is True
@@ -1631,7 +1752,8 @@ class TestProcessGroupSupervision:
         assert _safe_pgid_of(fake) is None
 
     def test_the_supervised_timeout_reaps_descendants(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The runner's OWN timeout path, not just the helper.
 
@@ -1645,12 +1767,11 @@ class TestProcessGroupSupervision:
             timeout_seconds=1.0,
         )
         assert outcome.timed_out
-        assert outcome.group_reaped, (
-            "the timeout must confirm the whole group is gone"
-        )
+        assert outcome.group_reaped, "the timeout must confirm the whole group is gone"
 
     def test_the_timeout_path_uses_the_pgid_captured_at_spawn(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Wiring, not behaviour.
 
@@ -1669,37 +1790,46 @@ class TestProcessGroupSupervision:
 
         with patch("kstrl.serve.terminate_process_group", side_effect=spy):
             run_supervised(
-                ["sh", "-c", "sleep 30"], cwd=tmp_path, timeout_seconds=1.0,
+                ["sh", "-c", "sleep 30"],
+                cwd=tmp_path,
+                timeout_seconds=1.0,
             )
         assert seen and seen[0] is not None and seen[0] > 1, (
             "the pgid captured at spawn must be passed to the killer"
         )
 
     def test_the_supervised_run_returns_the_exit_code_and_output(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         outcome = run_supervised(
-            ["sh", "-c", "echo hello; exit 3"], cwd=tmp_path,
+            ["sh", "-c", "echo hello; exit 3"],
+            cwd=tmp_path,
         )
         assert outcome.returncode == 3
         assert "hello" in outcome.output_tail
         assert not outcome.timed_out
 
     def test_a_failed_launch_is_reported_not_raised(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         outcome = run_supervised(
-            [str(tmp_path / "no-such-binary")], cwd=tmp_path,
+            [str(tmp_path / "no-such-binary")],
+            cwd=tmp_path,
         )
         assert outcome.launch_error
         assert outcome.returncode == -1
 
     def test_the_supervised_run_reports_the_child_pid(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         seen: list[int] = []
         run_supervised(
-            ["sh", "-c", "exit 0"], cwd=tmp_path, on_spawn=seen.append,
+            ["sh", "-c", "exit 0"],
+            cwd=tmp_path,
+            on_spawn=seen.append,
         )
         assert seen and seen[0] > 1
 
@@ -1710,7 +1840,9 @@ class TestProcessGroupSupervision:
         proc = subprocess.Popen(
             ["sh", "-c", "sleep 20 & sleep 20"],
             start_new_session=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         pgid = os.getpgid(proc.pid)
         real_killpg = os.killpg
@@ -1738,14 +1870,18 @@ class TestProcessGroupSupervision:
         import subprocess
 
         proc = subprocess.Popen(
-            ["sh", "-c", "exit 0"], start_new_session=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            ["sh", "-c", "exit 0"],
+            start_new_session=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         proc.wait(timeout=10)
         assert terminate_process_group(proc) is True
 
     def test_an_unreaped_timeout_poisons_instead_of_retrying(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The whole point: never hand the item back while a run may live.
 
@@ -1779,7 +1915,8 @@ class TestProcessGroupSupervision:
         assert queue.items()[0].state is ItemState.QUEUED
 
     def test_the_run_child_becomes_the_lease_owner(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Otherwise a successor reaper requeues a live run (#186 F1)."""
         queue = _queue(tmp_path)
@@ -1788,10 +1925,7 @@ class TestProcessGroupSupervision:
             tmp_path,
             runner=_stub_runner(RunOutcome(0), child_pid=424242),
         )
-        adopted = [
-            e for e in queue.journal_entries()
-            if e["reason"].startswith("lease adopted")
-        ]
+        adopted = [e for e in queue.journal_entries() if e["reason"].startswith("lease adopted")]
         assert adopted, "the child pid must be recorded as the lease owner"
         assert adopted[0]["detail"]["lease_pid"] == 424242
 
@@ -1800,7 +1934,8 @@ class TestRunOwnership:
     """#186 F2: charge and classify only artifacts this invocation made."""
 
     def test_a_launch_with_no_artifacts_charges_nothing(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path)
         _add(queue)
@@ -1818,7 +1953,8 @@ class TestRunOwnership:
         assert SpendLedger(tmp_path).read().spent_usd == 0.0
 
     def test_a_stale_manifest_is_not_used_to_classify(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An old manifest saying "infra failure" must not authorize a retry."""
         queue = _queue(tmp_path, max_attempts=3)
@@ -1830,13 +1966,15 @@ class TestRunOwnership:
         )
         _make_run_dir(tmp_path, "factory-OLD-000")
         result = serve_cycle(
-            tmp_path, runner=_stub_runner(RunOutcome(1), make_run_dir=False),
+            tmp_path,
+            runner=_stub_runner(RunOutcome(1), make_run_dir=False),
         )
         assert result.verdict is Verdict.UNCLASSIFIABLE
         assert queue.items()[0].state is ItemState.POISON
 
     def test_an_owned_manifest_is_read_and_classified(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The positive case, which only works if the run id key is right.
 
@@ -1872,7 +2010,8 @@ class TestRunOwnership:
         assert seen == ["factory-20260730-000000.000000-aaa"]
 
     def test_read_run_spend_refuses_an_empty_run_id(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An empty id used to select the NEWEST run on disk.
 
@@ -1887,9 +2026,15 @@ class TestRunOwnership:
         """The positive case, so the guard cannot be over-broad."""
         with patch("kstrl.reducer.load_run_state") as load:
             load.return_value = (
-                type("S", (), {
-                    "cost_usd": 1.25, "cost_calls": 2, "usage_calls": 3,
-                })(),
+                type(
+                    "S",
+                    (),
+                    {
+                        "cost_usd": 1.25,
+                        "cost_calls": 2,
+                        "usage_calls": 3,
+                    },
+                )(),
                 None,
             )
             spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
@@ -1897,7 +2042,8 @@ class TestRunOwnership:
         assert spend.uncovered_calls == 1
 
     def test_the_architect_is_recorded_as_unmetered(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#186 F3: decompose spends and emits no usage events at all."""
         queue = _queue(tmp_path)
@@ -1912,7 +2058,8 @@ class TestPauseIsAtomic:
     """#186 F7: the elapsed-pause clear must not lose an operator's pause."""
 
     def test_an_operator_pause_is_never_cleared_by_the_daemon(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A pause with no resume_after is a human decision; only a human lifts it."""
         queue = _queue(tmp_path)
@@ -1920,7 +2067,8 @@ class TestPauseIsAtomic:
         queue.pause(reason="operator emergency stop", actor="operator")
         calls: list[dict[str, object]] = []
         result = serve_cycle(
-            tmp_path, runner=_stub_runner(RunOutcome(0), calls),
+            tmp_path,
+            runner=_stub_runner(RunOutcome(0), calls),
         )
         assert calls == []
         assert "paused" in result.skipped
@@ -1952,10 +2100,7 @@ class TestPauseIsAtomic:
         import textwrap
 
         lines = textwrap.dedent(inspect.getsource(serve_cycle)).splitlines()
-        read_idx = next(
-            i for i, ln in enumerate(lines)
-            if "pause = queue.pause_state()" in ln
-        )
+        read_idx = next(i for i, ln in enumerate(lines) if "pause = queue.pause_state()" in ln)
         indent = len(lines[read_idx]) - len(lines[read_idx].lstrip())
         guard = ""
         for i in range(read_idx - 1, -1, -1):
@@ -1975,7 +2120,8 @@ class TestFactoryLockProbe:
         assert not factory_lock_held(tmp_path)
 
     def test_an_unopenable_lock_file_reads_as_HELD(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """An unopenable lock is not evidence that no run owns the root."""
         lock = tmp_path / ".kstrl" / "factory.lock"
@@ -2008,7 +2154,8 @@ class TestNeedsHuman:
     """#186 F10: exit status follows the terminal state, not may_retry."""
 
     def test_an_exhausted_infra_verdict_needs_a_human(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """may_retry stays True here, which is what fooled the old filter."""
         queue = _queue(tmp_path, max_attempts=1)
@@ -2024,7 +2171,8 @@ class TestNeedsHuman:
         assert result.needs_human
 
     def test_a_retryable_failure_with_attempts_left_does_not(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         queue = _queue(tmp_path, max_attempts=3)
         _add(queue)
@@ -2039,11 +2187,13 @@ class TestNeedsHuman:
         queue = _queue(tmp_path)
         _add(queue)
         assert not serve_cycle(
-            tmp_path, runner=_stub_runner(RunOutcome(0)),
+            tmp_path,
+            runner=_stub_runner(RunOutcome(0)),
         ).needs_human
 
     def test_a_reaper_poison_needs_a_human_without_running_an_item(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A path with no ran_item at all, which the old filter skipped."""
         queue = _queue(tmp_path, max_attempts=1)
@@ -2072,7 +2222,8 @@ class TestNeedsHuman:
         ledger.path.write_text("{corrupt")
         calls: list[dict[str, object]] = []
         result = serve_cycle(
-            tmp_path, runner=_stub_runner(RunOutcome(0), calls),
+            tmp_path,
+            runner=_stub_runner(RunOutcome(0), calls),
         )
         assert calls == []
         assert result.needs_human
@@ -2080,9 +2231,7 @@ class TestNeedsHuman:
         # not, so asserting it pins the earlier check specifically.
         from kstrl.inbox import Inbox, InboxConfig
 
-        titles = [
-            i.title for i in Inbox(tmp_path, InboxConfig.load(tmp_path)).items()
-        ]
+        titles = [i.title for i in Inbox(tmp_path, InboxConfig.load(tmp_path)).items()]
         assert any("unreadable spend ledger" in t for t in titles)
 
 
@@ -2091,7 +2240,9 @@ class TestBoundedRetention:
 
     def test_a_bounded_run_returns_every_result(self, tmp_path: Path) -> None:
         results = serve(
-            tmp_path, runner=_stub_runner(RunOutcome(0)), max_cycles=5,
+            tmp_path,
+            runner=_stub_runner(RunOutcome(0)),
+            max_cycles=5,
             sleeper=lambda _s: None,
         )
         assert len(results) == 5
@@ -2129,23 +2280,27 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
 
         paths = RunPaths.for_run(root, run_id)
         sink = JsonlSink(paths.events_file)
-        sink.emit(ev.BudgetExceeded(
-            component="comp-a",
-            total_tokens=716348,
-            max_total_tokens=400000,
-            cost_usd=2.53,
-            max_cost_usd=0.0,
-            ceiling="max_total_tokens",
-            condition="breached",
-            ceilings=("max_total_tokens",),
-        ))
+        sink.emit(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=716348,
+                max_total_tokens=400000,
+                cost_usd=2.53,
+                max_cost_usd=0.0,
+                ceiling="max_total_tokens",
+                condition="breached",
+                ceilings=("max_total_tokens",),
+            )
+        )
 
     def test_a_budget_halt_does_NOT_retry(self, tmp_path: Path) -> None:
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
         self._budget_run(tmp_path)
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
             owned_run_ids=["factory-budget"],
         )
         assert outcome.verdict is Verdict.BUDGET_HALT
@@ -2154,43 +2309,53 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
         )
 
     def test_the_reason_names_the_ceiling_and_the_decision(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
         self._budget_run(tmp_path)
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
             owned_run_ids=["factory-budget"],
         )
         assert "max_total_tokens" in outcome.reason
         assert "human decision" in outcome.reason
 
     def test_a_genuine_infra_failure_still_retries(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The fix must not swallow the case it was carved out of."""
         path = tmp_path / "m.json"
         _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
             owned_run_ids=["factory-no-budget-event"],
         )
         assert outcome.verdict is Verdict.RETRY_INFRA
 
     def test_the_check_reads_the_typed_event_not_the_prose(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A finding whose text merely mentions a budget is not a halt."""
         from kstrl.findings import Finding
 
         path = tmp_path / "m.json"
         misleading = Finding.infrastructure_error(
-            "engineer", "token budget exceeded: agent CLI printed this",
+            "engineer",
+            "token budget exceeded: agent CLI printed this",
         )
         _manifest(path, [_component("comp-a", "failed", [misleading])])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
             owned_run_ids=["factory-no-budget-event"],
         )
         assert outcome.verdict is Verdict.RETRY_INFRA, (
@@ -2198,7 +2363,8 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
         )
 
     def test_a_budget_halt_poisons_the_item_in_a_full_cycle(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """End to end: the item must not be requeued for another attempt."""
         queue = _queue(tmp_path, max_attempts=3)
@@ -2218,9 +2384,7 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
         result = serve_cycle(tmp_path, runner=runner)  # type: ignore[arg-type]
         assert result.verdict is Verdict.BUDGET_HALT
         item = queue.items()[0]
-        assert item.state is ItemState.POISON, (
-            "a ceiling breach must not consume further attempts"
-        )
+        assert item.state is ItemState.POISON, "a ceiling breach must not consume further attempts"
         assert result.needs_human
 
 
@@ -2239,19 +2403,22 @@ class TestBudgetHaltPrecedence:
         from kstrl.events import JsonlSink, RunPaths
 
         paths = RunPaths.for_run(root, run_id)
-        JsonlSink(paths.events_file).emit(ev.BudgetExceeded(
-            component="comp-a",
-            total_tokens=716348,
-            max_total_tokens=400000,
-            cost_usd=2.53,
-            max_cost_usd=0.0,
-            ceiling=ceilings[0] if ceilings else "",
-            condition=condition,
-            ceilings=ceilings,
-        ))
+        JsonlSink(paths.events_file).emit(
+            ev.BudgetExceeded(
+                component="comp-a",
+                total_tokens=716348,
+                max_total_tokens=400000,
+                cost_usd=2.53,
+                max_cost_usd=0.0,
+                ceiling=ceilings[0] if ceilings else "",
+                condition=condition,
+                ceilings=ceilings,
+            )
+        )
 
     def test_a_timed_out_run_that_blew_its_ceiling_does_not_retry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The exact hole: halt, then hang until our timeout kills it.
 
@@ -2269,23 +2436,28 @@ class TestBudgetHaltPrecedence:
         assert outcome.verdict is Verdict.BUDGET_HALT
         assert not outcome.verdict.may_retry
 
-    @pytest.mark.parametrize("run", [
-        RunOutcome(returncode=-9, timed_out=True, group_reaped=True),
-        RunOutcome(returncode=-9),
-        RunOutcome(returncode=2, output_tail="--force-lock"),
-        RunOutcome(returncode=1),
-    ])
+    @pytest.mark.parametrize(
+        "run",
+        [
+            RunOutcome(returncode=-9, timed_out=True, group_reaped=True),
+            RunOutcome(returncode=-9),
+            RunOutcome(returncode=2, output_tail="--force-lock"),
+            RunOutcome(returncode=1),
+        ],
+    )
     def test_no_retry_authorizing_branch_outranks_the_halt(
-        self, tmp_path: Path, run: RunOutcome,
+        self,
+        tmp_path: Path,
+        run: RunOutcome,
     ) -> None:
         self._budget_run(tmp_path)
         outcome = classify_run(
-            tmp_path, run=run, manifest_path=None,
+            tmp_path,
+            run=run,
+            manifest_path=None,
             owned_run_ids=["factory-budget"],
         )
-        assert outcome.verdict is Verdict.BUDGET_HALT, (
-            f"{run} outranked the ceiling"
-        )
+        assert outcome.verdict is Verdict.BUDGET_HALT, f"{run} outranked the ceiling"
 
     def test_a_launch_failure_still_retries(self, tmp_path: Path) -> None:
         """The one branch that must precede it: no child, no artifacts."""
@@ -2299,14 +2471,19 @@ class TestBudgetHaltPrecedence:
         assert outcome.verdict is Verdict.RETRY_INFRA
 
     def test_an_unenforceable_halt_does_not_claim_a_breach(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#197 M2: no threshold was crossed, so do not report one."""
         self._budget_run(
-            tmp_path, condition="unenforceable", ceilings=("max_cost_usd",),
+            tmp_path,
+            condition="unenforceable",
+            ceilings=("max_cost_usd",),
         )
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=None,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=None,
             owned_run_ids=["factory-budget"],
         )
         assert outcome.verdict is Verdict.BUDGET_HALT
@@ -2319,14 +2496,17 @@ class TestBudgetHaltPrecedence:
     def test_a_breached_halt_still_says_so(self, tmp_path: Path) -> None:
         self._budget_run(tmp_path, condition="breached")
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=None,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=None,
             owned_run_ids=["factory-budget"],
         )
         assert "human decision" in outcome.reason
         assert "can still fire" not in outcome.reason
 
     def test_an_unevidenced_sibling_is_never_dropped(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#197 M3: a spec finding must not hide a sibling's real error."""
         path = tmp_path / "m.json"
@@ -2335,7 +2515,9 @@ class TestBudgetHaltPrecedence:
         silent.error = "Failed to create worktree: fatal: invalid reference"
         _manifest(path, [spec_comp, silent])
         outcome = classify_run(
-            tmp_path, run=RunOutcome(returncode=1), manifest_path=path,
+            tmp_path,
+            run=RunOutcome(returncode=1),
+            manifest_path=path,
         )
         assert outcome.verdict is Verdict.SPEC_FAILURE, "terminal verdict stands"
         assert "comp-a" in outcome.reason

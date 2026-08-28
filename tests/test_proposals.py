@@ -62,9 +62,7 @@ class TestParsing:
         assert proposal.title == "Always pin versions"
         assert proposal.type == "computational"
         assert proposal.target == "claude_md"
-        assert proposal.convention == (
-            "Pin every dependency version in pyproject.toml."
-        )
+        assert proposal.convention == ("Pin every dependency version in pyproject.toml.")
         assert proposal.applied == ""
         assert proposal.is_convention
 
@@ -81,7 +79,8 @@ class TestParsing:
         proposals = list_proposals(proposals_dir)
         assert [p.id for p in proposals] == ["PROP-001", "PROP-002", "PROP-003"]
         assert existing_proposal_titles(proposals_dir) == {
-            "Always pin versions", "Bump feedforward budget",
+            "Always pin versions",
+            "Bump feedforward budget",
         }
         assert list_proposals(tmp_path / "nope") == []
 
@@ -121,16 +120,27 @@ class TestApply:
         proposals_dir = _write_props(tmp_path)
         (tmp_path / "CLAUDE.md").write_text(CLAUDE_MD)
         manual = parse_proposal_file(proposals_dir / "prop-002.md")
-        assert apply_proposal(
-            manual, tmp_path, confirm=lambda _: True,
-        ).status == "manual_required"
+        assert (
+            apply_proposal(
+                manual,
+                tmp_path,
+                confirm=lambda _: True,
+            ).status
+            == "manual_required"
+        )
         applied = parse_proposal_file(proposals_dir / "prop-003.md")
-        assert apply_proposal(
-            applied, tmp_path, confirm=lambda _: True,
-        ).status == "already_applied"
+        assert (
+            apply_proposal(
+                applied,
+                tmp_path,
+                confirm=lambda _: True,
+            ).status
+            == "already_applied"
+        )
 
     def test_missing_learnings_section_is_an_error(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         proposals_dir = _write_props(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\nno section\n")
@@ -140,7 +150,8 @@ class TestApply:
         assert "**Applied**:" not in proposal.path.read_text()
 
     def test_stamp_failure_is_reported_and_retry_is_idempotent(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         proposals_dir = _write_props(tmp_path)
         claude_md = tmp_path / "CLAUDE.md"
@@ -149,7 +160,9 @@ class TestApply:
 
         with patch("kstrl.proposals.mark_applied", side_effect=OSError("full")):
             outcome = apply_proposal(
-                proposal, tmp_path, confirm=lambda _: True,
+                proposal,
+                tmp_path,
+                confirm=lambda _: True,
             )
 
         assert outcome.status == "error"
@@ -166,7 +179,9 @@ class TestApply:
 
         with patch.object(Path, "write_text", side_effect=OSError("read-only")):
             outcome = apply_proposal(
-                proposal, tmp_path, confirm=lambda _: True,
+                proposal,
+                tmp_path,
+                confirm=lambda _: True,
             )
 
         assert outcome.status == "error"

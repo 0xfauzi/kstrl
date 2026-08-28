@@ -42,27 +42,38 @@ STUB_PR_URL = "https://github.com/stub/repo/pull/7"
 
 def _git(*args: str, cwd: Path) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    assert result.returncode == 0, (
-        f"git {' '.join(args)} failed: {result.stderr}"
-    )
+    assert result.returncode == 0, f"git {' '.join(args)} failed: {result.stderr}"
     return result.stdout.strip()
 
 
 def _prd_json() -> str:
-    return json.dumps({
-        "branchName": "test",
-        "userStories": [{
-            "id": "US-001", "title": "Test",
-            "acceptanceCriteria": ["AC1"],
-            "priority": 1, "passes": True, "notes": "",
-        }],
-    })
+    return json.dumps(
+        {
+            "branchName": "test",
+            "userStories": [
+                {
+                    "id": "US-001",
+                    "title": "Test",
+                    "acceptanceCriteria": ["AC1"],
+                    "priority": 1,
+                    "passes": True,
+                    "notes": "",
+                }
+            ],
+        }
+    )
 
 
 def _make_repo(
-    tmp_path: Path, comp_ids: list[str], with_origin: bool = True,
+    tmp_path: Path,
+    comp_ids: list[str],
+    with_origin: bool = True,
 ) -> Path:
     """Real git repo with committed kstrl scaffolding and, optionally, a
     bare origin. The operator is parked on a side branch with an
@@ -72,16 +83,12 @@ def _make_repo(
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     for cid in comp_ids:
         feature = kstrl_dir / "feature" / cid
         feature.mkdir(parents=True)
         (feature / "prd.json").write_text(_prd_json())
-    (root / ".gitignore").write_text(
-        ".kstrl/\nscripts/kstrl/manifest.json\n"
-    )
+    (root / ".gitignore").write_text(".kstrl/\nscripts/kstrl/manifest.json\n")
     _git("init", "-b", "main", cwd=root)
     _git("config", "user.email", "kstrl-test@example.com", cwd=root)
     _git("config", "user.name", "kstrl Test", cwd=root)
@@ -101,8 +108,7 @@ def _advance_origin(tmp_path: Path, filename: str = "file1.txt") -> str:
     """Push a new commit to origin/main from a second clone, simulating a
     squash merge landing remotely. Returns the new origin/main sha."""
     clone = tmp_path / f"clone-{filename}"
-    _git("clone", "-b", "main", str(tmp_path / "origin.git"), str(clone),
-         cwd=tmp_path)
+    _git("clone", "-b", "main", str(tmp_path / "origin.git"), str(clone), cwd=tmp_path)
     _git("config", "user.email", "other@example.com", cwd=clone)
     _git("config", "user.name", "Other", cwd=clone)
     (clone / filename).write_text("remote change")
@@ -135,7 +141,8 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state_dir.mkdir()
     monkeypatch.setenv("GH_STUB_STATE_DIR", str(state_dir))
     gh = bin_dir / "gh"
-    gh.write_text(textwrap.dedent(f"""\
+    gh.write_text(
+        textwrap.dedent(f"""\
         #!/bin/sh
         if [ "$1" = "auth" ]; then exit 0; fi
         if [ "$1" = "pr" ]; then
@@ -176,7 +183,8 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
           esac
         fi
         exit 0
-    """))
+    """)
+    )
     gh.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     return bin_dir
@@ -184,16 +192,25 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _two_component_manifest() -> Manifest:
     return Manifest(
-        version="1", spec_file="spec.md", project_name="test",
-        base_branch="main", single_pr=False,
+        version="1",
+        spec_file="spec.md",
+        project_name="test",
+        base_branch="main",
+        single_pr=False,
         components=[
             Component(
-                "alpha", "Alpha", "First", [],
+                "alpha",
+                "Alpha",
+                "First",
+                [],
                 "scripts/kstrl/feature/alpha/prd.json",
                 "kstrl/factory/alpha",
             ),
             Component(
-                "beta", "Beta", "Depends on alpha", ["alpha"],
+                "beta",
+                "Beta",
+                "Depends on alpha",
+                ["alpha"],
                 "scripts/kstrl/feature/beta/prd.json",
                 "kstrl/factory/beta",
             ),
@@ -203,13 +220,20 @@ def _two_component_manifest() -> Manifest:
 
 def _factory_config(**overrides: object) -> FactoryConfig:
     config = FactoryConfig(
-        use_worktrees=True, create_prs=True, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=True,
+        create_prs=True,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         merge_timeout=2.0,
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
     )
     for key, value in overrides.items():
@@ -221,29 +245,39 @@ def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
         prd_file=root / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
 def _run(
-    manifest: Manifest, root: Path, config: FactoryConfig | None = None,
+    manifest: Manifest,
+    root: Path,
+    config: FactoryConfig | None = None,
 ) -> tuple[FactoryResult, list[str]]:
     """run_factory with a fake always-succeeding engineer; returns the
     result and the component ids the scheduler actually ran."""
     calls: list[str] = []
 
     def fake_run(
-        component_id: str, *args: object, **kwargs: object,
+        component_id: str,
+        *args: object,
+        **kwargs: object,
     ) -> ComponentResult:
         calls.append(component_id)
         return ComponentResult(component_id, success=True, iterations=1)
 
     with patch("kstrl.factory._run_component", side_effect=fake_run):
         result = run_factory(
-            manifest, config or _factory_config(), _base_config(root),
-            PlainUI(no_color=True), root,
+            manifest,
+            config or _factory_config(),
+            _base_config(root),
+            PlainUI(no_color=True),
+            root,
         )
     return result, calls
 
@@ -253,13 +287,14 @@ class TestPrFlowGatesCompletion:
     dependents do not schedule."""
 
     def test_push_failure_fails_component_and_blocks_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha", "beta"])
         # Break the push target AFTER the initial push, so the
         # origin/main tracking ref exists but pushes fail.
-        _git("remote", "set-url", "origin", str(tmp_path / "missing.git"),
-             cwd=root)
+        _git("remote", "set-url", "origin", str(tmp_path / "missing.git"), cwd=root)
         manifest = _two_component_manifest()
 
         result, calls = _run(manifest, root)
@@ -276,7 +311,9 @@ class TestPrFlowGatesCompletion:
         assert result.exit_code == 1
 
     def test_create_failure_fails_component_and_blocks_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_CREATE", "fail")
@@ -295,7 +332,9 @@ class TestPrFlowGatesCompletion:
         assert result.exit_code == 1
 
     def test_merge_failure_fails_component_and_blocks_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_MERGE", "fail")
@@ -316,7 +355,9 @@ class TestPrFlowGatesCompletion:
         assert result.exit_code == 1
 
     def test_wait_timeout_marks_merge_pending_dependents_stay_pending(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "OPEN")
@@ -340,7 +381,9 @@ class TestPrFlowGatesCompletion:
         assert result.exit_code == 1
 
     def test_merged_pr_completes_and_schedules_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha", "beta"])
         manifest = _two_component_manifest()
@@ -372,7 +415,9 @@ class TestMergeConflictRerun:
     the component against the freshly merged base and then completes."""
 
     def test_conflicting_pr_reruns_component_then_completes(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         state_dir = tmp_path / "gh-state"
@@ -384,7 +429,9 @@ class TestMergeConflictRerun:
         manifest = _two_component_manifest()
 
         result, calls = _run(
-            manifest, root, _factory_config(max_retries=1),
+            manifest,
+            root,
+            _factory_config(max_retries=1),
         )
 
         alpha = manifest.get_component("alpha")
@@ -402,7 +449,9 @@ class TestMergeConflictRerun:
         assert alpha.pr_url == STUB_PR_URL
 
     def test_conflicting_pr_with_no_retries_fails_loudly(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_MERGE", "fail")
@@ -436,7 +485,9 @@ class TestMergePendingResume:
         return manifest
 
     def test_resume_repolls_merged_pr_and_unblocks_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # The PR merged BEFORE this resume run - no in-test merge call
@@ -460,7 +511,9 @@ class TestMergePendingResume:
         assert result.exit_code == 0
 
     def test_resume_keeps_merge_pending_while_pr_still_open(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "OPEN")
@@ -479,7 +532,9 @@ class TestMergePendingResume:
         assert result.exit_code == 1
 
     def test_resume_fails_component_when_pr_closed_without_merge(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "CLOSED")
@@ -513,16 +568,26 @@ class TestPrOutcomeDataclass:
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=2.0,
         )
 
         assert outcome == PrOutcome(
-            pushed=True, pr_number=7, pr_url=STUB_PR_URL,
-            merged=True, merge_pending=False, error=None,
+            pushed=True,
+            pr_number=7,
+            pr_url=STUB_PR_URL,
+            merged=True,
+            merge_pending=False,
+            error=None,
         )
 
     def test_merge_command_failure_with_merged_pr_still_completes(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The first real factory run's regression (2026-07-20): gh pr
@@ -537,14 +602,20 @@ class TestPrOutcomeDataclass:
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=2.0,
         )
 
         assert outcome.merged is True
         assert outcome.error is None
 
     def test_merge_command_failure_with_open_pr_still_fails(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The rescue must not soften REAL merge failures: a failed
@@ -556,7 +627,11 @@ class TestPrOutcomeDataclass:
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=2.0,
         )
 
         assert outcome.merged is False
@@ -564,7 +639,9 @@ class TestPrOutcomeDataclass:
         assert "merge failed" in outcome.error
 
     def test_merge_pr_never_passes_delete_branch(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """--delete-branch is the measured hazard: its local-branch
         deletion fails inside a component worktree and gh reports the
@@ -591,7 +668,9 @@ class TestPrOutcomeDataclass:
             assert "--delete-branch" not in cmd
 
     def test_remote_branch_deleted_after_confirmed_merge(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
     ) -> None:
         """Explicit remote cleanup replaces gh's --delete-branch: after
         a confirmed merge the pushed branch is removed from origin so a
@@ -601,17 +680,26 @@ class TestPrOutcomeDataclass:
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=2.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=2.0,
         )
         assert outcome.merged is True
 
         remote_refs = _git(
-            "ls-remote", "--heads", "origin", cwd=root,
+            "ls-remote",
+            "--heads",
+            "origin",
+            cwd=root,
         )
         assert comp.branch_name not in remote_refs
 
     def test_wait_timeout_outcome(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "OPEN")
@@ -620,7 +708,11 @@ class TestPrOutcomeDataclass:
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=1.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=1.0,
         )
 
         assert outcome.pushed is True
@@ -630,16 +722,21 @@ class TestPrOutcomeDataclass:
         assert outcome.error is not None and "not merged within" in outcome.error
 
     def test_push_failure_outcome(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
-        _git("remote", "set-url", "origin", str(tmp_path / "missing.git"),
-             cwd=root)
+        _git("remote", "set-url", "origin", str(tmp_path / "missing.git"), cwd=root)
         manifest = _two_component_manifest()
         comp = self._single_component(manifest, root)
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=1.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=1.0,
         )
 
         assert outcome.pushed is False
@@ -648,7 +745,9 @@ class TestPrOutcomeDataclass:
         assert outcome.error is not None
 
     def test_existing_merged_pr_short_circuits(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
         manifest = _two_component_manifest()
@@ -658,14 +757,20 @@ class TestPrOutcomeDataclass:
         comp.pr_url = STUB_PR_URL
 
         outcome = push_create_and_merge_pr(
-            comp, manifest, root, PlainUI(no_color=True), merge_timeout=1.0,
+            comp,
+            manifest,
+            root,
+            PlainUI(no_color=True),
+            merge_timeout=1.0,
         )
 
         assert outcome.merged is True
         assert outcome.pr_number == 7
 
     def test_wait_for_merge_distinguishes_closed_from_timeout(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
@@ -681,7 +786,8 @@ class TestFetchNeverPull:
     """H-1: base freshness comes from fetch; the checkout is never moved."""
 
     def test_fetch_updates_tracking_ref_without_touching_checkout(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
         new_sha = _advance_origin(tmp_path)
@@ -709,13 +815,15 @@ class TestBaseRefResolution:
     fall back to the local base ref otherwise."""
 
     def test_resolves_to_origin_when_tracking_ref_exists(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
         assert git.resolve_base_ref("main", root) == "origin/main"
 
     def test_falls_back_to_local_ref_without_remote(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"], with_origin=False)
         assert git.resolve_base_ref("main", root) == "main"
@@ -725,7 +833,8 @@ class TestBaseRefResolution:
         assert git.resolve_base_ref("origin/main", root) == "origin/main"
 
     def test_diff_against_origin_base_removes_phantom_diffs(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Squash merges rewrite SHAs: a branch cut from origin/<base>
         diffed against a stale LOCAL base shows the already-merged files
@@ -736,8 +845,7 @@ class TestBaseRefResolution:
         assert git.fetch_base_branch("main", root) is None
 
         wt = tmp_path / "wt-feat2"
-        _git("worktree", "add", str(wt), "-b", "feat2", "origin/main",
-             cwd=root)
+        _git("worktree", "add", str(wt), "-b", "feat2", "origin/main", cwd=root)
         (wt / "file2.txt").write_text("component change")
         _git("add", "-A", cwd=wt)
         _git("commit", "-m", "feat2 change", cwd=wt)
@@ -748,7 +856,8 @@ class TestBaseRefResolution:
         assert "file2.txt" in content and "file1.txt" not in content
 
     def test_factory_worktrees_fall_back_without_remote(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Local-only repos (and the test suite) keep working: worktrees
         cut from the local base ref when there is no origin."""

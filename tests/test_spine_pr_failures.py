@@ -82,7 +82,9 @@ def _run_real(
 
 class TestSpinePrFailurePaths:
     def test_merged_pr_completes_and_schedules_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Happy-path baseline for the harness itself: both engineers
@@ -113,15 +115,16 @@ class TestSpinePrFailurePaths:
             assert refs == "", branch + " not cleaned from origin: " + refs
 
     def test_push_failure_fails_component_and_skips_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = tmp_path / "repo"
         init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
         # Break the push target AFTER the initial push so the
         # origin/main tracking ref exists but every push fails.
-        git("remote", "set-url", "origin", str(tmp_path / "missing.git"),
-            cwd=root)
+        git("remote", "set-url", "origin", str(tmp_path / "missing.git"), cwd=root)
         manifest = _alpha_beta_manifest()
 
         result, ran = _run_real(root, tmp_path, monkeypatch, manifest)
@@ -138,7 +141,9 @@ class TestSpinePrFailurePaths:
         assert result.exit_code == 1
 
     def test_pr_create_failure_fails_component_and_skips_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_SPINE_CREATE", "fail")
@@ -163,7 +168,9 @@ class TestSpinePrFailurePaths:
         assert git("rev-parse", "refs/heads/kstrl/factory/alpha", cwd=origin)
 
     def test_merge_failure_fails_component_and_skips_dependents(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_SPINE_MERGE", "fail")
@@ -189,7 +196,9 @@ class TestSpinePrFailurePaths:
         assert result.exit_code == 1
 
     def test_wait_timeout_marks_merge_pending_dependents_stay_pending(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
@@ -215,7 +224,9 @@ class TestSpinePrFailurePaths:
         assert result.exit_code == 1
 
     def test_merge_pending_resume_repolls_without_rerunning_engineer(
-        self, tmp_path: Path, stub_gh: Path,
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Crash-recovery semantics: a MERGE_PENDING component whose PR

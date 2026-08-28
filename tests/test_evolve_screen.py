@@ -55,16 +55,18 @@ def _seed(tmp_path: Path) -> None:
     (proposals_dir / "prop-002.md").write_text(MANUAL_PROP)
     (tmp_path / "CLAUDE.md").write_text(CLAUDE_MD)
     (tmp_path / ".kstrl" / "experiments.tsv").write_text(
-        TSV_HEADER + "\n"
-        + "factory-20260718-100000.000000-aaa\t2026-07-18\tdemo\t3\t3\t0\t0"
-          "\t2.0\t120\t0.33\t\t144000\t2.25\t2\n"
+        TSV_HEADER + "\n" + "factory-20260718-100000.000000-aaa\t2026-07-18\tdemo\t3\t3\t0\t0"
+        "\t2.0\t120\t0.33\t\t144000\t2.25\t2\n"
         + "factory-20260719-100000.000000-bbb\t2026-07-19\tdemo\t2\t1\t1\t0"
-          "\t3.0\t150\t0\ttest_suite:assert\t\t\t0\n",
+        "\t3.0\t150\t0\ttest_suite:assert\t\t\t0\n",
     )
     entries = [
-        {"event_type": "component_result", "run_id": run,
-         "component_id": comp,
-         "failure_signatures": ["test_suite:assert"]}
+        {
+            "event_type": "component_result",
+            "run_id": run,
+            "component_id": comp,
+            "failure_signatures": ["test_suite:assert"],
+        }
         for run, comp in (("r1", "c1"), ("r2", "c2"))
     ]
     (tmp_path / ".kstrl" / "evolution.jsonl").write_text(
@@ -93,7 +95,8 @@ class TestRetryBar:
 
 class TestEvolveScreen:
     async def test_tabs_render_all_three_datasets(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
         app = _home_app(tmp_path)
@@ -115,13 +118,17 @@ class TestEvolveScreen:
 
             # Non-finite data is invalid, but must degrade to an empty
             # cell rather than crashing the whole screen.
-            cells = screen._trend_cells({
-                "retry_rate": "nan", "unreported_calls": "inf",
-            })
+            cells = screen._trend_cells(
+                {
+                    "retry_rate": "nan",
+                    "unreported_calls": "inf",
+                }
+            )
             assert str(cells[3]) == theme.EMPTY_CELL
 
     async def test_repository_text_is_literal_and_apply_is_tab_scoped(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
         proposal_path = tmp_path / ".kstrl" / "proposals" / "prop-001.md"
@@ -155,7 +162,8 @@ class TestEvolveScreen:
             await pilot.press("escape")
 
     async def test_apply_via_modal_mutates_and_stamps(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
         app = _home_app(tmp_path)
@@ -171,9 +179,7 @@ class TestEvolveScreen:
             content = (tmp_path / "CLAUDE.md").read_text()
             assert "Pin every dependency version" in content
             assert "applied from PROP-001" in content
-            prop = (
-                tmp_path / ".kstrl" / "proposals" / "prop-001.md"
-            ).read_text()
+            prop = (tmp_path / ".kstrl" / "proposals" / "prop-001.md").read_text()
             assert "**Applied**:" in prop
             detail = str(
                 screen.query_one("#proposal-detail").content,
@@ -192,13 +198,12 @@ class TestEvolveScreen:
             await pilot.press("2")  # Cancel
             await pilot.pause()
             assert (tmp_path / "CLAUDE.md").read_text() == CLAUDE_MD
-            prop = (
-                tmp_path / ".kstrl" / "proposals" / "prop-001.md"
-            ).read_text()
+            prop = (tmp_path / ".kstrl" / "proposals" / "prop-001.md").read_text()
             assert "**Applied**:" not in prop
 
     async def test_manual_proposal_never_opens_the_modal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
         app = _home_app(tmp_path)

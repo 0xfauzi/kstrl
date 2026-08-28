@@ -24,8 +24,7 @@ class StubAgent:
     final_message: str | None = None
     usage_records: list[Any] = []
 
-    def run(self, prompt: str, cwd: Path | None = None,
-            timeout: float | None = None) -> Any:
+    def run(self, prompt: str, cwd: Path | None = None, timeout: float | None = None) -> Any:
         yield "line"
 
 
@@ -43,12 +42,13 @@ class ScriptedChannel:
     def request(self, req: PromptRequest) -> PromptResponse:
         self.requests.append(req)
         return PromptResponse(
-            request_id=req.request_id, choice=self.choice, answered=True,
+            request_id=req.request_id,
+            choice=self.choice,
+            answered=True,
         )
 
 
-def _params(tmp_path: Path, *, stories: int = 1,
-            repair_max_runs: int = 0) -> FeatureParams:
+def _params(tmp_path: Path, *, stories: int = 1, repair_max_runs: int = 0) -> FeatureParams:
     feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
     understand = feature_dir / "understand.md"
@@ -59,9 +59,12 @@ def _params(tmp_path: Path, *, stories: int = 1,
         branch_name="kstrl/demo",
         user_stories=[
             UserStory(
-                id=f"US-{n}", title=f"story {n}",
-                acceptance_criteria=["tests pass"], priority=1,
-                passes=False, notes="",
+                id=f"US-{n}",
+                title=f"story {n}",
+                acceptance_criteria=["tests pass"],
+                priority=1,
+                passes=False,
+                notes="",
             )
             for n in range(stories)
         ],
@@ -89,8 +92,7 @@ def _loop_results(*codes: int) -> Any:
     """run_loop stub returning the given exit codes in order."""
     remaining = list(codes)
 
-    def fake(config: Any, ui: Any, agent: Any, *args: Any,
-             **kwargs: Any) -> LoopResult:
+    def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
         code = remaining.pop(0)
         return LoopResult(completed=code == 0, iterations=1, exit_code=code)
 
@@ -108,23 +110,33 @@ class TestReviewGate:
         channel = ScriptedChannel(choice=1)
         with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
-                _params(tmp_path), KstrlConfig(), StubAgent(), ui, tmp_path,
+                _params(tmp_path),
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=channel,
             )
         assert code == 0
         assert "Amend the understand file" in stream.getvalue()
         assert len(channel.requests) == 1
         assert channel.requests[0].options == (
-            "Start implementation", "Quit to amend",
+            "Start implementation",
+            "Quit to amend",
         )
 
     def test_non_promptable_channel_refuses_with_2(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         ui, stream = _ui()
         with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
-                _params(tmp_path), KstrlConfig(), StubAgent(), ui, tmp_path,
+                _params(tmp_path),
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=ScriptedChannel(0, promptable=False),
             )
         assert code == 2
@@ -137,7 +149,11 @@ class TestReviewGate:
         channel = ScriptedChannel(0)
         with patch("kstrl.feature_cmd.run_loop", _loop_results(0, 0)):
             code = run_feature(
-                params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                params,
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=channel,
             )
         assert code == 0
@@ -150,7 +166,11 @@ class TestExitCodes:
         ui, _ = _ui()
         with patch("kstrl.feature_cmd.run_loop", _loop_results(3)):
             code = run_feature(
-                _params(tmp_path), KstrlConfig(), StubAgent(), ui, tmp_path,
+                _params(tmp_path),
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=ScriptedChannel(0),
             )
         assert code == 3
@@ -167,7 +187,11 @@ class TestExitCodes:
 
         with patch("kstrl.feature_cmd.run_loop", incomplete):
             code = run_feature(
-                _params(tmp_path), KstrlConfig(), StubAgent(), ui, tmp_path,
+                _params(tmp_path),
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=channel,
             )
         assert code == 0
@@ -178,8 +202,12 @@ class TestExitCodes:
         ui, stream = _ui()
         with patch("kstrl.feature_cmd.run_loop", _loop_results(0)):
             code = run_feature(
-                _params(tmp_path, stories=0), KstrlConfig(), StubAgent(),
-                ui, tmp_path, interaction=ScriptedChannel(0),
+                _params(tmp_path, stories=0),
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
+                interaction=ScriptedChannel(0),
             )
         assert code == 0
         assert "PRD has no user stories" in stream.getvalue()
@@ -194,7 +222,11 @@ class TestExitCodes:
             patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
-                params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                params,
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=ScriptedChannel(0),
             )
         assert code == 0
@@ -210,7 +242,11 @@ class TestExitCodes:
             patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
-                params, KstrlConfig(), StubAgent(), ui, tmp_path,
+                params,
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
                 interaction=ScriptedChannel(0),
             )
         assert code == 4
@@ -227,11 +263,13 @@ class TestControlPropagation:
             return False
 
         seen: list[tuple[Any, Any]] = []
-        results = iter((
-            LoopResult(completed=True, iterations=1, exit_code=0),
-            LoopResult(completed=False, iterations=1, exit_code=1),
-            LoopResult(completed=True, iterations=1, exit_code=0),
-        ))
+        results = iter(
+            (
+                LoopResult(completed=True, iterations=1, exit_code=0),
+                LoopResult(completed=False, iterations=1, exit_code=1),
+                LoopResult(completed=True, iterations=1, exit_code=0),
+            )
+        )
 
         def record(*args: Any, **kwargs: Any) -> LoopResult:
             seen.append((kwargs.get("interaction"), kwargs.get("stop_check")))
@@ -242,8 +280,13 @@ class TestControlPropagation:
             patch("kstrl.feature_cmd.get_agent", return_value=StubAgent()),
         ):
             code = run_feature(
-                params, KstrlConfig(), StubAgent(), ui, tmp_path,
-                interaction=channel, stop_check=stop_check,
+                params,
+                KstrlConfig(),
+                StubAgent(),
+                ui,
+                tmp_path,
+                interaction=channel,
+                stop_check=stop_check,
             )
         assert code == 0
         assert seen == [(channel, stop_check)] * 3

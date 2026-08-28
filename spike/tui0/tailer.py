@@ -5,6 +5,7 @@ byte-offset polling with a partial-line buffer, tolerant of torn tails
 (a JSON line written in two flushes) and file truncation/replacement.
 Stdlib only.
 """
+
 from __future__ import annotations
 
 import json
@@ -91,7 +92,7 @@ class TextTailer:
         lines = data.split(b"\n")
         self._partial = lines.pop()
         out = [ln.decode("utf-8", errors="replace") for ln in lines]
-        return out[-self.max_lines:]
+        return out[-self.max_lines :]
 
 
 class RunTailer:

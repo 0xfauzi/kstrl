@@ -57,9 +57,7 @@ def _setup_project(tmp_path: Path) -> Path:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text(
-        '{"branchName": "test", "userStories": []}'
-    )
+    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
     return tmp_path
 
 
@@ -110,14 +108,15 @@ class TestMergeGateUnreachableWarning:
 
     def test_silent_when_gate_off(self) -> None:
         assert merge_gate_unreachable_warning(FactoryConfig()) is None
-        assert merge_gate_unreachable_warning(
-            FactoryConfig(create_prs=False)
-        ) is None
+        assert merge_gate_unreachable_warning(FactoryConfig(create_prs=False)) is None
 
     def test_silent_when_gate_reachable(self) -> None:
-        assert merge_gate_unreachable_warning(
-            FactoryConfig(pause_before_pr_merge=True, create_prs=True)
-        ) is None
+        assert (
+            merge_gate_unreachable_warning(
+                FactoryConfig(pause_before_pr_merge=True, create_prs=True)
+            )
+            is None
+        )
 
     def test_warns_when_prs_disabled(self) -> None:
         warning = merge_gate_unreachable_warning(
@@ -134,7 +133,9 @@ class TestMergeGateUnreachableWarning:
         unreachable even though create_prs is on."""
         warning = merge_gate_unreachable_warning(
             FactoryConfig(
-                pause_before_pr_merge=True, create_prs=True, single_pr=True,
+                pause_before_pr_merge=True,
+                create_prs=True,
+                single_pr=True,
             )
         )
         assert warning is not None
@@ -147,12 +148,16 @@ class TestRunFactoryDAGValidation:
 
     def test_rejects_cyclic_dag(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
-        manifest = _make_manifest([
-            Component("a", "A", "", ["b"], "a.json", "b/a"),
-            Component("b", "B", "", ["a"], "b.json", "b/b"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", ["b"], "a.json", "b/a"),
+                Component("b", "B", "", ["a"], "b.json", "b/b"),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            review_mode="skip",
         )
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
@@ -164,7 +169,9 @@ class TestRunFactoryDAGValidation:
         root = _setup_project(tmp_path)
         manifest = _make_manifest([])
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            review_mode="skip",
         )
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
@@ -178,20 +185,30 @@ class TestRunFactoryExecution:
 
     def test_single_component_success(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
-        manifest = _make_manifest([
-            Component(
-                "comp-a", "Component A", "Desc",
-                [], "scripts/kstrl/feature/comp-a/prd.json",
-                "kstrl/factory/comp-a",
-            ),
-        ])
+        manifest = _make_manifest(
+            [
+                Component(
+                    "comp-a",
+                    "Component A",
+                    "Desc",
+                    [],
+                    "scripts/kstrl/feature/comp-a/prd.json",
+                    "kstrl/factory/comp-a",
+                ),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
             review_mode="skip",
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         base = _make_base_config(root)
@@ -200,20 +217,33 @@ class TestRunFactoryExecution:
         # Create PRD for the component
         feature_dir = root / "scripts" / "kstrl" / "feature" / "comp-a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         success_result = ComponentResult("comp-a", success=True, iterations=3)
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "comp-a" in result.completed
@@ -221,13 +251,19 @@ class TestRunFactoryExecution:
 
     def test_component_failure_cascades(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)
-        manifest = _make_manifest([
-            Component("a", "A", "Desc A", [], "a.json", "b/a"),
-            Component("b", "B", "Desc B", ["a"], "b.json", "b/b"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "Desc A", [], "a.json", "b/a"),
+                Component("b", "B", "Desc B", ["a"], "b.json", "b/b"),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
         )
         base = _make_base_config(root)
         ui = PlainUI(no_color=True)
@@ -247,28 +283,49 @@ class TestRunFactoryExecution:
         prd_rel = "scripts/kstrl/feature/a/prd.json"
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
-        manifest = _make_manifest([
-            Component(
-                "a", "A", "", [], prd_rel, "b/a",
-                status=ComponentStatus.RUNNING.value,
-            ),
-        ])
+        manifest = _make_manifest(
+            [
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    prd_rel,
+                    "b/a",
+                    status=ComponentStatus.RUNNING.value,
+                ),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
             review_mode="skip",
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         base = _make_base_config(root)
@@ -276,9 +333,13 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -289,28 +350,49 @@ class TestRunFactoryExecution:
         prd_rel = "scripts/kstrl/feature/a/prd.json"
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
-        manifest = _make_manifest([
-            Component(
-                "a", "A", "", [], prd_rel, "b/a",
-                status=ComponentStatus.VERIFYING.value,
-            ),
-        ])
+        manifest = _make_manifest(
+            [
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    prd_rel,
+                    "b/a",
+                    status=ComponentStatus.VERIFYING.value,
+                ),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
             review_mode="skip",
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         base = _make_base_config(root)
@@ -318,9 +400,13 @@ class TestRunFactoryExecution:
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.completed
@@ -331,25 +417,41 @@ class TestRunFactoryExecution:
         prd_rel = "scripts/kstrl/feature/a/prd.json"
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
-        manifest = _make_manifest([
-            Component("a", "A", "", [], prd_rel, "b/a"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], prd_rel, "b/a"),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
             review_mode="skip",
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
         base = _make_base_config(root)
@@ -359,9 +461,13 @@ class TestRunFactoryExecution:
         success_result = ComponentResult("a", success=True, iterations=1)
         manifest_path = root / "scripts" / "kstrl" / "manifest.json"
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             run_factory(manifest, config, base, ui, root)
 
         assert manifest_path.exists()
@@ -372,12 +478,18 @@ class TestRunFactoryExecution:
         root = _setup_project(tmp_path)
 
         prd_rel = "scripts/kstrl/feature/a/prd.json"
-        manifest = _make_manifest([
-            Component("a", "A", "", [], prd_rel, "b/a"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], prd_rel, "b/a"),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=1, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=1,
+            retry_delay=0,
+            review_mode="skip",
             verify_config=VerifyConfig(
                 test_command="false",  # tests will fail
                 typecheck_command="true",
@@ -393,20 +505,33 @@ class TestRunFactoryExecution:
         # Create PRD with a non-passing story (verify will fail)
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         success_result = ComponentResult("a", success=True, iterations=1)
 
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ) as mock_run, patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ) as mock_run,
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         # Should fail because tests fail, and retries are exhausted
@@ -425,16 +550,23 @@ class TestEvolutionRecording:
     failure signatures and a nonzero attempt duration."""
 
     def test_failure_signature_and_duration_reach_journal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _setup_project(tmp_path)
         prd_rel = "scripts/kstrl/feature/a/prd.json"
-        manifest = _make_manifest([
-            Component("a", "A", "", [], prd_rel, "b/a"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], prd_rel, "b/a"),
+            ]
+        )
         config = FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             verify_config=VerifyConfig(
                 test_command="false",  # tests will fail
                 typecheck_command="true",
@@ -449,32 +581,42 @@ class TestEvolutionRecording:
 
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
 
         success_result = ComponentResult("a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success_result,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success_result,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(manifest, config, base, ui, root)
 
         assert "a" in result.failed
 
         journal_path = root / ".kstrl" / "evolution.jsonl"
-        entries = [
-            json.loads(line)
-            for line in journal_path.read_text().strip().splitlines()
-        ]
+        entries = [json.loads(line) for line in journal_path.read_text().strip().splitlines()]
         comp_entries = [
-            e for e in entries
-            if e.get("event_type") == "component_result"
-            and e.get("component_id") == "a"
+            e
+            for e in entries
+            if e.get("event_type") == "component_result" and e.get("component_id") == "a"
         ]
         assert comp_entries, f"no component_result entry in {entries}"
         entry = comp_entries[-1]
@@ -500,60 +642,85 @@ class TestEvolutionRecording:
         component 'a', so the submit-time prefix is non-empty."""
         root = _setup_project(tmp_path)
         prd_rel = "scripts/kstrl/feature/a/prd.json"
-        manifest = _make_manifest([
-            Component("a", "A", "", [], prd_rel, "b/a"),
-        ])
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], prd_rel, "b/a"),
+            ]
+        )
         feature_dir = root / "scripts" / "kstrl" / "feature" / "a"
         feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(json.dumps({
-            "branchName": "test",
-            "userStories": [{
-                "id": "US-001", "title": "Test",
-                "acceptanceCriteria": ["AC1"],
-                "priority": 1, "passes": True, "notes": "",
-            }],
-        }))
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
         # Written through the real writer so the fixture cannot drift
         # from the on-disk format the reader expects.
         write_facts(
-            [Fact(
-                id="fact-001", component_id="a", created_iter=1,
-                created_run_id="seed-run", scope="contract",
-                evidence=["widget.py:12"],
-                confidence="review_passed",
-                claim="The widget parser rejects trailing commas.",
-            )],
-            root / ".kstrl" / "knowledge", "a", "seed-run",
+            [
+                Fact(
+                    id="fact-001",
+                    component_id="a",
+                    created_iter=1,
+                    created_run_id="seed-run",
+                    scope="contract",
+                    evidence=["widget.py:12"],
+                    confidence="review_passed",
+                    claim="The widget parser rejects trailing commas.",
+                )
+            ],
+            root / ".kstrl" / "knowledge",
+            "a",
+            "seed-run",
         )
         return root, manifest
 
     def _passing_config(self, root: Path) -> FactoryConfig:
         return FactoryConfig(
-            use_worktrees=False, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
-                check_bad_patterns=False, subprocess_timeout=5.0,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
             ),
         )
 
     def _component_entry(self, root: Path) -> dict[str, Any]:
         entries = [
             json.loads(line)
-            for line in (root / ".kstrl" / "evolution.jsonl")
-            .read_text().strip().splitlines()
+            for line in (root / ".kstrl" / "evolution.jsonl").read_text().strip().splitlines()
         ]
         comp_entries = [
-            e for e in entries
-            if e.get("event_type") == "component_result"
-            and e.get("component_id") == "a"
+            e
+            for e in entries
+            if e.get("event_type") == "component_result" and e.get("component_id") == "a"
         ]
         assert comp_entries, f"no component_result entry in {entries}"
         return comp_entries[-1]
 
     def test_fact_utilization_reaches_the_journal(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """#191 end to end: the prefix captured at submit time survives
         through the pipeline into the journal, with no LLM spend."""
@@ -562,23 +729,34 @@ class TestEvolutionRecording:
         seen_prefixes: list[str] = []
 
         def fake_measure(
-            prefix: str, *artifacts: str, **kwargs: Any,
+            prefix: str,
+            *artifacts: str,
+            **kwargs: Any,
         ) -> dict[str, int]:
             seen_prefixes.append(prefix)
             return {"injected": 1, "referenced": 1}
 
-        with patch(
-            "kstrl.factory._run_component",
-            return_value=ComponentResult("a", success=True, iterations=1),
-        ), patch("kstrl.git.get_diff_content", return_value="some diff"), \
-                patch(
-                    "kstrl.factory.measure_fact_utilization", fake_measure,
-                ), patch(
-                    "kstrl.factory.distill_facts", return_value=(0, "none"),
-                ):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=ComponentResult("a", success=True, iterations=1),
+            ),
+            patch("kstrl.git.get_diff_content", return_value="some diff"),
+            patch(
+                "kstrl.factory.measure_fact_utilization",
+                fake_measure,
+            ),
+            patch(
+                "kstrl.factory.distill_facts",
+                return_value=(0, "none"),
+            ),
+        ):
             run_factory(
-                manifest, self._passing_config(root), base,
-                PlainUI(no_color=True), root,
+                manifest,
+                self._passing_config(root),
+                base,
+                PlainUI(no_color=True),
+                root,
             )
 
         # The measured prefix is the real one built at submit time, so
@@ -592,7 +770,8 @@ class TestEvolutionRecording:
         assert util["referenced"] == 1
 
     def test_knowledge_retrieval_failure_warns_and_is_unmeasured(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """The retrieval failure used to be a bare `except: pass` - it
         strips the engineer's whole prefix, so it must be loud, and the
@@ -605,15 +784,24 @@ class TestEvolutionRecording:
         def boom(*args: Any, **kwargs: Any) -> str:
             raise RuntimeError("knowledge store unreadable")
 
-        with patch(
-            "kstrl.factory._run_component",
-            return_value=ComponentResult("a", success=True, iterations=1),
-        ), patch("kstrl.git.get_diff_content", return_value="some diff"), \
-                patch("kstrl.factory.build_knowledge_context", boom), patch(
-                    "kstrl.factory.distill_facts", return_value=(0, "none"),
-                ):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=ComponentResult("a", success=True, iterations=1),
+            ),
+            patch("kstrl.git.get_diff_content", return_value="some diff"),
+            patch("kstrl.factory.build_knowledge_context", boom),
+            patch(
+                "kstrl.factory.distill_facts",
+                return_value=(0, "none"),
+            ),
+        ):
             run_factory(
-                manifest, self._passing_config(root), base, ui, root,
+                manifest,
+                self._passing_config(root),
+                base,
+                ui,
+                root,
             )
 
         assert "Knowledge retrieval failed" in buf.getvalue()

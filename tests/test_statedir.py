@@ -44,28 +44,16 @@ def repo(tmp_path: Path) -> Path:
 
 class TestNormalizeRemoteUrl:
     def test_https_strips_git_suffix(self) -> None:
-        assert (
-            normalize_remote_url("https://github.com/Org/Repo.git")
-            == "github.com/org/repo"
-        )
+        assert normalize_remote_url("https://github.com/Org/Repo.git") == "github.com/org/repo"
 
     def test_ssh_scplike(self) -> None:
-        assert (
-            normalize_remote_url("git@github.com:Org/Repo.git")
-            == "github.com/org/repo"
-        )
+        assert normalize_remote_url("git@github.com:Org/Repo.git") == "github.com/org/repo"
 
     def test_ssh_url(self) -> None:
-        assert (
-            normalize_remote_url("ssh://git@github.com/Org/Repo.git")
-            == "github.com/org/repo"
-        )
+        assert normalize_remote_url("ssh://git@github.com/Org/Repo.git") == "github.com/org/repo"
 
     def test_git_suffix_casefold(self) -> None:
-        assert (
-            normalize_remote_url("https://github.com/Org/Repo.GIT")
-            == "github.com/org/repo"
-        )
+        assert normalize_remote_url("https://github.com/Org/Repo.GIT") == "github.com/org/repo"
 
     def test_strips_userinfo(self) -> None:
         assert (
@@ -74,10 +62,7 @@ class TestNormalizeRemoteUrl:
         )
 
     def test_strips_default_https_port(self) -> None:
-        assert (
-            normalize_remote_url("https://github.com:443/Org/Repo.git")
-            == "github.com/org/repo"
-        )
+        assert normalize_remote_url("https://github.com:443/Org/Repo.git") == "github.com/org/repo"
 
     def test_keeps_nondefault_port(self) -> None:
         assert (
@@ -175,7 +160,9 @@ class TestControlIsExternal:
             assert control_is_external(repo) is False
 
     def test_false_when_xdg_under_repo(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         nested = repo / "nested-xdg"
         nested.mkdir()
@@ -187,7 +174,9 @@ class TestControlIsExternal:
 
 class TestPauseFailClosed:
     def test_inaccessible_control_dir_is_paused(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         with patch("kstrl.statedir._origin_url", return_value=None):
             ensure_control_state(repo)
@@ -210,7 +199,9 @@ class TestPauseFailClosed:
 
 class TestAutonomyL3Gate:
     def test_resolve_clamps_l3_when_xdg_under_repo(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.autonomy import (
             AutonomyConfig,
@@ -234,7 +225,9 @@ class TestAutonomyL3Gate:
             assert any("R8.9" in note for note in notes)
 
     def test_control_relocation_error_for_l3(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.autonomy import AutonomyLevel, control_relocation_error
 
@@ -243,13 +236,15 @@ class TestAutonomyL3Gate:
         monkeypatch.setenv("XDG_STATE_HOME", str(nested))
         with patch("kstrl.statedir._origin_url", return_value=None):
             err = control_relocation_error(
-                repo, target_level=AutonomyLevel.L3_ENVELOPED_AUTO,
+                repo,
+                target_level=AutonomyLevel.L3_ENVELOPED_AUTO,
             )
             assert err is not None
             assert "R8.9" in err
             assert (
                 control_relocation_error(
-                    repo, target_level=AutonomyLevel.L2_GATED_MERGE,
+                    repo,
+                    target_level=AutonomyLevel.L2_GATED_MERGE,
                 )
                 is None
             )
@@ -295,7 +290,8 @@ class TestReviewFailClosed:
     """Regressions for the adversarial review on PR #213."""
 
     def test_failed_migrate_keeps_pause_and_spend_closed(
-        self, repo: Path,
+        self,
+        repo: Path,
     ) -> None:
         from kstrl.serve import ServeStateError, SpendLedger
         from kstrl.statedir import CONTROL_PAUSE, CONTROL_SPEND
@@ -308,18 +304,20 @@ class TestReviewFailClosed:
                 encoding="utf-8",
             )
             legacy[CONTROL_SPEND].write_text(
-                json.dumps({
-                    "spend": {
-                        "date": "2099-01-01",
-                        "spent_usd": 12.5,
-                        "runs": 1,
-                        "covered_calls": 1,
-                        "total_calls": 1,
-                        "unmetered_phases": [],
-                    },
-                    "consecutive_poison": 0,
-                    "cost_coverage_seen": True,
-                }),
+                json.dumps(
+                    {
+                        "spend": {
+                            "date": "2099-01-01",
+                            "spent_usd": 12.5,
+                            "runs": 1,
+                            "covered_calls": 1,
+                            "total_calls": 1,
+                            "unmetered_phases": [],
+                        },
+                        "consecutive_poison": 0,
+                        "cost_coverage_seen": True,
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -337,7 +335,10 @@ class TestReviewFailClosed:
                     SpendLedger(repo).read_state("2099-01-01")
 
     def test_relative_xdg_survives_chdir(
-        self, repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.statedir import clear_xdg_state_home_cache
 
@@ -365,18 +366,20 @@ class TestReviewFailClosed:
                 encoding="utf-8",
             )
             control_file(repo, CONTROL_SPEND).write_text(
-                json.dumps({
-                    "spend": {
-                        "date": "2099-01-01",
-                        "spent_usd": 1.0,
-                        "runs": 1,
-                        "covered_calls": 1,
-                        "total_calls": 1,
-                        "unmetered_phases": [],
-                    },
-                    "consecutive_poison": 0,
-                    "cost_coverage_seen": True,
-                }),
+                json.dumps(
+                    {
+                        "spend": {
+                            "date": "2099-01-01",
+                            "spent_usd": 1.0,
+                            "runs": 1,
+                            "covered_calls": 1,
+                            "total_calls": 1,
+                            "unmetered_phases": [],
+                        },
+                        "consecutive_poison": 0,
+                        "cost_coverage_seen": True,
+                    }
+                ),
                 encoding="utf-8",
             )
             legacy = legacy_control_paths(repo)
@@ -386,18 +389,20 @@ class TestReviewFailClosed:
                 encoding="utf-8",
             )
             legacy[CONTROL_SPEND].write_text(
-                json.dumps({
-                    "spend": {
-                        "date": "2099-01-01",
-                        "spent_usd": 99.0,
-                        "runs": 1,
-                        "covered_calls": 1,
-                        "total_calls": 1,
-                        "unmetered_phases": [],
-                    },
-                    "consecutive_poison": 0,
-                    "cost_coverage_seen": True,
-                }),
+                json.dumps(
+                    {
+                        "spend": {
+                            "date": "2099-01-01",
+                            "spent_usd": 99.0,
+                            "runs": 1,
+                            "covered_calls": 1,
+                            "total_calls": 1,
+                            "unmetered_phases": [],
+                        },
+                        "consecutive_poison": 0,
+                        "cost_coverage_seen": True,
+                    }
+                ),
                 encoding="utf-8",
             )
             with pytest.warns(UserWarning, match="dual-state"):
@@ -419,7 +424,9 @@ class TestReviewFailClosed:
             assert Queue(repo).pause_state().paused is True
 
     def test_control_lock_raises_when_mkdir_fails(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.statedir import ControlUnavailableError, control_lock
 
@@ -435,7 +442,9 @@ class TestReviewFailClosed:
                     pass
 
     def test_exdev_migrate_succeeds_via_copy(
-        self, repo: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from kstrl.statedir import CONTROL_PAUSE, control_file
 

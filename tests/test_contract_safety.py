@@ -41,15 +41,17 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
 # Fails (with output) whenever bad_marker.txt exists in the tested tree.
-MARKER_TEST_CMD = (
-    "if [ -f bad_marker.txt ]; then echo INTEGRATION BROKEN; exit 1; fi"
-)
+MARKER_TEST_CMD = "if [ -f bad_marker.txt ]; then echo INTEGRATION BROKEN; exit 1; fi"
 
 
 def _git(*args: str, cwd: Path) -> str:
     result = subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True,
-        text=True, timeout=30,
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     return result.stdout
 
@@ -66,20 +68,32 @@ def _init_repo(root: Path) -> None:
     (kstrl_dir / "prompt.md").write_text("test prompt\n")
     feature_dir = kstrl_dir / "feature" / "a"
     feature_dir.mkdir(parents=True)
-    (feature_dir / "prd.json").write_text(json.dumps({
-        "branchName": "kstrl/factory/a",
-        "userStories": [{
-            "id": "US-001", "title": "Test",
-            "acceptanceCriteria": ["AC1"],
-            "priority": 1, "passes": True, "notes": "",
-        }],
-    }))
+    (feature_dir / "prd.json").write_text(
+        json.dumps(
+            {
+                "branchName": "kstrl/factory/a",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Test",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                ],
+            }
+        )
+    )
     _git("add", "-A", cwd=root)
     _git("commit", "-q", "-m", "init", cwd=root)
 
 
 def _commit_on_branch(
-    root: Path, branch: str, files: dict[str, str], base: str = "main",
+    root: Path,
+    branch: str,
+    files: dict[str, str],
+    base: str = "main",
 ) -> None:
     """Create ``branch`` from ``base`` with ``files`` committed, without
     moving the user's checkout (worktree-based, like the factory)."""
@@ -151,9 +165,7 @@ def _tracked_changes(root: Path) -> list[str]:
     ]
 
 
-def _read_journal_events(
-    root: Path, event_type: str
-) -> list[dict[str, object]]:
+def _read_journal_events(root: Path, event_type: str) -> list[dict[str, object]]:
     """Read evolution-journal entries of one event type. Since R2.1
     run_factory loads EvolutionConfig via ``load(root_dir)``, which
     anchors the default journal path to the factory root (not the
@@ -161,27 +173,29 @@ def _read_journal_events(
     journal = root / ".kstrl" / "evolution.jsonl"
     if not journal.exists():
         return []
-    entries = [
-        json.loads(line)
-        for line in journal.read_text().splitlines() if line.strip()
-    ]
+    entries = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
     return [e for e in entries if e.get("event_type") == event_type]
 
 
 class TestConflictedTierLeavesCheckoutUntouched:
     def test_conflict_recovers_and_checkout_is_byte_identical(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
         _commit_on_branch(root, "kstrl/a", {"conflict.txt": "from a\n"})
         _commit_on_branch(root, "kstrl/b", {"conflict.txt": "from b\n"})
-        manifest = _make_manifest([
-            _component("a", "kstrl/a"),
-            _component("b", "kstrl/b"),
-        ])
+        manifest = _make_manifest(
+            [
+                _component("a", "kstrl/a"),
+                _component("b", "kstrl/b"),
+            ]
+        )
         config = ContractConfig(
-            mode=ContractMode.TIER.value, test_command="true", timeout=60,
+            mode=ContractMode.TIER.value,
+            test_command="true",
+            timeout=60,
         )
         ui = PlainUI(no_color=True)
 
@@ -214,7 +228,8 @@ class TestConflictedTierLeavesCheckoutUntouched:
         assert result2.passed is True
 
     def test_failing_tests_bisect_leaves_checkout_untouched(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Test-failure path (merge ok, tests fail, bisection runs):
         the user's checkout still never changes."""
@@ -230,7 +245,13 @@ class TestConflictedTierLeavesCheckoutUntouched:
         before = _snapshot_working_tree(root)
 
         result = run_tier_check(
-            manifest, ["a"], [], root, config, PlainUI(no_color=True), 0,
+            manifest,
+            ["a"],
+            [],
+            root,
+            config,
+            PlainUI(no_color=True),
+            0,
         )
 
         assert result.passed is False
@@ -243,7 +264,8 @@ class TestConflictedTierLeavesCheckoutUntouched:
 
 class TestContractFailureExitsNonzero:
     def test_failing_tier_sets_nonzero_exit_and_run_summary(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Deferred-merge mode, retries exhausted: the run must exit
         nonzero with the failure recorded (previously it exited 0 with
@@ -253,8 +275,12 @@ class TestContractFailureExitsNonzero:
         _commit_on_branch(root, "kstrl/factory/a", {"bad_marker.txt": "boom\n"})
         manifest = _make_manifest([_component("a", "kstrl/factory/a")])
         factory_config = FactoryConfig(
-            use_worktrees=True, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             contract_config=ContractConfig(
                 mode=ContractMode.TIER.value,
                 test_command=MARKER_TEST_CMD,
@@ -266,12 +292,18 @@ class TestContractFailureExitsNonzero:
             prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         result = run_factory(
-            manifest, factory_config, base, PlainUI(no_color=True), root,
+            manifest,
+            factory_config,
+            base,
+            PlainUI(no_color=True),
+            root,
         )
 
         assert result.exit_code == 1
@@ -296,7 +328,9 @@ class TestContractFailureExitsNonzero:
 
 class TestBreakerRetryReentersScheduling:
     def test_breaker_reruns_and_passing_contract_completes_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """End to end with a real fake-agent subprocess: run 1 commits a
         marker that breaks the contract tests, the breaker is reset, the
@@ -319,19 +353,28 @@ class TestBreakerRetryReentersScheduling:
             "echo '<promise>COMPLETE</promise>'"
         )
 
-        manifest = _make_manifest([
-            _component(
-                "a", "kstrl/factory/a",
-                status=ComponentStatus.PENDING.value,
-            ),
-        ])
+        manifest = _make_manifest(
+            [
+                _component(
+                    "a",
+                    "kstrl/factory/a",
+                    status=ComponentStatus.PENDING.value,
+                ),
+            ]
+        )
         factory_config = FactoryConfig(
-            use_worktrees=True, create_prs=False, max_parallel=1,
-            max_retries=1, retry_delay=0, review_mode="skip",
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=1,
+            retry_delay=0,
+            review_mode="skip",
             progress_log_path=log_path,
             verify_config=VerifyConfig(
-                test_command="true", typecheck_command="true",
-                lint_command="true", check_diff_scope=False,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
                 check_bad_patterns=False,
             ),
             contract_config=ContractConfig(
@@ -340,7 +383,8 @@ class TestBreakerRetryReentersScheduling:
                 timeout=120,
             ),
             timeout_config=TimeoutConfig(
-                agent_iteration=60, component_total=120,
+                agent_iteration=60,
+                component_total=120,
             ),
         )
         base = KstrlConfig(
@@ -348,12 +392,18 @@ class TestBreakerRetryReentersScheduling:
             prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd=agent_cmd,
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         result = run_factory(
-            manifest, factory_config, base, PlainUI(no_color=True), root,
+            manifest,
+            factory_config,
+            base,
+            PlainUI(no_color=True),
+            root,
         )
 
         assert result.exit_code == 0
@@ -366,9 +416,7 @@ class TestBreakerRetryReentersScheduling:
         assert comp.retries == 1
 
         # Progress log shows the failed contract pass, then the passing one.
-        events = [
-            json.loads(line) for line in log_path.read_text().splitlines()
-        ]
+        events = [json.loads(line) for line in log_path.read_text().splitlines()]
         contract_events = [e for e in events if e["event"] == "contract_result"]
         assert [e["data"]["passed"] for e in contract_events] == [False, True]
         # Journal mirrors both outcomes (recorded for pass AND fail).
@@ -384,7 +432,8 @@ class TestBreakerRetryReentersScheduling:
 
 class TestMergedModeNoBlame:
     def test_squash_merged_mode_reports_failure_without_blame(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """create_prs mode: components already merged to base. The check
         tests the integrated base, reports the failing output, and must
@@ -399,10 +448,12 @@ class TestMergedModeNoBlame:
         _git("commit", "-q", "-m", "squash-merged components", cwd=root)
         _commit_on_branch(root, "kstrl/a", {"a.txt": "a\n"})
         _commit_on_branch(root, "kstrl/b", {"b.txt": "b\n"})
-        manifest = _make_manifest([
-            _component("a", "kstrl/a"),
-            _component("b", "kstrl/b", deps=["a"]),
-        ])
+        manifest = _make_manifest(
+            [
+                _component("a", "kstrl/a"),
+                _component("b", "kstrl/b", deps=["a"]),
+            ]
+        )
         config = ContractConfig(
             mode=ContractMode.TIER.value,
             test_command=MARKER_TEST_CMD,
@@ -411,7 +462,10 @@ class TestMergedModeNoBlame:
         before = _snapshot_working_tree(root)
 
         results = run_contract_testing(
-            manifest, root, config, PlainUI(no_color=True),
+            manifest,
+            root,
+            config,
+            PlainUI(no_color=True),
             components_merged=True,
         )
 
@@ -425,7 +479,8 @@ class TestMergedModeNoBlame:
         assert _worktree_count(root) == 1
 
     def test_squash_merged_mode_passes_on_healthy_base(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
@@ -438,7 +493,10 @@ class TestMergedModeNoBlame:
         )
 
         results = run_contract_testing(
-            manifest, root, config, PlainUI(no_color=True),
+            manifest,
+            root,
+            config,
+            PlainUI(no_color=True),
             components_merged=True,
         )
 
@@ -449,12 +507,16 @@ class TestMergedModeNoBlame:
 
 class TestCleanupFailsLoudly:
     def test_surviving_temp_worktree_raises_cleanup_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         root = tmp_path / "repo"
         _init_repo(root)
         worktree_path, error = contract_mod._create_temp_worktree(
-            "main", root, "cleanup-test",
+            "main",
+            root,
+            "cleanup-test",
         )
         assert worktree_path is not None, error
 
@@ -463,7 +525,10 @@ class TestCleanupFailsLoudly:
         def failing_remove(cmd: list[str], **kwargs: object) -> object:
             if cmd[:3] == ["git", "worktree", "remove"]:
                 return subprocess.CompletedProcess(
-                    cmd, returncode=1, stdout="", stderr="planted failure",
+                    cmd,
+                    returncode=1,
+                    stdout="",
+                    stderr="planted failure",
                 )
             return real_run(cmd, **kwargs)  # type: ignore[arg-type]
 
@@ -477,7 +542,9 @@ class TestCleanupFailsLoudly:
         assert not worktree_path.exists()
 
     def test_factory_converts_cleanup_error_to_nonzero_exit(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from unittest.mock import patch
 
@@ -485,10 +552,15 @@ class TestCleanupFailsLoudly:
         _init_repo(root)
         manifest = _make_manifest([_component("a", "kstrl/factory/a")])
         factory_config = FactoryConfig(
-            use_worktrees=True, create_prs=False, max_parallel=1,
-            max_retries=0, retry_delay=0, review_mode="skip",
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
             contract_config=ContractConfig(
-                mode=ContractMode.TIER.value, test_command="true",
+                mode=ContractMode.TIER.value,
+                test_command="true",
             ),
         )
         base = KstrlConfig(
@@ -496,8 +568,10 @@ class TestCleanupFailsLoudly:
             prd_file=root / "scripts" / "kstrl" / "prd.json",
             sleep_seconds=0,
             agent_cmd="echo unused",
-            kstrl_branch="", kstrl_branch_explicit=True,
-            ui_mode="plain", no_color=True,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
         )
 
         with patch(
@@ -505,10 +579,12 @@ class TestCleanupFailsLoudly:
             side_effect=ContractCleanupError("worktree survived removal"),
         ):
             result = run_factory(
-                manifest, factory_config, base, PlainUI(no_color=True), root,
+                manifest,
+                factory_config,
+                base,
+                PlainUI(no_color=True),
+                root,
             )
 
         assert result.exit_code == 1
-        assert any(
-            "cleanup failed" in line for line in result.contract_failures
-        )
+        assert any("cleanup failed" in line for line in result.contract_failures)

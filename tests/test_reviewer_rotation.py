@@ -228,7 +228,10 @@ class MockAgent:
         return self._name
 
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         yield from self._output.splitlines()
 
@@ -239,57 +242,81 @@ class MockAgent:
 
 class CrashingAgent(MockAgent):
     def run(
-        self, prompt: str, cwd: Path | None = None, timeout: float | None = None,
+        self,
+        prompt: str,
+        cwd: Path | None = None,
+        timeout: float | None = None,
     ) -> Iterator[str]:
         raise RuntimeError("agent exploded")
         yield ""  # pragma: no cover
 
 
-REVIEW_OUTPUT_WITH_CONCERN = json.dumps({
-    "stories": [{
-        "storyId": "US-001",
-        "storyTitle": "Test",
-        "criteria": [{
-            "criterion": "AC1",
-            "verdict": "fail",
-            "explanation": "not implemented",
-            "suggestion": "implement it",
-        }],
-    }],
-    "concerns": [{
-        "category": "dead_code",
-        "severity": "advisory",
-        "location": "a.py:1",
-        "explanation": "unused helper",
-        "suggestion": "remove",
-    }],
-    "exhaustively_searched": True,
-    "overallNotes": "",
-})
+REVIEW_OUTPUT_WITH_CONCERN = json.dumps(
+    {
+        "stories": [
+            {
+                "storyId": "US-001",
+                "storyTitle": "Test",
+                "criteria": [
+                    {
+                        "criterion": "AC1",
+                        "verdict": "fail",
+                        "explanation": "not implemented",
+                        "suggestion": "implement it",
+                    }
+                ],
+            }
+        ],
+        "concerns": [
+            {
+                "category": "dead_code",
+                "severity": "advisory",
+                "location": "a.py:1",
+                "explanation": "unused helper",
+                "suggestion": "remove",
+            }
+        ],
+        "exhaustively_searched": True,
+        "overallNotes": "",
+    }
+)
 
-SECURITY_OUTPUT_WITH_FINDING = json.dumps({
-    "findings": [{
-        "category": "hardcoded_secret",
-        "severity": "high",
-        "location": "b.py:3",
-        "explanation": "API key in source",
-        "suggestion": "move to env",
-    }],
-    "exhaustively_searched": True,
-    "overallNotes": "",
-})
+SECURITY_OUTPUT_WITH_FINDING = json.dumps(
+    {
+        "findings": [
+            {
+                "category": "hardcoded_secret",
+                "severity": "high",
+                "location": "b.py:3",
+                "explanation": "API key in source",
+                "suggestion": "move to env",
+            }
+        ],
+        "exhaustively_searched": True,
+        "overallNotes": "",
+    }
+)
 
 
 def _write_prd(tmp_path: Path) -> Path:
     prd_path = tmp_path / "prd.json"
-    prd_path.write_text(json.dumps({
-        "branchName": "test",
-        "userStories": [{
-            "id": "US-001", "title": "Test",
-            "acceptanceCriteria": ["AC1"], "priority": 1,
-            "passes": True, "notes": "",
-        }],
-    }))
+    prd_path.write_text(
+        json.dumps(
+            {
+                "branchName": "test",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Test",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                ],
+            }
+        )
+    )
     return prd_path
 
 
@@ -298,11 +325,16 @@ class TestModelTagEndToEnd:
         prd_path = _write_prd(tmp_path)
         agent = MockAgent(REVIEW_OUTPUT_WITH_CONCERN)
         result = run_review(
-            agent, prd_path, tmp_path, "main",
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
             VerificationResult(
-                passed=True, checks=[CheckResult("test_suite", True, "ok")],
+                passed=True,
+                checks=[CheckResult("test_suite", True, "ok")],
             ),
-            ReviewMode.HARD, PlainUI(no_color=True),
+            ReviewMode.HARD,
+            PlainUI(no_color=True),
             diff_content="+change\n",
         )
         assert result.reviewer_model == "codex (gpt-5)"
@@ -320,9 +352,13 @@ class TestModelTagEndToEnd:
         prd_path = _write_prd(tmp_path)
         agent = CrashingAgent("", name="codex (gpt-5)")
         result = run_review(
-            agent, prd_path, tmp_path, "main",
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
             VerificationResult(passed=True, checks=[]),
-            ReviewMode.HARD, PlainUI(no_color=True),
+            ReviewMode.HARD,
+            PlainUI(no_color=True),
             diff_content="+change\n",
         )
         assert result.infrastructure_error is True
@@ -334,8 +370,12 @@ class TestModelTagEndToEnd:
     def test_security_findings_carry_model_tag(self, tmp_path: Path) -> None:
         agent = MockAgent(SECURITY_OUTPUT_WITH_FINDING, name="codex")
         result = run_security_review(
-            agent, tmp_path / "missing-prd.json", tmp_path, "main",
-            SecurityConfig(mode="advisory"), PlainUI(no_color=True),
+            agent,
+            tmp_path / "missing-prd.json",
+            tmp_path,
+            "main",
+            SecurityConfig(mode="advisory"),
+            PlainUI(no_color=True),
             diff_content="+change\n",
         )
         assert result.reviewer_model == "codex"
@@ -347,7 +387,9 @@ class TestModelTagEndToEnd:
 
     def test_security_clean_result_still_names_reviewer(self) -> None:
         result = SecurityResult(
-            passed=True, mode="hard", reviewer_model="codex (gpt-5)",
+            passed=True,
+            mode="hard",
+            reviewer_model="codex (gpt-5)",
         )
         assert "**Reviewer model**: codex (gpt-5)" in result.as_pr_body_section()
 
@@ -361,14 +403,14 @@ class TestModelTagEndToEnd:
             SecurityResult(passed=True, mode="hard", reviewer_model="codex"),
             SecurityResult(passed=True, mode="hard", reviewer_model="codex"),
         ]
-        assert (
-            merge_security_results(chunks_s, "hard").reviewer_model == "codex"
-        )
+        assert merge_security_results(chunks_s, "hard").reviewer_model == "codex"
 
     def test_model_tag_is_idempotent_and_composes_with_attempt(self) -> None:
         f = Finding.from_review_concern(
-            category="dead_code", severity="advisory",
-            location="a.py:1", explanation="x",
+            category="dead_code",
+            severity="advisory",
+            location="a.py:1",
+            explanation="x",
         )
         tagged = tag_finding_with_model(f, "codex")
         again = tag_finding_with_model(tagged, "claude-code")
@@ -382,7 +424,8 @@ class TestModelTagEndToEnd:
 
     def test_render_findings_markdown_names_reviewer_model(self) -> None:
         f = tag_finding_with_model(
-            Finding.infrastructure_error("security", "boom"), "codex (gpt-5)",
+            Finding.infrastructure_error("security", "boom"),
+            "codex (gpt-5)",
         )
         rendered = render_findings_markdown([f])
         assert "Reviewer model: codex (gpt-5)" in rendered
@@ -391,21 +434,32 @@ class TestModelTagEndToEnd:
         prd_path = _write_prd(tmp_path)
         agent = MockAgent(REVIEW_OUTPUT_WITH_CONCERN)
         result = run_review(
-            agent, prd_path, tmp_path, "main",
+            agent,
+            prd_path,
+            tmp_path,
+            "main",
             VerificationResult(passed=True, checks=[]),
-            ReviewMode.HARD, PlainUI(no_color=True),
+            ReviewMode.HARD,
+            PlainUI(no_color=True),
             diff_content="+change\n",
         )
         comp = Component(
-            id="comp-a", title="Comp A", description="does things",
-            dependencies=[], prd_path="prd.json",
+            id="comp-a",
+            title="Comp A",
+            description="does things",
+            dependencies=[],
+            prd_path="prd.json",
             branch_name="kstrl/factory/comp-a",
         )
         comp.review_findings = result.as_pr_body_section()
         comp.findings = result.as_findings()
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="p",
-            base_branch="main", single_pr=False, components=[comp],
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[comp],
         )
         body = _generate_pr_body(comp, manifest)
         assert "**Reviewer model**: codex (gpt-5)" in body
@@ -423,15 +477,20 @@ class RecordingUI(PlainUI):
 
 class TestHomogeneityWarningFires:
     def test_run_factory_warns_once_and_journals_selection(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """A real run_factory invocation with a custom engineer command
         (family unknowable, so the warning fires regardless of which
         CLIs this machine has) prints the homogeneity warning for both
         enabled reviewer phases and journals the selection event."""
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="p",
-            base_branch="main", single_pr=False, components=[],
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[],
         )
         config = FactoryConfig(
             review_mode=ReviewMode.HARD.value,
@@ -441,30 +500,36 @@ class TestHomogeneityWarningFires:
         base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
         result = run_factory(
-            manifest, config, base, ui, tmp_path,
+            manifest,
+            config,
+            base,
+            ui,
+            tmp_path,
             manifest_path=tmp_path / "manifest.json",
         )
         assert result.exit_code == 0
         homogeneity = [w for w in ui.warnings if "Homogeneity risk" in w]
         assert len(homogeneity) == 2  # once per enabled phase, per run
         events = read_progress_events(tmp_path / ".kstrl" / "progress.jsonl")
-        selections = [
-            e for e in events if e["event"] == "adversarial_agent_selected"
-        ]
+        selections = [e for e in events if e["event"] == "adversarial_agent_selected"]
         assert {e["data"]["phase"] for e in selections} == {
-            "review", "security",
+            "review",
+            "security",
         }
         assert all(e["data"]["homogeneous"] for e in selections)
-        assert all(
-            e["data"]["source"] == "same-family-fallback" for e in selections
-        )
+        assert all(e["data"]["source"] == "same-family-fallback" for e in selections)
 
     def test_no_warning_when_reviewer_phases_disabled(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest = Manifest(
-            version="1", spec_file="spec.md", project_name="p",
-            base_branch="main", single_pr=False, components=[],
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[],
         )
         config = FactoryConfig(
             review_mode=ReviewMode.SKIP.value,
@@ -474,7 +539,11 @@ class TestHomogeneityWarningFires:
         base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
         run_factory(
-            manifest, config, base, ui, tmp_path,
+            manifest,
+            config,
+            base,
+            ui,
+            tmp_path,
             manifest_path=tmp_path / "manifest.json",
         )
         assert not [w for w in ui.warnings if "Homogeneity risk" in w]
@@ -504,10 +573,7 @@ class TestCalibrationReviewerOverride:
             calibration.reviewer_override_label("haiku", "codex", "gpt-5")
             == "haiku+reviewer:codex/gpt-5"
         )
-        assert (
-            calibration.reviewer_override_label("haiku", "codex", None)
-            == "haiku+reviewer:codex"
-        )
+        assert calibration.reviewer_override_label("haiku", "codex", None) == "haiku+reviewer:codex"
 
     def test_cross_family_baselines_compare_with_warning_not_failure(
         self,
@@ -517,20 +583,33 @@ class TestCalibrationReviewerOverride:
         change) instead of silently pretending both measured the same
         configuration."""
         old = calibration.Baseline(
-            path=None, model="haiku", timestamp="t1",
-            format_version=2, runs_per_fixture=3,
-            fixtures=(calibration.FixtureStats(
-                role="security", fixture_id="sec-01",
-                category="injection", cwe="CWE-89",
-                runs_total=3, runs_errored=0, runs_detected=3,
-            ),),
+            path=None,
+            model="haiku",
+            timestamp="t1",
+            format_version=2,
+            runs_per_fixture=3,
+            fixtures=(
+                calibration.FixtureStats(
+                    role="security",
+                    fixture_id="sec-01",
+                    category="injection",
+                    cwe="CWE-89",
+                    runs_total=3,
+                    runs_errored=0,
+                    runs_detected=3,
+                ),
+            ),
         )
         new = calibration.Baseline(
             path=None,
             model=calibration.reviewer_override_label(
-                "haiku", "codex", "gpt-5",
+                "haiku",
+                "codex",
+                "gpt-5",
             ),
-            timestamp="t2", format_version=2, runs_per_fixture=3,
+            timestamp="t2",
+            format_version=2,
+            runs_per_fixture=3,
             fixtures=old.fixtures,
         )
         comparison = calibration.compare_baselines(old, new)

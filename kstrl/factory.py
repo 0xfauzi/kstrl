@@ -308,7 +308,8 @@ class FactoryConfig:
         # built, not only in load(). A FactoryConfig assembled from CLI
         # flags or in a test goes through here too.
         _validate_setpoint_agreement(
-            self.setpoint_agreement, "[factory] setpoint_agreement",
+            self.setpoint_agreement,
+            "[factory] setpoint_agreement",
         )
 
     @classmethod
@@ -321,15 +322,15 @@ class FactoryConfig:
             max_retries=int(os.environ.get("FACTORY_MAX_RETRIES", "3")),
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
-            max_adversarial_calls=int(
-                os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")
+            max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
+            max_total_tokens=validate_token_ceiling(
+                int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
+                "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
             ),
-            max_total_tokens=validate_token_ceiling(int(
-                os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")
-            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"),
-            max_cost_usd=validate_cost_ceiling(float(
-                os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")
-            ), "KSTRL_FACTORY_MAX_COST_USD"),
+            max_cost_usd=validate_cost_ceiling(
+                float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
+                "KSTRL_FACTORY_MAX_COST_USD",
+            ),
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
@@ -360,6 +361,7 @@ class FactoryConfig:
         present, then overlays any matching env vars on top.
         """
         from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -396,16 +398,15 @@ class FactoryConfig:
             )
         if "max_cost_usd" in section:
             config.max_cost_usd = validate_cost_ceiling(
-                float(section["max_cost_usd"]), "[factory] max_cost_usd",
+                float(section["max_cost_usd"]),
+                "[factory] max_cost_usd",
             )
         if "pause_before_pr_merge" in section:
             config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
         if "progress_log_enabled" in section:
             config.progress_log_enabled = bool(section["progress_log_enabled"])
         if "keep_worktrees_on_failure" in section:
-            config.keep_worktrees_on_failure = bool(
-                section["keep_worktrees_on_failure"]
-            )
+            config.keep_worktrees_on_failure = bool(section["keep_worktrees_on_failure"])
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -416,17 +417,15 @@ class FactoryConfig:
         if "FACTORY_MERGE_TIMEOUT" in os.environ:
             config.merge_timeout = float(os.environ["FACTORY_MERGE_TIMEOUT"])
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
-            config.max_adversarial_calls = int(
-                os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"]
-            )
+            config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = validate_token_ceiling(int(
-                os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]
-            ), "KSTRL_FACTORY_MAX_TOTAL_TOKENS")
+            config.max_total_tokens = validate_token_ceiling(
+                int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
+            )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = validate_cost_ceiling(float(
-                os.environ["KSTRL_FACTORY_MAX_COST_USD"]
-            ), "KSTRL_FACTORY_MAX_COST_USD")
+            config.max_cost_usd = validate_cost_ceiling(
+                float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
+            )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
             config.pause_before_pr_merge = _parse_bool(
                 os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
@@ -565,8 +564,7 @@ def _cli_family(
     canonical = canonical_agent_type(agent_type)
     if canonical is None:
         raise UnknownAgentTypeError(
-            f"unknown agent type {agent_type!r}; expected one of "
-            f"{', '.join(VALID_AGENT_TYPES)}"
+            f"unknown agent type {agent_type!r}; expected one of {', '.join(VALID_AGENT_TYPES)}"
         )
     if canonical in ("claude-code", "claude-sdk"):
         return "claude-code"
@@ -661,14 +659,10 @@ def resolve_adversarial_selection(
     if codex_available is None:
         codex_available = CodexAgent.is_available()
 
-    explicit = any(
-        v is not None for v in (explicit_cmd, explicit_type, explicit_model)
-    )
+    explicit = any(v is not None for v in (explicit_cmd, explicit_type, explicit_model))
     if explicit:
         cmd = explicit_cmd if explicit_cmd is not None else fallback_cmd
-        agent_type = (
-            explicit_type if explicit_type is not None else fallback_type
-        )
+        agent_type = explicit_type if explicit_type is not None else fallback_type
         model = explicit_model if explicit_model is not None else fallback_model
         return AdversarialAgentSelection(
             phase=phase,
@@ -681,12 +675,8 @@ def resolve_adversarial_selection(
         )
 
     engineer_family = _cli_family(engineer_cmd, engineer_type, claude_available)
-    cross_type = (
-        _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
-    )
-    cross_available = (
-        codex_available if cross_type == "codex" else claude_available
-    )
+    cross_type = _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
+    cross_available = codex_available if cross_type == "codex" else claude_available
     if cross_type is not None and cross_available:
         return AdversarialAgentSelection(
             phase=phase,
@@ -728,7 +718,10 @@ def resolve_adversarial_selection(
         reasoning=fallback_reasoning,
         source="same-family-fallback",
         identity=_agent_identity(
-            fallback_cmd, fallback_type, fallback_model, claude_available,
+            fallback_cmd,
+            fallback_type,
+            fallback_model,
+            claude_available,
         ),
         warning=warning,
     )
@@ -812,6 +805,7 @@ class _RunLock:
             return
         try:
             import fcntl
+
             fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
         except (ImportError, OSError):
             pass
@@ -942,6 +936,7 @@ def _setup_worktree(
     try:
         try:
             import fcntl
+
             lock_fp = open(lock_path, "w")
             fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
         except (ImportError, OSError):
@@ -963,7 +958,9 @@ def _setup_worktree(
         # nothing is registered it fails harmlessly, like `branch -D`.
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
 
         if fresh_from_base:
@@ -971,7 +968,9 @@ def _setup_worktree(
             # recreates it from base rather than reusing its commits.
             subprocess.run(
                 ["git", "branch", "-D", branch_name],
-                cwd=root_dir, capture_output=True, timeout=30,
+                cwd=root_dir,
+                capture_output=True,
+                timeout=30,
             )
 
         # R0.2: cut from origin/<base> when a remote exists so this
@@ -984,7 +983,10 @@ def _setup_worktree(
 
         result = subprocess.run(
             ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_ref],
-            cwd=root_dir, capture_output=True, text=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
 
         if result.returncode != 0:
@@ -997,20 +999,22 @@ def _setup_worktree(
             # never silently reused here (R0.5).
             result = subprocess.run(
                 ["git", "worktree", "add", str(worktree_path), branch_name],
-                cwd=root_dir, capture_output=True, text=True, timeout=30,
+                cwd=root_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
 
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip()
-            raise RuntimeError(
-                f"Failed to create worktree for '{component_id}': {error}"
-            )
+            raise RuntimeError(f"Failed to create worktree for '{component_id}': {error}")
 
         return worktree_path
     finally:
         if lock_fp is not None:
             try:
                 import fcntl
+
                 fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
             except (ImportError, OSError):
                 pass
@@ -1024,7 +1028,9 @@ def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> None:
         return
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
-        cwd=root_dir, capture_output=True, timeout=30,
+        cwd=root_dir,
+        capture_output=True,
+        timeout=30,
     )
 
 
@@ -1039,10 +1045,7 @@ def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
     """
     keep: set[str] = set()
     for comp in manifest.components:
-        if (
-            comp.status == ComponentStatus.FAILED.value
-            and comp.evidence_worktree
-        ):
+        if comp.status == ComponentStatus.FAILED.value and comp.evidence_worktree:
             keep.add(comp.evidence_worktree)
             try:
                 keep.add(str(Path(comp.evidence_worktree).resolve()))
@@ -1052,7 +1055,10 @@ def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
 
 
 def _prune_stale_worktrees(
-    root_dir: Path, run_id: str, ui: UI, keep: set[str] | None = None,
+    root_dir: Path,
+    run_id: str,
+    ui: UI,
+    keep: set[str] | None = None,
 ) -> None:
     """Remove worktrees left behind by previous (crashed/aborted) runs.
 
@@ -1093,7 +1099,9 @@ def _prune_stale_worktrees(
                 continue
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(entry)],
-                cwd=root_dir, capture_output=True, timeout=30,
+                cwd=root_dir,
+                capture_output=True,
+                timeout=30,
             )
             removed += 1
         else:
@@ -1107,7 +1115,9 @@ def _prune_stale_worktrees(
                         continue
                     subprocess.run(
                         ["git", "worktree", "remove", "--force", str(wt)],
-                        cwd=root_dir, capture_output=True, timeout=30,
+                        cwd=root_dir,
+                        capture_output=True,
+                        timeout=30,
                     )
                     # Whatever git could not remove goes with the dir.
                     shutil.rmtree(wt, ignore_errors=True)
@@ -1123,7 +1133,9 @@ def _prune_stale_worktrees(
     if removed:
         subprocess.run(
             ["git", "worktree", "prune"],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
         ui.info(f"  Pruned {removed} stale worktree(s) from previous runs")
     if kept:
@@ -1134,7 +1146,9 @@ def _prune_stale_worktrees(
 
 
 def _component_scope(
-    comp: Component, root_dir: Path, base_config: KstrlConfig,
+    comp: Component,
+    root_dir: Path,
+    base_config: KstrlConfig,
 ) -> list[str] | None:
     """The scope the in-loop guard enforces for one component.
 
@@ -1166,7 +1180,9 @@ def _component_scope(
 
 
 def _preflight_component_branches(
-    manifest: Manifest, root_dir: Path, ui: UI,
+    manifest: Manifest,
+    root_dir: Path,
+    ui: UI,
 ) -> list[str]:
     """Refuse to silently reuse component branches from previous runs.
 
@@ -1195,18 +1211,25 @@ def _preflight_component_branches(
         seen.add(branch)
         exists = subprocess.run(
             ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
         if exists.returncode != 0:
             continue
         merged = subprocess.run(
             ["git", "merge-base", "--is-ancestor", branch, base_ref],
-            cwd=root_dir, capture_output=True, timeout=30,
+            cwd=root_dir,
+            capture_output=True,
+            timeout=30,
         )
         if merged.returncode == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", branch],
-                cwd=root_dir, capture_output=True, text=True, timeout=30,
+                cwd=root_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
             if deleted.returncode == 0:
                 ui.info(
@@ -1246,7 +1269,9 @@ def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent), suffix=".tmp", prefix=".usage-",
+            dir=str(path.parent),
+            suffix=".tmp",
+            prefix=".usage-",
         )
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -1285,8 +1310,14 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
         return None
     totals = UsageTotals()
     int_fields = (
-        "calls", "known_calls", "token_calls", "cost_calls", "input_tokens",
-        "output_tokens", "cache_read_tokens", "cache_creation_tokens",
+        "calls",
+        "known_calls",
+        "token_calls",
+        "cost_calls",
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_creation_tokens",
         "total_tokens",
     )
     for name in int_fields:
@@ -1295,11 +1326,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
             setattr(totals, name, value)
     for name in ("cost_usd", "duration_seconds"):
         value = data.get(name)
-        if (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and value >= 0
-        ):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
             setattr(totals, name, float(value))
     if totals.calls == 0:
         return None
@@ -1335,7 +1362,7 @@ def _clear_partial_usage(path: Path) -> bool:
     try:
         path.unlink()
     except FileNotFoundError:
-        return True          # nothing to retire; the slot is clean
+        return True  # nothing to retire; the slot is clean
     except OSError:
         return False
     return True
@@ -1413,8 +1440,8 @@ def _run_component(
     component's allowedPaths (see config.component_progress_path).
     """
     from kstrl.agents import (
-    get_agent,
-)
+        get_agent,
+    )
     from kstrl.loop import run_loop
     from kstrl.ui.bridge import EventBridgeUI, NullPrompter
     from kstrl.ui.plain import PlainUI
@@ -1454,9 +1481,13 @@ def _run_component(
             _install_worker_signal_forwarding()
 
     agent = get_agent(
-        agent_cmd, model, reasoning, agent_type,
+        agent_cmd,
+        model,
+        reasoning,
+        agent_type,
         sandbox=SandboxConfig(
-            enabled=sandbox_enabled, allow_network=sandbox_allow_network,
+            enabled=sandbox_enabled,
+            allow_network=sandbox_allow_network,
         ),
         max_budget_usd=agent_budget_usd,
     )
@@ -1503,8 +1534,11 @@ def _run_component(
     if scaffold_cmd:
         try:
             subprocess.run(
-                scaffold_cmd, shell=True, cwd=worktree_path,
-                capture_output=True, timeout=120,
+                scaffold_cmd,
+                shell=True,
+                cwd=worktree_path,
+                capture_output=True,
+                timeout=120,
             )
         except Exception:
             pass  # scaffold failure is non-fatal
@@ -1515,7 +1549,8 @@ def _run_component(
         try:
             ff_config = FeedforwardConfig(**feedforward_config_dict)
             feedforward_prefix = build_feedforward_context(
-                worktree_path, ff_config,
+                worktree_path,
+                ff_config,
                 component_id=component_id,
                 component_deps=component_deps,
             )
@@ -1545,8 +1580,10 @@ def _run_component(
         max_iterations=max_iterations,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
-        progress_file=worktree_path / component_progress_path(
-            prd_path_str, progress_file_str,
+        progress_file=worktree_path
+        / component_progress_path(
+            prd_path_str,
+            progress_file_str,
         ),
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
@@ -1579,7 +1616,9 @@ def _run_component(
         try:
             transcript_fh = open(
                 run_paths.engineer_log(component_id),
-                "a", buffering=1, encoding="utf-8",
+                "a",
+                buffering=1,
+                encoding="utf-8",
             )
         except OSError:
             transcript_fh = None
@@ -1592,10 +1631,14 @@ def _run_component(
 
         worker_bus = EventBus(
             JsonlSink(run_paths.engineer_events(component_id)),
-            run_id=run_id, source="worker", component=component_id,
+            run_id=run_id,
+            source="worker",
+            component=component_id,
         )
         ui = EventBridgeUI(
-            worker_bus, prompter=NullPrompter(), transcript=_transcript,
+            worker_bus,
+            prompter=NullPrompter(),
+            transcript=_transcript,
         )
         stop_heartbeat = _start_heartbeat(worker_bus)
 
@@ -1610,13 +1653,18 @@ def _run_component(
             component_id,
         )
         on_iteration_usage = functools.partial(
-            _write_partial_usage, usage_path,
+            _write_partial_usage,
+            usage_path,
         )
 
     try:
         result = run_loop(
-            config, ui, agent, worktree_path,
-            context_prefix=context_prefix, timeouts=timeouts,
+            config,
+            ui,
+            agent,
+            worktree_path,
+            context_prefix=context_prefix,
+            timeouts=timeouts,
             breaker_config=breaker_config,
             bus=worker_bus,
             stop_check=stop_check,
@@ -1766,7 +1814,10 @@ class _InlineExecutor:
     """
 
     def submit(
-        self, fn: Callable[..., ComponentResult], /, *args: Any,
+        self,
+        fn: Callable[..., ComponentResult],
+        /,
+        *args: Any,
     ) -> Future[ComponentResult]:
         future: Future[ComponentResult] = Future()
         try:
@@ -1778,7 +1829,9 @@ class _InlineExecutor:
         return future
 
     def shutdown(
-        self, wait: bool = True, cancel_futures: bool = False,
+        self,
+        wait: bool = True,
+        cancel_futures: bool = False,
     ) -> None:
         """Nothing to shut down: every submit already ran to completion."""
 
@@ -1797,20 +1850,12 @@ def _wait_interruptible(
     if stop is None:
         done, _ = wait(futures, timeout=timeout, return_when=FIRST_COMPLETED)
         return done, False
-    deadline = (
-        time.monotonic() + timeout if timeout is not None else None
-    )
+    deadline = time.monotonic() + timeout if timeout is not None else None
     while True:
         if stop.is_set():
             return set(), True
-        remaining = (
-            None if deadline is None
-            else max(0.0, deadline - time.monotonic())
-        )
-        slice_t = (
-            slice_seconds if remaining is None
-            else min(slice_seconds, remaining)
-        )
+        remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+        slice_t = slice_seconds if remaining is None else min(slice_seconds, remaining)
         done, _ = wait(futures, timeout=slice_t, return_when=FIRST_COMPLETED)
         if done:
             return done, False
@@ -1841,12 +1886,7 @@ def _abort_inflight(
         for worker in workers:
             try:
                 pid = worker.pid
-                if (
-                    isinstance(pid, int)
-                    and pid > 1
-                    and pid != os.getpid()
-                    and worker.is_alive()
-                ):
+                if isinstance(pid, int) and pid > 1 and pid != os.getpid() and worker.is_alive():
                     worker.terminate()
                     alive.append(worker)
             except (AssertionError, AttributeError, OSError, ValueError):
@@ -1959,10 +1999,7 @@ def _expired_futures(
     now: float,
 ) -> list[Future[ComponentResult]]:
     """Running futures whose scheduler-backstop deadline has passed."""
-    return [
-        f for f in running
-        if not f.done() and f in deadlines and now >= deadlines[f]
-    ]
+    return [f for f in running if not f.done() and f in deadlines and now >= deadlines[f]]
 
 
 # Rollup row order for the R3.1 usage table; phases outside this list
@@ -2096,9 +2133,7 @@ def _record_autonomy_outcome(
             return False
         return any(f.is_infrastructure_error for f in comp.findings)
 
-    judged_failures = [
-        comp_id for comp_id in factory_result.failed if not _infra_casualty(comp_id)
-    ]
+    judged_failures = [comp_id for comp_id in factory_result.failed if not _infra_casualty(comp_id)]
     decisive = bool(factory_result.completed or judged_failures)
     if decisive:
         state.record_decisive_run()
@@ -2109,8 +2144,7 @@ def _record_autonomy_outcome(
         comp.id
         for comp in manifest.components
         if any(
-            finding.category.startswith(POLICY_CATEGORY_PREFIX)
-            and finding.severity != "advisory"
+            finding.category.startswith(POLICY_CATEGORY_PREFIX) and finding.severity != "advisory"
             for finding in comp.findings
         )
     ]
@@ -2209,7 +2243,9 @@ def run_factory(
 
     try:
         run_lock = _acquire_run_lock(
-            root_dir, ui, force=factory_config.force_lock,
+            root_dir,
+            ui,
+            force=factory_config.force_lock,
         )
     except FactoryLockHeldError as exc:
         ui.err(str(exc))
@@ -2218,9 +2254,16 @@ def run_factory(
         return refused
     try:
         return _run_factory_locked(
-            manifest, factory_config, base_config, ui, root_dir,
-            manifest_path=manifest_path, lock_held=run_lock.held,
-            interaction=interaction, stop=stop, run_id_override=run_id,
+            manifest,
+            factory_config,
+            base_config,
+            ui,
+            root_dir,
+            manifest_path=manifest_path,
+            lock_held=run_lock.held,
+            interaction=interaction,
+            stop=stop,
+            run_id_override=run_id,
             notify_capture_output=notify_capture_output,
         )
     finally:
@@ -2301,10 +2344,7 @@ def _run_factory_locked(
     if not factory_config.progress_log_enabled:
         progress_log = NullProgressLog()
     else:
-        log_path = (
-            factory_config.progress_log_path
-            or root_dir / ".kstrl" / "progress.jsonl"
-        )
+        log_path = factory_config.progress_log_path or root_dir / ".kstrl" / "progress.jsonl"
         progress_log = ProgressLog(log_path, run_id=run_id, warn=ui.warn)
         journal_path = log_path
         run_paths = RunPaths.for_run(root_dir, run_id)
@@ -2338,20 +2378,25 @@ def _run_factory_locked(
         capture_output=notify_capture_output,
     )
 
-    bus.emit(RunStarted(
-        project=manifest.project_name, components=len(manifest.components),
-    ))
+    bus.emit(
+        RunStarted(
+            project=manifest.project_name,
+            components=len(manifest.components),
+        )
+    )
     # Chunk 4: the component DAG + budget caps as one event, so a
     # dashboard can draw the board without reading the manifest.
-    bus.emit(RunPlan(
-        components=tuple(
-            {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
-            for c in manifest.components
-        ),
-        max_total_tokens=factory_config.max_total_tokens,
-        max_adversarial_calls=factory_config.max_adversarial_calls,
-        max_cost_usd=factory_config.max_cost_usd,
-    ))
+    bus.emit(
+        RunPlan(
+            components=tuple(
+                {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
+                for c in manifest.components
+            ),
+            max_total_tokens=factory_config.max_total_tokens,
+            max_adversarial_calls=factory_config.max_adversarial_calls,
+            max_cost_usd=factory_config.max_cost_usd,
+        )
+    )
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -2387,9 +2432,7 @@ def _run_factory_locked(
             engineer_cmd=base_config.agent_cmd,
             engineer_type=base_config.agent_type,
         )
-    _review_phase_enabled = (
-        factory_config.review_mode != ReviewMode.SKIP.value
-    )
+    _review_phase_enabled = factory_config.review_mode != ReviewMode.SKIP.value
     _security_phase_enabled = (
         factory_config.security_config is not None
         and factory_config.security_config.mode != SecurityMode.SKIP.value
@@ -2402,14 +2445,16 @@ def _run_factory_locked(
             continue
         if _sel.warning:
             ui.warn(f"  {_sel.warning}")
-        bus.emit(AdversarialAgentSelected(
-            phase=_sel.phase,
-            agent_source=_sel.source,
-            identity=_sel.identity,
-            agent_type=_sel.agent_type,
-            model=_sel.model,
-            homogeneous=_sel.warning is not None,
-        ))
+        bus.emit(
+            AdversarialAgentSelected(
+                phase=_sel.phase,
+                agent_source=_sel.source,
+                identity=_sel.identity,
+                agent_type=_sel.agent_type,
+                model=_sel.model,
+                homogeneous=_sel.warning is not None,
+            )
+        )
 
     # Validate DAG
     ui.section("Factory: Validating DAG")
@@ -2461,7 +2506,8 @@ def _run_factory_locked(
     if autonomy_active:
         autonomy_state = AutonomyState.load(root_dir)
         autonomy_level, clamps = resolve_runtime_level(
-            autonomy_state, autonomy_config,
+            autonomy_state,
+            autonomy_config,
             policy_enabled=policy_config.enabled,
             root_dir=root_dir,
         )
@@ -2482,12 +2528,14 @@ def _run_factory_locked(
                 f"[policy] deps_allow_new=true withheld at "
                 f"{bundle.level.label} (ladder clamps to false)"
             )
-        bus.emit(AutonomyLevelApplied(
-            level=int(autonomy_level),
-            label=autonomy_level.label,
-            flags=tuple(bundle.describe()),
-            overrides=tuple(clamps + overrides),
-        ))
+        bus.emit(
+            AutonomyLevelApplied(
+                level=int(autonomy_level),
+                label=autonomy_level.label,
+                flags=tuple(bundle.describe()),
+                overrides=tuple(clamps + overrides),
+            )
+        )
         ui.kv("Autonomy", f"L{int(autonomy_level)} - {autonomy_level.label}")
         for note in clamps:
             ui.warn(f"  {note}")
@@ -2583,10 +2631,7 @@ def _run_factory_locked(
         # parallel same-tier components would hard-fail on "already
         # checked out". Sequential is the only layout that works.
         max_parallel = 1
-        ui.info(
-            "single_pr mode: components share one branch; "
-            "forcing max_parallel=1"
-        )
+        ui.info("single_pr mode: components share one branch; forcing max_parallel=1")
 
     # R0.1: TimeoutConfig is the single source for the agent-iteration and
     # component wall-clock limits. Enforcement layers: the adapters kill
@@ -2596,7 +2641,8 @@ def _run_factory_locked(
     timeout_cfg = factory_config.timeout_config or TimeoutConfig.load(root_dir)
     backstop_seconds = (
         timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
-        if timeout_cfg.component_total > 0 else 0.0
+        if timeout_cfg.component_total > 0
+        else 0.0
     )
 
     # R7.5: no-progress circuit breaker limits, forwarded into every
@@ -2634,7 +2680,9 @@ def _run_factory_locked(
     if factory_config.use_worktrees:
         if lock_held:
             _prune_stale_worktrees(
-                root_dir, run_id, ui,
+                root_dir,
+                run_id,
+                ui,
                 keep=_evidence_worktrees_to_keep(manifest),
             )
         else:
@@ -2655,19 +2703,16 @@ def _run_factory_locked(
     ui.kv("Max retries", str(factory_config.max_retries))
     ui.kv("Review mode", factory_config.review_mode)
     contract_mode = (
-        factory_config.contract_config.mode
-        if factory_config.contract_config else "skip"
+        factory_config.contract_config.mode if factory_config.contract_config else "skip"
     )
     ui.kv("Contract check", contract_mode)
     ui.kv(
         "Agent timeout",
-        f"{timeout_cfg.agent_iteration}s"
-        if timeout_cfg.agent_iteration > 0 else "<disabled>",
+        f"{timeout_cfg.agent_iteration}s" if timeout_cfg.agent_iteration > 0 else "<disabled>",
     )
     ui.kv(
         "Component timeout",
-        f"{timeout_cfg.component_total}s"
-        if timeout_cfg.component_total > 0 else "<disabled>",
+        f"{timeout_cfg.component_total}s" if timeout_cfg.component_total > 0 else "<disabled>",
     )
     # R8 (measured): state each ceiling AND what it counts, before the
     # run spends anything. An operator set --max-cost-usd 25.0 on a run
@@ -2716,8 +2761,12 @@ def _run_factory_locked(
                 fresh_from_base = comp.id in fresh_base_retry_ids
                 fresh_base_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
-                    comp.id, comp.branch_name, manifest.base_branch, root_dir,
-                    run_id, fresh_from_base=fresh_from_base,
+                    comp.id,
+                    comp.branch_name,
+                    manifest.base_branch,
+                    root_dir,
+                    run_id,
+                    fresh_from_base=fresh_from_base,
                 )
             else:
                 wt_path = root_dir
@@ -2728,7 +2777,10 @@ def _run_factory_locked(
             # pipeline.fail covers the R3.2 notify + progress-log
             # calls and stamps the R3.3 failure/evidence fields.
             pipeline.fail(
-                comp, str(exc), phase="provisioning", check="worktree_setup",
+                comp,
+                str(exc),
+                phase="provisioning",
+                check="worktree_setup",
             )
             return None
 
@@ -2752,26 +2804,34 @@ def _run_factory_locked(
         if knowledge_config.enabled:
             try:
                 knowledge_prefix = build_knowledge_context(
-                    manifest, comp, knowledge_config.knowledge_root, knowledge_config,
+                    manifest,
+                    comp,
+                    knowledge_config.knowledge_root,
+                    knowledge_config,
                 )
             except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
                 # Non-fatal, but NOT a metrics detail: the engineer runs
                 # without any of its facts when this fires. That is a
                 # real degradation of the run, and it used to be a bare
                 # `except: pass` that said nothing (#191).
-                ui.warn(
-                    f"  Knowledge retrieval failed for {comp.id}: {exc}"
-                )
+                ui.warn(f"  Knowledge retrieval failed for {comp.id}: {exc}")
                 pipeline.record_injected_knowledge(comp.id, None)
             else:
                 pipeline.record_injected_knowledge(comp.id, knowledge_prefix)
         else:
             pipeline.record_injected_knowledge(comp.id, None)
         return (
-            comp.id, comp.prd_path, str(wt_path), str(root_dir),
-            prompt_file_rel, base_config.agent_cmd, base_config.model,
-            base_config.model_reasoning_effort, base_config.agent_type,
-            base_config.sleep_seconds, ctx_json,
+            comp.id,
+            comp.prd_path,
+            str(wt_path),
+            str(root_dir),
+            prompt_file_rel,
+            base_config.agent_cmd,
+            base_config.model,
+            base_config.model_reasoning_effort,
+            base_config.agent_type,
+            base_config.sleep_seconds,
+            ctx_json,
             ff_config_dict,
             comp.scaffold or None,
             comp.dependencies or None,
@@ -2879,7 +2939,11 @@ def _run_factory_locked(
             while True:
                 if stop is not None and stop.is_set():
                     _abort_inflight(
-                        executor, running_futures, pipeline, ui, stop,
+                        executor,
+                        running_futures,
+                        pipeline,
+                        ui,
+                        stop,
                     )
                     return
                 ready = manifest.get_ready_components()
@@ -2918,7 +2982,9 @@ def _run_factory_locked(
                         # through to the dead ceilings and names only
                         # those actually configured.
                         pipeline.fail_for_budget(
-                            comp, "scheduling", reason=unenforceable,
+                            comp,
+                            "scheduling",
+                            reason=unenforceable,
                         )
                         transitioned_without_launch += 1
                         continue
@@ -2935,19 +3001,20 @@ def _run_factory_locked(
                     # Provisioning succeeded: the engineer phase starts
                     # immediately before submission. process_result closes
                     # normal exits; fail_scheduler_backstop closes timeouts.
-                    bus.emit(PhaseStarted(
-                        component=comp.id, phase="engineer",
-                        attempt=comp.retries + 1,
-                    ))
+                    bus.emit(
+                        PhaseStarted(
+                            component=comp.id,
+                            phase="engineer",
+                            attempt=comp.retries + 1,
+                        )
+                    )
                     args = _submit_args(comp, wt_path)
                     # R8 (P2-c): the usage snapshot is attempt-scoped by
                     # deletion, and the deletion happens HERE - before
                     # the worker exists - so an attempt cancelled during
                     # pool startup cannot salvage its predecessor's
                     # tokens on top of the ones already on the meter.
-                    if _clear_partial_usage(
-                        usage_paths.engineer_usage(comp.id)
-                    ):
+                    if _clear_partial_usage(usage_paths.engineer_usage(comp.id)):
                         pipeline.mark_usage_salvage_safe(comp.id)
                     else:
                         # A snapshot we could not delete may still hold
@@ -2974,7 +3041,8 @@ def _run_factory_locked(
                         # tuple stops before the kwargs; _submit_args
                         # ends at token_budget by construction.
                         task = functools.partial(
-                            _run_component, *args,
+                            _run_component,
+                            *args,
                             # Keyword, NOT appended to args: the tuple
                             # ends at token_budget by construction (see
                             # above) and a positional extra silently
@@ -2982,11 +3050,10 @@ def _run_factory_locked(
                             base_branch=manifest.base_branch,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
-                                ui.stream_line, "AI",
+                                ui.stream_line,
+                                "AI",
                             ),
-                            stop_check=(
-                                stop.is_set if stop is not None else None
-                            ),
+                            stop_check=(stop.is_set if stop is not None else None),
                         )
                         future = executor.submit(task)
                     else:
@@ -2998,7 +3065,8 @@ def _run_factory_locked(
                         # branch is a plain str.
                         future = executor.submit(
                             functools.partial(
-                                _run_component, *args,
+                                _run_component,
+                                *args,
                                 # Same unprovable-*args limitation the
                                 # inline branch annotates above.
                                 base_branch=manifest.base_branch,  # type: ignore[misc]
@@ -3006,9 +3074,7 @@ def _run_factory_locked(
                         )
                     running_futures[future] = comp.id
                     if backstop_seconds > 0:
-                        future_deadlines[future] = (
-                            time.monotonic() + backstop_seconds
-                        )
+                        future_deadlines[future] = time.monotonic() + backstop_seconds
 
                 if not running_futures:
                     if transitioned_without_launch:
@@ -3021,15 +3087,23 @@ def _run_factory_locked(
                 # deadline is the last line of defense when a worker hangs
                 # outside those layers.
                 wait_timeout = _next_backstop_wait(
-                    running_futures, future_deadlines, time.monotonic(),
+                    running_futures,
+                    future_deadlines,
+                    time.monotonic(),
                 )
                 done, stopped = _wait_interruptible(
-                    set(running_futures), wait_timeout, stop,
+                    set(running_futures),
+                    wait_timeout,
+                    stop,
                 )
                 if stopped:
                     assert stop is not None
                     _abort_inflight(
-                        executor, running_futures, pipeline, ui, stop,
+                        executor,
+                        running_futures,
+                        pipeline,
+                        ui,
+                        stop,
                     )
                     return
 
@@ -3043,7 +3117,9 @@ def _run_factory_locked(
                         comp_result = future.result()
                     except Exception as exc:
                         comp_result = ComponentResult(
-                            component_id=comp_id, success=False, error=str(exc),
+                            component_id=comp_id,
+                            success=False,
+                            error=str(exc),
                         )
                     pipeline.process_result(comp_id, comp_result)
                     continue
@@ -3052,7 +3128,9 @@ def _run_factory_locked(
                 # component past its backstop deadline and keep going.
                 now = time.monotonic()
                 for future in _expired_futures(
-                    running_futures, future_deadlines, now,
+                    running_futures,
+                    future_deadlines,
+                    now,
                 ):
                     comp_id = running_futures.pop(future)
                     future_deadlines.pop(future, None)
@@ -3084,10 +3162,7 @@ def _run_factory_locked(
                 # A possibly-live worker still owns this worktree; removing
                 # it under the worker risks corrupting the main repo's
                 # worktree metadata.
-                ui.warn(
-                    f"  Keeping worktree for '{comp_id}' "
-                    f"(leaked worker may still be running)"
-                )
+                ui.warn(f"  Keeping worktree for '{comp_id}' (leaked worker may still be running)")
                 continue
             comp = manifest.get_component(comp_id)
             if (
@@ -3097,10 +3172,7 @@ def _run_factory_locked(
             ):
                 comp.evidence_worktree = str(worktree_paths[comp_id])
                 kept_evidence = True
-                ui.info(
-                    f"  Keeping failed worktree for post-mortem: "
-                    f"{worktree_paths[comp_id]}"
-                )
+                ui.info(f"  Keeping failed worktree for post-mortem: {worktree_paths[comp_id]}")
                 continue
             _cleanup_worktree(comp_id, root_dir, run_id)
         if kept_evidence:
@@ -3150,9 +3222,7 @@ def _run_factory_locked(
                 f.write(json.dumps(entry, separators=(",", ":")) + "\n")
         except OSError as exc:
             # Evolution recording is non-fatal, but never silent (R6.1).
-            ui.warn(
-                f"  Evolution journal write failed (non-fatal): {exc}"
-            )
+            ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
 
     # Per-component PRs are squash-merged into base as each component
     # completes, so at contract time tier re-merges would be content
@@ -3176,15 +3246,15 @@ def _run_factory_locked(
 
         # PHASE 3: Contract testing
         contract_config = factory_config.contract_config
-        if (
-            contract_config is None
-            or contract_config.mode == ContractMode.SKIP.value
-        ):
+        if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
             break
 
         try:
             contract_results = run_contract_testing(
-                manifest, root_dir, contract_config, ui,
+                manifest,
+                root_dir,
+                contract_config,
+                ui,
                 components_merged=components_merged,
             )
         except ContractCleanupError as exc:
@@ -3192,16 +3262,18 @@ def _run_factory_locked(
             # checkout is untouched, but .kstrl/contract holds stale
             # state - fail the run loudly instead of continuing.
             ui.err(f"  Contract cleanup FAILED: {exc}")
-            factory_result.contract_failures.append(
-                f"contract cleanup failed: {exc}"
-            )
+            factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
             break
 
         for cr in contract_results:
-            bus.emit(ContractResultEvent(
-                tier=cr.tier, passed=cr.passed, breaker=cr.breaker,
-                duration_seconds=round(cr.duration_seconds, 2),
-            ))
+            bus.emit(
+                ContractResultEvent(
+                    tier=cr.tier,
+                    passed=cr.passed,
+                    breaker=cr.breaker,
+                    duration_seconds=round(cr.duration_seconds, 2),
+                )
+            )
             _record_contract_event(cr)
 
         failures = [cr for cr in contract_results if not cr.passed]
@@ -3229,9 +3301,7 @@ def _run_factory_locked(
                 # Remove from completed list
                 if cr.breaker in factory_result.completed:
                     factory_result.completed.remove(cr.breaker)
-                ctx = IterationContext.from_json(
-                    component_contexts.get(cr.breaker, "{}")
-                )
+                ctx = IterationContext.from_json(component_contexts.get(cr.breaker, "{}"))
                 # breaker.retries was already incremented above, so it
                 # now names the attempt whose contract test failed, not
                 # the next one. (Issue #223's table says retries + 1;
@@ -3239,14 +3309,13 @@ def _run_factory_locked(
                 # happens inside retry_or_fail AFTER the entry is
                 # recorded. Here it would be off by one.)
                 ctx.add_contract_failure(
-                    cr.test_output[:500], attempt=breaker.retries,
+                    cr.test_output[:500],
+                    attempt=breaker.retries,
                 )
                 component_contexts[cr.breaker] = ctx.to_json()
                 manifest.save(manifest_path)
                 any_breaker_reset = True
-                ui.warn(
-                    f"  Contract breaker '{cr.breaker}' sent back for retry"
-                )
+                ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
 
         if any_breaker_reset:
             continue
@@ -3262,10 +3331,7 @@ def _run_factory_locked(
                 breaker = manifest.get_component(cr.breaker)
                 if breaker is not None:
                     breaker.status = ComponentStatus.FAILED.value
-                    breaker.error = (
-                        f"Contract test failed at tier {cr.tier} "
-                        f"(retries exhausted)"
-                    )
+                    breaker.error = f"Contract test failed at tier {cr.tier} (retries exhausted)"
                     breaker.completed_at = _iso_now()
                     breaker.failed_phase = "contract"
                     breaker.failed_check = f"tier_{cr.tier}"
@@ -3276,21 +3342,18 @@ def _run_factory_locked(
                     factory_result.completed.remove(cr.breaker)
                 if cr.breaker not in factory_result.failed:
                     factory_result.failed.append(cr.breaker)
-                bus.emit(ComponentFailed(
-                    component=cr.breaker,
-                    error=(
-                        f"Contract test failed at tier {cr.tier} "
-                        f"(retries exhausted)"
-                    ),
-                ))
+                bus.emit(
+                    ComponentFailed(
+                        component=cr.breaker,
+                        error=(f"Contract test failed at tier {cr.tier} (retries exhausted)"),
+                    )
+                )
                 notify.fire_first_failure(
                     cr.breaker,
-                    f"Contract test failed at tier {cr.tier} "
-                    f"(retries exhausted)",
+                    f"Contract test failed at tier {cr.tier} (retries exhausted)",
                 )
                 factory_result.contract_failures.append(
-                    f"tier {cr.tier}: breaker '{cr.breaker}' "
-                    f"(retries exhausted): {summary_line}"
+                    f"tier {cr.tier}: breaker '{cr.breaker}' (retries exhausted): {summary_line}"
                 )
             else:
                 factory_result.contract_failures.append(
@@ -3298,10 +3361,7 @@ def _run_factory_locked(
                     f"attributed (components: "
                     f"{', '.join(cr.components_tested)}): {summary_line}"
                 )
-            ui.err(
-                f"  Contract failure recorded for tier {cr.tier}; "
-                f"run will exit nonzero"
-            )
+            ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
         manifest.save(manifest_path)
         break
 
@@ -3315,10 +3375,7 @@ def _run_factory_locked(
             manifest.save(manifest_path)
         else:
             # Per-component PRs are created in _handle_result; only handle stragglers
-            remaining = [
-                c for c in manifest.components
-                if c.status == "completed" and not c.pr_url
-            ]
+            remaining = [c for c in manifest.components if c.status == "completed" and not c.pr_url]
             if remaining:
                 pr_results = create_prs_in_order(manifest, root_dir, ui)
                 factory_result.pr_urls.extend(url for _, url in pr_results)
@@ -3326,12 +3383,14 @@ def _run_factory_locked(
 
     # Summary
     factory_duration = time.monotonic() - factory_start
-    bus.emit(RunCompleted(
-        completed=len(factory_result.completed),
-        failed=len(factory_result.failed),
-        skipped=len(factory_result.skipped),
-        duration_seconds=round(factory_duration, 2),
-    ))
+    bus.emit(
+        RunCompleted(
+            completed=len(factory_result.completed),
+            failed=len(factory_result.failed),
+            skipped=len(factory_result.skipped),
+            duration_seconds=round(factory_duration, 2),
+        )
+    )
     # Detach (not close) the console bus: post-run cli narration must
     # not reopen the run's files. The file sinks themselves close.
     for _sink in run_file_sinks:
@@ -3342,8 +3401,7 @@ def _run_factory_locked(
     # from the manifest (not accumulated during the run) so it reflects
     # the final state after any crash-recovery re-poll.
     factory_result.merge_pending = [
-        c.id for c in manifest.components
-        if c.status == ComponentStatus.MERGE_PENDING.value
+        c.id for c in manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
     ]
 
     ui.section("Factory: Summary")
@@ -3368,29 +3426,21 @@ def _run_factory_locked(
             if failed_comp.error:
                 ui.info(f"    error: {failed_comp.error[:160]}")
             if failed_comp.evidence_worktree:
-                ui.info(
-                    f"    worktree: {failed_comp.evidence_worktree}"
-                )
+                ui.info(f"    worktree: {failed_comp.evidence_worktree}")
             elif factory_config.use_worktrees:
                 ui.info(
-                    "    worktree: removed (re-run with "
-                    "--keep-worktrees-on-failure to keep it)"
+                    "    worktree: removed (re-run with --keep-worktrees-on-failure to keep it)"
                 )
             if failed_comp.evidence_debug_dir:
-                ui.info(
-                    f"    raw outputs: {failed_comp.evidence_debug_dir}"
-                )
-            if (
-                failed_comp.journal_offset_start >= 0
-                and journal_path is not None
-            ):
+                ui.info(f"    raw outputs: {failed_comp.evidence_debug_dir}")
+            if failed_comp.journal_offset_start >= 0 and journal_path is not None:
                 end = (
                     str(failed_comp.journal_offset_end)
-                    if failed_comp.journal_offset_end >= 0 else "end"
+                    if failed_comp.journal_offset_end >= 0
+                    else "end"
                 )
                 ui.info(
-                    f"    journal: {journal_path} bytes "
-                    f"[{failed_comp.journal_offset_start}:{end}]"
+                    f"    journal: {journal_path} bytes [{failed_comp.journal_offset_start}:{end}]"
                 )
             ui.info(f"    retry with: ks retry {failed_id}")
     if factory_result.contract_failures:
@@ -3480,19 +3530,17 @@ def _run_factory_locked(
         if evo_config.enabled:
             journal = EvolutionJournal(evo_config)
             journal.record_run(
-                run_id, manifest, factory_result,
+                run_id,
+                manifest,
+                factory_result,
                 usage_by_component={
-                    comp_id: {
-                        phase: totals.to_dict()
-                        for phase, totals in phases.items()
-                    }
+                    comp_id: {phase: totals.to_dict() for phase, totals in phases.items()}
                     for comp_id, phases in pipeline.usage_meter.items()
                 },
                 run_usage=pipeline.run_usage.to_dict(),
                 failure_signatures=component_failure_signatures,
                 fact_utilization={
-                    comp_id: util.to_dict()
-                    for comp_id, util in pipeline.fact_utilization.items()
+                    comp_id: util.to_dict() for comp_id, util in pipeline.fact_utilization.items()
                 },
             )
     except Exception as exc:

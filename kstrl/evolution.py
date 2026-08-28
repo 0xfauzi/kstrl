@@ -89,6 +89,7 @@ class EvolutionConfig:
     def load(cls, root_dir: Path | None = None) -> EvolutionConfig:
         """Load evolution config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
+
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
@@ -97,14 +98,10 @@ class EvolutionConfig:
             config.enabled = bool(section["enabled"])
         if "journal_path" in section:
             jp = str(section["journal_path"])
-            config.journal_path = (
-                Path(jp) if Path(jp).is_absolute() else root_dir / jp
-            )
+            config.journal_path = Path(jp) if Path(jp).is_absolute() else root_dir / jp
         if "experiments_path" in section:
             ep = str(section["experiments_path"])
-            config.experiments_path = (
-                Path(ep) if Path(ep).is_absolute() else root_dir / ep
-            )
+            config.experiments_path = Path(ep) if Path(ep).is_absolute() else root_dir / ep
         if "min_pattern_frequency" in section:
             config.min_pattern_frequency = int(section["min_pattern_frequency"])
         if "lookback_runs" in section:
@@ -112,9 +109,7 @@ class EvolutionConfig:
         if "auto_propose" in section:
             config.auto_propose = bool(section["auto_propose"])
         if "auto_apply_computational" in section:
-            config.auto_apply_computational = bool(
-                section["auto_apply_computational"]
-            )
+            config.auto_apply_computational = bool(section["auto_apply_computational"])
         _apply_env_overrides(config, root_dir)
         _resolve_relative_paths(config, root_dir)
         return config
@@ -125,13 +120,13 @@ def _apply_env_overrides(config: EvolutionConfig, root_dir: Path) -> None:
     existing value untouched (so toml values survive the overlay)."""
     if "KSTRL_EVOLUTION_ENABLED" in os.environ:
         config.enabled = os.environ["KSTRL_EVOLUTION_ENABLED"].lower() in {
-            "1", "true", "yes",
+            "1",
+            "true",
+            "yes",
         }
     if "KSTRL_EVOLUTION_JOURNAL_PATH" in os.environ:
         raw = os.environ["KSTRL_EVOLUTION_JOURNAL_PATH"]
-        config.journal_path = (
-            Path(raw) if Path(raw).is_absolute() else root_dir / raw
-        )
+        config.journal_path = Path(raw) if Path(raw).is_absolute() else root_dir / raw
     if "KSTRL_EVOLUTION_LOOKBACK_RUNS" in os.environ:
         config.lookback_runs = int(os.environ["KSTRL_EVOLUTION_LOOKBACK_RUNS"])
 
@@ -219,7 +214,7 @@ def _normalize_error(error: str) -> str:
     colon_idx = first_line.find(":")
     if colon_idx > 0:
         error_type = first_line[:colon_idx].strip()
-        message = first_line[colon_idx + 1:].strip()
+        message = first_line[colon_idx + 1 :].strip()
         # Slugify message portion.
         slug = re.sub(r"[^a-z0-9]+", "-", message.lower()).strip("-")
         if slug:
@@ -348,9 +343,7 @@ def signatures_from_verification(checks: Iterable[CheckResult]) -> list[str]:
                 for failure in parsed.failures:
                     m = _EXC_NAME_RE.match(failure.message or "")
                     if m:
-                        codes.append(
-                            re.sub(r"(?<!^)(?=[A-Z])", "-", m.group(1)).lower()
-                        )
+                        codes.append(re.sub(r"(?<!^)(?=[A-Z])", "-", m.group(1)).lower())
         if codes:
             distinct = list(dict.fromkeys(codes))[:_MAX_SIGNATURES_PER_CHECK]
             signatures.extend(f"{check.name}:{code}" for code in distinct)
@@ -393,12 +386,8 @@ def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
         if f.is_infrastructure_error:
             summary["infrastructure_errors"] += 1
         summary["by_phase"][f.phase] = summary["by_phase"].get(f.phase, 0) + 1
-        summary["by_severity"][f.severity] = (
-            summary["by_severity"].get(f.severity, 0) + 1
-        )
-        summary["by_category"][f.category] = (
-            summary["by_category"].get(f.category, 0) + 1
-        )
+        summary["by_severity"][f.severity] = summary["by_severity"].get(f.severity, 0) + 1
+        summary["by_category"][f.category] = summary["by_category"].get(f.category, 0) + 1
         if f.owasp:
             summary["by_owasp"][f.owasp] = summary["by_owasp"].get(f.owasp, 0) + 1
     return summary
@@ -514,8 +503,7 @@ class EvolutionJournal:
                 # could not measure" and from "measured=true,
                 # referenced=0", which is real evidence of unused facts.
                 "knowledge_utilization": (
-                    fact_utilization.get(comp.id)
-                    or dict(_UNMEASURED_UTILIZATION)
+                    fact_utilization.get(comp.id) or dict(_UNMEASURED_UTILIZATION)
                 ),
             }
             entries.append(entry)
@@ -528,7 +516,8 @@ class EvolutionJournal:
         except OSError as exc:
             logger.warning(
                 "evolution journal write failed (non-fatal): %s: %s",
-                self.config.journal_path, exc,
+                self.config.journal_path,
+                exc,
             )
 
         # --- Experiments TSV summary line ---
@@ -538,9 +527,7 @@ class EvolutionJournal:
         skipped = len(factory_result.skipped)
 
         iteration_counts = [c.iteration_count for c in manifest.components if c.iteration_count > 0]
-        avg_iterations = (
-            sum(iteration_counts) / len(iteration_counts) if iteration_counts else 0.0
-        )
+        avg_iterations = sum(iteration_counts) / len(iteration_counts) if iteration_counts else 0.0
 
         durations = [c.duration_seconds for c in manifest.components if c.duration_seconds > 0]
         avg_duration = sum(durations) / len(durations) if durations else 0.0
@@ -555,9 +542,12 @@ class EvolutionJournal:
                 continue
             sigs = list(failure_signatures.get(comp.id) or [])
             if not sigs:
-                sigs = [signature_for_error(
-                    _classify_check(comp.error)[0], comp.error,
-                )]
+                sigs = [
+                    signature_for_error(
+                        _classify_check(comp.error)[0],
+                        comp.error,
+                    )
+                ]
             for sig in sigs:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]
@@ -600,7 +590,8 @@ class EvolutionJournal:
         except OSError as exc:
             logger.warning(
                 "experiments.tsv write failed (non-fatal): %s: %s",
-                self.config.experiments_path, exc,
+                self.config.experiments_path,
+                exc,
             )
 
     # ------------------------------------------------------------------
@@ -716,10 +707,13 @@ class EvolutionJournal:
                 sig_runs.setdefault(sig, set()).add(run_id)
                 sig_components.setdefault(sig, []).append(comp_id)
 
-        total_runs = len({
-            e.get("run_id") for e in entries
-            if e.get("event_type", "component_result") == "component_result"
-        })
+        total_runs = len(
+            {
+                e.get("run_id")
+                for e in entries
+                if e.get("event_type", "component_result") == "component_result"
+            }
+        )
         patterns: list[FailurePattern] = []
 
         for sig, run_ids in sig_runs.items():
@@ -869,10 +863,7 @@ class EvolutionJournal:
                 proposals.append(
                     HarnessProposal(
                         id=proposal_id,
-                        title=(
-                            f"Add security guidance for "
-                            f"'{pattern.error_signature}'"
-                        ),
+                        title=(f"Add security guidance for '{pattern.error_signature}'"),
                         description=(
                             f"Security finding category '{pattern.error_signature}' "
                             f"(OWASP-mapped taxonomy) appeared in "
@@ -954,7 +945,8 @@ class EvolutionJournal:
         except OSError as exc:
             logger.warning(
                 "proposal dir creation failed (non-fatal): %s: %s",
-                output_dir, exc,
+                output_dir,
+                exc,
             )
             return written
 
@@ -965,13 +957,12 @@ class EvolutionJournal:
             if filepath.exists():
                 logger.warning(
                     "refusing to overwrite existing proposal %s; "
-                    "renumber with next_proposal_number()", filepath,
+                    "renumber with next_proposal_number()",
+                    filepath,
                 )
                 continue
 
-            sources_block = "\n".join(
-                f"- {s}" for s in proposal.source_patterns
-            )
+            sources_block = "\n".join(f"- {s}" for s in proposal.source_patterns)
 
             content = (
                 f"# {proposal.id}: {proposal.title}\n"
@@ -996,7 +987,8 @@ class EvolutionJournal:
             except OSError as exc:
                 logger.warning(
                     "proposal write failed (non-fatal): %s: %s",
-                    filepath, exc,
+                    filepath,
+                    exc,
                 )
 
         return written
@@ -1022,7 +1014,8 @@ class EvolutionJournal:
         non-execution, not adversarial signal, and are excluded.
         """
         entries = [
-            e for e in self._read_journal_entries(lookback_runs)
+            e
+            for e in self._read_journal_entries(lookback_runs)
             if e.get("event_type", "component_result") == "component_result"
         ]
         runs = len({e.get("run_id", "") for e in entries})
@@ -1075,7 +1068,8 @@ class EvolutionJournal:
         ``knowledge.measure_fact_utilization``.
         """
         entries = [
-            e for e in self._read_journal_entries(lookback_runs)
+            e
+            for e in self._read_journal_entries(lookback_runs)
             if e.get("event_type", "component_result") == "component_result"
         ]
         measured = unmeasured = 0

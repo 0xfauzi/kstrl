@@ -41,17 +41,24 @@ from kstrl.verify import VerifyConfig
 
 
 def _write_prd(path: Path, story_ids: list[str]) -> None:
-    path.write_text(json.dumps({
-        "branchName": "test",
-        "userStories": [
+    path.write_text(
+        json.dumps(
             {
-                "id": sid, "title": f"Story {sid}",
-                "acceptanceCriteria": ["AC1"], "priority": 1,
-                "passes": True, "notes": "",
+                "branchName": "test",
+                "userStories": [
+                    {
+                        "id": sid,
+                        "title": f"Story {sid}",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                    for sid in story_ids
+                ],
             }
-            for sid in story_ids
-        ],
-    }))
+        )
+    )
 
 
 def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
@@ -69,11 +76,17 @@ def _scaffold(tmp_path: Path, comp_ids: list[str]) -> Path:
 
 def _make_manifest(ids: list[str]) -> Manifest:
     return Manifest(
-        version="1", spec_file="s", project_name="t",
-        base_branch="main", single_pr=False,
+        version="1",
+        spec_file="s",
+        project_name="t",
+        base_branch="main",
+        single_pr=False,
         components=[
             Component(
-                id=i, title=i, description="", dependencies=[],
+                id=i,
+                title=i,
+                description="",
+                dependencies=[],
                 prd_path=f"scripts/kstrl/feature/{i}/prd.json",
                 branch_name=f"kstrl/{i}",
             )
@@ -86,20 +99,30 @@ def _base_config(root: Path) -> KstrlConfig:
     return KstrlConfig(
         prompt_file=root / "scripts/kstrl/prompt.md",
         prd_file=root / "scripts/kstrl/prd.json",
-        sleep_seconds=0, agent_cmd="echo test",
-        kstrl_branch="", kstrl_branch_explicit=True,
-        ui_mode="plain", no_color=True,
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
     )
 
 
 def _factory_config(**overrides: object) -> FactoryConfig:
     defaults: dict[str, object] = dict(
-        use_worktrees=False, create_prs=False, max_parallel=1,
-        max_retries=0, retry_delay=0, review_mode="skip",
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
         verify_config=VerifyConfig(
-            test_command="true", typecheck_command="true",
-            lint_command="true", check_diff_scope=False,
-            check_bad_patterns=False, subprocess_timeout=5.0,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
         ),
     )
     defaults.update(overrides)
@@ -108,11 +131,13 @@ def _factory_config(**overrides: object) -> FactoryConfig:
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True, timeout=30,
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    assert result.returncode == 0, (
-        f"git {' '.join(args)} failed: {result.stderr}"
-    )
+    assert result.returncode == 0, f"git {' '.join(args)} failed: {result.stderr}"
     return result
 
 
@@ -151,7 +176,8 @@ class TestAttemptTagging:
 
     def test_tagging_is_idempotent(self) -> None:
         f = tag_finding_with_attempt(
-            Finding.phase_skipped("review", "skipped"), 1,
+            Finding.phase_skipped("review", "skipped"),
+            1,
         )
         retagged = tag_finding_with_attempt(f, 2)
         assert retagged.tags == f.tags
@@ -195,15 +221,27 @@ class TestManifestRunMetadata:
 
     def test_pre_r33_manifest_loads_with_defaults(self, tmp_path: Path) -> None:
         path = tmp_path / "m.json"
-        path.write_text(json.dumps({
-            "version": "1", "specFile": "s", "projectName": "t",
-            "baseBranch": "main", "singlePr": False,
-            "components": [{
-                "id": "comp-a", "title": "a", "description": "",
-                "dependencies": [], "prdPath": "p.json",
-                "branchName": "kstrl/comp-a",
-            }],
-        }))
+        path.write_text(
+            json.dumps(
+                {
+                    "version": "1",
+                    "specFile": "s",
+                    "projectName": "t",
+                    "baseBranch": "main",
+                    "singlePr": False,
+                    "components": [
+                        {
+                            "id": "comp-a",
+                            "title": "a",
+                            "description": "",
+                            "dependencies": [],
+                            "prdPath": "p.json",
+                            "branchName": "kstrl/comp-a",
+                        }
+                    ],
+                }
+            )
+        )
         loaded = Manifest.load(path)
         assert loaded.run_id == ""
         assert loaded.completed_at == ""
@@ -267,18 +305,30 @@ class TestResetForRetry:
 
     def test_dependent_skipped_by_other_failure_stays_skipped(self) -> None:
         manifest = self._failed_manifest()
-        manifest.components.append(Component(
-            id="comp-e", title="e", description="", dependencies=[],
-            prd_path="p.json", branch_name="kstrl/comp-e",
-            status=ComponentStatus.FAILED.value, error="other failure",
-        ))
-        manifest.components.append(Component(
-            id="comp-f", title="f", description="",
-            dependencies=["comp-a", "comp-e"],
-            prd_path="p.json", branch_name="kstrl/comp-f",
-            status=ComponentStatus.SKIPPED.value,
-            error="Dependency 'comp-e' failed",
-        ))
+        manifest.components.append(
+            Component(
+                id="comp-e",
+                title="e",
+                description="",
+                dependencies=[],
+                prd_path="p.json",
+                branch_name="kstrl/comp-e",
+                status=ComponentStatus.FAILED.value,
+                error="other failure",
+            )
+        )
+        manifest.components.append(
+            Component(
+                id="comp-f",
+                title="f",
+                description="",
+                dependencies=["comp-a", "comp-e"],
+                prd_path="p.json",
+                branch_name="kstrl/comp-f",
+                status=ComponentStatus.SKIPPED.value,
+                error="Dependency 'comp-e' failed",
+            )
+        )
         reset = manifest.reset_for_retry("comp-a")
         assert reset == ["comp-b"]
         f = manifest.get_component("comp-f")
@@ -293,18 +343,26 @@ class TestResetForRetry:
 
 class TestRunMetadataPersistence:
     def test_completed_at_and_run_id_set_on_success(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         config = _factory_config()
         success = ComponentResult("comp-a", success=True, iterations=1)
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert result.exit_code == 0
         assert manifest.run_id != ""
@@ -312,9 +370,7 @@ class TestRunMetadataPersistence:
         comp = manifest.get_component("comp-a")
         assert comp is not None
         assert comp.completed_at != ""
-        saved = json.loads(
-            (root / "scripts" / "kstrl" / "manifest.json").read_text()
-        )
+        saved = json.loads((root / "scripts" / "kstrl" / "manifest.json").read_text())
         assert saved["runId"] == manifest.run_id
         assert saved["completedAt"] == manifest.completed_at
 
@@ -323,14 +379,21 @@ class TestRunMetadataPersistence:
         manifest = _make_manifest(["comp-a"])
         config = _factory_config()
         failure = ComponentResult(
-            "comp-a", success=False, iterations=1, error="agent died",
+            "comp-a",
+            success=False,
+            iterations=1,
+            error="agent died",
         )
         with patch(
-            "kstrl.factory._run_component", return_value=failure,
+            "kstrl.factory._run_component",
+            return_value=failure,
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         assert result.exit_code == 1
         comp = manifest.get_component("comp-a")
@@ -349,7 +412,8 @@ class TestRunMetadataPersistence:
 
 class TestPerAttemptFindings:
     def test_attempt1_findings_cleared_but_journaled(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Attempt 1 fails hard review with a concern; attempt 2 passes.
         The final component findings carry only attempt:2 tags; the
@@ -358,26 +422,40 @@ class TestPerAttemptFindings:
         root = _scaffold(tmp_path, ["comp-a"])
         manifest = _make_manifest(["comp-a"])
         config = _factory_config(
-            review_mode="hard", max_retries=1,
+            review_mode="hard",
+            max_retries=1,
         )
         success = ComponentResult("comp-a", success=True, iterations=1)
         failing_review = ReviewResult(
-            passed=False, mode="hard",
-            concerns=[ReviewConcern(
-                category="test_quality", severity="fail",
-                location="x.py:1", explanation="tautological test",
-            )],
+            passed=False,
+            mode="hard",
+            concerns=[
+                ReviewConcern(
+                    category="test_quality",
+                    severity="fail",
+                    location="x.py:1",
+                    explanation="tautological test",
+                )
+            ],
         )
         passing_review = ReviewResult(passed=True, mode="hard")
-        with patch(
-            "kstrl.factory._run_component", return_value=success,
-        ), patch(
-            "kstrl.factory.run_review",
-            side_effect=[failing_review, passing_review],
-        ), patch("kstrl.git.get_diff_content", return_value=""):
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=success,
+            ),
+            patch(
+                "kstrl.factory.run_review",
+                side_effect=[failing_review, passing_review],
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
 
         assert result.completed == ["comp-a"]
@@ -389,15 +467,13 @@ class TestPerAttemptFindings:
         assert comp.findings, "attempt 2 should record phase-skip findings"
         attempts = {finding_attempt(f) for f in comp.findings}
         assert attempts == {2}
-        assert not any(
-            f.category == "test_quality" for f in comp.findings
-        ), "the superseded review concern must not survive into attempt 2"
+        assert not any(f.category == "test_quality" for f in comp.findings), (
+            "the superseded review concern must not survive into attempt 2"
+        )
 
         # Journal: superseded findings retained, tagged attempt:1.
         events = _journal_events(root)
-        superseded = [
-            e for e in events if e["event_type"] == "findings_superseded"
-        ]
+        superseded = [e for e in events if e["event_type"] == "findings_superseded"]
         assert len(superseded) == 1
         assert superseded[0]["component_id"] == "comp-a"
         assert superseded[0]["attempt"] == 1
@@ -410,9 +486,9 @@ class TestPerAttemptFindings:
 
         # record_run's component_result carries only the final stream.
         component_results = [
-            e for e in events
-            if e["event_type"] == "component_result"
-            and e["component_id"] == "comp-a"
+            e
+            for e in events
+            if e["event_type"] == "component_result" and e["component_id"] == "comp-a"
         ]
         assert component_results, "record_run must journal the component"
         final_findings = [
@@ -420,9 +496,7 @@ class TestPerAttemptFindings:
             for d in component_results[-1]["findings"]  # type: ignore[index]
         ]
         assert all(finding_attempt(f) == 2 for f in final_findings)
-        assert not any(
-            f.category == "test_quality" for f in final_findings
-        )
+        assert not any(f.category == "test_quality" for f in final_findings)
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +506,9 @@ class TestPerAttemptFindings:
 
 class TestKeepWorktreesOnFailure:
     def _run_failing_factory(
-        self, root: Path, keep: bool,
+        self,
+        root: Path,
+        keep: bool,
     ) -> tuple[Manifest, FactoryResult]:
         _init_git_repo(root)
         _scaffold(root, ["comp-a"])
@@ -443,19 +519,28 @@ class TestKeepWorktreesOnFailure:
             progress_log_path=root / ".kstrl" / "progress.jsonl",
         )
         failure = ComponentResult(
-            "comp-a", success=False, iterations=1, error="agent died",
+            "comp-a",
+            success=False,
+            iterations=1,
+            error="agent died",
         )
         with patch(
-            "kstrl.factory._run_component", return_value=failure,
+            "kstrl.factory._run_component",
+            return_value=failure,
         ):
             result = run_factory(
-                manifest, config, _base_config(root),
-                PlainUI(no_color=True), root,
+                manifest,
+                config,
+                _base_config(root),
+                PlainUI(no_color=True),
+                root,
             )
         return manifest, result
 
     def test_failed_worktree_kept_and_summary_points_at_it(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         manifest, result = self._run_failing_factory(tmp_path, keep=True)
         assert result.exit_code == 1
@@ -467,9 +552,7 @@ class TestKeepWorktreesOnFailure:
         assert kept == tmp_path / ".kstrl" / "worktrees" / manifest.run_id / "comp-a"
 
         # Evidence pointers persisted to disk.
-        saved = json.loads(
-            (tmp_path / "scripts" / "kstrl" / "manifest.json").read_text()
-        )
+        saved = json.loads((tmp_path / "scripts" / "kstrl" / "manifest.json").read_text())
         saved_comp = saved["components"][0]
         assert saved_comp["evidenceWorktree"] == comp.evidence_worktree
         assert saved_comp["failedPhase"] == "engineer"
@@ -488,7 +571,8 @@ class TestKeepWorktreesOnFailure:
         assert "ks retry comp-a" in out
 
     def test_failed_worktree_removed_without_flag(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest, result = self._run_failing_factory(tmp_path, keep=False)
         assert result.exit_code == 1
@@ -499,7 +583,8 @@ class TestKeepWorktreesOnFailure:
         assert not (run_dir / "comp-a").exists()
 
     def test_next_run_prune_preserves_kept_evidence(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         manifest, _ = self._run_failing_factory(tmp_path, keep=True)
         comp = manifest.get_component("comp-a")
@@ -515,8 +600,11 @@ class TestKeepWorktreesOnFailure:
             side_effect=AssertionError("nothing should be scheduled"),
         ):
             run_factory(
-                manifest, config, _base_config(tmp_path),
-                PlainUI(no_color=True), tmp_path,
+                manifest,
+                config,
+                _base_config(tmp_path),
+                PlainUI(no_color=True),
+                tmp_path,
             )
         assert kept.exists(), "prune must preserve evidence worktrees"
 
@@ -559,7 +647,9 @@ class TestRetryCli:
         return manifest_file
 
     def test_retry_round_trip(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         manifest_file = self._failed_repo(tmp_path)
         captured: dict[str, object] = {}
@@ -580,12 +670,20 @@ class TestRetryCli:
 
         monkeypatch.setattr("kstrl.cli.run_factory", fake_run_factory)
         monkeypatch.setattr(
-            "kstrl.cli._check_agent_preflight", lambda *a, **k: None,
+            "kstrl.cli._check_agent_preflight",
+            lambda *a, **k: None,
         )
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "retry", "comp-a", "--root", str(tmp_path), "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "retry",
+                "comp-a",
+                "--root",
+                str(tmp_path),
+                "--yes",
+            ],
+        )
         assert result.exit_code == 0, result.output
 
         # The factory re-entered with the SAME manifest file, components
@@ -610,17 +708,18 @@ class TestRetryCli:
         # Failed-attempt branch and evidence worktree are gone, so the
         # stale-branch preflight cannot refuse the re-run.
         branch = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet",
-             "refs/heads/kstrl/comp-a"],
-            cwd=tmp_path, capture_output=True, timeout=30,
+            ["git", "rev-parse", "--verify", "--quiet", "refs/heads/kstrl/comp-a"],
+            cwd=tmp_path,
+            capture_output=True,
+            timeout=30,
         )
         assert branch.returncode != 0, "failed-attempt branch must be deleted"
-        assert not (
-            tmp_path / ".kstrl" / "worktrees" / "run-old" / "comp-a"
-        ).exists()
+        assert not (tmp_path / ".kstrl" / "worktrees" / "run-old" / "comp-a").exists()
 
     def test_retry_rejects_non_failed_component(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         manifest_file = self._failed_repo(tmp_path)
         manifest = Manifest.load(manifest_file)
@@ -630,22 +729,39 @@ class TestRetryCli:
         manifest.save(manifest_file)
 
         monkeypatch.setattr(
-            "kstrl.cli._check_agent_preflight", lambda *a, **k: None,
+            "kstrl.cli._check_agent_preflight",
+            lambda *a, **k: None,
         )
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "retry", "comp-a", "--root", str(tmp_path), "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "retry",
+                "comp-a",
+                "--root",
+                str(tmp_path),
+                "--yes",
+            ],
+        )
         assert result.exit_code == 2
         assert "not 'failed'" in result.output
 
     def test_retry_unknown_component(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._failed_repo(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, [
-            "retry", "ghost", "--root", str(tmp_path), "--yes",
-        ])
+        result = runner.invoke(
+            cli,
+            [
+                "retry",
+                "ghost",
+                "--root",
+                str(tmp_path),
+                "--yes",
+            ],
+        )
         assert result.exit_code == 2
         assert "Unknown component" in result.output

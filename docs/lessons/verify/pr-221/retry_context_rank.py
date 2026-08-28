@@ -121,8 +121,10 @@ def render_new(entries: list[Entry]) -> str:
             phase = next(e.phase for e in live if e.attempt == i)
             lines.append(f"- Attempt {i}: FAILED - {phase} failed")
         lines.append("")
-    lines.append("Fix the current failures. Re-check the not-re-measured items yourself; "
-                 "do not assume they still apply.")
+    lines.append(
+        "Fix the current failures. Re-check the not-re-measured items yourself; "
+        "do not assume they still apply."
+    )
     lines.append("=== END PREVIOUS CONTEXT ===")
     return "\n".join(lines)
 
@@ -188,8 +190,10 @@ def main() -> None:
     if "--json" in sys.argv:
         json.dump(rows, sys.stdout)
         return
-    print(f"sequences swept: {len(rows)} (lengths 1 to 4 over {len(PHASES)} phases, "
-          f"with and without a legacy entry)")
+    print(
+        f"sequences swept: {len(rows)} (lengths 1 to 4 over {len(PHASES)} phases, "
+        f"with and without a legacy entry)"
+    )
 
     ok = True
     for r in rows:
@@ -210,58 +214,91 @@ def main() -> None:
         for e in b["resolved"]:
             if not (0 < e.attempt < n and PHASE_RANK[e.phase] <= q):
                 ok = False
-    print("claim 1: every entry lands in exactly one bucket, current holds only the "
-          "latest attempt, and the rank rule decides the rest ->", "holds" if ok else "fails")
+    print(
+        "claim 1: every entry lands in exactly one bucket, current holds only the "
+        "latest attempt, and the rank rule decides the rest ->",
+        "holds" if ok else "fails",
+    )
 
     same = [len(buckets(build(["verification"] * k, False))["current"]) for k in range(1, 5)]
     old = [len(build(["verification"] * k, False)) for k in range(1, 5)]
-    print(f"k consecutive verification failures, k = 1..4: current section entries "
-          f"{same}; old rendering entries {old}")
-    print("claim 2: the current section does not grow with k; the old rendering does ->",
-          "holds" if same == [1, 1, 1, 1] and old == [1, 2, 3, 4] else "fails")
+    print(
+        f"k consecutive verification failures, k = 1..4: current section entries "
+        f"{same}; old rendering entries {old}"
+    )
+    print(
+        "claim 2: the current section does not grow with k; the old rendering does ->",
+        "holds" if same == [1, 1, 1, 1] and old == [1, 2, 3, 4] else "fails",
+    )
 
     e1 = evaluate(["verification", "review"], False)
-    print("claim 3: issue example 1 (verification, then review): E501 resolved, "
-          "criterion current ->",
-          "holds" if e1["resolved"] == 1 and len(e1["current"]) == 1  # type: ignore[arg-type]
-          and not e1["not_remeasured"] else "fails")
+    print(
+        "claim 3: issue example 1 (verification, then review): E501 resolved, criterion current ->",
+        "holds"
+        if e1["resolved"] == 1
+        and len(e1["current"]) == 1  # type: ignore[arg-type]
+        and not e1["not_remeasured"]
+        else "fails",
+    )
     e2 = evaluate(["review", "verification"], False)
-    print("claim 4: issue example 2 (review, then verification): review entry not "
-          "re-measured ->",
-          "holds" if e2["resolved"] == 0 and len(e2["not_remeasured"]) == 1  # type: ignore[arg-type]
-          else "fails")
+    print(
+        "claim 4: issue example 2 (review, then verification): review entry not re-measured ->",
+        "holds"
+        if e2["resolved"] == 0 and len(e2["not_remeasured"]) == 1  # type: ignore[arg-type]
+        else "fails",
+    )
 
     legacy_ok = all(
         LEGACY_TEXT in evaluate([p], True)["not_remeasured"]  # type: ignore[operator]
         for p in PHASES
     )
-    print("claim 5: a legacy entry stays under Not re-measured whatever attempt 1 fails at "
-          "(issue #223 test 6, five sub-cases) ->", "holds" if legacy_ok else "fails")
+    print(
+        "claim 5: a legacy entry stays under Not re-measured whatever attempt 1 fails at "
+        "(issue #223 test 6, five sub-cases) ->",
+        "holds" if legacy_ok else "fails",
+    )
 
     sizes_old = [int(evaluate(["verification"] * k, False)["old_chars"]) for k in range(1, 6)]
     sizes_new = [int(evaluate(["verification"] * k, False)["new_chars"]) for k in range(1, 6)]
     d_old = [b - a for a, b in zip(sizes_old, sizes_old[1:], strict=False)]
     d_new = [b - a for a, b in zip(sizes_new[1:], sizes_new[2:], strict=False)]
     print(f"per-attempt growth, same phase: old {d_old} chars; new (from k=2) {d_new} chars")
-    print("claim 6: from the second attempt on, each further attempt adds a full failure "
-          "text to the old rendering and only a history line to the new one ->",
-          "holds" if all(d >= TEXT_LEN for d in d_old) and all(0 < d < TEXT_LEN for d in d_new)
-          else "fails")
+    print(
+        "claim 6: from the second attempt on, each further attempt adds a full failure "
+        "text to the old rendering and only a history line to the new one ->",
+        "holds"
+        if all(d >= TEXT_LEN for d in d_old) and all(0 < d < TEXT_LEN for d in d_new)
+        else "fails",
+    )
     crossover = next((k for k in range(1, 6) if sizes_new[k - 1] < sizes_old[k - 1]), None)
-    print(f"observation: the new rendering is LARGER than the old for the first attempts "
-          f"(longer headings) and smaller from k = {crossover}; it is bounded, not small.")
+    print(
+        f"observation: the new rendering is LARGER than the old for the first attempts "
+        f"(longer headings) and smaller from k = {crossover}; it is bounded, not small."
+    )
 
     entries = build(["verification", "review"], False)
-    print("claim 7: the closing instruction changed ->",
-          "holds" if "Fix ALL issues listed above" in render_old(entries)
-          and "Fix ALL issues listed above" not in render_new(entries) else "fails")
+    print(
+        "claim 7: the closing instruction changed ->",
+        "holds"
+        if "Fix ALL issues listed above" in render_old(entries)
+        and "Fix ALL issues listed above" not in render_new(entries)
+        else "fails",
+    )
 
     print()
     print("sizes, invented texts of fixed length:")
-    for seq in (["verification"], ["verification"] * 2, ["verification"] * 3,
-                ["verification"] * 4, ["review", "verification"], ["verification", "review"]):
+    for seq in (
+        ["verification"],
+        ["verification"] * 2,
+        ["verification"] * 3,
+        ["verification"] * 4,
+        ["review", "verification"],
+        ["verification", "review"],
+    ):
         r = evaluate(seq, False)
-        print(f"  {' -> '.join(seq):55s} old {r['old_chars']:5d} chars, new {r['new_chars']:5d} chars")
+        print(
+            f"  {' -> '.join(seq):55s} old {r['old_chars']:5d} chars, new {r['new_chars']:5d} chars"
+        )
 
 
 if __name__ == "__main__":

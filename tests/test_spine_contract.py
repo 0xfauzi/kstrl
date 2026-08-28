@@ -70,11 +70,7 @@ def _checkout_state(root: Path) -> dict[str, Any]:
 
 def _contract_events(progress_path: Path) -> list[tuple[int, bool, str | None]]:
     """(tier, passed, breaker) for each contract_result progress event."""
-    events = [
-        json.loads(line)
-        for line in progress_path.read_text().splitlines()
-        if line.strip()
-    ]
+    events = [json.loads(line) for line in progress_path.read_text().splitlines() if line.strip()]
     return [
         (e["data"]["tier"], e["data"]["passed"], e["data"]["breaker"])
         for e in events
@@ -89,9 +85,7 @@ def _assert_no_contract_debris(root: Path) -> None:
     if contract_dir.exists():
         assert list(contract_dir.iterdir()) == []
     listing = git("worktree", "list", "--porcelain", cwd=root)
-    worktree_lines = [
-        line for line in listing.splitlines() if line.startswith("worktree ")
-    ]
+    worktree_lines = [line for line in listing.splitlines() if line.startswith("worktree ")]
     assert worktree_lines == [f"worktree {root}"]
 
 
@@ -108,7 +102,9 @@ def _run(
         factory_config(
             max_retries=max_retries,
             contract_config=ContractConfig(
-                mode="tier", test_command=contract_test_cmd, timeout=30.0,
+                mode="tier",
+                test_command=contract_test_cmd,
+                timeout=30.0,
             ),
             progress_log_path=progress_path,
         ),
@@ -145,7 +141,9 @@ _CONFLICTING_ENGINEER = textwrap.dedent("""\
 
 class TestContractPassingTier:
     def test_tier_checks_merge_real_branches_incrementally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Two-tier manifest (beta depends on alpha): each tier's
         contract test runs in a temp worktree that REALLY contains the
@@ -154,9 +152,7 @@ class TestContractPassingTier:
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
         init_kstrl_repo(root, ("alpha", "beta"))
-        manifest = make_manifest(
-            [component("alpha"), component("beta", ["alpha"])]
-        )
+        manifest = make_manifest([component("alpha"), component("beta", ["alpha"])])
         before = _checkout_state(root)
         obs_log = tmp_path / "contract-observations.log"
         # The contract command is a real check AND a real observer: it
@@ -166,7 +162,10 @@ class TestContractPassingTier:
         progress_path = tmp_path / "progress.jsonl"
 
         result = _run(
-            root, manifest, _FILE_PER_COMPONENT_ENGINEER, contract_cmd,
+            root,
+            manifest,
+            _FILE_PER_COMPONENT_ENGINEER,
+            contract_cmd,
             progress_path,
         )
 
@@ -181,7 +180,8 @@ class TestContractPassingTier:
 
         # Both tiers ran and passed, with no breaker.
         assert _contract_events(progress_path) == [
-            (0, True, None), (1, True, None),
+            (0, True, None),
+            (1, True, None),
         ]
 
         # The merges were real: tier 0's temp worktree held alpha's file
@@ -193,7 +193,8 @@ class TestContractPassingTier:
             else:
                 blocks[-1].append(line)
         assert [b for b in blocks if b] == [
-            ["alpha.txt"], ["alpha.txt", "beta.txt"],
+            ["alpha.txt"],
+            ["alpha.txt", "beta.txt"],
         ]
 
         assert _checkout_state(root) == before
@@ -202,7 +203,9 @@ class TestContractPassingTier:
 
 class TestContractConflictedTier:
     def test_merge_conflict_attributes_breaker_and_leaves_checkout_intact(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Same-tier components whose branches conflict: the later
         merge (manifest order) is blamed, the failure is terminal with
@@ -217,7 +220,11 @@ class TestContractConflictedTier:
         progress_path = tmp_path / "progress.jsonl"
 
         result = _run(
-            root, manifest, _CONFLICTING_ENGINEER, "true", progress_path,
+            root,
+            manifest,
+            _CONFLICTING_ENGINEER,
+            "true",
+            progress_path,
         )
 
         # Wave-2 recovery semantics: the run completes (no exception),
@@ -249,7 +256,9 @@ class TestContractConflictedTier:
 
 class TestContractBreakerRerun:
     def test_breaker_reenters_scheduling_and_completes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A contract TEST failure (clean merges, broken integration)
         bisects to beta; beta is reset to PENDING, its retry prompt
@@ -294,12 +303,15 @@ class TestContractBreakerRerun:
             echo '<promise>COMPLETE</promise>'
         """)
         contract_cmd = (
-            "test ! -f broken.txt || "
-            "{ echo 'integration broken: broken.txt present'; exit 1; }"
+            "test ! -f broken.txt || { echo 'integration broken: broken.txt present'; exit 1; }"
         )
 
         result = _run(
-            root, manifest, engineer, contract_cmd, progress_path,
+            root,
+            manifest,
+            engineer,
+            contract_cmd,
+            progress_path,
             max_retries=1,
         )
 
@@ -315,7 +327,8 @@ class TestContractBreakerRerun:
 
         # First pass failed and bisected to beta; the re-run passed.
         assert _contract_events(progress_path) == [
-            (0, False, "beta"), (0, True, None),
+            (0, False, "beta"),
+            (0, True, None),
         ]
 
         # The breaker's engineer REALLY re-ran (exactly once), alpha's
@@ -341,7 +354,10 @@ class TestContractBreakerRerun:
         # The fix landed on beta's real branch: beta.txt in, broken.txt
         # gone.
         branch_files = git(
-            "ls-tree", "--name-only", "kstrl/factory/beta", cwd=root,
+            "ls-tree",
+            "--name-only",
+            "kstrl/factory/beta",
+            cwd=root,
         ).splitlines()
         assert "beta.txt" in branch_files
         assert "broken.txt" not in branch_files

@@ -111,7 +111,10 @@ class GhResult:
 
 
 def run_gh(
-    args: list[str], *, timeout: float, cwd: Path | None = None,
+    args: list[str],
+    *,
+    timeout: float,
+    cwd: Path | None = None,
 ) -> GhResult:
     """Invoke ``gh``, converting every failure into a value.
 
@@ -176,18 +179,14 @@ class GitHubIntakeConfig:
             raise IntakeError("intake_github.queued_label must not be empty")
         if self.max_items_per_sync < 1:
             raise IntakeError(
-                "intake_github.max_items_per_sync must be >= 1, got "
-                f"{self.max_items_per_sync}"
+                f"intake_github.max_items_per_sync must be >= 1, got {self.max_items_per_sync}"
             )
         if self.timeout_seconds <= 0:
             raise IntakeError(
-                "intake_github.timeout_seconds must be > 0, got "
-                f"{self.timeout_seconds}"
+                f"intake_github.timeout_seconds must be > 0, got {self.timeout_seconds}"
             )
         if self.repo and self.repo.count("/") != 1:
-            raise IntakeError(
-                f"intake_github.repo must be 'owner/name', got {self.repo!r}"
-            )
+            raise IntakeError(f"intake_github.repo must be 'owner/name', got {self.repo!r}")
 
     def state_label(self, state: str) -> str:
         return f"{self.label_prefix}{state}"
@@ -202,10 +201,7 @@ class GitHubIntakeConfig:
         """
         return (
             self.queued_label,
-            *(
-                self.state_label(name)
-                for name in ("running", "done", "failed", "poison")
-            ),
+            *(self.state_label(name) for name in ("running", "done", "failed", "poison")),
         )
 
     @classmethod
@@ -225,19 +221,11 @@ class GitHubIntakeConfig:
             repo=defaults.repo if repo is None else repo,
             queued_label=defaults.queued_label if label is None else label,
             label_prefix=defaults.label_prefix if prefix is None else prefix,
-            max_items_per_sync=(
-                defaults.max_items_per_sync if cap is None else int(cap)
-            ),
-            default_priority=(
-                defaults.default_priority if priority is None else int(priority)
-            ),
-            comment_on_result=(
-                defaults.comment_on_result if comment is None else comment == "1"
-            ),
+            max_items_per_sync=(defaults.max_items_per_sync if cap is None else int(cap)),
+            default_priority=(defaults.default_priority if priority is None else int(priority)),
+            comment_on_result=(defaults.comment_on_result if comment is None else comment == "1"),
             dry_run=defaults.dry_run if dry is None else dry == "1",
-            timeout_seconds=(
-                defaults.timeout_seconds if timeout is None else float(timeout)
-            ),
+            timeout_seconds=(defaults.timeout_seconds if timeout is None else float(timeout)),
         )
 
     @classmethod
@@ -248,7 +236,8 @@ class GitHubIntakeConfig:
         if root_dir is None:
             root_dir = Path.cwd()
         section = load_toml_section(
-            resolve_config_file(root_dir), "intake_github",
+            resolve_config_file(root_dir),
+            "intake_github",
         )
         defaults = cls()
 
@@ -267,18 +256,22 @@ class GitHubIntakeConfig:
             "queued_label": _str("queued_label", defaults.queued_label),
             "label_prefix": _str("label_prefix", defaults.label_prefix),
             "max_items_per_sync": _int(
-                "max_items_per_sync", defaults.max_items_per_sync,
+                "max_items_per_sync",
+                defaults.max_items_per_sync,
             ),
             "default_priority": _int(
-                "default_priority", defaults.default_priority,
+                "default_priority",
+                defaults.default_priority,
             ),
             "comment_on_result": _bool(
-                "comment_on_result", defaults.comment_on_result,
+                "comment_on_result",
+                defaults.comment_on_result,
             ),
             "dry_run": _bool("dry_run", defaults.dry_run),
             "timeout_seconds": float(
                 section["timeout_seconds"]
-                if "timeout_seconds" in section else defaults.timeout_seconds
+                if "timeout_seconds" in section
+                else defaults.timeout_seconds
             ),
         }
         env_map: dict[str, tuple[str, Callable[[str], Any]]] = {
@@ -289,7 +282,8 @@ class GitHubIntakeConfig:
             "KSTRL_INTAKE_GITHUB_MAX_ITEMS": ("max_items_per_sync", int),
             "KSTRL_INTAKE_GITHUB_PRIORITY": ("default_priority", int),
             "KSTRL_INTAKE_GITHUB_COMMENT": (
-                "comment_on_result", lambda v: v == "1",
+                "comment_on_result",
+                lambda v: v == "1",
             ),
             "KSTRL_INTAKE_GITHUB_DRY_RUN": ("dry_run", lambda v: v == "1"),
             "KSTRL_INTAKE_GITHUB_TIMEOUT": ("timeout_seconds", float),
@@ -330,9 +324,7 @@ def parse_issue_list(payload: str) -> tuple[list[RemoteIssue], str]:
     except json.JSONDecodeError as exc:
         return [], f"could not parse `gh issue list` output: {exc}"
     if not isinstance(data, list):
-        return [], (
-            f"`gh issue list` returned {type(data).__name__}, expected a list"
-        )
+        return [], (f"`gh issue list` returned {type(data).__name__}, expected a list")
     issues: list[RemoteIssue] = []
     for entry in data:
         if not isinstance(entry, dict):
@@ -348,13 +340,15 @@ def parse_issue_list(payload: str) -> tuple[list[RemoteIssue], str]:
                 for item in raw_labels
                 if isinstance(item, dict) and isinstance(item.get("name"), str)
             )
-        issues.append(RemoteIssue(
-            number=number,
-            title=str(entry.get("title") or f"issue #{number}"),
-            body=str(entry.get("body") or ""),
-            url=str(entry.get("url") or ""),
-            labels=labels,
-        ))
+        issues.append(
+            RemoteIssue(
+                number=number,
+                title=str(entry.get("title") or f"issue #{number}"),
+                body=str(entry.get("body") or ""),
+                url=str(entry.get("url") or ""),
+                labels=labels,
+            )
+        )
     # Oldest first: FIFO across the remote inbox, matching the queue's own
     # ordering within a priority band. The poll ALSO asks GitHub to sort
     # ascending - sorting a truncated page cannot establish FIFO on its
@@ -426,12 +420,16 @@ def poll_queued(
     page = limit if limit > 0 else max(POLL_PAGE_SIZE, config.max_items_per_sync)
     result = run_gh(
         [
-            "issue", "list",
-            "--repo", repo,
+            "issue",
+            "list",
+            "--repo",
+            repo,
             "--search",
             f'label:"{config.queued_label}" state:open sort:created-asc',
-            "--limit", str(page),
-            "--json", "number,title,body,url,labels",
+            "--limit",
+            str(page),
+            "--json",
+            "number,title,body,url,labels",
         ],
         timeout=config.timeout_seconds,
         cwd=root_dir,
@@ -480,10 +478,7 @@ class ProcessedLedger:
             self._entries = {}
             return self
         if isinstance(data, dict) and isinstance(data.get("processed"), dict):
-            self._entries = {
-                str(k): v for k, v in data["processed"].items()
-                if isinstance(v, dict)
-            }
+            self._entries = {str(k): v for k, v in data["processed"].items() if isinstance(v, dict)}
         else:
             self._entries = {}
         return self
@@ -517,8 +512,10 @@ class ProcessedLedger:
                 path,
                 json.dumps(
                     {"version": 1, "processed": self._entries},
-                    indent=2, ensure_ascii=False,
-                ) + "\n",
+                    indent=2,
+                    ensure_ascii=False,
+                )
+                + "\n",
             )
 
 
@@ -570,7 +567,10 @@ class Authorization:
 
 
 def verify_authorization(
-    config: GitHubIntakeConfig, repo: str, number: int, root_dir: Path,
+    config: GitHubIntakeConfig,
+    repo: str,
+    number: int,
+    root_dir: Path,
 ) -> Authorization:
     """Confirm the issue has not been edited since it was labelled.
 
@@ -584,11 +584,16 @@ def verify_authorization(
         return Authorization(ok=False, reason=f"unusable repo {repo!r}")
     result = run_gh(
         [
-            "api", "graphql",
-            "-f", f"query={_AUTH_QUERY}",
-            "-F", f"owner={owner}",
-            "-F", f"name={name}",
-            "-F", f"number={number}",
+            "api",
+            "graphql",
+            "-f",
+            f"query={_AUTH_QUERY}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"number={number}",
         ],
         timeout=config.timeout_seconds,
         cwd=root_dir,
@@ -602,15 +607,18 @@ def verify_authorization(
         payload = json.loads(result.stdout or "{}")
     except json.JSONDecodeError as exc:
         return Authorization(
-            ok=False, reason=f"unparseable authorization timeline: {exc}",
+            ok=False,
+            reason=f"unparseable authorization timeline: {exc}",
         )
     issue = (
         payload.get("data", {}).get("repository", {}).get("issue")
-        if isinstance(payload, dict) else None
+        if isinstance(payload, dict)
+        else None
     )
     if not isinstance(issue, dict):
         return Authorization(
-            ok=False, reason="authorization timeline had no issue node",
+            ok=False,
+            reason="authorization timeline had no issue node",
         )
 
     nodes = issue.get("timelineItems", {})
@@ -655,7 +663,9 @@ def verify_authorization(
                 ),
             )
     return Authorization(
-        ok=True, actor=actor, labeled_at=latest_at,
+        ok=True,
+        actor=actor,
+        labeled_at=latest_at,
         last_edited_at=edited_at if isinstance(edited_at, str) else "",
     )
 
@@ -719,32 +729,51 @@ def plan_sync(
     for issue in issues:
         ref = issue.source_ref(repo)
         if ledger.contains(ref):
-            planned.append(PlannedIssue(
-                issue, Decision.SKIP_PROCESSED, "already processed",
-            ))
+            planned.append(
+                PlannedIssue(
+                    issue,
+                    Decision.SKIP_PROCESSED,
+                    "already processed",
+                )
+            )
             continue
         if queue.find_by_source_ref(ref) is not None:
-            planned.append(PlannedIssue(
-                issue, Decision.SKIP_IN_QUEUE, "already in the queue",
-            ))
+            planned.append(
+                PlannedIssue(
+                    issue,
+                    Decision.SKIP_IN_QUEUE,
+                    "already in the queue",
+                )
+            )
             continue
         if not issue.body.strip():
-            planned.append(PlannedIssue(
-                issue, Decision.SKIP_EMPTY_BODY,
-                "issue body is empty; nothing to build",
-            ))
+            planned.append(
+                PlannedIssue(
+                    issue,
+                    Decision.SKIP_EMPTY_BODY,
+                    "issue body is empty; nothing to build",
+                )
+            )
             continue
         if admitted >= config.max_items_per_sync:
-            planned.append(PlannedIssue(
-                issue, Decision.SKIP_CAP,
-                f"per-sync cap of {config.max_items_per_sync} reached",
-            ))
+            planned.append(
+                PlannedIssue(
+                    issue,
+                    Decision.SKIP_CAP,
+                    f"per-sync cap of {config.max_items_per_sync} reached",
+                )
+            )
             continue
         auth = authorizer(issue) if authorizer is not None else None
         if auth is not None and not auth.ok:
-            planned.append(PlannedIssue(
-                issue, Decision.REFUSE_UNAUTHORIZED, auth.reason, auth,
-            ))
+            planned.append(
+                PlannedIssue(
+                    issue,
+                    Decision.REFUSE_UNAUTHORIZED,
+                    auth.reason,
+                    auth,
+                )
+            )
             continue
         planned.append(PlannedIssue(issue, Decision.ADMIT, "", auth))
         admitted += 1
@@ -795,9 +824,7 @@ def spec_from_issue(issue: RemoteIssue, repo: str) -> str:
     if len(spec) > MAX_SPEC_CHARS:
         keep = MAX_SPEC_CHARS - len(header) - 80
         spec = (
-            header
-            + body[: max(0, keep)]
-            + "\n\n[truncated by kstrl: issue body exceeded "
+            header + body[: max(0, keep)] + "\n\n[truncated by kstrl: issue body exceeded "
             f"{MAX_SPEC_CHARS} characters]\n"
         )
     return spec
@@ -843,9 +870,13 @@ def apply_state_label(
     target = config.state_label(state)
     remove = [name for name in config.managed_labels if name != target]
     args = [
-        "issue", "edit", str(number),
-        "--repo", repo,
-        "--add-label", target,
+        "issue",
+        "edit",
+        str(number),
+        "--repo",
+        repo,
+        "--add-label",
+        target,
     ]
     for name in remove:
         args.extend(["--remove-label", name])
@@ -933,8 +964,7 @@ def sync(
     local_repo, local_error = checkout_repo(config, root_dir)
     if local_error:
         result.errors = (
-            f"refusing to admit work without confirming the execution "
-            f"repository: {local_error}",
+            f"refusing to admit work without confirming the execution repository: {local_error}",
         )
         return result
     if local_repo.lower() != repo.lower():
@@ -955,7 +985,10 @@ def sync(
     def _authorize(issue: RemoteIssue) -> Authorization:
         if issue.number not in checked:
             checked[issue.number] = verify_authorization(
-                config, repo, issue.number, root_dir,
+                config,
+                repo,
+                issue.number,
+                root_dir,
             )
         return checked[issue.number]
 
@@ -965,7 +998,10 @@ def sync(
     # ---- network phase: NO lock is held here (#189 N1) ----
     for page_limit in poll_ladder(config):
         issues, poll_error, exhausted = poll_queued(
-            config, repo, root_dir, limit=page_limit,
+            config,
+            repo,
+            root_dir,
+            limit=page_limit,
         )
         if poll_error:
             result.errors = (poll_error,)
@@ -973,7 +1009,12 @@ def sync(
         result.polled = len(issues)
         polled_issues = issues
         planned = plan_sync(
-            queue, config, repo, issues, ledger, authorizer=authorizer,
+            queue,
+            config,
+            repo,
+            issues,
+            ledger,
+            authorizer=authorizer,
         )
         admitted = sum(1 for entry in planned if entry.decision.admits)
         # Stop when the cap is filled or there is nothing more to look at.
@@ -988,8 +1029,7 @@ def sync(
         # Planned, reported, nothing written. The CLI's --dry-run uses the
         # same planner, so the two cannot disagree.
         result.would_enqueue = tuple(
-            entry.issue.source_ref(repo) for entry in planned
-            if entry.decision.admits
+            entry.issue.source_ref(repo) for entry in planned if entry.decision.admits
         )
         return result
 
@@ -1005,15 +1045,26 @@ def sync(
         # is memoized, so this makes no new requests.
         ledger = ProcessedLedger(root_dir).load()
         planned = plan_sync(
-            queue, config, repo, polled_issues, ledger, authorizer=authorizer,
+            queue,
+            config,
+            repo,
+            polled_issues,
+            ledger,
+            authorizer=authorizer,
         )
         result.planned = tuple(planned)
         result.skipped = {
             entry.issue.source_ref(repo): entry.reason
-            for entry in planned if not entry.decision.admits
+            for entry in planned
+            if not entry.decision.admits
         }
         enqueued, errors = _commit_admissions(
-            queue, config, repo, planned, ledger, stamp,
+            queue,
+            config,
+            repo,
+            planned,
+            ledger,
+            stamp,
         )
 
     result.enqueued = tuple(enqueued)
@@ -1065,13 +1116,8 @@ def _commit_admissions(
                 queue.remove(item, actor="intake-github")
                 undone = "the queued item was rolled back"
             except (QueueError, OSError) as undo_exc:
-                undone = (
-                    f"AND the rollback failed ({undo_exc}); remove "
-                    f"{item.item_id} by hand"
-                )
-            errors.append(
-                f"{ref}: could not record the dedupe entry ({exc}); {undone}"
-            )
+                undone = f"AND the rollback failed ({undo_exc}); remove {item.item_id} by hand"
+            errors.append(f"{ref}: could not record the dedupe entry ({exc}); {undone}")
             continue
 
         enqueued.append(ref)
@@ -1117,23 +1163,24 @@ def _outcome_comment(item: QueueItem, state: str, detail: str) -> str:
     lines = [f"**kstrl: {state}**", ""]
     if detail:
         lines.extend([detail, ""])
-    lines.append(
-        f"Queue item `{item.item_id}` - attempt {item.attempts} of "
-        f"{item.max_attempts}."
-    )
+    lines.append(f"Queue item `{item.item_id}` - attempt {item.attempts} of {item.max_attempts}.")
     if state == "poison":
-        lines.extend([
-            "",
-            "This will NOT be retried automatically. Inspect it with "
-            f"`ks queue show {item.item_id[:12]}` and, if it should run "
-            "again, `ks queue retry --reset-attempts`.",
-        ])
+        lines.extend(
+            [
+                "",
+                "This will NOT be retried automatically. Inspect it with "
+                f"`ks queue show {item.item_id[:12]}` and, if it should run "
+                "again, `ks queue retry --reset-attempts`.",
+            ]
+        )
     elif state == "done":
-        lines.extend([
-            "",
-            "The PR waits for a human merge decision: remote-sourced items "
-            "always stop at the PR.",
-        ])
+        lines.extend(
+            [
+                "",
+                "The PR waits for a human merge decision: remote-sourced items "
+                "always stop at the PR.",
+            ]
+        )
     return "\n".join(lines)
 
 

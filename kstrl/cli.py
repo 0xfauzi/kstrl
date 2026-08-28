@@ -104,7 +104,10 @@ def _console_ui(
     the bus via ``ui.bus`` to attach the run's file sinks.
     """
     return build_console(
-        mode, no_color=no_color, ascii_only=ascii_only, force_rich=force_rich,
+        mode,
+        no_color=no_color,
+        ascii_only=ascii_only,
+        force_rich=force_rich,
     ).ui
 
 
@@ -124,7 +127,10 @@ def _detect_base_branch(cwd: Path) -> str:
     try:
         head_ref = _sp.run(
             ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            cwd=cwd, capture_output=True, text=True, timeout=5,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if head_ref.returncode == 0:
             # "refs/remotes/origin/main" -> "main"
@@ -145,7 +151,8 @@ _AGENT_TYPE_ALIASES = AGENT_TYPE_ALIASES
 
 
 def _agent_preflight(
-    agent_cmd: str | None, agent_type: str | None,
+    agent_cmd: str | None,
+    agent_type: str | None,
 ) -> tuple[str | None, str | None, str | None]:
     """Check that the agent the resolved config selects is reachable.
 
@@ -190,10 +197,8 @@ def _agent_preflight(
         if not ClaudeSdkAgent.is_available():
             return (
                 agent_type,
-                "claude-agent-sdk is not installed "
-                "(config selects agent type 'claude-sdk')",
-                "Install the sdk extra (uv sync --extra sdk), "
-                "or change [agent].type",
+                "claude-agent-sdk is not installed (config selects agent type 'claude-sdk')",
+                "Install the sdk extra (uv sync --extra sdk), or change [agent].type",
             )
         return "claude-sdk", None, None
     if canonical == "codex":
@@ -279,6 +284,7 @@ def _apply_cli_overrides(
     only when the user actually passed them. Returns the KstrlConfig
     field names a flag overrode, for per-value source reporting.
     """
+
     def passed(name: str) -> bool:
         return name in ctx.params and _use_cli_value(ctx, name)
 
@@ -287,9 +293,7 @@ def _apply_cli_overrides(
         config.max_iterations = ctx.params["max_iterations"]
         overridden.add("max_iterations")
     if passed("prompt"):
-        config.prompt_file = _resolve_path(
-            root_dir, ctx.params["prompt"], prompt_default
-        )
+        config.prompt_file = _resolve_path(root_dir, ctx.params["prompt"], prompt_default)
         overridden.add("prompt_file")
     if passed("prd"):
         config.prd_file = _resolve_path(root_dir, ctx.params["prd"], prd_default)
@@ -442,11 +446,7 @@ def cli(ctx: click.Context) -> None:
     # Bare `ks` on a TTY opens the home shell (D1 user decision);
     # everywhere else stays byte-identical to click's no-args behavior
     # (help on stdout, exit 2) - the pipe/CI contract.
-    if (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-    ):
+    if sys.stdout.isatty() and sys.stdin.isatty() and os.environ.get("KSTRL_NO_TUI") != "1":
         from kstrl.tui.home import run_home_shell
 
         ctx.exit(run_home_shell(Path.cwd()))
@@ -515,7 +515,8 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
     help="Project root path (defaults to current directory)",
 )
 @click.option(
-    "--prompt", "-p",
+    "--prompt",
+    "-p",
     type=str,
     help="Prompt file path",
 )
@@ -529,7 +530,8 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
     help="Custom agent command (prompt piped to stdin)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     help="Model for codex agent",
 )
 @click.option(
@@ -537,13 +539,15 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
     help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
-    "--sleep", "-s",
+    "--sleep",
+    "-s",
     type=float,
     default=2.0,
     help="Sleep seconds between iterations",
 )
 @click.option(
-    "--interactive", "-i",
+    "--interactive",
+    "-i",
     is_flag=True,
     help="Enable human-in-the-loop mode",
 )
@@ -580,7 +584,7 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
     "--force-lock",
     is_flag=True,
     help="Proceed even if another kstrl invocation holds "
-         ".kstrl/factory.lock (may corrupt the other run's state)",
+    ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 def run(
     max_iterations: int,
@@ -611,9 +615,7 @@ def run(
     env_prompt = os.environ.get("PROMPT_FILE")
     env_prd = os.environ.get("PRD_FILE")
 
-    prompt_for_root = (
-        Path(prompt) if _use_cli_value(ctx, "prompt") and prompt is not None else None
-    )
+    prompt_for_root = Path(prompt) if _use_cli_value(ctx, "prompt") and prompt is not None else None
     if prompt_for_root is None and env_prompt is not None:
         prompt_for_root = Path(env_prompt)
 
@@ -629,7 +631,9 @@ def run(
 
     # Apply CLI overrides when explicitly provided.
     _apply_cli_overrides(
-        ctx, config, root_dir,
+        ctx,
+        config,
+        root_dir,
         prompt_default=root_dir / "scripts/kstrl/prompt.md",
         prd_default=root_dir / "scripts/kstrl/prd.json",
     )
@@ -645,9 +649,7 @@ def run(
     )
 
     if config.max_iterations < 0:
-        ui_impl.err(
-            f"MAX_ITERATIONS must be non-negative (got: {config.max_iterations})"
-        )
+        ui_impl.err(f"MAX_ITERATIONS must be non-negative (got: {config.max_iterations})")
         sys.exit(2)
 
     # R2.4 preflight: verify the agent the config selects is reachable,
@@ -723,7 +725,11 @@ def run(
     uninstall = install_signal_handlers(stop)
     try:
         factory_result = run_factory(
-            manifest, factory_cfg, config, ui_impl, root_dir,
+            manifest,
+            factory_cfg,
+            config,
+            ui_impl,
+            root_dir,
             manifest_path=root_dir / "scripts" / "kstrl" / "run-manifest.json",
             stop=stop,
         )
@@ -764,7 +770,8 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     help="Project root path (defaults to current directory)",
 )
 @click.option(
-    "--prompt", "-p",
+    "--prompt",
+    "-p",
     type=str,
     help="Prompt file path",
 )
@@ -778,7 +785,8 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     help="Custom agent command",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     help="Model for codex agent",
 )
 @click.option(
@@ -786,13 +794,15 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
-    "--sleep", "-s",
+    "--sleep",
+    "-s",
     type=float,
     default=2.0,
     help="Sleep seconds between iterations",
 )
 @click.option(
-    "--interactive", "-i",
+    "--interactive",
+    "-i",
     is_flag=True,
     help="Enable human-in-the-loop mode",
 )
@@ -825,7 +835,7 @@ def init(directory: Path, ui: str, no_color: bool) -> None:
     "tui",
     default=None,
     help="Embedded dashboard (default: auto - on when stdin/stdout are "
-         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
 )
 def understand(
     max_iterations: int,
@@ -857,9 +867,7 @@ def understand(
     env_prompt = os.environ.get("PROMPT_FILE")
     env_prd = os.environ.get("PRD_FILE")
 
-    prompt_for_root = (
-        Path(prompt) if _use_cli_value(ctx, "prompt") and prompt is not None else None
-    )
+    prompt_for_root = Path(prompt) if _use_cli_value(ctx, "prompt") and prompt is not None else None
     if prompt_for_root is None and env_prompt is not None:
         prompt_for_root = Path(env_prompt)
 
@@ -875,6 +883,7 @@ def understand(
     codebase_map = kstrl_dir / "codebase_map.md"
     if not codebase_map.exists():
         from kstrl.init_cmd import DEFAULT_CODEBASE_MAP
+
         codebase_map.parent.mkdir(parents=True, exist_ok=True)
         codebase_map.write_text(DEFAULT_CODEBASE_MAP)
 
@@ -884,13 +893,9 @@ def understand(
     if _use_cli_value(ctx, "max_iterations"):
         config.max_iterations = max_iterations
     if _use_cli_value(ctx, "prompt"):
-        config.prompt_file = _resolve_path(
-            root_dir, prompt, kstrl_dir / "understand_prompt.md"
-        )
+        config.prompt_file = _resolve_path(root_dir, prompt, kstrl_dir / "understand_prompt.md")
     if _use_cli_value(ctx, "prd"):
-        config.prd_file = _resolve_path(
-            root_dir, prd, kstrl_dir / "prd.json"
-        )
+        config.prd_file = _resolve_path(root_dir, prd, kstrl_dir / "prd.json")
     if _use_cli_value(ctx, "sleep"):
         config.sleep_seconds = sleep
     if _use_cli_value(ctx, "interactive"):
@@ -940,9 +945,7 @@ def understand(
     )
 
     if config.max_iterations < 0:
-        ui_impl.err(
-            f"MAX_ITERATIONS must be non-negative (got: {config.max_iterations})"
-        )
+        ui_impl.err(f"MAX_ITERATIONS must be non-negative (got: {config.max_iterations})")
         sys.exit(2)
 
     # R2.4 preflight: accept whichever agent the resolved config selects.
@@ -955,16 +958,23 @@ def understand(
             "settings cannot be applied to it and are ignored"
         )
     agent = get_agent(
-        config.agent_cmd, config.model, config.model_reasoning_effort,
-        config.agent_type, sandbox=sandbox_cfg,
+        config.agent_cmd,
+        config.model,
+        config.model_reasoning_effort,
+        config.agent_type,
+        sandbox=sandbox_cfg,
         max_budget_usd=config.agent_budget_usd,
     )
 
-    use_tui = tui if tui is not None else (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-        and config.ui_mode != "plain"
+    use_tui = (
+        tui
+        if tui is not None
+        else (
+            sys.stdout.isatty()
+            and sys.stdin.isatty()
+            and os.environ.get("KSTRL_NO_TUI") != "1"
+            and config.ui_mode != "plain"
+        )
     )
     if use_tui:
         if not (sys.stdout.isatty() and sys.stdin.isatty()):
@@ -981,12 +991,18 @@ def understand(
 
         def _target(embed_ctx: EmbeddedContext) -> int:
             command_run = open_command_run(
-                embed_ctx.ui, root_dir, "understand",
-                component="understand", run_id=embed_ctx.run_id,
+                embed_ctx.ui,
+                root_dir,
+                "understand",
+                component="understand",
+                run_id=embed_ctx.run_id,
             )
             try:
                 return _understand_core(
-                    config, agent, root_dir, embed_ctx.ui,
+                    config,
+                    agent,
+                    root_dir,
+                    embed_ctx.ui,
                     run=command_run,
                     interaction=embed_ctx.channel,
                     stop_check=embed_ctx.stop.is_set,
@@ -994,21 +1010,31 @@ def understand(
             finally:
                 command_run.close()
 
-        sys.exit(run_embedded(
-            _target, root_dir=root_dir,
-            run_id=mint_run_id("understand"),
-            screen_factory=lambda: [
-                OverviewScreen(observe_only=False),
-                ComponentScreen("understand"),
-            ],
-        ))
+        sys.exit(
+            run_embedded(
+                _target,
+                root_dir=root_dir,
+                run_id=mint_run_id("understand"),
+                screen_factory=lambda: [
+                    OverviewScreen(observe_only=False),
+                    ComponentScreen("understand"),
+                ],
+            )
+        )
 
     command_run = open_command_run(
-        ui_impl, root_dir, "understand", component="understand",
+        ui_impl,
+        root_dir,
+        "understand",
+        component="understand",
     )
     try:
         code = _understand_core(
-            config, agent, root_dir, ui_impl, run=command_run,
+            config,
+            agent,
+            root_dir,
+            ui_impl,
+            run=command_run,
         )
     finally:
         command_run.close()
@@ -1041,15 +1067,18 @@ def _understand_core(
 
     started = time.monotonic()
     bus.emit(RunStarted(project=root_dir.name, components=1))
-    bus.emit(RunPlan(components=(
-        {"id": component, "title": "Codebase understanding", "deps": []},
-    )))
+    bus.emit(
+        RunPlan(components=({"id": component, "title": "Codebase understanding", "deps": []},))
+    )
     bus.emit(ComponentStarted(component=component))
     bus.emit(PhaseStarted(component=component, phase="understand", attempt=1))
 
     try:
         result = run_loop(
-            config, ui_impl, loop_agent, root_dir,
+            config,
+            ui_impl,
+            loop_agent,
+            root_dir,
             timeouts=TimeoutConfig.load(root_dir),
             breaker_config=BreakerConfig.load(root_dir),
             bus=bus,
@@ -1059,28 +1088,39 @@ def _understand_core(
     except Exception as exc:
         duration = round(time.monotonic() - started, 2)
         detail = f"{type(exc).__name__}: {exc}"
-        bus.emit(PhaseCompleted(
-            component=component, phase="understand", passed=False,
-            detail=detail, duration_seconds=duration,
-        ))
+        bus.emit(
+            PhaseCompleted(
+                component=component,
+                phase="understand",
+                passed=False,
+                detail=detail,
+                duration_seconds=duration,
+            )
+        )
         bus.emit(ComponentFailed(component=component, error=detail))
-        bus.emit(RunCompleted(
-            completed=0, failed=1, duration_seconds=duration,
-        ))
+        bus.emit(
+            RunCompleted(
+                completed=0,
+                failed=1,
+                duration_seconds=duration,
+            )
+        )
         raise
 
     duration = round(time.monotonic() - started, 2)
     passed = result.completed and result.exit_code == 0
     failure_detail = (
-        f"exit {result.exit_code}"
-        if result.exit_code != 0
-        else "ended before completion"
+        f"exit {result.exit_code}" if result.exit_code != 0 else "ended before completion"
     )
-    bus.emit(PhaseCompleted(
-        component=component, phase="understand", passed=passed,
-        detail="" if passed else failure_detail,
-        duration_seconds=duration,
-    ))
+    bus.emit(
+        PhaseCompleted(
+            component=component,
+            phase="understand",
+            passed=passed,
+            detail="" if passed else failure_detail,
+            duration_seconds=duration,
+        )
+    )
     if passed:
         map_path = config.codebase_map_file
         try:
@@ -1088,20 +1128,27 @@ def _understand_core(
         except ValueError:
             map_display = str(map_path)
         bus.emit(ArtifactWritten(label="codebase_map", path=map_display))
-        bus.emit(ComponentCompleted(
-            component=component, duration_seconds=duration,
-            iterations=result.iterations,
-        ))
+        bus.emit(
+            ComponentCompleted(
+                component=component,
+                duration_seconds=duration,
+                iterations=result.iterations,
+            )
+        )
     else:
-        bus.emit(ComponentFailed(
-            component=component,
-            error=f"understand loop {failure_detail}",
-        ))
-    bus.emit(RunCompleted(
-        completed=1 if passed else 0,
-        failed=0 if passed else 1,
-        duration_seconds=duration,
-    ))
+        bus.emit(
+            ComponentFailed(
+                component=component,
+                error=f"understand loop {failure_detail}",
+            )
+        )
+    bus.emit(
+        RunCompleted(
+            completed=1 if passed else 0,
+            failed=0 if passed else 1,
+            duration_seconds=duration,
+        )
+    )
     return result.exit_code
 
 
@@ -1122,7 +1169,8 @@ def _understand_core(
     help="Iterations for the feature understanding phase",
 )
 @click.option(
-    "--understand-prompt", "-p",
+    "--understand-prompt",
+    "-p",
     type=str,
     help="Prompt file path for feature understanding",
 )
@@ -1131,7 +1179,8 @@ def _understand_core(
     help="Custom agent command (prompt piped to stdin)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     help="Model for codex agent",
 )
 @click.option(
@@ -1139,13 +1188,15 @@ def _understand_core(
     help="Reasoning effort (low, medium, high, max)",
 )
 @click.option(
-    "--sleep", "-s",
+    "--sleep",
+    "-s",
     type=float,
     default=2.0,
     help="Sleep seconds between iterations",
 )
 @click.option(
-    "--interactive", "-i",
+    "--interactive",
+    "-i",
     is_flag=True,
     help="Enable human-in-the-loop mode",
 )
@@ -1199,7 +1250,7 @@ def _understand_core(
     "tui",
     default=None,
     help="Embedded dashboard (default: auto - on when stdin/stdout are "
-         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
 )
 def feature(
     root: Path | None,
@@ -1290,30 +1341,24 @@ def feature(
     if _use_cli_value(ctx, "understand_iterations"):
         if understand_iterations is None or understand_iterations < 0:
             ui_impl.err(
-                "UNDERSTAND_ITERATIONS must be non-negative "
-                f"(got: {understand_iterations})"
+                f"UNDERSTAND_ITERATIONS must be non-negative (got: {understand_iterations})"
             )
             sys.exit(2)
         understand_iterations_value = understand_iterations
     else:
         if base_config.max_iterations < 0:
             ui_impl.err(
-                "UNDERSTAND_ITERATIONS must be non-negative "
-                f"(got: {base_config.max_iterations})"
+                f"UNDERSTAND_ITERATIONS must be non-negative (got: {base_config.max_iterations})"
             )
             sys.exit(2)
         understand_iterations_value = base_config.max_iterations
 
     if repair_max_runs < 0:
-        ui_impl.err(
-            f"REPAIR_MAX_RUNS must be non-negative (got: {repair_max_runs})"
-        )
+        ui_impl.err(f"REPAIR_MAX_RUNS must be non-negative (got: {repair_max_runs})")
         sys.exit(2)
 
     if repair_iterations < 0:
-        ui_impl.err(
-            f"REPAIR_ITERATIONS must be non-negative (got: {repair_iterations})"
-        )
+        ui_impl.err(f"REPAIR_ITERATIONS must be non-negative (got: {repair_iterations})")
         sys.exit(2)
 
     if _use_cli_value(ctx, "prd"):
@@ -1351,8 +1396,6 @@ def feature(
 
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(base_config, ui_impl)
-
-
 
     sandbox_cfg = SandboxConfig.load(root_dir)
     if sandbox_cfg.enabled and base_config.agent_cmd:
@@ -1400,11 +1443,15 @@ def feature(
         sandbox=sandbox_cfg,
     )
 
-    use_tui = tui if tui is not None else (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-        and base_config.ui_mode != "plain"
+    use_tui = (
+        tui
+        if tui is not None
+        else (
+            sys.stdout.isatty()
+            and sys.stdin.isatty()
+            and os.environ.get("KSTRL_NO_TUI") != "1"
+            and base_config.ui_mode != "plain"
+        )
     )
     if use_tui:
         if not (sys.stdout.isatty() and sys.stdin.isatty()):
@@ -1421,12 +1468,19 @@ def feature(
 
         def _target(embed_ctx: EmbeddedContext) -> int:
             command_run = open_command_run(
-                embed_ctx.ui, root_dir, "feature",
-                component=feature_name, run_id=embed_ctx.run_id,
+                embed_ctx.ui,
+                root_dir,
+                "feature",
+                component=feature_name,
+                run_id=embed_ctx.run_id,
             )
             try:
                 return run_feature(
-                    params, base_config, agent, embed_ctx.ui, root_dir,
+                    params,
+                    base_config,
+                    agent,
+                    embed_ctx.ui,
+                    root_dir,
                     interaction=embed_ctx.channel,
                     run=command_run,
                     stop_check=embed_ctx.stop.is_set,
@@ -1434,21 +1488,31 @@ def feature(
             finally:
                 command_run.close()
 
-        sys.exit(run_embedded(
-            _target, root_dir=root_dir,
-            run_id=mint_run_id("feature"),
-            screen_factory=lambda: [
-                OverviewScreen(observe_only=False),
-                ComponentScreen(feature_name),
-            ],
-        ))
+        sys.exit(
+            run_embedded(
+                _target,
+                root_dir=root_dir,
+                run_id=mint_run_id("feature"),
+                screen_factory=lambda: [
+                    OverviewScreen(observe_only=False),
+                    ComponentScreen(feature_name),
+                ],
+            )
+        )
 
     command_run = open_command_run(
-        ui_impl, root_dir, "feature", component=feature_name,
+        ui_impl,
+        root_dir,
+        "feature",
+        component=feature_name,
     )
     try:
         code = run_feature(
-            params, base_config, agent, ui_impl, root_dir,
+            params,
+            base_config,
+            agent,
+            ui_impl,
+            root_dir,
             run=command_run,
         )
     finally:
@@ -1491,7 +1555,8 @@ def feature(
     help="Custom agent command (prompt piped to stdin)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     help="Model for the agent",
 )
 @click.option(
@@ -1520,7 +1585,7 @@ def feature(
     "tui",
     default=None,
     help="Embedded dashboard (default: auto - on when stdin/stdout are "
-         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
 )
 def decompose(
     spec: Path,
@@ -1547,11 +1612,11 @@ def decompose(
     effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
     effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
     effective_reasoning = (
-        reasoning if _use_cli_value(ctx, "reasoning")
-        else os.environ.get("MODEL_REASONING_EFFORT")
+        reasoning if _use_cli_value(ctx, "reasoning") else os.environ.get("MODEL_REASONING_EFFORT")
     )
     effective_type = (
-        agent_type if _use_cli_value(ctx, "agent_type")
+        agent_type
+        if _use_cli_value(ctx, "agent_type")
         else os.environ.get("KSTRL_AGENT_TYPE", "auto")
     )
 
@@ -1559,7 +1624,8 @@ def decompose(
     # "claude" before get_agent, whose unrecognized-type fallthrough is
     # codex; the preflight also covers the no-agent-available check.
     canonical_type, type_error, type_hint = _agent_preflight(
-        effective_cmd, effective_type,
+        effective_cmd,
+        effective_type,
     )
     if type_error:
         ui_impl.err(type_error)
@@ -1596,11 +1662,15 @@ def decompose(
             core_ui.err(str(exc))
             return 1
 
-    use_tui = tui if tui is not None else (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-        and _normalize_ui_mode(ui) != "plain"
+    use_tui = (
+        tui
+        if tui is not None
+        else (
+            sys.stdout.isatty()
+            and sys.stdin.isatty()
+            and os.environ.get("KSTRL_NO_TUI") != "1"
+            and _normalize_ui_mode(ui) != "plain"
+        )
     )
     if use_tui:
         if not (sys.stdout.isatty() and sys.stdin.isatty()):
@@ -1616,24 +1686,34 @@ def decompose(
 
         def _target(embed_ctx: EmbeddedContext) -> int:
             command_run = open_command_run(
-                embed_ctx.ui, root_dir, "decompose",
-                component="architect", run_id=embed_ctx.run_id,
+                embed_ctx.ui,
+                root_dir,
+                "decompose",
+                component="architect",
+                run_id=embed_ctx.run_id,
             )
             try:
                 return _decompose_core(embed_ctx.ui, command_run)
             finally:
                 command_run.close()
 
-        sys.exit(run_embedded(
-            _target, root_dir=root_dir,
-            run_id=mint_run_id("decompose"),
-            screen_factory=initial_screens_for_kind(
-                "decompose", observe_only=False,
-            ),
-        ))
+        sys.exit(
+            run_embedded(
+                _target,
+                root_dir=root_dir,
+                run_id=mint_run_id("decompose"),
+                screen_factory=initial_screens_for_kind(
+                    "decompose",
+                    observe_only=False,
+                ),
+            )
+        )
 
     command_run = open_command_run(
-        ui_impl, root_dir, "decompose", component="architect",
+        ui_impl,
+        root_dir,
+        "decompose",
+        component="architect",
     )
     try:
         code = _decompose_core(ui_impl, command_run)
@@ -1646,10 +1726,7 @@ def decompose(
 @click.option(
     "--spec",
     type=click.Path(exists=True, path_type=Path),
-    help=(
-        "Markdown spec file or SpecKit artifact directory "
-        "(runs decompose first)"
-    ),
+    help=("Markdown spec file or SpecKit artifact directory (runs decompose first)"),
 )
 @click.option(
     "--manifest",
@@ -1743,8 +1820,7 @@ def decompose(
     "--review-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
     default=None,
-    help="Phase 2 review: hard (block), advisory (warn), skip "
-         "(default: hard)",
+    help="Phase 2 review: hard (block), advisory (warn), skip (default: hard)",
 )
 @click.option(
     "--review-agent-cmd",
@@ -1759,31 +1835,28 @@ def decompose(
     type=click.Choice(["hard", "advisory", "skip"]),
     default=None,
     help="Phase 2.5 security review: hard (block on critical+high), "
-         "advisory (warn only), skip (default - opt in explicitly)",
+    "advisory (warn only), skip (default - opt in explicitly)",
 )
 @click.option(
     "--security-agent-cmd",
-    help="Custom agent for security reviewer "
-         "(default: same as implementation agent)",
+    help="Custom agent for security reviewer (default: same as implementation agent)",
 )
 @click.option(
     "--security-model",
-    help="Model for security reviewer agent "
-         "(default: same as implementation agent)",
+    help="Model for security reviewer agent (default: same as implementation agent)",
 )
 @click.option(
     "--security-fail-threshold",
     type=click.Choice(["critical", "high", "medium", "low"]),
     default=None,
     help="In hard mode, findings at or above this severity block "
-         "(default: high - critical+high fail)",
+    "(default: high - critical+high fail)",
 )
 @click.option(
     "--contract-check",
     type=click.Choice(["tier", "final", "skip"]),
     default=None,
-    help="Phase 3 contract testing: tier (per-tier), final (end-only), "
-         "skip (default: tier)",
+    help="Phase 3 contract testing: tier (per-tier), final (end-only), skip (default: tier)",
 )
 @click.option(
     "--contract-test-cmd",
@@ -1794,65 +1867,65 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
-         "(default: 1800, or KSTRL_TIMEOUT_AGENT_ITERATION / "
-         "[timeout].agent_iteration in kstrl.toml)",
+    "(default: 1800, or KSTRL_TIMEOUT_AGENT_ITERATION / "
+    "[timeout].agent_iteration in kstrl.toml)",
 )
 @click.option(
     "--component-timeout",
     type=float,
     default=None,
     help="Timeout per component total in seconds; 0 disables "
-         "(default: 7200, or KSTRL_TIMEOUT_COMPONENT / "
-         "[timeout].component_total in kstrl.toml)",
+    "(default: 7200, or KSTRL_TIMEOUT_COMPONENT / "
+    "[timeout].component_total in kstrl.toml)",
 )
 @click.option(
     "--max-adversarial-calls",
     type=int,
     default=None,
     help="Hard cap on adversarial LLM calls (review + security + "
-         "distill) per run; 0 = unbounded (default: 0, or "
-         "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS / "
-         "[factory].max_adversarial_calls in kstrl.toml)",
+    "distill) per run; 0 = unbounded (default: 0, or "
+    "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS / "
+    "[factory].max_adversarial_calls in kstrl.toml)",
 )
 @click.option(
     "--max-total-tokens",
     type=int,
     default=None,
     help="Run-level token budget across ALL phases (engineer + review "
-         "+ security + distill); 0 = unbounded. Counts CACHE READS at "
-         "par, so it is a poor proxy for spend - prefer --max-cost-usd. "
-         "On breach the current component fails with a synthetic budget "
-         "finding and pending components halt (default: 0, or "
-         "KSTRL_FACTORY_MAX_TOTAL_TOKENS "
-         "/ [factory].max_total_tokens in kstrl.toml)",
+    "+ security + distill); 0 = unbounded. Counts CACHE READS at "
+    "par, so it is a poor proxy for spend - prefer --max-cost-usd. "
+    "On breach the current component fails with a synthetic budget "
+    "finding and pending components halt (default: 0, or "
+    "KSTRL_FACTORY_MAX_TOTAL_TOKENS "
+    "/ [factory].max_total_tokens in kstrl.toml)",
 )
 @click.option(
     "--max-cost-usd",
     type=float,
     default=None,
     help="Run-level USD budget across ALL phases; 0 = unbounded. "
-         "Checked between engineer iterations and at phase boundaries, "
-         "so it is NOT a hard cap: the iteration already in flight is "
-         "unbounded. Distinct from [agent] budget_usd, which is "
-         "adapter-internal (claude-sdk only). Default: 0, or "
-         "KSTRL_FACTORY_MAX_COST_USD / [factory].max_cost_usd in "
-         "kstrl.toml",
+    "Checked between engineer iterations and at phase boundaries, "
+    "so it is NOT a hard cap: the iteration already in flight is "
+    "unbounded. Distinct from [agent] budget_usd, which is "
+    "adapter-internal (claude-sdk only). Default: 0, or "
+    "KSTRL_FACTORY_MAX_COST_USD / [factory].max_cost_usd in "
+    "kstrl.toml",
 )
 @click.option(
     "--pause-before-pr-merge/--no-pause-before-pr-merge",
     default=None,
     help="Pause for human approval before each component's PR "
-         "push+merge (default: off, or "
-         "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE / "
-         "[factory].pause_before_pr_merge in kstrl.toml)",
+    "push+merge (default: off, or "
+    "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE / "
+    "[factory].pause_before_pr_merge in kstrl.toml)",
 )
 @click.option(
     "--progress-log",
     type=click.Path(path_type=Path),
     help="Path for the JSONL progress log (default: .kstrl/progress.jsonl; "
-         "the log is on by default, disable via "
-         "[factory].progress_log_enabled = false or "
-         "KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)",
+    "the log is on by default, disable via "
+    "[factory].progress_log_enabled = false or "
+    "KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)",
 )
 @click.option(
     "--no-worktrees",
@@ -1863,18 +1936,19 @@ def decompose(
     "--keep-worktrees-on-failure",
     is_flag=True,
     help="Keep a failed component's worktree for post-mortem instead of "
-         "removing it at cleanup; the failure summary points at it "
-         "(default: off, or KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
-         "[factory].keep_worktrees_on_failure in kstrl.toml)",
+    "removing it at cleanup; the failure summary points at it "
+    "(default: off, or KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+    "[factory].keep_worktrees_on_failure in kstrl.toml)",
 )
 @click.option(
     "--force-lock",
     is_flag=True,
     help="Proceed even if another kstrl invocation holds "
-         ".kstrl/factory.lock (may corrupt the other run's state)",
+    ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
-    "--yes", "-y",
+    "--yes",
+    "-y",
     is_flag=True,
     help="Skip confirmation prompt",
 )
@@ -1883,7 +1957,8 @@ def decompose(
     help="Custom agent command (prompt piped to stdin)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     help="Model for the agent",
 )
 @click.option(
@@ -1897,7 +1972,8 @@ def decompose(
     help="Agent type",
 )
 @click.option(
-    "--sleep", "-s",
+    "--sleep",
+    "-s",
     type=float,
     default=2.0,
     help="Sleep seconds between iterations",
@@ -1918,7 +1994,7 @@ def decompose(
     "tui",
     default=None,
     help="Embedded dashboard (default: auto - on when stdin/stdout are "
-         "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
+    "TTYs and --ui is not plain; KSTRL_NO_TUI=1 forces off)",
 )
 def factory(
     tui: bool | None,
@@ -1987,11 +2063,11 @@ def factory(
     effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
     effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
     effective_reasoning = (
-        reasoning if _use_cli_value(ctx, "reasoning")
-        else os.environ.get("MODEL_REASONING_EFFORT")
+        reasoning if _use_cli_value(ctx, "reasoning") else os.environ.get("MODEL_REASONING_EFFORT")
     )
     effective_type = (
-        agent_type if _use_cli_value(ctx, "agent_type")
+        agent_type
+        if _use_cli_value(ctx, "agent_type")
         else os.environ.get("KSTRL_AGENT_TYPE", "auto")
     )
 
@@ -1999,7 +2075,8 @@ def factory(
     # "claude" before get_agent, whose unrecognized-type fallthrough is
     # codex; the preflight also covers the no-agent-available check.
     canonical_type, type_error, type_hint = _agent_preflight(
-        effective_cmd, effective_type,
+        effective_cmd,
+        effective_type,
     )
     if type_error:
         ui_impl.err(type_error)
@@ -2077,7 +2154,10 @@ def factory(
 
     # factory_config was loaded in the budget preflight above.
     _collect_toml_notes(
-        toml_notes, "factory", factory_config, FactoryConfig.from_env(),
+        toml_notes,
+        "factory",
+        factory_config,
+        FactoryConfig.from_env(),
         flag_overridden={
             name
             for name, passed in (
@@ -2136,7 +2216,10 @@ def factory(
     if not no_verify:
         v_config = VerifyConfig.load(root_dir)
         _collect_toml_notes(
-            toml_notes, "verify", v_config, VerifyConfig.from_env(),
+            toml_notes,
+            "verify",
+            v_config,
+            VerifyConfig.from_env(),
             flag_overridden={
                 name
                 for name, passed in (
@@ -2168,7 +2251,10 @@ def factory(
 
     s_config = SecurityConfig.load(root_dir)
     _collect_toml_notes(
-        toml_notes, "security", s_config, SecurityConfig.from_env(),
+        toml_notes,
+        "security",
+        s_config,
+        SecurityConfig.from_env(),
         flag_overridden={
             name
             for name, passed in (
@@ -2195,7 +2281,10 @@ def factory(
     cli_contract_cmd = contract_test_cmd or test_command
     contract_resolved = ContractConfig.load(root_dir)
     _collect_toml_notes(
-        toml_notes, "contract", contract_resolved, ContractConfig.from_env(),
+        toml_notes,
+        "contract",
+        contract_resolved,
+        ContractConfig.from_env(),
         flag_overridden={
             name
             for name, passed in (
@@ -2216,21 +2305,30 @@ def factory(
 
     ff_config = FeedforwardConfig.load(root_dir)
     _collect_toml_notes(
-        toml_notes, "feedforward", ff_config, FeedforwardConfig.from_env(),
+        toml_notes,
+        "feedforward",
+        ff_config,
+        FeedforwardConfig.from_env(),
         flag_overridden=set(),
     )
 
     # Evolution config is consumed inside run_factory via
     # EvolutionConfig.load(root_dir); loaded here only for the NOTE sweep.
     _collect_toml_notes(
-        toml_notes, "evolution", EvolutionConfig.load(root_dir),
-        EvolutionConfig.from_env(root_dir), flag_overridden=set(),
+        toml_notes,
+        "evolution",
+        EvolutionConfig.load(root_dir),
+        EvolutionConfig.from_env(root_dir),
+        flag_overridden=set(),
     )
 
     # R0.1: TimeoutConfig is the single source for timeout values.
     timeout_config = TimeoutConfig.load(root_dir)
     _collect_toml_notes(
-        toml_notes, "timeout", timeout_config, TimeoutConfig.from_env(),
+        toml_notes,
+        "timeout",
+        timeout_config,
+        TimeoutConfig.from_env(),
         flag_overridden={
             name
             for name, passed in (
@@ -2278,12 +2376,14 @@ def factory(
 
     _factory_channel = UiInteractionChannel(ui_impl)
     if not yes and _factory_channel.can_prompt():
-        response = _factory_channel.request(PromptRequest(
-            kind=PromptKind.CONFIRM,
-            header="Proceed with factory execution?",
-            options=("Start", "Quit"),
-            default=0,
-        ))
+        response = _factory_channel.request(
+            PromptRequest(
+                kind=PromptKind.CONFIRM,
+                header="Proceed with factory execution?",
+                options=("Start", "Quit"),
+                default=0,
+            )
+        )
         if response.answered and response.choice != 0:
             sys.exit(0)
 
@@ -2332,11 +2432,15 @@ def factory(
     # R0.5 (H-15): state saves back to the file it was loaded from.
     # --manifest /custom.json persists to /custom.json; --spec runs keep
     # the default scripts/kstrl/manifest.json that decompose wrote.
-    use_tui = tui if tui is not None else (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-        and _normalize_ui_mode(ui) != "plain"
+    use_tui = (
+        tui
+        if tui is not None
+        else (
+            sys.stdout.isatty()
+            and sys.stdin.isatty()
+            and os.environ.get("KSTRL_NO_TUI") != "1"
+            and _normalize_ui_mode(ui) != "plain"
+        )
     )
     if use_tui:
         if not (sys.stdout.isatty() and sys.stdin.isatty()):
@@ -2351,16 +2455,25 @@ def factory(
         # modal-before-app); everything from here renders in Textual.
         from kstrl.tui.embed import run_factory_embedded
 
-        sys.exit(run_factory_embedded(
-            manifest, factory_config, base_config, root_dir,
-            manifest_path,
-        ))
+        sys.exit(
+            run_factory_embedded(
+                manifest,
+                factory_config,
+                base_config,
+                root_dir,
+                manifest_path,
+            )
+        )
 
     stop = StopController()
     uninstall = install_signal_handlers(stop)
     try:
         result = run_factory(
-            manifest, factory_config, base_config, ui_impl, root_dir,
+            manifest,
+            factory_config,
+            base_config,
+            ui_impl,
+            root_dir,
             manifest_path=manifest_path,
             stop=stop,
         )
@@ -2437,7 +2550,9 @@ def config_show(
 
     def _overlay(config: KstrlConfig) -> set[str]:
         return _apply_cli_overrides(
-            ctx, config, root_dir,
+            ctx,
+            config,
+            root_dir,
             prompt_default=root_dir / "scripts/kstrl/prompt.md",
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
@@ -2467,7 +2582,7 @@ def config_show(
 
 
 def _age_label(ts: str) -> str:
-    """"5m ago" for an event timestamp, or "" when unparseable."""
+    """ "5m ago" for an event timestamp, or "" when unparseable."""
     age = event_age_seconds(ts)
     if age is None:
         return ""
@@ -2475,7 +2590,7 @@ def _age_label(ts: str) -> str:
 
 
 def _age_label_epoch(ts: float) -> str:
-    """"5m ago" for a float epoch timestamp (reducer times), or ""."""
+    """ "5m ago" for a float epoch timestamp (reducer times), or ""."""
     if ts <= 0:
         return ""
     age = max(0.0, time.time() - ts)
@@ -2502,9 +2617,7 @@ def _render_safe_mode(ui_impl: UI, root_dir: Path) -> None:
         return
     ui_impl.kv("safe mode", f"{len(reasons)} reason(s)")
     for reason in reasons:
-        ui_impl.info(
-            f"  - [{reason.source}] {reason.detail} (see {reason.recovery})"
-        )
+        ui_impl.info(f"  - [{reason.source}] {reason.detail} (see {reason.recovery})")
 
 
 def _render_status(
@@ -2528,9 +2641,7 @@ def _render_status(
     ui_impl.kv("Base branch", manifest.base_branch)
 
     if state is not None and source_path is not None:
-        label = (
-            "Events" if source_path.name == "events.jsonl" else "Progress log"
-        )
+        label = "Events" if source_path.name == "events.jsonl" else "Progress log"
         ui_impl.kv(label, str(source_path))
         if state.run_id:
             ui_impl.kv("Run id", state.run_id)
@@ -2555,8 +2666,7 @@ def _render_status(
             ui_impl.kv(
                 "Run usage",
                 f"{state.total_tokens}{token_note} tokens, "
-                f"${state.cost_usd:.4f}{cost_note}"
-                + (f" of {', '.join(caps)}" if caps else ""),
+                f"${state.cost_usd:.4f}{cost_note}" + (f" of {', '.join(caps)}" if caps else ""),
             )
             for gap in state.coverage_gaps.values():
                 # The ceiling's own words, uncovered magnitude in TOKENS.
@@ -2588,12 +2698,14 @@ def _render_status(
         if comp.pr_url:
             pr_note = (
                 f" ({comp_state.pr_state})"
-                if comp_state is not None and comp_state.pr_state else ""
+                if comp_state is not None and comp_state.pr_state
+                else ""
             )
             ui_impl.kv("  pr", f"{comp.pr_url}{pr_note}")
         elif comp_state is not None and comp_state.pr_url:
             ui_impl.kv(
-                "  pr", f"{comp_state.pr_url} ({comp_state.pr_state})",
+                "  pr",
+                f"{comp_state.pr_url} ({comp_state.pr_state})",
             )
         if comp.error:
             ui_impl.kv("  error", comp.error)
@@ -2607,18 +2719,14 @@ def _render_status(
                 age = _age_label_epoch(comp_state.last_event_ts)
                 ui_impl.kv(
                     "  last event",
-                    f"{comp_state.last_event} ({age})"
-                    if age else comp_state.last_event,
+                    f"{comp_state.last_event} ({age})" if age else comp_state.last_event,
                 )
             if comp_state.checkpoint_open:
                 ui_impl.kv(
                     "  checkpoint",
                     f"{comp_state.checkpoint_open} awaiting decision",
                 )
-            if (
-                comp_state.last_heartbeat_ts
-                and comp.status in ("running", "verifying")
-            ):
+            if comp_state.last_heartbeat_ts and comp.status in ("running", "verifying"):
                 ui_impl.kv(
                     "  worker",
                     f"last heartbeat {_age_label_epoch(comp_state.last_heartbeat_ts)}",
@@ -2629,16 +2737,16 @@ def _render_status(
                 # and no token count is not "unreported" but still
                 # leaves the token total short.
                 short = [
-                    name for name, is_short in (
+                    name
+                    for name, is_short in (
                         ("tokens", comp_state.tokens_are_lower_bound),
                         ("cost", comp_state.cost_is_lower_bound),
-                    ) if is_short
+                    )
+                    if is_short
                 ]
                 detail = f"lower bound: {', '.join(short)}" if short else ""
                 if comp_state.unreported_calls:
-                    detail += (
-                        f"; {comp_state.unreported_calls} call(s) unreported"
-                    )
+                    detail += f"; {comp_state.unreported_calls} call(s) unreported"
                 note = f" ({detail})" if detail else ""
                 ui_impl.kv(
                     "  usage",
@@ -2651,7 +2759,8 @@ def _render_status(
         # outputs under .kstrl/debug/).
         if root_dir is not None and state is not None and state.run_id:
             evidence = [
-                path for path in (
+                path
+                for path in (
                     root_dir / ".kstrl" / "worktrees" / state.run_id / comp.id,
                     root_dir / ".kstrl" / "debug" / state.run_id / comp.id,
                 )
@@ -2691,8 +2800,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     root_dir = root.resolve() if root else Path.cwd()
     if not (_sys.stdout.isatty() and _sys.stdin.isatty()):
         click.echo(
-            "ks dash needs a terminal; use `ks status` for "
-            "non-interactive output.",
+            "ks dash needs a terminal; use `ks status` for non-interactive output.",
             err=True,
         )
         _sys.exit(2)
@@ -2713,10 +2821,13 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     from kstrl.tui.dispatch import initial_screens_for_kind
 
     app = KstrlTuiApp(
-        run_dir=ref.run_dir, root_dir=root_dir,
-        mode=Mode.DASH, poll_interval=poll,
+        run_dir=ref.run_dir,
+        root_dir=root_dir,
+        mode=Mode.DASH,
+        poll_interval=poll,
         screen_factory=initial_screens_for_kind(
-            ref.kind, observe_only=True,
+            ref.kind,
+            observe_only=True,
         ),
     )
     try:
@@ -2740,14 +2851,13 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     "manifest_path",
     type=click.Path(path_type=Path),
     help="Manifest file (default: scripts/kstrl/manifest.json, falling "
-         "back to scripts/kstrl/run-manifest.json)",
+    "back to scripts/kstrl/run-manifest.json)",
 )
 @click.option(
     "--progress-log",
     "progress_log_path",
     type=click.Path(path_type=Path),
-    help="Progress log to join onto the manifest "
-         "(default: <root>/.kstrl/progress.jsonl)",
+    help="Progress log to join onto the manifest (default: <root>/.kstrl/progress.jsonl)",
 )
 @click.option(
     "--watch",
@@ -2776,8 +2886,8 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     "tui",
     default=None,
     help="Open the dashboard for the newest run (default: auto - on "
-         "when stdin/stdout are TTYs, --ui is not plain, and --watch "
-         "is not set; KSTRL_NO_TUI=1 forces off)",
+    "when stdin/stdout are TTYs, --ui is not plain, and --watch "
+    "is not set; KSTRL_NO_TUI=1 forces off)",
 )
 def status(
     root: Path | None,
@@ -2807,12 +2917,16 @@ def status(
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
-    use_tui = tui if tui is not None else (
-        sys.stdout.isatty()
-        and sys.stdin.isatty()
-        and os.environ.get("KSTRL_NO_TUI") != "1"
-        and _normalize_ui_mode(ui) != "plain"
-        and not watch
+    use_tui = (
+        tui
+        if tui is not None
+        else (
+            sys.stdout.isatty()
+            and sys.stdin.isatty()
+            and os.environ.get("KSTRL_NO_TUI") != "1"
+            and _normalize_ui_mode(ui) != "plain"
+            and not watch
+        )
     )
     if use_tui:
         from kstrl.tui.runs import latest_run
@@ -2823,9 +2937,12 @@ def status(
             from kstrl.tui.dispatch import initial_screens_for_kind
 
             app = KstrlTuiApp(
-                run_dir=ref.run_dir, root_dir=root_dir, mode=Mode.DASH,
+                run_dir=ref.run_dir,
+                root_dir=root_dir,
+                mode=Mode.DASH,
                 screen_factory=initial_screens_for_kind(
-                    ref.kind, observe_only=True,
+                    ref.kind,
+                    observe_only=True,
                 ),
             )
             try:
@@ -2879,9 +2996,7 @@ def status(
         if manifest_file is None:
             looked = ", ".join(str(p) for p in candidates)
             ui_impl.err(f"No manifest found (looked for: {looked})")
-            ui_impl.info(
-                "Run `ks factory` or `ks run` first, or pass --manifest."
-            )
+            ui_impl.info("Run `ks factory` or `ks run` first, or pass --manifest.")
             # Safe mode does not depend on a manifest, and "nothing has
             # run here" is exactly when an operator wants to know whether
             # the factory is holding back. Withholding the answer on this
@@ -2902,15 +3017,14 @@ def status(
 
         state, source_path = _load_state(manifest)
         _render_status(
-            manifest, manifest_file, ui_impl,
-            state=state, source_path=source_path,
+            manifest,
+            manifest_file,
+            ui_impl,
+            state=state,
+            source_path=source_path,
             root_dir=root_dir,
         )
-        if (
-            source_path is not None
-            and source_path.name == "events.jsonl"
-            and not watch
-        ):
+        if source_path is not None and source_path.name == "events.jsonl" and not watch:
             ui_impl.info("")
             ui_impl.info("Dashboard: ks dash")
         return 0
@@ -2940,9 +3054,11 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     """
     click.echo(f"error: {message}", err=True)
     if as_json:
-        click.echo(json.dumps(
-            {"schema_version": SENSE_SCHEMA_VERSION, "error": message},
-        ))
+        click.echo(
+            json.dumps(
+                {"schema_version": SENSE_SCHEMA_VERSION, "error": message},
+            )
+        )
     sys.exit(2)
 
 
@@ -2950,15 +3066,13 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
 @click.option(
     "--root",
     type=click.Path(path_type=Path),
-    help="Project root; kstrl.toml is read from here "
-         "(defaults to current directory)",
+    help="Project root; kstrl.toml is read from here (defaults to current directory)",
 )
 @click.option(
     "--path",
     "tree_path",
     type=click.Path(path_type=Path),
-    help="Tree to measure: a worktree, a checkout, any directory "
-         "(defaults to --root)",
+    help="Tree to measure: a worktree, a checkout, any directory (defaults to --root)",
 )
 @click.option(
     "--base",
@@ -2966,21 +3080,20 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     type=str,
     default=None,
     help="Base branch for the diff-scope and bad-pattern checks "
-         "(default: the branch origin/HEAD points at, else main)",
+    "(default: the branch origin/HEAD points at, else main)",
 )
 @click.option(
     "--prd",
     "prd_path",
     type=click.Path(path_type=Path),
-    help="PRD file; when given, the prd_stories check and the "
-         "approved-fixtures oracle also run",
+    help="PRD file; when given, the prd_stories check and the approved-fixtures oracle also run",
 )
 @click.option(
     "--allowed-path",
     "allowed_paths",
     multiple=True,
     help="Glob the diff must stay inside (repeatable); when absent "
-         "diff-scope reports no scope constraints",
+    "diff-scope reports no scope constraints",
 )
 @click.option(
     "--json",
@@ -3049,9 +3162,7 @@ def sense(
         verify_cfg = VerifyConfig.load(root_dir)
         policy_cfg = PolicyConfig.load(root_dir)
         adequacy_cfg = AdequacyConfig.load(root_dir)
-        fixtures_cfg = (
-            FixturesConfig.load(root_dir) if prd_path is not None else None
-        )
+        fixtures_cfg = FixturesConfig.load(root_dir) if prd_path is not None else None
     except (OSError, ValueError) as exc:
         # ValueError covers malformed TOML (load_toml_section) and the
         # loaders' own validation errors (PolicyConfigError is one).
@@ -3084,13 +3195,10 @@ def sense(
             _git.get_diff_names(base, path, strict=True)
         except _git.GitDiffError as exc:
             origin = (
-                "from --base"
-                if base_branch
-                else "auto-detected; name the right one with --base"
+                "from --base" if base_branch else "auto-detected; name the right one with --base"
             )
             _sense_error(
-                f"git cannot measure the diff against {base!r} "
-                f"({origin}): {exc}",
+                f"git cannot measure the diff against {base!r} ({origin}): {exc}",
                 as_json,
             )
 
@@ -3177,18 +3285,19 @@ def sense(
     "--keep-worktrees-on-failure",
     is_flag=True,
     help="Keep a failed component's worktree for post-mortem instead of "
-         "removing it at cleanup (also via "
-         "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
-         "[factory].keep_worktrees_on_failure in kstrl.toml)",
+    "removing it at cleanup (also via "
+    "KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE / "
+    "[factory].keep_worktrees_on_failure in kstrl.toml)",
 )
 @click.option(
     "--force-lock",
     is_flag=True,
     help="Proceed even if another kstrl invocation holds "
-         ".kstrl/factory.lock (may corrupt the other run's state)",
+    ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
-    "--yes", "-y",
+    "--yes",
+    "-y",
     is_flag=True,
     help="Skip confirmation prompt",
 )
@@ -3229,7 +3338,8 @@ def retry(
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     manifest_file = (
-        manifest_path if manifest_path is not None
+        manifest_path
+        if manifest_path is not None
         else root_dir / "scripts" / "kstrl" / "manifest.json"
     )
     if not manifest_file.exists():
@@ -3252,12 +3362,14 @@ def retry(
 
     _retry_channel = UiInteractionChannel(ui_impl)
     if not yes and _retry_channel.can_prompt():
-        response = _retry_channel.request(PromptRequest(
-            kind=PromptKind.CONFIRM,
-            header=f"Re-enter the factory to retry '{component_id}'?",
-            options=("Start", "Quit"),
-            default=0,
-        ))
+        response = _retry_channel.request(
+            PromptRequest(
+                kind=PromptKind.CONFIRM,
+                header=f"Re-enter the factory to retry '{component_id}'?",
+                options=("Start", "Quit"),
+                default=0,
+            )
+        )
         if response.answered and response.choice != 0:
             sys.exit(0)
 
@@ -3276,7 +3388,11 @@ def retry(
     uninstall = install_signal_handlers(stop)
     try:
         result = run_factory(
-            manifest, factory_config, base_config, ui_impl, root_dir,
+            manifest,
+            factory_config,
+            base_config,
+            ui_impl,
+            root_dir,
             manifest_path=manifest_file,
             stop=stop,
         )
@@ -3368,7 +3484,11 @@ def evolve(
             ui_impl.err("No proposals found. Run `ks evolve` first.")
             sys.exit(1)
         exit_code = _evolve_apply(
-            apply_id, proposals_dir, root_dir, evo_config, ui_impl,
+            apply_id,
+            proposals_dir,
+            root_dir,
+            evo_config,
+            ui_impl,
         )
         sys.exit(exit_code)
 
@@ -3417,15 +3537,12 @@ def evolve(
         for path in paths:
             ui_impl.info(f"  {path}")
         if already:
-            ui_impl.info(
-                f"  ({already} proposal(s) already on disk; not duplicated)"
-            )
+            ui_impl.info(f"  ({already} proposal(s) already on disk; not duplicated)")
         ui_impl.info("")
         ui_impl.info("Review proposals and apply with `ks evolve --apply <ID>`")
     elif already:
         ui_impl.info(
-            f"All {already} proposal(s) for these patterns already exist "
-            f"in {proposals_dir}."
+            f"All {already} proposal(s) for these patterns already exist in {proposals_dir}."
         )
     else:
         ui_impl.info("No actionable proposals generated from current patterns.")
@@ -3456,10 +3573,7 @@ def _evolve_apply(
     else:
         candidate = proposals_dir / f"{apply_id.lower()}.md"
         if not candidate.exists():
-            ui_impl.err(
-                f"Proposal '{apply_id}' not found "
-                f"(expected {candidate})."
-            )
+            ui_impl.err(f"Proposal '{apply_id}' not found (expected {candidate}).")
             return 1
         paths = [candidate]
 
@@ -3469,9 +3583,7 @@ def _evolve_apply(
         proposal = parse_proposal_file(path)
         pid = proposal.display_id
         if proposal.applied:
-            ui_impl.info(
-                f"{pid} already applied at {proposal.applied}; skipping."
-            )
+            ui_impl.info(f"{pid} already applied at {proposal.applied}; skipping.")
             continue
         if not proposal.is_convention:
             ui_impl.info(f"{pid}: {proposal.title}")
@@ -3492,7 +3604,8 @@ def _evolve_apply(
             # "declined", never a crash.
             try:
                 confirmed = click.confirm(
-                    f"Append this convention to {claude_md}?", default=False,
+                    f"Append this convention to {claude_md}?",
+                    default=False,
                 )
             except click.Abort:
                 ui_impl.info("")
@@ -3501,7 +3614,9 @@ def _evolve_apply(
                 ui_impl.info(f"  {pid} not applied (declined).")
                 continue
         if not _append_to_agent_learnings(
-            claude_md, pid, proposal.convention,
+            claude_md,
+            pid,
+            proposal.convention,
         ):
             ui_impl.err(
                 f"  Could not apply {pid}: {claude_md} is missing or has "
@@ -3542,7 +3657,9 @@ _autonomy_ui_option = click.option(
     help="UI mode",
 )
 _autonomy_no_color_option = click.option(
-    "--no-color", is_flag=True, help="Disable colors",
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
 )
 
 
@@ -3566,7 +3683,10 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     state = AutonomyState.load(root_dir)
     policy_enabled = PolicyConfig.load(root_dir).enabled
     level, clamps = resolve_runtime_level(
-        state, config, policy_enabled=policy_enabled, root_dir=root_dir,
+        state,
+        config,
+        policy_enabled=policy_enabled,
+        root_dir=root_dir,
     )
 
     ui_impl.section("Autonomy")
@@ -3576,7 +3696,8 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
         for note in clamps:
             ui_impl.warn(f"  {note}")
     ui_impl.kv(
-        "enabled", "yes" if config.enabled else "no ([autonomy] enabled=false)",
+        "enabled",
+        "yes" if config.enabled else "no ([autonomy] enabled=false)",
     )
     ui_impl.kv("since", state.since or "-")
     if state.last_promoted_by:
@@ -3597,7 +3718,8 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
     ui_impl.kv("policy violations", str(state.policy_violations_at_level))
     if state.cooldown_runs_remaining:
         ui_impl.kv(
-            "cool-down", f"{state.cooldown_runs_remaining} run(s) remaining",
+            "cool-down",
+            f"{state.cooldown_runs_remaining} run(s) remaining",
         )
 
     blockers = state.promotion_blockers()
@@ -3608,9 +3730,7 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
             ui_impl.info(f"    - {blocker}")
     else:
         ui_impl.ok("  Criteria met; `ks autonomy promote --actor <you> --ack <why>`")
-    ui_impl.info(
-        "  Thresholds are UNMEASURED placeholders; run `ks autonomy replay`."
-    )
+    ui_impl.info("  Thresholds are UNMEASURED placeholders; run `ks autonomy replay`.")
     sys.exit(0)
 
 
@@ -3618,14 +3738,20 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
 @click.option("--actor", required=True, help="Who is acknowledging (a human)")
 @click.option("--ack", required=True, help="Why the evidence justifies promotion")
 @click.option(
-    "--force", is_flag=True,
+    "--force",
+    is_flag=True,
     help="Override unmet criteria (recorded as such in the audit trail)",
 )
 @_autonomy_root_option
 @_autonomy_ui_option
 @_autonomy_no_color_option
 def autonomy_promote(
-    actor: str, ack: str, force: bool, root: Path | None, ui: str, no_color: bool,
+    actor: str,
+    ack: str,
+    force: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Raise the autonomy level by one. Requires a human ack."""
     from kstrl.autonomy import (
@@ -3672,10 +3798,15 @@ def autonomy_promote(
 @click.option("--reason", required=True, help="Why the level is being revoked")
 @click.option(
     "--trigger",
-    type=click.Choice([
-        "policy_violation", "calibration_regression", "health_breach",
-        "human_rejected_auto_merge", "manual",
-    ]),
+    type=click.Choice(
+        [
+            "policy_violation",
+            "calibration_regression",
+            "health_breach",
+            "human_rejected_auto_merge",
+            "manual",
+        ]
+    ),
     default="manual",
     help="Which trigger fired",
 )
@@ -3683,7 +3814,11 @@ def autonomy_promote(
 @_autonomy_ui_option
 @_autonomy_no_color_option
 def autonomy_demote(
-    reason: str, trigger: str, root: Path | None, ui: str, no_color: bool,
+    reason: str,
+    trigger: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Drop the autonomy level by one and start the cool-down."""
     from kstrl.autonomy import AutonomyState, DemotionTrigger, commit_transition
@@ -3692,7 +3827,8 @@ def autonomy_demote(
     ui_impl = _autonomy_ui(ui, no_color)
     state = AutonomyState.load(root_dir)
     chosen = next(
-        (t for t in DemotionTrigger if t.label == trigger), DemotionTrigger.MANUAL,
+        (t for t in DemotionTrigger if t.label == trigger),
+        DemotionTrigger.MANUAL,
     )
     record = state.demote(chosen, reason, actor="operator")
     if record is None:
@@ -3743,7 +3879,10 @@ def autonomy_history(root: Path | None, ui: str, no_color: bool) -> None:
 @_autonomy_ui_option
 @_autonomy_no_color_option
 def autonomy_replay_cmd(
-    root: Path | None, experiments: Path | None, ui: str, no_color: bool,
+    root: Path | None,
+    experiments: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Replay the ladder's thresholds over recorded run history.
 
@@ -3772,15 +3911,20 @@ def inbox_group() -> None:
 
 
 _inbox_root_option = click.option(
-    "--root", type=click.Path(path_type=Path),
+    "--root",
+    type=click.Path(path_type=Path),
     help="Project root path (defaults to current directory)",
 )
 _inbox_ui_option = click.option(
-    "--ui", type=click.Choice(["auto", "rich", "plain", "gum"]),
-    default="auto", help="UI mode",
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
 )
 _inbox_no_color_option = click.option(
-    "--no-color", is_flag=True, help="Disable colors",
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
 )
 
 
@@ -3802,7 +3946,10 @@ def _actor() -> str:
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_ls(
-    show_all: bool, root: Path | None, ui: str, no_color: bool,
+    show_all: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """List items awaiting a decision."""
     from kstrl.inbox import summarize
@@ -3818,10 +3965,7 @@ def inbox_ls(
         marker = {"high": "!", "normal": " ", "low": "."}.get(str(item.priority), " ")
         repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
         state = "" if item.is_open else f" [{item.status}]"
-        ui_impl.info(
-            f"  {marker} {item.id[:8]}  {str(item.kind):<18}"
-            f"{item.title}{repeat}{state}"
-        )
+        ui_impl.info(f"  {marker} {item.id[:8]}  {str(item.kind):<18}{item.title}{repeat}{state}")
     ui_impl.info("")
     ui_impl.kv("summary", summarize(box.items()))
     if box.over_cap():
@@ -3838,7 +3982,10 @@ def inbox_ls(
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_show(
-    item_id: str, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Show one item in full, including its evidence."""
     import json as _json
@@ -3877,8 +4024,13 @@ def inbox_show(
 
 
 def _decide_and_report(
-    action: str, item_id: str, root: Path | None, ui: str, no_color: bool,
-    comment: str = "", hours: float | None = None,
+    action: str,
+    item_id: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+    comment: str = "",
+    hours: float | None = None,
 ) -> None:
     from kstrl.inbox import InboxError
 
@@ -3907,7 +4059,11 @@ def _decide_and_report(
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_approve(
-    item_id: str, comment: str, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    comment: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Accept the exception and close the item."""
     _decide_and_report("approve", item_id, root, ui, no_color, comment=comment)
@@ -3920,7 +4076,11 @@ def inbox_approve(
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_reject(
-    item_id: str, comment: str, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    comment: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Refuse the exception, recording why."""
     _decide_and_report("reject", item_id, root, ui, no_color, comment=comment)
@@ -3933,7 +4093,11 @@ def inbox_reject(
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_snooze(
-    item_id: str, hours: float | None, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    hours: float | None,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Defer an item; it returns when the TTL lapses."""
     _decide_and_report("snooze", item_id, root, ui, no_color, hours=hours)
@@ -3945,7 +4109,10 @@ def inbox_snooze(
 @_inbox_ui_option
 @_inbox_no_color_option
 def inbox_retry(
-    item_id: str, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Requeue the item's component and close the item.
 
@@ -3994,15 +4161,20 @@ def queue_group() -> None:
 
 
 _queue_root_option = click.option(
-    "--root", type=click.Path(path_type=Path),
+    "--root",
+    type=click.Path(path_type=Path),
     help="Project root path (defaults to current directory)",
 )
 _queue_ui_option = click.option(
-    "--ui", type=click.Choice(["auto", "rich", "plain", "gum"]),
-    default="auto", help="UI mode",
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
 )
 _queue_no_color_option = click.option(
-    "--no-color", is_flag=True, help="Disable colors",
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
 )
 
 
@@ -4043,7 +4215,9 @@ def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
     ),
 )
 @click.option(
-    "--max-attempts", type=click.IntRange(min=1), default=None,
+    "--max-attempts",
+    type=click.IntRange(min=1),
+    default=None,
     help="Execution attempts before poisoning (default: [queue] max_attempts)",
 )
 @_queue_root_option
@@ -4069,9 +4243,7 @@ def queue_add(
 
     root_dir, queue = _queue_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
-    disposition = (
-        MergeDisposition.AUTO_MERGE if auto_merge else MergeDisposition.STOP_AT_PR
-    )
+    disposition = MergeDisposition.AUTO_MERGE if auto_merge else MergeDisposition.STOP_AT_PR
     try:
         with queue_lock(root_dir):
             # Under the lock, any staging directory is abandoned by
@@ -4100,14 +4272,19 @@ def queue_add(
 
 @queue_group.command(name="ls")
 @click.option(
-    "--state", "states", multiple=True,
+    "--state",
+    "states",
+    multiple=True,
     help="Filter by state (repeatable): queued/leased/running/done/failed/poison",
 )
 @_queue_root_option
 @_queue_ui_option
 @_queue_no_color_option
 def queue_ls(
-    states: tuple[str, ...], root: Path | None, ui: str, no_color: bool,
+    states: tuple[str, ...],
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """List queue items in run order."""
     from kstrl.workqueue import ItemState, summarize
@@ -4147,7 +4324,10 @@ def queue_ls(
 @_queue_ui_option
 @_queue_no_color_option
 def queue_show(
-    item_id: str, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Show one item in full, with its transition history."""
     _root_dir, queue = _queue_for(root)
@@ -4171,8 +4351,7 @@ def queue_show(
         ui_impl.kv(
             "lease",
             f"pid {item.lease_pid} on {item.lease_host} "
-            f"until {item.lease_expires_at}"
-            + (" (EXPIRED)" if item.lease_expired() else ""),
+            f"until {item.lease_expires_at}" + (" (EXPIRED)" if item.lease_expired() else ""),
         )
     if item.last_error:
         ui_impl.kv("last error", item.last_error)
@@ -4196,7 +4375,8 @@ def queue_show(
 @queue_group.command(name="retry")
 @click.argument("item_id")
 @click.option(
-    "--reset-attempts", is_flag=True,
+    "--reset-attempts",
+    is_flag=True,
     help="Zero the attempt counter (explicit human decision to spend again)",
 )
 @_queue_root_option
@@ -4223,8 +4403,7 @@ def queue_retry(
     item = _resolve_queue_item(queue, item_id, ui_impl)
     if item.state not in (ItemState.FAILED, ItemState.POISON):
         ui_impl.err(
-            f"{item.item_id[:12]} is {item.state}; only failed or poisoned "
-            "items can be retried"
+            f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
         )
         sys.exit(1)
     if not reset_attempts and item.attempts_remaining == 0:
@@ -4236,16 +4415,15 @@ def queue_retry(
     try:
         with queue_lock(root_dir):
             queue.requeue(
-                item, reason="retry (manual)", actor=_actor(),
+                item,
+                reason="retry (manual)",
+                actor=_actor(),
                 reset_attempts=reset_attempts,
             )
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
         sys.exit(1)
-    ui_impl.ok(
-        f"Requeued {item.item_id[:12]} "
-        f"({item.attempts}/{item.max_attempts} attempts used)"
-    )
+    ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
     sys.exit(0)
 
 
@@ -4256,7 +4434,11 @@ def queue_retry(
 @_queue_ui_option
 @_queue_no_color_option
 def queue_rm(
-    item_id: str, yes: bool, root: Path | None, ui: str, no_color: bool,
+    item_id: str,
+    yes: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Delete an item and its spec."""
     from kstrl.workqueue import QueueError, queue_lock
@@ -4265,7 +4447,8 @@ def queue_rm(
     ui_impl = _autonomy_ui(ui, no_color)
     item = _resolve_queue_item(queue, item_id, ui_impl)
     if not yes and not click.confirm(
-        f"Delete {item.item_id[:12]} ({item.title})?", default=False,
+        f"Delete {item.item_id[:12]} ({item.title})?",
+        default=False,
     ):
         ui_impl.info("Left alone.")
         sys.exit(0)
@@ -4287,7 +4470,10 @@ def queue_rm(
 @_queue_ui_option
 @_queue_no_color_option
 def queue_pause(
-    reason: str, root: Path | None, ui: str, no_color: bool,
+    reason: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Stop admitting queued work.
 
@@ -4325,14 +4511,18 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
 
 @queue_group.command(name="sync")
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Poll and report what would be enqueued, writing nothing",
 )
 @_queue_root_option
 @_queue_ui_option
 @_queue_no_color_option
 def queue_sync(
-    dry_run: bool, root: Path | None, ui: str, no_color: bool,
+    dry_run: bool,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
 ) -> None:
     """Pull labelled GitHub issues into the queue (R8.6).
 
@@ -4371,9 +4561,7 @@ def queue_sync(
         with queue_lock(root_dir):
             result = run_sync(queue, config, root_dir)
     except QueueLockedError as exc:
-        ui_impl.err(
-            f"{exc}. Another queue operation is in progress; retry shortly."
-        )
+        ui_impl.err(f"{exc}. Another queue operation is in progress; retry shortly.")
         sys.exit(1)
     except (QueueError, OSError) as exc:
         ui_impl.err(f"Sync failed: {exc}")
@@ -4410,28 +4598,37 @@ def queue_sync(
 
 @cli.command()
 @click.option(
-    "--once", is_flag=True,
+    "--once",
+    is_flag=True,
     help="Run a single poll cycle and exit (launchd/cron fallback mode)",
 )
 @click.option(
-    "--max-cycles", type=click.IntRange(min=0), default=0,
+    "--max-cycles",
+    type=click.IntRange(min=0),
+    default=0,
     help="Stop after this many cycles; 0 runs until interrupted",
 )
 @click.option(
-    "--dry-run", is_flag=True,
+    "--dry-run",
+    is_flag=True,
     help="Report what the next cycle would do without spending anything",
 )
 @click.option(
-    "--print-plist", "print_plist", is_flag=True,
+    "--print-plist",
+    "print_plist",
+    is_flag=True,
     help="Print a launchd LaunchAgent plist for this checkout and exit",
 )
 @click.option(
-    "--plist-mode", type=click.Choice(["keepalive", "interval"]),
+    "--plist-mode",
+    type=click.Choice(["keepalive", "interval"]),
     default="keepalive",
     help="keepalive: one long-lived daemon; interval: `--once` on a timer",
 )
 @click.option(
-    "--plist-interval", type=click.IntRange(min=1), default=5,
+    "--plist-interval",
+    type=click.IntRange(min=1),
+    default=5,
     help=(
         "MINUTES between runs in interval mode; must divide an hour "
         "(1,2,3,4,5,6,10,12,15,20,30,60) or be whole hours"
@@ -4502,14 +4699,15 @@ def serve(
             sys.exit(2)
 
         try:
-            click.echo(render_launchd_plist(
-                root_dir,
-                mode=plist_mode,
-                interval_minutes=plist_interval,
-                factory_timeout_seconds=(
-                    ServeConfig.load(root_dir).factory_timeout_seconds
+            click.echo(
+                render_launchd_plist(
+                    root_dir,
+                    mode=plist_mode,
+                    interval_minutes=plist_interval,
+                    factory_timeout_seconds=(ServeConfig.load(root_dir).factory_timeout_seconds),
                 ),
-            ), nl=False)
+                nl=False,
+            )
         except ServeError as exc:
             ui_impl.err(str(exc))
             sys.exit(2)
@@ -4524,9 +4722,7 @@ def serve(
     # A scheduled LaunchAgent carries this marker, so the promise it was
     # installed under is re-checked on every invocation rather than only
     # the day the plist was written (#189 N3).
-    if os.environ.get(REQUIRE_TIMEOUT_ENV) == "1" and (
-        config.factory_timeout_seconds <= 0
-    ):
+    if os.environ.get(REQUIRE_TIMEOUT_ENV) == "1" and (config.factory_timeout_seconds <= 0):
         ui_impl.err(
             "this scheduled job was installed on the promise of a bounded "
             "cycle, but [serve] factory_timeout_seconds is now 0. launchd "
@@ -4559,25 +4755,30 @@ def serve(
             ui_impl.err(str(exc))
             sys.exit(2)
         floor = (
-            f" (a FLOOR: {spend.uncovered_calls} call(s) reported no cost"
-            + (
-                "; unmetered: " + ", ".join(spend.unmetered_phases)
-                if spend.unmetered_phases else ""
+            (
+                f" (a FLOOR: {spend.uncovered_calls} call(s) reported no cost"
+                + (
+                    "; unmetered: " + ", ".join(spend.unmetered_phases)
+                    if spend.unmetered_phases
+                    else ""
+                )
+                + ")"
             )
-            + ")"
-        ) if spend.lower_bound else ""
+            if spend.lower_bound
+            else ""
+        )
         ui_impl.kv(
-            "today", f"${spend.spent_usd:.2f} over {spend.runs} run(s){floor}",
+            "today",
+            f"${spend.spent_usd:.2f} over {spend.runs} run(s){floor}",
         )
         ui_impl.kv(
             "daily budget",
-            f"${config.daily_budget_usd:.2f}"
-            if config.daily_budget_usd > 0 else "unset (no cap)",
+            f"${config.daily_budget_usd:.2f}" if config.daily_budget_usd > 0 else "unset (no cap)",
         )
         ui_impl.kv("consecutive poison", str(consecutive_poison_count(ledger)))
         ui_impl.kv(
-            "factory lock", "held by another run" if factory_lock_held(root_dir)
-            else "free",
+            "factory lock",
+            "held by another run" if factory_lock_held(root_dir) else "free",
         )
         for label, admission in (
             ("poison breaker", check_poison_breaker(ledger, config)),
@@ -4605,7 +4806,9 @@ def serve(
             ui_impl.warn(f"  intake config unreadable: {exc}")
         if intake_config is not None and intake_config.enabled:
             plan = intake_sync(
-                queue, _replace(intake_config, dry_run=True), root_dir,
+                queue,
+                _replace(intake_config, dry_run=True),
+                root_dir,
             )
             ui_impl.kv("intake", f"{plan.polled} polled from {plan.repo or '?'}")
             for ref in plan.would_enqueue:
@@ -4618,13 +4821,8 @@ def serve(
             ui_impl.kv("intake", "disabled")
 
         candidate = queue.next_ready()
-        pending = (
-            f"{candidate.item_id[:12]} - {candidate.title}"
-            if candidate else "nothing ready"
-        )
-        if candidate is None and intake_config is not None and (
-            intake_config.enabled
-        ):
+        pending = f"{candidate.item_id[:12]} - {candidate.title}" if candidate else "nothing ready"
+        if candidate is None and intake_config is not None and (intake_config.enabled):
             # Say so explicitly: "nothing ready" alone would be misleading
             # when intake is about to admit work.
             pending = "nothing queued yet (intake may admit the items above)"
@@ -4635,8 +4833,7 @@ def serve(
         f"ks serve on {root_dir} "
         f"(poll {config.poll_interval_seconds:.0f}s, "
         f"budget "
-        + (f"${config.daily_budget_usd:.2f}/day" if config.daily_budget_usd > 0
-           else "unset")
+        + (f"${config.daily_budget_usd:.2f}/day" if config.daily_budget_usd > 0 else "unset")
         + f", caffeinate {'on' if config.caffeinate else 'off'})"
     )
     observer = _ServeUiObserver(ui_impl)

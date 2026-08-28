@@ -78,7 +78,7 @@ def normalize_remote_url(url: str) -> str:
     value = raw.casefold()
     if value.startswith("git@"):
         # git@github.com:org/repo.git -> github.com/org/repo
-        rest = value[len("git@"):]
+        rest = value[len("git@") :]
         if ":" in rest:
             host, path = rest.split(":", 1)
             value = f"{host}/{path}"
@@ -421,9 +421,7 @@ def control_lock(root_dir: Path, *, blocking: bool = True) -> Iterator[None]:
     try:
         handle: IO[str] = open(lock_path, "a+")
     except OSError as exc:
-        raise ControlUnavailableError(
-            f"cannot open control lock {lock_path}: {exc}"
-        ) from exc
+        raise ControlUnavailableError(f"cannot open control lock {lock_path}: {exc}") from exc
     try:
         flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
         try:

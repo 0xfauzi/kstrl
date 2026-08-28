@@ -42,7 +42,7 @@ class TestGlobMatcher:
         [
             (".github/workflows/ci.yml", ".github/workflows/**", True),
             (".github/workflows/a/b.yml", ".github/workflows/**", True),
-            ("key.pem", "**/*.pem", True),          # zero leading dirs
+            ("key.pem", "**/*.pem", True),  # zero leading dirs
             ("a/b/key.pem", "**/*.pem", True),
             (".env", "**/.env*", True),
             ("cfg/.env.local", "**/.env*", True),
@@ -51,8 +51,8 @@ class TestGlobMatcher:
             ("src/main.py", "**/*.pem", False),
             ("src/main.py", "kstrl.toml", False),
             ("notenv/file", "**/.env*", False),
-            ("a/b/c.py", "a/*/c.py", True),         # single-segment star
-            ("a/x/y/c.py", "a/*/c.py", False),      # star does not cross '/'
+            ("a/b/c.py", "a/*/c.py", True),  # single-segment star
+            ("a/x/y/c.py", "a/*/c.py", False),  # star does not cross '/'
         ],
     )
     def test_matches(self, path: str, pattern: str, expected: bool) -> None:
@@ -91,11 +91,7 @@ class TestDiffParsing:
         # '+++ x'. Without a preceding '--- ' it is content, not a header,
         # so it must stay attributed to the real file.
         diff = (
-            "--- a/notes.md\n"
-            "+++ b/notes.md\n"
-            "@@ -0,0 +1,2 @@\n"
-            "+++ still notes content\n"
-            "+real line\n"
+            "--- a/notes.md\n+++ b/notes.md\n@@ -0,0 +1,2 @@\n+++ still notes content\n+real line\n"
         )
         parsed = parse_added_lines(diff)
         assert ("notes.md", "++ still notes content") in parsed
@@ -126,15 +122,19 @@ class TestDiffParsing:
 class TestEvaluatePolicy:
     def test_clean_change_passes(self) -> None:
         ev = evaluate_policy(
-            ["src/ok.py"], [(3, 1, "src/ok.py")],
-            "--- a/src/ok.py\n+++ b/src/ok.py\n+x = 1\n", PolicyConfig(),
+            ["src/ok.py"],
+            [(3, 1, "src/ok.py")],
+            "--- a/src/ok.py\n+++ b/src/ok.py\n+x = 1\n",
+            PolicyConfig(),
         )
         assert ev.ok and not ev.machinery_hit and ev.details == []
 
     def test_enforcement_machinery_halt(self) -> None:
         ev = evaluate_policy(
             [".github/workflows/ci.yml"],
-            [(1, 0, ".github/workflows/ci.yml")], "", PolicyConfig(),
+            [(1, 0, ".github/workflows/ci.yml")],
+            "",
+            PolicyConfig(),
         )
         assert not ev.ok and ev.machinery_hit
         assert "HALT" in ev.details[0]
@@ -143,13 +143,19 @@ class TestEvaluatePolicy:
         # Even with paths_deny emptied, machinery edits still halt.
         cfg = PolicyConfig(paths_deny=[])
         ev = evaluate_policy(
-            ["kstrl.toml"], [(1, 0, "kstrl.toml")], "", cfg,
+            ["kstrl.toml"],
+            [(1, 0, "kstrl.toml")],
+            "",
+            cfg,
         )
         assert not ev.ok and ev.machinery_hit
 
     def test_paths_deny_violation(self) -> None:
         ev = evaluate_policy(
-            ["secrets/key.pem"], [(1, 0, "secrets/key.pem")], "", PolicyConfig(),
+            ["secrets/key.pem"],
+            [(1, 0, "secrets/key.pem")],
+            "",
+            PolicyConfig(),
         )
         assert not ev.ok and not ev.machinery_hit
         assert any("Denied paths" in d for d in ev.details)
@@ -166,13 +172,19 @@ class TestEvaluatePolicy:
         # 2000 lockfile lines are excluded; 5 real lines are under the cap.
         numstat = [(2000, 0, "uv.lock"), (5, 0, "src/a.py")]
         ev = evaluate_policy(
-            ["uv.lock", "src/a.py"], numstat, "", PolicyConfig(),
+            ["uv.lock", "src/a.py"],
+            numstat,
+            "",
+            PolicyConfig(),
         )
         assert ev.ok, ev.details
 
     def test_max_lines_changed_violation(self) -> None:
         ev = evaluate_policy(
-            ["src/big.py"], [(2000, 0, "src/big.py")], "", PolicyConfig(),
+            ["src/big.py"],
+            [(2000, 0, "src/big.py")],
+            "",
+            PolicyConfig(),
         )
         assert not ev.ok
         assert any("Too many lines" in d for d in ev.details)
@@ -194,7 +206,7 @@ class TestEvaluatePolicy:
         assert any("New dependencies" in d and "requests" in d for d in ev.details)
 
     def test_new_dependency_allowed_when_enabled(self) -> None:
-        diff = "--- a/uv.lock\n+++ b/uv.lock\n+name = \"requests\"\n"
+        diff = '--- a/uv.lock\n+++ b/uv.lock\n+name = "requests"\n'
         cfg = PolicyConfig(deps_allow_new=True)
         ev = evaluate_policy(["uv.lock"], [(1, 0, "uv.lock")], diff, cfg)
         assert ev.ok
@@ -209,7 +221,10 @@ class TestEvaluatePolicy:
     def test_secret_in_added_line_any_file(self) -> None:
         diff = '--- a/config.yaml\n+++ b/config.yaml\n+token = "AKIAABCDEFGHIJKLMNOP"\n'
         ev = evaluate_policy(
-            ["config.yaml"], [(1, 0, "config.yaml")], diff, PolicyConfig(),
+            ["config.yaml"],
+            [(1, 0, "config.yaml")],
+            diff,
+            PolicyConfig(),
         )
         assert not ev.ok
         assert any("secrets" in d and "config.yaml" in d for d in ev.details)
@@ -218,7 +233,10 @@ class TestEvaluatePolicy:
         cfg = PolicyConfig(secret_patterns=["(unclosed"])
         with pytest.raises(PolicyConfigError):
             evaluate_policy(
-                ["a.py"], [(1, 0, "a.py")], "+++ b/a.py\n+x\n", cfg,
+                ["a.py"],
+                [(1, 0, "a.py")],
+                "+++ b/a.py\n+x\n",
+                cfg,
             )
 
 
@@ -248,7 +266,9 @@ class TestPolicyConfig:
         assert cfg.paths_deny == ["dist/**"]
 
     def test_env_overrides_toml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text("[policy]\nenabled = false\nmax_files_changed = 7\n")
         monkeypatch.setenv("KSTRL_POLICY_ENABLED", "1")
@@ -282,13 +302,22 @@ class TestPolicyConfig:
 class TestManifestPolicyHash:
     def _manifest(self) -> Manifest:
         return Manifest(
-            version="1", spec_file="s", project_name="p",
-            base_branch="main", single_pr=False,
-            components=[Component(
-                id="main", title="t", description="d", dependencies=[],
-                prd_path="prd.json", branch_name="kstrl/x",
-                status=ComponentStatus.PENDING.value,
-            )],
+            version="1",
+            spec_file="s",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    id="main",
+                    title="t",
+                    description="d",
+                    dependencies=[],
+                    prd_path="prd.json",
+                    branch_name="kstrl/x",
+                    status=ComponentStatus.PENDING.value,
+                )
+            ],
             policy_hash="deadbeef",
         )
 
@@ -309,11 +338,17 @@ class TestManifestPolicyHash:
         assert Manifest.load(path).policy_hash == ""
 
     def test_validate_rejects_non_string(self) -> None:
-        errors = Manifest.validate_schema({
-            "version": "1", "specFile": "s", "projectName": "p",
-            "baseBranch": "main", "singlePr": False, "components": [],
-            "policyHash": 123,
-        })
+        errors = Manifest.validate_schema(
+            {
+                "version": "1",
+                "specFile": "s",
+                "projectName": "p",
+                "baseBranch": "main",
+                "singlePr": False,
+                "components": [],
+                "policyHash": 123,
+            }
+        )
         assert any("policyHash" in e for e in errors)
 
 
@@ -322,10 +357,13 @@ class TestManifestPolicyHash:
 # --------------------------------------------------------------------------
 class TestCheckPolicyEnvelope:
     def test_passes_when_clean(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(
-            git, "get_diff_content",
+            git,
+            "get_diff_content",
             lambda *a, **k: "--- a/src/a.py\n+++ b/src/a.py\n+x=1\n",
         )
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["src/a.py"])
@@ -334,7 +372,9 @@ class TestCheckPolicyEnvelope:
         assert res.passed and res.name == "policy_envelope"
 
     def test_fails_on_violation(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "")
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["a/b.pem"])
@@ -344,7 +384,9 @@ class TestCheckPolicyEnvelope:
         assert any("Denied paths" in d for d in res.details)
 
     def test_fails_closed_on_git_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def _raise(*a: object, **k: object) -> str:
             raise git.GitDiffError("bad ref")
@@ -355,7 +397,9 @@ class TestCheckPolicyEnvelope:
         assert "infrastructure error" in res.message
 
     def test_fails_closed_on_bad_regex(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "+++ b/a.py\n+x\n")
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["a.py"])
@@ -381,28 +425,44 @@ class TestRunMechanicalVerificationGating:
 
     def _config(self):  # type: ignore[no-untyped-def]
         from kstrl.verify import VerifyConfig
+
         # Disable the LLM/subprocess checks that need a real project.
         return VerifyConfig(
-            test_command="true", typecheck_command="true", lint_command="true",
-            check_diff_scope=False, check_bad_patterns=False,
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
         )
 
     def test_disabled_policy_not_appended(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._stub_git(monkeypatch, ["kstrl.toml"])
         result = run_mechanical_verification(
-            tmp_path, self._prd(tmp_path), "main", None, self._config(),
+            tmp_path,
+            self._prd(tmp_path),
+            "main",
+            None,
+            self._config(),
             policy_config=PolicyConfig(enabled=False),
         )
         assert "policy_envelope" not in {c.name for c in result.checks}
 
     def test_enabled_policy_appended_and_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._stub_git(monkeypatch, ["kstrl.toml"])  # machinery halt
         result = run_mechanical_verification(
-            tmp_path, self._prd(tmp_path), "main", None, self._config(),
+            tmp_path,
+            self._prd(tmp_path),
+            "main",
+            None,
+            self._config(),
             policy_config=PolicyConfig(enabled=True),
         )
         policy = [c for c in result.checks if c.name == "policy_envelope"]
@@ -471,15 +531,15 @@ class TestClassifyLicense:
         "license_str,expected",
         [
             ("MIT", "allowed"),
-            ("mit", "allowed"),                             # case-insensitive
-            ("Apache-2.0 OR BSD-3-Clause", "allowed"),      # compound, all allowed
+            ("mit", "allowed"),  # case-insensitive
+            ("Apache-2.0 OR BSD-3-Clause", "allowed"),  # compound, all allowed
             ("GPL-3.0-only", "denied"),
             ("AGPL-3.0-or-later", "denied"),
-            ("LGPL-3.0-only", "denied"),                    # 'GPL' substring wins
+            ("LGPL-3.0-only", "denied"),  # 'GPL' substring wins
             ("GPL-2.0 WITH Classpath-exception-2.0", "denied"),
-            ("MPL-2.0", "unknown"),                         # neither allowed nor denied
-            ("Apache-2.0 OR Proprietary", "unknown"),       # one atom not allowed
-            (None, "unknown"),                              # unresolved
+            ("MPL-2.0", "unknown"),  # neither allowed nor denied
+            ("Apache-2.0 OR Proprietary", "unknown"),  # one atom not allowed
+            (None, "unknown"),  # unresolved
             ("", "unknown"),
         ],
     )
@@ -502,7 +562,7 @@ class TestParseNewDependencies:
 
     def test_version_bump_only_is_not_new(self) -> None:
         # Only a version line added (name line is unchanged context).
-        diff = "--- a/uv.lock\n+++ b/uv.lock\n+version = \"9.9.9\"\n"
+        diff = '--- a/uv.lock\n+++ b/uv.lock\n+version = "9.9.9"\n'
         assert parse_new_dependencies(parse_added_lines(diff)) == []
 
 
@@ -539,9 +599,7 @@ class TestLicenseResolution:
     def test_resolve_from_uv_cache(self, tmp_path: Path) -> None:
         d = tmp_path / "cache" / "archive-v0" / "h" / "foo-1.2.3.dist-info"
         d.mkdir(parents=True)
-        (d / "METADATA").write_text(
-            "Name: foo\nVersion: 1.2.3\nLicense-Expression: MIT\n\nbody"
-        )
+        (d / "METADATA").write_text("Name: foo\nVersion: 1.2.3\nLicense-Expression: MIT\n\nbody")
         cache = tmp_path / "cache"
         assert licensing.resolve_from_uv_cache("foo", "1.2.3", cache) == "MIT"
         assert licensing.resolve_from_uv_cache("foo", "9.9.9", cache) is None
@@ -576,13 +634,19 @@ class TestLicenseResolution:
             raise AssertionError("PyPI must not be called on a cache hit")
 
         got = licensing.resolve_license(
-            "foo", "1.0", uv_cache=tmp_path / "cache", http_get=unexpected,
+            "foo",
+            "1.0",
+            uv_cache=tmp_path / "cache",
+            http_get=unexpected,
         )
         assert got == "MIT"
 
     def test_resolve_license_offline_miss_is_none(self, tmp_path: Path) -> None:
         got = licensing.resolve_license(
-            "foo", "1.0", uv_cache=tmp_path, use_pypi=False,
+            "foo",
+            "1.0",
+            uv_cache=tmp_path,
+            use_pypi=False,
         )
         assert got is None
 
@@ -606,7 +670,9 @@ class TestCheckPolicyEnvelopeLicense:
         config: PolicyConfig,
     ) -> object:
         monkeypatch.setattr(
-            git, "get_diff_content", lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
+            git,
+            "get_diff_content",
+            lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
         )
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
         monkeypatch.setattr(git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")])
@@ -620,27 +686,35 @@ class TestCheckPolicyEnvelopeLicense:
         return PolicyConfig(enabled=True, deps_allow_new=True)
 
     def test_allowed_license_passes(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._run(monkeypatch, tmp_path, "MIT", self._cfg())
         assert res.passed  # type: ignore[attr-defined]
 
     def test_denied_license_blocks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._run(monkeypatch, tmp_path, "GPL-3.0-only", self._cfg())
         assert not res.passed  # type: ignore[attr-defined]
         assert any("denied license" in d for d in res.details)  # type: ignore[attr-defined]
 
     def test_unknown_resolved_license_blocks(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._run(monkeypatch, tmp_path, "MPL-2.0", self._cfg())
         assert not res.passed  # type: ignore[attr-defined]
         assert any("not in license_allow" in d for d in res.details)  # type: ignore[attr-defined]
 
     def test_unresolved_license_blocks_by_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # PR #173 review: an unprovable license is not demonstrably inside
         # the envelope, so the explicit-allowlist posture blocks it. Opting
@@ -648,11 +722,14 @@ class TestCheckPolicyEnvelopeLicense:
         res = self._run(monkeypatch, tmp_path, None, self._cfg())
         assert not res.passed  # type: ignore[attr-defined]
         assert any(
-            "could not be resolved" in d for d in res.details  # type: ignore[attr-defined]
+            "could not be resolved" in d
+            for d in res.details  # type: ignore[attr-defined]
         )
 
     def test_empty_allowlist_disables_gate(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cfg = PolicyConfig(enabled=True, deps_allow_new=True, license_allow=[])
         # Even a GPL dep passes when the license gate is unconfigured.
@@ -668,9 +745,7 @@ class TestPolicyConfigLicenseFields:
 
     def test_load_reads_license_lists(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(
-            "[policy]\n"
-            'license_allow = ["MIT", "MPL-2.0"]\n'
-            'license_deny_partial = ["AGPL"]\n'
+            '[policy]\nlicense_allow = ["MIT", "MPL-2.0"]\nlicense_deny_partial = ["AGPL"]\n'
         )
         cfg = PolicyConfig.load(tmp_path)
         assert cfg.license_allow == ["MIT", "MPL-2.0"]
@@ -701,7 +776,10 @@ class TestEnforcementMachineryCoversVerifierCode:
         # The exact reviewer repro: paths_deny emptied must not permit an
         # agent to rewrite the code that enforces the envelope.
         ev = evaluate_policy(
-            [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+            [path],
+            [(1, 0, path)],
+            "",
+            PolicyConfig(paths_deny=[]),
         )
         assert not ev.ok, f"{path} did not block"
         assert ev.machinery_hit
@@ -712,14 +790,20 @@ class TestEnforcementMachineryCoversVerifierCode:
     def test_nested_checkout_also_halts(self, path: str) -> None:
         nested = f"vendor/pkg/{path}"
         ev = evaluate_policy(
-            [nested], [(1, 0, nested)], "", PolicyConfig(paths_deny=[]),
+            [nested],
+            [(1, 0, nested)],
+            "",
+            PolicyConfig(paths_deny=[]),
         )
         assert not ev.ok and ev.machinery_hit
 
     def test_ci_and_config_still_halt(self) -> None:
         for path in (".github/workflows/ci.yml", "kstrl.toml", "ralph.toml"):
             ev = evaluate_policy(
-                [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+                [path],
+                [(1, 0, path)],
+                "",
+                PolicyConfig(paths_deny=[]),
             )
             assert not ev.ok and ev.machinery_hit, path
 
@@ -732,7 +816,10 @@ class TestEnforcementMachineryCoversVerifierCode:
         # Supplying extras must not displace the built-in protections.
         cfg = PolicyConfig(paths_deny=[], enforcement_paths_extra=["ci/**"])
         ev = evaluate_policy(
-            ["kstrl/verify.py"], [(1, 0, "kstrl/verify.py")], "", cfg,
+            ["kstrl/verify.py"],
+            [(1, 0, "kstrl/verify.py")],
+            "",
+            cfg,
         )
         assert not ev.ok and ev.machinery_hit
 
@@ -740,7 +827,10 @@ class TestEnforcementMachineryCoversVerifierCode:
         # Guard against over-broad matching: normal code is unaffected.
         for path in ("kstrl/pipeline.py", "src/app/verify.py", "verify.py"):
             ev = evaluate_policy(
-                [path], [(1, 0, path)], "", PolicyConfig(paths_deny=[]),
+                [path],
+                [(1, 0, path)],
+                "",
+                PolicyConfig(paths_deny=[]),
             )
             assert ev.ok, f"{path} should not halt"
 
@@ -748,20 +838,23 @@ class TestEnforcementMachineryCoversVerifierCode:
 # 2. Metadata reads must fail closed, not evaluate as 0 files / 0 lines.
 class TestGitMetadataFailsClosed:
     def test_get_diff_names_strict_raises_on_nonzero_exit(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with pytest.raises(git.GitDiffError):
             # tmp_path is not a git repo -> nonzero exit.
             git.get_diff_names("main", tmp_path, strict=True)
 
     def test_get_diff_numstat_strict_raises_on_nonzero_exit(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with pytest.raises(git.GitDiffError):
             git.get_diff_numstat("main", tmp_path, strict=True)
 
     def test_lenient_default_preserved_for_existing_callers(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # check_diff_scope and friends rely on the [] contract.
         assert git.get_diff_names("main", tmp_path) == []
@@ -769,7 +862,10 @@ class TestGitMetadataFailsClosed:
 
     @pytest.mark.parametrize("helper", ["get_diff_names", "get_diff_numstat"])
     def test_strict_raises_on_timeout(
-        self, helper: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        helper: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         def _timeout(*a: object, **k: object) -> object:
             raise subprocess.TimeoutExpired(cmd="git", timeout=1.0)
@@ -780,7 +876,9 @@ class TestGitMetadataFailsClosed:
             getattr(git, helper)("main", tmp_path, strict=True)
 
     def test_policy_check_fails_closed_when_names_read_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Reviewer repro: a kstrl.toml diff passed as "0 files, 0 lines"
         # when the metadata helpers returned empty.
@@ -795,7 +893,9 @@ class TestGitMetadataFailsClosed:
         assert any(f.is_infrastructure_error for f in res.findings)
 
     def test_policy_check_fails_closed_when_numstat_read_fails(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def _boom(*a: object, **k: object) -> list[object]:
             raise git.GitDiffError("simulated timeout")
@@ -817,43 +917,57 @@ class TestLicenseUnresolvedPosture:
         config: PolicyConfig,
     ) -> object:
         monkeypatch.setattr(
-            git, "get_diff_content",
+            git,
+            "get_diff_content",
             lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
         )
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
         monkeypatch.setattr(
-            git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")],
+            git,
+            "get_diff_numstat",
+            lambda *a, **k: [(3, 0, "uv.lock")],
         )
         monkeypatch.setattr(licensing, "uv_cache_dir", lambda: None)
         monkeypatch.setattr(licensing, "resolve_license", lambda *a, **k: None)
         return check_policy_envelope(tmp_path, "main", config)
 
     def test_unresolved_blocks_by_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cfg = PolicyConfig(enabled=True, deps_allow_new=True)
         assert cfg.license_unresolved == "block"
         res = self._run(monkeypatch, tmp_path, cfg)
         assert not res.passed  # type: ignore[attr-defined]
         assert any(
-            "could not be resolved" in d for d in res.details  # type: ignore[attr-defined]
+            "could not be resolved" in d
+            for d in res.details  # type: ignore[attr-defined]
         )
 
     def test_unresolved_advisory_when_opted_in(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cfg = PolicyConfig(
-            enabled=True, deps_allow_new=True, license_unresolved="advisory",
+            enabled=True,
+            deps_allow_new=True,
+            license_unresolved="advisory",
         )
         res = self._run(monkeypatch, tmp_path, cfg)
         assert res.passed  # type: ignore[attr-defined]
         assert any("advisory" in d for d in res.details)  # type: ignore[attr-defined]
 
     def test_offline_mode_names_the_reason(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cfg = PolicyConfig(
-            enabled=True, deps_allow_new=True, license_use_network=False,
+            enabled=True,
+            deps_allow_new=True,
+            license_use_network=False,
         )
         res = self._run(monkeypatch, tmp_path, cfg)
         assert not res.passed  # type: ignore[attr-defined]
@@ -880,7 +994,9 @@ class TestLicenseUnresolvedPosture:
             PolicyConfig(license_unresolved="maybe")
 
     def test_env_toggles_land_in_config_and_hash(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_POLICY_LICENSE_NET", "0")
         monkeypatch.setenv("KSTRL_POLICY_LICENSE_UNRESOLVED", "advisory")
@@ -890,7 +1006,9 @@ class TestLicenseUnresolvedPosture:
         assert cfg.envelope_hash() != PolicyConfig().envelope_hash()
 
     def test_config_disables_network_resolution(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # license_use_network=False must reach resolve_license as use_pypi.
         seen: dict[str, object] = {}
@@ -900,19 +1018,25 @@ class TestLicenseUnresolvedPosture:
             return "MIT"
 
         monkeypatch.setattr(
-            git, "get_diff_content",
+            git,
+            "get_diff_content",
             lambda *a, **k: _uvlock_add_diff("newpkg", "1.0"),
         )
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: ["uv.lock"])
         monkeypatch.setattr(
-            git, "get_diff_numstat", lambda *a, **k: [(3, 0, "uv.lock")],
+            git,
+            "get_diff_numstat",
+            lambda *a, **k: [(3, 0, "uv.lock")],
         )
         monkeypatch.setattr(licensing, "uv_cache_dir", lambda: None)
         monkeypatch.setattr(licensing, "resolve_license", _spy)
         check_policy_envelope(
-            tmp_path, "main",
+            tmp_path,
+            "main",
             PolicyConfig(
-                enabled=True, deps_allow_new=True, license_use_network=False,
+                enabled=True,
+                deps_allow_new=True,
+                license_use_network=False,
             ),
         )
         assert seen["use_pypi"] is False
@@ -930,16 +1054,21 @@ class TestPolicyFindings:
         monkeypatch.setattr(git, "get_diff_content", lambda *a, **k: "")
         monkeypatch.setattr(git, "get_diff_names", lambda *a, **k: names)
         monkeypatch.setattr(
-            git, "get_diff_numstat",
+            git,
+            "get_diff_numstat",
             lambda *a, **k: [(1, 0, n) for n in names],
         )
         return check_policy_envelope(tmp_path, "main", config)
 
     def test_machinery_halt_emits_critical_finding(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._res(
-            monkeypatch, tmp_path, ["kstrl/verify.py"],
+            monkeypatch,
+            tmp_path,
+            ["kstrl/verify.py"],
             PolicyConfig(enabled=True),
         )
         findings = res.findings  # type: ignore[attr-defined]
@@ -951,10 +1080,15 @@ class TestPolicyFindings:
         assert "policy" in f.tags
 
     def test_paths_deny_emits_high_finding(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._res(
-            monkeypatch, tmp_path, ["a/b.pem"], PolicyConfig(enabled=True),
+            monkeypatch,
+            tmp_path,
+            ["a/b.pem"],
+            PolicyConfig(enabled=True),
         )
         findings = res.findings  # type: ignore[attr-defined]
         assert [f.category for f in findings] == ["policy_paths_deny"]
@@ -962,23 +1096,34 @@ class TestPolicyFindings:
         assert findings[0].suggestion
 
     def test_clean_change_emits_no_findings(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         res = self._res(
-            monkeypatch, tmp_path, ["src/ok.py"], PolicyConfig(enabled=True),
+            monkeypatch,
+            tmp_path,
+            ["src/ok.py"],
+            PolicyConfig(enabled=True),
         )
         assert res.passed  # type: ignore[attr-defined]
         assert res.findings == []  # type: ignore[attr-defined]
 
     def test_findings_are_not_infrastructure_errors(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # A real violation must not masquerade as "the check broke".
         res = self._res(
-            monkeypatch, tmp_path, ["a/b.pem"], PolicyConfig(enabled=True),
+            monkeypatch,
+            tmp_path,
+            ["a/b.pem"],
+            PolicyConfig(enabled=True),
         )
         assert not any(
-            f.is_infrastructure_error for f in res.findings  # type: ignore[attr-defined]
+            f.is_infrastructure_error
+            for f in res.findings  # type: ignore[attr-defined]
         )
 
     def test_blocking_details_precede_advisories(self) -> None:
@@ -988,7 +1133,8 @@ class TestPolicyFindings:
 
         blocking = PolicyViolation(category="paths_deny", explanation="BLOCK")
         advisory = PolicyViolation(
-            category="license_unresolved", explanation="ADVISORY",
+            category="license_unresolved",
+            explanation="ADVISORY",
             severity="advisory",
         )
         assert blocking.blocking and not advisory.blocking

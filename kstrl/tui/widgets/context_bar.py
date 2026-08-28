@@ -34,7 +34,8 @@ def brand_chip() -> Text:
     # becomes the BASE style and bleeds into every later append.
     chip = Text()
     chip.append(
-        " ◍ kstrl ", style=f"bold {theme.BACKGROUND} on {theme.ACCENT}",
+        " ◍ kstrl ",
+        style=f"bold {theme.BACKGROUND} on {theme.ACCENT}",
     )
     return chip
 
@@ -43,7 +44,9 @@ class ContextBar(Horizontal):
     DEFAULT_CLASSES = "context-bar"
 
     def __init__(
-        self, screen_name: str, context: str = "",
+        self,
+        screen_name: str,
+        context: str = "",
         right: Text | str = "",
     ) -> None:
         super().__init__()

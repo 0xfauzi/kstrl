@@ -33,10 +33,12 @@ CONVENTION_PROP = """# PROP-001: Pin versions
 
 class TestSummarizeRun:
     def test_factory_run_with_lower_bound_marker(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(
-            tmp_path, FakeRunSpec(components=2, include_unreported_usage=True),
+            tmp_path,
+            FakeRunSpec(components=2, include_unreported_usage=True),
         )
         ref = discover_runs(tmp_path)[0]
         summary = summarize_run(ref)
@@ -50,7 +52,8 @@ class TestSummarizeRun:
     def test_understand_and_halted_decompose(self, tmp_path: Path) -> None:
         write_fake_understand_run(tmp_path)
         write_fake_decompose_run(
-            tmp_path, blockers=1,
+            tmp_path,
+            blockers=1,
             run_id="decompose-20260720-160000.000000-halt",
         )
         by_kind = {ref.kind: ref for ref in discover_runs(tmp_path)}
@@ -138,15 +141,15 @@ class TestPendingProposals:
 
 class TestHomeSummariesPilot:
     async def test_cells_fill_after_the_worker_lands(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         write_fake_run(tmp_path, FakeRunSpec(components=2))
         proposals_dir = tmp_path / ".kstrl" / "proposals"
         proposals_dir.mkdir(parents=True)
         (proposals_dir / "prop-001.md").write_text(CONVENTION_PROP)
 
-        app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME,
-                          poll_interval=0.05)
+        app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
         async with app.run_test(size=(130, 40)) as pilot:
             deadline = time.monotonic() + 5
             while True:

@@ -42,11 +42,11 @@ class TestSandboxConfig:
         assert config.allow_network is True
 
     def test_load_toml_and_env_precedence(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[sandbox]\nenabled = true\nallow_network = true\n"
-        )
+        (tmp_path / "kstrl.toml").write_text("[sandbox]\nenabled = true\nallow_network = true\n")
         config = SandboxConfig.load(tmp_path)
         assert config.enabled is True
         assert config.allow_network is True
@@ -67,8 +67,10 @@ class TestCodexArgs:
         (measured on a machine with exactly that config)."""
         args = codex_sandbox_args(SandboxConfig(enabled=True))
         assert args == [
-            "--sandbox", "workspace-write",
-            "-c", "sandbox_workspace_write.network_access=false",
+            "--sandbox",
+            "workspace-write",
+            "-c",
+            "sandbox_workspace_write.network_access=false",
         ]
 
     def test_enabled_with_network(self) -> None:
@@ -76,8 +78,10 @@ class TestCodexArgs:
             SandboxConfig(enabled=True, allow_network=True),
         )
         assert args == [
-            "--sandbox", "workspace-write",
-            "-c", "sandbox_workspace_write.network_access=true",
+            "--sandbox",
+            "workspace-write",
+            "-c",
+            "sandbox_workspace_write.network_access=true",
         ]
 
 
@@ -86,9 +90,12 @@ class TestClaudeArgs:
         assert claude_sandbox_args(None) == []
         assert claude_sandbox_args(SandboxConfig(enabled=False)) == []
         assert claude_sandbox_drops_skip_permissions(None) is False
-        assert claude_sandbox_drops_skip_permissions(
-            SandboxConfig(enabled=False),
-        ) is False
+        assert (
+            claude_sandbox_drops_skip_permissions(
+                SandboxConfig(enabled=False),
+            )
+            is False
+        )
 
     def test_enabled_with_network_keeps_skip_permissions(self) -> None:
         config = SandboxConfig(enabled=True, allow_network=True)
@@ -129,7 +136,8 @@ def _mock_proc(lines: list[str]) -> MagicMock:
 
 def _claude_cmd(sandbox: SandboxConfig | None) -> list[str]:
     with patch(
-        "subprocess.Popen", return_value=_mock_proc(["done\n"]),
+        "subprocess.Popen",
+        return_value=_mock_proc(["done\n"]),
     ) as popen:
         agent = ClaudeCodeAgent(sandbox=sandbox)
         list(agent.run("test", cwd=Path("/tmp")))
@@ -160,13 +168,18 @@ class TestClaudeAdapterPassThrough:
 
 class TestCodexAdapterPassThrough:
     def _codex_cmd(
-        self, monkeypatch: pytest.MonkeyPatch, sandbox: SandboxConfig | None,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        sandbox: SandboxConfig | None,
     ) -> list[str]:
         monkeypatch.setattr(
-            CodexAgent, "_supports_output_last_message", False,
+            CodexAgent,
+            "_supports_output_last_message",
+            False,
         )
         with patch(
-            "subprocess.Popen", return_value=_mock_proc(["done\n"]),
+            "subprocess.Popen",
+            return_value=_mock_proc(["done\n"]),
         ) as popen:
             agent = CodexAgent(sandbox=sandbox)
             list(agent.run("test", cwd=Path("/tmp")))
@@ -175,13 +188,15 @@ class TestCodexAdapterPassThrough:
         return list(cmd)
 
     def test_default_unsandboxed_command(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cmd = self._codex_cmd(monkeypatch, None)
         assert "--sandbox" not in cmd
 
     def test_sandboxed_without_network(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cmd = self._codex_cmd(monkeypatch, SandboxConfig(enabled=True))
         idx = cmd.index("--sandbox")
@@ -189,10 +204,12 @@ class TestCodexAdapterPassThrough:
         assert "sandbox_workspace_write.network_access=false" in cmd
 
     def test_sandboxed_with_network(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         cmd = self._codex_cmd(
-            monkeypatch, SandboxConfig(enabled=True, allow_network=True),
+            monkeypatch,
+            SandboxConfig(enabled=True, allow_network=True),
         )
         assert "sandbox_workspace_write.network_access=true" in cmd
 
@@ -212,14 +229,17 @@ class TestGetAgentPassThrough:
 
     def test_custom_agent_has_no_sandbox_surface(self) -> None:
         agent = get_agent(
-            agent_cmd="echo hi", sandbox=SandboxConfig(enabled=True),
+            agent_cmd="echo hi",
+            sandbox=SandboxConfig(enabled=True),
         )
         assert isinstance(agent, CustomAgent)
 
 
 class TestFactoryWorkerPassThrough:
     def test_run_component_forwards_sandbox_intent(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """_run_component rebuilds SandboxConfig from its pickled args
         and hands it to get_agent."""
@@ -241,11 +261,21 @@ class TestFactoryWorkerPassThrough:
         monkeypatch.setattr(loop_mod, "run_loop", fake_run_loop)
 
         result = _run_component(
-            "comp-a", "prd.json", str(tmp_path), str(tmp_path),
-            "prompt.md", None, None, None, "claude-code", 0.0,
-            sandbox_enabled=True, sandbox_allow_network=True,
+            "comp-a",
+            "prd.json",
+            str(tmp_path),
+            str(tmp_path),
+            "prompt.md",
+            None,
+            None,
+            None,
+            "claude-code",
+            0.0,
+            sandbox_enabled=True,
+            sandbox_allow_network=True,
         )
         assert result.success is True
         assert captured["sandbox"] == SandboxConfig(
-            enabled=True, allow_network=True,
+            enabled=True,
+            allow_network=True,
         )
