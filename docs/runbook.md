@@ -183,11 +183,17 @@ Two surfaces print it. `ks status` prints `safe mode: nominal` or
 
 The dashboard shows it too. On a terminal `ks status` opens the
 dashboard rather than the plain report whenever a run directory exists,
-so `m` opens a safe-mode panel from any screen, and a warning banner
+so `f2` opens a safe-mode panel from any screen, and a warning banner
 appears under the run masthead the moment a signal goes degraded, naming
 the sources.
 
-The banner is hidden while everything is clear, and `m` is what makes
+A function key rather than a letter, and that is not cosmetic: Textual's
+text inputs consume printable keys before application bindings, so a
+letter key would silently type itself into the launch, config,
+decompose and init fields instead of opening the panel. The argument
+below only holds if the key always works.
+
+The banner is hidden while everything is clear, and `f2` is what makes
 that safe: the panel distinguishes the three states the banner cannot,
 telling "not checked yet" apart from "checked and clear" apart from a
 list of reasons. So an absent banner never has to carry a meaning on its

@@ -12,7 +12,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import Static
 
 from kstrl.safemode import RECOVERY, SafeModeReason
 from kstrl.tui.app import KstrlTuiApp, Mode
@@ -73,7 +72,7 @@ class TestChipRendering:
 
         assert "queue" in banner
         assert "autonomy" in banner
-        assert "press m" in banner
+        assert "press f2" in banner
 
     def test_the_banner_names_repeated_sources_once(self) -> None:
         """Two skipped phases are one story on a one-line banner."""
@@ -111,7 +110,7 @@ class TestDashboardSurface:
         assert banner_shown
         assert "safe mode: 1 reason(s)" in text
         assert "queue" in text
-        assert "press m" in text
+        assert "press f2" in text
 
     async def test_a_clean_root_hides_the_banner(
         self, tmp_path: Path,
@@ -181,12 +180,10 @@ class TestDashboardSurface:
                 if app._safe_mode_reasons:
                     break
                 await pilot.pause(0.05)
-            await pilot.press("m")
+            await pilot.press("f2")
             await pilot.pause()
             assert isinstance(app.screen, SafeModePanel)
-            body = "\n".join(
-                str(node.render()) for node in app.screen.query(Static)
-            )
+            body = str(app.screen.query_one("#safemode-body").render())
 
         assert "poison breaker tripped" in body
         assert RECOVERY["queue"] in body
@@ -197,7 +194,7 @@ class TestDashboardSurface:
 
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
-            await pilot.press("m")
+            await pilot.press("f2")
             await pilot.pause()
             assert isinstance(app.screen, SafeModePanel)
             await pilot.press("escape")
@@ -287,3 +284,180 @@ class TestHomeShell:
 
         assert app._safe_mode_reasons == []
         assert "ok" in text
+
+
+class TestReviewFindings:
+    """One test per defect the post-merge review reproduced. Each fails
+    on the merged implementation."""
+
+    async def test_the_banners_do_not_overlap_each_other_or_the_topbar(
+        self, tmp_path: Path,
+    ) -> None:
+        """P1. `dock: top` siblings ALL reserve row zero and paint over
+        each other, so the checkpoint banner hid the safe-mode warning
+        and the safe-mode warning hid the run header. Measured y=0,0,0
+        before the fix. This also repairs a pre-existing bug: the
+        checkpoint banner has always covered the topbar."""
+        from kstrl.tui.screens.overview import CheckpointBanner
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            banner = screen.query_one(SafeModeBanner)
+            checkpoint = screen.query_one(CheckpointBanner)
+            banner.display = True
+            checkpoint.display = True
+            await pilot.pause()
+            await pilot.pause()
+            rows = [
+                screen.query_one("#topbar").region.y,
+                banner.region.y,
+                checkpoint.region.y,
+            ]
+
+        assert len(set(rows)) == 3, f"widgets share a row: {rows}"
+        assert rows == sorted(rows)
+
+    async def test_a_text_input_does_not_swallow_the_safe_mode_key(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. Textual's Input consumes printable keys BEFORE app
+        bindings, so `m` typed the letter into the field instead of
+        opening the panel. Hiding the banner while clear is only
+        defensible if the key always works."""
+        from textual.widgets import Input
+
+        from kstrl.tui.app import KstrlTuiApp as App
+
+        binding_keys = {b.key for b in App.BINDINGS if hasattr(b, "key")}
+        safe_mode_keys = {
+            b.key for b in App.BINDINGS
+            if getattr(b, "action", "") == "safe_mode"
+        }
+
+        assert safe_mode_keys, "no safe-mode binding at all"
+        for key in safe_mode_keys:
+            assert len(key) > 1, (
+                f"{key!r} is a printable key; an Input will consume it "
+                "before the app binding runs"
+            )
+        assert "m" not in binding_keys or "m" not in safe_mode_keys
+        assert Input is not None  # the widget class this is about
+
+    async def test_a_late_check_does_not_overwrite_a_newer_one(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. exclusive=True cancels the asyncio wrapper, never the
+        thread, so a superseded check still posts. A slow NOMINAL result
+        landing after a fast DEGRADED one would clear the warning."""
+        from kstrl.tui.messages import SafeModeChecked
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            for _ in range(40):
+                if app._safe_mode_reasons is not None:
+                    break
+                await pilot.pause(0.05)
+            # A fresh degraded result, then a STALE nominal one.
+            app.post_message(SafeModeChecked([_reason()], seq=99))
+            await pilot.pause()
+            app.post_message(SafeModeChecked([], seq=98))
+            await pilot.pause()
+            after = app._safe_mode_reasons
+
+        assert after, "a superseded check cleared a newer degradation"
+
+    async def test_the_open_panel_updates_when_a_check_lands(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. The panel took its reasons at construction and never
+        looked again, so opening it before the first check finished left
+        it reading "not checked yet" for the life of the session."""
+        from kstrl.tui.messages import SafeModeChecked
+        from kstrl.tui.screens.safemode import SafeModePanel as Panel
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        Queue(tmp_path, QueueConfig()).pause(reason="paused now", actor="t")
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            for _ in range(40):
+                if app._safe_mode_reasons:
+                    break
+                await pilot.pause(0.05)
+            # Constructed with None, as it is when opened before the
+            # first check reports.
+            app.push_screen(Panel(None))
+            await pilot.pause()
+            assert isinstance(app.screen, Panel)
+            on_mount_body = str(
+                app.screen.query_one("#safemode-body").render(),
+            )
+            # And the broadcast path, for a check that lands while open.
+            app.post_message(
+                SafeModeChecked([_reason("autonomy", "clamped later")],
+                                seq=99),
+            )
+            await pilot.pause()
+            await pilot.pause()
+            broadcast_body = str(
+                app.screen.query_one("#safemode-body").render(),
+            )
+
+        assert "paused now" in on_mount_body       # replayed on mount
+        assert "clamped later" in broadcast_body   # updated in place
+
+    async def test_a_screen_mounted_later_shows_the_active_warning(
+        self, tmp_path: Path,
+    ) -> None:
+        """P2. on_mount hid the banner and nothing replayed the last
+        completed check, so navigating home -> run made an active
+        warning vanish for up to five seconds."""
+        from kstrl.tui.screens.overview import OverviewScreen
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        Queue(tmp_path, QueueConfig()).pause(reason="paused", actor="t")
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            for _ in range(40):
+                if app._safe_mode_reasons:
+                    break
+                await pilot.pause(0.05)
+            # A screen built AFTER the check already reported.
+            app.push_screen(OverviewScreen(observe_only=True))
+            await pilot.pause()
+            await pilot.pause()
+            shown = app.screen.query_one(SafeModeBanner).display
+
+        assert shown, "a freshly mounted screen hid an active warning"
+
+    async def test_the_panel_dialog_has_a_border_so_its_title_renders(
+        self, tmp_path: Path,
+    ) -> None:
+        """P3. border_title renders only with a border, and there was no
+        #safemode-dialog rule at all, so the modal filled the screen
+        with no visible title."""
+        from kstrl.tui.screens.safemode import SafeModePanel as Panel
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        app = _app(tmp_path, run_dir)
+
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause()
+            app.push_screen(Panel([_reason()]))
+            await pilot.pause()
+            dialog = app.screen.query_one("#safemode-dialog")
+            has_border = dialog.styles.border.top[0] not in ("", None)
+            width = dialog.region.width
+
+        assert has_border, "no border, so border_title never renders"
+        assert width < 120, "the dialog fills the whole screen"

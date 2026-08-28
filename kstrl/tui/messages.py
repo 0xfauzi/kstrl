@@ -30,9 +30,13 @@ class SafeModeChecked(Message):
     disagree about what the factory is doing right now.
     """
 
-    def __init__(self, reasons: list[SafeModeReason]) -> None:
+    def __init__(self, reasons: list[SafeModeReason], *, seq: int = 0) -> None:
         super().__init__()
         self.reasons = reasons
+        #: The check's start order. A superseded check that finishes late
+        #: still posts (a thread cannot be cancelled), so the handler
+        #: needs to tell a late answer from a current one.
+        self.seq = seq
 
 
 class SummariesReady(Message):

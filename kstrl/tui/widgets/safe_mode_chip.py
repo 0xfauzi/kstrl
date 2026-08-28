@@ -47,7 +47,7 @@ def render_chip(reasons: list[SafeModeReason] | None) -> Text:
     return text
 
 
-def render_banner(reasons: list[SafeModeReason], *, key: str = "m") -> str:
+def render_banner(reasons: list[SafeModeReason], *, key: str = "f2") -> str:
     """The words the chip has no room for. Only shown when degraded."""
     seen: list[str] = []
     for reason in reasons:

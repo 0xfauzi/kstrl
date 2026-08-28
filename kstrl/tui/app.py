@@ -76,7 +76,7 @@ class KstrlTuiApp(App[int]):
         # toward home when there is anywhere to pop to. (Named
         # nav_back: Textual's App already owns an async action_back.)
         Binding("escape", "nav_back", show=False),
-        Binding("m", "safe_mode", "Safe mode"),
+        Binding("f2", "safe_mode", "Safe mode"),
     ]
 
     def __init__(
@@ -96,6 +96,11 @@ class KstrlTuiApp(App[int]):
         #: None until the first background check reports. Distinct from
         #: [] (checked, nominal), because those are different facts.
         self._safe_mode_reasons: list[SafeModeReason] | None = None
+        #: Monotonic stamp so a superseded check that finishes late is
+        #: identifiable rather than authoritative.
+        self._safe_mode_seq = 0
+        self._safe_mode_seen_seq = 0
+        self._safe_mode_running = False
         # Precomputed by run_home_shell BEFORE app.run() - the source
         # detection scrubs os.environ process-wide (see config_report).
         self.config_report = config_report
@@ -186,16 +191,29 @@ class KstrlTuiApp(App[int]):
     # -- safe mode -----------------------------------------------------------
 
     def _check_safe_mode(self) -> None:
-        """Evaluate the predicate on a thread and post the result."""
+        """Evaluate the predicate on a thread and post the result.
+
+        Not ``exclusive=True``: that cancels the asyncio wrapper and not
+        the thread, so a superseded check keeps running and still posts.
+        A 500 MiB event stream was measured at 5.65s against a 5s
+        interval, so a slow nominal result landing after a fast degraded
+        one is reachable, and it would hide the degradation. One check
+        in flight at a time, and every result carries the sequence it
+        was started with.
+        """
+        if self._safe_mode_running:
+            return
+        self._safe_mode_running = True
+        self._safe_mode_seq += 1
+        seq = self._safe_mode_seq
         self.run_worker(
-            self._safe_mode_worker,
+            lambda: self._safe_mode_worker(seq),
             name="safe-mode",
             group="safe-mode",
             thread=True,
-            exclusive=True,
         )
 
-    def _safe_mode_worker(self) -> None:
+    def _safe_mode_worker(self, seq: int) -> None:
         from kstrl.safemode import safe_mode_reasons
 
         # safe_mode_reasons never raises by contract, but a worker that
@@ -212,9 +230,14 @@ class KstrlTuiApp(App[int]):
                 detail=f"could not evaluate safe mode: {exc}",
                 recovery=RECOVERY["control_dir"],
             )]
-        self.post_message(SafeModeChecked(reasons))
+        finally:
+            self._safe_mode_running = False
+        self.post_message(SafeModeChecked(reasons, seq=seq))
 
     def on_safe_mode_checked(self, message: SafeModeChecked) -> None:
+        if message.seq < self._safe_mode_seen_seq:
+            return  # a superseded check finished late; its answer is stale
+        self._safe_mode_seen_seq = message.seq
         self._safe_mode_reasons = message.reasons
         for screen in self.screen_stack:
             update = getattr(screen, "update_safe_mode", None)

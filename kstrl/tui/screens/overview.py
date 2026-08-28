@@ -89,7 +89,11 @@ class OverviewScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self.query_one(CheckpointBanner).display = False
-        self.query_one(SafeModeBanner).display = False
+        # Replay the last completed check rather than starting hidden.
+        # A screen mounted after the message (home -> run) would
+        # otherwise show no warning until the next interval, so an
+        # active degradation vanished for as long as five seconds.
+        self.update_safe_mode(getattr(self.app, "_safe_mode_reasons", None))
         if self._pending_feed:
             self.query_one(ActivityFeed).feed_events(self._pending_feed)
             self._pending_feed = []
