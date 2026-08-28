@@ -1,5 +1,5 @@
 {
- "built_at_commit": "33abeb4990d0afa4d7813c2a7478f109c5b1c137",
+ "built_at_commit": "ba6b182fbbd398cff10c0bf198d7096910168880",
  "components": {
   "kstrl": {
    "classes": [],
@@ -155,10 +155,10 @@
    "imports": [
     "kstrl.config"
    ],
-   "loc": 877,
+   "loc": 919,
    "package": "kstrl",
    "plane": "core",
-   "sha": "74dc1899dbc1",
+   "sha": "4c4a8e3e0ce4",
    "tests": [
     "test_a_new_weak_file_still_blocks",
     "test_a_test_named_after_skipping_is_not_a_skip",
@@ -244,10 +244,10 @@
     "kstrl.agents.custom",
     "kstrl.sandbox"
    ],
-   "loc": 138,
+   "loc": 145,
    "package": "kstrl",
    "plane": "core",
-   "sha": "f04669354a81",
+   "sha": "caeb84975233",
    "tests": [
     "test_an_explicit_command_wins_regardless_of_type",
     "test_architect_emits_sensible_allowed_paths",
@@ -396,7 +396,7 @@
    "loc": 497,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "66e9c23f670d",
+   "sha": "42463db2eba1",
    "tests": [
     "test_a_configured_cost_ceiling_reports_its_coverage",
     "test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter",
@@ -462,10 +462,10 @@
     "kstrl.agents.proc",
     "kstrl.sandbox"
    ],
-   "loc": 347,
+   "loc": 357,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "e63147a22672",
+   "sha": "4c4508390a8c",
    "tests": [
     "test_a_configured_cost_ceiling_reports_its_coverage",
     "test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter",
@@ -548,10 +548,10 @@
     "kstrl.agents.proc",
     "kstrl.sandbox"
    ],
-   "loc": 254,
+   "loc": 267,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "ceed6caa8405",
+   "sha": "a6b4d08770c4",
    "tests": [
     "test_agent_ignoring_stdin_does_not_block_on_large_prompt",
     "test_agent_iteration_timeout_reaches_agent",
@@ -624,10 +624,10 @@
     "kstrl.agents.proc",
     "kstrl.sandbox"
    ],
-   "loc": 200,
+   "loc": 210,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "499f6768b24e",
+   "sha": "0d3066cc4864",
    "tests": [
     "test_a_configured_cost_ceiling_reports_its_coverage",
     "test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter",
@@ -697,10 +697,10 @@
     "kstrl.agents.base",
     "kstrl.agents.proc"
    ],
-   "loc": 95,
+   "loc": 102,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "b161e872ac8b",
+   "sha": "3429b77a928c",
    "tests": [
     "test_a_configured_cost_ceiling_reports_its_coverage",
     "test_a_cost_ceiling_alone_is_dead_on_a_token_only_adapter",
@@ -766,10 +766,10 @@
    "imports": [
     "kstrl.agents.base"
    ],
-   "loc": 44,
+   "loc": 47,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "dbf03c58db4c",
+   "sha": "23ff690a08ac",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -831,10 +831,10 @@
     "kstrl.loop"
    ],
    "imports": [],
-   "loc": 217,
+   "loc": 215,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "48f91f37c9c6",
+   "sha": "c772b8875814",
    "tests": [
     "test_agent_ignoring_stdin_does_not_block_on_large_prompt",
     "test_agent_iteration_timeout_reaches_agent",
@@ -885,10 +885,10 @@
     "kstrl.agents.claude_code",
     "kstrl.agents.claude_sdk"
    ],
-   "loc": 303,
+   "loc": 324,
    "package": "kstrl",
    "plane": "agents",
-   "sha": "94e4024cc14f",
+   "sha": "2ee856ab2556",
    "tests": [
     "test_auto_never_selects_claude_sdk",
     "test_contract_lines_consumed_display_passed_through",
@@ -1078,10 +1078,10 @@
     "kstrl.evolution",
     "kstrl.statedir"
    ],
-   "loc": 875,
+   "loc": 866,
    "package": "kstrl",
    "plane": "core",
-   "sha": "af1a631ea53a",
+   "sha": "f1beceeaa7b1",
    "tests": [
     "test_a_crashed_run_keeps_its_recorded_skip",
     "test_a_decompose_run_does_not_clear_a_factory_skip",
@@ -1192,7 +1192,7 @@
    "loc": 253,
    "package": "kstrl",
    "plane": "core",
-   "sha": "46ec1b36f5bc",
+   "sha": "1ad0b8e6aeed",
    "tests": [
     "test_advisory_finding_does_not_demote",
     "test_agreeing_config_produces_no_notes",
@@ -1289,10 +1289,10 @@
     "kstrl.config",
     "kstrl.verify"
    ],
-   "loc": 321,
+   "loc": 317,
    "package": "kstrl",
    "plane": "core",
-   "sha": "be47a9a54ad5",
+   "sha": "7a907487b87c",
    "tests": [
     "test_breaker_trip_fails_without_retry",
     "test_changes_on_commit",
@@ -1490,10 +1490,10 @@
    "id": "kstrl.calibration",
    "imported_by": [],
    "imports": [],
-   "loc": 738,
+   "loc": 720,
    "package": "kstrl",
    "plane": "core",
-   "sha": "c2a9f2f67f90",
+   "sha": "5eff441750e0",
    "tests": [
     "test_architect_emits_sensible_allowed_paths",
     "test_architect_role_flags_vague_spec",
@@ -1786,10 +1786,10 @@
     "kstrl.verify",
     "kstrl.workqueue"
    ],
-   "loc": 4699,
+   "loc": 4896,
    "package": "kstrl",
    "plane": "core",
-   "sha": "bf070465b230",
+   "sha": "4f13e9d989a8",
    "tests": [
     "test_default_valued_fields_stay_silent",
     "test_feature_help",
@@ -2105,10 +2105,10 @@
     "kstrl.ui.base",
     "kstrl.ui.bridge"
    ],
-   "loc": 229,
+   "loc": 233,
    "package": "kstrl",
    "plane": "core",
-   "sha": "477555830af4",
+   "sha": "aed73b84d3c1",
    "tests": [
     "test_agent_stream_stays_out_of_events_jsonl",
     "test_bridge_run_level_session_clears_inherited_component",
@@ -2265,10 +2265,10 @@
     "kstrl.workqueue"
    ],
    "imports": [],
-   "loc": 508,
+   "loc": 511,
    "package": "kstrl",
    "plane": "core",
-   "sha": "e59a1c72b2da",
+   "sha": "8bc090d819fe",
    "tests": [
     "test_a_committed_edit_to_a_tracked_file_is_rolled_back",
     "test_a_committed_in_scope_edit_is_not_a_violation",
@@ -2377,10 +2377,10 @@
     "kstrl.timeout",
     "kstrl.verify"
    ],
-   "loc": 282,
+   "loc": 373,
    "package": "kstrl",
    "plane": "core",
-   "sha": "20c106e159d7",
+   "sha": "9640897f31df",
    "tests": [
     "test_absent_toml",
     "test_cases",
@@ -2503,10 +2503,10 @@
     "kstrl.pipeline"
    ],
    "imports": [],
-   "loc": 445,
+   "loc": 459,
    "package": "kstrl",
    "plane": "core",
-   "sha": "5207b1eb37d2",
+   "sha": "a49a9bf2927c",
    "tests": [
     "test_a_real_reading_still_supersedes_after_a_crash",
     "test_add_empty_string_ignored",
@@ -2610,10 +2610,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 549,
+   "loc": 565,
    "package": "kstrl",
    "plane": "core",
-   "sha": "75ebc928f8b4",
+   "sha": "2bc8f5702b41",
    "tests": [
     "test_defaults",
     "test_diamond",
@@ -2760,10 +2760,10 @@
     "kstrl.prd",
     "kstrl.ui.base"
    ],
-   "loc": 1449,
+   "loc": 1472,
    "package": "kstrl",
    "plane": "core",
-   "sha": "cf6ae1d28afa",
+   "sha": "22a126f3edf9",
    "tests": [
     "test_allowed_paths_empty_rejected",
     "test_allowed_paths_must_be_array",
@@ -3175,10 +3175,10 @@
    "imports": [
     "kstrl.observability"
    ],
-   "loc": 1035,
+   "loc": 1088,
    "package": "kstrl",
    "plane": "core",
-   "sha": "d5cc3555ea77",
+   "sha": "8dc9b002d692",
    "tests": [
     "test_a_breach_reaches_both_sinks_identically",
     "test_a_legacy_coverage_payload_decodes_with_defaults",
@@ -3308,10 +3308,10 @@
     "kstrl.manifest",
     "kstrl.verify"
    ],
-   "loc": 1162,
+   "loc": 1156,
    "package": "kstrl",
    "plane": "core",
-   "sha": "87d41d421880",
+   "sha": "c1587c9fb2ba",
    "tests": [
     "test_counts_categories_from_findings_summary",
     "test_empty_journal",
@@ -3491,10 +3491,10 @@
     "kstrl.ui.plain",
     "kstrl.verify"
    ],
-   "loc": 3502,
+   "loc": 3550,
    "package": "kstrl",
    "plane": "core",
-   "sha": "d5333c45e0ff",
+   "sha": "489eb8fb1086",
    "tests": [
     "test_component_failure_cascades",
     "test_crash_recovery_resets_running",
@@ -3736,10 +3736,10 @@
     "kstrl.timeout",
     "kstrl.ui.base"
    ],
-   "loc": 473,
+   "loc": 540,
    "package": "kstrl",
    "plane": "core",
-   "sha": "cb9e390bff05",
+   "sha": "9065f85d9800",
    "tests": [
     "test_auto_run_skips_the_gate",
     "test_empty_prd_skips_implementation",
@@ -3870,10 +3870,10 @@
    "imports": [
     "kstrl.config"
    ],
-   "loc": 795,
+   "loc": 807,
    "package": "kstrl",
    "plane": "core",
-   "sha": "b6d58a883743",
+   "sha": "f2254af33303",
    "tests": [
     "test_build_dependency_graph",
     "test_build_dependency_graph_no_packages",
@@ -3999,10 +3999,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 414,
+   "loc": 411,
    "package": "kstrl",
    "plane": "core",
-   "sha": "65ecf2dc992a",
+   "sha": "e61a1e5b7e98",
    "tests": [
     "test_clean_review_has_no_infrastructure_finding",
     "test_concerns_typed",
@@ -4116,7 +4116,7 @@
    "loc": 792,
    "package": "kstrl",
    "plane": "core",
-   "sha": "80ae13f099df",
+   "sha": "0660899ed54f",
    "tests": [
     "test_bad_cli_entries_rejected",
     "test_check_fixtures_empty",
@@ -4356,10 +4356,10 @@
    "imports": [
     "kstrl.ui.base"
    ],
-   "loc": 1228,
+   "loc": 1246,
    "package": "kstrl",
    "plane": "core",
-   "sha": "5122892f6aec",
+   "sha": "e0eb2ff7a2a4",
    "tests": [
     "test_a_committed_edit_to_a_tracked_file_is_rolled_back",
     "test_a_committed_in_scope_edit_is_not_a_violation",
@@ -4429,10 +4429,10 @@
     "kstrl.interaction",
     "kstrl.ui.base"
    ],
-   "loc": 189,
+   "loc": 194,
    "package": "kstrl",
    "plane": "core",
-   "sha": "d203cdc37d6e",
+   "sha": "2c8d8620ee1c",
    "tests": [
     "test_active_run_state_is_ignored_but_arbitrary_state_is_not",
     "test_all_violations",
@@ -4591,10 +4591,10 @@
     "kstrl.config",
     "kstrl.statedir"
    ],
-   "loc": 679,
+   "loc": 684,
    "package": "kstrl",
    "plane": "core",
-   "sha": "2f3c2f92a48e",
+   "sha": "e74f7ac9f0f2",
    "tests": [
     "test_action_required_item_fires_its_own_command",
     "test_action_required_taxonomy",
@@ -4704,10 +4704,10 @@
     "kstrl.prd",
     "kstrl.ui.base"
    ],
-   "loc": 1039,
+   "loc": 1037,
    "package": "kstrl",
    "plane": "core",
-   "sha": "b82c53a4d87f",
+   "sha": "7a1b0f3d272d",
    "tests": [
     "test_active_run_state_does_not_trip_scope_guard",
     "test_all_documented_keys_have_descriptions",
@@ -4996,10 +4996,10 @@
     "kstrl.statedir",
     "kstrl.workqueue"
    ],
-   "loc": 1143,
+   "loc": 1190,
    "package": "kstrl",
    "plane": "core",
-   "sha": "74bac834f180",
+   "sha": "d66804152d17",
    "tests": [
     "test_a_boolean_number_is_rejected",
     "test_a_corrupt_ledger_reads_as_empty",
@@ -5130,10 +5130,10 @@
     "kstrl.findings",
     "kstrl.ui.base"
    ],
-   "loc": 200,
+   "loc": 209,
    "package": "kstrl",
    "plane": "core",
-   "sha": "21714ea1a7d2",
+   "sha": "0e98519e538b",
    "tests": [
     "test_cancel_all_releases_waiters_with_defaults",
     "test_delegates_to_ui_choose",
@@ -5314,7 +5314,7 @@
    "loc": 1445,
    "package": "kstrl",
    "plane": "core",
-   "sha": "7dc86d45dd3d",
+   "sha": "4aba5934bde6",
    "tests": [
     "test_added_line_is_utilization",
     "test_caps_evidence_list",
@@ -5418,10 +5418,10 @@
     "kstrl.timeout",
     "kstrl.verify"
    ],
-   "loc": 99,
+   "loc": 97,
    "package": "kstrl",
    "plane": "core",
-   "sha": "80c688c3cd96",
+   "sha": "ac2541a6e1aa",
    "tests": [
     "test_confirmation_does_not_overwrite_changed_manifest",
     "test_decompose_canonicalizes_agent_alias",
@@ -5508,10 +5508,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 210,
+   "loc": 212,
    "package": "kstrl",
    "plane": "core",
-   "sha": "26ba70ac2858",
+   "sha": "7fed2663c223",
    "tests": [
     "test_added_content_rendered_as_header_is_not_a_header",
     "test_allowed_license_passes",
@@ -5633,10 +5633,10 @@
     "kstrl.knowledge",
     "kstrl.manifest"
    ],
-   "loc": 886,
+   "loc": 842,
    "package": "kstrl",
    "plane": "core",
-   "sha": "5b24f7eece43",
+   "sha": "52cea83e0d1f",
    "tests": [
     "test_auth_header_modes",
     "test_branch_carries_lowercase_identifier_token",
@@ -5751,10 +5751,10 @@
     "kstrl.timeout",
     "kstrl.ui.base"
    ],
-   "loc": 853,
+   "loc": 866,
    "package": "kstrl",
    "plane": "core",
-   "sha": "1a4dbe9a55d5",
+   "sha": "f83e2de0f480",
    "tests": [
     "test_active_run_state_does_not_trip_scope_guard",
     "test_auto_checkout_false_skips_branch_checkout",
@@ -5912,10 +5912,10 @@
    "imports": [
     "kstrl.findings"
    ],
-   "loc": 779,
+   "loc": 783,
    "package": "kstrl",
    "plane": "core",
-   "sha": "29b02759e4d6",
+   "sha": "d736281d4d4e",
    "tests": [
     "test_chain_of_dependents",
     "test_completed_not_ready",
@@ -6072,10 +6072,10 @@
    "imports": [
     "kstrl.config"
    ],
-   "loc": 676,
+   "loc": 733,
    "package": "kstrl",
    "plane": "core",
-   "sha": "756130c8b8fe",
+   "sha": "87cdd8fc0331",
    "tests": [
     "test_convenience_methods",
     "test_convenience_methods_are_noop",
@@ -6142,10 +6142,10 @@
     "kstrl.ui.base",
     "kstrl.ui.bridge"
    ],
-   "loc": 55,
+   "loc": 58,
    "package": "kstrl",
    "plane": "core",
-   "sha": "b7a2f73cb049",
+   "sha": "9e339d80a944",
    "tests": [
     "test_assembly_and_synchronous_render",
     "test_bridge_render_output_byte_identical_to_direct",
@@ -6228,10 +6228,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 423,
+   "loc": 421,
    "package": "kstrl",
    "plane": "core",
-   "sha": "00a14ce70646",
+   "sha": "247e39e9faf8",
    "tests": [
     "test_add_source_context",
     "test_add_source_context_no_file",
@@ -6417,10 +6417,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 3628,
+   "loc": 3876,
    "package": "kstrl",
    "plane": "core",
-   "sha": "f946270ab84c",
+   "sha": "e3dd958e593b",
    "tests": [
     "test_added_line_is_referenced_end_to_end",
     "test_checkpoint_reject_fails_component",
@@ -6660,10 +6660,10 @@
    "imports": [
     "kstrl.config"
    ],
-   "loc": 698,
+   "loc": 705,
    "package": "kstrl",
    "plane": "core",
-   "sha": "0136bb659468",
+   "sha": "c3fe7dbfb7d0",
    "tests": [
     "test_added_content_rendered_as_header_is_not_a_header",
     "test_advisory_finding_does_not_demote",
@@ -6788,10 +6788,10 @@
     "kstrl.manifest",
     "kstrl.ui.base"
    ],
-   "loc": 759,
+   "loc": 782,
    "package": "kstrl",
    "plane": "core",
-   "sha": "806c11a68fdc",
+   "sha": "b509d9d2dd8f",
    "tests": [
     "test_body_contains_attribution",
     "test_body_contains_dependencies_with_links",
@@ -6875,10 +6875,10 @@
     "kstrl.verify"
    ],
    "imports": [],
-   "loc": 404,
+   "loc": 394,
    "package": "kstrl",
    "plane": "core",
-   "sha": "6147d6545911",
+   "sha": "583b82cc13f7",
    "tests": [
     "test_a_committed_edit_to_a_tracked_file_is_rolled_back",
     "test_a_committed_in_scope_edit_is_not_a_violation",
@@ -6982,10 +6982,10 @@
     "kstrl.tui.screens.evolve"
    ],
    "imports": [],
-   "loc": 204,
+   "loc": 205,
    "package": "kstrl",
    "plane": "core",
-   "sha": "15e762b625ae",
+   "sha": "e554dc2e08dd",
    "tests": [
     "test_applied_path_writes_bullet_and_stamp",
     "test_applied_stamp_and_classification",
@@ -7106,10 +7106,10 @@
     "kstrl.runid",
     "kstrl.statedir"
    ],
-   "loc": 667,
+   "loc": 652,
    "package": "kstrl",
    "plane": "core",
-   "sha": "2b8194e2b88a",
+   "sha": "4edd9b2aae27",
    "tests": [
     "test_a_legacy_payloads_unreported_calls_still_mark_both_axes",
     "test_a_payload_predating_the_axis_fields_claims_nothing",
@@ -7199,10 +7199,10 @@
     "kstrl.ui.base",
     "kstrl.ui.plain"
    ],
-   "loc": 75,
+   "loc": 76,
    "package": "kstrl",
    "plane": "core",
-   "sha": "cb00c58cfe91",
+   "sha": "162ef3501eb9",
    "tests": [
     "test_assembly_and_synchronous_render",
     "test_bridge_render_output_byte_identical_to_direct",
@@ -7270,7 +7270,7 @@
    "loc": 149,
    "package": "kstrl",
    "plane": "core",
-   "sha": "8dfbe405cf35",
+   "sha": "288a5e5d28b4",
    "tests": [
     "test_prepare_mutates_saves_and_narrates",
     "test_preview_leaves_manifest_untouched",
@@ -7418,10 +7418,10 @@
     "kstrl.ui.base",
     "kstrl.verify"
    ],
-   "loc": 1241,
+   "loc": 1246,
    "package": "kstrl",
    "plane": "core",
-   "sha": "dd8598fac9f8",
+   "sha": "86a8a7e00180",
    "tests": [
     "test_advisory_concerns_do_not_block",
     "test_advisory_mode_downgrades_concern_failures",
@@ -7606,10 +7606,10 @@
     "kstrl.statedir",
     "kstrl.workqueue"
    ],
-   "loc": 341,
+   "loc": 352,
    "package": "kstrl",
    "plane": "core",
-   "sha": "d9093ef1a3c6",
+   "sha": "b4821c79db0a",
    "tests": [
     "test_a_crashed_run_keeps_its_recorded_skip",
     "test_a_decompose_run_does_not_clear_a_factory_skip",
@@ -7717,10 +7717,10 @@
    "imports": [
     "kstrl.config"
    ],
-   "loc": 190,
+   "loc": 195,
    "package": "kstrl",
    "plane": "core",
-   "sha": "8589e83d9f71",
+   "sha": "b6d0a1823b6c",
    "tests": [
     "test_claude_code_receives_sandbox",
     "test_codex_receives_sandbox",
@@ -7863,10 +7863,10 @@
     "kstrl.git",
     "kstrl.ui.base"
    ],
-   "loc": 809,
+   "loc": 814,
    "package": "kstrl",
    "plane": "core",
-   "sha": "3ad6e3e6b6c5",
+   "sha": "c0a539ea5913",
    "tests": [
     "test_advisory_always_passes",
     "test_advisory_passes_even_with_findings",
@@ -8235,10 +8235,10 @@
     "kstrl.statedir",
     "kstrl.workqueue"
    ],
-   "loc": 2648,
+   "loc": 2671,
    "package": "kstrl",
    "plane": "core",
-   "sha": "ca6e7e54e116",
+   "sha": "700a3147e817",
    "tests": [
     "test_a_backed_off_item_does_not_starve_the_others",
     "test_a_bounded_run_returns_every_result",
@@ -8539,10 +8539,10 @@
     "kstrl.workqueue"
    ],
    "imports": [],
-   "loc": 448,
+   "loc": 446,
    "package": "kstrl",
    "plane": "core",
-   "sha": "0db159d20a3e",
+   "sha": "c30386300d8a",
    "tests": [
     "test_all_legacy_control_paths_in_machinery",
     "test_control_file_rejects_unknown",
@@ -8736,10 +8736,10 @@
     "kstrl.tui.state",
     "kstrl.tui.theme"
    ],
-   "loc": 586,
+   "loc": 589,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "ebd135edc19f",
+   "sha": "9c45e509e55a",
    "tests": [
     "test_a_clean_root_hides_the_banner",
     "test_a_dropped_tick_reruns_instead_of_being_lost",
@@ -8872,10 +8872,10 @@
     "kstrl.shutdown",
     "kstrl.ui.base"
    ],
-   "loc": 121,
+   "loc": 129,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "a17c456cf924",
+   "sha": "9122d8e3ba45",
    "tests": [
     "test_captured_hook_writes_nothing_to_terminal",
     "test_checkpoint_modal_answers_the_channel",
@@ -9035,10 +9035,10 @@
     "kstrl.ui.bridge",
     "kstrl.ui.plain"
    ],
-   "loc": 210,
+   "loc": 232,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "072d4c7bf37d",
+   "sha": "fffb85bee9d0",
    "tests": [
     "test_captured_hook_writes_nothing_to_terminal",
     "test_checkpoint_modal_answers_the_channel",
@@ -9137,10 +9137,10 @@
     "kstrl.config_report",
     "kstrl.tui.app"
    ],
-   "loc": 50,
+   "loc": 52,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "1f697e6b39a0",
+   "sha": "8d1431148980",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -9218,10 +9218,10 @@
     "kstrl.reducer",
     "kstrl.tui.runs"
    ],
-   "loc": 160,
+   "loc": 155,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "1204f1308a29",
+   "sha": "c91c06c6bba5",
    "tests": [
     "test_cells_fill_after_the_worker_lands",
     "test_counts_unapplied_only",
@@ -9284,10 +9284,10 @@
     "kstrl.safemode",
     "kstrl.tui.home_data"
    ],
-   "loc": 50,
+   "loc": 52,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "298d49fe141c",
+   "sha": "59ee44360e5c",
    "tests": [
     "test_a_clean_root_hides_the_banner",
     "test_a_dropped_tick_reruns_instead_of_being_lost",
@@ -9356,10 +9356,10 @@
     "kstrl.tui.state",
     "kstrl.tui.tail"
    ],
-   "loc": 59,
+   "loc": 63,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "3d94bfc3f953",
+   "sha": "83796c5a6935",
    "tests": [
     "test_display_value_only_relativizes_paths_inside_root",
     "test_filter_narrows_and_escape_clears_then_pops",
@@ -9438,10 +9438,10 @@
    "imports": [
     "kstrl.runid"
    ],
-   "loc": 163,
+   "loc": 166,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "47e345cc13a1",
+   "sha": "679133393faf",
    "tests": [
     "test_cells_fill_after_the_worker_lands",
     "test_counts_unapplied_only",
@@ -9523,10 +9523,10 @@
     "kstrl.interaction",
     "kstrl.tui.theme"
    ],
-   "loc": 129,
+   "loc": 136,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "d34366cdce76",
+   "sha": "1986189c8807",
    "tests": [
     "test_captured_hook_writes_nothing_to_terminal",
     "test_checkpoint_modal_answers_the_channel",
@@ -9602,10 +9602,10 @@
     "kstrl.tui.widgets.phase_timeline",
     "kstrl.tui.widgets.transcript"
    ],
-   "loc": 130,
+   "loc": 129,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "9730847b925b",
+   "sha": "dd59eb3a5f7a",
    "tests": [
     "test_captured_hook_writes_nothing_to_terminal",
     "test_chain_and_diamond",
@@ -9713,10 +9713,10 @@
     "kstrl.tui.theme",
     "kstrl.tui.widgets.context_bar"
    ],
-   "loc": 227,
+   "loc": 230,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "cbcd4c5c6270",
+   "sha": "e3087db9a94b",
    "tests": [
     "test_display_value_only_relativizes_paths_inside_root",
     "test_filter_narrows_and_escape_clears_then_pops",
@@ -9789,10 +9789,10 @@
     "kstrl.tui.widgets.header",
     "kstrl.tui.widgets.transcript"
    ],
-   "loc": 322,
+   "loc": 328,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "8c87668ba9ba",
+   "sha": "42c670d2dcb8",
    "tests": [
     "test_chain_and_diamond",
     "test_confirmation_does_not_overwrite_changed_manifest",
@@ -9897,10 +9897,10 @@
     "kstrl.tui.theme",
     "kstrl.tui.widgets.context_bar"
    ],
-   "loc": 304,
+   "loc": 308,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "63ccf1a94fa4",
+   "sha": "b1bde346b371",
    "tests": [
     "test_apply_via_modal_mutates_and_stamps",
     "test_cancel_writes_nothing",
@@ -10004,10 +10004,10 @@
     "kstrl.tui.widgets.run_table",
     "kstrl.tui.widgets.safe_mode_chip"
    ],
-   "loc": 400,
+   "loc": 410,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "eeff8ef10237",
+   "sha": "e2a77e4b1825",
    "tests": [
     "test_action_required_item_fires_its_own_command",
     "test_action_required_taxonomy",
@@ -10134,10 +10134,10 @@
     "kstrl.tui.screens.options",
     "kstrl.tui.widgets.context_bar"
    ],
-   "loc": 197,
+   "loc": 200,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "0b517c5c7b36",
+   "sha": "334c1478afed",
    "tests": [
     "test_action_required_item_fires_its_own_command",
     "test_action_required_taxonomy",
@@ -10228,10 +10228,10 @@
     "kstrl.tui.widgets.form",
     "kstrl.ui.plain"
    ],
-   "loc": 284,
+   "loc": 290,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "ddb7ea642188",
+   "sha": "4c601dff8321",
    "tests": [
     "test_bad_directory_blocks_preview",
     "test_empty_values_are_a_noop",
@@ -10310,10 +10310,10 @@
     "kstrl.tui.widgets.context_bar",
     "kstrl.tui.widgets.form"
    ],
-   "loc": 174,
+   "loc": 179,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "77c6b058f173",
+   "sha": "b32fd517cbb1",
    "tests": [
     "test_confirmation_does_not_overwrite_changed_manifest",
     "test_dash_command_opens_newest_run",
@@ -10392,10 +10392,10 @@
    "imports": [
     "kstrl.interaction"
    ],
-   "loc": 87,
+   "loc": 84,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "317cd4d237c6",
+   "sha": "c84fd3b96c03",
    "tests": [
     "test_apply_via_modal_mutates_and_stamps",
     "test_cancel_writes_nothing",
@@ -10477,10 +10477,10 @@
     "kstrl.tui.widgets.header",
     "kstrl.tui.widgets.safe_mode_chip"
    ],
-   "loc": 142,
+   "loc": 140,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "0f53f0b794ad",
+   "sha": "01cd9ec2a02e",
    "tests": [
     "test_a_clean_root_hides_the_banner",
     "test_a_dropped_tick_reruns_instead_of_being_lost",
@@ -10624,10 +10624,10 @@
     "kstrl.tui.widgets.context_bar",
     "kstrl.ui.plain"
    ],
-   "loc": 221,
+   "loc": 235,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "4f0974adb4d0",
+   "sha": "55ce35f7352f",
    "tests": [
     "test_confirmation_does_not_overwrite_changed_manifest",
     "test_decompose_canonicalizes_agent_alias",
@@ -10715,10 +10715,10 @@
     "kstrl.safemode",
     "kstrl.tui.theme"
    ],
-   "loc": 118,
+   "loc": 121,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "983b115ffa16",
+   "sha": "7f93c5a8f0a6",
    "tests": [
     "test_a_clean_root_hides_the_banner",
     "test_a_dropped_tick_reruns_instead_of_being_lost",
@@ -10807,10 +10807,10 @@
     "kstrl.ui.bridge",
     "kstrl.ui.plain"
    ],
-   "loc": 291,
+   "loc": 300,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "54f7a60637d6",
+   "sha": "16d4f06a1bee",
    "tests": [
     "test_confirmation_does_not_overwrite_changed_manifest",
     "test_decompose_canonicalizes_agent_alias",
@@ -10984,10 +10984,10 @@
    "imports": [
     "kstrl.events"
    ],
-   "loc": 186,
+   "loc": 182,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "e70b93f9b5d9",
+   "sha": "25cba60ea3be",
    "tests": [
     "test_catch_up_burst_bounded",
     "test_incremental_lines_and_partial",
@@ -11115,7 +11115,7 @@
    "loc": 95,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "d86c0ab9c56e",
+   "sha": "8c02697fd1bb",
    "tests": [
     "test_a_ceilingless_gap_still_names_its_axis",
     "test_apply_via_modal_mutates_and_stamps",
@@ -11193,10 +11193,10 @@
     "kstrl.events",
     "kstrl.tui.theme"
    ],
-   "loc": 211,
+   "loc": 208,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "342fcbf10aa0",
+   "sha": "0647efd83d16",
    "tests": [
     "test_a_ceilingless_gap_still_names_its_axis",
     "test_blocker_reads_as_error",
@@ -11254,10 +11254,10 @@
     "kstrl.reducer",
     "kstrl.tui.theme"
    ],
-   "loc": 135,
+   "loc": 147,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "ba03beddbd7b",
+   "sha": "d12fdad81a6f",
    "tests": [
     "test_a_tokenless_axis_marks_tokens_only",
     "test_checkpoint_banner_in_dash_mode",
@@ -11325,10 +11325,10 @@
    "imports": [
     "kstrl.tui.theme"
    ],
-   "loc": 76,
+   "loc": 79,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "d503b15d6cb5",
+   "sha": "c796763c4896",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -11375,10 +11375,10 @@
     "kstrl.reducer",
     "kstrl.tui.theme"
    ],
-   "loc": 111,
+   "loc": 119,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "21e4df445bc8",
+   "sha": "7fa7ec57126f",
    "tests": [
     "test_a_tokenless_axis_marks_tokens_only",
     "test_checkpoint_banner_in_dash_mode",
@@ -11448,10 +11448,10 @@
     "kstrl.reducer",
     "kstrl.tui.theme"
    ],
-   "loc": 120,
+   "loc": 108,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "64b8ae114a71",
+   "sha": "ea609dd539db",
    "tests": [
     "test_chain_and_diamond",
     "test_cycle_marks_members_not_raises",
@@ -11507,10 +11507,10 @@
     "kstrl.manifest",
     "kstrl.reducer"
    ],
-   "loc": 53,
+   "loc": 56,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "bdfa99113cd1",
+   "sha": "7fabdc5029e0",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -11619,10 +11619,10 @@
    "imports": [
     "kstrl.tui.theme"
    ],
-   "loc": 101,
+   "loc": 108,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "f810426d590f",
+   "sha": "4b15676f0dac",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -11733,10 +11733,10 @@
     "kstrl.reducer",
     "kstrl.tui.theme"
    ],
-   "loc": 61,
+   "loc": 58,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "52e9bdf0327a",
+   "sha": "350ce3864aaf",
    "tests": [
     "test_detail_shows_timeline_findings_transcript",
     "test_enter_opens_detail_and_escape_returns",
@@ -11791,10 +11791,10 @@
     "kstrl.tui.theme",
     "kstrl.tui.widgets.cost_meter"
    ],
-   "loc": 122,
+   "loc": 120,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "98877de4e75b",
+   "sha": "75883a384b80",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -11856,10 +11856,10 @@
     "kstrl.safemode",
     "kstrl.tui.theme"
    ],
-   "loc": 85,
+   "loc": 82,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "0cea28744c1d",
+   "sha": "f1fcafa9d07c",
    "tests": [
     "test_a_clean_root_hides_the_banner",
     "test_a_dropped_tick_reruns_instead_of_being_lost",
@@ -11925,10 +11925,10 @@
     "kstrl.tui.screens.decompose"
    ],
    "imports": [],
-   "loc": 34,
+   "loc": 36,
    "package": "kstrl",
    "plane": "tui",
-   "sha": "cfb6f6f92899",
+   "sha": "b463f252d325",
    "tests": [
     "test_detail_shows_timeline_findings_transcript",
     "test_enter_opens_detail_and_escape_returns",
@@ -12235,10 +12235,10 @@
     "kstrl.ui"
    ],
    "imports": [],
-   "loc": 189,
+   "loc": 190,
    "package": "kstrl",
    "plane": "ui",
-   "sha": "93561c4c2405",
+   "sha": "a2de10f4e9de",
    "tests": [
     "test_a_committed_edit_to_a_tracked_file_is_rolled_back",
     "test_a_committed_in_scope_edit_is_not_a_violation",
@@ -12318,10 +12318,10 @@
    "imports": [
     "kstrl.ui.animated_art"
    ],
-   "loc": 216,
+   "loc": 217,
    "package": "kstrl",
    "plane": "ui",
-   "sha": "c4a8ddce7b5d",
+   "sha": "d3fad9116646",
    "tests": [],
    "tests_primary": 0,
    "tests_total": 0,
@@ -12468,10 +12468,10 @@
     "kstrl.policy",
     "kstrl.prd"
    ],
-   "loc": 1585,
+   "loc": 1629,
    "package": "kstrl",
    "plane": "core",
-   "sha": "67a091bf08eb",
+   "sha": "632c8058d85d",
    "tests": [
     "test_all_in_scope",
     "test_all_pass",
@@ -12731,10 +12731,10 @@
     "kstrl.config",
     "kstrl.statedir"
    ],
-   "loc": 1345,
+   "loc": 1410,
    "package": "kstrl",
    "plane": "core",
-   "sha": "bac26d016c6c",
+   "sha": "7d9ad53e6b33",
    "tests": [
     "test_a_crafted_item_id_cannot_redirect_removal",
     "test_a_crafted_spec_filename_is_rejected_on_decode",

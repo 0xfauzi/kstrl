@@ -273,7 +273,7 @@ def caption_for(atlas: dict[str, Any]) -> str:
 
 def map_size(map_svg: str) -> tuple[float, float]:
     """The map's own width and height, from its viewBox."""
-    m = re.match(r'<svg (?P<attrs>[^>]*)>', map_svg)
+    m = re.match(r"<svg (?P<attrs>[^>]*)>", map_svg)
     if not m:
         raise ValueError("schematic did not return an <svg> root")
     vb = re.search(r'viewBox="([^"]+)"', m.group("attrs"))
@@ -293,7 +293,7 @@ def nest(map_svg: str, x: float, y: float, clip: bool = True) -> tuple[str, floa
     map whose label placer may seat a label a few units past the canvas
     edge (the panel's margin has the room).
     """
-    m = re.match(r'<svg (?P<attrs>[^>]*)>', map_svg)
+    m = re.match(r"<svg (?P<attrs>[^>]*)>", map_svg)
     if not m:
         raise ValueError("schematic did not return an <svg> root")
     attrs = m.group("attrs")
@@ -307,7 +307,7 @@ def nest(map_svg: str, x: float, y: float, clip: bool = True) -> tuple[str, floa
         f'<svg id="{sid.group(1)}" x="{x:.1f}" y="{y:.1f}" width="{vw:.0f}" height="{vh:.0f}" '
         f'viewBox="{vb.group(1)}"{overflow}>'
     )
-    return head + map_svg[m.end():], vw, vh
+    return head + map_svg[m.end() :], vw, vh
 
 
 def panel(
@@ -382,10 +382,7 @@ def panel(
         f'height="{h * scale:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" role="img" '
         f'aria-label="{esc(label)}">'
         f'<rect x="0" y="0" width="{w:.0f}" height="{h:.0f}" rx="14" fill="{t["bg"]}" '
-        f'stroke="{t["line_2"]}" stroke-width="2"/>'
-        + "".join(parts)
-        + c.css()
-        + "</svg>"
+        f'stroke="{t["line_2"]}" stroke-width="2"/>' + "".join(parts) + c.css() + "</svg>"
     )
 
 
@@ -508,6 +505,16 @@ def journey_figure(atlas: dict[str, Any], journey: dict[str, Any], scale: float)
         scale,
         f"Journey: {journey['label']}",
     )
+
+
+def committed(svg: str) -> str:
+    """The exact bytes a figure has on disk.
+
+    A committed text file ends with a newline and end-of-file-fixer enforces
+    that repo-wide, so the generator writes it too. Without it the hook appends
+    one and --check calls every figure stale on the next run.
+    """
+    return svg if svg.endswith("\n") else svg + "\n"
 
 
 @dataclass(frozen=True)
@@ -746,10 +753,7 @@ def loops_figure(atlas: dict[str, Any], scale: float) -> str:
         f'height="{h * scale:.0f}" viewBox="0 0 {W:.0f} {h:.0f}" role="img" '
         f'aria-label="The seven control loops of kstrl as nested bands">'
         f'<rect x="0" y="0" width="{W:.0f}" height="{h:.0f}" rx="14" fill="{t["bg"]}" '
-        f'stroke="{t["line_2"]}" stroke-width="2"/>'
-        + "".join(parts)
-        + c.css()
-        + "</svg>"
+        f'stroke="{t["line_2"]}" stroke-width="2"/>' + "".join(parts) + c.css() + "</svg>"
     )
 
 
@@ -855,7 +859,7 @@ def main() -> int:
         for name, fig in figures.items():
             path = out_dir / name
             current = path.read_text(encoding="utf-8") if path.is_file() else ""
-            if current != fig.svg:
+            if current != committed(fig.svg):
                 stale.append(name)
         extra = sorted(p.name for p in out_dir.glob("*.svg") if p.name not in figures)
         if stale or extra:
@@ -877,7 +881,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, fig in figures.items():
         path = out_dir / name
-        path.write_text(fig.svg, encoding="utf-8")
+        path.write_text(committed(fig.svg), encoding="utf-8")
         print(f"wrote {path} ({path.stat().st_size / 1024:.0f} KB)")
         if fig.stats:
             print(f"  {describe(name, fig)}")
