@@ -32,7 +32,12 @@ from kstrl.autonomy import (
 )
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
-from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
+from kstrl.config import (
+    KstrlConfig,
+    component_harness_paths,
+    component_progress_path,
+    relative_to_root,
+)
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -63,6 +68,7 @@ from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
+from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
@@ -1340,6 +1346,164 @@ def _preflight_component_branches(
     return errors
 
 
+_SCOPE_HAZARD_REASONS: dict[ScopeHazard, str] = {
+    "absolute": "it is an absolute path, and diff names are repository-relative",
+    "traversal": "it traverses outside the repository with '..'",
+    "root": "it reduces to the repository root, which matches no path prefix",
+    "whitespace": "it has leading or trailing whitespace and scope matching is exact",
+}
+
+
+def _authored_scope_errors(
+    comp_id: str,
+    allowed: list[str],
+    harness: list[str],
+) -> list[str]:
+    """allowedPaths entries that authorise nothing.
+
+    The backstop for HAND-WRITTEN manifests, which never went through
+    ``decompose._validate_allowed_path_entry``. An entry that cannot
+    match is worse than a missing one: it reads as authorisation and
+    grants none, so every file the operator meant to authorise is
+    reported outside scope - the same unwinnable retry loop #264
+    describes, from the other end, and just as expensive because it is
+    discovered only after a full engineer attempt.
+
+    """
+    errors: list[str] = []
+    for entry in allowed:
+        hazard = scope_entry_hazard(entry)
+        if hazard is None:
+            continue
+        errors.append(
+            f"component '{comp_id}': allowedPaths entry '{entry}' can never "
+            f"match a changed file because {_SCOPE_HAZARD_REASONS[hazard]}, so "
+            "every file it was meant to authorise will be reported outside "
+            "scope. Use a repository-relative prefix ('src/') or an exact "
+            "repository-relative file path. Allowed paths (complete list): "
+            f"{', '.join(allowed)}; plus harness artifacts: {', '.join(harness)}."
+        )
+    return errors
+
+
+def _preflight_component_scope(
+    manifest: Manifest,
+    root_dir: Path,
+    base_config: KstrlConfig,
+) -> list[str]:
+    """Refuse a component whose scope cannot work, before any spend.
+
+    Pure path comparison against data the manifest and the config
+    already hold: no git, no agent, no LLM. The measured failure this
+    backstops (#264) cost $14.49 and 41 minutes across three engineer
+    attempts that each produced the identical ``diff_scope`` rejection.
+    One line of output in the first second is the right price for that.
+
+    Two checks the issue asked for are deliberately NOT here, both
+    because they would assert something that cannot happen:
+
+    - "does ``allowedPaths`` cover the component's prdPath and progress
+      log?" is answered structurally.
+      ``KstrlConfig.component_harness_files`` carves those files out at
+      both guards, so the required set and the carve-out are one list
+      and the assertion is a tautology.
+    - "is any HARNESS path unmatchable?" (an absolute or escaping
+      ``[paths] progress`` / ``codebase_map`` / ``prdPath``) was refused
+      here until the #268 review pointed out that
+      ``config.reconcile_progress_config`` documents exactly that
+      configuration as SUPPORTED and self-consistent: joining an
+      absolute path onto a worktree is a no-op, so writer and reader
+      both land on that one file in the main checkout. Such a file is
+      outside every worktree, so it never appears in a component's
+      ``git diff`` and can never BE a scope violation. There was nothing
+      to guard, and refusing the run contradicted a documented feature.
+
+    What is left is narrow and real: an authored ``allowedPaths`` entry
+    that cannot match a changed file at all. Each distinct SCOPE is
+    examined once, not each component: ``_component_scope``'s fallback
+    is the run-wide ``--allowed-paths`` flag, so one bad entry there is
+    shared by every component and N copies of the same paragraph help
+    nobody. Two components with genuinely different authored lists are
+    both reported, each naming its own complete list.
+    """
+    errors: list[str] = []
+    seen: set[tuple[str, ...]] = set()
+    for comp in manifest.components:
+        if comp.status != ComponentStatus.PENDING.value:
+            continue
+        allowed = _component_scope(comp, root_dir, base_config)
+        if not allowed or tuple(allowed) in seen:
+            continue
+        seen.add(tuple(allowed))
+        errors.extend(
+            _authored_scope_errors(
+                comp.id,
+                allowed,
+                base_config.component_harness_files(comp.prd_path, root_dir),
+            )
+        )
+    return errors
+
+
+def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
+    """Print a refusal and say whether one happened."""
+    if not errors:
+        return False
+    ui.err(f"Refusing to run: {headline}")
+    for line in errors:
+        ui.err(f"  {line}")
+    return True
+
+
+def _run_preflights(
+    manifest: Manifest,
+    root_dir: Path,
+    base_config: KstrlConfig,
+    factory_config: FactoryConfig,
+    run_id: str,
+    ui: UI,
+    *,
+    lock_held: bool,
+) -> bool:
+    """Every pre-spend refusal, cheapest first. True to proceed.
+
+    Scope goes first (#264): it is a pure path comparison with no git
+    and no agent behind it, and a component that cannot pass diff_scope
+    must not reach the engineer - the measured cost of finding out later
+    was $14.49 across three identical attempts. It also runs without
+    worktrees, unlike the R0.5 branch policy below, which only applies
+    to worktree mode: without worktrees the factory neither creates
+    branches nor worktree dirs.
+    """
+    if _report_preflight(
+        ui,
+        "components cannot pass the scope check",
+        _preflight_component_scope(manifest, root_dir, base_config),
+    ):
+        return False
+    if not factory_config.use_worktrees:
+        return True
+    if lock_held:
+        _prune_stale_worktrees(
+            root_dir,
+            run_id,
+            ui,
+            keep=_evidence_worktrees_to_keep(manifest),
+        )
+    else:
+        ui.warn(
+            "  Run lock not held; skipping stale-worktree cleanup "
+            "(another live invocation may own them)"
+        )
+    if _report_preflight(
+        ui,
+        "stale component branches found",
+        _preflight_component_branches(manifest, root_dir, ui),
+    ):
+        return False
+    return True
+
+
 def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
     """Publish the engineer loop's usage-so-far, atomically (R8).
 
@@ -1664,15 +1828,34 @@ def _run_component(
     # from the invoking config via _submit_args. They were previously
     # hardcoded here (30 / False / unset), which made `ks run N`, -i,
     # and --allowed-paths silent no-ops under the factory pipeline.
+    component_progress_rel = component_progress_path(
+        prd_path_str,
+        progress_file_str,
+    )
+    # #264: the three files kstrl's own checks require this engineer to
+    # write, as exact root-relative paths. Reported as the run's failure
+    # message showed: the guard fired on `scripts/kstrl/codebase_map.md`,
+    # the component PRD and the progress log while every line of product
+    # code was in scope. Phase 1 applies the SAME carve-out
+    # (pipeline._phase_verify -> check_diff_scope(harness_paths=...));
+    # this guard fires first, so both sites need it or the loop still
+    # dies before Phase 1 is reached.
+    #
+    # The one direct call to component_harness_paths rather than to
+    # KstrlConfig.component_harness_files, which owns the derivation
+    # everywhere else: this runs in a pool worker handed the three paths
+    # as strings, with no config to ask. The strings come from
+    # _submit_args, which built them with that method's own inputs.
+    harness_paths = component_harness_paths(
+        prd_path_str,
+        component_progress_rel,
+        codebase_map_file_str,
+    )
     config = KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=worktree_prompt,
         prd_file=worktree_prd,
-        progress_file=worktree_path
-        / component_progress_path(
-            prd_path_str,
-            progress_file_str,
-        ),
+        progress_file=worktree_path / component_progress_rel,
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
@@ -1759,6 +1942,7 @@ def _run_component(
             budget=token_budget,
             on_iteration_usage=on_iteration_usage,
             guard_base_ref=base_branch,
+            guard_ignored_paths=harness_paths,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -1798,7 +1982,15 @@ def _run_component(
                 f"do NOT `git checkout {base_branch} -- <path>`, revert "
                 "only your own out-of-scope commits/edits). "
                 f"Allowed paths (complete list): "
-                f"{', '.join(allowed_paths or [])}. "
+                f"{', '.join(allowed_paths or [])}; "
+                # #264: the two sets stay separate. The harness artifacts
+                # are already in scope, so naming them here stops the
+                # retry agent reading its own PRD or progress log as the
+                # thing it must stop writing - which is the one edit it
+                # cannot make and still pass prd_stories.
+                f"plus harness artifacts (kstrl's own files, already in "
+                f"scope, no need to widen allowedPaths): "
+                f"{', '.join(harness_paths)}. "
                 "Do not widen allowedPaths."
             )
         elif result.no_progress:
@@ -2762,29 +2954,17 @@ def _run_factory_locked(
             "(worktree isolation remains the only boundary)"
         )
 
-    # R0.5 worktree crash recovery + stale-branch policy. Both only
-    # apply to worktree mode: without worktrees the factory neither
-    # creates branches nor worktree dirs.
-    if factory_config.use_worktrees:
-        if lock_held:
-            _prune_stale_worktrees(
-                root_dir,
-                run_id,
-                ui,
-                keep=_evidence_worktrees_to_keep(manifest),
-            )
-        else:
-            ui.warn(
-                "  Run lock not held; skipping stale-worktree cleanup "
-                "(another live invocation may own them)"
-            )
-        branch_errors = _preflight_component_branches(manifest, root_dir, ui)
-        if branch_errors:
-            ui.err("Refusing to run: stale component branches found")
-            for line in branch_errors:
-                ui.err(f"  {line}")
-            factory_result.exit_code = 2
-            return factory_result
+    if not _run_preflights(
+        manifest,
+        root_dir,
+        base_config,
+        factory_config,
+        run_id,
+        ui,
+        lock_held=lock_held,
+    ):
+        factory_result.exit_code = 2
+        return factory_result
 
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))

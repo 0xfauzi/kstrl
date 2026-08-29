@@ -720,20 +720,78 @@ def check_linter(
     )
 
 
+def _diff_scope_details(
+    base_branch: str,
+    allowed_paths: list[str],
+    harness_paths: list[str] | None,
+    violations: list[str],
+) -> list[str]:
+    """Failure details for a diff that left its scope.
+
+    R0.4: name the base branch and the FULL allowed-paths list. Without
+    them the retry agent has to guess both; the recorded e2e run guessed
+    `main` as base and reverted base-branch content with `git checkout
+    main -- ...`, failing again. Base branch and allowed paths are single
+    detail entries at the head of the list so
+    ``VerificationResult.as_context()``'s ``details[:10]`` slice carries
+    them into the retry prompt verbatim.
+
+    #264: the harness carve-out is its own entry, never folded into the
+    authored list. The operator has to be able to read what THEY
+    authorised, and the retry agent has to know its own PRD and progress
+    log are already in scope - telling it to stop writing those is the
+    one instruction it cannot obey and still pass ``prd_stories``.
+    """
+    shown = violations[:15]
+    violation_lines = [f"  - {v}" for v in shown]
+    if len(violations) > len(shown):
+        violation_lines.append(f"  ... and {len(violations) - len(shown)} more")
+    harness_note = (
+        [
+            "Plus harness artifacts (kstrl's own files, already in "
+            f"scope, no need to widen allowedPaths): {', '.join(harness_paths)}"
+        ]
+        if harness_paths
+        else []
+    )
+    return [
+        f"Base branch: {base_branch} "
+        f"(scope is judged on `git diff {base_branch}...HEAD`; "
+        f"do NOT `git checkout {base_branch} -- <path>`, revert only "
+        "your own out-of-scope commits/edits)",
+        f"Allowed paths (complete list): {', '.join(allowed_paths)}",
+        *harness_note,
+        # One multi-line entry so as_context()'s details[:10] slice
+        # cannot drop violations or the truncation marker.
+        "Files outside allowed scope:\n" + "\n".join(violation_lines),
+    ]
+
+
 def check_diff_scope(
     cwd: Path,
     base_branch: str,
     allowed_paths: list[str] | None = None,
     allowed_paths_error: str | None = None,
+    harness_paths: list[str] | None = None,
 ) -> CheckResult:
     """Check that git diff is within expected scope.
 
-    ``allowed_paths_error`` marks an infrastructure failure loading the
-    scope configuration (the PRD carrying allowedPaths was missing or
-    unparseable). The check then fails CLOSED: the diff cannot be
-    proven in-scope, and silently skipping the guard is exactly the
-    hole R1.5 closes. This is distinct from ``allowed_paths=None``,
-    which means no scope was configured -- a legitimate pass.
+    ``allowed_paths_error`` marks a failure to establish a TRUSTWORTHY
+    scope: the PRD carrying allowedPaths was missing or unparseable, or
+    (#264) the worktree copy's allowedPaths no longer match the pre-run
+    copy the harness recorded. The check then fails CLOSED: the diff
+    cannot be proven in-scope, and silently skipping the guard is
+    exactly the hole R1.5 closes. This is distinct from
+    ``allowed_paths=None``, which means no scope was configured -- a
+    legitimate pass.
+
+    ``harness_paths`` (#264) is kstrl's OWN per-component carve-out from
+    ``config.component_harness_paths``: exact files kstrl's other checks
+    require the agent to write (its PRD, its progress log, the codebase
+    map). They widen the effective scope but are reported SEPARATELY, so
+    the failure message still shows the operator what they authorised.
+    They never create a scope where none was configured: with
+    ``allowed_paths`` unset the check still passes unconditionally.
     """
     start = time.monotonic()
 
@@ -742,15 +800,16 @@ def check_diff_scope(
             name="diff_scope",
             passed=False,
             message=(
-                "Scope configuration could not be loaded; failing closed "
-                "(infrastructure error, not a diff violation)"
+                "Scope configuration could not be trusted; failing closed "
+                "(scope-source error, not a diff violation)"
             ),
             details=[
                 f"Error: {allowed_paths_error}",
-                "The PRD carrying allowedPaths failed to load, so the "
-                "diff cannot be proven in-scope. Restore a valid PRD "
-                "file; do not treat this as permission to widen the "
-                "diff.",
+                "The allowedPaths this diff must be judged against could "
+                "not be established from a trustworthy PRD, so the diff "
+                "cannot be proven in-scope. Restore a valid PRD file "
+                "carrying the allowedPaths the run started with; do not "
+                "treat this as permission to widen the diff.",
             ],
             duration_seconds=time.monotonic() - start,
         )
@@ -764,30 +823,27 @@ def check_diff_scope(
         )
 
     changed = git.get_diff_names(base_branch, cwd)
-    violations = [f for f in changed if not path_is_allowed(f, allowed_paths)]
+    # #264: the authored scope plus kstrl's own per-component files. The
+    # two lists stay separate all the way into the failure details: an
+    # operator reading "outside allowed scope" must be able to tell what
+    # they authorised from what the harness added on their behalf.
+    #
+    # Deliberately NOT guards.check_violations, which is the same
+    # decision on the same inputs: it takes a set and returns sorted, and
+    # the violation list is truncated to 15 for the retry prompt, so
+    # sorting silently changes WHICH violations the retry agent is shown.
+    # Git's order is the order the operator sees elsewhere; a cosmetic
+    # de-duplication is not worth moving it.
+    effective = [*allowed_paths, *(harness_paths or ())]
+    violations = [f for f in changed if not path_is_allowed(f, effective)]
 
     if violations:
-        # R0.4: name the base branch and the FULL allowed-paths list in the
-        # failure details. Without them the retry agent has to guess both;
-        # the recorded e2e run guessed `main` as base and reverted
-        # base-branch content with `git checkout main -- ...`, failing
-        # again. Base branch and allowed paths are single detail entries at
-        # the head of the list so VerificationResult.as_context()'s
-        # details[:10] slice carries them into the retry prompt verbatim.
-        shown = violations[:15]
-        violation_lines = [f"  - {v}" for v in shown]
-        if len(violations) > len(shown):
-            violation_lines.append(f"  ... and {len(violations) - len(shown)} more")
-        details = [
-            f"Base branch: {base_branch} "
-            f"(scope is judged on `git diff {base_branch}...HEAD`; "
-            f"do NOT `git checkout {base_branch} -- <path>`, revert only "
-            "your own out-of-scope commits/edits)",
-            f"Allowed paths (complete list): {', '.join(allowed_paths)}",
-            # One multi-line entry so as_context()'s details[:10] slice
-            # cannot drop violations or the truncation marker.
-            "Files outside allowed scope:\n" + "\n".join(violation_lines),
-        ]
+        details = _diff_scope_details(
+            base_branch,
+            allowed_paths,
+            harness_paths,
+            violations,
+        )
         return CheckResult(
             name="diff_scope",
             passed=False,
@@ -1465,6 +1521,7 @@ def run_mechanical_verification(
     allowed_paths: list[str] | None,
     config: VerifyConfig,
     allowed_paths_error: str | None = None,
+    harness_paths: list[str] | None = None,
     fixtures_config: FixturesConfig | None = None,
     policy_config: PolicyConfig | None = None,
     adequacy_config: AdequacyConfig | None = None,
@@ -1480,6 +1537,11 @@ def run_mechanical_verification(
     ``config.progress_file_path`` names the log explicitly (with no PRD
     there is no sibling to derive it from). Every other check runs
     exactly as it does with a real path.
+
+    ``harness_paths`` (#264) is the per-component carve-out for kstrl's
+    OWN files, forwarded to ``check_diff_scope``. The factory computes it
+    with ``config.component_harness_paths``; ``ks sense`` leaves it None
+    because it judges an operator's diff, not a factory component's.
 
     ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
     the approved-fixtures oracle runs against the PRD's ``fixtures``
@@ -1532,6 +1594,7 @@ def run_mechanical_verification(
                 base_branch,
                 allowed_paths,
                 allowed_paths_error=allowed_paths_error,
+                harness_paths=harness_paths,
             )
         )
 

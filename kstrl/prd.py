@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -332,6 +332,69 @@ class PRD:
                 errors.append(f"{story_prefix}.notes: must be a string")
 
         return errors
+
+    def _pinned_stories(self) -> dict[str, UserStory]:
+        """Each story with the engineer-writable fields blanked out.
+
+        ``passes`` and ``notes`` are the ONLY two an engineer may
+        rewrite: setting ``passes`` is the whole job, ``notes`` is where
+        it records what it did, and they are also the only fields
+        ``review.revert_unconfirmed_stories`` touches, so the harness's
+        own set-point write cannot look like tampering.
+
+        Blanking them and comparing whole stories through
+        ``UserStory``'s generated ``__eq__`` means a field added to the
+        dataclass later is pinned BY DEFAULT rather than silently
+        exempt. That is the fail-closed direction: forgetting to pin a
+        new field would let an agent edit it unnoticed, while forgetting
+        to exempt one produces a loud, fixable refusal.
+        """
+        return {s.id: replace(s, passes=False, notes="") for s in self.user_stories}
+
+    def tamper_changes(self, pre_run: PRD) -> list[str]:
+        """How ``self`` differs from ``pre_run`` in ways no engineer may.
+
+        The field policy for #264's carve-out: the component PRD is
+        inside every component's write scope by design, so the file
+        Phase 1 trusts is a file the agent edits. ``check_prd_stories``
+        re-reads the stories from it and ``check_fixtures_from_prd``
+        re-reads the fixtures, so an unpinned PRD lets an agent delete a
+        criterion or neuter an executable oracle and pass a gate it
+        authored. Returns one clause per change, empty when the PRD is
+        untouched in every pinned respect.
+
+        ``allowedPaths`` is the one field compared LOOSELY, and only
+        additions count - see ``pipeline._widened_scope``. Everything
+        else is compared for equality, ORDER INCLUDED, because the
+        engineer is not meant to touch these fields at all: any
+        difference is a rewrite, and the remedy ("restore the file") is
+        always available. Order carries no meaning for path matching,
+        which is why the scope comparison alone can afford to ignore it.
+        """
+        changes: list[str] = []
+        if pre_run.branch_name != self.branch_name:
+            changes.append(
+                f"changed branchName from {pre_run.branch_name!r} to {self.branch_name!r}"
+            )
+        before = pre_run._pinned_stories()
+        after = self._pinned_stories()
+        if set(before) != set(after):
+            changes.append(
+                f"changed the story set from {', '.join(sorted(before)) or '(none)'} "
+                f"to {', '.join(sorted(after)) or '(none)'}"
+            )
+        else:
+            for story_id in sorted(before):
+                moved = [
+                    f.name
+                    for f in fields(UserStory)
+                    if getattr(before[story_id], f.name) != getattr(after[story_id], f.name)
+                ]
+                if moved:
+                    changes.append(f"rewrote {', '.join(moved)} on story {story_id}")
+        if pre_run.fixtures != self.fixtures:
+            changes.append("changed the approved fixtures")
+        return changes
 
     def get_next_story(self) -> UserStory | None:
         """Get the highest-priority failing story."""

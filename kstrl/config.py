@@ -180,6 +180,54 @@ def component_progress_path(
     return Path(prd_path).parent / COMPONENT_PROGRESS_FILENAME
 
 
+def component_harness_paths(
+    prd_path: str | Path,
+    progress_path: str | Path,
+    codebase_map_path: str | Path,
+) -> list[str]:
+    """The harness's OWN files for one component, as EXACT paths.
+
+    kstrl's mechanical checks require the engineer to write three files
+    that are not product code: the component PRD (``check_prd_stories``
+    re-reads it and only the agent can set ``passes``), the component
+    progress log (``check_self_critique`` reads the Self-Critique block
+    out of it), and the codebase map (the engineer prompt tells the
+    agent to append durable facts to it). kstrl knows all three; the
+    operator should not have to guess them into ``allowedPaths``.
+
+    The list is the carve-out both scope guards apply on top of the
+    AUTHORED ``allowedPaths`` - the in-loop guard through
+    ``loop.run_loop(guard_ignored_paths=...)`` and Phase 1 through
+    ``verify.check_diff_scope(harness_paths=...)``. It is reported
+    separately from the authored list at both sites so an operator can
+    still see what THEY authorised.
+
+    Every entry is an exact path, never a directory prefix: a trailing
+    slash would widen the carve-out to a whole subtree, and
+    ``scripts/kstrl/`` is precisely the blanket prefix operators resort
+    to today and that DECOMPOSE_PROMPT rule 12 refuses. Entries are
+    de-duplicated (the single-component layout can point two of the
+    three at one file) and sorted so the reported set is stable.
+
+    An entry that is absolute, or that escapes the root, is kept rather
+    than dropped, and is harmless: such a file lives outside every
+    worktree (joining an absolute path onto one is a no-op), so it never
+    appears in a component's ``git diff`` and can never be a scope
+    violation in the first place. ``config.reconcile_progress_config``
+    documents that configuration as supported.
+
+    Callers normally reach this through
+    ``KstrlConfig.component_harness_files``, or
+    ``standalone_harness_files`` for the loop whose progress log is not
+    a sibling of a component PRD. ``factory._run_component`` is the one
+    direct caller: it runs in a pool worker that is handed the three
+    paths as strings and has no config to ask.
+    """
+    return sorted(
+        {Path(p).as_posix() for p in (prd_path, progress_path, codebase_map_path)},
+    )
+
+
 @dataclass
 class KstrlConfig:
     """Configuration for the kstrl agentic loop."""
@@ -310,6 +358,48 @@ class KstrlConfig:
             else None
         )
         return component_progress_path(prd_path, configured).as_posix()
+
+    def component_harness_files(
+        self,
+        prd_path: str | Path,
+        root_dir: Path,
+    ) -> list[str]:
+        """kstrl's OWN files for one component, as exact root-relative paths.
+
+        The single place the factory decides WHICH files the harness
+        requires a component's engineer to write, mirroring
+        ``component_progress_file``'s role for the progress log alone.
+        Both scope guards carve out exactly this list (#264): the in-loop
+        guard via ``loop.run_loop(guard_ignored_paths=...)`` and Phase 1
+        via ``verify.check_diff_scope(harness_paths=...)``. Deriving the
+        three arguments here rather than at each call site is what stops
+        the two guards judging different sets.
+        """
+        return component_harness_paths(
+            prd_path,
+            self.component_progress_file(prd_path, root_dir),
+            relative_to_root(self.codebase_map_file, root_dir),
+        )
+
+    def standalone_harness_files(self, root_dir: Path) -> list[str]:
+        """The same three files for the STANDALONE loop (``ks understand``).
+
+        Deliberately NOT ``component_harness_files``: that derives the
+        progress log as a SIBLING of the component PRD, while the
+        standalone loop writes ``resolved_progress_file``. The two
+        coincide only in the default layout - point ``[paths] prd`` at
+        ``docs/prd.json`` and the factory rule yields
+        ``docs/progress.txt`` while the loop still writes
+        ``scripts/kstrl/progress.txt`` - so reusing the factory method
+        here would carve out a file nothing writes and leave the real
+        one exposed. The one place the two rules diverge belongs beside
+        them both, not in the CLI.
+        """
+        return component_harness_paths(
+            relative_to_root(self.prd_file, root_dir),
+            relative_to_root(self.resolved_progress_file(root_dir), root_dir),
+            relative_to_root(self.codebase_map_file, root_dir),
+        )
 
     def resolved_progress_file(self, root_dir: Path) -> Path:
         """Concrete progress path for the STANDALONE loop.

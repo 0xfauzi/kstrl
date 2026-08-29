@@ -463,6 +463,7 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            harness_paths: list[str] | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
             adequacy_config: object | None = None,
@@ -471,6 +472,7 @@ class TestFactoryScopeSiteFailsClosed:
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error
+            captured["harness_paths"] = harness_paths
             return VerificationResult(
                 passed=True,
                 checks=[CheckResult("diff_scope", True, "ok")],
@@ -502,6 +504,7 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            harness_paths: list[str] | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
             adequacy_config: object | None = None,
@@ -562,6 +565,7 @@ class TestFactoryScopeSiteFailsClosed:
             allowed_paths: list[str] | None,
             verify_config: VerifyConfig,
             allowed_paths_error: str | None = None,
+            harness_paths: list[str] | None = None,
             fixtures_config: object | None = None,
             policy_config: object | None = None,
             adequacy_config: object | None = None,
@@ -570,6 +574,7 @@ class TestFactoryScopeSiteFailsClosed:
         ) -> VerificationResult:
             captured["allowed_paths"] = allowed_paths
             captured["allowed_paths_error"] = allowed_paths_error
+            captured["harness_paths"] = harness_paths
             return VerificationResult(
                 passed=True,
                 checks=[CheckResult("diff_scope", True, "ok")],

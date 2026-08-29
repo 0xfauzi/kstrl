@@ -10,7 +10,7 @@ Recovery procedures for the failure modes that actually happen during factory ru
 
 - `prd_stories`: the agent never set `passes: true` on its assigned story. Either the iteration ran out, or the agent didn't understand the PRD.
 - `test_suite`, `typecheck`, `linter`: the project's commands failed. To inspect the failed state, re-run with `--keep-worktrees-on-failure`: by default cleanup removes component worktrees at the end of the run, so `.kstrl/worktrees/<comp_id>/` will not survive a failed run without the flag. With the flag set, check the preserved worktree and rerun the command manually.
-- `diff_scope`: the agent wrote files outside `ALLOWED_PATHS`. Tighten the allowlist or relax it as appropriate.
+- `diff_scope`: the agent wrote files outside `ALLOWED_PATHS`. Tighten the allowlist or relax it as appropriate. Do NOT widen it to cover kstrl's own files: on `ks factory`, `ks run` and `ks understand`, the component's PRD, its progress log and `scripts/kstrl/codebase_map.md` are carved out automatically per component and reported separately in the failure as `plus harness artifacts:`. Widening to the bare `scripts/kstrl/` prefix to reach them exposes the manifest and every sibling component's PRD. `ks feature` carves out its own `.kstrl/logs/` run directory the same way.
 - `bad_patterns`: a secret-like pattern landed in the diff.
 - `dead_code` / `mutation`: the optional advanced checks failed.
 - `self_critique`: the engineer prompt's self-critique block is missing, too short, or filled with placeholder content.

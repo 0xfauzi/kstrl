@@ -9,11 +9,17 @@ component was failed and retried from base. Measured cost of one such
 retry: $12.93.
 
 The property under test is a containment invariant, not a string:
-the DEFAULT progress path for a factory component is inside that
-component's own ``allowedPaths``, judged by the same
+every file the HARNESS requires a factory component's engineer to write
+is inside that component's effective scope, judged by the same
 ``guards.path_is_allowed`` the diff-scope check uses. Explicit
 configuration still wins, and the single-component layout used by
 ``ks run`` is unchanged.
+
+The invariant originally covered only the progress log, which is why
+``scripts/kstrl/codebase_map.md`` shipped uncovered and cost another
+$14.49 (#264). It now covers the PRD and the codebase map too, through
+``config.component_harness_paths`` - the single list both scope guards
+carve out.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl import git
-from kstrl.config import KstrlConfig, component_progress_path
+from kstrl.config import KstrlConfig, component_progress_path, relative_to_root
 from kstrl.decompose import _generate_component_prd
 from kstrl.events import EventBus, V1CompatSink
 from kstrl.factory import (
@@ -308,6 +314,63 @@ class TestProgressPathInsideAllowedPaths:
                 tmp_path,
             )
             == f"{FEATURE_DIR}/progress.txt"
+        )
+
+    def test_the_codebase_map_is_not_covered_by_the_authored_scope(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The omission this invariant used to have (#264).
+
+        The progress log is a SIBLING of the PRD, so the architect's own
+        `scripts/kstrl/feature/<id>/` entry covers it. The codebase map
+        is not: it sits at the repo-root `scripts/kstrl/`, which
+        DECOMPOSE_PROMPT rule 12 refuses as a bare prefix and never
+        lists as an exact file. The engineer prompt still tells the agent
+        to append to it, and only "if you discover durable, reusable
+        codebase facts" - so the same component passed or failed
+        depending on whether the agent had something to add. This test
+        pins the gap; the one below pins the fix.
+        """
+        base = _base_config(tmp_path)
+        map_rel = relative_to_root(base.codebase_map_file, tmp_path)
+        assert not path_is_allowed(map_rel, ARCHITECT_ALLOWED_PATHS)
+
+    def test_the_carve_out_puts_the_codebase_map_back_in_scope(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """THE invariant, widened past the progress log (#264).
+
+        Judged against the set Phase 1 ACTUALLY resolves - the pipeline's
+        own ``_resolve_verify_scope``, not a re-derivation - so the map
+        cannot be dropped from the carve-out without failing here. The
+        PRD comes from decompose's real writer and the progress log stays
+        covered by the architect's own feature subtree.
+        """
+        prd_path = _generate_component_prd(
+            _architect_component(),
+            tmp_path,
+            "kstrl/factory/hmac",
+        )
+        rel_prd = prd_path.relative_to(tmp_path).as_posix()
+        allowed = PRD.load(prd_path).allowed_paths
+        assert allowed == ARCHITECT_ALLOWED_PATHS
+        base = _base_config(tmp_path)
+        map_rel = relative_to_root(base.codebase_map_file, tmp_path)
+
+        comp = _component()
+        scope = _pipeline(tmp_path, comp, tmp_path)._resolve_verify_scope(comp, tmp_path)
+        effective = [*allowed, *scope.harness_paths]
+
+        assert path_is_allowed(map_rel, effective), (
+            f"{map_rel} is outside the effective scope {effective}; "
+            "Phase 1 diff_scope would fail the component for writing a "
+            "file the engineer prompt tells it to write"
+        )
+        assert path_is_allowed(
+            base.component_progress_file(rel_prd, tmp_path),
+            effective,
         )
 
     def test_single_component_layout_is_unchanged(self, tmp_path: Path) -> None:
