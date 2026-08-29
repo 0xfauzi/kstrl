@@ -74,7 +74,12 @@ from kstrl.knowledge import (
 )
 from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.loop import LoopBudget
-from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.manifest import (
+    COMPONENT_STATUS_VALUES,
+    Component,
+    ComponentStatus,
+    Manifest,
+)
 from kstrl.observability import (
     NotifyConfig,
     NotifyHooks,
@@ -779,7 +784,90 @@ class FactoryResult:
     # failed check). Non-empty forces a nonzero exit code even when no
     # single component could be blamed.
     contract_failures: list[str] = field(default_factory=list)
+    # Components this run actually handed to the executor, in launch
+    # order (a retried component appears once per attempt). The counters
+    # above cannot stand in for this: they are all empty both when the
+    # scheduler found nothing to do and when there was nothing left to
+    # do, and only the first of those is a failure (#263).
+    scheduled: list[str] = field(default_factory=list)
     exit_code: int = 0
+
+
+def resolve_exit_code(
+    factory_result: FactoryResult,
+    manifest: Manifest,
+    ui: UI,
+    *,
+    stopped: bool,
+) -> int:
+    """Map a finished run's state to its process exit code.
+
+    Emits the diagnostic for the nothing-was-scheduled case, which is the
+    only branch whose cause the summary counters do not already name.
+    """
+    if stopped:
+        return 130
+    if factory_result.failed or factory_result.contract_failures:
+        return 1
+    if factory_result.merge_pending:
+        # Incomplete, not failed: unconfirmed merges blocked their
+        # dependents. Nonzero so automation notices; a re-run re-polls.
+        return 1
+    if factory_result.skipped and not factory_result.completed:
+        return 1
+
+    # #263: components the manifest ends the run short of COMPLETED. Read
+    # from the manifest rather than the run counters, because the counters
+    # are equally empty whether the scheduler found nothing it COULD do or
+    # nothing it NEEDED to do, and only the first of those is a failure.
+    # Same reasoning the merge_pending list above is rebuilt from the
+    # manifest rather than accumulated during the run.
+    unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
+    if not factory_result.scheduled and unfinished:
+        # The manifest held work and the scheduler launched none of it:
+        # an off-enum status, a component left FAILED or SKIPPED by an
+        # earlier run, or a future scheduling bug. Reported as a failure
+        # so `ks factory && deploy` cannot deploy a run that built
+        # nothing. An empty manifest and a fully COMPLETED one both leave
+        # `unfinished` empty and stay at 0.
+        _report_nothing_scheduled(manifest, unfinished, ui)
+        return 1
+    return 0
+
+
+def _report_nothing_scheduled(
+    manifest: Manifest,
+    unfinished: list[str],
+    ui: UI,
+) -> None:
+    """Say what the run did not do, and name an action that will work.
+
+    The remedy has to be executable for the state it names, so the retry
+    targets come from ``Manifest.retryable_component_ids`` - the same
+    definition ``reset_for_retry`` enforces - rather than from a second
+    reading of the statuses here. A skipped component is never named:
+    it becomes runnable by retrying the failure that cascaded onto it,
+    and `ks retry <skipped-id>` exits 2.
+    """
+    ui.err(
+        f"No component was scheduled from {len(manifest.components)} in the "
+        f"manifest, and {len(unfinished)} did not complete: "
+        f"{', '.join(unfinished)}"
+    )
+    retryable = manifest.retryable_component_ids()
+    if retryable:
+        advice = (
+            f"  `ks retry <component-id>` resets a failed component to "
+            f"'{ComponentStatus.PENDING.value}', and with it every dependent "
+            f"it cascade-skipped. Failed here: {', '.join(retryable)}."
+        )
+    else:
+        advice = (
+            "  Check each component's status against ComponentStatus "
+            f"({', '.join(COMPONENT_STATUS_VALUES)}). `ks retry` accepts only "
+            f"a component in '{ComponentStatus.FAILED.value}', and none is."
+        )
+    ui.info(advice)
 
 
 class FactoryLockHeldError(RuntimeError):
@@ -3073,6 +3161,7 @@ def _run_factory_locked(
                             ),
                         )
                     running_futures[future] = comp.id
+                    factory_result.scheduled.append(comp.id)
                     if backstop_seconds > 0:
                         future_deadlines[future] = time.monotonic() + backstop_seconds
 
@@ -3475,16 +3564,12 @@ def _run_factory_locked(
             "re-poll them: " + ", ".join(factory_result.merge_pending)
         )
 
-    if stop is not None and stop.is_set():
-        factory_result.exit_code = 130
-    elif factory_result.failed or factory_result.contract_failures:
-        factory_result.exit_code = 1
-    elif factory_result.merge_pending:
-        # Incomplete, not failed: unconfirmed merges blocked their
-        # dependents. Nonzero so automation notices; a re-run re-polls.
-        factory_result.exit_code = 1
-    elif factory_result.skipped and not factory_result.completed:
-        factory_result.exit_code = 1
+    factory_result.exit_code = resolve_exit_code(
+        factory_result,
+        manifest,
+        ui,
+        stopped=stop is not None and stop.is_set(),
+    )
 
     # R3.3: the run reached its terminal state; stamp the manifest so a
     # resume (and Linear, later) can tell a finished run from a crash.

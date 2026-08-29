@@ -69,7 +69,7 @@ from kstrl.interaction import (
 )
 from kstrl.launch import assemble_factory_configs
 from kstrl.loop import run_loop
-from kstrl.manifest import Manifest
+from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
 from kstrl.observability import (
     event_age_seconds,
     format_age,
@@ -87,6 +87,37 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
+
+
+def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
+    """Load a manifest, or print why not and exit 1.
+
+    A `Manifest.load` reachable from the CLI must never traceback at the
+    operator: the input is a file a human or another tool wrote, so a bad
+    one is an expected outcome. Shared so a new call site cannot forget
+    the guard, which is how `ks inbox retry` came to lack it (#263).
+    """
+    try:
+        return Manifest.load(path)
+    except (OSError, ValueError) as exc:
+        ui.err(f"Failed to load manifest {path}: {exc}")
+        sys.exit(1)
+
+
+def _format_component_status(status: str | None) -> str:
+    """Render a component status for the plan, flagging an off-enum one.
+
+    A status the enum does not know can never be scheduled, so echoing it
+    plain reads as confirmation that the manifest is correct - the plan
+    line for a component that will silently never run looks exactly like
+    the plan line for one that will (#263). ``None`` means the execution
+    order named an id the manifest has no component for.
+    """
+    if status is None:
+        return "?"
+    if status in COMPONENT_STATUS_VALUES:
+        return status
+    return f"{status} (not a valid status)"
 
 
 def _console_ui(
@@ -2369,7 +2400,7 @@ def factory(
     ui_impl.info("Execution order:")
     for i, comp_id in enumerate(topo, 1):
         comp = manifest.get_component(comp_id)
-        status = comp.status if comp else "?"
+        status = _format_component_status(comp.status if comp else None)
         dep_list = ", ".join(comp.dependencies) if comp and comp.dependencies else ""
         deps = f" (depends on: {dep_list})" if dep_list else ""
         ui_impl.info(f"  {i}. {comp_id} [{status}]{deps}")
@@ -3346,11 +3377,7 @@ def retry(
         ui_impl.err(f"No manifest found at {manifest_file}")
         ui_impl.info("Run `ks factory` first, or pass --manifest.")
         sys.exit(1)
-    try:
-        manifest = Manifest.load(manifest_file)
-    except (OSError, ValueError) as exc:
-        ui_impl.err(f"Failed to load manifest {manifest_file}: {exc}")
-        sys.exit(1)
+    manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
     try:
         prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
@@ -4120,8 +4147,6 @@ def inbox_retry(
     PENDING in the manifest (with its dependents un-skipped), so the next
     `ks factory` run picks it up.
     """
-    from kstrl.manifest import Manifest
-
     root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
     item = box.get(item_id)
@@ -4135,7 +4160,7 @@ def inbox_retry(
     if not manifest_path.exists():
         ui_impl.err(f"No manifest at {manifest_path}")
         sys.exit(1)
-    manifest = Manifest.load(manifest_path)
+    manifest = _load_manifest_or_exit(manifest_path, ui_impl)
     try:
         reset = manifest.reset_for_retry(item.component)
     except (ValueError, KeyError) as exc:

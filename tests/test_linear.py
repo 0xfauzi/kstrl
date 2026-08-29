@@ -45,7 +45,8 @@ from kstrl.linear import (
     resync_components,
     sync_decompose,
 )
-from kstrl.manifest import ComponentStatus, Manifest, validate_branch_name
+from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.names import validate_branch_name
 from kstrl.observability import ProgressLog
 from kstrl.pr import _generate_pr_body
 from tests.spine_utils import component, make_manifest
