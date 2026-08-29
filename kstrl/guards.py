@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from kstrl import git
@@ -36,6 +37,35 @@ def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
             if path == allowed:
                 return True
     return False
+
+
+def scope_entry_hazard(entry: str) -> str | None:
+    """Why ``path_is_allowed`` can never match ``entry``, or None.
+
+    Returns a reason CODE - ``"root"``, ``"absolute"`` or
+    ``"traversal"`` - and leaves the sentence to the caller, because the
+    two callers address different people:
+    ``decompose._validate_allowed_path_entry`` addresses the architect
+    inside a retry loop, ``factory._preflight_component_scope``
+    addresses the operator before a run starts. The predicate is shared
+    so a hazard added for one is caught for the other; only the wording
+    forks.
+
+    An entry that cannot match is worse than a missing one: it reads as
+    authorisation and grants none, so every file it was meant to allow
+    is reported outside scope.
+    """
+    stripped = entry.strip()
+    if stripped.startswith("/"):
+        return "root" if stripped.rstrip("/") == "" else "absolute"
+    if ".." in PurePosixPath(stripped).parts:
+        return "traversal"
+    normalized = stripped
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.rstrip("/") in ("", "."):
+        return "root"
+    return None
 
 
 def check_violations(

@@ -292,6 +292,22 @@ class PrPhaseResult:
 
 
 @dataclass(frozen=True)
+class VerifyScope:
+    """What Phase 1's ``check_diff_scope`` judges one component against.
+
+    ``allowed_paths`` is the AUTHORED scope, read from the component's
+    PRD. ``harness_paths`` is kstrl's own per-component carve-out
+    (#264), reported separately so an operator can still see what they
+    authorised. ``error`` is set when no trustworthy scope could be
+    established, and makes the check fail closed.
+    """
+
+    allowed_paths: list[str] | None
+    harness_paths: list[str]
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class PipelineOutcome:
     """Everything one ``process_result`` pass decided, for callers/tests."""
 
@@ -330,6 +346,50 @@ class PipelineHooks:
     # to reintroduce the rebuild through this struct.
     measure_fact_utilization: Callable[..., dict[str, int]]
     cleanup_worktree: Callable[[str, Path, str], None]
+
+
+def scope_widening_error(
+    root_dir: Path,
+    prd_path: str,
+    worktree_allowed: list[str] | None,
+) -> str | None:
+    """Refuse a scope the agent authored for itself (#264).
+
+    Phase 1 sources allowedPaths from the PRD IN THE WORKTREE, and the
+    harness carve-out now puts that PRD inside every component's
+    effective scope by design - the agent has to write it to set
+    ``passes``. So the file Phase 1 trusts is a file the agent may edit,
+    and an agent that widened its own allowedPaths would pass a check it
+    wrote. The in-loop guard sidesteps this by reading from ``root_dir``
+    (factory._component_scope); Phase 1 cannot, because it must fail
+    closed on the worktree copy it verifies against.
+
+    The pre-run copy at ``root_dir`` is outside every worktree and so is
+    not agent-writable. Comparing the two is the whole check. Two cases
+    are deliberately not covered, because in both there is nothing to
+    compare rather than something being waved through:
+
+    - No readable pre-run copy. A harness or operator condition (the run
+      was launched without one), not something an agent can arrange from
+      inside its worktree.
+    - ``use_worktrees=False``, where the "worktree" IS ``root_dir``, so
+      the two paths name one file. That mode has no isolation boundary
+      at all - the agent edits the operator's tree directly - so the
+      scope guard there is advisory by construction, and this check
+      cannot be the thing that makes it otherwise.
+    """
+    try:
+        pre_run = PRD.load(root_dir / prd_path).allowed_paths
+    except (OSError, ValueError):
+        return None
+    if pre_run == worktree_allowed:
+        return None
+    return (
+        f"allowedPaths in the worktree copy of {prd_path} no longer "
+        f"match the pre-run copy: the run started with {pre_run}, the "
+        f"worktree now declares {worktree_allowed}. A component may not "
+        "rewrite the scope it is judged against."
+    )
 
 
 class ComponentPipeline:
@@ -2326,6 +2386,64 @@ class ComponentPipeline:
             signatures=failure.signatures,
         )
 
+    def _resolve_verify_scope(self, comp: Component, wt_path: Path) -> VerifyScope:
+        """The scope Phase 1 judges ``comp``'s diff against.
+
+        Per-component allowed_paths comes from the PRD (architect-emitted
+        via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+). Without
+        this, the diff-scope check silently passes and a rogue agent can
+        touch anything in the worktree - the end-to-end validation run on
+        2026-05-27 caught an agent editing factory internals because
+        allowed_paths was always None here. Legacy PRDs without the field
+        load with allowed_paths=None which preserves the prior "no
+        constraint" behavior; v1.2.0+ architect outputs are gated
+        upstream in decompose._validate_decompose_output.
+
+        R1.5: a PRD that fails to LOAD is not the same as a PRD with no
+        allowedPaths. Swallowing the load error into allowed_paths=None
+        silently disabled the scope check - an agent that corrupts or
+        deletes its own PRD would unbind its write scope. Load failure
+        flows into check_diff_scope as allowed_paths_error, which fails
+        the check closed.
+
+        R8 review finding 5: the family is OSError, not just
+        FileNotFoundError. A prd.json that is a DIRECTORY raises
+        IsADirectoryError and an unreadable one PermissionError; both
+        escaped this block and became a factory EXCEPTION instead of a
+        failed verification. Fail-closed only works if the failure is
+        caught: an unreadable PRD must produce a verification RESULT
+        (check_diff_scope failing on allowed_paths_error), which is
+        recorded, retried and reported, rather than an exception the
+        component's error path never sees.
+        """
+        # #264: kstrl's own per-component files, carved out of the scope
+        # check the same way the in-loop guard carves them out
+        # (factory._run_component -> run_loop(guard_ignored_paths=...)).
+        # Both sites go through KstrlConfig.component_harness_files, which
+        # owns the derivation, so they cannot drift; the loop's guard
+        # fires FIRST, so a fix at only one of them fixes nothing.
+        harness_paths = self.base_config.component_harness_files(
+            comp.prd_path,
+            self.root_dir,
+        )
+        try:
+            prd_for_scope = PRD.load(wt_path / comp.prd_path)
+        except FileNotFoundError as exc:
+            return VerifyScope(None, harness_paths, f"PRD not found: {exc}")
+        except OSError as exc:
+            return VerifyScope(None, harness_paths, f"PRD could not be read: {exc}")
+        except ValueError as exc:
+            return VerifyScope(None, harness_paths, f"PRD failed to parse: {exc}")
+        return VerifyScope(
+            prd_for_scope.allowed_paths,
+            harness_paths,
+            scope_widening_error(
+                self.root_dir,
+                comp.prd_path,
+                prd_for_scope.allowed_paths,
+            ),
+        )
+
     def _phase_verify(
         self,
         comp: Component,
@@ -2358,44 +2476,7 @@ class ComponentPipeline:
         verify_config = self.factory_config.verify_config or VerifyConfig()
         self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
         verify_start = time.monotonic()
-        # Per-component allowed_paths comes from the PRD (architect-
-        # emitted via DECOMPOSE_PROMPT v1.1.0+, REQUIRED for v1.2.0+).
-        # Without this, the diff-scope check silently passes and a
-        # rogue agent can touch anything in the worktree -- the
-        # end-to-end validation run on 2026-05-27 caught an agent
-        # editing factory internals because allowed_paths was always
-        # None here. Legacy PRDs without the field load with
-        # allowed_paths=None which preserves the prior "no constraint"
-        # behavior; v1.2.0+ architect outputs are gated upstream in
-        # decompose._validate_decompose_output.
-        #
-        # R1.5: a PRD that fails to LOAD is not the same as a PRD with
-        # no allowedPaths. Swallowing the load error into
-        # allowed_paths=None silently disabled the scope check -- an
-        # agent that corrupts or deletes its own PRD would unbind its
-        # write scope. Load failure now flows into check_diff_scope as
-        # allowed_paths_error, which fails the check closed.
-        #
-        # R8 review finding 5: the family is OSError, not just
-        # FileNotFoundError. A prd.json that is a DIRECTORY raises
-        # IsADirectoryError and an unreadable one PermissionError; both
-        # escaped this block and became a factory EXCEPTION instead of a
-        # failed verification. Fail-closed only works if the failure is
-        # caught: an unreadable PRD must produce a verification RESULT
-        # (check_diff_scope failing on allowed_paths_error), which is
-        # recorded, retried and reported, rather than an exception the
-        # component's error path never sees.
-        component_allowed_paths: list[str] | None = None
-        allowed_paths_error: str | None = None
-        try:
-            prd_for_scope = PRD.load(wt_path / comp.prd_path)
-            component_allowed_paths = prd_for_scope.allowed_paths
-        except FileNotFoundError as exc:
-            allowed_paths_error = f"PRD not found: {exc}"
-        except OSError as exc:
-            allowed_paths_error = f"PRD could not be read: {exc}"
-        except ValueError as exc:
-            allowed_paths_error = f"PRD failed to parse: {exc}"
+        scope = self._resolve_verify_scope(comp, wt_path)
         # R7.2: fixtures config resolves from toml/env when the
         # caller did not inject one; enabled=false (the default)
         # makes run_mechanical_verification skip the check entirely.
@@ -2410,9 +2491,10 @@ class ComponentPipeline:
             wt_path,
             wt_path / comp.prd_path,
             self.manifest.base_branch,
-            component_allowed_paths,
+            scope.allowed_paths,
             verify_config,
-            allowed_paths_error=allowed_paths_error,
+            allowed_paths_error=scope.error,
+            harness_paths=scope.harness_paths,
             fixtures_config=fixtures_cfg,
             policy_config=policy_cfg,
             adequacy_config=adequacy_cfg,

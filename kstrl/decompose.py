@@ -10,7 +10,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.events import (
@@ -27,6 +27,7 @@ from kstrl.events import (
     RunStarted,
     SpecIssueRecorded,
 )
+from kstrl.guards import scope_entry_hazard
 from kstrl.linear import (
     LinearClient,
     LinearConfig,
@@ -492,30 +493,29 @@ _ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset(
 def _validate_allowed_path_entry(entry: str) -> str | None:
     """Return an error message if an allowedPaths entry is unacceptable.
 
-    Enforces the DECOMPOSE_PROMPT rule #12 EXCLUDE list plus structural
-    hazards: absolute paths, `..` traversal, and whole-repo scopes.
-    Returns None for acceptable entries. Errors feed the decompose
-    retry-with-error loop, so they address the architect directly.
+    Enforces the DECOMPOSE_PROMPT rule #12 EXCLUDE list plus the
+    structural hazards ``guards.scope_entry_hazard`` classifies:
+    absolute paths, `..` traversal, and whole-repo scopes. The predicate
+    is shared with ``factory._preflight_component_scope`` so a hazard
+    added for one input path is caught for the other; only the wording
+    forks, because these errors feed the decompose retry-with-error loop
+    and address the architect directly.
     """
     stripped = entry.strip()
-    if stripped.startswith("/"):
-        if stripped.rstrip("/") == "":
-            return (
-                f"entry '{entry}' grants whole-repo scope; list specific "
-                "source/test/feature path prefixes instead"
-            )
+    hazard = scope_entry_hazard(stripped)
+    if hazard == "root":
+        return (
+            f"entry '{entry}' grants whole-repo scope; list specific "
+            "source/test/feature path prefixes instead"
+        )
+    if hazard == "absolute":
         return f"entry '{entry}' is an absolute path; entries must be repo-relative prefixes"
-    if ".." in PurePosixPath(stripped).parts:
+    if hazard == "traversal":
         return f"entry '{entry}' contains '..'; path traversal outside the worktree is not allowed"
     normalized = stripped
     while normalized.startswith("./"):
         normalized = normalized[2:]
     normalized = normalized.rstrip("/")
-    if normalized in ("", "."):
-        return (
-            f"entry '{entry}' grants whole-repo scope; list specific "
-            "source/test/feature path prefixes instead"
-        )
     if normalized in _ALLOWED_PATHS_EXCLUDE:
         return (
             f"entry '{entry}' is on the DECOMPOSE_PROMPT EXCLUDE list "
