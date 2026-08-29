@@ -1076,10 +1076,10 @@ def _understand_core(
     # #264/#268: the standalone loop gets the same carve-out the factory
     # gets. `ks understand` writes the codebase map - the understand
     # prompt says it is the ONLY file it may edit - and its progress log.
-    # The default allowed_paths below already names the map, but an
-    # operator who passes --allowed-paths replaces that default, and the
-    # in-loop guard then reverts the one file the prompt told the agent
-    # to write. `ks run` needs nothing here: it is a single-component
+    # The `understand` command's own default allowed_paths already names
+    # the map, but an operator who passes --allowed-paths REPLACES that
+    # default, and the in-loop guard then reverts the one file the prompt
+    # told the agent to write. `ks run` needs nothing here: it is a single-component
     # factory invocation (Manifest.from_prd -> run_factory), so it
     # carries the carve-out through factory._run_component.
     understand_harness_paths = config.standalone_harness_files(root_dir)
