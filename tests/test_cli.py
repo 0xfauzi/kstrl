@@ -6,8 +6,9 @@ from pathlib import Path
 
 from click.testing import CliRunner, Result
 
-from kstrl.cli import _run_structural_override_notices, cli
+from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
 from kstrl.factory import FactoryConfig
+from kstrl.manifest import ComponentStatus
 from tests.spine_utils import git as spine_git
 
 
@@ -336,3 +337,20 @@ class TestDecomposeBlockerOutput:
         assert result.exit_code == 2
         assert "spec is too vague" in result.output
         assert str(artifact) in result.output
+
+
+class TestFormatComponentStatus:
+    """#263: the plan line must not echo an unschedulable status as if valid."""
+
+    def test_every_enum_status_renders_verbatim(self) -> None:
+        for status in ComponentStatus:
+            assert _format_component_status(status.value) == status.value
+
+    def test_off_enum_status_is_flagged(self) -> None:
+        # The reporter's manifest said "PENDING" and the plan printed
+        # "document-format [PENDING]" - indistinguishable from a correct
+        # manifest, so the display confirmed the very thing that was wrong.
+        assert _format_component_status("PENDING") == "PENDING (not a valid status)"
+
+    def test_missing_component_renders_question_mark(self) -> None:
+        assert _format_component_status(None) == "?"

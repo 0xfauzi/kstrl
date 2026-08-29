@@ -8,11 +8,13 @@ from unittest.mock import Mock
 from kstrl.agents.base import UsageTotals
 from kstrl.findings import Finding
 from kstrl.interaction import CheckpointContext, PromptKind, PromptRequest
+from kstrl.manifest import COMPONENT_STATUS_VALUES
 from kstrl.reducer import ComponentState
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.overview import OverviewScreen
+from kstrl.tui.theme import STATUS_GLYPHS, status_glyph
 from kstrl.tui.widgets.findings_table import FindingsTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.phase_timeline import render_timeline
@@ -255,3 +257,20 @@ class TestPhaseTimeline:
         assert "engineer ✗" in timeline
         # The retried phase renders as the live amber chip (● marker).
         assert "engineer ●" in timeline
+
+
+class TestStatusGlyphCoverage:
+    """#263 follow-on: three enumerations of the legal statuses now exist.
+
+    ``ComponentStatus`` is the enum, ``COMPONENT_STATUS_VALUES`` is what
+    the manifest validator and the CLI plan check against, and
+    ``STATUS_GLYPHS`` is the TUI's hand-written table. A status added to
+    the enum but not to the table would render as the ``?`` fallback -
+    the glyph reserved for a status nothing recognises.
+    """
+
+    def test_glyph_table_covers_exactly_the_enum(self) -> None:
+        assert set(STATUS_GLYPHS) == set(COMPONENT_STATUS_VALUES)
+
+    def test_unknown_status_falls_back_to_question_mark(self) -> None:
+        assert status_glyph("PENDING")[0] == "?"

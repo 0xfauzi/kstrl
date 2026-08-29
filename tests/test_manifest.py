@@ -125,6 +125,45 @@ class TestManifestValidateSchema:
         data = _minimal_manifest_data([comp])
         assert Manifest.validate_schema(data) == []
 
+    @pytest.mark.parametrize("status", [s.value for s in ComponentStatus])
+    def test_component_accepts_every_enum_status(self, status: str) -> None:
+        comp = _component_data(status=status)
+        data = _minimal_manifest_data([comp])
+        assert Manifest.validate_schema(data) == []
+
+    def test_component_rejects_off_enum_status(self) -> None:
+        # #263: "PENDING" is not "pending", and get_ready_components
+        # matches the enum value exactly, so an off-enum status made the
+        # component permanently unschedulable while the manifest loaded
+        # clean and the run reported success.
+        comp = _component_data(status="PENDING")
+        data = _minimal_manifest_data([comp])
+        errors = Manifest.validate_schema(data)
+        assert len(errors) == 1
+        assert "'PENDING' is not a valid status" in errors[0]
+        # The message has to list the legal values: the reporter could
+        # not tell from the manifest alone what the right spelling was.
+        for legal in ComponentStatus:
+            assert legal.value in errors[0]
+
+    @pytest.mark.parametrize("status", [3, None, ["pending"]])
+    def test_component_rejects_non_string_status(self, status: object) -> None:
+        comp = _component_data(status=status)
+        data = _minimal_manifest_data([comp])
+        errors = Manifest.validate_schema(data)
+        assert errors == ["components[0].status: must be a string"]
+
+    def test_load_rejects_off_enum_status(self, tmp_path: Path) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(_minimal_manifest_data([_component_data(status="PENDING")])))
+        with pytest.raises(ValueError, match="'PENDING' is not a valid status"):
+            Manifest.load(path)
+
+    def test_load_accepts_a_legal_status(self, tmp_path: Path) -> None:
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(_minimal_manifest_data([_component_data(status="failed")])))
+        assert Manifest.load(path).components[0].status == ComponentStatus.FAILED.value
+
 
 class TestManifestValidateDAG:
     """Tests for Manifest.validate_dag."""

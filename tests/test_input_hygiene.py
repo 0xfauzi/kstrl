@@ -29,9 +29,8 @@ from kstrl.git import (
 from kstrl.manifest import (
     Component,
     Manifest,
-    validate_branch_name,
-    validate_component_id,
 )
+from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 

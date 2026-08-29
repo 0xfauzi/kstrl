@@ -69,7 +69,7 @@ from kstrl.interaction import (
 )
 from kstrl.launch import assemble_factory_configs
 from kstrl.loop import run_loop
-from kstrl.manifest import Manifest
+from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
 from kstrl.observability import (
     event_age_seconds,
     format_age,
@@ -87,6 +87,22 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
+
+
+def _format_component_status(status: str | None) -> str:
+    """Render a component status for the plan, flagging an off-enum one.
+
+    A status the enum does not know can never be scheduled, so echoing it
+    plain reads as confirmation that the manifest is correct - the plan
+    line for a component that will silently never run looks exactly like
+    the plan line for one that will (#263). ``None`` means the execution
+    order named an id the manifest has no component for.
+    """
+    if status is None:
+        return "?"
+    if status in COMPONENT_STATUS_VALUES:
+        return status
+    return f"{status} (not a valid status)"
 
 
 def _console_ui(
@@ -2369,7 +2385,7 @@ def factory(
     ui_impl.info("Execution order:")
     for i, comp_id in enumerate(topo, 1):
         comp = manifest.get_component(comp_id)
-        status = comp.status if comp else "?"
+        status = _format_component_status(comp.status if comp else None)
         dep_list = ", ".join(comp.dependencies) if comp and comp.dependencies else ""
         deps = f" (depends on: {dep_list})" if dep_list else ""
         ui_impl.info(f"  {i}. {comp_id} [{status}]{deps}")

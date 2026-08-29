@@ -37,9 +37,8 @@ from kstrl.manifest import (
     Component,
     ComponentStatus,
     Manifest,
-    validate_branch_name,
-    validate_component_id,
 )
+from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
 
 if TYPE_CHECKING:

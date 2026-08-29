@@ -8,11 +8,15 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
+    FactoryResult,
     merge_gate_unreachable_warning,
+    resolve_exit_code,
     run_factory,
 )
 from kstrl.knowledge import Fact, write_facts
@@ -808,3 +812,262 @@ class TestEvolutionRecording:
         util = self._component_entry(root)["knowledge_utilization"]
         assert util["measured"] is False
         assert util["reason"] == "knowledge retrieval failed"
+
+
+class TestResolveExitCode:
+    """#263: the ladder branch for a run that scheduled nothing.
+
+    Unit level, because the interesting cases differ only in manifest
+    state and the counters an executed run would have left behind.
+    """
+
+    @staticmethod
+    def _ui() -> tuple[PlainUI, io.StringIO]:
+        buf = io.StringIO()
+        return PlainUI(no_color=True, file=buf), buf
+
+    def _resolve(
+        self,
+        manifest: Manifest,
+        result: FactoryResult,
+        stopped: bool = False,
+    ) -> tuple[int, str]:
+        ui, buf = self._ui()
+        code = resolve_exit_code(result, manifest, ui, stopped=stopped)
+        return code, buf.getvalue()
+
+    def test_empty_manifest_stays_zero(self) -> None:
+        code, out = self._resolve(_make_manifest([]), FactoryResult())
+        assert code == 0
+        assert out == ""
+
+    def test_finished_manifest_rerun_stays_zero(self) -> None:
+        # Idempotent re-run of a manifest whose work is done. Every
+        # counter is empty here exactly as in the bug report, which is
+        # why a counter-based predicate cannot separate the two.
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="completed")]
+        )
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 0
+        assert out == ""
+
+    def test_off_enum_status_fails_loudly(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="PENDING")])
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 1
+        assert "No component was scheduled from 1 in the manifest" in out
+        assert "ComponentStatus" in out
+        for legal in ComponentStatus:
+            assert legal.value in out
+
+    def test_already_failed_rerun_fails(self) -> None:
+        # Re-running a manifest whose component failed, without `ks
+        # retry`: nothing is schedulable, so the run built nothing.
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="failed")])
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 1
+        assert "ks retry" in out
+
+    def test_partly_finished_rerun_fails(self) -> None:
+        # The case "no component ever completed" would wave through: one
+        # component IS completed, but the other never ran.
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="completed"),
+                Component("b", "B", "", [], "b.json", "b/b", status="failed"),
+            ]
+        )
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 1
+        assert "1 did not complete: b" in out
+
+    # merge_pending: repoll_merge_pending leaves these alone when gh is
+    # unavailable and warns that dependents stay blocked; the exit code
+    # now says the same thing.
+    @pytest.mark.parametrize("status", ["skipped", "merge_pending"])
+    def test_leftover_terminal_status_rerun_fails(self, status: str) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status=status)])
+        code, _ = self._resolve(manifest, FactoryResult())
+        assert code == 1
+
+    def test_scheduled_run_that_completed_stays_zero(self) -> None:
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="completed")]
+        )
+        code, out = self._resolve(manifest, FactoryResult(completed=["a"], scheduled=["a"]))
+        assert code == 0
+        assert out == ""
+
+    def test_scheduled_run_left_unfinished_is_not_reported_here(self) -> None:
+        # A component that ran and did not finish is already named by an
+        # earlier branch; this branch must not double-report it, and must
+        # not fire for any run that actually scheduled work.
+        manifest = _make_manifest(
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="completed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b", status="skipped"),
+            ]
+        )
+        code, out = self._resolve(
+            manifest,
+            FactoryResult(completed=["a"], scheduled=["a"]),
+        )
+        assert code == 0
+        assert out == ""
+
+    def test_stop_wins_over_nothing_scheduled(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="failed")])
+        code, out = self._resolve(manifest, FactoryResult(), stopped=True)
+        assert code == 130
+        assert out == ""
+
+    def test_failure_branch_wins_over_nothing_scheduled(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="failed")])
+        code, out = self._resolve(manifest, FactoryResult(failed=["a"]))
+        assert code == 1
+        assert out == ""
+
+
+class TestRunFactorySchedulesNothing:
+    """#263 end to end: a run that launches nothing must not report success."""
+
+    @staticmethod
+    def _config() -> FactoryConfig:
+        return FactoryConfig(
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            review_mode="skip",
+        )
+
+    def _run(self, root: Path, manifest: Manifest) -> tuple[Any, str]:
+        buf = io.StringIO()
+        ui = PlainUI(no_color=True, file=buf)
+        result = run_factory(manifest, self._config(), _make_base_config(root), ui, root)
+        return result, buf.getvalue()
+
+    def test_off_enum_status_exits_nonzero(self, tmp_path: Path) -> None:
+        root = _setup_project(tmp_path)
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="PENDING")])
+
+        result, out = self._run(root, manifest)
+
+        assert result.scheduled == []
+        assert result.completed == []
+        assert result.exit_code == 1
+        assert "No component was scheduled from 1 in the manifest" in out
+
+    def test_already_failed_rerun_exits_nonzero(self, tmp_path: Path) -> None:
+        root = _setup_project(tmp_path)
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="failed")])
+
+        result, out = self._run(root, manifest)
+
+        assert result.scheduled == []
+        assert result.exit_code == 1
+        assert "ks retry" in out
+
+    def test_finished_manifest_rerun_exits_zero(self, tmp_path: Path) -> None:
+        root = _setup_project(tmp_path)
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="completed")]
+        )
+
+        result, out = self._run(root, manifest)
+
+        assert result.scheduled == []
+        assert result.exit_code == 0
+        assert "No component was scheduled" not in out
+
+    def test_a_scheduled_run_records_what_it_launched(self, tmp_path: Path) -> None:
+        root = _setup_project(tmp_path)
+        manifest = _make_manifest(
+            [
+                Component(
+                    "comp-a",
+                    "Component A",
+                    "Desc",
+                    [],
+                    "scripts/kstrl/feature/comp-a/prd.json",
+                    "kstrl/factory/comp-a",
+                ),
+            ]
+        )
+        feature_dir = root / "scripts" / "kstrl" / "feature" / "comp-a"
+        feature_dir.mkdir(parents=True)
+        (feature_dir / "prd.json").write_text(
+            json.dumps(
+                {
+                    "branchName": "test",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": "Test",
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": True,
+                            "notes": "",
+                        }
+                    ],
+                }
+            )
+        )
+        config = FactoryConfig(
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            review_mode="skip",
+            verify_config=VerifyConfig(
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_diff_scope=False,
+                check_bad_patterns=False,
+                subprocess_timeout=5.0,
+            ),
+        )
+
+        buf = io.StringIO()
+        ui = PlainUI(no_color=True, file=buf)
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                return_value=ComponentResult("comp-a", success=True, iterations=1),
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
+            result = run_factory(manifest, config, _make_base_config(root), ui, root)
+
+        assert result.completed == ["comp-a"]
+        assert result.scheduled == ["comp-a"]
+        assert result.exit_code == 0
+        assert "No component was scheduled" not in buf.getvalue()
+
+    def test_scheduled_records_one_entry_per_attempt(self, tmp_path: Path) -> None:
+        # `scheduled` is an attempt log, not a set: the branch that reads
+        # it only asks whether it is empty, and a per-attempt record is
+        # the more informative of the two.
+        root = _setup_project(tmp_path)
+        manifest = _make_manifest([Component("a", "A", "Desc", [], "a.json", "b/a")])
+        config = FactoryConfig(
+            use_worktrees=False,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=2,
+            retry_delay=0,
+            review_mode="skip",
+        )
+
+        buf = io.StringIO()
+        ui = PlainUI(no_color=True, file=buf)
+        with patch(
+            "kstrl.factory._run_component",
+            return_value=ComponentResult("a", success=False, error="boom"),
+        ):
+            result = run_factory(manifest, config, _make_base_config(root), ui, root)
+
+        assert result.scheduled == ["a", "a", "a"]
+        assert result.failed == ["a"]
+        assert result.exit_code == 1
+        assert "No component was scheduled" not in buf.getvalue()
