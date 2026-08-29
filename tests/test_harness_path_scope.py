@@ -204,9 +204,13 @@ class TestComponentHarnessPaths:
             MAP_REL,
         ) == [MAP_REL, "scripts/kstrl/prd.json"]
 
-    def test_a_non_relative_path_is_kept_for_the_preflight_to_name(self) -> None:
-        """Inert here (it can never match a diff name) and refused by
-        _preflight_component_scope before any spend."""
+    def test_a_non_relative_path_is_kept_and_is_harmless(self) -> None:
+        """An absolute [paths] setting is supported (see
+        config.reconcile_progress_config): the file lives outside every
+        worktree, so it never appears in a component diff and can never
+        BE a violation. The entry rides along inertly rather than being
+        filtered, and it matches nothing.
+        """
         entries = component_harness_paths(PRD_REL, PROGRESS_REL, "/etc/map.md")
         assert "/etc/map.md" in entries
         assert not path_is_allowed("etc/map.md", entries)

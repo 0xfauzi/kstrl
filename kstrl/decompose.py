@@ -507,9 +507,9 @@ _SCOPE_HAZARD_ADVICE: dict[ScopeHazard, str] = {
 def _validate_allowed_path_entry(entry: str) -> str | None:
     """Return an error message if an allowedPaths entry is unacceptable.
 
-    Enforces the DECOMPOSE_PROMPT rule #12 EXCLUDE list plus the
-    structural hazards ``guards.scope_entry_hazard`` classifies:
-    absolute paths, `..` traversal, and whole-repo scopes. The predicate
+    Enforces the DECOMPOSE_PROMPT rule #12 EXCLUDE list plus every
+    hazard ``guards.scope_entry_hazard`` classifies, each with its
+    sentence in ``_SCOPE_HAZARD_ADVICE``. The predicate
     is shared with ``factory._preflight_component_scope`` so a hazard
     added for one input path is caught for the other; only the wording
     forks, because these errors feed the decompose retry-with-error loop

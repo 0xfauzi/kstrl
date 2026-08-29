@@ -210,11 +210,18 @@ def component_harness_paths(
     three at one file) and sorted so the reported set is stable.
 
     An entry that is absolute, or that escapes the root, is kept rather
-    than dropped: it can never match a ``git diff --name-only`` line, so
-    it is inert here, and ``factory._preflight_component_scope`` refuses
-    the run naming it before any engineer call is paid for. Callers
-    normally reach this through ``KstrlConfig.component_harness_files``,
-    which owns the resolution of the three arguments.
+    than dropped, and is harmless: such a file lives outside every
+    worktree (joining an absolute path onto one is a no-op), so it never
+    appears in a component's ``git diff`` and can never be a scope
+    violation in the first place. ``config.reconcile_progress_config``
+    documents that configuration as supported.
+
+    Callers normally reach this through
+    ``KstrlConfig.component_harness_files``, or
+    ``standalone_harness_files`` for the loop whose progress log is not
+    a sibling of a component PRD. ``factory._run_component`` is the one
+    direct caller: it runs in a pool worker that is handed the three
+    paths as strings and has no config to ask.
     """
     return sorted(
         {Path(p).as_posix() for p in (prd_path, progress_path, codebase_map_path)},

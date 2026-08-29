@@ -1752,6 +1752,12 @@ def _run_component(
     # (pipeline._phase_verify -> check_diff_scope(harness_paths=...));
     # this guard fires first, so both sites need it or the loop still
     # dies before Phase 1 is reached.
+    #
+    # The one direct call to component_harness_paths rather than to
+    # KstrlConfig.component_harness_files, which owns the derivation
+    # everywhere else: this runs in a pool worker handed the three paths
+    # as strings, with no config to ask. The strings come from
+    # _submit_args, which built them with that method's own inputs.
     harness_paths = component_harness_paths(
         prd_path_str,
         component_progress_rel,
