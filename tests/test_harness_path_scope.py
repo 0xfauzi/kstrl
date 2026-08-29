@@ -30,20 +30,30 @@ import io
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast, get_args
 from unittest.mock import patch
 
 import pytest
 
+from kstrl.cli import _understand_core
+from kstrl.commandrun import CommandRun
 from kstrl.config import component_harness_paths
+from kstrl.decompose import _SCOPE_HAZARD_ADVICE
+from kstrl.events import EventBus
 from kstrl.factory import (
+    _SCOPE_HAZARD_REASONS,
     ComponentResult,
     FactoryConfig,
     _preflight_component_scope,
     _run_component,
     run_factory,
 )
-from kstrl.guards import check_violations, path_is_allowed, scope_entry_hazard
+from kstrl.guards import (
+    ScopeHazard,
+    check_violations,
+    path_is_allowed,
+    scope_entry_hazard,
+)
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
@@ -86,33 +96,73 @@ def _manifest(components: list[Component]) -> Manifest:
     )
 
 
-def _write_prd(path: Path, allowed: list[str] | None) -> None:
+STORY: dict[str, Any] = {
+    "id": "US-001",
+    "title": "Parse a document",
+    "acceptanceCriteria": ["AC-1", "AC-2"],
+    "priority": 1,
+    "passes": True,
+    "notes": "",
+}
+
+
+def _write_prd(
+    path: Path,
+    allowed: list[str] | None,
+    *,
+    stories: list[dict[str, Any]] | None = None,
+    branch: str | None = None,
+    fixtures: list[dict[str, Any]] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     body: dict[str, Any] = {
-        "branchName": f"kstrl/factory/{COMPONENT_ID}",
-        "userStories": [
-            {
-                "id": "US-001",
-                "title": "Parse a document",
-                "acceptanceCriteria": ["AC"],
-                "priority": 1,
-                "passes": True,
-                "notes": "",
-            }
-        ],
+        "branchName": branch or f"kstrl/factory/{COMPONENT_ID}",
+        "userStories": [dict(STORY)] if stories is None else stories,
     }
     if allowed is not None:
         body["allowedPaths"] = allowed
+    if fixtures is not None:
+        body["fixtures"] = fixtures
     path.write_text(json.dumps(body))
 
 
-def _setup_project(root: Path, allowed: list[str] | None = None) -> None:
+def _spy_run_loop(
+    completed: bool = True,
+    guard_violations: tuple[str, ...] = (),
+) -> tuple[list[Any], Any]:
+    """A run_loop stand-in plus the list it records into.
+
+    Every test here asks the same question of the same seam - what
+    ``guard_ignored_paths`` did the caller pass? - so the closure is
+    written once.
+    """
+    seen: list[Any] = []
+
+    def fake(*args: Any, **kwargs: Any) -> LoopResult:
+        seen.append(kwargs.get("guard_ignored_paths"))
+        return LoopResult(
+            completed=completed,
+            iterations=1,
+            exit_code=0 if completed else 1,
+            duration_seconds=0.0,
+            guard_violations=guard_violations,
+        )
+
+    return seen, fake
+
+
+def _setup_project(root: Path, allowed: list[str] | None = AUTHORED) -> None:
+    """``allowed`` means what it means in _write_prd: None OMITS the
+    field. An empty list is not a way to say that - PRD.validate_schema
+    rejects `"allowedPaths": []` outright, so writing one produced an
+    unloadable PRD and silently exercised the fallback path instead.
+    """
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
     (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}')
     (root / "kstrl.toml").write_text("[knowledge]\nenabled = false\n")
-    _write_prd(root / PRD_REL, AUTHORED if allowed is None else allowed)
+    _write_prd(root / PRD_REL, allowed)
 
 
 # ---------------------------------------------------------------------------
@@ -194,16 +244,7 @@ class TestInLoopGuard:
         unreachable.
         """
         _setup_project(tmp_path)
-        seen: list[Any] = []
-
-        def fake_run_loop(*args: Any, **kwargs: Any) -> LoopResult:
-            seen.append(kwargs.get("guard_ignored_paths"))
-            return LoopResult(
-                completed=True,
-                iterations=1,
-                exit_code=0,
-                duration_seconds=0.0,
-            )
+        seen, fake_run_loop = _spy_run_loop()
 
         with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
             _run_component(
@@ -232,14 +273,10 @@ class TestInLoopGuard:
         thing it has to stop writing."""
         _setup_project(tmp_path)
 
-        def fake_run_loop(*args: Any, **kwargs: Any) -> LoopResult:
-            return LoopResult(
-                completed=False,
-                iterations=1,
-                exit_code=1,
-                duration_seconds=0.0,
-                guard_violations=("kstrl/factory.py",),
-            )
+        _, fake_run_loop = _spy_run_loop(
+            completed=False,
+            guard_violations=("kstrl/factory.py",),
+        )
 
         with patch("kstrl.loop.run_loop", side_effect=fake_run_loop):
             result = _run_component(
@@ -339,75 +376,6 @@ class TestPhase1DiffScope:
 
 
 # ---------------------------------------------------------------------------
-# The self-widening hole the carve-out would otherwise open
-# ---------------------------------------------------------------------------
-
-
-class TestScopeSelfWidening:
-    def _scope(self, root: Path, wt: Path) -> Any:
-        comp = _component()
-        return _pipeline(root, comp, wt)._resolve_verify_scope(comp, wt)
-
-    def test_an_unchanged_prd_is_accepted(self, tmp_path: Path) -> None:
-        wt = tmp_path / "wt"
-        _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(wt / PRD_REL, AUTHORED)
-        scope = self._scope(tmp_path, wt)
-        assert scope.error is None
-        assert scope.allowed_paths == AUTHORED
-        assert scope.harness_paths == HARNESS
-
-    def test_a_widened_prd_fails_closed(self, tmp_path: Path) -> None:
-        """Phase 1 reads allowedPaths from the worktree - a file the
-        agent must write to set ``passes``. Without this the agent could
-        authorise its own scope and pass a check it wrote."""
-        wt = tmp_path / "wt"
-        _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(wt / PRD_REL, [*AUTHORED, "kstrl/"])
-        scope = self._scope(tmp_path, wt)
-        assert scope.error is not None
-        assert "no longer match the pre-run copy" in scope.error
-        assert "kstrl/" in scope.error
-
-    def test_a_narrowed_prd_is_refused_too(self, tmp_path: Path) -> None:
-        """Any rewrite is refused, not only a widening: the check is
-        'the scope you are judged against is the one the run started
-        with', and a narrowing still means the two guards disagree."""
-        wt = tmp_path / "wt"
-        _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(wt / PRD_REL, ["src/writers_room/"])
-        assert self._scope(tmp_path, wt).error is not None
-
-    def test_no_pre_run_copy_skips_the_comparison(self, tmp_path: Path) -> None:
-        """Nothing to compare against. A missing root copy is a harness
-        or operator condition - the root tree is outside every worktree,
-        so an agent cannot arrange it."""
-        wt = tmp_path / "wt"
-        _write_prd(wt / PRD_REL, AUTHORED)
-        scope = self._scope(tmp_path, wt)
-        assert scope.error is None
-        assert scope.allowed_paths == AUTHORED
-
-    def test_the_fail_closed_message_says_what_to_restore(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        wt = tmp_path / "wt"
-        _write_prd(tmp_path / PRD_REL, AUTHORED)
-        _write_prd(wt / PRD_REL, [*AUTHORED, "kstrl/"])
-        scope = self._scope(tmp_path, wt)
-        result = check_diff_scope(
-            tmp_path,
-            "main",
-            scope.allowed_paths,
-            allowed_paths_error=scope.error,
-        )
-        assert result.passed is False
-        assert "failing closed" in result.message
-        assert "do not treat this as permission to widen the diff" in "\n".join(result.details)
-
-
-# ---------------------------------------------------------------------------
 # The plan-time preflight: no spend
 # ---------------------------------------------------------------------------
 
@@ -430,7 +398,7 @@ class TestPreflightComponentScope:
     ) -> None:
         """No allowedPaths means no scope, so there is nothing for a file
         to fall outside of."""
-        _setup_project(tmp_path, allowed=[])
+        _setup_project(tmp_path, allowed=None)
         assert (
             _preflight_component_scope(
                 _manifest([_component()]),
@@ -440,29 +408,6 @@ class TestPreflightComponentScope:
             == []
         )
 
-    def test_an_unconstrained_component_is_still_harness_checked(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """An engineer pointed outside its own worktree is a problem with
-        or without an allowlist, so that arm is not gated on
-        allowedPaths."""
-        _setup_project(tmp_path, allowed=[])
-        base = _base_config(tmp_path)
-        base.codebase_map_file = Path("/elsewhere/codebase_map.md")
-        errors = _preflight_component_scope(_manifest([_component()]), tmp_path, base)
-        assert len(errors) == 1
-
-    def test_one_broken_config_path_is_reported_once(self, tmp_path: Path) -> None:
-        """The map and the progress log come from ONE [paths] setting
-        shared by the whole run, so a three-component manifest must not
-        produce three copies of the same error."""
-        _setup_project(tmp_path)
-        base = _base_config(tmp_path)
-        base.codebase_map_file = Path("/elsewhere/codebase_map.md")
-        manifest = _manifest([_component(), _component(), _component()])
-        assert len(_preflight_component_scope(manifest, tmp_path, base)) == 1
-
     @pytest.mark.parametrize(
         ("entry", "hazard"),
         [
@@ -471,6 +416,8 @@ class TestPreflightComponentScope:
             (".", "root"),
             ("./", "root"),
             ("/", "root"),
+            (" src/", "whitespace"),
+            ("src/ ", "whitespace"),
             ("src/", None),
             ("tests/", None),
             (MAP_REL, None),
@@ -483,13 +430,50 @@ class TestPreflightComponentScope:
         architect is caught for hand-written manifests too."""
         assert scope_entry_hazard(entry) == hazard
 
-    def test_an_unmatchable_authored_entry_is_refused(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("entry", ["/abs/src/", "../outside/", ".", " src/"])
+    def test_the_classifier_agrees_with_the_matcher(self, entry: str) -> None:
+        """The predicate and the matcher must judge the SAME string.
+
+        Classifying ``entry.strip()`` while ``path_is_allowed`` matched
+        the raw entry let `` src/`` pass as safe and authorise nothing,
+        in a check whose entire job is catching exactly that (#268
+        review).
+        """
+        assert not path_is_allowed("src/document.py", [entry])
+
+    def test_every_hazard_code_has_a_sentence_in_both_consumers(self) -> None:
+        """The mechanism the shared predicate was missing.
+
+        Adding "whitespace" in the #268 review meant editing three files
+        by hand, and nothing would have failed if one had been missed:
+        the operator or the architect would have got a KeyError or a
+        silently unhandled case. Literal alone does not force
+        exhaustiveness, so this asserts it.
+        """
+        codes = set(get_args(ScopeHazard))
+        assert codes == set(_SCOPE_HAZARD_REASONS)
+        assert codes == set(_SCOPE_HAZARD_ADVICE)
+
+    @pytest.mark.parametrize(
+        ("entry", "reason"),
+        [
+            ("{root}/src/writers_room/", "absolute path"),
+            (" src/writers_room/", "whitespace"),
+            ("../src/writers_room/", "traverses outside"),
+        ],
+    )
+    def test_an_unmatchable_authored_entry_is_refused(
+        self,
+        tmp_path: Path,
+        entry: str,
+        reason: str,
+    ) -> None:
         """The hand-written-manifest backstop. decompose validates
         architect output; nothing validated a hand-edited PRD, so an
-        absolute entry silently authorised nothing and every file under
-        it became a violation - the same unwinnable loop, from the other
-        end."""
-        _setup_project(tmp_path, allowed=[f"{tmp_path}/src/writers_room/"])
+        entry like this silently authorised nothing and every file it
+        was meant to cover became a violation - the same unwinnable
+        loop, from the other end."""
+        _setup_project(tmp_path, allowed=[entry.format(root=tmp_path)])
         errors = _preflight_component_scope(
             _manifest([_component()]),
             tmp_path,
@@ -497,38 +481,37 @@ class TestPreflightComponentScope:
         )
         assert len(errors) == 1
         assert "allowedPaths entry" in errors[0]
-        assert "absolute path" in errors[0]
+        assert reason in errors[0]
         assert f"plus harness artifacts: {', '.join(HARNESS)}" in errors[0]
 
-    def test_a_non_relative_harness_path_is_refused(self, tmp_path: Path) -> None:
-        """``[paths] codebase_map`` pointing outside the repo puts the
-        engineer's writes outside its own worktree AND makes the
-        carve-out unmatchable. Refused before any spend, and the error
-        names the two sets separately."""
-        _setup_project(tmp_path)
+    def test_one_bad_entry_is_reported_once(self, tmp_path: Path) -> None:
+        """_component_scope falls back to the run-wide --allowed-paths
+        flag, so one bad entry there is shared by every component and
+        must not repeat its paragraph once per component."""
+        _setup_project(tmp_path, allowed=None)
         base = _base_config(tmp_path)
-        base.codebase_map_file = Path("/elsewhere/codebase_map.md")
-        errors = _preflight_component_scope(
-            _manifest([_component()]),
-            tmp_path,
-            base,
-        )
-        assert len(errors) == 1
-        assert "/elsewhere/codebase_map.md" in errors[0]
-        assert "absolute path" in errors[0]
-        assert "Harness artifacts for this component" in errors[0]
+        base.allowed_paths = ["/abs/src/"]
+        manifest = _manifest([_component(), _component(), _component()])
+        assert len(_preflight_component_scope(manifest, tmp_path, base)) == 1
 
-    def test_a_traversing_harness_path_is_refused(self, tmp_path: Path) -> None:
+    def test_an_absolute_harness_path_is_supported_not_refused(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """config.reconcile_progress_config documents an absolute
+        progress path outside root as SUPPORTED and self-consistent:
+        joining it onto a worktree is a no-op, so writer and reader land
+        on one shared file in the main checkout. Such a file is outside
+        every worktree, never appears in a component's git diff, and so
+        can never BE a scope violation. The preflight refused it until
+        the #268 review; two docstrings in one codebase said opposite
+        things.
+        """
         _setup_project(tmp_path)
         base = _base_config(tmp_path)
-        base.progress_file = Path("../outside/progress.txt")
-        errors = _preflight_component_scope(
-            _manifest([_component()]),
-            tmp_path,
-            base,
-        )
-        assert len(errors) == 1
-        assert "traverses outside" in errors[0]
+        base.progress_file = Path("/var/log/shared/progress.txt")
+        base.codebase_map_file = Path("/elsewhere/codebase_map.md")
+        assert _preflight_component_scope(_manifest([_component()]), tmp_path, base) == []
 
     def test_run_factory_refuses_without_paying_for_an_engineer_call(
         self,
@@ -536,9 +519,8 @@ class TestPreflightComponentScope:
     ) -> None:
         """The whole point: $14.49 and 41 minutes become exit 2 in the
         first second."""
-        _setup_project(tmp_path)
+        _setup_project(tmp_path, allowed=[f"{tmp_path}/src/writers_room/"])
         base = _base_config(tmp_path)
-        base.codebase_map_file = Path("/elsewhere/codebase_map.md")
         calls: list[Any] = []
 
         def fake_component(*args: Any, **kwargs: Any) -> ComponentResult:
@@ -599,6 +581,91 @@ class TestPreflightComponentScope:
 
         assert result.exit_code != 2
         assert len(calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# The standalone paths, not only the factory
+# ---------------------------------------------------------------------------
+
+
+class TestStandaloneLoops:
+    """`ks run` and `ks understand` write the same harness files, so a
+    carve-out only the factory applied would leave #264 reproducible on
+    the commands a first-time user reaches for first.
+    """
+
+    def test_ks_run_carries_the_carve_out_through_the_factory(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`ks run` is a single-component factory invocation
+        (Manifest.from_prd -> run_factory), so it reaches
+        _run_component and gets the carve-out. Driven here the way the
+        CLI drives it, with the run-wide --allowed-paths flag and a PRD
+        that carries no allowedPaths of its own, which is exactly the
+        `ks run --allowed-paths src/` shape.
+        """
+        _setup_project(tmp_path, allowed=None)
+        base = _base_config(tmp_path)
+        base.allowed_paths = ["src/writers_room/"]
+        seen, fake_run_loop = _spy_run_loop()
+
+        with (
+            patch("kstrl.loop.run_loop", side_effect=fake_run_loop),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
+            run_factory(
+                _manifest([_component()]),
+                FactoryConfig(
+                    use_worktrees=False,
+                    create_prs=False,
+                    max_parallel=1,
+                    max_retries=0,
+                    retry_delay=0,
+                    review_mode="skip",
+                    progress_log_path=tmp_path / "progress.jsonl",
+                ),
+                base,
+                PlainUI(no_color=True, file=io.StringIO()),
+                tmp_path,
+            )
+
+        assert seen, "the engineer loop never ran"
+        assert seen[0] == HARNESS
+        assert path_is_allowed(PRD_REL, [*base.allowed_paths, *seen[0]])
+        assert path_is_allowed(MAP_REL, [*base.allowed_paths, *seen[0]])
+
+    def test_ks_understand_carries_the_carve_out(self, tmp_path: Path) -> None:
+        """`ks understand` calls run_loop directly. Its default
+        allowed_paths already names the codebase map, but an operator
+        who passes --allowed-paths REPLACES that default, and the
+        in-loop guard then reverts the one file the understand prompt
+        calls the only file the agent may edit.
+        """
+        _setup_project(tmp_path)
+        config = _base_config(tmp_path)
+        config.allowed_paths = ["src/writers_room/"]
+        config.codebase_map_file = tmp_path / MAP_REL
+        seen, fake_run_loop = _spy_run_loop()
+
+        run = CommandRun(
+            run_id="run-test",
+            kind="understand",
+            bus=EventBus(run_id="run-test"),
+            paths=None,
+        )
+        with patch("kstrl.cli.run_loop", side_effect=fake_run_loop):
+            _understand_core(
+                config,
+                cast(Any, None),
+                tmp_path,
+                PlainUI(no_color=True, file=io.StringIO()),
+                run=run,
+            )
+
+        assert seen, "the understand loop never ran"
+        assert MAP_REL in seen[0]
+        assert path_is_allowed(MAP_REL, [*config.allowed_paths, *seen[0]])
 
 
 # ---------------------------------------------------------------------------

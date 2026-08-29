@@ -54,8 +54,14 @@ def _fake_run_loop(
         bus: Any = None,
         interaction: Any = None,
         stop_check: Any = None,
+        guard_ignored_paths: Any = None,
     ) -> LoopResult:
-        record.update(bus=bus, interaction=interaction, agent=agent)
+        record.update(
+            bus=bus,
+            interaction=interaction,
+            agent=agent,
+            guard_ignored_paths=guard_ignored_paths,
+        )
         for _ in agent.run("prompt", cwd):
             pass
         if bus is not None:

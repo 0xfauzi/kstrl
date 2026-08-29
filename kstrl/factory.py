@@ -68,7 +68,7 @@ from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
-from kstrl.guards import scope_entry_hazard
+from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import InteractionChannel
 from kstrl.knowledge import (
@@ -1258,46 +1258,12 @@ def _preflight_component_branches(
     return errors
 
 
-_SCOPE_HAZARD_REASONS = {
+_SCOPE_HAZARD_REASONS: dict[ScopeHazard, str] = {
     "absolute": "it is an absolute path, and diff names are repository-relative",
     "traversal": "it traverses outside the repository with '..'",
     "root": "it reduces to the repository root, which matches no path prefix",
+    "whitespace": "it has leading or trailing whitespace and scope matching is exact",
 }
-
-
-def _harness_path_errors(
-    comp_id: str,
-    candidates: list[str],
-    harness: list[str],
-) -> list[str]:
-    """Harness files this component's engineer could not be scope-checked on.
-
-    ``worktree_path / "/elsewhere/map.md"`` is ``/elsewhere/map.md``, so
-    an absolute or traversing harness path points the engineer outside
-    its own worktree AND can never match a diff name, which makes the
-    carve-out silently miss it. Runs for every component, constrained or
-    not: writing outside the worktree is a problem with or without an
-    allowlist.
-
-    ``candidates`` is the subset not already reported for an earlier
-    component; ``harness`` stays the component's complete set, so the
-    message names every harness file the engineer will write and not
-    just the ones being complained about.
-    """
-    errors: list[str] = []
-    for required in candidates:
-        hazard = scope_entry_hazard(required)
-        if hazard is None:
-            continue
-        errors.append(
-            f"component '{comp_id}': the harness file '{required}' cannot be "
-            f"scope-checked because {_SCOPE_HAZARD_REASONS[hazard]}, and the "
-            "engineer would write it outside its own worktree. Point [paths] "
-            "(prd / progress / codebase_map) and the manifest's prdPath at "
-            f"paths inside the repository. Harness artifacts for this "
-            f"component: {', '.join(harness)}."
-        )
-    return errors
 
 
 def _authored_scope_errors(
@@ -1310,9 +1276,11 @@ def _authored_scope_errors(
     The backstop for HAND-WRITTEN manifests, which never went through
     ``decompose._validate_allowed_path_entry``. An entry that cannot
     match is worse than a missing one: it reads as authorisation and
-    grants none, so every file the operator meant to allow is reported
-    outside scope - the same unwinnable retry loop #264 describes, from
-    the other end.
+    grants none, so every file the operator meant to authorise is
+    reported outside scope - the same unwinnable retry loop #264
+    describes, from the other end, and just as expensive because it is
+    discovered only after a full engineer attempt.
+
     """
     errors: list[str] = []
     for entry in allowed:
@@ -1343,30 +1311,49 @@ def _preflight_component_scope(
     attempts that each produced the identical ``diff_scope`` rejection.
     One line of output in the first second is the right price for that.
 
-    The issue's own version of this check - "does ``allowedPaths`` cover
-    the component's prdPath and progress log?" - is now answered
-    structurally: ``KstrlConfig.component_harness_files`` carves those
-    files out at both guards, so asserting the coverage here would
-    assert a tautology and test nothing. What is still worth asking at
-    plan time is narrower and real, and is split across the two helpers
-    above: can each entry match a changed file at all?
+    Two checks the issue asked for are deliberately NOT here, both
+    because they would assert something that cannot happen:
 
-    A broken harness path is reported ONCE, not once per component: it
-    usually comes from a single ``[paths]`` setting shared by the whole
-    run, and N copies of the same 400-character error help nobody.
+    - "does ``allowedPaths`` cover the component's prdPath and progress
+      log?" is answered structurally.
+      ``KstrlConfig.component_harness_files`` carves those files out at
+      both guards, so the required set and the carve-out are one list
+      and the assertion is a tautology.
+    - "is any HARNESS path unmatchable?" (an absolute or escaping
+      ``[paths] progress`` / ``codebase_map`` / ``prdPath``) was refused
+      here until the #268 review pointed out that
+      ``config.reconcile_progress_config`` documents exactly that
+      configuration as SUPPORTED and self-consistent: joining an
+      absolute path onto a worktree is a no-op, so writer and reader
+      both land on that one file in the main checkout. Such a file is
+      outside every worktree, so it never appears in a component's
+      ``git diff`` and can never BE a scope violation. There was nothing
+      to guard, and refusing the run contradicted a documented feature.
+
+    What is left is narrow and real: an authored ``allowedPaths`` entry
+    that cannot match a changed file at all. Each distinct SCOPE is
+    examined once, not each component: ``_component_scope``'s fallback
+    is the run-wide ``--allowed-paths`` flag, so one bad entry there is
+    shared by every component and N copies of the same paragraph help
+    nobody. Two components with genuinely different authored lists are
+    both reported, each naming its own complete list.
     """
     errors: list[str] = []
-    reported: set[str] = set()
+    seen: set[tuple[str, ...]] = set()
     for comp in manifest.components:
         if comp.status != ComponentStatus.PENDING.value:
             continue
-        harness = base_config.component_harness_files(comp.prd_path, root_dir)
-        fresh = [h for h in harness if h not in reported]
-        reported.update(fresh)
-        errors.extend(_harness_path_errors(comp.id, fresh, harness))
         allowed = _component_scope(comp, root_dir, base_config)
-        if allowed:
-            errors.extend(_authored_scope_errors(comp.id, allowed, harness))
+        if not allowed or tuple(allowed) in seen:
+            continue
+        seen.add(tuple(allowed))
+        errors.extend(
+            _authored_scope_errors(
+                comp.id,
+                allowed,
+                base_config.component_harness_files(comp.prd_path, root_dir),
+            )
+        )
     return errors
 
 

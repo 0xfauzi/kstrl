@@ -27,7 +27,7 @@ from kstrl.events import (
     RunStarted,
     SpecIssueRecorded,
 )
-from kstrl.guards import scope_entry_hazard
+from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.linear import (
     LinearClient,
     LinearConfig,
@@ -490,6 +490,20 @@ _ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset(
 )
 
 
+# Rule #12's structural hazards, addressed to the ARCHITECT inside the
+# decompose retry loop. Keyed by guards.ScopeHazard so adding a hazard
+# there is a type error here rather than a silently unhandled case;
+# tests/test_harness_path_scope.py asserts the keys stay in step.
+_SCOPE_HAZARD_ADVICE: dict[ScopeHazard, str] = {
+    "root": ("grants whole-repo scope; list specific source/test/feature path prefixes instead"),
+    "absolute": "is an absolute path; entries must be repo-relative prefixes",
+    "traversal": "contains '..'; path traversal outside the worktree is not allowed",
+    "whitespace": (
+        "has leading or trailing whitespace; scope matching is exact, so it would authorise nothing"
+    ),
+}
+
+
 def _validate_allowed_path_entry(entry: str) -> str | None:
     """Return an error message if an allowedPaths entry is unacceptable.
 
@@ -502,16 +516,11 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
     and address the architect directly.
     """
     stripped = entry.strip()
-    hazard = scope_entry_hazard(stripped)
-    if hazard == "root":
-        return (
-            f"entry '{entry}' grants whole-repo scope; list specific "
-            "source/test/feature path prefixes instead"
-        )
-    if hazard == "absolute":
-        return f"entry '{entry}' is an absolute path; entries must be repo-relative prefixes"
-    if hazard == "traversal":
-        return f"entry '{entry}' contains '..'; path traversal outside the worktree is not allowed"
+    # The RAW entry, not the stripped one: path_is_allowed matches raw,
+    # so " src/" authorises nothing and must be rejected here too.
+    hazard = scope_entry_hazard(entry)
+    if hazard is not None:
+        return f"entry '{entry}' {_SCOPE_HAZARD_ADVICE[hazard]}"
     normalized = stripped
     while normalized.startswith("./"):
         normalized = normalized[2:]

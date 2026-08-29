@@ -348,21 +348,52 @@ class PipelineHooks:
     cleanup_worktree: Callable[[str, Path, str], None]
 
 
-def scope_widening_error(
+def _widened_scope(pre_run: list[str] | None, worktree: list[str] | None) -> str | None:
+    """How the worktree PRD loosened the scope it is judged against, or None.
+
+    SETS, not lists, and only ADDITIONS (#268 review). List equality
+    failed a benign reorder and a NARROWING, and because the failure
+    becomes ``allowed_paths_error`` the component retried, the agent
+    re-serialised its JSON the same way, and it failed identically
+    forever - the exact unwinnable retry loop #264 is about,
+    reintroduced by its own fix. Narrowing is not widening: a stricter
+    worktree scope makes Phase 1 reject more, not less, so it is safe.
+    Order carries no meaning for ``guards.path_is_allowed``, which is
+    why this one field can afford to ignore it where
+    ``PRD.tamper_changes`` pins the rest exactly.
+
+    An empty or absent list means "no constraint" to ``check_diff_scope``,
+    so dropping ``allowedPaths`` is the MAXIMAL widening and is refused,
+    while a run that STARTED unconstrained has nothing to widen from.
+    """
+    if not pre_run:
+        return None
+    if not worktree:
+        return "dropped allowedPaths entirely, which disables the scope check"
+    added = sorted(set(worktree) - set(pre_run))
+    if not added:
+        return None
+    return f"added {', '.join(added)} to allowedPaths"
+
+
+def prd_tamper_error(
     root_dir: Path,
     prd_path: str,
-    worktree_allowed: list[str] | None,
+    worktree_prd: PRD,
 ) -> str | None:
-    """Refuse a scope the agent authored for itself (#264).
+    """Refuse a PRD the agent rewrote in its own favour (#264, #268).
 
-    Phase 1 sources allowedPaths from the PRD IN THE WORKTREE, and the
-    harness carve-out now puts that PRD inside every component's
-    effective scope by design - the agent has to write it to set
-    ``passes``. So the file Phase 1 trusts is a file the agent may edit,
-    and an agent that widened its own allowedPaths would pass a check it
-    wrote. The in-loop guard sidesteps this by reading from ``root_dir``
-    (factory._component_scope); Phase 1 cannot, because it must fail
-    closed on the worktree copy it verifies against.
+    The harness carve-out puts the component PRD inside every
+    component's effective scope by design - the agent has to write it to
+    set ``passes``. That makes the file Phase 1 trusts a file the agent
+    may edit, and Phase 1 is not its only reader: ``check_prd_stories``
+    re-reads the stories from it and ``check_fixtures_from_prd`` re-reads
+    the fixtures.
+
+    WHICH fields are the engineer's to write is the PRD's own business
+    and lives in ``PRD.tamper_changes``, beside the fields it pins. This
+    function owns the phase policy: where the trustworthy copy comes
+    from, and what to say when it disagrees.
 
     The pre-run copy at ``root_dir`` is outside every worktree and so is
     not agent-writable. Comparing the two is the whole check. Two cases
@@ -379,16 +410,22 @@ def scope_widening_error(
       cannot be the thing that makes it otherwise.
     """
     try:
-        pre_run = PRD.load(root_dir / prd_path).allowed_paths
+        pre_run = PRD.load(root_dir / prd_path)
     except (OSError, ValueError):
         return None
-    if pre_run == worktree_allowed:
+
+    changes = worktree_prd.tamper_changes(pre_run)
+    widened = _widened_scope(pre_run.allowed_paths, worktree_prd.allowed_paths)
+    if widened:
+        changes.insert(0, widened)
+    if not changes:
         return None
     return (
-        f"allowedPaths in the worktree copy of {prd_path} no longer "
-        f"match the pre-run copy: the run started with {pre_run}, the "
-        f"worktree now declares {worktree_allowed}. A component may not "
-        "rewrite the scope it is judged against."
+        f"the worktree copy of {prd_path} no longer matches the pre-run "
+        f"copy: it {'; '.join(changes)}. A component may set `passes` and "
+        "`notes` on its own stories and nothing else - it may not rewrite "
+        "the criteria, the fixtures or the scope it is judged against. "
+        "Restore the file to what the run started with."
     )
 
 
@@ -2437,11 +2474,7 @@ class ComponentPipeline:
         return VerifyScope(
             prd_for_scope.allowed_paths,
             harness_paths,
-            scope_widening_error(
-                self.root_dir,
-                comp.prd_path,
-                prd_for_scope.allowed_paths,
-            ),
+            prd_tamper_error(self.root_dir, comp.prd_path, prd_for_scope),
         )
 
     def _phase_verify(

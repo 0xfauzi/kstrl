@@ -374,6 +374,26 @@ class KstrlConfig:
             relative_to_root(self.codebase_map_file, root_dir),
         )
 
+    def standalone_harness_files(self, root_dir: Path) -> list[str]:
+        """The same three files for the STANDALONE loop (``ks understand``).
+
+        Deliberately NOT ``component_harness_files``: that derives the
+        progress log as a SIBLING of the component PRD, while the
+        standalone loop writes ``resolved_progress_file``. The two
+        coincide only in the default layout - point ``[paths] prd`` at
+        ``docs/prd.json`` and the factory rule yields
+        ``docs/progress.txt`` while the loop still writes
+        ``scripts/kstrl/progress.txt`` - so reusing the factory method
+        here would carve out a file nothing writes and leave the real
+        one exposed. The one place the two rules diverge belongs beside
+        them both, not in the CLI.
+        """
+        return component_harness_paths(
+            relative_to_root(self.prd_file, root_dir),
+            relative_to_root(self.resolved_progress_file(root_dir), root_dir),
+            relative_to_root(self.codebase_map_file, root_dir),
+        )
+
     def resolved_progress_file(self, root_dir: Path) -> Path:
         """Concrete progress path for the STANDALONE loop.
 

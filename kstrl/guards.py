@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from kstrl import git
 from kstrl.interaction import (
@@ -39,12 +39,19 @@ def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
     return False
 
 
-def scope_entry_hazard(entry: str) -> str | None:
+# The ways an allowedPaths entry can be unmatchable. A closed alias
+# rather than bare strings: this set grew by one ("whitespace") in the
+# #268 review and that edit had to touch three files by hand, which is
+# exactly what an explicit type prevents. Every consumer maps it through
+# a dict keyed by this alias, and a test asserts the keys agree.
+ScopeHazard = Literal["absolute", "traversal", "root", "whitespace"]
+
+
+def scope_entry_hazard(entry: str) -> ScopeHazard | None:
     """Why ``path_is_allowed`` can never match ``entry``, or None.
 
-    Returns a reason CODE - ``"root"``, ``"absolute"`` or
-    ``"traversal"`` - and leaves the sentence to the caller, because the
-    two callers address different people:
+    Returns a ``ScopeHazard`` code and leaves the sentence to the
+    caller, because the two callers address different people:
     ``decompose._validate_allowed_path_entry`` addresses the architect
     inside a retry loop, ``factory._preflight_component_scope``
     addresses the operator before a run starts. The predicate is shared
@@ -54,6 +61,13 @@ def scope_entry_hazard(entry: str) -> str | None:
     An entry that cannot match is worse than a missing one: it reads as
     authorisation and grants none, so every file it was meant to allow
     is reported outside scope.
+
+    Judged on the RAW entry, which is what ``path_is_allowed`` matches
+    on (#268 review). Classifying the stripped form let `` src/`` pass as
+    safe while authorising nothing, in a predicate whose entire job is
+    catching exactly that. Surrounding whitespace is therefore its own
+    hazard, and it is reported LAST so a `` /abs/`` entry names the more
+    substantive problem first.
     """
     stripped = entry.strip()
     if stripped.startswith("/"):
@@ -65,6 +79,8 @@ def scope_entry_hazard(entry: str) -> str | None:
         normalized = normalized[2:]
     if normalized.rstrip("/") in ("", "."):
         return "root"
+    if entry != stripped:
+        return "whitespace"
     return None
 
 
