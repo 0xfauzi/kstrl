@@ -882,14 +882,79 @@ class TestResolveExitCode:
         assert code == 1
         assert "1 did not complete: b" in out
 
-    # merge_pending: repoll_merge_pending leaves these alone when gh is
-    # unavailable and warns that dependents stay blocked; the exit code
-    # now says the same thing.
-    @pytest.mark.parametrize("status", ["skipped", "merge_pending"])
-    def test_leftover_terminal_status_rerun_fails(self, status: str) -> None:
-        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status=status)])
+    def test_leftover_skipped_rerun_fails(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="skipped")])
         code, _ = self._resolve(manifest, FactoryResult())
         assert code == 1
+
+    def test_merge_pending_belongs_to_the_earlier_branch(self) -> None:
+        # _run_factory_locked rebuilds factory_result.merge_pending from
+        # the manifest before calling this, so an all-merge_pending
+        # manifest can never reach the nothing-scheduled branch. Pinned
+        # with merge_pending populated the way the caller populates it,
+        # not with the empty FactoryResult that would fake a reachable
+        # state: this already returned 1 before #263.
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="merge_pending")]
+        )
+        code, out = self._resolve(manifest, FactoryResult(merge_pending=["a"]))
+        assert code == 1
+        assert "No component was scheduled" not in out
+
+    @staticmethod
+    def _cascade_manifest() -> Manifest:
+        """`a` failed and cascade-skipped `b`: the common stuck re-run."""
+        return _make_manifest(
+            [
+                Component("a", "A", "", [], "a.json", "b/a", status="failed"),
+                Component("b", "B", "", ["a"], "b.json", "b/b", status="skipped"),
+            ]
+        )
+
+    def test_cascade_points_at_the_root_failure_not_the_victim(self) -> None:
+        # `ks retry b` on a cascade-skipped component exits 2, so the
+        # remedy has to name `a`. The old wording said "a component left
+        # in 'failed' or 'skipped' ... until `ks retry <component-id>`",
+        # which sent the operator at `b`.
+        manifest = self._cascade_manifest()
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 1
+        assert "Failed here: a." in out
+        assert "Failed here: b" not in out
+
+    def test_named_retry_target_is_actually_retryable(self) -> None:
+        # The advice is only worth printing if it runs, so put the id the
+        # message names through the command's own gate.
+        manifest = self._cascade_manifest()
+        _, out = self._resolve(manifest, FactoryResult())
+        assert "Failed here: a." in out
+        reset = manifest.reset_for_retry("a")
+        # Retrying the root also frees the component it cascade-skipped.
+        assert "b" in reset
+        assert manifest.get_component("b").status == ComponentStatus.PENDING.value
+
+    def test_message_names_exactly_the_retryable_ids(self) -> None:
+        # The message and `reset_for_retry` must read one definition, so
+        # a future change to what counts as retryable cannot leave the
+        # advice naming ids the command has started refusing.
+        manifest = self._cascade_manifest()
+        _, out = self._resolve(manifest, FactoryResult())
+        assert manifest.retryable_component_ids() == ["a"]
+        assert f"Failed here: {', '.join(manifest.retryable_component_ids())}." in out
+
+    def test_retrying_the_skipped_victim_is_refused(self) -> None:
+        # The behaviour the old message walked the operator into.
+        manifest = self._cascade_manifest()
+        with pytest.raises(ValueError, match="only failed components can be retried"):
+            manifest.reset_for_retry("b")
+
+    @pytest.mark.parametrize("status", ["skipped", "PENDING"])
+    def test_no_failed_component_says_retry_will_not_help(self, status: str) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status=status)])
+        code, out = self._resolve(manifest, FactoryResult())
+        assert code == 1
+        assert "accepts only a component in 'failed', and none is" in out
+        assert "Failed here" not in out
 
     def test_scheduled_run_that_completed_stays_zero(self) -> None:
         manifest = _make_manifest(

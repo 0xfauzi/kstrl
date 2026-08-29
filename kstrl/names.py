@@ -3,8 +3,13 @@
 Split out of ``manifest.py`` rather than left in it: these are pure string
 rules that know nothing about a Component, a Manifest or a DAG, and keeping
 them alongside the schema and the scheduler is what pushed that module past
-the file-length gate. ``manifest`` imports both validators, so
-``from kstrl.manifest import validate_branch_name`` keeps working.
+the file-length gate.
+
+Import them from HERE, not from ``kstrl.manifest``. ``manifest`` imports
+both validators for its own use, but that is not a re-export: the project's
+typecheck is ``mypy --strict``, which implies ``--no-implicit-reexport``, so
+``from kstrl.manifest import validate_branch_name`` fails the gate with
+"Module 'kstrl.manifest' does not explicitly export attribute".
 """
 
 from __future__ import annotations

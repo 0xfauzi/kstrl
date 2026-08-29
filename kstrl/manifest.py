@@ -621,6 +621,16 @@ class Manifest:
                     queue.append(dependent_id)
         return found
 
+    def retryable_component_ids(self) -> list[str]:
+        """Ids ``reset_for_retry`` will accept, in manifest order.
+
+        The one definition of "can be retried", so a caller that offers
+        `ks retry <id>` as advice cannot name an id the command refuses.
+        A SKIPPED component is deliberately absent: it becomes runnable
+        by retrying the failure that cascaded onto it, not on its own.
+        """
+        return [c.id for c in self.components if c.status == ComponentStatus.FAILED.value]
+
     def reset_for_retry(self, component_id: str) -> list[str]:
         """Reset a FAILED component and its cascade-SKIPPED dependents to
         PENDING so a factory re-run schedules them again (R3.3).

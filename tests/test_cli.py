@@ -8,7 +8,7 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
 from kstrl.factory import FactoryConfig
-from kstrl.manifest import ComponentStatus
+from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.spine_utils import git as spine_git
 
 
@@ -354,3 +354,65 @@ class TestFormatComponentStatus:
 
     def test_missing_component_renders_question_mark(self) -> None:
         assert _format_component_status(None) == "?"
+
+
+class TestInboxRetryManifestLoad:
+    """#263 follow-on: a bad manifest must not traceback out of `ks inbox retry`.
+
+    Every other `Manifest.load` call site in the CLI catches OSError and
+    ValueError. This one did not, and the new status validation gives it a
+    likely trigger: a hand-edited manifest with a status typo, which is the
+    exact scenario #263 was reported from.
+    """
+
+    @staticmethod
+    def _project(tmp_path: Path, status: str) -> str:
+        from kstrl.inbox import Inbox, InboxConfig, ItemKind
+
+        scaffold = tmp_path / "scripts" / "kstrl"
+        scaffold.mkdir(parents=True)
+        # Written through Manifest.save, which serialises the schema the
+        # loader reads and does not validate, so an off-enum status lands
+        # on disk exactly as a hand-edited file would carry it.
+        Manifest(
+            version="1",
+            spec_file="spec.md",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[Component("comp-a", "A", "", [], "p.json", "b/a", status=status)],
+        ).save(scaffold / "manifest.json")
+        box = Inbox(tmp_path, InboxConfig.load(tmp_path))
+        item = box.add(ItemKind.HALTED_RUN, "comp-a halted", component="comp-a")
+        return str(item.id)
+
+    def _run(self, tmp_path: Path, item_id: str) -> Result:
+        runner = CliRunner()
+        return runner.invoke(
+            cli,
+            [
+                "inbox",
+                "retry",
+                item_id,
+                "--root",
+                str(tmp_path),
+                "--ui",
+                "plain",
+                "--no-color",
+            ],
+        )
+
+    def test_off_enum_status_reports_cleanly(self, tmp_path: Path) -> None:
+        item_id = self._project(tmp_path, "PENDING")
+        result = self._run(tmp_path, item_id)
+        assert result.exit_code == 1
+        assert "Failed to load manifest" in result.output
+        assert "'PENDING' is not a valid status" in result.output
+        # A clean exit, not a traceback leaking past the new guard.
+        assert isinstance(result.exception, SystemExit)
+
+    def test_valid_manifest_still_retries(self, tmp_path: Path) -> None:
+        item_id = self._project(tmp_path, "failed")
+        result = self._run(tmp_path, item_id)
+        assert result.exit_code == 0
+        assert "Requeued comp-a" in result.output

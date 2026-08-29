@@ -830,19 +830,44 @@ def resolve_exit_code(
         # so `ks factory && deploy` cannot deploy a run that built
         # nothing. An empty manifest and a fully COMPLETED one both leave
         # `unfinished` empty and stay at 0.
-        ui.err(
-            f"No component was scheduled from {len(manifest.components)} in the "
-            f"manifest, and {len(unfinished)} did not complete: "
-            f"{', '.join(unfinished)}"
-        )
-        ui.info(
-            "  Check each component's status against ComponentStatus "
-            f"({', '.join(COMPONENT_STATUS_VALUES)}). A component left in "
-            "'failed' or 'skipped' is not schedulable until `ks retry "
-            "<component-id>` resets it to 'pending'."
-        )
+        _report_nothing_scheduled(manifest, unfinished, ui)
         return 1
     return 0
+
+
+def _report_nothing_scheduled(
+    manifest: Manifest,
+    unfinished: list[str],
+    ui: UI,
+) -> None:
+    """Say what the run did not do, and name an action that will work.
+
+    The remedy has to be executable for the state it names, so the retry
+    targets come from ``Manifest.retryable_component_ids`` - the same
+    definition ``reset_for_retry`` enforces - rather than from a second
+    reading of the statuses here. A skipped component is never named:
+    it becomes runnable by retrying the failure that cascaded onto it,
+    and `ks retry <skipped-id>` exits 2.
+    """
+    ui.err(
+        f"No component was scheduled from {len(manifest.components)} in the "
+        f"manifest, and {len(unfinished)} did not complete: "
+        f"{', '.join(unfinished)}"
+    )
+    retryable = manifest.retryable_component_ids()
+    if retryable:
+        advice = (
+            f"  `ks retry <component-id>` resets a failed component to "
+            f"'{ComponentStatus.PENDING.value}', and with it every dependent "
+            f"it cascade-skipped. Failed here: {', '.join(retryable)}."
+        )
+    else:
+        advice = (
+            "  Check each component's status against ComponentStatus "
+            f"({', '.join(COMPONENT_STATUS_VALUES)}). `ks retry` accepts only "
+            f"a component in '{ComponentStatus.FAILED.value}', and none is."
+        )
+    ui.info(advice)
 
 
 class FactoryLockHeldError(RuntimeError):
