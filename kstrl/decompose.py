@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -18,6 +19,7 @@ from kstrl.agents.base import (
     Agent,
     collect_usage,
     print_usage_rollup,
+    usage_cursor,
 )
 from kstrl.events import (
     ArtifactWritten,
@@ -48,6 +50,8 @@ from kstrl.manifest import (
 )
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionJournal
@@ -1171,9 +1175,23 @@ def _generate_component_prd(
 ARCHITECT_COMPONENT = ARCHITECT_ROLE
 
 
-def _report_architect_usage(agent: Agent, ui: UI, bus: EventBus | None) -> None:
+def _report_architect_usage(
+    agent: Agent,
+    ui: UI,
+    bus: EventBus | None,
+    *,
+    since: int,
+) -> None:
     """Publish what the architect's LLM calls cost, to the bus and the
     terminal (#257).
+
+    ``since`` is the agent's record count before this decomposition ran.
+    ``decompose_spec`` is public and takes an ``Agent``, so a caller can
+    hold one across two calls - re-running after editing the spec is the
+    obvious way - and would then see run 1 folded into run 2's event AND
+    its table. Every in-tree caller passes a fresh agent; the offset
+    removes the dependency rather than documenting an invariant a caller
+    cannot see (#257 review).
 
     The component id is the pseudo-component ``_decompose_spec_impl``
     already announced in the plan, so the event lands on an existing row
@@ -1187,7 +1205,7 @@ def _report_architect_usage(agent: Agent, ui: UI, bus: EventBus | None) -> None:
     already swallows a malformed record set, and zero calls (an agent
     predating R3.1, or one that never ran) reports nothing at all.
     """
-    totals = collect_usage(agent)
+    totals = collect_usage(agent, since=since)
     if totals.calls == 0:
         return
     if bus is not None:
@@ -1723,6 +1741,8 @@ def decompose_spec(
     there has to move this emit, not just handle it.
     """
     started = time.monotonic()
+    # Read BEFORE the work so the report covers this call only.
+    usage_before = usage_cursor(agent)
     try:
         return _decompose_spec_impl(
             spec_path=spec_path,
@@ -1757,4 +1777,25 @@ def decompose_spec(
             )
         raise
     finally:
-        _report_architect_usage(agent, ui, bus)
+        # Isolated because a `finally` that raises REPLACES the exception
+        # propagating through it, which here would destroy the very halt
+        # this reporting exists to cover: the SpecBlockerError becomes a
+        # BrokenPipeError traceback and the documented exit code 2 is
+        # lost.
+        #
+        # Measured (2026-08-30), because the obvious repro is the wrong
+        # one: `ks decompose | head -5` does NOT do it. Both UIs default
+        # to sys.stderr (ui/plain.py, ui/rich_ui.py), so piping stdout
+        # leaves the stream the rollup writes to untouched. The shape
+        # that fires is `ks decompose 2>&1 | head -5`, which raises
+        # BrokenPipeError out of PlainUI._print's `print(...)` once the
+        # writes pass the pipe buffer.
+        #
+        # `collect_usage` and `EventBus.emit` are already defensive; the
+        # UI writes are not, and must not be made so inside
+        # `print_usage_rollup` - the factory epilogue shares it and a
+        # failed write there should be loud.
+        try:
+            _report_architect_usage(agent, ui, bus, since=usage_before)
+        except Exception as exc:  # noqa: BLE001 - accounting never gates a run
+            logger.warning("Failed to report architect usage: %s", exc)

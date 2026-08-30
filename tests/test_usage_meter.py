@@ -24,6 +24,7 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -34,6 +35,7 @@ from kstrl.agents.base import (
     UsageTotals,
     collect_usage,
     format_usage_rollup,
+    usage_cursor,
 )
 from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
@@ -4557,6 +4559,65 @@ class TestRollupReportsPerAxisCoverage:
         notes = [line for line in lines if line.startswith("note:")]
         assert len(notes) == 1
         assert "lower bounds" in notes[0]
+
+
+class TestUsageCursorIsRecordsNotCalls:
+    """#257 review: ``since`` is an index into ``usage_records``, so the
+    cursor must count RECORDS. ``collect_usage(...).calls`` happens to
+    equal that only because ``add_record`` increments unconditionally."""
+
+    class _Hostile:
+        """A record whose field access blows up mid-walk.
+
+        Not contrived: ``collect_usage`` wraps its whole loop in a
+        try/except precisely because a foreign or malformed record can do
+        this, and that guard is what makes ``calls`` disagree with
+        ``len(records)``.
+        """
+
+        @property
+        def input_tokens(self) -> int:
+            raise RuntimeError("malformed record")
+
+    @staticmethod
+    def _agent() -> SimpleNamespace:
+        """Four records; the second raises on field access."""
+        good = UsageRecord(total_tokens=5, source="claude-stream-json")
+        return SimpleNamespace(
+            usage_records=[good, TestUsageCursorIsRecordsNotCalls._Hostile(), good, good]
+        )
+
+    def test_a_walk_that_dies_partway_leaves_calls_short(self) -> None:
+        agent = self._agent()
+        # `calls` increments BEFORE the fields are read, so the record
+        # that raised is counted and the two after it are not.
+        assert collect_usage(agent).calls == 2
+        assert usage_cursor(agent) == 4
+
+    def test_the_short_offset_misattributes_the_unread_tail(self) -> None:
+        """Why the distinction is worth its own helper: seeding `since`
+        from `calls` hands the FIRST unit of work's unread records to the
+        SECOND one."""
+        agent = self._agent()
+        short = collect_usage(agent).calls
+        assert collect_usage(agent, since=short).calls == 2, "tail re-folded"
+        assert collect_usage(agent, since=usage_cursor(agent)).calls == 0
+
+    def test_a_cursor_over_a_normal_agent_is_the_record_count(self) -> None:
+        agent = SimpleNamespace(usage_records=[UsageRecord(), UsageRecord()])
+        assert usage_cursor(agent) == 2
+
+    def test_an_agent_without_records_has_a_zero_cursor(self) -> None:
+        """Folds everything, which is the pre-``since`` behavior."""
+        assert usage_cursor(object()) == 0
+
+    def test_a_hostile_records_attribute_degrades_to_zero(self) -> None:
+        class Boom:
+            @property
+            def usage_records(self) -> list[UsageRecord]:
+                raise RuntimeError("no records for you")
+
+        assert usage_cursor(Boom()) == 0
 
 
 class TestRollupRowsFollowTheOrderTheRolesRun:

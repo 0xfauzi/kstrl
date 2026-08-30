@@ -26,6 +26,7 @@ from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
+    SPAWNED_RUN_KIND,
     DailySpend,
     RunOutcome,
     RunSpend,
@@ -160,6 +161,7 @@ def _stub_runner(
     run_id: str = "factory-20260730-000000.000000-aaa",
     make_run_dir: bool = True,
     child_pid: int | None = None,
+    extra_run_ids: tuple[str, ...] = (),
 ):
     """A factory stand-in that leaves the artifacts a real run would.
 
@@ -167,6 +169,10 @@ def _stub_runner(
     models a launch that died before producing anything, which serve must
     treat as having no artifacts of its own rather than reading the
     newest run on disk.
+
+    ``extra_run_ids`` are run dirs that appear DURING the launch window
+    without belonging to it - an operator running another kstrl command
+    by hand on the same repo (#257 review).
     """
 
     def runner(
@@ -191,6 +197,8 @@ def _stub_runner(
             on_spawn(child_pid)
         if make_run_dir:
             _make_run_dir(root_dir, run_id)
+        for extra in extra_run_ids:
+            _make_run_dir(root_dir, extra)
         return outcome
 
     return runner
@@ -2040,6 +2048,56 @@ class TestRunOwnership:
             spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
         assert spend.cost_usd == 1.25
         assert spend.uncovered_calls == 1
+
+    def test_a_concurrent_decompose_is_not_charged_to_the_queue(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#257 review: `ks decompose` takes no factory.lock, so an
+        operator can start one on this repo while a queue item is
+        executing. Its run dir appears inside the launch window, and
+        since #257 it carries REAL spend. Charging it would bill the
+        queue for money the daemon never spent, and could halt the queue
+        on `max_daily_spend` because of it.
+        """
+        queue = _queue(tmp_path)
+        _add(queue)
+        seen: list[str] = []
+
+        def fake_spend(root: Path, run_id: str) -> RunSpend:
+            seen.append(run_id)
+            return RunSpend(cost_usd=4.0, cost_calls=1, usage_calls=1)
+
+        # The operator's decompose lands mid-run, so it is NEW since the
+        # snapshot and the set difference alone would take it.
+        runner = _stub_runner(
+            RunOutcome(0),
+            extra_run_ids=("decompose-20260730-000001.000000-bbb",),
+        )
+        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+            serve_cycle(tmp_path, runner=runner)
+
+        assert seen == ["factory-20260730-000000.000000-aaa"]
+        # Charged once, not twice: the hand-run decompose is someone
+        # else's spend even though it is inside the window.
+        assert SpendLedger(tmp_path).read().spent_usd == pytest.approx(4.0)
+
+    def test_the_charged_kind_matches_what_a_factory_actually_mints(
+        self,
+    ) -> None:
+        """#257 review: the filter and the spawned argv agree with each
+        other by convention, not by derivation - the kind on disk comes
+        from ``mint_run_id``'s default, a third literal. If that ever
+        moved, both would still agree and both would disagree with the
+        disk, and the daemon would charge $0.00 for every queue item
+        forever. Silent under-billing is exactly what max_daily_spend
+        exists to catch, so pin the third leg.
+        """
+        from kstrl.knowledge import current_run_id
+        from kstrl.runid import KNOWN_KINDS, run_kind
+
+        assert SPAWNED_RUN_KIND in KNOWN_KINDS
+        assert run_kind(current_run_id()) == SPAWNED_RUN_KIND
 
     def test_the_architect_is_recorded_as_unmetered(
         self,

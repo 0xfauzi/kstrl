@@ -80,9 +80,10 @@ class ExplodingAgent:
 
 
 def _spec_root(tmp_path: Path) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     spec_file = tmp_path / "spec.md"
     spec_file.write_text("# Spec\nBuild it.")
-    (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
     return spec_file
 
 
@@ -460,3 +461,89 @@ class TestArchitectUsageIsPrinted:
         # nothing at all.
         assert "Architect usage" in console.getvalue()
         assert "coverage is" not in console.getvalue()
+
+
+class BrokenPipeUI(PlainUI):
+    """A terminal that has gone away, which is what `| head -5` leaves."""
+
+    def subsection(self, text: str) -> None:
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+class TestReportingNeverReplacesTheHalt:
+    """#257 review: a ``finally`` that raises REPLACES the exception
+    propagating through it, so the usage report could destroy the very
+    halt it was written to cover."""
+
+    def test_a_broken_pipe_does_not_swallow_the_blocker_halt(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`ks decompose | head -5` on a spec with blockers: the pipe
+        closes, the rollup's write raises, and without isolation the
+        BrokenPipeError displaces SpecBlockerError - turning the
+        documented exit code 2 into a traceback."""
+        spec_file = _spec_root(tmp_path)
+        with pytest.raises(SpecBlockerError):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=MeteringAgent(BLOCKER_OUTPUT),  # type: ignore[arg-type]
+                ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
+                root_dir=tmp_path,
+            )
+
+    def test_a_broken_pipe_does_not_swallow_a_success(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other direction: a dead terminal must not turn a
+        successful decomposition into a failure either."""
+        spec_file = _spec_root(tmp_path)
+        manifest = decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=MeteringAgent(MINOR_ISSUE_OUTPUT),  # type: ignore[arg-type]
+            ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
+            root_dir=tmp_path,
+        )
+        assert len(manifest.components) == 2
+
+
+class TestUsageIsPerCallNotCumulative:
+    """#257 review: ``usage_records`` is cumulative for the life of the
+    agent instance. Reading it at a call boundary is correct only while
+    every caller passes a fresh agent, and ``decompose_spec`` is public,
+    so that invariant is invisible to the caller who would break it."""
+
+    def test_a_reused_agent_reports_only_the_second_run(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Re-running decompose after editing the spec, holding the
+        agent. Run 2 must report run 2, not run 1 plus run 2."""
+        agent = MeteringAgent(MINOR_ISSUE_OUTPUT)
+        first, second = io.StringIO(), io.StringIO()
+        _decompose(tmp_path / "a", agent, first)
+        _decompose(tmp_path / "b", agent, second)
+
+        # The agent really did accumulate; the report is what must not.
+        assert len(agent.usage_records) == 2
+        for console in (first, second):
+            printed = console.getvalue()
+            assert "0.5000" in printed
+            assert "1.0000" not in printed, printed
+
+    def test_the_event_is_per_call_too(self, tmp_path: Path) -> None:
+        """Not just the printed table: the ComponentUsage payload the
+        reducer and `serve.read_run_spend` fold must be per-call."""
+        agent = MeteringAgent(MINOR_ISSUE_OUTPUT)
+        _decompose(tmp_path / "a", agent)
+        _decompose(tmp_path / "b", agent)
+        state, _ = load_run_state(tmp_path / "b")
+        assert state.usage_calls == 1
+        assert state.cost_usd == pytest.approx(0.5)

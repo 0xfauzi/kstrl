@@ -584,19 +584,55 @@ def _as_float(value: object) -> float | None:
     return float(value) if value >= 0 else None
 
 
-def collect_usage(agent: object) -> UsageTotals:
+def usage_cursor(agent: object) -> int:
+    """How many records the agent already holds, for a later ``since=``.
+
+    Deliberately NOT ``collect_usage(agent).calls``. Those agree only
+    because ``add_record`` increments ``calls`` unconditionally, which is
+    an accident of that method and not a stated contract - and they
+    diverge in exactly the case the meter exists to survive.
+
+    Measured (2026-08-30) on four records whose second raises on field
+    access: ``collect_usage`` aborts the walk and reports ``calls=2``,
+    while four records are present. Seeding the next call with 2 folds
+    records 2 and 3 - which belong to the FIRST unit of work and went
+    unreported there - into the SECOND one's total. A cursor of 4 folds
+    nothing, which is correct: records the meter could not read are lost
+    from the report, not silently re-attributed to whoever ran next.
+
+    Degrades to 0 (fold everything, the pre-``since`` behavior) rather
+    than raising: a cursor is accounting, and accounting never gates a
+    run.
+    """
+    try:
+        records = getattr(agent, "usage_records", None)
+        return 0 if records is None else len(list(records))
+    except Exception as exc:  # noqa: BLE001 - meter must never crash a run
+        logger.warning("Failed to read agent usage cursor: %s", exc)
+        return 0
+
+
+def collect_usage(agent: object, *, since: int = 0) -> UsageTotals:
     """Aggregate an agent's accumulated ``usage_records`` defensively.
 
     Works on ANY object: an agent without the attribute (a third-party
     Agent implementation predating R3.1, or a test fake) yields empty
     totals rather than an error - the meter must never gate correctness.
+
+    ``usage_records`` is CUMULATIVE for the life of the agent instance,
+    so the default folds every call the instance ever made. Callers that
+    hand out a fresh agent per unit of work want exactly that. A caller
+    that cannot rely on freshness passes ``since`` - the record count
+    taken before the work by :func:`usage_cursor` - and gets only the
+    tail. Sliced rather than indexed so a list that shrank or was
+    replaced underneath degrades to empty totals instead of raising.
     """
     totals = UsageTotals()
     try:
         records = getattr(agent, "usage_records", None)
         if records is None:
             return totals
-        for record in list(records):
+        for record in list(records)[since:]:
             totals.add_record(record)
     except Exception as exc:  # noqa: BLE001 - meter must never crash a run
         logger.warning("Failed to collect agent usage records: %s", exc)
