@@ -594,7 +594,7 @@ stories (`review.py:547`). The second sensor exists and is simply not consulted.
 **A correction to the earlier draft.** That draft claimed this crosses the H3
 prompt-versioning boundary, because the engineer prompt's step 14 would become
 misleading. On re-reading, it does not. Step 14 says "set that story's `passes`
-to `true` (only after tests/typecheck pass AND the self-critique is written)".
+to `true` (only after step 9 is green AND the self-critique is written)".
 That instruction stays exactly correct. What changes is not what the agent is
 asked to do; it is that its claim stops being the sole authority. The flag was
 always a claim. The harness just started treating it as one.

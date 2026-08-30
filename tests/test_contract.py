@@ -8,6 +8,7 @@ from kstrl.contract import (
     compute_tiers,
 )
 from kstrl.manifest import Component, Manifest
+from kstrl.verify import DEFAULT_TEST_COMMAND
 
 
 def _make_manifest(components: list[Component]) -> Manifest:
@@ -83,7 +84,10 @@ class TestContractConfig:
     def test_defaults(self) -> None:
         config = ContractConfig()
         assert config.mode == ContractMode.TIER.value
-        assert config.test_command == "uv run pytest"
+        # #276: the Phase 1 constant, not a copy of the string. The
+        # "these are one fact" assertion lives in
+        # tests/test_engineer_verify_instructions.py.
+        assert config.test_command == DEFAULT_TEST_COMMAND
         assert config.timeout == 600.0
 
     def test_from_env(self, monkeypatch) -> None:

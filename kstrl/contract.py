@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.manifest import Manifest
-from kstrl.verify import run_scrubbed
+from kstrl.verify import DEFAULT_TEST_COMMAND, run_scrubbed
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -76,7 +76,13 @@ class ContractConfig:
     """Configuration for contract testing."""
 
     mode: str = ContractMode.TIER.value
-    test_command: str = "uv run pytest"
+    #: #276: Phase 3 runs the merged tiers through the same suite Phase 1
+    #: ran per component, so the default is the Phase 1 constant rather
+    #: than a second literal that happens to agree with it today. Note
+    #: this only shares the DEFAULT: a project that sets
+    #: ``[verify] test_command`` does not move Phase 3 with it, because
+    #: ``load`` reads only ``[contract]``.
+    test_command: str = DEFAULT_TEST_COMMAND
     timeout: float = 600.0
 
     def __post_init__(self) -> None:
@@ -93,7 +99,7 @@ class ContractConfig:
         """Load contract config from environment variables."""
         return cls(
             mode=os.environ.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
-            test_command=os.environ.get("KSTRL_CONTRACT_TEST_CMD", "uv run pytest"),
+            test_command=os.environ.get("KSTRL_CONTRACT_TEST_CMD", DEFAULT_TEST_COMMAND),
             timeout=float(os.environ.get("KSTRL_TIMEOUT_CONTRACT", "600")),
         )
 

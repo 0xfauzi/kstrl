@@ -37,6 +37,7 @@ from kstrl.verify import (
     DEFAULT_TEST_COMMAND,
     DEFAULT_TYPECHECK_COMMAND,
     SCOPED_TYPECHECK_COMMAND,
+    VERIFY_COMMANDS_PROMPT,
     ResolvedVerifyCommands,
     VerifyConfig,
     check_linter,
@@ -77,10 +78,11 @@ class _PromptCapturingAgent:
         yield COMPLETION_MARKER
 
 
-def _project(root: Path) -> KstrlConfig:
+def _project(root: Path, *, scaffold_prompt: bool = True) -> KstrlConfig:
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
-    (kstrl_dir / "prompt.md").write_text("STORY-PROMPT-BODY")
+    if scaffold_prompt:
+        (kstrl_dir / "prompt.md").write_text("STORY-PROMPT-BODY")
     (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}')
     return KstrlConfig(
         max_iterations=1,
@@ -92,12 +94,12 @@ def _project(root: Path) -> KstrlConfig:
     )
 
 
-def _prompt_from_cli(args: list[str]) -> str:
-    """The prompt a real CLI entry point hands the engineer.
+def _run_cli(args: list[str]) -> _PromptCapturingAgent:
+    """Invoke a real CLI entry point with the agent replaced.
 
-    ``run_loop`` runs unpatched, because that is where the block is
-    built. Only the agent is replaced, and it is handed the finished
-    prompt, so what is asserted is what the command actually produces.
+    Returns the agent rather than its prompts, because a caller that
+    stubs ``run_loop`` is asserting on the call and gets no prompt at
+    all.
     """
     agent = _PromptCapturingAgent()
     runner = CliRunner()
@@ -107,8 +109,52 @@ def _prompt_from_cli(args: list[str]) -> str:
         patch("kstrl.cli._check_agent_preflight"),
     ):
         runner.invoke(cli, args, catch_exceptions=False)
-    assert agent.prompts, "no engineer prompt was built"
-    return agent.prompts[0]
+    return agent
+
+
+def _prompts_from_cli(args: list[str]) -> list[str]:
+    """Every prompt a real CLI entry point hands an agent, in order.
+
+    ``run_loop`` runs unpatched, because that is where the block is
+    built. Only the agent is replaced, and it is handed the finished
+    prompt, so what is asserted is what the command actually produces.
+
+    A multi-phase command (`ks feature` runs understand, then implement,
+    then repair) yields one entry per agent.run call, so a caller that
+    cares about a specific phase has to pick it rather than assume the
+    first.
+    """
+    prompts = _run_cli(args).prompts
+    assert prompts, "no engineer prompt was built"
+    return prompts
+
+
+def _prompt_from_cli(args: list[str]) -> str:
+    """The FIRST prompt a real CLI entry point hands an agent."""
+    return _prompts_from_cli(args)[0]
+
+
+def _feature_cli_args(root: Path, *, auto_run: bool = False) -> list[str]:
+    """argv for `ks feature` against the tree ``_write_feature_prd`` built.
+
+    ``auto_run`` adds ``--implementation-auto-run``, without which the
+    command halts at the interactive review checkpoint after the
+    understand phase and never builds an implement prompt.
+    """
+    args = [
+        "feature",
+        "--root",
+        str(root),
+        "--prd",
+        "scripts/kstrl/feature/demo/prd.json",
+        "--understand-iterations",
+        "1",
+        "--branch",
+        "",
+    ]
+    if auto_run:
+        args.append("--implementation-auto-run")
+    return args
 
 
 def _write_feature_prd(root: Path) -> None:
@@ -135,13 +181,24 @@ def _write_feature_prd(root: Path) -> None:
     )
 
 
-def _engineer_prompt(root: Path, verify_config: VerifyConfig | None = None) -> str:
+def _engineer_prompt(
+    root: Path,
+    verify_config: VerifyConfig | None = None,
+    *,
+    scaffold_prompt: bool = True,
+) -> str:
     """The prompt the engineer was handed.
 
     ``verify_config=None`` is run_loop's own default and means "no gate
     runs", so it is what the no-verification entry points produce.
+
+    ``scaffold_prompt=False`` leaves no prompt.md, so run_loop falls back
+    to the harness DEFAULT_PROMPT. The stub body is right for the
+    assembly tests here; the fallback is what an un-customised project
+    actually runs, and is what tests/test_engineer_verify_instructions.py
+    asserts against.
     """
-    config = _project(root)
+    config = _project(root, scaffold_prompt=scaffold_prompt)
     agent = _PromptCapturingAgent()
     result = run_loop(
         config,
@@ -153,6 +210,17 @@ def _engineer_prompt(root: Path, verify_config: VerifyConfig | None = None) -> s
     assert result.completed is True
     assert agent.prompts
     return agent.prompts[0]
+
+
+def _block_is_injected(prompt: str) -> bool:
+    """Whether the resolved verification block itself reached the agent.
+
+    Searching for the bare heading text no longer answers that: since
+    #276 DEFAULT_PROMPT names the same string to point the engineer at
+    the block. As a markdown heading - line-initial, with its ``# `` -
+    it is only ever the block.
+    """
+    return f"\n{VERIFY_COMMANDS_PROMPT.splitlines()[0]}\n" in f"\n{prompt}"
 
 
 # ---------------------------------------------------------------------------
@@ -585,25 +653,13 @@ class TestNoVerificationEntryPoints:
         prompt = _prompt_from_cli(["understand", "--root", str(tmp_path)])
         assert DEFAULT_TEST_COMMAND not in prompt
         assert DEFAULT_LINT_COMMAND not in prompt
-        assert "Verification Commands (resolved by kstrl)" not in prompt
+        assert not _block_is_injected(prompt)
 
     def test_ks_feature_states_no_commands(self, tmp_path: Path) -> None:
         _write_feature_prd(tmp_path)
-        prompt = _prompt_from_cli(
-            [
-                "feature",
-                "--root",
-                str(tmp_path),
-                "--prd",
-                "scripts/kstrl/feature/demo/prd.json",
-                "--understand-iterations",
-                "1",
-                "--branch",
-                "",
-            ]
-        )
+        prompt = _prompt_from_cli(_feature_cli_args(tmp_path))
         assert DEFAULT_TEST_COMMAND not in prompt
-        assert "Verification Commands (resolved by kstrl)" not in prompt
+        assert not _block_is_injected(prompt)
 
 
 class TestParentReportsDivergence:

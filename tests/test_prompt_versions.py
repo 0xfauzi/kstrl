@@ -106,9 +106,17 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
         "1.1.0",
     ),
+    # 1.3.0 (#276): step 9 now defers to the VERIFY_COMMANDS_PROMPT block
+    # rather than telling the engineer to derive its own typecheck and
+    # test commands, and it names lint - a blocking Phase 1 gate the
+    # previous body never mentioned. Step 14's duplicate done-rule, which
+    # carried the same lint omission, now refers to step 9. 1.2.0 was an
+    # unreleased draft of the same change, revised in review and never
+    # pinned here; the version moved with the body rather than being
+    # reused, so each round carries its own audit trail.
     "DEFAULT_PROMPT": (
-        "4f7370f5f4efb2d9b89ce6ae09fcbf7e5c3c8fb3db22cdeb07a9221ccbc638dc",
-        "1.1.1",
+        "392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384",
+        "1.3.0",
     ),
     # 1.0.0 (#261): harness-authored instruction text prepended to the
     # engineer prompt every iteration, naming the commands Phase 1 will
