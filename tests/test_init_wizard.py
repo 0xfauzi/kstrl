@@ -41,6 +41,15 @@ class TestPlanScaffold:
         planned = {e.path.name: e for e in plan_scaffold(tmp_path)}
         assert planned[".gitignore"].action == "append"
 
+    def test_an_unreadable_gitignore_is_planned_as_kept(self, tmp_path: Path) -> None:
+        """The preview must not promise a write init will not make: a
+        .gitignore it cannot read is left alone, and reading it used to
+        crash the preview with UnicodeDecodeError (#201 review)."""
+        (tmp_path / ".gitignore").write_bytes(b"build\xff/\n")
+
+        planned = {e.path.name: e for e in plan_scaffold(tmp_path)}
+        assert planned[".gitignore"].action == "keep"
+
     def test_only_gitignore_is_ever_planned_as_an_append(self, tmp_path: Path) -> None:
         (tmp_path / ".gitignore").write_text("secrets.env\n")
         (tmp_path / "kstrl.toml").write_text("")

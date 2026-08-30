@@ -143,6 +143,24 @@ class TestExampleProjectContract:
         example = (REPO_ROOT / "examples" / "uv-python" / ".gitignore").read_text(encoding="utf-8")
         assert example == gitignore_block("Python")
 
+    def test_example_lockfile_is_tracked(self) -> None:
+        """The example stopped ignoring uv.lock in #201, so the file has
+        to be IN GIT: an un-ignored untracked lockfile is the exact
+        condition #201 is about, and leaving one in kstrl's own tree
+        would have the fix reproduce the bug it fixes. Existence is not
+        enough - an untracked file exists too."""
+        import subprocess
+
+        relative = "examples/uv-python/uv.lock"
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", relative],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+
+        assert tracked.returncode == 0, f"run `uv lock` in examples/uv-python and commit {relative}"
+
     def test_example_prd_prompt_allows_allowed_paths(self) -> None:
         text = (
             REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prd_prompt.txt"

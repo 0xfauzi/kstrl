@@ -69,7 +69,7 @@ class InitWizardScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield ContextBar(
             "init",
-            "rewrites nothing - files kept, .gitignore appended, uv.lock staged",
+            "rewrites nothing - files kept, .gitignore appended, lockfile staged",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="wizard-root")

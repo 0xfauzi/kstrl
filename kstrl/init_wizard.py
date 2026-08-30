@@ -15,9 +15,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
-from kstrl.init_cmd import _detect_project_context, has_gitignore_block
+from kstrl.init_cmd import ScaffoldAction, _detect_project_context, gitignore_plan
 
 # The documented kstrl.toml [agent] type vocabulary (empty = auto).
 AGENT_TYPES = ("", "claude-code", "claude-sdk", "codex")
@@ -29,9 +28,6 @@ _AGENT_STOCK_PREFIXES = {
     "model": '# model = ""',
     "reasoning_effort": '# reasoning_effort = ""',
 }
-
-
-ScaffoldAction = Literal["create", "keep", "append"]
 
 
 @dataclass(frozen=True)
@@ -49,7 +45,7 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
     there would be a preview that does not match the write (#201).
 
     Files only. run_init has one non-file side effect, staging an
-    untracked uv.lock, and it reports that in its own transcript.
+    untracked lockfile, and it reports that in its own transcript.
     """
     kstrl_dir = root / "scripts" / "kstrl"
     paths = [
@@ -64,15 +60,8 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
         root / "AGENTS.md",
     ]
     entries = [ScaffoldEntry(path=p, action="keep" if p.exists() else "create") for p in paths]
-    gitignore = root / ".gitignore"
-    entries.append(ScaffoldEntry(path=gitignore, action=_gitignore_action(root)))
+    entries.append(ScaffoldEntry(path=root / ".gitignore", action=gitignore_plan(root)))
     return entries
-
-
-def _gitignore_action(root: Path) -> ScaffoldAction:
-    if not (root / ".gitignore").exists():
-        return "create"
-    return "keep" if has_gitignore_block(root) else "append"
 
 
 def detect_context(root: Path) -> dict[str, str]:

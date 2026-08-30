@@ -65,6 +65,13 @@ class RichUI:
             file=self._file,
             no_color=no_color,
             force_terminal=True,
+            # The UI protocol carries PLAIN TEXT, never Rich markup, and
+            # this is the seam that says so once for every method rather
+            # than per call: `ks init` printed `ks run [iterations]` as
+            # `ks run`, the argument silently swallowed as a style tag
+            # (#256 review). Styling is applied through Text objects,
+            # which are not re-parsed.
+            markup=False,
         )
         self._hr_char = "-" if ascii_only else "\u2500"
         self._block_tl = "+" if ascii_only else "\u250c"
@@ -144,21 +151,26 @@ class RichUI:
         padded_key = f"  {key}:".ljust(16)
         self.console.print(Text(padded_key, style="dim") + Text(value))
 
+    # These four wrap their text in Text as well as relying on the
+    # console's markup=False, because Text also skips the repr
+    # highlighter: help text like `--prd <name>/prd.json` is a command to
+    # copy, not a value to colour by type.
+
     def info(self, text: str) -> None:
         """Display info message (dim)."""
-        self.console.print(text, style="dim")
+        self.console.print(Text(text, style="dim"))
 
     def ok(self, text: str) -> None:
         """Display success message (green)."""
-        self.console.print(f"OK: {text}", style="green")
+        self.console.print(Text(f"OK: {text}", style="green"))
 
     def warn(self, text: str) -> None:
         """Display warning message (yellow)."""
-        self.console.print(f"WARN: {text}", style="yellow")
+        self.console.print(Text(f"WARN: {text}", style="yellow"))
 
     def err(self, text: str) -> None:
         """Display error message (red)."""
-        self.console.print(f"ERROR: {text}", style="red bold")
+        self.console.print(Text(f"ERROR: {text}", style="red bold"))
 
     def channel_header(self, channel: str, title: str = "") -> None:
         """Display channel header with optional title."""
@@ -181,7 +193,7 @@ class RichUI:
         if line_style:
             self.console.print(Text(line, style=line_style))
         else:
-            self.console.print(line, markup=False)
+            self.console.print(line)
 
     def choose(self, header: str, options: list[str], default: int = 0) -> int:
         """Interactive choice, returns selected index."""
