@@ -19,9 +19,9 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.2.0"
+DEFAULT_PROMPT_VERSION = "1.3.0"
 
-# v1.2.0 (#276): step 9 defers to the verification block the harness
+# v1.3.0 (#276): step 9 defers to the verification block the harness
 # injects (verify.VERIFY_COMMANDS_PROMPT) instead of telling the agent to
 # find its own typecheck and test commands. #261 made
 # verify.resolve_verify_commands the only answer to "what does Phase 1
@@ -32,6 +32,22 @@ DEFAULT_PROMPT_VERSION = "1.2.0"
 # Step 14 carried a second copy of the same done-rule ("only after
 # tests/typecheck pass"), with the same lint omission, at the moment the
 # agent flips passes to true; it now refers to step 9 instead.
+#
+# The no-block branch states a FLOOR, not a proportionality hint, and it
+# is scoped to marking a story done rather than to every iteration:
+# `ks feature`'s implement and repair loops reach it while writing
+# production code with no Phase 1 at all (feature_cmd has no
+# verification), while an `ks understand` iteration that reaches it -
+# only un-init'd, since `ks init` scaffolds a separate
+# understand_prompt.md - marks no story and so owes nothing.
+#
+# INTERIM, tracked as #288. A text floor is not a mechanism: nothing on
+# that path samples whether the agent ran anything, and it asks the agent
+# to find commands that resolve_verify_commands could have named, which
+# is the derive-your-own shape #261 exists to remove. The harness stays
+# silent there because VERIFY_COMMANDS_PROMPT claims the gate runs the
+# commands, which would be false, and because #261 decided that
+# verify_config=None states nothing. Revisiting that is #288's job.
 #
 # The $prd_path / $progress_path / $codebase_map_path placeholders are
 # substituted by loop.run_loop (string.Template.safe_substitute) with the
@@ -68,11 +84,14 @@ reviewer as already reading your diff while you write it.
      above, lint included, exactly as written. Do NOT derive your own or substitute
      a narrower or broader variant (an added path, a `-k` filter, a dropped flag):
      a command the gate will not run proves nothing.
-   - If that block is absent, no mechanical gate runs on this iteration. Verify in
-     proportion to what you changed.
-   - Do NOT mark the story as done until every command passes. If one fails because
-     the project has no such tooling configured, configure the tooling rather than
-     swapping the command.
+   - If a command fails for a reason other than your work, fix the cause and never
+     substitute a different command. Missing tooling is yours to configure. A
+     command that is wrong for this project's language is not: name the `[verify]`
+     section of `kstrl.toml` in your progress entry rather than editing it, because
+     kstrl's policy envelope can treat that edit as tampering.
+   - Do NOT mark the story as done until every command passes. If that block is
+     absent, nothing will check this work mechanically: run the project's own
+     typecheck and tests yourself first.
 10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
    `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
    (skip if nothing new).
@@ -94,7 +113,7 @@ reviewer as already reading your diff while you write it.
     fail the mechanical check.
 13. Commit with message: `feat: [ID] - [Title]`
 14. Update `$prd_path`: set that story's `passes` to `true`
-    (only after step 9's commands pass AND the self-critique is written)
+    (only after step 9 is green AND the self-critique is written)
 15. Append learnings to `$progress_path`
 
 ## PRD ambiguity

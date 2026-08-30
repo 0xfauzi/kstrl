@@ -26,11 +26,14 @@ reviewer as already reading your diff while you write it.
      above, lint included, exactly as written. Do NOT derive your own or substitute
      a narrower or broader variant (an added path, a `-k` filter, a dropped flag):
      a command the gate will not run proves nothing.
-   - If that block is absent, no mechanical gate runs on this iteration. Verify in
-     proportion to what you changed.
-   - Do NOT mark the story as done until every command passes. If one fails because
-     the project has no such tooling configured, configure the tooling rather than
-     swapping the command.
+   - If a command fails for a reason other than your work, fix the cause and never
+     substitute a different command. Missing tooling is yours to configure. A
+     command that is wrong for this project's language is not: name the `[verify]`
+     section of `kstrl.toml` in your progress entry rather than editing it, because
+     kstrl's policy envelope can treat that edit as tampering.
+   - Do NOT mark the story as done until every command passes. If that block is
+     absent, nothing will check this work mechanically: run the project's own
+     typecheck and tests yourself first.
 10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
    `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
    (skip if nothing new).
@@ -52,7 +55,7 @@ reviewer as already reading your diff while you write it.
     fail the mechanical check.
 13. Commit with message: `feat: [ID] - [Title]`
 14. Update `$prd_path`: set that story's `passes` to `true`
-    (only after step 9's commands pass AND the self-critique is written)
+    (only after step 9 is green AND the self-critique is written)
 15. Append learnings to `$progress_path`
 
 ## PRD ambiguity
