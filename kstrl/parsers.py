@@ -110,6 +110,18 @@ _PYTEST_FAILED_COUNT_RE = re.compile(r"(\d+)\s+failed")
 _PYTEST_ERROR_COUNT_RE = re.compile(r"(\d+)\s+error")
 
 
+def _pytest_failure_count(summary: str) -> int:
+    """Failures plus errors reported by a pytest-shaped summary line."""
+    count = 0
+    failed_m = _PYTEST_FAILED_COUNT_RE.search(summary)
+    if failed_m:
+        count += int(failed_m.group(1))
+    error_m = _PYTEST_ERROR_COUNT_RE.search(summary)
+    if error_m:
+        count += int(error_m.group(1))
+    return count
+
+
 def parse_pytest_output(raw: str) -> ParsedOutput:
     """Parse pytest output into structured failures.
 
@@ -167,35 +179,33 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
         if m:
             result.raw_summary = m.group("summary").strip()
 
-    # Fallback: if we parsed nothing useful, preserve raw tail as summary.
-    # This runs BEFORE the count below because the count reads
-    # raw_summary. The other order reported total_errors == 0 on output
-    # whose own tail said "1 failed" - measured on real vitest output
-    # (#258). Preemptive, not a live misread: nothing in kstrl/ reads
-    # total_errors today (the gate's verdict is the exit code), so this
-    # stops a future reader taking 0 for "clean" rather than fixing a
-    # current one. The mypy and ruff parsers never had the bug; they set
-    # summary and count together in their line loops.
+    # Nothing structured parsed AND no summary reporting a failure: what
+    # we matched, if anything, is not describing whatever failed this
+    # gate, so prefer the raw tail. Two measured cases (#258), both from
+    # a polyglot repo running `uv run pytest && npm test`:
+    #
+    # - vitest alone: nothing matched at all, so there is no summary.
+    # - pytest PASSING then vitest failing: `_PYTEST_SUMMARY_RE` matches
+    #   pytest's footer, so the summary became "5 passed in 0.00s" and
+    #   the failed gate's entire retry detail told the engineer that
+    #   five tests passed, with the vitest failure dropped.
+    #
+    # The consequence for purely passing input is deliberate: the tail
+    # replaces a clean footer. Only `check_test_suite` calls this, and
+    # only on a nonzero exit, so "no failure in sight" always means the
+    # parse missed it.
+    #
     # The tail is still only the last few lines, so a foreign tool's
     # file, line and assertion detail is dropped either way; recovering
     # that needs a parser that knows the tool, which is the other half
     # of #258.
-    if not result.failures and not result.raw_summary:
+    if not result.failures and _pytest_failure_count(result.raw_summary) == 0:
         tail = lines[-5:] if len(lines) > 5 else lines
         result.raw_summary = "\n".join(tail)
 
-    # Extract total error count from summary
-    if result.raw_summary:
-        failed_m = _PYTEST_FAILED_COUNT_RE.search(result.raw_summary)
-        error_m = _PYTEST_ERROR_COUNT_RE.search(result.raw_summary)
-        count = 0
-        if failed_m:
-            count += int(failed_m.group(1))
-        if error_m:
-            count += int(error_m.group(1))
-        result.total_errors = count
-    else:
-        result.total_errors = len(result.failures)
+    result.total_errors = (
+        _pytest_failure_count(result.raw_summary) if result.raw_summary else len(result.failures)
+    )
 
     return result
 

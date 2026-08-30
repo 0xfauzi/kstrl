@@ -513,6 +513,18 @@ class TestDetectBaseBranch:
         spine_git("branch", "main", cwd=clone)
         assert detect_base_branch(clone) == remote_default
 
+    def test_origin_head_pointing_outside_the_remote_is_demoted(self, tmp_path: Path) -> None:
+        # origin/HEAD is normally a symref into refs/remotes/origin/;
+        # this one is hand-built to point straight at a local head, the
+        # shape that made an unguarded removeprefix answer with a whole
+        # refname. See git.detect_base_branch for why that got so far.
+        root = _repo_on(tmp_path, "master")
+        (root / ".git" / "refs" / "remotes" / "origin").mkdir(parents=True)
+        (root / ".git" / "refs" / "remotes" / "origin" / "HEAD").write_text(
+            "ref: refs/heads/master\n"
+        )
+        assert detect_base_branch(root) == "master"
+
     def test_a_tag_is_not_a_base_branch(self, tmp_path: Path) -> None:
         # A bare-name `rev-parse` resolves refs/tags before refs/heads,
         # so a tag called `main` shadows the branch we mean. Only

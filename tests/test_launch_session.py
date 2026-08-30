@@ -310,6 +310,10 @@ class TestStartRunSession:
         assert session.kind == "decompose"
         assert (session.run_dir / "events.jsonl").exists()
         assert (session.run_dir / "orchestrator.log").exists()
+        manifest = json.loads(
+            (tmp_path / "scripts" / "kstrl" / "manifest.json").read_text(),
+        )
+        assert len(manifest["components"]) == 2
 
     def test_decompose_session_resolves_an_unset_base_branch(self, tmp_path: Path) -> None:
         """#259: DecomposeLaunch carries no base branch of its own, so
@@ -337,12 +341,8 @@ class TestStartRunSession:
             assert session.handle.exit_code == 0
         finally:
             session.close()
-        manifest = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json")
-        assert manifest.base_branch == "trunk"
-        manifest = json.loads(
-            (tmp_path / "scripts" / "kstrl" / "manifest.json").read_text(),
-        )
-        assert len(manifest["components"]) == 2
+        written = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json")
+        assert written.base_branch == "trunk"
 
 
 class TestLaunchForms:

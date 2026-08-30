@@ -328,6 +328,21 @@ AssertionError: expected false to be true // Object.is equality
 """
 
 
+# Captured verbatim from a real `pytest` run where every test PASSED.
+# The polyglot gate chains toolchains (`uv run pytest && npm test`), so
+# the half that passes can be the half the parser understands.
+PYTEST_PASSING_OUTPUT = """\
+============================= test session starts ==============================
+platform darwin -- Python 3.12.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /tmp/writers-room
+collected 5 items
+
+tests/test_ok.py .....                                                   [100%]
+
+============================== 5 passed in 0.00s ===============================
+"""
+
+
 class TestNonPythonToolOutput:
     """The pytest parser is applied to whatever `test_command` ran.
 
@@ -387,3 +402,42 @@ class TestNonPythonToolOutput:
         parsed = parse_pytest_output(VITEST_FAILURE_OUTPUT)
         assert parsed.command == ""
         assert parsed.format_for_prompt()[0].startswith("[pytest]")
+
+    def test_a_passing_half_does_not_become_the_failure_detail(self) -> None:
+        """A failed gate must not report the passing toolchain's summary.
+
+        The measured shape from the polyglot repo behind #258: pytest
+        passes, vitest fails, `test_command` chains them. `_PYTEST_
+        SUMMARY_RE` matches pytest's footer, so the summary became
+        "5 passed in 0.00s" and, with the tail fallback suppressed by a
+        summary already being set, that single line was the whole retry
+        detail. The engineer was told five tests passed by a gate that
+        had just failed, and the vitest failure was gone.
+        """
+        combined = PYTEST_PASSING_OUTPUT + VITEST_FAILURE_OUTPUT
+
+        parsed = parse_pytest_output(combined)
+        parsed.command = "uv run pytest && npm test"
+        detail = "".join(parsed.format_for_prompt())
+
+        assert parsed.failures == []
+        assert "5 passed" not in detail
+        # What survives is the failing half's own summary.
+        assert "1 failed" in detail
+        assert parsed.total_errors == 1
+
+    def test_a_summary_reporting_failures_is_kept(self) -> None:
+        # The guard is "no failure in sight", not "no parsed failures":
+        # a real pytest footer that reports failures still wins over the
+        # tail even when no FAILED line was parseable from it.
+        raw = (
+            "collected 5 items\n"
+            "============================= 2 failed, 3 passed in 1.23s ==============================\n"
+        )
+        parsed = parse_pytest_output(raw)
+        assert parsed.failures == []
+        # The tail always contains the last line, so the discriminator is
+        # the "=" padding: the extracted summary has none, the raw tail
+        # keeps it. Taking the tail here would lose the count as well.
+        assert parsed.raw_summary == "2 failed, 3 passed in 1.23s"
+        assert parsed.total_errors == 2

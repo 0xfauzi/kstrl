@@ -128,12 +128,20 @@ def detect_base_branch(cwd: Path) -> str:
     present: set[str] = set()
     for line in listing.stdout.splitlines():
         refname, _, symref = line.partition("\t")
-        if refname == _ORIGIN_HEAD_REF:
-            # "refs/remotes/origin/main" -> "main". Stripping the known
-            # prefix rather than splitting on the last "/", because a
-            # remote may well default to a slashed branch and rsplit
-            # turns "release/2.0" into "2.0".
-            remote_default = symref.strip().removeprefix(_ORIGIN_REF_PREFIX)
+        symref = symref.strip()
+        # "refs/remotes/origin/main" -> "main". Stripping the known
+        # prefix rather than splitting on the last "/", because a remote
+        # may well default to a slashed branch and rsplit turns
+        # "release/2.0" into "2.0". The startswith is not decoration: an
+        # unguarded removeprefix returns its input untouched, so an
+        # origin/HEAD symrefing outside refs/remotes/origin/ (measured:
+        # one pointing at refs/heads/dev) yielded the whole refname as
+        # the answer. Every character in it passes validate_branch_name,
+        # so it reached the manifest and `gh pr create --base` before
+        # anything noticed. Leaving remote_default empty demotes it to
+        # the candidate rung instead.
+        if refname == _ORIGIN_HEAD_REF and symref.startswith(_ORIGIN_REF_PREFIX):
+            remote_default = symref.removeprefix(_ORIGIN_REF_PREFIX)
         elif refname in _BASE_BRANCH_REFS:
             present.add(_BASE_BRANCH_REFS[refname])
 
