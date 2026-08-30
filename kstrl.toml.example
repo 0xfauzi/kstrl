@@ -263,14 +263,17 @@ timeout_seconds = 60.0
 
 # Across-attempt divergence detector (#265). The retry loop can drive a
 # component the wrong way: the review fails, the engineer answers by writing
-# more code, the change grows, and the reviewer comes back no happier. Each
-# turn of that costs a full engineer run. The detector fails the component
-# once the change has grown at every one of `growth_steps` consecutive failed
-# reviews AND the reviewer never retired findings without raising new ones.
-# `ks retry` starts a fresh run with an empty history, so it is overridable.
+# more code, the change gets larger, and the reviewer comes back no happier.
+# Each turn of that costs a full engineer run. It trips when the change got
+# larger at every one of `growth_steps` consecutive failed reviews AND not one
+# of the reviewer's blocking findings was retired at any of them. ADVISORY
+# first: the size half is exact but the retirement half reconstructs a
+# finding's identity from reviewer prose, and that has no measured
+# false-positive rate yet. Set mode = "block" once you have seen its output on
+# real runs; a blocking trip is overridable with `ks retry`.
 [divergence]
-enabled = true
-growth_steps = 2                   # consecutive growth steps; needs N+1 measured attempts
+mode = "advisory"                  # skip | advisory | block
+growth_steps = 2                   # consecutive steps; needs N+1 measured attempts, must be >= 1
 
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the

@@ -166,6 +166,11 @@ def count_diff_size(
     """``(files, lines)`` for a ``git diff --numstat`` result, lockfiles
     excluded.
 
+    ``lines`` is lines ADDED PLUS REMOVED, git's own sense of "lines
+    changed", so deleting pre-existing code raises it. It measures churn,
+    not the artifact getting bigger, and callers must not describe it as
+    growth of the tree.
+
     Shared by the R8.1 size caps and the #265 divergence detector, which
     must agree about how large a change is. Binary files report ``-`` for
     both counts (``None`` here) and so contribute their file but no lines.

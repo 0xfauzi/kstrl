@@ -201,17 +201,22 @@ class Finding:
         )
 
     @classmethod
-    def divergence(cls, explanation: str) -> Finding:
+    def divergence(cls, explanation: str, severity: str = "advisory") -> Finding:
         """Build a Finding for a #265 across-attempt divergence trip.
 
-        Severity ``fail`` because the trip ends the component: unlike the
-        adequacy family it is not judged against an invented threshold,
-        it is a deterministic reading of the loop's own trajectory.
+        Severity defaults to ``advisory`` and matches the gate's mode:
+        the predicate is mechanical, but its retirement half reconstructs
+        a finding's identity from what the reviewer wrote, and that
+        heuristic's false-positive rate has not been measured on real
+        runs. Advisory mode is what produces the evidence a graduation to
+        ``fail`` would rest on.
+
+        Mechanical, so no model tag: the predicate decided, not an LLM.
         """
         return cls(
             phase="review",
             category=DIVERGENCE_CATEGORY,
-            severity="fail",
+            severity=severity,
             location="",
             explanation=explanation,
             tags=("divergence", "phase:review"),

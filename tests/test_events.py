@@ -89,6 +89,7 @@ def _sample_events() -> list[ev.Event]:
             lines_changed=(612, 1408, 2907),
             files_changed=(4, 6, 7),
             blocking_findings=(6, 1, 10),
+            blocked=True,
         ),
         ev.AdversarialAgentSelected(
             phase="review",

@@ -669,7 +669,7 @@ class TestDivergenceDetector:
             passed=False,
             mode="hard",
             concerns=[
-                ReviewConcern("test_quality", "fail", f"tests/{name}.py:12", "weak")
+                ReviewConcern("test_quality", "fail", "tests/a.py:12", f"{name} is weak")
                 for name in fails
             ],
         )
@@ -682,6 +682,7 @@ class TestDivergenceDetector:
         reviews: list[ReviewResult],
         sizes: list[int],
         numstat_error: bool = False,
+        mode: str = "block",
     ) -> tuple[Any, Component, list[Transition], list[Event]]:
         """Drive one component through N attempts, one review and one
         change size per attempt, and return the transitions plus every
@@ -702,6 +703,7 @@ class TestDivergenceDetector:
             return reviews[attempt["n"] - 1]
 
         monkeypatch.setattr("kstrl.git.get_diff_numstat", _numstat)
+        (tmp_path / "kstrl.toml").write_text(f'[divergence]\nmode = "{mode}"\n', encoding="utf-8")
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             config=_factory_config(review_mode="hard", max_retries=5),
@@ -730,9 +732,9 @@ class TestDivergenceDetector:
             tmp_path,
             monkeypatch,
             reviews=[
+                self._review(["a", "b"]),
                 self._review(["a", "b", "c"]),
-                self._review(["d"]),
-                self._review(["d", "e"]),
+                self._review(["a", "b", "c", "d"]),
             ],
             sizes=[600, 1400, 2900],
         )
@@ -752,7 +754,9 @@ class TestDivergenceDetector:
         event = next(e for e in events if isinstance(e, ev.ReviewDivergence))
         assert event.attempts == (1, 2, 3)
         assert event.lines_changed == (600, 1400, 2900)
-        assert event.blocking_findings == (3, 1, 2)
+        # The reviewer's own fail_count per attempt, not the key count.
+        assert event.blocking_findings == (2, 3, 4)
+        assert event.blocked is True
         assert pipeline.review_readings["comp-a"][0].files_changed == 2
 
     def test_converging_component_keeps_its_retries(
@@ -760,15 +764,18 @@ class TestDivergenceDetector:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """It grows just as fast, but every attempt retires findings and
-        raises none, so the growth is buying something."""
+        """It grows just as fast, and it never retires more than one
+        finding at a time while the reviewer keeps drawing a new one.
+        That is the ordinary shape of answering a review, and the
+        strict-subset reset this predicate does NOT use would have
+        condemned it."""
         _, comp, transitions, _events_seen = self._run_attempts(
             tmp_path,
             monkeypatch,
             reviews=[
-                self._review(["a", "b", "c"]),
                 self._review(["a", "b"]),
-                self._review(["a"]),
+                self._review(["b", "c"]),
+                self._review(["c", "d"]),
             ],
             sizes=[600, 1400, 2900],
         )
@@ -802,7 +809,7 @@ class TestDivergenceDetector:
         pipeline, _, transitions, _events_seen = self._run_attempts(
             tmp_path,
             monkeypatch,
-            reviews=[self._review(["a", "b"]), self._review(["a", "c"]), self._review(["a", "d"])],
+            reviews=[self._review(["a", "b"])] * 3,
             sizes=[600, 1400, 2900],
             numstat_error=True,
         )
@@ -826,26 +833,51 @@ class TestDivergenceDetector:
         assert transitions == [Transition.RETRYING] * 3
         assert [r.attempt for r in pipeline.review_readings["comp-a"]] == [1, 3]
 
-    def test_disabled_detector_keeps_retrying(
+    def test_advisory_mode_records_the_trip_and_keeps_retrying(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            "[divergence]\nenabled = false\n",
-            encoding="utf-8",
-        )
-        _, comp, transitions, _events_seen = self._run_attempts(
+        """The shipped default. The same trajectory that fails the
+        component under mode = "block" is recorded here and costs it
+        nothing, which is what makes graduation a decision with
+        evidence."""
+        _, comp, transitions, events = self._run_attempts(
             tmp_path,
             monkeypatch,
             reviews=[
+                self._review(["a", "b"]),
                 self._review(["a", "b", "c"]),
-                self._review(["d"]),
-                self._review(["d", "e"]),
+                self._review(["a", "b", "c", "d"]),
             ],
             sizes=[600, 1400, 2900],
+            mode="advisory",
         )
         assert transitions == [Transition.RETRYING] * 3
+        assert comp.failed_check == "criteria"
+        finding = next(f for f in comp.findings if f.category == "review_divergence")
+        assert finding.severity == "advisory"
+        event = next(e for e in events if isinstance(e, ev.ReviewDivergence))
+        assert event.blocked is False
+
+    def test_skip_mode_takes_no_readings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        pipeline, comp, transitions, _events_seen = self._run_attempts(
+            tmp_path,
+            monkeypatch,
+            reviews=[
+                self._review(["a", "b"]),
+                self._review(["a", "b", "c"]),
+                self._review(["a", "b", "c", "d"]),
+            ],
+            sizes=[600, 1400, 2900],
+            mode="skip",
+        )
+        assert transitions == [Transition.RETRYING] * 3
+        assert pipeline.review_readings == {}
         assert not any(f.category == "review_divergence" for f in comp.findings)
 
 

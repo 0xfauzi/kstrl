@@ -678,7 +678,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "flag_assertionless_tests",
     },
     "divergence": {
-        "enabled",
+        "mode",
         "growth_steps",
     },
     "inbox": {

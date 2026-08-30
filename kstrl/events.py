@@ -367,15 +367,22 @@ class DiffChunked(Event):
 @dataclass(frozen=True, kw_only=True)
 class ReviewDivergence(Event):
     """#265: the retry loop was growing the change without the review
-    getting any closer to passing, so the component was failed rather
-    than retried. Parallel series, one entry per attempt in the window
-    that tripped it."""
+    retiring a single one of its blocking findings. Parallel series, one
+    entry per attempt in the window that tripped it."""
 
     type: ClassVar[str] = "review_divergence"
     attempts: tuple[int, ...] = ()
+    #: Lines ADDED PLUS REMOVED against the base, per attempt.
     lines_changed: tuple[int, ...] = ()
     files_changed: tuple[int, ...] = ()
+    #: ``ReviewResult.fail_count`` per attempt, so this joins against
+    #: ``ReviewResultEvent.fail_count`` rather than disagreeing with it.
     blocking_findings: tuple[int, ...] = ()
+    #: Whether this trip actually failed the component. False in
+    #: advisory mode, where it was recorded and the component retried.
+    #: Named apart from ``blocking_findings`` above, which counts the
+    #: reviewer's findings and is a different sense of the word.
+    blocked: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

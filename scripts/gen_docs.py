@@ -587,14 +587,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "queue",
         "lease_ttl_seconds",
     ): "claim validity in seconds; the reaper recovers anything past this",
-    ("divergence", "enabled"): "fail a component whose change keeps growing while the review "
-    "keeps failing, instead of paying for another retry (#265)",
+    ("divergence", "mode"): "skip | advisory | block; advisory records a diverging retry loop, "
+    "block fails the component instead of paying for another retry (#265)",
     (
         "divergence",
         "growth_steps",
-    ): "consecutive growth steps required before the detector fires, so it "
-    "needs growth_steps + 1 measured attempts; the default is a structural "
-    "minimum, not a measured number",
+    ): "consecutive steps required before the detector fires, so it needs "
+    'growth_steps + 1 measured attempts; must be >= 1 (use mode = "skip" '
+    "to disable); the default is a structural minimum, not a measured number",
     ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
     ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
     ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",
@@ -656,6 +656,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("security", "fail_threshold"): "low",
     ("policy", "license_unresolved"): "advisory",
     ("adequacy", "layer0"): "block",
+    ("divergence", "mode"): "block",
     ("autonomy", "max_level"): 2,
     ("contract", "mode"): "final",
     ("knowledge", "dependency_scope"): "transitive",

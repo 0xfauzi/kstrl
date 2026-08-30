@@ -2811,15 +2811,22 @@ class ComponentPipeline:
             chunks=review_chunks,
         )
 
-    def _divergence_verdict(
+    def _divergence_failure(
         self,
         comp: Component,
         wt_path: Path,
         review_result: ReviewResult,
     ) -> str | None:
         """#265: record this attempt's reading and ask whether the retry
-        loop is diverging. Returns the operator-facing message on a trip,
-        ``None`` when it is not diverging or cannot be told.
+        loop is diverging. Returns the message that should FAIL the
+        component, or ``None`` when nothing should.
+
+        A trip is reported here whatever the mode - the line, the
+        finding and the event all go out before this returns - so the
+        return value carries the routing decision only, and ``None``
+        covering both "not diverging" and "recorded, keep retrying" is
+        not a lost fact: an advisory trip is already durable in the
+        event stream by then.
 
         Every "cannot be told" path declines to record a reading rather
         than recording a guessed one. The predicate needs CONSECUTIVE
@@ -2827,7 +2834,7 @@ class ComponentPipeline:
         is the fail-open direction: the loop keeps its retries.
         """
         config = DivergenceConfig.load(self.root_dir)
-        if not config.enabled:
+        if not config.measures:
             return None
         if review_result.infrastructure_error:
             # A crashed reviewer produced no verdict, so there is nothing
@@ -2850,7 +2857,10 @@ class ComponentPipeline:
         # R8.1's size caps and this detector must agree about how large a
         # change is, so both count through the same helper - which also
         # brings its exclusion of machine-generated lockfiles, without
-        # which a dependency bump could supply the growth half of a trip.
+        # which a dependency bump could supply the size half of a trip.
+        # The result is lines ADDED PLUS REMOVED, so it is churn rather
+        # than file growth; see the module docstring for why that is what
+        # the predicate wants.
         files_changed, lines_changed = count_diff_size(numstat)
         readings = self.review_readings.setdefault(comp.id, [])
         readings.append(
@@ -2859,23 +2869,37 @@ class ComponentPipeline:
                 lines_changed=lines_changed,
                 files_changed=files_changed,
                 finding_keys=keys,
+                # The reviewer's own count, NOT len(keys): keys
+                # deduplicate and the operator's line above this one
+                # ("Phase 2 FAILED: N failures") does not.
+                blocking_count=review_result.fail_count,
             )
         )
         verdict = detect_divergence(readings, config)
         if verdict is None:
             return None
         message = verdict.message
-        self._add_findings(comp, [Finding.divergence(message)])
+        self._add_findings(
+            comp,
+            [Finding.divergence(message, severity="fail" if config.blocks else "advisory")],
+        )
         self.bus.emit(
             ev.ReviewDivergence(
                 component=comp.id,
                 attempts=tuple(r.attempt for r in verdict.readings),
                 lines_changed=tuple(r.lines_changed for r in verdict.readings),
                 files_changed=tuple(r.files_changed for r in verdict.readings),
-                blocking_findings=tuple(len(r.finding_keys) for r in verdict.readings),
+                blocking_findings=tuple(r.blocking_count for r in verdict.readings),
+                blocked=config.blocks,
             )
         )
-        return message
+        # One event, one print site. Severity of the LINE follows the
+        # severity of the decision.
+        if config.blocks:
+            self.ui.err(f"  {message}")
+            return message
+        self.ui.warn(f"  {message}")
+        return None
 
     def _review_failure(
         self,
@@ -2888,23 +2912,23 @@ class ComponentPipeline:
         between retrying and the #265 divergence wall."""
         self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
         # #265: before spending another engineer run, ask whether the
-        # last few have been spent moving away from a pass. FAIL, not
-        # RETRY_OR_FAIL, because the whole value of the detector is not
-        # paying for the attempt it forecloses and an outcome that only
-        # reported would save nothing.
+        # last few have been spent moving away from a pass. Advisory by
+        # default: this records the trip and keeps retrying, and returns
+        # a message only under `[divergence] mode = "block"`.
         #
-        # Stated plainly, because the other FAIL sites do not work this
-        # way: budget exhaustion is a PROOF that retrying cannot help (a
-        # budget only shrinks), while this is a FORECAST from the loop's
-        # own trajectory. The forecast is deliberately conservative - it
-        # needs consecutive failed reviews, strict growth at every step
-        # and not one clean retirement of findings - and the operator
-        # keeps the override, because `ks retry` starts a fresh run with
-        # an empty reading history. Do not read the precedent the other
-        # way round and route a weaker forecast here.
-        divergence = self._divergence_verdict(comp, wt_path, review_result)
+        # When it DOES block, it is FAIL rather than RETRY_OR_FAIL,
+        # because the whole value is not paying for the attempt it
+        # forecloses and an outcome that only reported would save
+        # nothing. Stated plainly, because the other FAIL sites do not
+        # work this way: budget exhaustion is a PROOF that retrying
+        # cannot help (a budget only shrinks), while this is a FORECAST
+        # from the loop's own trajectory. That gap is exactly why the
+        # default is advisory, and why the forecast is built to fail
+        # open - see the module docstring on which way its identity
+        # heuristic errs. Do not read the precedent the other way round
+        # and route a weaker forecast here.
+        divergence = self._divergence_failure(comp, wt_path, review_result)
         if divergence is not None:
-            self.ui.err(f"  {divergence}")
             return ReviewPhaseResult(
                 ran=True,
                 result=review_result,

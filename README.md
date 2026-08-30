@@ -420,8 +420,8 @@ lease_ttl_seconds = 3600.0  # claim validity in seconds; the reaper recovers any
 
 # Across-attempt review divergence detector (#265)
 [divergence]
-enabled = true    # fail a component whose change keeps growing while the review keeps failing, instead of paying for another retry (#265)
-growth_steps = 2  # consecutive growth steps required before the detector fires, so it needs growth_steps + 1 measured attempts; the default is a structural minimum, not a measured number
+mode = "advisory"  # skip | advisory | block; advisory records a diverging retry loop, block fails the component instead of paying for another retry (#265)
+growth_steps = 2   # consecutive steps required before the detector fires, so it needs growth_steps + 1 measured attempts; must be >= 1 (use mode = "skip" to disable); the default is a structural minimum, not a measured number
 
 # Test-suite adequacy gate (R8.5; opt-in, advisory first)
 [adequacy]
