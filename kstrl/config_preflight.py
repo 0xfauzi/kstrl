@@ -60,7 +60,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kstrl.config import ConfigError, _load_toml, load_toml_section, resolve_config_file
+from kstrl.config import (
+    ConfigError,
+    load_toml_document,
+    load_toml_section,
+    resolve_config_file,
+    toml_parse_scope,
+)
+from kstrl.config_report import scrubbed_environ
 
 #: Exceptions a loader raises for input the operator has to fix, and the
 #: complete set of them: these loaders read a file and coerce values, so
@@ -88,7 +95,9 @@ class ConfigSection:
 
     sections: tuple[str, ...]
     loader: Callable[[Path], Any]
-    fatal: bool
+    #: False for a section whose failure degrades rather than stops the
+    #: command. Exactly one entry sets it; see the module docstring.
+    fatal: bool = True
 
     @property
     def label(self) -> str:
@@ -99,10 +108,11 @@ def config_sections() -> list[ConfigSection]:
     """Every configuration section kstrl reads, with its loader.
 
     Imports are deferred the way ``config_report._phase_sections`` defers
-    them. Measured on this tree, importing the twenty modules not already
-    pulled in by ``kstrl.cli`` costs under 5ms warm, so the reason is
-    ordering (this module is imported by ``kstrl.cli``, which several of
-    these import from) rather than latency.
+    them, and the reason is ordering, not latency: this module is
+    imported by ``kstrl.cli``, which several of these import from.
+    Measured on this tree, only four of the twenty-two are new work
+    (evolution, intake_github with workqueue, and serve; the rest arrive
+    with ``kstrl.cli``), costing about 7 ms warm on a 151 ms process.
 
     ``tests/test_config_preflight.py`` walks ``kstrl/`` for config
     dataclasses and fails if one is missing from this list, so a section
@@ -131,40 +141,52 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.verify import VerifyConfig
     from kstrl.workqueue import QueueConfig
 
-    fatal: list[tuple[tuple[str, ...], Callable[[Path], Any]]] = [
-        (("agent", "run", "paths", "git", "ui"), KstrlConfig.load),
-        (("factory",), FactoryConfig.load),
-        (("verify",), VerifyConfig.load),
-        (("security",), SecurityConfig.load),
-        (("contract",), ContractConfig.load),
-        (("adequacy",), AdequacyConfig.load),
-        (("policy",), PolicyConfig.load),
-        (("autonomy",), AutonomyConfig.load),
-        (("divergence",), DivergenceConfig.load),
-        (("breaker",), BreakerConfig.load),
-        (("sandbox",), SandboxConfig.load),
-        (("timeout",), TimeoutConfig.load),
-        (("feedforward",), FeedforwardConfig.load),
-        (("knowledge",), KnowledgeConfig.load),
-        (("fixtures",), FixturesConfig.load),
-        (("queue",), QueueConfig.load),
-        (("inbox",), InboxConfig.load),
-        (("intake_github",), GitHubIntakeConfig.load),
-        (("serve",), ServeConfig.load),
-        (("notify",), NotifyConfig.load),
-        (("linear",), LinearConfig.load),
+    return [
+        ConfigSection(("agent", "run", "paths", "git", "ui"), KstrlConfig.load),
+        ConfigSection(("factory",), FactoryConfig.load),
+        ConfigSection(("verify",), VerifyConfig.load),
+        ConfigSection(("security",), SecurityConfig.load),
+        ConfigSection(("contract",), ContractConfig.load),
+        ConfigSection(("adequacy",), AdequacyConfig.load),
+        ConfigSection(("policy",), PolicyConfig.load),
+        ConfigSection(("autonomy",), AutonomyConfig.load),
+        ConfigSection(("divergence",), DivergenceConfig.load),
+        ConfigSection(("breaker",), BreakerConfig.load),
+        ConfigSection(("sandbox",), SandboxConfig.load),
+        ConfigSection(("timeout",), TimeoutConfig.load),
+        ConfigSection(("feedforward",), FeedforwardConfig.load),
+        ConfigSection(("knowledge",), KnowledgeConfig.load),
+        ConfigSection(("fixtures",), FixturesConfig.load),
+        ConfigSection(("queue",), QueueConfig.load),
+        ConfigSection(("inbox",), InboxConfig.load),
+        ConfigSection(("intake_github",), GitHubIntakeConfig.load),
+        ConfigSection(("serve",), ServeConfig.load),
+        ConfigSection(("notify",), NotifyConfig.load),
+        ConfigSection(("linear",), LinearConfig.load),
+        ConfigSection(("evolution",), EvolutionConfig.load, fatal=False),
     ]
-    entries = [ConfigSection(names, loader, fatal=True) for names, loader in fatal]
-    entries.append(ConfigSection(("evolution",), EvolutionConfig.load, fatal=False))
-    return entries
 
 
-def preflight_config(root_dir: Path, warn: Callable[[str], None]) -> None:
+def preflight_config(
+    root_dir: Path,
+    warn: Callable[[str], None],
+    *,
+    required: frozenset[str] = frozenset(),
+) -> None:
     """Resolve every configuration section, or say exactly what to fix.
 
     Raises :class:`ConfigError` naming the section, the offending input
     and the loader's own message. Degrading sections (see the module
     docstring) go to ``warn`` instead and the command continues.
+
+    ``required`` promotes named sections to fatal for THIS caller. It
+    exists because "degrading" means "an audit trail attached to work
+    that is about something else": ``ks evolve`` IS the journal, so it
+    passes ``{"evolution"}`` and gets the error line, with the key and
+    the offending value, instead of a warning followed two lines later
+    by the traceback the warning promised would not come. A command
+    that is ABOUT a section declares that here rather than remembering
+    its own guard.
 
     Deliberately NOT swallowed here: ``BudgetConfigError``, which
     ``_KstrlGroup.invoke`` already renders with its own message, and
@@ -173,26 +195,31 @@ def preflight_config(root_dir: Path, warn: Callable[[str], None]) -> None:
     from kstrl.factory import BudgetConfigError
 
     toml_path = resolve_config_file(root_dir)
-    if toml_path.exists():
-        # The document first: a syntax error breaks every section, and
-        # one line naming the line and column beats twenty-two saying so.
-        try:
-            _load_toml(toml_path)
-        except OSError as exc:
-            raise ConfigError(f"{toml_path} could not be read: {exc}") from exc
-
     problems: list[str] = []
-    for section in config_sections():
-        try:
-            section.loader(root_dir)
-        except BudgetConfigError:
-            raise
-        except _REJECTIONS as exc:
-            detail = _detail(section, root_dir, exc)
-            if section.fatal:
-                problems.append(detail)
-            else:
-                warn(f"{detail} - continuing without it")
+    # One parse of the file for the whole check, blame helpers included.
+    # Without the scope the 22 loaders lex the same bytes 22 times:
+    # measured on the shipped 21 KB kstrl.toml.example, this check costs
+    # 9.4 ms without it and 0.6 ms with it.
+    with toml_parse_scope():
+        if toml_path.exists():
+            # The document first: a syntax error breaks every section,
+            # and one line naming the line and column beats 22 saying so.
+            try:
+                load_toml_document(toml_path)
+            except OSError as exc:
+                raise ConfigError(f"{toml_path} could not be read: {exc}") from exc
+
+        for section in config_sections():
+            try:
+                section.loader(root_dir)
+            except BudgetConfigError:
+                raise
+            except _REJECTIONS as exc:
+                detail = _detail(section, toml_path, root_dir, exc)
+                if section.fatal or not required.isdisjoint(section.sections):
+                    problems.append(detail)
+                else:
+                    warn(f"{detail} - continuing without it")
 
     if problems:
         raise ConfigError(
@@ -201,31 +228,58 @@ def preflight_config(root_dir: Path, warn: Callable[[str], None]) -> None:
         )
 
 
-def _detail(section: ConfigSection, root_dir: Path, exc: Exception) -> str:
-    """One line: which section, what the loader said, and which input."""
+def _detail(
+    section: ConfigSection,
+    toml_path: Path,
+    root_dir: Path,
+    exc: Exception,
+) -> str:
+    """One line: which section, what the loader said, and which input.
+
+    The environment is asked FIRST because the environment wins: with
+    the same bad value in both places, the variable is the one taking
+    effect, so naming the file's key would send the operator to a line
+    that changing does not help.
+    """
     message = str(exc)
-    blamed = _blamed_env_var(section.loader, root_dir) or _blamed_toml_value(
+    blamed = _blamed_env_var(section.loader, root_dir, message) or _blamed_toml_value(
         section.sections,
-        resolve_config_file(root_dir),
+        toml_path,
         message,
     )
     line = f"{section.label} {message}"
     return f"{line} ({blamed})" if blamed else line
 
 
-def _blamed_env_var(loader: Callable[[Path], Any], root_dir: Path) -> str | None:
+def _blamed_env_var(
+    loader: Callable[[Path], Any],
+    root_dir: Path,
+    message: str,
+) -> str | None:
     """The environment variable whose REMOVAL makes this loader accept
     the configuration, if exactly one does.
 
-    Measured, not guessed: the variable is named only when taking it out
+    Measured, not guessed: a variable is named only when taking it out
     of the environment demonstrably fixes the load. Nothing is reported
     when the fault is in the file, or when two inputs are wrong at once.
 
-    Mutating ``os.environ`` is PROCESS-WIDE, so this runs only on the
-    error path at command entry, where the command body has not started
-    and no other thread of ours is alive - the same constraint
-    ``config_report.scrubbed_environ`` documents.
+    An EMPTY environment is tried first, and a loader that still fails
+    there ends the search: the file is at fault, and no single variable
+    can be. That gate is what keeps the common case at one extra load
+    rather than one per variable (measured with 83 variables set: 34.3
+    ms of fruitless sweep for a file fault, against 0.5 ms with it).
+
+    Mutating ``os.environ`` is PROCESS-WIDE, which is why this runs only
+    on the error path at command entry, where the command body has not
+    started and no other thread of ours is alive. That is the constraint
+    ``config_report.scrubbed_environ``, reused here, already documents.
     """
+    with scrubbed_environ():
+        try:
+            loader(root_dir)
+        except Exception:
+            return None
+
     for name in sorted(os.environ):
         saved = os.environ.pop(name)
         try:
@@ -235,7 +289,10 @@ def _blamed_env_var(loader: Callable[[Path], Any], root_dir: Path) -> str | None
             # this variable is not the one thing to change.
             continue
         else:
-            return f"set by {name}={saved}"
+            # The value is echoed only where the loader's own message
+            # already quotes it. Nothing has decided that an arbitrary
+            # environment value may be printed, so nothing prints one.
+            return f"set by {name}={saved}" if repr(saved) in message else f"set by {name}"
         finally:
             os.environ[name] = saved
     return None

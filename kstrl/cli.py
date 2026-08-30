@@ -515,20 +515,43 @@ def _timestamp() -> str:
 # - `ks init` WRITES a kstrl.toml, including over a broken one. Refusing
 #   to run it because the file it is about to replace does not parse
 #   takes away the tool the operator recovers with.
-# - `ks config show` exists to EXPLAIN a broken config, and renders the
-#   failure itself with the row that caused it. Same reason.
-# - `ks sense` already does exactly what this preflight does, at its own
-#   entry, before any measurement - and does it BETTER, through a
-#   documented machine contract: exit 2 (not 1) and a JSON error
-#   document on stdout for `--json`. Preflighting it would replace a
-#   contract a script can read with one it cannot.
-# - `ks serve` has the same documented exit 2, and calls the preflight
-#   ITSELF (see the `serve` body) so the daemon still gets the whole
-#   check. Exempt from the seam, not from the guarantee.
+# - `ks config show` exists to EXPLAIN a broken config: it prints the
+#   resolved rows first and reports the same verdict last, so it can
+#   neither be silenced by a broken section nor disagree with the seam.
+# - `ks sense` reports a config failure through a documented MACHINE
+#   contract that the seam would destroy: exit 2 (not 1) and a JSON
+#   error document on stdout for `--json`. It calls the preflight
+#   itself, under that contract.
+# - `ks serve` has the same documented exit 2, and also calls the
+#   preflight itself.
+#
+# The last three are exempt from the SEAM, never from the check: each
+# runs the same `preflight_config` in its own body, under its own
+# contract. An exemption that skipped the check would be the property
+# #272 removed, smuggled back in under a name.
 #
 # Matched on the command's name and on its parents', so `ks config show`
 # is covered by "config".
 _PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "serve"})
+
+# Sections a command is ABOUT, promoted from degrading to fatal for that
+# command only. `[evolution]` degrades everywhere because the journal is
+# an audit trail attached to work about something else; `ks evolve` IS
+# the journal, so warning and continuing would be a promise the next two
+# lines break. Declared here, beside the exemptions, so a command does
+# not carry its own remembered guard for a policy the seam already owns.
+_PREFLIGHT_REQUIRED: dict[str, frozenset[str]] = {
+    "evolve": frozenset({"evolution"}),
+}
+
+
+def _preflight_warn(message: str) -> None:
+    """A degrading section's warning, on STDERR.
+
+    Stdout belongs to the command's output, and `ks sense --json` puts a
+    single JSON document there that a script parses.
+    """
+    click.echo(f"warning: {message}", err=True)
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -538,18 +561,27 @@ def _preflight_root(ctx: click.Context) -> Path:
     precedence - so the file the preflight validates is the file the
     command will load. A command with none of them gets the cwd, which
     is what those commands do themselves.
-    """
-    params = ctx.params
 
-    def _as_path(name: str, env_var: str) -> Path | None:
-        value = params.get(name) or os.environ.get(env_var)
+    ``understand_prompt`` is read beside ``prompt`` because that is the
+    option ``ks feature`` feeds to ``_resolve_root`` (cli.py:1498). Miss
+    it and the preflight validates the cwd while the command loads
+    another checkout's config, which fails SILENTLY, by passing. No
+    command declares both, so asking for both cannot be ambiguous.
+    """
+
+    def _param(name: str) -> str | None:
+        value = ctx.params.get(name)
+        return str(value) if value else None
+
+    def _path(name: str, env_var: str) -> Path | None:
+        value = _param(name) or os.environ.get(env_var)
         return Path(value) if value else None
 
-    root = params.get("root")
+    root = _param("root")
     return _resolve_root(
         Path(root) if root else None,
-        _as_path("prompt", "PROMPT_FILE"),
-        _as_path("prd", "PRD_FILE"),
+        _path("prompt", "PROMPT_FILE") or _path("understand_prompt", "PROMPT_FILE"),
+        _path("prd", "PRD_FILE"),
     )
 
 
@@ -574,21 +606,29 @@ class _KstrlCommand(click.Command):
     def invoke(self, ctx: click.Context) -> Any:
         from kstrl.config_preflight import preflight_config
 
-        if not self._exempt(ctx):
+        name = self._top_level_name(ctx)
+        if name not in _PREFLIGHT_EXEMPT:
             preflight_config(
                 _preflight_root(ctx),
-                warn=lambda message: click.echo(f"warning: {message}", err=True),
+                warn=_preflight_warn,
+                required=_PREFLIGHT_REQUIRED.get(name, frozenset()),
             )
         return super().invoke(ctx)
 
     @staticmethod
-    def _exempt(ctx: click.Context) -> bool:
-        node: click.Context | None = ctx
-        while node is not None:
-            if node.command.name in _PREFLIGHT_EXEMPT:
-                return True
+    def _top_level_name(ctx: click.Context) -> str:
+        """The command name directly under the root group.
+
+        Both tables key off THIS, not off any name in the chain: keying
+        off any would exempt a later ``ks queue init`` or ``ks inbox
+        serve`` purely because of its leaf name, which is a decision
+        nobody would have made. It is also what puts ``ks config show``
+        under ``config``.
+        """
+        node = ctx
+        while node.parent is not None and node.parent.parent is not None:
             node = node.parent
-        return False
+        return node.command.name or ""
 
 
 class _KstrlGroup(click.Group):
@@ -2811,6 +2851,20 @@ def config_show(
         click.echo(f"  {row.key} = {row.value}  ({row.source})")
     click.echo("")
 
+    # The rows above cover the sections `config_report` knows about; the
+    # entry seam (#272) resolves ELEVEN more, and refuses every other
+    # command when one of them is unusable. Reporting the verdict last
+    # means this command cannot say "all fine" about a config that stops
+    # `ks factory` - which would be the worst possible answer from the
+    # tool the seam exempts precisely so an operator can diagnose one.
+    from kstrl.config_preflight import preflight_config
+
+    try:
+        preflight_config(root_dir, warn=_preflight_warn)
+    except ValueError as exc:
+        click.echo(f"error: {exc}", err=True)
+        sys.exit(1)
+
     sys.exit(0)
 
 
@@ -3387,18 +3441,28 @@ def sense(
         _sense_error(f"path is not a directory: {path}", as_json)
 
     from kstrl.adequacy import AdequacyConfig
+    from kstrl.config_preflight import preflight_config
     from kstrl.fixtures import FixturesConfig
     from kstrl.policy import PolicyConfig
     from kstrl.verify import VerifyConfig, run_mechanical_verification
 
     try:
+        # The WHOLE configuration, not only the four sections this
+        # command reads. `sense` is exempt from the entry seam because
+        # its contract is exit 2 plus a JSON error document rather than
+        # the seam's exit 1, and an exemption is only honest if the
+        # command does the same check: checking four of twenty-two
+        # would keep exactly the "depends which section you typo'd"
+        # property #272 removed, inside the exemption.
+        preflight_config(root_dir, warn=_preflight_warn)
         verify_cfg = VerifyConfig.load(root_dir)
         policy_cfg = PolicyConfig.load(root_dir)
         adequacy_cfg = AdequacyConfig.load(root_dir)
         fixtures_cfg = FixturesConfig.load(root_dir) if prd_path is not None else None
     except (OSError, ValueError) as exc:
-        # ValueError covers malformed TOML (load_toml_section) and the
-        # loaders' own validation errors (PolicyConfigError is one).
+        # ValueError covers malformed TOML (load_toml_section), the
+        # preflight's ConfigError, and the loaders' own validation
+        # errors (PolicyConfigError is one).
         _sense_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
 
     base = resolve_base_branch(base_branch, path)
@@ -3683,17 +3747,10 @@ def evolve(
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     # R2.1: honor [evolution] in kstrl.toml + env, anchored to --root.
-    try:
-        evo_config = EvolutionConfig.load(root_dir)
-    except (ValueError, OSError) as exc:
-        # The entry preflight classifies [evolution] as DEGRADING and
-        # warns rather than stopping, because everywhere else the journal
-        # is an optional audit trail attached to work that is about
-        # something else. Here it is the work, so the same value is
-        # fatal - and this is the guard that keeps that from arriving as
-        # a traceback two lines after the preflight said "continuing".
-        ui_impl.err(f"[evolution] configuration is unusable: {exc}")
-        sys.exit(1)
+    # Unguarded on purpose: `_PREFLIGHT_REQUIRED` lists this command as
+    # one that [evolution] is FATAL for, so the entry seam has already
+    # rejected a config this would raise on.
+    evo_config = EvolutionConfig.load(root_dir)
 
     if not evo_config.enabled:
         ui_impl.err("Evolution is disabled in config")

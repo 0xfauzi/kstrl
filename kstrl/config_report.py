@@ -154,22 +154,25 @@ def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
 def _phase_sections() -> list[tuple[str, Any, list[str]]]:
     """(section, loader, knob fields) - the documented kstrl.toml
     surface for the factory-phase configs. Loaders import lazily; the
-    report is not on any hot path."""
-    from kstrl.contract import ContractConfig
-    from kstrl.evolution import EvolutionConfig
-    from kstrl.factory import FactoryConfig
-    from kstrl.feedforward import FeedforwardConfig
-    from kstrl.knowledge import KnowledgeConfig
-    from kstrl.linear import LinearConfig
-    from kstrl.observability import NotifyConfig
-    from kstrl.security import SecurityConfig
+    report is not on any hot path.
+
+    The LOADER for each section comes from
+    ``config_preflight.config_sections()``, which is the one registry of
+    section to loader and is kept complete by an AST test. Only the knob
+    lists are local, because they are about what this report RENDERS
+    rather than about what a section is loaded by. A second copy of the
+    loader table is what the comment on ``verify`` below is already an
+    account of, one level down.
+    """
+    from kstrl.config_preflight import config_sections
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
 
-    return [
+    loaders = {name: entry.loader for entry in config_sections() for name in entry.sections}
+
+    knobs: list[tuple[str, list[str]]] = [
         (
             "factory",
-            FactoryConfig.load,
             [
                 "max_parallel",
                 "max_retries",
@@ -196,10 +199,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         # VerifyConfig IS a documented kstrl.toml key, which gen_docs
         # already enforces, so the field list is the key list and a
         # second copy of it can only ever be wrong.
-        ("verify", VerifyConfig.load, [f.name for f in dataclass_fields(VerifyConfig)]),
+        ("verify", [f.name for f in dataclass_fields(VerifyConfig)]),
         (
             "security",
-            SecurityConfig.load,
             [
                 "mode",
                 "fail_threshold",
@@ -209,10 +211,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "model",
             ],
         ),
-        ("contract", ContractConfig.load, ["mode", "test_command", "timeout"]),
+        ("contract", ["mode", "test_command", "timeout"]),
         (
             "feedforward",
-            FeedforwardConfig.load,
             [
                 "enabled",
                 "module_map",
@@ -224,7 +225,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "knowledge",
-            KnowledgeConfig.load,
             [
                 "enabled",
                 "max_core_tokens",
@@ -238,7 +238,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "evolution",
-            EvolutionConfig.load,
             [
                 "enabled",
                 "journal_path",
@@ -249,10 +248,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "auto_apply_computational",
             ],
         ),
-        ("timeout", TimeoutConfig.load, [f.name for f in dataclass_fields(TimeoutConfig)]),
+        ("timeout", [f.name for f in dataclass_fields(TimeoutConfig)]),
         (
             "notify",
-            NotifyConfig.load,
             [
                 "on_complete",
                 "on_first_failure",
@@ -262,7 +260,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "linear",
-            LinearConfig.load,
             [
                 "enabled",
                 "team_id",
@@ -275,6 +272,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
             ],
         ),
     ]
+    return [(name, loaders[name], fields) for name, fields in knobs]
 
 
 def _base_sources(

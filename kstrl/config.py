@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -462,13 +465,62 @@ class ConfigError(ValueError):
     """
 
 
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Load and parse a TOML file. Raises ConfigError on malformed input."""
+#: Documents parsed inside the innermost :func:`toml_parse_scope`, or
+#: None outside one. A ContextVar rather than a module global so a
+#: scope cannot leak into another thread or task.
+_PARSE_SCOPE: ContextVar[dict[Path, dict[str, Any]] | None] = ContextVar(
+    "kstrl_toml_parse_scope",
+    default=None,
+)
+
+
+@contextmanager
+def toml_parse_scope() -> Iterator[None]:
+    """Parse each kstrl.toml at most once for the duration of the block.
+
+    Every config dataclass reads its own section, and each read reparses
+    the whole file: resolving all 22 sections at command entry lexed the
+    same bytes 23 times. Measured on the shipped 21 KB
+    kstrl.toml.example, the entry check cost 9.4 ms without this scope
+    and 0.6 ms with it, which took `ks status` from 159.9 ms to
+    157.7 ms against the same file.
+
+    SCOPED, not process-wide, and the distinction is the whole design.
+    A process-wide snapshot would freeze the file for the life of the
+    process, which two surfaces would be wrong about: the TUI config
+    screen has a refresh action whose job is to re-read the file on
+    demand (``tui/screens/config.py``), and ``ks serve`` is a long-lived
+    daemon that re-reads config per queue item. Inside a block that runs
+    for under a millisecond there is no window for either, and no
+    caller outside one sees any change at all.
+
+    Nothing in this package mutates what ``load_toml_section`` returns,
+    which is what makes handing out the same sub-dict twice safe.
+    """
+    token = _PARSE_SCOPE.set({})
+    try:
+        yield
+    finally:
+        _PARSE_SCOPE.reset(token)
+
+
+def load_toml_document(path: Path) -> dict[str, Any]:
+    """Load and parse a TOML file. Raises ConfigError on malformed input.
+
+    Inside a :func:`toml_parse_scope` the parsed document is reused
+    rather than re-read.
+    """
+    scope = _PARSE_SCOPE.get()
+    if scope is not None and path in scope:
+        return scope[path]
     try:
         with open(path, "rb") as f:
-            return tomllib.load(f)
+            data: dict[str, Any] = tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+    if scope is not None:
+        scope[path] = data
+    return data
 
 
 def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
@@ -485,7 +537,7 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
     """
     if not toml_path.exists():
         return {}
-    data = _load_toml(toml_path)
+    data = load_toml_document(toml_path)
     section_data = data.get(section, {})
     if not isinstance(section_data, dict):
         return {}
@@ -502,7 +554,7 @@ def _apply_toml_overrides(
     Maps the documented section structure (agent, run, paths, git, ui) onto
     the flat KstrlConfig dataclass. Unknown keys are silently ignored.
     """
-    data = _load_toml(toml_path)
+    data = load_toml_document(toml_path)
 
     agent = data.get("agent")
     if isinstance(agent, dict):

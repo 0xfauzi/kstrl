@@ -20,15 +20,17 @@ import json
 from pathlib import Path
 from typing import Any
 
+import click
 import pytest
 from click.testing import CliRunner, Result
 
 import kstrl.cli as cli_mod
 from kstrl.cli import cli
-from kstrl.config import ConfigError
+from kstrl.config import ConfigError, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import config_sections, preflight_config
 from kstrl.factory import FactoryResult
-from kstrl.manifest import Component, Manifest
+from tests.conftest import REPO_ROOT
+from tests.spine_utils import component, make_manifest
 
 MALFORMED_TOML = "[verify\ntest_command = 'pytest'\n"
 
@@ -45,25 +47,7 @@ DECOMPOSE_ARGS = [
     "true",
 ]
 
-
-def _write_manifest(path: Path) -> None:
-    Manifest(
-        version="1",
-        spec_file="s.md",
-        project_name="test",
-        base_branch="main",
-        single_pr=False,
-        components=[
-            Component(
-                "comp-a",
-                "Comp A",
-                "Desc",
-                [],
-                "scripts/kstrl/feature/comp-a/prd.json",
-                "kstrl/factory/comp-a",
-            )
-        ],
-    ).save(path)
+FACTORY_ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
 
 
 def _invoke(args: list[str], *, toml: str | None = None) -> Result:
@@ -72,27 +56,57 @@ def _invoke(args: list[str], *, toml: str | None = None) -> Result:
     with runner.isolated_filesystem() as fs:
         root = Path(fs)
         (root / "s.md").write_text("# spec\n")
-        _write_manifest(root / "m.json")
+        make_manifest([component("comp-a")]).save(root / "m.json")
         if toml is not None:
             (root / "kstrl.toml").write_text(toml)
         return runner.invoke(cli, args, catch_exceptions=True)
 
 
-def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
+def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Record every agent construction and every architect call."""
-    built: list[tuple[Any, ...]] = []
+    built: list[str] = []
 
     def fake_get_agent(*args: Any, **kwargs: Any) -> Any:
-        built.append(("get_agent", args))
+        built.append("get_agent")
         raise AssertionError("an agent was constructed after a rejected config")
 
     def fake_decompose_spec(*args: Any, **kwargs: Any) -> Any:
-        built.append(("decompose_spec", args))
+        built.append("decompose_spec")
         raise AssertionError("the architect was invoked after a rejected config")
 
     monkeypatch.setattr(cli_mod, "get_agent", fake_get_agent)
     monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose_spec)
     return built
+
+
+def _class_defs(path: Path) -> list[ast.ClassDef]:
+    """Every class defined in one file.
+
+    A file that will not parse yields none: that is a defect for mypy
+    and ruff to report, not a reason for this test to fail obscurely.
+    ``tests/test_prompt_versions.py``'s walk tolerates it the same way.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (SyntaxError, UnicodeDecodeError):
+        return []
+    return [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+
+
+def _defines_load(node: ast.ClassDef) -> bool:
+    return any(isinstance(child, ast.FunctionDef) and child.name == "load" for child in node.body)
+
+
+def _stub_run_factory(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Stop at the factory boundary, recording whether we got there."""
+    ran: list[str] = []
+
+    def fake_run_factory(*args: Any, **kwargs: Any) -> FactoryResult:
+        ran.append("run_factory")
+        return FactoryResult()
+
+    monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+    return ran
 
 
 class TestTheDecomposePathFailsBeforeTheArchitect:
@@ -160,9 +174,9 @@ class TestTheEnvironmentIsCheckedInTheSamePass:
         """Reproduced against main before the fix: exit 1 with a raw
         ValueError traceback and no error line."""
         monkeypatch.setenv(var, "many")
-        monkeypatch.setattr(cli_mod, "run_factory", lambda *a, **k: FactoryResult())
+        _stub_run_factory(monkeypatch)
 
-        result = _invoke(["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"])
+        result = _invoke(FACTORY_ARGS)
 
         assert not isinstance(result.exception, ValueError), result.exception
         assert result.exit_code == 1
@@ -181,50 +195,43 @@ class TestFatalVersusDegrading:
     something else.
     """
 
-    ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
-
     def test_a_bad_evolution_knob_warns_and_the_run_still_happens(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        ran: list[bool] = []
-        monkeypatch.setattr(
-            cli_mod,
-            "run_factory",
-            lambda *a, **k: (ran.append(True), FactoryResult())[1],
-        )
+        ran = _stub_run_factory(monkeypatch)
 
-        result = _invoke(self.ARGS, toml='[evolution]\nlookback_runs = "many"\n')
+        result = _invoke(FACTORY_ARGS, toml='[evolution]\nlookback_runs = "many"\n')
 
         assert result.exit_code == 0, result.output
-        assert ran == [True]
+        assert ran == ["run_factory"]
         assert "[evolution]" in result.output
         assert "continuing without it" in result.output
 
     def test_evolve_treats_the_same_evolution_knob_as_fatal(self) -> None:
         """Degrading means "the audit trail is dropped from work that is
         about something else". `ks evolve` IS the journal, so the value
-        the preflight warns about has to stop THAT command - with an
-        error line, not the traceback the warning would otherwise be
-        followed by two lines later."""
+        the preflight warns about elsewhere has to stop THAT command -
+        with the same error line, key and value, rather than a warning
+        followed two lines later by the traceback it promised was not
+        coming."""
         result = _invoke(["evolve", "--status"], toml='[evolution]\nlookback_runs = "many"\n')
 
         assert result.exit_code == 1
-        assert "[evolution] configuration is unusable" in result.output
+        assert "error:" in result.output
+        assert "[evolution] lookback_runs = 'many'" in result.output
+        # Promoted at the seam, so the warning it would otherwise have
+        # printed never happens: one report, not two.
+        assert "continuing without it" not in result.output
         assert not isinstance(result.exception, ValueError), result.exception
 
     def test_a_bad_verify_knob_stops_the_run(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        ran: list[bool] = []
-        monkeypatch.setattr(
-            cli_mod,
-            "run_factory",
-            lambda *a, **k: (ran.append(True), FactoryResult())[1],
-        )
+        ran = _stub_run_factory(monkeypatch)
 
-        result = _invoke(self.ARGS, toml='[verify]\nmutation_threshold = "many"\n')
+        result = _invoke(FACTORY_ARGS, toml='[verify]\nmutation_threshold = "many"\n')
 
         assert result.exit_code == 1
         assert ran == []
@@ -267,7 +274,7 @@ class TestWhatItNames:
 
     def test_a_clean_config_raises_nothing(self, tmp_path: Path) -> None:
         """The example config ships as documentation; it has to pass."""
-        example = Path(__file__).resolve().parents[1] / "kstrl.toml.example"
+        example = REPO_ROOT / "kstrl.toml.example"
         (tmp_path / "kstrl.toml").write_text(example.read_text())
 
         warnings: list[str] = []
@@ -281,6 +288,35 @@ class TestTheRootIsTheOneTheCommandWillUse:
     level click has not parsed ``--root`` yet, so a preflight there would
     read the config of whatever directory the operator happened to be
     standing in."""
+
+    def test_the_prompt_option_feature_actually_uses_derives_the_root(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`ks feature` names its prompt option ``--understand-prompt``
+        and feeds THAT to ``_resolve_root``. Reading only ``prompt``
+        made the check validate the cwd while the command loaded another
+        checkout's config, and the failure mode was the worst kind: a
+        preflight that PASSES, which no other test here can catch.
+        """
+        project = tmp_path / "project"
+        (project / "scripts" / "kstrl").mkdir(parents=True)
+        # A section the command body does NOT load early. Malformed TOML
+        # would not distinguish anything: `KstrlConfig.load` is the
+        # command's second statement, so the operator gets a clean error
+        # either way. [linear] is the section #272 was filed about
+        # precisely because nothing reads it until after the agent.
+        (project / "kstrl.toml").write_text('[linear]\ntimeout_seconds = "soon"\n')
+        prompt = project / "scripts" / "kstrl" / "understand_prompt.md"
+        prompt.write_text("# understand\n")
+        built = _no_agents(monkeypatch)
+
+        result = _invoke(["feature", "--understand-prompt", str(prompt), "--agent-cmd", "true"])
+
+        assert built == []
+        assert result.exit_code == 1
+        assert "[linear]" in result.output
 
     def test_a_broken_config_under_root_is_found_from_a_clean_cwd(
         self,
@@ -307,13 +343,13 @@ class TestTheRootIsTheOneTheCommandWillUse:
         command's config must not stop it."""
         clean = tmp_path / "project"
         clean.mkdir()
-        monkeypatch.setattr(cli_mod, "run_factory", lambda *a, **k: FactoryResult())
+        _stub_run_factory(monkeypatch)
 
         runner = CliRunner()
         with runner.isolated_filesystem() as fs:
             root = Path(fs)
             (root / "kstrl.toml").write_text(MALFORMED_TOML)
-            _write_manifest(clean / "m.json")
+            make_manifest([component("comp-a")]).save(clean / "m.json")
             result = runner.invoke(
                 cli,
                 [
@@ -358,6 +394,28 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert result.exit_code == 2
         assert "error" in json.loads(result.stdout)
 
+    def test_sense_checks_sections_it_does_not_itself_read(self) -> None:
+        """`sense` loads four sections of its own. An exemption that
+        checked only those would keep the "depends which section you
+        typo'd" property inside itself, so it runs the whole preflight
+        under its own contract."""
+        result = _invoke(["sense", "--json"], toml='[linear]\ntimeout_seconds = "soon"\n')
+
+        assert result.exit_code == 2
+        assert "[linear]" in json.loads(result.stdout)["error"]
+
+    def test_config_show_reports_a_section_its_own_rows_do_not_cover(self) -> None:
+        """`config_report` renders 15 of the 26 sections. Without this,
+        the tool the seam exempts so an operator can DIAGNOSE a refusal
+        would print rows and exit 0 for the very config that refuses
+        every other command."""
+        result = _invoke(["config", "show"], toml='[queue]\nmax_attempts = "many"\n')
+
+        assert result.exit_code == 1
+        assert "[queue]" in result.output
+        # It still renders what it can before saying so.
+        assert "[agent]" in result.output
+
     def test_help_still_renders_for_a_command_that_is_not_exempt(self) -> None:
         """Reading the help is part of fixing the file. click handles
         ``--help`` while parsing, before ``Command.invoke``, so this is a
@@ -381,6 +439,64 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert "[verify]" in result.output
 
 
+class TestTheExemptionKeysOffTheTopLevelName:
+    """Both seam tables are keyed by the command directly under the root
+    group. Keyed by any name in the chain instead, a later ``ks queue
+    init`` or ``ks inbox serve`` would be exempted purely because of its
+    leaf name, which is not a decision anybody would have made.
+    """
+
+    @staticmethod
+    def _name_for(args: list[str]) -> str:
+        seen: list[str] = []
+
+        def record(self: Any, ctx: click.Context) -> Any:
+            seen.append(cli_mod._KstrlCommand._top_level_name(ctx))
+            return None
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(cli_mod._KstrlCommand, "invoke", record)
+            CliRunner().invoke(cli, args, catch_exceptions=True)
+        return seen[0]
+
+    def test_a_top_level_command_names_itself(self) -> None:
+        assert self._name_for(["status"]) == "status"
+
+    def test_a_subcommand_names_its_group(self) -> None:
+        assert self._name_for(["config", "show"]) == "config"
+        assert self._name_for(["queue", "ls"]) == "queue"
+
+
+class TestTheParseScope:
+    """The check resolves 22 sections, and each loader reparses the file.
+    ``toml_parse_scope`` makes that one parse. The property that matters
+    is how far the reuse reaches: inside the block, not beyond it.
+    """
+
+    def test_a_document_is_parsed_once_inside_the_scope(self, tmp_path: Path) -> None:
+        toml_path = tmp_path / "kstrl.toml"
+        toml_path.write_text("[factory]\nmax_parallel = 2\n")
+
+        with toml_parse_scope():
+            first = load_toml_document(toml_path)
+            toml_path.write_text("[factory]\nmax_parallel = 9\n")
+            assert load_toml_document(toml_path) is first
+
+    def test_the_scope_does_not_outlive_its_block(self, tmp_path: Path) -> None:
+        """The half that keeps this honest. A process-wide snapshot
+        would freeze the file for surfaces built to re-read it: the TUI
+        config screen's refresh action, and `ks serve` re-reading per
+        queue item."""
+        toml_path = tmp_path / "kstrl.toml"
+        toml_path.write_text("[factory]\nmax_parallel = 2\n")
+
+        with toml_parse_scope():
+            load_toml_document(toml_path)
+        toml_path.write_text("[factory]\nmax_parallel = 9\n")
+
+        assert load_toml_document(toml_path)["factory"]["max_parallel"] == 9
+
+
 class TestEverySectionIsEnrolled:
     """The registry is only a guarantee while it is complete.
 
@@ -392,20 +508,12 @@ class TestEverySectionIsEnrolled:
 
     @staticmethod
     def _config_classes_with_a_loader() -> set[str]:
-        found: set[str] = set()
-        for path in sorted((Path(__file__).resolve().parents[1] / "kstrl").rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ClassDef) or not node.name.endswith("Config"):
-                    continue
-                loaders = {
-                    child.name
-                    for child in node.body
-                    if isinstance(child, ast.FunctionDef) and child.name == "load"
-                }
-                if loaders:
-                    found.add(node.name)
-        return found
+        return {
+            node.name
+            for path in sorted((REPO_ROOT / "kstrl").rglob("*.py"))
+            for node in _class_defs(path)
+            if node.name.endswith("Config") and _defines_load(node)
+        }
 
     def test_no_config_dataclass_is_missing_from_the_registry(self) -> None:
         registered = {
@@ -419,7 +527,7 @@ class TestEverySectionIsEnrolled:
         """A section name is what the error line points the operator at,
         so a typo in the registry would name a table that does not
         exist. Every name here appears in the shipped example."""
-        example = (Path(__file__).resolve().parents[1] / "kstrl.toml.example").read_text()
+        example = (REPO_ROOT / "kstrl.toml.example").read_text()
         names = {name for section in config_sections() for name in section.sections}
 
         assert {name for name in names if f"[{name}]" not in example} == set()
