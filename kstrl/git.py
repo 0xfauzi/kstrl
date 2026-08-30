@@ -442,6 +442,66 @@ def restore_file_from(
         return False
 
 
+def stage_file(
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """Stage one path (``git add``), leaving history alone.
+
+    The inverse of :func:`remove_from_index`, and the smallest write that
+    makes a path TRACKED: no commit is created.
+
+    Returns an error message, or None on success, like
+    :func:`fetch_base_branch` and unlike the bool helpers around it. The
+    reason matters here: ``git add`` refuses an ignored path, and a
+    caller that only knows "false" ends up advising the very command
+    that just failed (#256 review).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "add", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return f"git add {file} timed out after {timeout}s"
+    if result.returncode != 0:
+        return result.stderr.strip().splitlines()[0] if result.stderr.strip() else "git add failed"
+    return None
+
+
+def ignore_source(
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """Where an ignore rule for ``file`` lives, or None if not ignored.
+
+    ``git check-ignore -v`` answers with ``<source>:<line>:<pattern>``,
+    so the caller can name the file and line the operator has to edit
+    instead of reporting that git said no. Exit 1 means "not ignored"
+    and 128 means git could not answer; both read as None.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "-v", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    # "<source>:<line>:<pattern>\t<pathname>" - the pathname is the file
+    # we asked about, so only the rule's location is worth reporting.
+    return result.stdout.strip().splitlines()[0].split("\t")[0]
+
+
 def remove_from_index(
     file: str,
     cwd: Path | None = None,

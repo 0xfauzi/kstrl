@@ -1,7 +1,19 @@
-.venv/
+# kstrl: artifacts the scope guard would otherwise count
+# The in-loop scope guard counts UNTRACKED files against a component's
+# allowed paths, so anything your test / typecheck / lint commands write
+# has to be ignored here or committed - otherwise the agent's own build
+# artifacts read as out-of-scope edits and cost an iteration.
 __pycache__/
 *.py[cod]
+.venv/
+venv/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
-uv.lock
-.python-version
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.kstrl/
+.DS_Store

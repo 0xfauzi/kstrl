@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from kstrl import git
 from kstrl.prd import PRD
@@ -540,6 +540,136 @@ DEFAULT_KSTRL_TOML = """\
 # scheduler_backstop_margin = 60.0
 """
 
+# What `ks init` does to a scaffolded file. The TUI wizard's preview
+# renders these, so the vocabulary belongs beside the code that decides.
+ScaffoldAction = Literal["create", "keep", "append"]
+
+# First line of the .gitignore block `ks init` writes. Its presence is
+# the whole idempotency test: an existing .gitignore is a user-owned
+# file, so the block is appended once and never rewritten.
+GITIGNORE_BLOCK_MARKER = "# kstrl: artifacts the scope guard would otherwise count"
+
+# The marker plus the reason, so the file explains itself to whoever
+# reads it next.
+_GITIGNORE_BLOCK_HEADER = f"""{GITIGNORE_BLOCK_MARKER}
+# The in-loop scope guard counts UNTRACKED files against a component's
+# allowed paths, so anything your test / typecheck / lint commands write
+# has to be ignored here or committed - otherwise the agent's own build
+# artifacts read as out-of-scope edits and cost an iteration.
+"""
+
+# Ignored everywhere: kstrl's own runtime state, plus the one OS artifact
+# that lands in a working tree without anybody asking for it.
+_COMMON_IGNORES = (
+    ".kstrl/",
+    ".DS_Store",
+)
+
+_JS_IGNORES = (
+    "node_modules/",
+    "dist/",
+    "build/",
+    "coverage/",
+    ".next/",
+    "*.tsbuildinfo",
+)
+
+# npm, yarn and pnpm each write their own; whichever exists is the one
+# this project uses.
+_JS_LOCKFILES = (
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+)
+
+_JVM_IGNORES = (
+    "target/",
+    "build/",
+    ".gradle/",
+)
+
+# Build output and caches per detected language, keyed like the other
+# language tables in this module (_LANGUAGE_STANDARDS,
+# _LANGUAGE_ANTIPATTERNS) on the strings _detect_project_context returns.
+# Deliberately no lockfile and no .python-version: both pin a build, so
+# both belong in version control. _LANGUAGE_LOCKFILES below puts the
+# lockfile there instead of hiding it, and measured, none of `uv run`,
+# `uv sync`, `uv lock` or `uv venv` writes a .python-version, so it
+# cannot appear mid-iteration the way a lockfile can.
+_LANGUAGE_IGNORES: dict[str, tuple[str, ...]] = {
+    "Python": (
+        "__pycache__/",
+        "*.py[cod]",
+        ".venv/",
+        "venv/",
+        ".pytest_cache/",
+        ".mypy_cache/",
+        ".ruff_cache/",
+        ".coverage",
+        "htmlcov/",
+        "build/",
+        "dist/",
+        "*.egg-info/",
+    ),
+    "TypeScript": _JS_IGNORES,
+    "JavaScript": _JS_IGNORES,
+    "Rust": ("target/",),
+    "Go": (
+        "bin/",
+        "*.test",
+        "*.out",
+    ),
+    "Java": _JVM_IGNORES,
+    "Kotlin": _JVM_IGNORES,
+}
+
+# Lockfiles per detected language: generated files that pin a build and
+# therefore belong in version control, NOT in the ignore block above.
+# Every key in _LANGUAGE_IGNORES appears here, an empty tuple meaning
+# "this toolchain has no lockfile" as a STATED policy rather than an
+# omission - tests/test_init_cmd.py fails if the two tables disagree, so
+# a language cannot quietly get build-artifact ignores and no lockfile
+# rule again (#201 review). The names are drawn from
+# policy.LOCKFILE_BASENAMES, which the merge-policy size caps already
+# key on, and the same test keeps this table inside that vocabulary.
+#
+# Measured, not assumed: with none present, `uv run pytest` writes
+# uv.lock, `cargo test` writes Cargo.lock and `npm install` writes
+# package-lock.json. Go writes go.sum only once the module requires
+# something, and Gradle/Maven have no lockfile by default.
+_LANGUAGE_LOCKFILES: dict[str, tuple[str, ...]] = {
+    "Python": ("uv.lock", "poetry.lock", "Pipfile.lock"),
+    "TypeScript": _JS_LOCKFILES,
+    "JavaScript": _JS_LOCKFILES,
+    "Rust": ("Cargo.lock",),
+    "Go": ("go.sum",),
+    "Java": (),
+    "Kotlin": (),
+}
+
+# The "Next steps" block. The spec path leads because it is the one the
+# README sells and the one the scaffold cannot suggest on its own: init
+# writes an empty userStories array, which reads as "write these by
+# hand" (#256). Not named *_PROMPT: that suffix enrols a constant in the
+# adversarial prompt version snapshot, and this is UI copy.
+NEXT_STEPS = """You have a spec (recommended):
+  ks decompose --spec <spec.md> --project-name <name>  # plan it
+  ks factory --spec <spec.md> --project-name <name>    # plan and build it
+
+You want to drive one component by hand:
+  1. Edit scripts/kstrl/prompt.md
+  2. Add user stories to scripts/kstrl/prd.json
+  3. ks run [iterations]                               # one component, no PR
+
+Other modes:
+  ks understand [iterations]
+  ks feature [iterations] --prd scripts/kstrl/feature/<name>/prd.json
+
+Measure before you spend (no agent, no cost):
+  ks sense
+  ks sense --allowed-path '<glob>'                     # preflight the guard
+"""
+
 
 def run_init(directory: Path, ui: UI) -> int:
     """Initialize kstrl harness in a project directory.
@@ -591,7 +721,13 @@ def run_init(directory: Path, ui: UI) -> int:
     )
 
     # Bootstrap CLAUDE.md and AGENTS.md
-    bootstrap_claude_md(root, ui)
+    ctx = _detect_project_context(root)
+    bootstrap_claude_md(root, ui, ctx)
+
+    # Keep the agent's own build artifacts out of the scope guard (#201)
+    ui.section("Git hygiene")
+    _ensure_gitignore(root, ctx["language"], ui)
+    _ensure_lockfiles_tracked(root, ctx["language"], is_repo, ui)
 
     # Validate PRD
     ui.section("Validate PRD")
@@ -627,15 +763,8 @@ def run_init(directory: Path, ui: UI) -> int:
 
     # Next steps
     ui.section("Next steps")
-    ui.info("1. Edit scripts/kstrl/prompt.md")
-    ui.info("2. Add user stories to scripts/kstrl/prd.json")
-    ui.info("3. Run: ks run [iterations]")
-    ui.info("")
-    ui.info("For codebase understanding mode:")
-    ui.info("  ks understand [iterations]")
-    ui.info("")
-    ui.info("For feature understanding mode:")
-    ui.info("  ks feature [iterations] --prd scripts/kstrl/feature/<feature_name>/prd.json")
+    for line in NEXT_STEPS.splitlines():
+        ui.info(line)
 
     return 0
 
@@ -647,6 +776,146 @@ def _create_if_missing(path: Path, content: str, ui: UI) -> None:
     else:
         path.write_text(content)
         ui.ok(f"  Created {path.name}")
+
+
+def gitignore_block(language: str) -> str:
+    """The .gitignore block `ks init` writes for a detected language.
+
+    Public because examples/uv-python ships a copy of it, held in
+    lockstep by tests/test_gen_docs.py the way the example's prompt.md
+    is held against DEFAULT_PROMPT.
+    """
+    entries = (*_LANGUAGE_IGNORES.get(language, ()), *_COMMON_IGNORES)
+    return _GITIGNORE_BLOCK_HEADER + "\n".join(entries) + "\n"
+
+
+def _read_text_or_none(path: Path) -> str | None:
+    """``path``'s text, or None when it cannot be read as text.
+
+    Catches ValueError alongside OSError because UnicodeDecodeError is a
+    ValueError: a .gitignore that is not UTF-8 crashed `ks init` and
+    the TUI scaffold preview with a traceback (#201 review). A
+    directory in the file's place raises IsADirectoryError, an OSError.
+    """
+    try:
+        return path.read_text()
+    except (OSError, ValueError):
+        return None
+
+
+def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
+    """What init would do to ``root``/.gitignore, and the text it read.
+
+    One decision with two consumers - the write below and the TUI
+    wizard's preview - so the preview cannot describe a write that would
+    not happen. "keep" covers both "the block is already there" and
+    "the file cannot be read as text", because init leaves both alone;
+    the second is the one where the text comes back None.
+    """
+    path = root / ".gitignore"
+    if not path.exists():
+        return "create", None
+    existing = _read_text_or_none(path)
+    if existing is None:
+        return "keep", None
+    if GITIGNORE_BLOCK_MARKER in existing:
+        return "keep", existing
+    return "append", existing
+
+
+def gitignore_plan(root: Path) -> ScaffoldAction:
+    """The scaffold preview's half of :func:`_gitignore_state`."""
+    return _gitignore_state(root)[0]
+
+
+def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
+    """Create .gitignore, or append the kstrl block to an existing one.
+
+    An existing .gitignore is a user-owned file: this only ever APPENDS,
+    inside a marked block, and skips entirely once the marker is present,
+    so re-running `ks init` cannot duplicate it or rewrite a line the
+    user wrote. A file it cannot read is left alone for the same reason:
+    without the marker check, appending could duplicate the block.
+    """
+    path = root / ".gitignore"
+    action, existing = _gitignore_state(root)
+
+    if action == "create":
+        _create_if_missing(path, gitignore_block(language), ui)
+        return
+
+    if existing is None:
+        ui.warn("  .gitignore could not be read as text; leaving it alone")
+        ui.info("    Add the usual build-artifact rules yourself, or the scope")
+        ui.info("    guard counts what your test and lint commands write.")
+        return
+
+    if action == "keep":
+        ui.info("  .gitignore already has the kstrl block")
+        return
+
+    # One blank line between the user's last rule and ours, and no
+    # leading blank when the file is empty.
+    separator = "" if not existing else "\n" if existing.endswith("\n") else "\n\n"
+    with path.open("a") as handle:
+        handle.write(separator + gitignore_block(language))
+    ui.ok("  Appended the kstrl block to .gitignore")
+
+
+def _ensure_lockfiles_tracked(root: Path, language: str, is_repo: bool, ui: UI) -> None:
+    """Stage the project's untracked lockfiles, and say so.
+
+    A lockfile is NOT ignored. For an application it belongs in version
+    control, so ignoring it (what examples/uv-python/.gitignore did
+    before #201) hides it from the scope guard by hiding it from git,
+    which is a workaround rather than a lockfile policy. Tracked is the
+    real fix: ``git ls-files --others --exclude-standard`` cannot list a
+    file that is in the index.
+
+    Staging is as far as init goes - creating a commit in someone's
+    repository is not a scaffolder's call - so the printed instruction
+    carries the rest. It matters: a factory worktree is cut from a
+    COMMIT, so an uncommitted lockfile is absent there and the first
+    verify run writes a fresh untracked one.
+    """
+    candidates = _LANGUAGE_LOCKFILES.get(language, ())
+    if not is_repo or not candidates:
+        return
+
+    present = [name for name in candidates if (root / name).exists()]
+    if not present:
+        ui.warn(f"  No lockfile yet ({', '.join(candidates)})")
+        ui.info("    Your package manager writes one; create it and commit it")
+        ui.info("    before your first run, or the verify commands write it")
+        ui.info("    mid-iteration and it reads as an out-of-scope edit.")
+        return
+
+    for name in present:
+        _track_lockfile(root, name, ui)
+
+
+def _track_lockfile(root: Path, name: str, ui: UI) -> None:
+    """Report or fix one lockfile's tracking state."""
+    if git.is_file_tracked(name, root):
+        ui.ok(f"  {name} is tracked")
+        return
+
+    error = git.stage_file(name, root)
+    if error is not None:
+        # `git add` refuses an ignored path and its message does not say
+        # WHICH rule ignored it, so the remediation has to name one.
+        ignored_by = git.ignore_source(name, root)
+        if ignored_by:
+            ui.warn(f"  {name} is ignored by {ignored_by}, so git will not track it")
+            ui.info(f"    Delete that rule and `git add {name}`: the lockfile pins")
+            ui.info("    your build, so it belongs in version control.")
+        else:
+            ui.warn(f"  Could not stage {name}: {error}")
+        return
+
+    ui.ok(f"  Staged {name} (staged only, no commit was created)")
+    ui.info("    Commit it before your first run: a factory worktree is cut from")
+    ui.info("    a commit, so an uncommitted lockfile is not in it.")
 
 
 # ---------------------------------------------------------------------------
@@ -682,23 +951,19 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         ctx["typecheck_cmd"] = f"{runner}mypy src/ --strict"
         ctx["lint_cmd"] = f"{runner}ruff check src/"
         ctx["format_cmd"] = f"{runner}ruff format src/"
-        if pyproject.exists():
-            try:
-                text = pyproject.read_text()
-                if "name" in text:
-                    import re
+        pyproject_text = _read_text_or_none(pyproject) or ""
+        if "name" in pyproject_text:
+            import re
 
-                    m = re.search(r'name\s*=\s*"([^"]+)"', text)
-                    if m:
-                        ctx["name"] = m.group(1)
-                if "fastapi" in text:
-                    ctx["framework"] = "FastAPI"
-                elif "django" in text:
-                    ctx["framework"] = "Django"
-                elif "flask" in text:
-                    ctx["framework"] = "Flask"
-            except OSError:
-                pass
+            m = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
+            if m:
+                ctx["name"] = m.group(1)
+        if "fastapi" in pyproject_text:
+            ctx["framework"] = "FastAPI"
+        elif "django" in pyproject_text:
+            ctx["framework"] = "Django"
+        elif "flask" in pyproject_text:
+            ctx["framework"] = "Flask"
         return ctx
 
     # Rust
@@ -710,19 +975,16 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         ctx["typecheck_cmd"] = "cargo check"
         ctx["build_cmd"] = "cargo build"
         ctx["format_cmd"] = "cargo fmt"
-        try:
-            text = cargo_toml.read_text()
-            import re
+        import re
 
-            m = re.search(r'name\s*=\s*"([^"]+)"', text)
-            if m:
-                ctx["name"] = m.group(1)
-            if "actix" in text or "axum" in text:
-                ctx["framework"] = "Axum/Actix"
-            elif "rocket" in text:
-                ctx["framework"] = "Rocket"
-        except OSError:
-            pass
+        cargo_text = _read_text_or_none(cargo_toml) or ""
+        m = re.search(r'name\s*=\s*"([^"]+)"', cargo_text)
+        if m:
+            ctx["name"] = m.group(1)
+        if "actix" in cargo_text or "axum" in cargo_text:
+            ctx["framework"] = "Axum/Actix"
+        elif "rocket" in cargo_text:
+            ctx["framework"] = "Rocket"
         return ctx
 
     # TypeScript / JavaScript
@@ -732,7 +994,7 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         try:
             import json as _json
 
-            pkg = _json.loads(pkg_json.read_text())
+            pkg = _json.loads(_read_text_or_none(pkg_json) or "{}")
             ctx["name"] = pkg.get("name", root.name)
             scripts = pkg.get("scripts", {})
             ctx["test_cmd"] = (
@@ -767,13 +1029,10 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         ctx["typecheck_cmd"] = "go vet ./..."
         ctx["build_cmd"] = "go build ./..."
         ctx["format_cmd"] = "gofmt -w ."
-        try:
-            text = go_mod.read_text()
-            first_line = text.strip().splitlines()[0] if text.strip() else ""
-            if first_line.startswith("module "):
-                ctx["name"] = first_line.split()[-1].split("/")[-1]
-        except OSError:
-            pass
+        go_text = (_read_text_or_none(go_mod) or "").strip()
+        first_line = go_text.splitlines()[0] if go_text else ""
+        if first_line.startswith("module "):
+            ctx["name"] = first_line.split()[-1].split("/")[-1]
         return ctx
 
     # Java / Kotlin
@@ -1007,12 +1266,12 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
     return "\n".join(sections) + "\n"
 
 
-def bootstrap_claude_md(root: Path, ui: UI) -> None:
+def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
     """Generate CLAUDE.md and symlink AGENTS.md to it.
 
-    Detects project language, framework, and tooling from config files,
-    then generates agent-facing documentation with coding standards,
-    implementation principles, and verification commands.
+    ``ctx`` is :func:`_detect_project_context`'s reading of the project's
+    language, framework and tooling; the caller detects once because the
+    .gitignore block is chosen from the same reading.
 
     AGENTS.md is a symlink to CLAUDE.md so both names point to the same
     file. When the prompt tells agents to "update AGENTS.md", they are
@@ -1022,7 +1281,6 @@ def bootstrap_claude_md(root: Path, ui: UI) -> None:
 
     ui.section("Agent context files")
 
-    ctx = _detect_project_context(root)
     ui.kv("Detected language", ctx["language"])
     if ctx["framework"]:
         ui.kv("Detected framework", ctx["framework"])

@@ -69,7 +69,7 @@ class InitWizardScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield ContextBar(
             "init",
-            "scaffold is non-destructive - existing files are kept",
+            "rewrites nothing - files kept, .gitignore appended, lockfile staged",
         )
         with Vertical(classes="dialog-host"):
             panel = Vertical(classes="dialog-panel", id="wizard-root")
@@ -162,9 +162,12 @@ class InitWizardScreen(Screen[None]):
                 display = entry.path.relative_to(directory)
             except ValueError:
                 display = entry.path
-            if entry.exists:
+            if entry.action == "keep":
                 plan.append("  · exists - kept   ", style=theme.MUTED)
                 plan.append(f"{display}\n", style=theme.MUTED)
+            elif entry.action == "append":
+                plan.append("  ~ append block    ", style=f"bold {theme.ACCENT}")
+                plan.append(f"{display}\n")
             else:
                 plan.append("  + will create    ", style=f"bold {theme.ACCENT}")
                 plan.append(f"{display}\n")
