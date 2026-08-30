@@ -29,7 +29,6 @@ for the same reason.
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -42,6 +41,7 @@ from kstrl import events as ev
 from kstrl import git
 from kstrl.adequacy import AdequacyConfig
 from kstrl.agents.base import (
+    ARCHITECT_ROLE,
     CEILING_AXES,
     CeilingCoverage,
     UsageTotals,
@@ -663,6 +663,38 @@ class ComponentPipeline:
         never double count with the normal path."""
         self._record_usage(comp_id, "engineer", totals)
 
+    def record_architect_usage(self, totals: UsageTotals | None) -> None:
+        """Fold the architect's spend into this run before it starts (#257).
+
+        Every other role is metered by a phase this pipeline drives. The
+        architect is not: `ks factory` decomposes the spec in the command
+        itself, before any run id or run directory exists, and only then
+        builds this pipeline. Its spend therefore has to be handed in
+        rather than captured, which is what ``architect_usage`` on
+        ``run_factory`` carries.
+
+        It goes through the ordinary ``_record_usage`` path, and that is
+        the entire point of the seat. ``run_usage`` is what
+        :meth:`cost_budget_exceeded` reads, so an operator's
+        ``--max-cost-usd`` now bounds the architect too instead of
+        bounding the four roles that follow it; the meter gains a fifth
+        row; and ``_announce_coverage_gaps`` counts the architect as a
+        metered call rather than leaving it invisible to the coverage
+        accounting.
+
+        Component id and phase are both ``ARCHITECT_ROLE``, which is the
+        key `ks decompose` already writes (``ARCHITECT_COMPONENT``) and
+        the one ``serve.read_run_spend`` reads. Pairing them HERE is why
+        the constant exists rather than a literal per surface.
+
+        ``None`` or zero calls records nothing: a run resumed from a
+        manifest never ran an architect, and an agent that reported no
+        usage must not become a phantom row claiming it cost nothing.
+        """
+        if totals is None:
+            return
+        self._record_usage(ARCHITECT_ROLE, ARCHITECT_ROLE, totals)
+
     def record_injected_knowledge(
         self,
         comp_id: str,
@@ -1231,10 +1263,10 @@ class ComponentPipeline:
         Non-fatal on I/O errors, matching _record_contract_event."""
         if not comp.findings:
             return
-        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
+        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
 
-        evo_config = EvolutionConfig.load(self.root_dir)
-        if not evo_config.enabled:
+        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
+        if journal is None:
             return
         entry = {
             "schema_version": JOURNAL_SCHEMA_VERSION,
@@ -1251,9 +1283,7 @@ class ComponentPipeline:
             "findings": [f.to_dict() for f in comp.findings],
         }
         try:
-            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(evo_config.journal_path, "a") as f:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            journal.append_entries([entry])
         except OSError as exc:
             # Evolution recording is non-fatal, but never silent (R6.1).
             self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")

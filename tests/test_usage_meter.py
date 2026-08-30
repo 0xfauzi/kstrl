@@ -23,6 +23,7 @@ import stat
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -45,6 +46,8 @@ from kstrl.events import RunPaths
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
+    FactoryLockHeldError,
+    FactoryResult,
     _clear_partial_usage,
     _read_partial_usage,
     _run_component,
@@ -783,18 +786,33 @@ def _engineer_usage(total: int, cost: float = 0.0) -> UsageTotals:
     return totals
 
 
+def _architect_usage(cost: float | None, tokens: int = 1000) -> UsageTotals:
+    """What `ks factory`'s decompose leaves on its agent (#257).
+
+    The architect's record has the same shape as any other role's, so
+    this is ``_engineer_usage`` under the name that makes the call sites
+    readable. ``cost=None`` is the codex shape - a token count and no
+    price - which is what the coverage accounting exists to describe.
+    """
+    return _engineer_usage(tokens, cost=cost or 0.0)
+
+
+def _usage_events(root: Path, phase: str) -> list[dict[str, Any]]:
+    """Every usage event one phase recorded, in order."""
+    return [
+        e
+        for e in ProgressLog(root / "progress.jsonl").read_events()
+        if e["event"] == "component_usage" and e["data"]["phase"] == phase
+    ]
+
+
 def _engineer_usage_events(root: Path) -> list[int]:
     """Every engineer-phase usage total the run recorded, in order.
 
     A list (not a sum) on purpose: a double count and a correct total
     are the same number of tokens but a different number of events.
     """
-    events = ProgressLog(root / "progress.jsonl").read_events()
-    return [
-        int(e["data"]["total_tokens"])
-        for e in events
-        if e["event"] == "component_usage" and e["data"]["phase"] == "engineer"
-    ]
+    return [int(e["data"]["total_tokens"]) for e in _usage_events(root, "engineer")]
 
 
 def _read_journal(tmp_path: Path) -> list[dict[str, Any]]:
@@ -5146,3 +5164,585 @@ class TestEveryConfiguredCeilingRecordsItsCoverage:
         assert halts
         coverage = halts[-1]["data"]["coverage"]
         assert [entry["ceiling"] for entry in coverage] == ["max_total_tokens"]
+
+
+@dataclass(frozen=True)
+class _SeededRun:
+    """One `ks factory` run and everything a #257 assertion reads off it."""
+
+    root: Path
+    manifest: Manifest
+    launched: list[str]
+    console: io.StringIO
+    result: FactoryResult
+
+    @property
+    def printed(self) -> str:
+        return self.console.getvalue()
+
+    def usage_events(self, phase: str) -> list[dict[str, Any]]:
+        return _usage_events(self.root, phase)
+
+
+def _run_with_architect_spend(
+    tmp_path: Path,
+    architect_usage: UsageTotals | None,
+    **config: Any,
+) -> _SeededRun:
+    """A one-component run whose engineer is cheap and whose architect
+    already spent whatever the caller says `ks factory` paid it.
+
+    The scaffolding lives here rather than at each call site because only
+    the architect's spend and the ceiling ever vary between them.
+    """
+    root = _setup_project(tmp_path, ["comp-a"])
+    manifest = _make_manifest([_component("comp-a")])
+    launched: list[str] = []
+    console = io.StringIO()
+
+    def fake_run_component(*args: Any, **kwargs: Any) -> ComponentResult:
+        launched.append(str(args[0]))
+        return ComponentResult(
+            str(args[0]),
+            success=True,
+            iterations=1,
+            usage=_engineer_usage(100, cost=0.01),
+        )
+
+    with (
+        patch("kstrl.factory._run_component", side_effect=fake_run_component),
+        patch("kstrl.git.get_diff_content", return_value=""),
+    ):
+        result = run_factory(
+            manifest,
+            _factory_config(root, **config),
+            _make_base_config(root),
+            PlainUI(no_color=True, file=console),
+            root,
+            architect_usage=architect_usage,
+        )
+    return _SeededRun(root, manifest, launched, console, result)
+
+
+class TestArchitectSpendCountsAgainstTheCeiling:
+    """#257 piece B: ``max_cost_usd`` is enforced against
+    ``pipeline.run_usage``, which only ``_record_usage`` feeds, and the
+    architect never called it. An operator who set a ceiling was bounding
+    engineer + review + security + distill, and the role that runs FIRST
+    ran outside the bound entirely.
+    """
+
+    def test_the_ceiling_trips_before_any_engineer_launches(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The property the issue is about: an operator who set $5 and
+        whose architect spent $6 must not get an engineer at all.
+
+        Before this the architect's $6 was not in ``run_usage``, the
+        scheduling gate read $0.00, and the run went on to spend the
+        whole ceiling again on top of it.
+        """
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(6.0),
+            max_cost_usd=5.0,
+        )
+
+        assert run.launched == [], "the engineer must never start"
+        assert "comp-a" in run.result.failed
+        comp = run.manifest.get_component("comp-a")
+        assert comp is not None
+        assert comp.status == ComponentStatus.FAILED.value
+        assert "max_cost_usd" in (comp.error or "")
+
+    def test_the_ceiling_does_not_trip_on_spend_below_it(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other direction, so the gate above cannot pass by halting
+        everything: an architect comfortably under the ceiling changes
+        nothing about the run."""
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(1.0),
+            max_cost_usd=5.0,
+        )
+
+        assert run.launched == ["comp-a"]
+        assert run.result.failed == []
+        # It is in the total the ceiling reads all the same.
+        assert run.usage_events("architect")
+
+    def test_an_unbounded_run_is_not_given_a_bound(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``max_cost_usd = 0`` means unbounded. Seeding real spend into
+        an unbounded run must not invent a ceiling for it."""
+        run = _run_with_architect_spend(tmp_path, _architect_usage(999.0))
+
+        assert run.launched == ["comp-a"]
+        assert run.result.failed == []
+
+    def test_the_architect_is_a_row_in_the_meter_and_the_stream(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """One ``component_usage`` event, under the role name, on the
+        pseudo-component `ks decompose` already reports under - so both
+        commands write the architect to the same key."""
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(1.5),
+            max_cost_usd=50.0,
+        )
+
+        events = run.usage_events("architect")
+        assert len(events) == 1
+        assert events[0]["component"] == "architect"
+        assert events[0]["data"]["cost_usd"] == pytest.approx(1.5)
+
+    def test_a_run_with_no_architect_records_no_phantom_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`ks factory --manifest` resumes a run that never decomposed,
+        and every other ``run_factory`` caller passes nothing. An empty
+        architect row would claim the role ran and cost nothing."""
+        run = _run_with_architect_spend(tmp_path, None)
+
+        assert run.launched == ["comp-a"]
+        assert run.usage_events("architect") == []
+
+    def test_an_architect_that_reported_nothing_records_no_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A ``CustomAgent``, or any adapter predating R3.1, reports no
+        usage records at all. ``collect_usage`` then yields zero calls,
+        and zero calls must stay silent rather than become a $0.00 row
+        that reads as "the architect was free"."""
+        run = _run_with_architect_spend(tmp_path, UsageTotals())
+
+        assert run.usage_events("architect") == []
+
+
+class TestCoverageCountsTheArchitect:
+    """#257: the architect was not an UNCOVERED metered call, it was not
+    a metered call at all - so the "N of M metered call(s)" line the
+    factory prints was short by a whole role, silently."""
+
+    def test_the_uncovered_line_names_the_architect(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A codex-shaped architect under a cost ceiling: tokens, no
+        price. The warning has to name it, because a ceiling that cannot
+        see the run's first call is a ceiling the operator misreads."""
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(None),
+            max_cost_usd=50.0,
+        )
+
+        assert "cost coverage is" in run.printed
+        assert "architect (1 of 1 call(s), 1,000 token(s) unpriced)" in run.printed
+        assert "lower bound" in run.printed
+
+    def test_the_metered_call_count_includes_the_architect(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The issue's line verbatim: "2 of 4 metered call(s)" would have
+        been 2 of 5 with the architect enrolled. Asserted on the
+        DENOMINATOR, which is the whole claim - one engineer call plus
+        one architect call is two metered calls, not one."""
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(None),
+            max_cost_usd=50.0,
+        )
+
+        assert "1 of 2 metered call(s) reported a cost" in run.printed
+
+    def test_the_rollup_prints_the_architect_in_the_run_total(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The end-of-run table, where the operator reads what the run
+        cost. The architect is a row, and the TOTAL covers it."""
+        run = _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(1.5),
+            max_cost_usd=50.0,
+        )
+
+        assert "Usage rollup" in run.printed
+        rows = [line for line in run.printed.splitlines() if " architect " in line]
+        assert len(rows) == 1, run.printed
+        assert "1.5000" in rows[0]
+        total = next(line for line in run.printed.splitlines() if "TOTAL" in line)
+        assert "1.5100" in total, total
+
+
+def _invoke_factory_cli(
+    args: list[str],
+    *,
+    setup: Callable[[Path], None] | None = None,
+    catch_exceptions: bool = False,
+) -> Any:
+    """`ks factory` in an isolated filesystem holding a spec and a manifest.
+
+    ``setup`` seeds anything else the case needs (a kstrl.toml, say).
+    ``catch_exceptions`` is for the tests that assert an exception did
+    NOT escape - with the default, an escaping one fails the test as a
+    traceback rather than as the assertion that explains it.
+    """
+    from click.testing import CliRunner
+
+    from kstrl.cli import cli
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as fs:
+        root = Path(fs)
+        (root / "s.md").write_text("# spec\n")
+        _make_manifest([_component("comp-a")]).save(root / "m.json")
+        if setup is not None:
+            setup(root)
+        return runner.invoke(cli, args, catch_exceptions=catch_exceptions)
+
+
+class TestFactoryHandsTheArchitectSpendToTheRun:
+    """The wiring, at the one command that has both an architect and a
+    run. Without it every property above is true of a seat that nothing
+    ever sits in.
+    """
+
+    @staticmethod
+    def _install(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        halt: bool = False,
+    ) -> dict[str, Any]:
+        """Stand in for the two halves `ks factory` joins.
+
+        The fake decompose bills its agent where a real adapter does -
+        appending to ``usage_records`` when the call ends - so the test
+        exercises the capture rather than a value handed straight
+        through.
+        """
+        from kstrl import cli as cli_mod
+        from kstrl.decompose import SpecBlockerError, SpecIssue
+
+        captured: dict[str, Any] = {}
+        agent = SimpleNamespace(name="fake", usage_records=[])
+
+        def fake_get_agent(*args: Any, **kwargs: Any) -> Any:
+            return agent
+
+        def fake_decompose(**kwargs: Any) -> Manifest:
+            agent.usage_records.append(
+                UsageRecord(
+                    input_tokens=500,
+                    output_tokens=500,
+                    total_tokens=1000,
+                    cost_usd=2.25,
+                    duration_seconds=2.0,
+                    source="claude-stream-json",
+                )
+            )
+            if halt:
+                raise SpecBlockerError(
+                    [
+                        SpecIssue(
+                            severity="blocker",
+                            kind="ambiguity",
+                            summary="the spec does not say",
+                        )
+                    ]
+                )
+            return _make_manifest([_component("comp-a")])
+
+        def fake_run_factory(*args: Any, **kwargs: Any) -> Any:
+            captured["architect_usage"] = kwargs.get("architect_usage")
+            captured["called"] = True
+            return FactoryResult()
+
+        monkeypatch.setattr(cli_mod, "get_agent", fake_get_agent)
+        monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
+        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        return captured
+
+    def test_the_spec_path_passes_what_the_decompose_agent_spent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured = self._install(monkeypatch)
+
+        result = _invoke_factory_cli(
+            [
+                "factory",
+                "--spec",
+                "s.md",
+                "--project-name",
+                "p",
+                "--agent-cmd",
+                "true",
+                "--yes",
+            ]
+        )
+
+        assert result.exit_code == 0, result.output
+        spent = captured["architect_usage"]
+        assert spent is not None
+        assert spent.calls == 1
+        assert spent.cost_usd == pytest.approx(2.25)
+        assert spent.total_tokens == 1000
+
+    def test_the_manifest_path_passes_no_architect_spend(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A resume ran no architect, so there is nothing to hand over -
+        and the seat must not be filled from an agent that never ran."""
+        captured = self._install(monkeypatch)
+
+        result = _invoke_factory_cli(
+            [
+                "factory",
+                "--manifest",
+                "m.json",
+                "--agent-cmd",
+                "true",
+                "--yes",
+            ]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert captured["architect_usage"].calls == 0
+
+    def test_the_blocker_halt_reaches_no_run_at_all(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The accepted residue of #257 piece B, pinned so it cannot
+        change silently. ``serve.RunSpend.unmetered_phases`` states why
+        the halt leaves the spend nowhere on disk.
+        """
+        captured = self._install(monkeypatch, halt=True)
+
+        result = _invoke_factory_cli(
+            [
+                "factory",
+                "--spec",
+                "s.md",
+                "--project-name",
+                "p",
+                "--agent-cmd",
+                "true",
+                "--yes",
+            ]
+        )
+
+        assert result.exit_code == 2
+        assert "called" not in captured, "no run may start after a blocker halt"
+
+
+class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
+    """#257 review: the architect record claimed to precede every early
+    exit, and two reachable ones preceded IT."""
+
+    @staticmethod
+    def _cyclic_manifest() -> Manifest:
+        """What an LLM architect can hand back and `ks factory` accepts
+        (`decompose.py` warns on DAG errors and returns anyway)."""
+        return _make_manifest(
+            [
+                _component("comp-a", deps=["comp-b"]),
+                _component("comp-b", deps=["comp-a"]),
+            ]
+        )
+
+    @staticmethod
+    def _run(root: Path, manifest: Manifest, manifest_path: Path | None = None) -> Any:
+        with patch("kstrl.git.get_diff_content", return_value=""):
+            return run_factory(
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                manifest_path,
+                architect_usage=_architect_usage(4.0),
+            )
+
+    def test_a_cyclic_manifest_still_records_the_architect(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The run directory exists, so the spend has somewhere to go.
+
+        The reachability argument lives at the record site in
+        `factory._run_factory_locked`; this pins the outcome.
+        """
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        result = self._run(root, self._cyclic_manifest())
+
+        assert result.exit_code == 1, "the cyclic DAG must still fail the run"
+        events = _usage_events(root, "architect")
+        assert len(events) == 1, "the spend must reach the run directory"
+        assert events[0]["data"]["cost_usd"] == pytest.approx(4.0)
+
+    def test_the_dag_check_still_rejects_before_the_manifest_is_stamped(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Moving the meter up must not drag manifest mutation with it.
+
+        A rejected DAG leaves the manifest unstamped and unsaved, so it
+        cannot read afterwards as a run that is still in flight.
+        """
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = self._cyclic_manifest()
+        manifest_path = root / "scripts" / "kstrl" / "manifest.json"
+
+        self._run(root, manifest, manifest_path)
+
+        assert manifest.run_id == ""
+        assert not manifest_path.exists()
+
+    def test_a_refused_lock_records_nothing_because_no_run_exists(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other early exit, and accepted residue rather than a fix:
+        the lock is refused before a run id is minted, so there is
+        nowhere on disk to write. `serve.RunSpend.unmetered_phases` says
+        how the daemon accounts for that."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+
+        with patch(
+            "kstrl.factory._acquire_run_lock",
+            side_effect=FactoryLockHeldError("held by another run"),
+        ):
+            result = self._run(root, manifest)
+
+        assert result.exit_code == 2
+        assert not (root / ".kstrl" / "runs").exists()
+
+
+class TestTheJournalKeepsTheArchitectRow:
+    """#257 review: ``record_run`` iterates the MANIFEST, so an architect
+    key in ``usage_by_component`` was silently dropped while
+    ``run_usage`` - which includes it - fed the TSV's total_cost_usd. The
+    journal's rows stopped summing to its own total."""
+
+    def test_the_architect_reaches_the_journal(self, tmp_path: Path) -> None:
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        roles = [e for e in _read_journal(run.root) if e.get("event_type") == "role_usage"]
+        assert len(roles) == 1
+        assert roles[0]["component_id"] == "architect"
+        assert roles[0]["usage"]["architect"]["cost_usd"] == pytest.approx(1.5)
+
+    def test_the_journal_rows_sum_to_the_run_total(self, tmp_path: Path) -> None:
+        """The property that was broken, asserted as arithmetic rather
+        than as the presence of a key."""
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        rows = sum(
+            phase["cost_usd"]
+            for e in _read_journal(run.root)
+            if e.get("event_type") in ("component_result", "role_usage")
+            for phase in e.get("usage", {}).values()
+        )
+        tsv = (run.root / ".kstrl" / "experiments.tsv").read_text().splitlines()
+        # Keyed by header, not by index: a column appended to the TSV
+        # must not silently move what this reads.
+        totals = dict(zip(tsv[0].split("\t"), tsv[-1].split("\t"), strict=True))
+        assert rows == pytest.approx(1.51)
+        assert rows == pytest.approx(float(totals["total_cost_usd"]))
+
+    def test_a_run_with_no_extra_role_adds_no_row(self, tmp_path: Path) -> None:
+        """A resume has no architect, and every other usage key IS a
+        manifest component. The new branch must add nothing."""
+        run = _run_with_architect_spend(tmp_path, None)
+
+        assert [e for e in _read_journal(run.root) if e.get("event_type") == "role_usage"] == []
+
+    def test_the_role_row_is_not_counted_as_a_component_outcome(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Three readers in evolution.py aggregate over component_result.
+        The architect has no status, no retries and no findings, so it
+        must not arrive wearing that type and skew them."""
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        results = [e for e in _read_journal(run.root) if e.get("event_type") == "component_result"]
+        assert [e["component_id"] for e in results] == ["comp-a"]
+
+
+class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:
+    """#257 review: the toml-notes sweep loaded the evolution config
+    unguarded, between `decompose_spec` being paid for and `run_factory`
+    being entered, where the spend exists only in a local variable.
+
+    ``cli._collect_evolution_notes`` carries the reasoning, including
+    what this does NOT fix.
+    """
+
+    @staticmethod
+    def _captured_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        """Stop at the factory boundary and record whether we got there."""
+        from kstrl import cli as cli_mod
+
+        captured: dict[str, Any] = {}
+
+        def fake_run_factory(*args: Any, **kwargs: Any) -> Any:
+            captured["called"] = True
+            return FactoryResult()
+
+        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        return captured
+
+    ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
+
+    def test_a_bad_evolution_knob_does_not_leak_a_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reproduced against the real CLI before the fix: exit 1 with a
+        raw ValueError traceback and no error line."""
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "many")
+        captured = self._captured_run(monkeypatch)
+
+        result = _invoke_factory_cli(self.ARGS, catch_exceptions=True)
+
+        assert not isinstance(result.exception, ValueError), result.exception
+        assert result.exit_code == 0, result.output
+        assert "Evolution config unreadable" in result.output
+        # The run still happens: an unreadable audit knob costs the NOTE
+        # line, never the work the operator asked for.
+        assert captured.get("called") is True
+
+    def test_a_readable_config_still_produces_its_notes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The guard must not silence the sweep it wraps, or a toml
+        section that takes effect would stop announcing itself (R2.1)."""
+        monkeypatch.delenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", raising=False)
+        self._captured_run(monkeypatch)
+
+        result = _invoke_factory_cli(
+            self.ARGS,
+            setup=lambda root: (root / "kstrl.toml").write_text("[evolution]\nlookback_runs = 7\n"),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "lookback_runs" in result.output
+        assert "Evolution config unreadable" not in result.output

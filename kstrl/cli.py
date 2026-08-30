@@ -29,7 +29,7 @@ from kstrl.agents import (
     CodexAgent,
     get_agent,
 )
-from kstrl.agents.base import Agent
+from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
 from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
@@ -372,6 +372,59 @@ def _collect_toml_notes(
                 f"kstrl.toml (built-in default: {baseline_val!r}; "
                 f"this section was ignored before R2.1)"
             )
+
+
+def _collect_evolution_notes(
+    notes: list[str],
+    root_dir: Path,
+    ui_impl: UI,
+) -> None:
+    """The evolution section's NOTE sweep, guarded against a bad knob.
+
+    Its own function because the guard has to sit BETWEEN the two loads:
+    ``from_env`` applies the same env overrides as ``load``, so passing
+    both as arguments to :func:`_collect_toml_notes` would evaluate the
+    unguarded one first and raise before the guard could run.
+
+    Why this section and not the others, stated precisely because the
+    obvious reading is wrong (#257 review): evolution is NOT the only
+    loader here that can raise. Measured on this tree, `ks factory`
+    exits 1 with a raw ValueError traceback under
+    ``KSTRL_MUTATION_THRESHOLD=many`` and ``KSTRL_SECURITY_TIMEOUT=many``
+    too, and the toml paths of verify, security, contract, feedforward
+    and timeout raise the same way. Five sibling loads in this command
+    are still unguarded.
+
+    What separates evolution is what a failure MAY cost. The journal is
+    an optional audit trail, so "unreadable, carry on without it" is an
+    honest degrade. For verify, security, contract and timeout it is
+    not: silently substituting defaults for the checks an operator
+    configured is a semantic substitution, and those need an error
+    boundary - a typed parse error caught where
+    ``_KstrlGroup.invoke`` already catches ``BudgetConfigError`` - not a
+    fallback. That boundary is a change to six config modules and is
+    left out of #257.
+
+    So this is one exit plugged, not the class closed. It is the exit
+    worth plugging first: it runs AFTER the architect has been paid for
+    and BEFORE ``run_factory``, with the spend live only in a local
+    variable. It is not the only exit in that window either - the
+    confirm prompt's "Quit" is an ordinary one - which is the honest
+    argument for eventually making the architect's spend durable where
+    it is earned rather than plugging exits one at a time.
+    """
+    from kstrl.evolution import EvolutionConfig
+
+    config = EvolutionConfig.load_or_none(root_dir, warn=ui_impl.warn)
+    if config is None:
+        return
+    _collect_toml_notes(
+        notes,
+        "evolution",
+        config,
+        EvolutionConfig.from_env(root_dir),
+        flag_overridden=set(),
+    )
 
 
 def _resolve_root(root: Path | None, prompt: Path | None, prd: Path | None) -> Path:
@@ -2130,7 +2183,17 @@ def factory(
     if max_total_tokens is not None:
         validate_token_ceiling(max_total_tokens, "--max-total-tokens")
 
-    # Get or create manifest
+    # Get or create manifest.
+    #
+    # #257: a --spec run also pays for the architect here, before any run
+    # id or run directory exists, so what it cost has to be carried into
+    # the run by hand for `--max-cost-usd` to bound five roles instead of
+    # four. A --manifest resume ran no architect and leaves this empty.
+    #
+    # Only the paths that reach run_factory are covered: a blocker halt
+    # exits below, before there is anywhere on disk to record it.
+    # `decompose_spec` prints the number to the terminal on that path.
+    architect_usage = UsageTotals()
     if manifest_path:
         try:
             manifest = Manifest.load(manifest_path)
@@ -2143,6 +2206,11 @@ def factory(
             ui_impl.err("--project-name is required with --spec")
             sys.exit(2)
 
+        # Read BEFORE the work, and sliced from there afterwards, the
+        # same way `decompose_spec` reports it - so the two derivations
+        # of "what the architect spent" cannot disagree, and neither
+        # rests on an invariant about who else touched this agent.
+        usage_before = usage_cursor(agent)
         try:
             manifest = decompose_spec(
                 spec_path=spec,
@@ -2168,6 +2236,7 @@ def factory(
         except ValueError as exc:
             ui_impl.err(str(exc))
             sys.exit(1)
+        architect_usage = collect_usage(agent, since=usage_before)
 
     # Build configs (R2.1). Resolution order for every phase config:
     # explicit CLI flag > env > kstrl.toml > dataclass default. The
@@ -2175,7 +2244,6 @@ def factory(
     # sentinels so "not passed" is distinguishable from "passed the
     # default value", and an explicitly-passed flag is applied on top.
     from kstrl.contract import ContractConfig
-    from kstrl.evolution import EvolutionConfig
     from kstrl.feedforward import FeedforwardConfig
     from kstrl.security import SecurityConfig
     from kstrl.verify import VerifyConfig
@@ -2343,14 +2411,10 @@ def factory(
     )
 
     # Evolution config is consumed inside run_factory via
-    # EvolutionConfig.load(root_dir); loaded here only for the NOTE sweep.
-    _collect_toml_notes(
-        toml_notes,
-        "evolution",
-        EvolutionConfig.load(root_dir),
-        EvolutionConfig.from_env(root_dir),
-        flag_overridden=set(),
-    )
+    # EvolutionJournal.open; swept here only for the NOTE lines, and by
+    # a helper because a failed load must not cost the run. The helper
+    # says why this section and not its five raising siblings.
+    _collect_evolution_notes(toml_notes, root_dir, ui_impl)
 
     # R0.1: TimeoutConfig is the single source for timeout values.
     timeout_config = TimeoutConfig.load(root_dir)
@@ -2492,6 +2556,7 @@ def factory(
                 base_config,
                 root_dir,
                 manifest_path,
+                architect_usage=architect_usage,
             )
         )
 
@@ -2506,6 +2571,7 @@ def factory(
             root_dir,
             manifest_path=manifest_path,
             stop=stop,
+            architect_usage=architect_usage,
         )
     finally:
         uninstall()

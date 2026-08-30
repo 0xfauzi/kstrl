@@ -68,6 +68,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from kstrl.agents.base import ARCHITECT_ROLE
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -378,9 +379,9 @@ class DailySpend:
     Only the third is unenforceable.
 
     ``unmetered_phases`` names phases known to spend without reporting
-    anything. The architect is always in it for a spec-decomposed item;
-    ``serve_cycle`` states why at the one place that fills this field.
-    Naming it is the honest alternative to estimating it (#186 F3).
+    anything. What goes in it is derived per launch by
+    :attr:`RunSpend.unmetered_phases`, which states when and why. Naming
+    a phase there is the honest alternative to estimating it (#186 F3).
     """
 
     date: str = ""
@@ -635,6 +636,9 @@ class RunSpend:
     cost_usd: float = 0.0
     cost_calls: int = 0
     usage_calls: int = 0
+    #: Calls the run recorded against the architect, read for one
+    #: question only: see :attr:`unmetered_phases`.
+    architect_calls: int = 0
 
     @property
     def uncovered_calls(self) -> int:
@@ -643,6 +647,75 @@ class RunSpend:
     @property
     def lower_bound(self) -> bool:
         return self.uncovered_calls > 0
+
+    @property
+    def unmetered_phases(self) -> tuple[str, ...]:
+        """Roles that spent on THIS RUN without reaching the meter.
+
+        The one member of this class that does not survive summation,
+        which is why a launch spanning several runs is a
+        :class:`LaunchSpend` and not a bigger ``RunSpend``: the answer is
+        all-or-nothing, so on a sum one run's architect would clear
+        another's (#257 review). ``cost_usd`` and ``uncovered_calls``
+        add up fine; this does not.
+
+        It stopped being a constant in #257 piece B. `ks factory` now
+        hands the architect's spend to the run it decomposed for, so a
+        run that got as far as executing carries an architect row inside
+        the dir the daemon just charged - already counted in
+        ``cost_usd``, and naming it unmetered on top of that would call
+        a measured figure a floor.
+
+        Zero calls does NOT mean zero spend, which is why the fallback is
+        the pessimistic one. Three separate cases land on it and all
+        three deserve it: a blocker halt, which exits `ks factory` before
+        any run directory exists so the decompose bill is nowhere on disk
+        to charge; an adapter that reports no usage; and a resume that
+        ran no architect at all. Naming the role keeps the day's total
+        labelled a floor rather than estimated (#186 F3).
+        """
+        return () if self.architect_calls > 0 else (ARCHITECT_ROLE,)
+
+
+@dataclass(frozen=True)
+class LaunchSpend:
+    """What ONE launch spent, across every run directory it produced.
+
+    Separate from :class:`RunSpend` because a launch is not simply a
+    bigger run. The dollar and call figures add up; ``unmetered_phases``
+    does not, so summing runs into a single ``RunSpend`` and reading the
+    property off the total let a run that reported an architect clear
+    the claim for a sibling that had none, and the day was reported
+    exact on the strength of a different run's spend (#257 review).
+
+    Stating it as its own type is what makes that misuse unreachable
+    rather than merely documented: there is no ``architect_calls`` here
+    to sum, and ``unmetered_phases`` is correct by construction.
+    """
+
+    cost_usd: float = 0.0
+    cost_calls: int = 0
+    usage_calls: int = 0
+    unmetered_phases: tuple[str, ...] = ()
+
+    @classmethod
+    def over(cls, spends: Sequence[RunSpend]) -> LaunchSpend:
+        """Fold each run's reading into the launch's."""
+        # A launch that produced no directory at all is accounted for as
+        # one empty run rather than as nothing: it spent nothing this
+        # code can see, but a blocker halt spends an architect's worth of
+        # money and leaves it nowhere on disk. An empty RunSpend reports
+        # exactly that, so the pessimistic answer arrives by the same
+        # path as every other one.
+        readings = list(spends) or [RunSpend()]
+        return cls(
+            cost_usd=sum(reading.cost_usd for reading in readings),
+            cost_calls=sum(reading.cost_calls for reading in readings),
+            usage_calls=sum(reading.usage_calls for reading in readings),
+            unmetered_phases=tuple(
+                sorted({phase for reading in readings for phase in reading.unmetered_phases})
+            ),
+        )
 
 
 def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
@@ -663,10 +736,12 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
         state, _source = load_run_state(root_dir, run_id)
     except OSError:
         return RunSpend()
+    architect = state.components.get(ARCHITECT_ROLE)
     return RunSpend(
         cost_usd=state.cost_usd,
         cost_calls=state.cost_calls,
         usage_calls=state.usage_calls,
+        architect_calls=architect.usage_calls if architect is not None else 0,
     )
 
 
@@ -683,8 +758,8 @@ SPAWNED_RUN_KIND: Final = "factory"
 def owned_run_spend(
     root_dir: Path,
     runs_before: frozenset[str],
-) -> tuple[list[str], RunSpend]:
-    """The run dirs a launch produced, and the spend they reported.
+) -> tuple[list[str], LaunchSpend]:
+    """The run dirs a launch produced, and what they add up to.
 
     "Produced" is narrower than "new" (#257 review). `ks decompose` takes
     no factory.lock, so an operator can start one on this repo at any
@@ -703,19 +778,15 @@ def owned_run_spend(
     lock. A foreign factory-kind dir can still land in the window. That
     hole predates #257 and is unchanged by it; what #257 changed, and
     this restores, is that decompose dirs now carry real money.
+
+    That the window can hold more than one dir is exactly why the return
+    is a :class:`LaunchSpend`: see its docstring for what does and does
+    not survive being added together.
     """
     owned = sorted(
         rid for rid in run_dir_names(root_dir) - runs_before if run_kind(rid) == SPAWNED_RUN_KIND
     )
-    total = RunSpend()
-    for rid in owned:
-        spend = read_run_spend(root_dir, rid)
-        total = RunSpend(
-            cost_usd=total.cost_usd + spend.cost_usd,
-            cost_calls=total.cost_calls + spend.cost_calls,
-            usage_calls=total.usage_calls + spend.usage_calls,
-        )
-    return owned, total
+    return owned, LaunchSpend.over([read_run_spend(root_dir, rid) for rid in owned])
 
 
 def run_dir_names(root_dir: Path) -> frozenset[str]:
@@ -2218,25 +2289,15 @@ def serve_cycle(
     covered_calls = owned.cost_calls
     total_calls = owned.usage_calls
 
-    # The one statement of why the architect is unmetered HERE, which
-    # the docstrings above point at rather than restate.
-    #
-    # #257 gave decompose_spec a ComponentUsage event, but it reaches a
-    # run directory only when a bus is passed, and the `ks factory` this
-    # daemon spawns decomposes BEFORE any run directory exists, so it
-    # passes none. Nor does the kind filter above recover it from
-    # somewhere else: a `ks decompose` an operator ran by hand is a
-    # DIFFERENT spend, correctly excluded, not this run's architect.
-    # So the architect's spend here is still real and still invisible.
-    # Closing it needs the architect metered inside the factory run
-    # (#257 piece B). Until then, naming it keeps the day's total
-    # honestly labelled a floor instead of estimating it (#186 F3).
-    unmetered = ("architect",)
     charged = ledger.charge(
         total,
         covered_calls=covered_calls,
         total_calls=total_calls,
-        unmetered_phases=unmetered,
+        # Derived per run and unioned, not asserted: since #257 piece B
+        # the architect reaches the meter on a run that executed, and
+        # `RunSpend.unmetered_phases` states what zero calls does and
+        # does not prove.
+        unmetered_phases=owned.unmetered_phases,
         metered_run=bool(owned_runs),
     )
     result.charged_usd = total

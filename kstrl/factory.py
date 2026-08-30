@@ -2479,6 +2479,7 @@ def run_factory(
     stop: StopController | None = None,
     run_id: str | None = None,
     notify_capture_output: bool = False,
+    architect_usage: UsageTotals | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -2495,6 +2496,16 @@ def run_factory(
     Holds the run-level ``.kstrl/factory.lock`` flock for the whole run
     (R0.5, H-7); a contending invocation is refused with exit code 2
     unless it passes ``--force-lock``.
+
+    ``architect_usage`` is what the caller already spent ON THIS RUN's
+    behalf, before the run existed: `ks factory` decomposes the spec
+    itself and only then calls this (#257). Passing it is what makes
+    ``max_cost_usd`` bound the architect - see
+    :meth:`ComponentPipeline.record_architect_usage`. Named for the role
+    rather than generically, because the body records it as the
+    architect unconditionally: a second pre-run role would have to grow
+    the signature rather than quietly borrow this one's row. None for
+    every caller that resumes from a manifest, which ran no architect.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
@@ -2528,6 +2539,7 @@ def run_factory(
             stop=stop,
             run_id_override=run_id,
             notify_capture_output=notify_capture_output,
+            architect_usage=architect_usage,
         )
     finally:
         run_lock.release()
@@ -2545,6 +2557,7 @@ def _run_factory_locked(
     stop: StopController | None = None,
     run_id_override: str | None = None,
     notify_capture_output: bool = False,
+    architect_usage: UsageTotals | None = None,
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -2719,6 +2732,96 @@ def _run_factory_locked(
             )
         )
 
+    if manifest_path is None:
+        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+
+    # Load knowledge config once for the entire factory run, BEFORE the
+    # pipeline is constructed. Binding it at construction removes the
+    # late-binding accident where the old _handle_result closure read a
+    # name that was only assigned further down the function (R7.3).
+    knowledge_config = KnowledgeConfig.load(root_dir)
+
+    # Scheduling state shared between the scheduler and the pipeline.
+    worktree_paths: dict[str, Path] = {}
+    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
+    # Components whose last failure was a timeout kill: their retry must
+    # not trust the surviving worktree/branch state (R0.1 requirement 5).
+    fresh_base_retry_ids: set[str] = set()
+    # Components abandoned by the scheduler backstop; their workers may
+    # still be alive, so their worktrees are never cleaned up here.
+    leaked_component_ids: set[str] = set()
+
+    # R7.3: the per-component phase chain and every component state
+    # transition live in ComponentPipeline. Hooks are resolved from this
+    # module's globals HERE, at run start, so tests patching
+    # kstrl.factory.run_review (and friends) keep intercepting the
+    # phase functions.
+    #
+    # Constructed BEFORE the DAG check below, and that placement is
+    # load-bearing rather than incidental: the pipeline owns the meter,
+    # so the meter's lifetime has to start with the run directory's
+    # rather than with the first phase's. The record just below says
+    # what breaks otherwise (#257 review). Construction is pure
+    # attribute assignment, so doing it ahead of a check that can reject
+    # the run costs nothing.
+    pipeline = ComponentPipeline(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        factory_config=factory_config,
+        base_config=base_config,
+        ui=ui,
+        root_dir=root_dir,
+        run_id=run_id,
+        bus=bus,
+        journal_path=journal_path,
+        run_paths=run_paths,
+        usage_paths=usage_paths,
+        interaction=interaction,
+        notify=notify,
+        review_selection=review_selection,
+        security_selection=security_selection,
+        knowledge_config=knowledge_config,
+        factory_result=factory_result,
+        hooks=PipelineHooks(
+            run_mechanical_verification=run_mechanical_verification,
+            run_review=run_review,
+            run_chunked_review=run_chunked_review,
+            run_security_review=run_security_review,
+            run_chunked_security_review=run_chunked_security_review,
+            distill_facts=distill_facts,
+            measure_fact_utilization=measure_fact_utilization,
+            cleanup_worktree=_cleanup_worktree,
+        ),
+        worktree_paths=worktree_paths,
+        component_contexts=component_contexts,
+        fresh_base_retry_ids=fresh_base_retry_ids,
+        component_failure_signatures=component_failure_signatures,
+    )
+
+    # #257: the architect's spend, incurred by the caller before this run
+    # existed, enters the meter here - the first thing done to the
+    # pipeline, and deliberately AHEAD of the DAG check below.
+    #
+    # The money is already gone by this point, so every early exit from
+    # here has to leave it recorded rather than report a run that cost
+    # nothing. That is not a hypothetical: `decompose_spec` only WARNS on
+    # DAG errors and returns the manifest anyway, so an LLM-produced
+    # cyclic or dangling-dependency manifest reaches the return below on
+    # an ordinary `--spec` run. With the meter built after it, the run
+    # directory existed, the architect row did not, and `serve` charged
+    # $0 for a launch that had spent real money (#257 review).
+    #
+    # The invariant this rests on - nothing between the run directory's
+    # sinks and this line returns early - holds today and is checked by
+    # hand, not by a mechanism. An early exit inserted above would break
+    # it silently; the cyclic-manifest test pins only the case that was
+    # actually reachable.
+    #
+    # The cost of the ordering is cosmetic: a coverage warning about an
+    # unpriced architect prints just ahead of the "Cost ceiling" line
+    # rather than just after it.
+    pipeline.record_architect_usage(architect_usage)
+
     # Validate DAG
     ui.section("Factory: Validating DAG")
     dag_errors = manifest.validate_dag()
@@ -2739,9 +2842,6 @@ def _run_factory_locked(
         ):
             ui.info(f"  Resetting '{comp.id}' from {comp.status} to PENDING")
             comp.status = ComponentStatus.PENDING.value
-
-    if manifest_path is None:
-        manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
 
     # R3.3: persist which run owns this manifest state. completed_at is
     # blanked while the run is in flight and stamped in the summary
@@ -2823,61 +2923,6 @@ def _run_factory_locked(
 
     manifest.policy_hash = policy_config.envelope_hash()
     manifest.save(manifest_path)
-
-    # Load knowledge config once for the entire factory run, BEFORE the
-    # pipeline is constructed. Binding it at construction removes the
-    # late-binding accident where the old _handle_result closure read a
-    # name that was only assigned further down the function (R7.3).
-    knowledge_config = KnowledgeConfig.load(root_dir)
-
-    # Scheduling state shared between the scheduler and the pipeline.
-    worktree_paths: dict[str, Path] = {}
-    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
-    # Components whose last failure was a timeout kill: their retry must
-    # not trust the surviving worktree/branch state (R0.1 requirement 5).
-    fresh_base_retry_ids: set[str] = set()
-    # Components abandoned by the scheduler backstop; their workers may
-    # still be alive, so their worktrees are never cleaned up here.
-    leaked_component_ids: set[str] = set()
-
-    # R7.3: the per-component phase chain and every component state
-    # transition live in ComponentPipeline. Hooks are resolved from this
-    # module's globals HERE, at run start, so tests patching
-    # kstrl.factory.run_review (and friends) keep intercepting the
-    # phase functions.
-    pipeline = ComponentPipeline(
-        manifest=manifest,
-        manifest_path=manifest_path,
-        factory_config=factory_config,
-        base_config=base_config,
-        ui=ui,
-        root_dir=root_dir,
-        run_id=run_id,
-        bus=bus,
-        journal_path=journal_path,
-        run_paths=run_paths,
-        usage_paths=usage_paths,
-        interaction=interaction,
-        notify=notify,
-        review_selection=review_selection,
-        security_selection=security_selection,
-        knowledge_config=knowledge_config,
-        factory_result=factory_result,
-        hooks=PipelineHooks(
-            run_mechanical_verification=run_mechanical_verification,
-            run_review=run_review,
-            run_chunked_review=run_chunked_review,
-            run_security_review=run_security_review,
-            run_chunked_security_review=run_chunked_security_review,
-            distill_facts=distill_facts,
-            measure_fact_utilization=measure_fact_utilization,
-            cleanup_worktree=_cleanup_worktree,
-        ),
-        worktree_paths=worktree_paths,
-        component_contexts=component_contexts,
-        fresh_base_retry_ids=fresh_base_retry_ids,
-        component_failure_signatures=component_failure_signatures,
-    )
 
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
     # Re-poll before scheduling so confirmed merges unblock dependents.
@@ -3454,12 +3499,12 @@ def _run_factory_locked(
         that a breaker retry later resolves. Non-fatal on I/O errors,
         matching EvolutionJournal.record_run.
         """
-        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
+        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
 
         # R2.1: honor [evolution] in kstrl.toml + env, resolved against
         # the factory root rather than whatever the process CWD is.
-        evo_config = EvolutionConfig.load(root_dir)
-        if not evo_config.enabled:
+        journal = EvolutionJournal.open(root_dir, warn=ui.warn)
+        if journal is None:
             return
         entry = {
             "schema_version": JOURNAL_SCHEMA_VERSION,
@@ -3476,9 +3521,7 @@ def _run_factory_locked(
             "duration_seconds": round(cr.duration_seconds, 2),
         }
         try:
-            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(evo_config.journal_path, "a") as f:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            journal.append_entries([entry])
         except OSError as exc:
             # Evolution recording is non-fatal, but never silent (R6.1).
             ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")

@@ -426,9 +426,72 @@ def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _role_usage_entries(
+    usage_by_component: dict[str, dict[str, dict[str, Any]]],
+    *,
+    manifest: Manifest,
+    run_id: str,
+    timestamp: str,
+) -> list[dict[str, Any]]:
+    """Journal rows for spend that belongs to no manifest component.
+
+    ``record_run`` builds its rows by walking the MANIFEST, so a usage
+    key with no component was dropped on the floor while ``run_usage`` -
+    which does include it - fed the TSV's ``total_cost_usd``. The
+    journal's per-component rows then did not sum to its own run total
+    (#257 review). The architect is what made that reachable: a one-role
+    pseudo-component that spends before any component exists and never
+    appears in a manifest.
+
+    A distinct ``event_type`` rather than a synthetic
+    ``component_result``, because every field that row carries - status,
+    retries, findings, failed_phase - is meaningless for something that
+    is not a component, and three readers in this module aggregate over
+    ``component_result`` specifically. They ignore this type, which is
+    the point: the row records spend without inventing an outcome.
+    """
+    component_ids = {comp.id for comp in manifest.components}
+    return [
+        {
+            "schema_version": JOURNAL_SCHEMA_VERSION,
+            "timestamp": timestamp,
+            "run_id": run_id,
+            "project": manifest.project_name,
+            "component_id": role,
+            "event_type": "role_usage",
+            "usage": usage_by_component[role],
+        }
+        for role in sorted(set(usage_by_component) - component_ids)
+    ]
+
+
 class EvolutionJournal:
     def __init__(self, config: EvolutionConfig) -> None:
         self.config = config
+
+    @classmethod
+    def open(
+        cls,
+        root_dir: Path,
+        warn: Callable[[str], None],
+    ) -> EvolutionJournal | None:
+        """The journal for ``root_dir``, or None when it is unusable.
+
+        Every writer asks the same two questions in the same order -
+        does the config parse, and is the journal switched on - and does
+        the same thing on either No. Asking them here rather than at each
+        site is what stops the pair drifting: measured, the four writers
+        that existed before #257 disagreed, with two of them omitting the
+        parse guard entirely and raising a config typo into work that had
+        already been paid for.
+
+        Which exceptions "does not parse" covers is ``load_or_none``'s to
+        know, not a call site's. Degrades loudly through ``warn``.
+        """
+        config = EvolutionConfig.load_or_none(root_dir, warn=warn)
+        if config is None or not config.enabled:
+            return None
+        return cls(config)
 
     # ------------------------------------------------------------------
     # record_run
@@ -535,6 +598,15 @@ class EvolutionJournal:
                 ),
             }
             entries.append(entry)
+
+        entries.extend(
+            _role_usage_entries(
+                usage_by_component,
+                manifest=manifest,
+                run_id=run_id,
+                timestamp=timestamp,
+            )
+        )
 
         try:
             self.append_entries(entries)
