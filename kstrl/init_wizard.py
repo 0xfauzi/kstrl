@@ -15,8 +15,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
-from kstrl.init_cmd import _detect_project_context
+from kstrl.init_cmd import _detect_project_context, has_gitignore_block
 
 # The documented kstrl.toml [agent] type vocabulary (empty = auto).
 AGENT_TYPES = ("", "claude-code", "claude-sdk", "codex")
@@ -30,14 +31,26 @@ _AGENT_STOCK_PREFIXES = {
 }
 
 
+ScaffoldAction = Literal["create", "keep", "append"]
+
+
 @dataclass(frozen=True)
 class ScaffoldEntry:
     path: Path
-    exists: bool  # True -> "exists - kept"; False -> "will create"
+    action: ScaffoldAction  # create = written; keep = left alone; append = added to
 
 
 def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
-    """The exact file set run_init touches, with existence markers."""
+    """The exact file set run_init touches, with the action for each.
+
+    .gitignore is the one entry that is not create-or-keep: run_init
+    appends its block to an existing file, so an existing .gitignore
+    without that block is reported as ``append``. Saying "exists - kept"
+    there would be a preview that does not match the write (#201).
+
+    Files only. run_init has one non-file side effect, staging an
+    untracked uv.lock, and it reports that in its own transcript.
+    """
     kstrl_dir = root / "scripts" / "kstrl"
     paths = [
         root / "kstrl.toml",
@@ -50,7 +63,16 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
         root / "CLAUDE.md",
         root / "AGENTS.md",
     ]
-    return [ScaffoldEntry(path=p, exists=p.exists()) for p in paths]
+    entries = [ScaffoldEntry(path=p, action="keep" if p.exists() else "create") for p in paths]
+    gitignore = root / ".gitignore"
+    entries.append(ScaffoldEntry(path=gitignore, action=_gitignore_action(root)))
+    return entries
+
+
+def _gitignore_action(root: Path) -> ScaffoldAction:
+    if not (root / ".gitignore").exists():
+        return "create"
+    return "keep" if has_gitignore_block(root) else "append"
 
 
 def detect_context(root: Path) -> dict[str, str]:

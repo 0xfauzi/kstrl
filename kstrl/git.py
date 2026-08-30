@@ -442,6 +442,28 @@ def restore_file_from(
         return False
 
 
+def stage_file(
+    file: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> bool:
+    """Stage one path (``git add``), leaving history alone.
+
+    The inverse of :func:`remove_from_index`, and the smallest write that
+    makes a path TRACKED: no commit is created.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "add", "--", file],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
 def remove_from_index(
     file: str,
     cwd: Path | None = None,

@@ -133,6 +133,16 @@ class TestExampleProjectContract:
         ).read_text(encoding="utf-8")
         assert example == DEFAULT_PROMPT
 
+    def test_example_gitignore_is_the_one_init_scaffolds(self) -> None:
+        """examples/uv-python ships the same ignore block `ks init`
+        writes. Before #201 it ignored uv.lock, which hid the lockfile
+        from the scope guard by hiding it from git - a workaround the
+        example then taught to everyone who copied it."""
+        from kstrl.init_cmd import gitignore_block
+
+        example = (REPO_ROOT / "examples" / "uv-python" / ".gitignore").read_text(encoding="utf-8")
+        assert example == gitignore_block("Python")
+
     def test_example_prd_prompt_allows_allowed_paths(self) -> None:
         text = (
             REPO_ROOT / "examples" / "uv-python" / "scripts" / "kstrl" / "prd_prompt.txt"

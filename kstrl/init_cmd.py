@@ -532,6 +532,98 @@ DEFAULT_KSTRL_TOML = """\
 # scheduler_backstop_margin = 60.0
 """
 
+# First line of the .gitignore block `ks init` writes. Its presence is
+# the whole idempotency test: an existing .gitignore is a user-owned
+# file, so the block is appended once and never rewritten.
+GITIGNORE_BLOCK_MARKER = "# kstrl: artifacts the scope guard would otherwise count"
+
+# The marker plus the reason, so the file explains itself to whoever
+# reads it next.
+_GITIGNORE_BLOCK_HEADER = f"""{GITIGNORE_BLOCK_MARKER}
+# The in-loop scope guard counts UNTRACKED files against a component's
+# allowed paths, so anything your test / typecheck / lint commands write
+# has to be ignored here or committed - otherwise the agent's own build
+# artifacts read as out-of-scope edits and cost an iteration.
+"""
+
+# Ignored everywhere: kstrl's own runtime state, plus the one OS artifact
+# that lands in a working tree without anybody asking for it.
+_COMMON_IGNORES = (
+    ".kstrl/",
+    ".DS_Store",
+)
+
+_JS_IGNORES = (
+    "node_modules/",
+    "dist/",
+    "build/",
+    "coverage/",
+    ".next/",
+    "*.tsbuildinfo",
+)
+
+_JVM_IGNORES = (
+    "target/",
+    "build/",
+    ".gradle/",
+)
+
+# Build output and caches per detected language, keyed like the other
+# language tables in this module (_LANGUAGE_STANDARDS,
+# _LANGUAGE_ANTIPATTERNS) on the strings _detect_project_context returns.
+# Deliberately no lockfile: for an application the lockfile belongs in
+# version control, and _ensure_lockfile_tracked puts it there instead of
+# hiding it.
+_LANGUAGE_IGNORES: dict[str, tuple[str, ...]] = {
+    "Python": (
+        "__pycache__/",
+        "*.py[cod]",
+        ".venv/",
+        "venv/",
+        ".pytest_cache/",
+        ".mypy_cache/",
+        ".ruff_cache/",
+        ".coverage",
+        "htmlcov/",
+        "build/",
+        "dist/",
+        "*.egg-info/",
+    ),
+    "TypeScript": _JS_IGNORES,
+    "JavaScript": _JS_IGNORES,
+    "Rust": ("target/",),
+    "Go": (
+        "bin/",
+        "*.test",
+        "*.out",
+    ),
+    "Java": _JVM_IGNORES,
+    "Kotlin": _JVM_IGNORES,
+}
+
+# The "Next steps" block. The spec path leads because it is the one the
+# README sells and the one the scaffold cannot suggest on its own: init
+# writes an empty userStories array, which reads as "write these by
+# hand" (#256). Not named *_PROMPT: that suffix enrols a constant in the
+# adversarial prompt version snapshot, and this is UI copy.
+NEXT_STEPS = """You have a spec (recommended):
+  ks decompose --spec <spec.md> --project-name <name>   # plan it
+  ks factory --spec <spec.md> --project-name <name>     # plan it and build it
+
+You want to drive one component by hand:
+  1. Edit scripts/kstrl/prompt.md
+  2. Add user stories to scripts/kstrl/prd.json
+  3. ks run [iterations]                                # one component, no PR
+
+Other modes:
+  ks understand [iterations]
+  ks feature [iterations] --prd scripts/kstrl/feature/<name>/prd.json
+
+Measure before you spend (no agent, no cost):
+  ks sense
+  ks sense --allowed-path '<glob>'                      # preflight the scope guard
+"""
+
 
 def run_init(directory: Path, ui: UI) -> int:
     """Initialize kstrl harness in a project directory.
@@ -583,7 +675,13 @@ def run_init(directory: Path, ui: UI) -> int:
     )
 
     # Bootstrap CLAUDE.md and AGENTS.md
-    bootstrap_claude_md(root, ui)
+    ctx = _detect_project_context(root)
+    bootstrap_claude_md(root, ui, ctx)
+
+    # Keep the agent's own build artifacts out of the scope guard (#201)
+    ui.section("Git hygiene")
+    _ensure_gitignore(root, ctx["language"], ui)
+    _ensure_lockfile_tracked(root, is_repo, ui)
 
     # Validate PRD
     ui.section("Validate PRD")
@@ -619,15 +717,8 @@ def run_init(directory: Path, ui: UI) -> int:
 
     # Next steps
     ui.section("Next steps")
-    ui.info("1. Edit scripts/kstrl/prompt.md")
-    ui.info("2. Add user stories to scripts/kstrl/prd.json")
-    ui.info("3. Run: ks run [iterations]")
-    ui.info("")
-    ui.info("For codebase understanding mode:")
-    ui.info("  ks understand [iterations]")
-    ui.info("")
-    ui.info("For feature understanding mode:")
-    ui.info("  ks feature [iterations] --prd scripts/kstrl/feature/<feature_name>/prd.json")
+    for line in NEXT_STEPS.splitlines():
+        ui.info(line)
 
     return 0
 
@@ -639,6 +730,95 @@ def _create_if_missing(path: Path, content: str, ui: UI) -> None:
     else:
         path.write_text(content)
         ui.ok(f"  Created {path.name}")
+
+
+def gitignore_block(language: str) -> str:
+    """The .gitignore block `ks init` writes for a detected language.
+
+    Public because examples/uv-python ships a copy of it, held in
+    lockstep by tests/test_gen_docs.py the way the example's prompt.md
+    is held against DEFAULT_PROMPT.
+    """
+    entries = (*_LANGUAGE_IGNORES.get(language, ()), *_COMMON_IGNORES)
+    return _GITIGNORE_BLOCK_HEADER + "\n".join(entries) + "\n"
+
+
+def has_gitignore_block(root: Path) -> bool:
+    """True when root/.gitignore already carries the kstrl block.
+
+    Shared with the TUI wizard's scaffold preview so the preview and the
+    write cannot disagree about whether a re-run would append anything.
+    """
+    try:
+        return GITIGNORE_BLOCK_MARKER in (root / ".gitignore").read_text()
+    except OSError:
+        return False
+
+
+def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
+    """Create .gitignore, or append the kstrl block to an existing one.
+
+    An existing .gitignore is a user-owned file: this only ever APPENDS,
+    inside a marked block, and skips entirely once the marker is present,
+    so re-running `ks init` cannot duplicate it or rewrite a line the
+    user wrote.
+    """
+    path = root / ".gitignore"
+    block = gitignore_block(language)
+
+    if not path.exists():
+        _create_if_missing(path, block, ui)
+        return
+
+    existing = path.read_text()
+    if GITIGNORE_BLOCK_MARKER in existing:
+        ui.info("  .gitignore already has the kstrl block")
+        return
+
+    # One blank line between the user's last rule and ours, and no
+    # leading blank when the file is empty.
+    separator = "" if not existing else "\n" if existing.endswith("\n") else "\n\n"
+    with path.open("a") as handle:
+        handle.write(separator + block)
+    ui.ok("  Appended the kstrl block to .gitignore")
+
+
+def _ensure_lockfile_tracked(root: Path, is_repo: bool, ui: UI) -> None:
+    """Stage an untracked uv.lock, and say so.
+
+    The lockfile is NOT ignored. For an application it belongs in version
+    control, so ignoring it (what examples/uv-python/.gitignore did
+    before #201) hides it from the scope guard by hiding it from git,
+    which is a workaround rather than a lockfile policy. Tracked is the
+    real fix:
+    ``git ls-files --others --exclude-standard`` cannot list a file that
+    is in the index.
+
+    Staging is as far as init goes - creating a commit in someone's
+    repository is not a scaffolder's call - so the printed instruction
+    carries the rest. It matters: a factory worktree is cut from a
+    COMMIT, so an uncommitted lockfile is absent there and `uv run`
+    writes a fresh untracked one.
+    """
+    if not is_repo or not (root / "pyproject.toml").exists():
+        return
+
+    if not (root / "uv.lock").exists():
+        ui.warn("  No uv.lock yet")
+        ui.info("    Run `uv lock` and commit the result: the first verify run")
+        ui.info("    writes one, and an untracked lockfile reads as an out-of-scope edit.")
+        return
+
+    if git.is_file_tracked("uv.lock", root):
+        ui.ok("  uv.lock is tracked")
+        return
+
+    if git.stage_file("uv.lock", root):
+        ui.ok("  Staged uv.lock (staged only, no commit was created)")
+        ui.info("    Commit it before your first run: a factory worktree is cut from")
+        ui.info("    a commit, so an uncommitted lockfile is not in it.")
+    else:
+        ui.warn("  Could not stage uv.lock; run `git add uv.lock` before your first run")
 
 
 # ---------------------------------------------------------------------------
@@ -999,12 +1179,12 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
     return "\n".join(sections) + "\n"
 
 
-def bootstrap_claude_md(root: Path, ui: UI) -> None:
+def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
     """Generate CLAUDE.md and symlink AGENTS.md to it.
 
-    Detects project language, framework, and tooling from config files,
-    then generates agent-facing documentation with coding standards,
-    implementation principles, and verification commands.
+    ``ctx`` is :func:`_detect_project_context`'s reading of the project's
+    language, framework and tooling; the caller detects once because the
+    .gitignore block is chosen from the same reading.
 
     AGENTS.md is a symlink to CLAUDE.md so both names point to the same
     file. When the prompt tells agents to "update AGENTS.md", they are
@@ -1014,7 +1194,6 @@ def bootstrap_claude_md(root: Path, ui: UI) -> None:
 
     ui.section("Agent context files")
 
-    ctx = _detect_project_context(root)
     ui.kv("Detected language", ctx["language"])
     if ctx["framework"]:
         ui.kv("Detected framework", ctx["framework"])

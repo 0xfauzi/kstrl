@@ -21,17 +21,32 @@ from kstrl.tui.screens.init_wizard import InitWizardScreen
 class TestPlanScaffold:
     def test_markers_flip_after_init(self, tmp_path: Path) -> None:
         before = plan_scaffold(tmp_path)
-        assert all(not entry.exists for entry in before)
+        assert all(entry.action == "create" for entry in before)
         names = [entry.path.name for entry in before]
         assert "kstrl.toml" in names
         assert "prompt.md" in names
         assert "CLAUDE.md" in names
+        assert ".gitignore" in names
 
         (tmp_path / "kstrl.toml").write_text("")
         after = plan_scaffold(tmp_path)
-        by_name = {e.path.name: e.exists for e in after}
-        assert by_name["kstrl.toml"] is True
-        assert by_name["prd.json"] is False
+        by_name = {e.path.name: e for e in after}
+        assert by_name["kstrl.toml"].action == "keep"
+        assert by_name["prd.json"].action == "create"
+
+    def test_existing_gitignore_is_planned_as_an_append(self, tmp_path: Path) -> None:
+        """An existing .gitignore is added to, not kept as-is (#201)."""
+        (tmp_path / ".gitignore").write_text("secrets.env\n")
+
+        planned = {e.path.name: e for e in plan_scaffold(tmp_path)}
+        assert planned[".gitignore"].action == "append"
+
+    def test_only_gitignore_is_ever_planned_as_an_append(self, tmp_path: Path) -> None:
+        (tmp_path / ".gitignore").write_text("secrets.env\n")
+        (tmp_path / "kstrl.toml").write_text("")
+
+        appending = [e.path.name for e in plan_scaffold(tmp_path) if e.action == "append"]
+        assert appending == [".gitignore"]
 
 
 class TestApplyAgentSettings:

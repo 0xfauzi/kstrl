@@ -51,10 +51,15 @@ uv tool install kstrl              # installs `ks` and `kstrl` (requires Python 
 # or: git clone https://github.com/0xfauzi/kstrl.git && cd kstrl && uv tool install -e .
 
 cd your-project
-ks init .                          # scaffold kstrl.toml and prompt/PRD templates
+ks init .                          # scaffold kstrl.toml, prompt/PRD templates and a .gitignore
 $EDITOR scripts/kstrl/prd.json     # define what to build (user stories + acceptance criteria)
 ks run 25                          # let the agent work for up to 25 iterations
 ```
+
+That is the single-component loop, which creates no PR. If you already have a
+spec, `ks decompose --spec <spec.md> --project-name <name>` plans it into
+components and `ks factory --spec ...` plans and builds it; `ks init` prints
+both paths when it finishes.
 
 `ks sense` runs the mechanical sensors (tests, typecheck, lint, diff scope, bad patterns) against any tree by hand, with no PRD, branch, worktree or agent spend; `ks sense --json` prints the same measurement as one JSON document for scripts.
 It is the standalone entry point to the checks the factory runs in Phase 1, so a threshold can be measured before it is automated.
