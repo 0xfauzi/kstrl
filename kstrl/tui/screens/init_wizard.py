@@ -33,6 +33,7 @@ from kstrl.tui import theme
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig, resolve_verify_commands
 
 if TYPE_CHECKING:
     pass
@@ -121,15 +122,20 @@ class InitWizardScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        root = getattr(self.app, "root_dir", Path.cwd())
+        root = Path(getattr(self.app, "root_dir", Path.cwd()))
         self.query_one("#wizard-directory", Input).value = str(root)
-        context = detect_context(Path(root))
+        context = detect_context(root)
         detected = Text()
         detected.append("detected  ", style=f"bold {theme.MUTED}")
         detected.append(context.get("language", "unknown"))
-        for key in ("test_cmd", "typecheck_cmd", "lint_cmd"):
-            if context.get(key):
-                detected.append(f"  ·  {context[key]}", style=theme.MUTED)
+        # #261: what the Phase 1 gate will actually run, from the gate's
+        # own resolver. This line used to show init's guesses.
+        commands = resolve_verify_commands(VerifyConfig.load(root), root)
+        detected.append("\nverifies with  ", style=f"bold {theme.MUTED}")
+        detected.append(
+            f"{commands.test}  ·  {commands.typecheck}  ·  {commands.lint}",
+            style=theme.MUTED,
+        )
         self.query_one("#wizard-detected", Static).update(detected)
         self._show_stage("form")
 

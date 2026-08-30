@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -415,11 +416,18 @@ DEFAULT_KSTRL_TOML = """\
 # max_adversarial_calls = 0        # 0 = unbounded; caps review+security+distill LLM calls per run
 # pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge
 
-# Phase 1 mechanical verification.
+# Phase 1 mechanical verification. These three are the one source of truth for
+# how this project is checked: the gate runs them, and kstrl injects them into
+# the engineer prompt, so the agent is never told a different command (#261).
+# Leave a key empty for the harness default. Do NOT pin typecheck_command to a
+# path such as "mypy ." if pyproject.toml scopes mypy itself; the empty default
+# already defers to your [tool.mypy] files/packages.
+# Chain toolchains to gate a polyglot repo, for example
+# "uv run pytest -q && cd web && npm run test".
 [verify]
-# test_command = "uv run pytest"   # empty/omitted = project-type default
-# typecheck_command = "uv run mypy ."
-# lint_command = "uv run ruff check ."
+# test_command = ""
+# typecheck_command = ""
+# lint_command = ""
 # check_diff_scope = true
 # check_bad_patterns = true
 # dead_code_cleanup = false
@@ -924,20 +932,19 @@ def _track_lockfile(root: Path, name: str, ui: UI) -> None:
 
 
 def _detect_project_context(root: Path) -> dict[str, str]:
-    """Detect project language, framework, and tooling from config files.
+    """Detect project name, language and framework from config files.
 
-    Inspects the project root for pyproject.toml, Cargo.toml, package.json,
-    go.mod, etc. and returns a dict of detected values.
+    Inspects the project root for pyproject.toml, Cargo.toml,
+    package.json, go.mod, etc. First match wins.
+
+    #261: this deliberately does NOT guess test / typecheck / lint
+    commands. ``verify.resolve_verify_commands`` is the only place that
+    answers that question.
     """
     ctx: dict[str, str] = {
         "name": root.name,
         "language": "unknown",
         "framework": "",
-        "test_cmd": "",
-        "lint_cmd": "",
-        "typecheck_cmd": "",
-        "build_cmd": "",
-        "format_cmd": "",
     }
 
     # Python
@@ -945,19 +952,10 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     setup_py = root / "setup.py"
     if pyproject.exists() or setup_py.exists():
         ctx["language"] = "Python"
-        has_uv = (root / "uv.lock").exists() or (root / ".venv").exists()
-        runner = "uv run " if has_uv else ""
-        ctx["test_cmd"] = f"{runner}pytest tests/ -v --tb=short"
-        ctx["typecheck_cmd"] = f"{runner}mypy src/ --strict"
-        ctx["lint_cmd"] = f"{runner}ruff check src/"
-        ctx["format_cmd"] = f"{runner}ruff format src/"
         pyproject_text = _read_text_or_none(pyproject) or ""
-        if "name" in pyproject_text:
-            import re
-
-            m = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
-            if m:
-                ctx["name"] = m.group(1)
+        match = re.search(r'name\s*=\s*"([^"]+)"', pyproject_text)
+        if match:
+            ctx["name"] = match.group(1)
         if "fastapi" in pyproject_text:
             ctx["framework"] = "FastAPI"
         elif "django" in pyproject_text:
@@ -970,17 +968,10 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     cargo_toml = root / "Cargo.toml"
     if cargo_toml.exists():
         ctx["language"] = "Rust"
-        ctx["test_cmd"] = "cargo test"
-        ctx["lint_cmd"] = "cargo clippy -- -D warnings"
-        ctx["typecheck_cmd"] = "cargo check"
-        ctx["build_cmd"] = "cargo build"
-        ctx["format_cmd"] = "cargo fmt"
-        import re
-
         cargo_text = _read_text_or_none(cargo_toml) or ""
-        m = re.search(r'name\s*=\s*"([^"]+)"', cargo_text)
-        if m:
-            ctx["name"] = m.group(1)
+        match = re.search(r'name\s*=\s*"([^"]+)"', cargo_text)
+        if match:
+            ctx["name"] = match.group(1)
         if "actix" in cargo_text or "axum" in cargo_text:
             ctx["framework"] = "Axum/Actix"
         elif "rocket" in cargo_text:
@@ -992,19 +983,8 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     if pkg_json.exists():
         ctx["language"] = "TypeScript"
         try:
-            import json as _json
-
-            pkg = _json.loads(_read_text_or_none(pkg_json) or "{}")
+            pkg = json.loads(_read_text_or_none(pkg_json) or "{}")
             ctx["name"] = pkg.get("name", root.name)
-            scripts = pkg.get("scripts", {})
-            ctx["test_cmd"] = (
-                f"npm run {scripts.get('test', 'test')}" if "test" in scripts else "npx jest"
-            )
-            ctx["lint_cmd"] = (
-                f"npm run {scripts.get('lint', 'lint')}" if "lint" in scripts else "npx eslint ."
-            )
-            ctx["typecheck_cmd"] = "npx tsc --noEmit"
-            ctx["build_cmd"] = "npm run build" if "build" in scripts else ""
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             if "next" in deps:
                 ctx["framework"] = "Next.js"
@@ -1024,11 +1004,6 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     go_mod = root / "go.mod"
     if go_mod.exists():
         ctx["language"] = "Go"
-        ctx["test_cmd"] = "go test ./..."
-        ctx["lint_cmd"] = "golangci-lint run"
-        ctx["typecheck_cmd"] = "go vet ./..."
-        ctx["build_cmd"] = "go build ./..."
-        ctx["format_cmd"] = "gofmt -w ."
         go_text = (_read_text_or_none(go_mod) or "").strip()
         first_line = go_text.splitlines()[0] if go_text else ""
         if first_line.startswith("module "):
@@ -1041,11 +1016,7 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         or (root / "build.gradle").exists()
         or (root / "build.gradle.kts").exists()
     ):
-        ctx["language"] = "Java"
-        if (root / "build.gradle.kts").exists():
-            ctx["language"] = "Kotlin"
-        ctx["test_cmd"] = "./gradlew test" if (root / "gradlew").exists() else "mvn test"
-        ctx["build_cmd"] = "./gradlew build" if (root / "gradlew").exists() else "mvn package"
+        ctx["language"] = "Kotlin" if (root / "build.gradle.kts").exists() else "Java"
         return ctx
 
     return ctx
@@ -1158,6 +1129,31 @@ _LANGUAGE_ANTIPATTERNS: dict[str, str] = {
 }
 
 
+# What the generated CLAUDE.md says about verification, and why it names
+# no commands. CLAUDE.md is prepended verbatim into the engineer prompt
+# (loop.build_project_context), so anything written here is an
+# instruction the agent follows; deriving the right commands would still
+# be a second copy, and two copies drift. See the #261 note in verify.py.
+_VERIFICATION_SECTION = """
+## Verification
+
+kstrl resolves this project's test, typecheck and lint commands at run
+time and injects them into the engineer prompt, so they are deliberately
+not restated here and cannot drift out of step with the gate that
+enforces them.
+
+Set them in `kstrl.toml` under `[verify]` (`test_command`,
+`typecheck_command`, `lint_command`). An unset key falls back to the
+harness default for the project. One command may chain several
+toolchains, which is how a polyglot repo is gated:
+
+```toml
+[verify]
+test_command = "uv run pytest -q && cd web && npm run test"
+```
+"""
+
+
 def _generate_claude_md(ctx: dict[str, str]) -> str:
     """Generate CLAUDE.md content from detected project context."""
     lang = ctx["language"]
@@ -1171,18 +1167,7 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
     sections.append(f"- **Project**: {ctx['name']}")
     sections.append("")
 
-    # Verification commands
-    sections.append("## Verification Commands")
-    if ctx["test_cmd"]:
-        sections.append(f"- **Test**: `{ctx['test_cmd']}`")
-    if ctx["typecheck_cmd"]:
-        sections.append(f"- **Typecheck**: `{ctx['typecheck_cmd']}`")
-    if ctx["lint_cmd"]:
-        sections.append(f"- **Lint**: `{ctx['lint_cmd']}`")
-    if ctx["format_cmd"]:
-        sections.append(f"- **Format**: `{ctx['format_cmd']}`")
-    if ctx["build_cmd"]:
-        sections.append(f"- **Build**: `{ctx['build_cmd']}`")
+    sections.append(_VERIFICATION_SECTION.strip())
     sections.append("")
 
     # Coding standards

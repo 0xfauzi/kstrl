@@ -1657,6 +1657,8 @@ def _run_component(
     live_line: Callable[[str], None] | None = None,
     stop_check: Callable[[], bool] | None = None,
     base_branch: str = "main",
+    verify_config: VerifyConfig | None = None,
+    skip_verification: bool = False,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -1685,6 +1687,13 @@ def _run_component(
     the spend recorded before this worker launched, so the engineer loop
     can halt itself BETWEEN iterations instead of waiting for the
     parent's next phase boundary. None disables the in-loop check.
+
+    #261: ``verify_config`` / ``skip_verification`` are forwarded to the
+    loop so the engineer is told exactly what Phase 1 will run. They must
+    be the SAME pair ``_phase_verify`` reads: a CLI override or an
+    uncommitted kstrl.toml edit lives only in the parent, and the
+    parent's own fallback is ``VerifyConfig()`` rather than a reload from
+    disk. With ``skip_verification`` the loop states no commands at all.
 
     ``progress_file_str`` is None unless the operator explicitly
     configured a progress path; None means "derive it next to this
@@ -1943,6 +1952,8 @@ def _run_component(
             on_iteration_usage=on_iteration_usage,
             guard_base_ref=base_branch,
             guard_ignored_paths=harness_paths,
+            verify_config=verify_config,
+            skip_verification=skip_verification,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -3316,6 +3327,11 @@ def _run_factory_locked(
                             # above) and a positional extra silently
                             # lands on redirect_output.
                             base_branch=manifest.base_branch,
+                            # #261: byte-for-byte the pair _phase_verify
+                            # reads (pipeline.py), so the engineer prompt
+                            # cannot name a command Phase 1 will not run.
+                            verify_config=factory_config.verify_config or VerifyConfig(),
+                            skip_verification=factory_config.skip_verification,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -3338,6 +3354,9 @@ def _run_factory_locked(
                                 # Same unprovable-*args limitation the
                                 # inline branch annotates above.
                                 base_branch=manifest.base_branch,  # type: ignore[misc]
+                                # #261: see the inline branch.
+                                verify_config=factory_config.verify_config or VerifyConfig(),
+                                skip_verification=factory_config.skip_verification,
                             ),
                         )
                     running_futures[future] = comp.id

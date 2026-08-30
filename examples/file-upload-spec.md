@@ -58,13 +58,14 @@ We need a simple file-upload micro-service. Users upload files via a multipart P
 - SQLite (file-backed) for the metadata table.
 - `PyJWT` for JWT verification.
 - `pytest` + `httpx.AsyncClient` for tests; coverage of negative paths is required.
-- Typecheck: `uv run mypy src/ --strict`. Lint: `uv run ruff check src/ tests/`.
+- `mypy` and `ruff` for typecheck and lint.
 
 ## Verification commands
 
-- Tests: `uv run pytest tests/ -v`
-- Typecheck: `uv run mypy src/ --strict`
-- Lint: `uv run ruff check src/ tests/`
+Set these in `kstrl.toml` under `[verify]`, not here. kstrl resolves the
+gate's test / typecheck / lint commands at run time and tells the engineer
+what they are, so a spec that names its own copy can only disagree with the
+gate (#261).
 
 ## Things the architect / reviewer / security role should naturally surface
 

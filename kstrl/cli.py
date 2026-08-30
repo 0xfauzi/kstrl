@@ -87,6 +87,7 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
+from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
@@ -1819,15 +1820,16 @@ def decompose(
 )
 @click.option(
     "--test-command",
-    help="Test suite command (default: 'uv run pytest')",
+    help=f"Test suite command (default: {DEFAULT_TEST_COMMAND!r})",
 )
 @click.option(
     "--typecheck-command",
-    help="Typecheck command (default: 'uv run mypy .')",
+    help="Typecheck command (default: 'uv run mypy', or 'uv run mypy .' "
+    "when pyproject.toml does not scope mypy itself)",
 )
 @click.option(
     "--lint-command",
-    help="Lint command (default: 'uv run ruff check .')",
+    help=f"Lint command (default: {DEFAULT_LINT_COMMAND!r})",
 )
 @click.option(
     "--no-verify",

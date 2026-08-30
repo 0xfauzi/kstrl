@@ -22,6 +22,11 @@ from kstrl.interaction import (
 )
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig
+from kstrl.verify import (
+    VerifyConfig,
+    resolve_verify_commands,
+    scrub_stale_verify_commands,
+)
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -411,6 +416,54 @@ class LoopResult:
     guard_violations: tuple[str, ...] = ()
 
 
+def build_project_context(
+    cwd: Path,
+    ui: UI,
+    verify_config: VerifyConfig | None = None,
+    skip_verification: bool = False,
+) -> str:
+    """Assemble the project-context prefix of the engineer prompt.
+
+    Two sections: the project's CLAUDE.md, if it has one, and the
+    verification commands the mechanical gate will run.
+
+    #261: the commands come from ``verify.resolve_verify_commands``, the
+    same resolver the gate itself calls, against the same directory the
+    gate will run in. There is no second copy for the agent to read, so
+    it cannot be told a command the gate will not run.
+
+    The ``verify_config`` / ``skip_verification`` pair means exactly what
+    it means on ``FactoryConfig``. None is "read the project's own config
+    from ``cwd``", which is what a direct caller wants; the factory
+    passes its already-resolved config so a CLI flag or an uncommitted
+    kstrl.toml edit reaches the agent as well as the gate.
+    ``skip_verification`` omits the block entirely: with Phase 1 off
+    there is no gate, and claiming one would run is the same species of
+    untruth this issue is about.
+    """
+    commands = None
+    if not skip_verification:
+        commands = resolve_verify_commands(verify_config or VerifyConfig.load(cwd), cwd)
+
+    sections: list[str] = []
+    claude_md_path = cwd / "CLAUDE.md"
+    if claude_md_path.exists():
+        claude_md = claude_md_path.read_text()
+        if commands is not None:
+            # A CLAUDE.md scaffolded before #261 still carries verification
+            # bullets that disagree with the gate. Drop the divergent ones
+            # from the prompt copy (never from disk) and say so.
+            scrubbed = scrub_stale_verify_commands(claude_md, commands)
+            for divergence in scrubbed.divergences:
+                ui.warn(divergence)
+            claude_md = scrubbed.text
+        sections.append("# Project Context (from CLAUDE.md)\n\n" + claude_md)
+
+    if commands is not None:
+        sections.append(commands.format_for_prompt())
+    return "\n\n".join(sections)
+
+
 def run_loop(
     config: KstrlConfig,
     ui: UI,
@@ -430,6 +483,8 @@ def run_loop(
     guard_base_ref: str | None = None,
     budget: LoopBudget | None = None,
     on_iteration_usage: Callable[[UsageTotals], None] | None = None,
+    verify_config: VerifyConfig | None = None,
+    skip_verification: bool = False,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -447,6 +502,14 @@ def run_loop(
         budget: Run-level token ceiling (R8), checked between
             iterations. None (the default, and every non-factory
             caller) means no in-loop token limit.
+        verify_config: The Phase 1 verify config whose commands the
+            engineer is told to run (#261). None means "load this
+            project's own config from ``cwd``"; the factory passes the
+            exact object Phase 1 will use, so a CLI override reaches
+            the agent and the gate alike.
+        skip_verification: Phase 1 is disabled (``--no-verify``), so no
+            verification commands are stated. Same meaning as the field
+            of the same name on ``FactoryConfig``.
         on_iteration_usage: Called with this loop's usage-so-far at
             every iteration boundary. The factory uses it to persist a
             durable copy, so a worker killed by a shutdown does not
@@ -530,13 +593,9 @@ def run_loop(
         codebase_map_path=str(config.codebase_map_file),
     )
 
-    # Prepend CLAUDE.md project context if it exists in the working directory
-    claude_md_path = cwd / "CLAUDE.md"
-    if claude_md_path.exists():
-        claude_md_content = claude_md_path.read_text()
-        prompt = (
-            "# Project Context (from CLAUDE.md)\n\n" + claude_md_content + "\n\n---\n\n" + prompt
-        )
+    project_context = build_project_context(cwd, ui, verify_config, skip_verification)
+    if project_context:
+        prompt = project_context + "\n\n---\n\n" + prompt
 
     # Prepend context from previous retries if provided
     if context_prefix:
