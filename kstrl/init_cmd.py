@@ -716,7 +716,7 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.ok("scripts/kstrl/ exists")
 
     ui.section("Create defaults")
-    _create_if_missing(root / "kstrl.toml", DEFAULT_KSTRL_TOML, ui)
+    _create_if_missing(root / "kstrl.toml", kstrl_toml_for(root), ui)
     _create_if_missing(kstrl_dir / "prompt.md", DEFAULT_PROMPT, ui)
     _create_if_missing(kstrl_dir / "prd.json", json.dumps(DEFAULT_PRD, indent=2) + "\n", ui)
     _create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)
@@ -775,6 +775,53 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.info(line)
 
     return 0
+
+
+_VERIFY_KEYS = ("test_command", "typecheck_command", "lint_command")
+
+# (test, typecheck, lint) per detected language, "" where the toolchain
+# has no such step. Python and an unrecognised tree are absent on
+# purpose: the harness defaults are already right for Python, and a
+# suggestion that merely restates them is the duplication #261 removed.
+_LANGUAGE_VERIFY_COMMANDS: dict[str, tuple[str, str, str]] = {
+    "Rust": ("cargo test", "cargo check", "cargo clippy -- -D warnings"),
+    "Go": ("go test ./...", "go vet ./...", "golangci-lint run"),
+    "TypeScript": ("npm test", "npx tsc --noEmit", "npx eslint ."),
+    "JavaScript": ("npm test", "", "npx eslint ."),
+}
+
+
+def _verify_commands_for(root: Path, language: str) -> tuple[str, str, str] | None:
+    if language in ("Java", "Kotlin"):
+        # The only pair that needs the tree, not just the language.
+        runner = "./gradlew test" if (root / "gradlew").exists() else "mvn test"
+        return (runner, "", "")
+    return _LANGUAGE_VERIFY_COMMANDS.get(language)
+
+
+def kstrl_toml_for(root: Path) -> str:
+    """``DEFAULT_KSTRL_TOML`` with ``[verify]`` seeded for this project.
+
+    The harness gate defaults are Python-shaped, so on a Rust or Go
+    project Phase 1 resolves to `uv run pytest` and fails every
+    iteration. #261 removed the per-language guesses from the generated
+    CLAUDE.md, where they were a second copy of a fact the gate owned.
+    They belong here instead: kstrl.toml [verify] IS the source the gate
+    and the engineer prompt both read, so seeding it records the
+    detected toolchain in the one place that can act on it.
+
+    Seeded COMMENTED, because `ks init` must not change an effective
+    value (tests/test_config_control_plane.py pins that). Uncommenting
+    one line is the operator's explicit opt-in.
+    """
+    commands = _verify_commands_for(root, _detect_project_context(root)["language"])
+    if commands is None:
+        return DEFAULT_KSTRL_TOML
+    text = DEFAULT_KSTRL_TOML
+    for key, command in zip(_VERIFY_KEYS, commands, strict=True):
+        if command:
+            text = text.replace(f'# {key} = ""\n', f'# {key} = "{command}"\n', 1)
+    return text
 
 
 def _create_if_missing(path: Path, content: str, ui: UI) -> None:

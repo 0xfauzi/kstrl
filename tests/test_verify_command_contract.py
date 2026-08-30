@@ -17,16 +17,19 @@ what will run. These tests hold the two sides together.
 
 from __future__ import annotations
 
+import io
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
+from kstrl.cli import cli
 from kstrl.config import KstrlConfig
-from kstrl.factory import _run_component
-from kstrl.init_cmd import _generate_claude_md
+from kstrl.factory import FactoryConfig, _run_component, _warn_claude_md_divergence
 from kstrl.loop import COMPLETION_MARKER, LoopResult, build_project_context, run_loop
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
@@ -59,6 +62,7 @@ class _PromptCapturingAgent:
 
     name = "capture"
     final_message: str | None = None
+    usage_records: list[Any] = []
 
     def __init__(self) -> None:
         self.prompts: list[str] = []
@@ -88,11 +92,55 @@ def _project(root: Path) -> KstrlConfig:
     )
 
 
-def _engineer_prompt(
-    root: Path,
-    verify_config: VerifyConfig | None = None,
-    skip_verification: bool = False,
-) -> str:
+def _prompt_from_cli(args: list[str]) -> str:
+    """The prompt a real CLI entry point hands the engineer.
+
+    ``run_loop`` runs unpatched, because that is where the block is
+    built. Only the agent is replaced, and it is handed the finished
+    prompt, so what is asserted is what the command actually produces.
+    """
+    agent = _PromptCapturingAgent()
+    runner = CliRunner()
+    with (
+        patch("kstrl.cli.get_agent", return_value=agent),
+        patch("kstrl.feature_cmd.get_agent", return_value=agent),
+        patch("kstrl.cli._check_agent_preflight"),
+    ):
+        runner.invoke(cli, args, catch_exceptions=False)
+    assert agent.prompts, "no engineer prompt was built"
+    return agent.prompts[0]
+
+
+def _write_feature_prd(root: Path) -> None:
+    feature_dir = root / "scripts" / "kstrl" / "feature" / "demo"
+    feature_dir.mkdir(parents=True, exist_ok=True)
+    # ks feature refuses to start without one.
+    (root / "scripts" / "kstrl" / "codebase_map.md").write_text("# map\n")
+    (feature_dir / "prd.json").write_text(
+        json.dumps(
+            {
+                "branchName": "feat/demo",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Demo",
+                        "acceptanceCriteria": ["AC"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
+            }
+        )
+    )
+
+
+def _engineer_prompt(root: Path, verify_config: VerifyConfig | None = None) -> str:
+    """The prompt the engineer was handed.
+
+    ``verify_config=None`` is run_loop's own default and means "no gate
+    runs", so it is what the no-verification entry points produce.
+    """
     config = _project(root)
     agent = _PromptCapturingAgent()
     result = run_loop(
@@ -101,7 +149,6 @@ def _engineer_prompt(
         agent,  # type: ignore[arg-type]
         root,
         verify_config=verify_config,
-        skip_verification=skip_verification,
     )
     assert result.completed is True
     assert agent.prompts
@@ -311,53 +358,6 @@ class TestScrubStaleVerifyCommands:
 
 
 # ---------------------------------------------------------------------------
-# ks init no longer writes a second copy
-# ---------------------------------------------------------------------------
-
-
-class TestGeneratedClaudeMd:
-    def _generated(self) -> str:
-        return _generate_claude_md(
-            {"name": "demo", "language": "Python", "framework": "FastAPI"},
-        )
-
-    def test_it_states_no_verification_command(self) -> None:
-        generated = self._generated()
-        for label in ("**Test**", "**Typecheck**", "**Lint**"):
-            assert label not in generated
-
-    def test_none_of_the_three_wrong_literals_survive(self) -> None:
-        generated = self._generated()
-        for literal in (
-            "pytest tests/ -v --tb=short",
-            "mypy src/ --strict",
-            "ruff check src/",
-        ):
-            assert literal not in generated
-
-    def test_it_still_tells_a_human_where_verification_lives(self) -> None:
-        generated = self._generated()
-        assert "## Verification" in generated
-        assert "[verify]" in generated
-        assert "test_command" in generated
-
-    def test_the_proposals_anchor_heading_is_untouched(self) -> None:
-        """proposals.py:194 errors when this literal heading is absent."""
-        assert "## Agent Learnings" in self._generated()
-
-    def test_a_scrub_of_a_freshly_generated_file_finds_nothing_to_do(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The end state: init's own output cannot diverge, because it
-        states nothing that could."""
-        scrubbed = scrub_stale_verify_commands(
-            self._generated(),
-            resolve_verify_commands(VerifyConfig(), tmp_path),
-        )
-        assert scrubbed.divergences == []
-
-
 # ---------------------------------------------------------------------------
 # What the engineer is actually handed
 # ---------------------------------------------------------------------------
@@ -365,7 +365,7 @@ class TestGeneratedClaudeMd:
 
 class TestEngineerPromptCarriesTheGateCommands:
     def test_the_block_is_injected_without_a_claude_md(self, tmp_path: Path) -> None:
-        prompt = _engineer_prompt(tmp_path)
+        prompt = _engineer_prompt(tmp_path, VerifyConfig())
         assert DEFAULT_TEST_COMMAND in prompt
         assert DEFAULT_LINT_COMMAND in prompt
         assert "STORY-PROMPT-BODY" in prompt
@@ -393,15 +393,9 @@ class TestEngineerPromptCarriesTheGateCommands:
         assert "npm run test" in prompt
         assert "npm run check" in prompt
 
-    def test_kstrl_toml_is_read_when_no_config_is_passed(self, tmp_path: Path) -> None:
-        (tmp_path / "kstrl.toml").write_text(
-            f'[verify]\ntest_command = "{POLYGLOT_TEST}"\n',
-        )
-        assert POLYGLOT_TEST in _engineer_prompt(tmp_path)
-
     def test_a_legacy_claude_md_cannot_contradict_the_gate(self, tmp_path: Path) -> None:
         (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        prompt = _engineer_prompt(tmp_path)
+        prompt = _engineer_prompt(tmp_path, VerifyConfig())
         # The stale instructions are gone from what the agent reads...
         assert "ruff check src/" not in prompt
         assert "mypy src/ --strict" not in prompt
@@ -414,7 +408,7 @@ class TestEngineerPromptCarriesTheGateCommands:
     def test_the_file_on_disk_is_never_rewritten(self, tmp_path: Path) -> None:
         claude_md = tmp_path / "CLAUDE.md"
         claude_md.write_text(_LEGACY_CLAUDE_MD)
-        _engineer_prompt(tmp_path)
+        _engineer_prompt(tmp_path, VerifyConfig())
         assert claude_md.read_text() == _LEGACY_CLAUDE_MD
 
     def test_each_divergence_is_reported_to_the_operator(
@@ -423,7 +417,7 @@ class TestEngineerPromptCarriesTheGateCommands:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
-        _engineer_prompt(tmp_path)
+        _engineer_prompt(tmp_path, VerifyConfig())
         # PlainUI writes to stderr.
         warnings = capsys.readouterr().err
         assert "uv run ruff check src/" in warnings
@@ -437,23 +431,20 @@ class TestEngineerPromptCarriesTheGateCommands:
         (tmp_path / "CLAUDE.md").write_text(
             f"## Verification Commands\n- **Lint**: `{DEFAULT_LINT_COMMAND}`\n",
         )
-        prompt = _engineer_prompt(tmp_path)
+        prompt = _engineer_prompt(tmp_path, VerifyConfig())
         assert f"- **Lint**: `{DEFAULT_LINT_COMMAND}`" in prompt
         assert "Dropping the stale line" not in capsys.readouterr().err
 
 
 class TestBuildProjectContext:
-    def test_it_reads_the_projects_own_config_when_given_none(
+    def test_the_caller_config_is_the_only_config_consulted(
         self,
         tmp_path: Path,
     ) -> None:
-        (tmp_path / "kstrl.toml").write_text('[verify]\nlint_command = "eslint ."\n')
-        context = build_project_context(tmp_path, PlainUI(no_color=True))
-        assert "eslint ." in context
-
-    def test_an_explicit_config_beats_the_projects_file(self, tmp_path: Path) -> None:
-        """A CLI --lint-command or an uncommitted edit lives only in the
-        parent, so the parent's answer has to win."""
+        """It never re-reads kstrl.toml. A CLI --lint-command or an
+        uncommitted edit lives only in the parent, and the parent's
+        fallback is VerifyConfig() rather than a reload, so re-reading
+        here would state a command the gate will not run."""
         (tmp_path / "kstrl.toml").write_text('[verify]\nlint_command = "eslint ."\n')
         context = build_project_context(
             tmp_path,
@@ -463,39 +454,34 @@ class TestBuildProjectContext:
         assert "ruff check --preview ." in context
         assert "eslint ." not in context
 
-    def test_skip_verification_states_no_commands_at_all(self, tmp_path: Path) -> None:
-        """--no-verify means no gate runs, so claiming one would is the
-        same species of untruth this issue is about."""
+    def test_no_gate_means_no_commands_are_stated(self, tmp_path: Path) -> None:
+        """None is the default and means no mechanical gate runs, so
+        claiming one would is the same species of untruth this issue is
+        about. The CLAUDE.md context still goes through."""
         (tmp_path / "CLAUDE.md").write_text("# CLAUDE.md\n\nprose\n")
-        context = build_project_context(
-            tmp_path,
-            PlainUI(no_color=True),
-            VerifyConfig(),
-            skip_verification=True,
-        )
+        context = build_project_context(tmp_path, PlainUI(no_color=True))
         assert "prose" in context
         assert DEFAULT_TEST_COMMAND not in context
         assert "Verification Commands (resolved by kstrl)" not in context
 
-    def test_skip_verification_with_no_claude_md_yields_no_context(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        assert (
-            build_project_context(
-                tmp_path,
-                PlainUI(no_color=True),
-                skip_verification=True,
-            )
-            == ""
-        )
+    def test_no_gate_and_no_claude_md_yields_no_context(self, tmp_path: Path) -> None:
+        assert build_project_context(tmp_path, PlainUI(no_color=True)) == ""
 
     def test_the_loop_omits_the_separator_when_there_is_no_context(
         self,
         tmp_path: Path,
     ) -> None:
-        prompt = _engineer_prompt(tmp_path, skip_verification=True)
-        assert prompt == "STORY-PROMPT-BODY"
+        assert _engineer_prompt(tmp_path) == "STORY-PROMPT-BODY"
+
+    def test_a_stale_claude_md_is_not_scrubbed_when_no_gate_runs(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Nothing to reconcile against: with no gate there is no
+        resolved command that the file could contradict."""
+        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
+        context = build_project_context(tmp_path, PlainUI(no_color=True))
+        assert "uv run ruff check src/" in context
 
 
 class TestFactoryForwardsItsResolvedConfig:
@@ -538,10 +524,120 @@ class TestFactoryForwardsItsResolvedConfig:
         passed = VerifyConfig(test_command=POLYGLOT_TEST)
         assert self._forwarded(tmp_path, verify_config=passed)["verify_config"] is passed
 
-    def test_the_skip_flag_reaches_the_loop(self, tmp_path: Path) -> None:
-        assert self._forwarded(tmp_path, skip_verification=True)["skip_verification"] is True
+    def test_it_defaults_to_no_gate(self, tmp_path: Path) -> None:
+        """A caller that names no gate gets the fail-safe: silence, not
+        a claim about commands nothing will run."""
+        assert self._forwarded(tmp_path)["verify_config"] is None
 
-    def test_both_default_off(self, tmp_path: Path) -> None:
-        forwarded = self._forwarded(tmp_path)
-        assert forwarded["verify_config"] is None
-        assert forwarded["skip_verification"] is False
+
+class TestEngineerVerifyConfigHelper:
+    """One resolver for "what does Phase 1 run with", used by the gate
+    (``pipeline._phase_verify``) and by the engineer submit, so the two
+    cannot answer it differently (#261).
+
+    Methods on FactoryConfig rather than free functions taking the two
+    fields: the coupling is the point, and unpacking them at each call
+    site made ``(cfg.verify_config, False)`` a legal miscall."""
+
+    def test_none_resolves_to_bare_defaults_not_a_disk_reload(self) -> None:
+        """``verify_config=None`` has always meant "use the defaults"
+        on FactoryConfig. Re-reading kstrl.toml here instead would make
+        the prompt state a command the gate will not run."""
+        assert FactoryConfig().resolved_verify_config() == VerifyConfig()
+
+    def test_an_explicit_config_passes_through_untouched(self) -> None:
+        config = VerifyConfig(test_command=POLYGLOT_TEST)
+        assert FactoryConfig(verify_config=config).resolved_verify_config() is config
+
+    def test_the_engineer_is_told_nothing_when_phase_1_is_off(self) -> None:
+        config = FactoryConfig(verify_config=VerifyConfig(), skip_verification=True)
+        assert config.engineer_verify_config() is None
+
+    def test_otherwise_the_engineer_gets_what_the_gate_gets(self) -> None:
+        config = VerifyConfig(lint_command="ruff check kstrl/")
+        assert FactoryConfig(verify_config=config).engineer_verify_config() is config
+
+    def test_the_pipeline_and_the_engineer_agree_on_the_default(self) -> None:
+        """The exact divergence this pairing exists to prevent."""
+        config = FactoryConfig()
+        assert config.engineer_verify_config() == config.resolved_verify_config()
+
+
+class TestNoVerificationEntryPoints:
+    """`ks understand` and `ks feature` run no mechanical verification at
+    all, so the engineer must not be told a gate will check its work.
+
+    Before the fail-safe default, an `ks understand` iteration whose
+    allowed paths permit only the codebase map was instructed to run the
+    whole test suite plus mypy plus ruff on every pass.
+    """
+
+    def test_run_loops_default_states_no_commands(self, tmp_path: Path) -> None:
+        """Every call site that does not name a gate inherits this."""
+        prompt = _engineer_prompt(tmp_path)
+        assert DEFAULT_TEST_COMMAND not in prompt
+        assert DEFAULT_LINT_COMMAND not in prompt
+
+    def test_ks_understand_states_no_commands(self, tmp_path: Path) -> None:
+        """Driven through the real CLI. Its allowed paths permit only
+        the codebase map, so instructing it to run the suite is minutes
+        and tokens spent on a claim that is false for that command."""
+        prompt = _prompt_from_cli(["understand", "--root", str(tmp_path)])
+        assert DEFAULT_TEST_COMMAND not in prompt
+        assert DEFAULT_LINT_COMMAND not in prompt
+        assert "Verification Commands (resolved by kstrl)" not in prompt
+
+    def test_ks_feature_states_no_commands(self, tmp_path: Path) -> None:
+        _write_feature_prd(tmp_path)
+        prompt = _prompt_from_cli(
+            [
+                "feature",
+                "--root",
+                str(tmp_path),
+                "--prd",
+                "scripts/kstrl/feature/demo/prd.json",
+                "--understand-iterations",
+                "1",
+                "--branch",
+                "",
+            ]
+        )
+        assert DEFAULT_TEST_COMMAND not in prompt
+        assert "Verification Commands (resolved by kstrl)" not in prompt
+
+
+class TestParentReportsDivergence:
+    """The migration warning has to reach the terminal the operator is
+    watching. The worker's copy goes to that component's engineer.jsonl,
+    and in pool mode nothing mirrors it to the parent.
+    """
+
+    def _warn(self, root: Path, config: FactoryConfig | None = None) -> str:
+        out = io.StringIO()
+        _warn_claude_md_divergence(
+            root,
+            config or FactoryConfig(),
+            PlainUI(no_color=True, file=out),
+        )
+        return out.getvalue()
+
+    def test_it_names_both_sides_before_any_spend(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
+        out = self._warn(tmp_path)
+        assert "uv run ruff check src/" in out
+        assert DEFAULT_LINT_COMMAND in out
+
+    def test_it_says_nothing_when_claude_md_agrees(self, tmp_path: Path) -> None:
+        (tmp_path / "CLAUDE.md").write_text(
+            f"- **Lint**: `{DEFAULT_LINT_COMMAND}`\n",
+        )
+        assert self._warn(tmp_path) == ""
+
+    def test_it_says_nothing_without_a_claude_md(self, tmp_path: Path) -> None:
+        assert self._warn(tmp_path) == ""
+
+    def test_it_says_nothing_when_phase_1_is_off(self, tmp_path: Path) -> None:
+        """No gate, so there is no divergence to report."""
+        (tmp_path / "CLAUDE.md").write_text(_LEGACY_CLAUDE_MD)
+        config = FactoryConfig(verify_config=VerifyConfig(), skip_verification=True)
+        assert self._warn(tmp_path, config) == ""

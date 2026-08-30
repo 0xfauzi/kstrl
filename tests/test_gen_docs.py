@@ -15,6 +15,13 @@ from types import ModuleType
 
 import pytest
 
+from kstrl.verify import (
+    DEFAULT_LINT_COMMAND,
+    DEFAULT_TEST_COMMAND,
+    DEFAULT_TYPECHECK_COMMAND,
+    SCOPED_TYPECHECK_COMMAND,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -182,3 +189,22 @@ class TestSectionSpecShape:
                 assert field_name in field_names, (
                     f"[{spec.section}] {key} maps to missing field {field_name}"
                 )
+
+
+class TestVerifyDefaultsAreNotRestated:
+    """#261: the config reference states the gate defaults an operator
+    reads when deciding whether to override, and it had drifted - it
+    claimed `uv run ruff check` without the path the gate passes, and
+    named only the scoped branch of the typecheck default. They are
+    imported from verify.py now, so they cannot drift again."""
+
+    def test_the_lint_default_is_stated_exactly(self, gen_docs: ModuleType) -> None:
+        assert DEFAULT_LINT_COMMAND in gen_docs.KEY_DESCRIPTIONS[("verify", "lint_command")]
+
+    def test_the_test_default_is_stated_exactly(self, gen_docs: ModuleType) -> None:
+        assert DEFAULT_TEST_COMMAND in gen_docs.KEY_DESCRIPTIONS[("verify", "test_command")]
+
+    def test_both_typecheck_branches_are_stated(self, gen_docs: ModuleType) -> None:
+        note = gen_docs.KEY_DESCRIPTIONS[("verify", "typecheck_command")]
+        assert SCOPED_TYPECHECK_COMMAND in note
+        assert DEFAULT_TYPECHECK_COMMAND in note

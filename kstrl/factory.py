@@ -111,7 +111,12 @@ from kstrl.security import (
 from kstrl.shutdown import StopController
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.bridge import EventBridgeUI
-from kstrl.verify import VerifyConfig, run_mechanical_verification
+from kstrl.verify import (
+    VerifyConfig,
+    resolve_verify_commands,
+    run_mechanical_verification,
+    scrub_project_claude_md,
+)
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -313,6 +318,30 @@ class FactoryConfig:
     # run_factory loads PolicyConfig.load(root_dir) - toml [policy] section
     # + env. Opt-in ([policy].enabled = false): existing runs unchanged.
     policy_config: PolicyConfig | None = None
+
+    def resolved_verify_config(self) -> VerifyConfig:
+        """The VerifyConfig Phase 1 runs with (#261).
+
+        ``verify_config=None`` has always meant "use the defaults" here
+        (``skip_verification`` is the separate, explicit skip sentinel),
+        so the fallback is a bare ``VerifyConfig()`` and NOT a reload
+        from disk. ``pipeline._phase_verify`` calls this, and so does
+        ``engineer_verify_config`` below, which is what stops the gate
+        and the engineer prompt answering the question two ways.
+        """
+        return self.verify_config or VerifyConfig()
+
+    def engineer_verify_config(self) -> VerifyConfig | None:
+        """What the engineer may be told Phase 1 will run, or None.
+
+        None when ``--no-verify`` disabled Phase 1: no gate runs, so
+        naming commands would claim a check that never happens.
+
+        A method rather than a free function taking the two fields: the
+        coupling between them is the point, and unpacking them at each
+        call site made ``(cfg.verify_config, False)`` a legal miscall.
+        """
+        return None if self.skip_verification else self.resolved_verify_config()
 
     def __post_init__(self) -> None:
         # R10.3: catch a bad set-point mode wherever the config is
@@ -1455,6 +1484,34 @@ def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
     return True
 
 
+def _warn_claude_md_divergence(
+    root_dir: Path,
+    factory_config: FactoryConfig,
+    ui: UI,
+) -> None:
+    """Tell the OPERATOR that CLAUDE.md disagrees with the gate (#261).
+
+    The worker does the same scrub when it builds the engineer prompt,
+    but its ``ui`` is an EventBridgeUI writing to that component's
+    engineer.jsonl, and in pool mode ``live_line`` is None, so nothing
+    reaches the terminal. The whole point of the warning is that a human
+    deletes the stale section, so it has to be said once, here, on the
+    surface they are actually watching. Never refuses: a stale CLAUDE.md
+    is already handled correctly for the agent.
+    """
+    verify_config = factory_config.engineer_verify_config()
+    if verify_config is None:
+        return
+    scrubbed = scrub_project_claude_md(
+        root_dir,
+        resolve_verify_commands(verify_config, root_dir),
+    )
+    if scrubbed is None:
+        return
+    for divergence in scrubbed.divergences:
+        ui.warn(f"  {divergence}")
+
+
 def _run_preflights(
     manifest: Manifest,
     root_dir: Path,
@@ -1475,6 +1532,7 @@ def _run_preflights(
     to worktree mode: without worktrees the factory neither creates
     branches nor worktree dirs.
     """
+    _warn_claude_md_divergence(root_dir, factory_config, ui)
     if _report_preflight(
         ui,
         "components cannot pass the scope check",
@@ -1658,7 +1716,6 @@ def _run_component(
     stop_check: Callable[[], bool] | None = None,
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
-    skip_verification: bool = False,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -1688,12 +1745,13 @@ def _run_component(
     can halt itself BETWEEN iterations instead of waiting for the
     parent's next phase boundary. None disables the in-loop check.
 
-    #261: ``verify_config`` / ``skip_verification`` are forwarded to the
-    loop so the engineer is told exactly what Phase 1 will run. They must
-    be the SAME pair ``_phase_verify`` reads: a CLI override or an
-    uncommitted kstrl.toml edit lives only in the parent, and the
-    parent's own fallback is ``VerifyConfig()`` rather than a reload from
-    disk. With ``skip_verification`` the loop states no commands at all.
+    #261: ``verify_config`` is forwarded to the loop so the engineer is
+    told exactly what Phase 1 will run. It must be the SAME object
+    ``_phase_verify`` reads, which is why both come from
+    ``engineer_verify_config``: a CLI override or an uncommitted
+    kstrl.toml edit lives only in the parent, and the parent's fallback
+    is ``VerifyConfig()`` rather than a reload from disk. None means no
+    gate runs, and the loop then states no commands at all.
 
     ``progress_file_str`` is None unless the operator explicitly
     configured a progress path; None means "derive it next to this
@@ -1953,7 +2011,6 @@ def _run_component(
             guard_base_ref=base_branch,
             guard_ignored_paths=harness_paths,
             verify_config=verify_config,
-            skip_verification=skip_verification,
         )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
@@ -3186,6 +3243,10 @@ def _run_factory_locked(
             ),
         )
 
+    # #261: run-invariant, so it is resolved once here rather than per
+    # component. None when Phase 1 is off.
+    engineer_verify = factory_config.engineer_verify_config()
+
     def _run_scheduling_pass() -> None:
         """Run ready components until nothing is PENDING-and-ready.
 
@@ -3288,6 +3349,7 @@ def _run_factory_locked(
                         )
                     )
                     args = _submit_args(comp, wt_path)
+
                     # R8 (P2-c): the usage snapshot is attempt-scoped by
                     # deletion, and the deletion happens HERE - before
                     # the worker exists - so an attempt cancelled during
@@ -3327,11 +3389,7 @@ def _run_factory_locked(
                             # above) and a positional extra silently
                             # lands on redirect_output.
                             base_branch=manifest.base_branch,
-                            # #261: byte-for-byte the pair _phase_verify
-                            # reads (pipeline.py), so the engineer prompt
-                            # cannot name a command Phase 1 will not run.
-                            verify_config=factory_config.verify_config or VerifyConfig(),
-                            skip_verification=factory_config.skip_verification,
+                            verify_config=engineer_verify,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -3354,9 +3412,7 @@ def _run_factory_locked(
                                 # Same unprovable-*args limitation the
                                 # inline branch annotates above.
                                 base_branch=manifest.base_branch,  # type: ignore[misc]
-                                # #261: see the inline branch.
-                                verify_config=factory_config.verify_config or VerifyConfig(),
-                                skip_verification=factory_config.skip_verification,
+                                verify_config=engineer_verify,
                             ),
                         )
                     running_futures[future] = comp.id

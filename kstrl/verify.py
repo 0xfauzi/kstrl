@@ -582,10 +582,14 @@ DEFAULT_TYPECHECK_COMMAND = "uv run mypy ."
 #: scoped mypy via ``[tool.mypy] files`` or ``packages``.
 SCOPED_TYPECHECK_COMMAND = "uv run mypy"
 
-# The engineer-prompt block. Deliberately not named ``*_PROMPT``: it is
-# run-time context assembled from the operator's config, not an
-# adversarial prompt body under the H3 version/hash snapshot.
-_PROMPT_SECTION_TEMPLATE = """\
+# Harness-authored instruction text injected into the engineer prompt on
+# every iteration, so it is enrolled in the H3 version/hash snapshot
+# (tests/test_prompt_versions.py) exactly like DEFAULT_PROMPT. Only the
+# TEMPLATE is snapshotted: the three command values are the operator's,
+# interpolated at run time, and H3 cannot and should not pin those.
+VERIFY_COMMANDS_PROMPT_VERSION = "1.0.0"
+
+VERIFY_COMMANDS_PROMPT = """\
 # Verification Commands (resolved by kstrl)
 
 These are the exact commands kstrl's mechanical verification gate runs on your
@@ -678,7 +682,7 @@ class ResolvedVerifyCommands:
         scaffolded before #261 may also be shown a stale CLAUDE.md list,
         and has to know which one binds.
         """
-        return _PROMPT_SECTION_TEMPLATE.format(
+        return VERIFY_COMMANDS_PROMPT.format(
             test=self.test,
             typecheck=self.typecheck,
             lint=self.lint,
@@ -765,6 +769,27 @@ def scrub_stale_verify_commands(
             f"kstrl.toml instead."
         )
     return ScrubbedProjectContext(text="".join(kept), divergences=divergences)
+
+
+def scrub_project_claude_md(
+    root: Path,
+    commands: ResolvedVerifyCommands,
+) -> ScrubbedProjectContext | None:
+    """``scrub_stale_verify_commands`` on ``root``'s CLAUDE.md, or None.
+
+    None when the project has no readable CLAUDE.md. One place decides
+    where the file lives and what an unreadable one means, because two
+    callers need the same answer for different reasons: the engineer
+    loop wants ``.text`` (the copy that goes into the prompt) and the
+    factory preflight wants ``.divergences`` (what to tell the
+    operator), and they had drifted into two different missing-file
+    policies (#261).
+    """
+    try:
+        claude_md = (root / "CLAUDE.md").read_text()
+    except OSError:
+        return None
+    return scrub_stale_verify_commands(claude_md, commands)
 
 
 def check_test_suite(
