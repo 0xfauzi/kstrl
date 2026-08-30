@@ -35,6 +35,7 @@ from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import (
+    ConfigError,
     KstrlConfig,
     _parse_paths,
     reconcile_progress_config,
@@ -508,9 +509,91 @@ def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+# The commands that must NOT be preflighted, and why each one is not a
+# hole in the guarantee:
+#
+# - `ks init` WRITES a kstrl.toml, including over a broken one. Refusing
+#   to run it because the file it is about to replace does not parse
+#   takes away the tool the operator recovers with.
+# - `ks config show` exists to EXPLAIN a broken config, and renders the
+#   failure itself with the row that caused it. Same reason.
+# - `ks sense` already does exactly what this preflight does, at its own
+#   entry, before any measurement - and does it BETTER, through a
+#   documented machine contract: exit 2 (not 1) and a JSON error
+#   document on stdout for `--json`. Preflighting it would replace a
+#   contract a script can read with one it cannot.
+# - `ks serve` has the same documented exit 2, and calls the preflight
+#   ITSELF (see the `serve` body) so the daemon still gets the whole
+#   check. Exempt from the seam, not from the guarantee.
+#
+# Matched on the command's name and on its parents', so `ks config show`
+# is covered by "config".
+_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "serve"})
+
+
+def _preflight_root(ctx: click.Context) -> Path:
+    """The root the command is about to use, derived before it runs.
+
+    Reuses ``_resolve_root`` - the same three inputs, in the same
+    precedence - so the file the preflight validates is the file the
+    command will load. A command with none of them gets the cwd, which
+    is what those commands do themselves.
+    """
+    params = ctx.params
+
+    def _as_path(name: str, env_var: str) -> Path | None:
+        value = params.get(name) or os.environ.get(env_var)
+        return Path(value) if value else None
+
+    root = params.get("root")
+    return _resolve_root(
+        Path(root) if root else None,
+        _as_path("prompt", "PROMPT_FILE"),
+        _as_path("prd", "PRD_FILE"),
+    )
+
+
+class _KstrlCommand(click.Command):
+    """Every command, with one guarantee: the configuration is resolved
+    before the command body constructs anything.
+
+    THIS seam and not ``_KstrlGroup.invoke``, which is where the error is
+    caught: at group level click has parsed the group's own arguments but
+    not the subcommand's, so ``--root`` is not known yet and the
+    preflight would validate the wrong file whenever an operator pointed
+    a command at another checkout. ``Command.invoke`` runs after the
+    subcommand's parameters are parsed and before its callback, which is
+    the first moment both facts are available - the root, and that
+    nothing has been built or paid for yet.
+
+    Installed through ``_KstrlGroup.command_class`` rather than on each
+    command, for the reason the group gives below: a guarantee that every
+    entry point has to remember is one a later entry point will forget.
+    """
+
+    def invoke(self, ctx: click.Context) -> Any:
+        from kstrl.config_preflight import preflight_config
+
+        if not self._exempt(ctx):
+            preflight_config(
+                _preflight_root(ctx),
+                warn=lambda message: click.echo(f"warning: {message}", err=True),
+            )
+        return super().invoke(ctx)
+
+    @staticmethod
+    def _exempt(ctx: click.Context) -> bool:
+        node: click.Context | None = ctx
+        while node is not None:
+            if node.command.name in _PREFLIGHT_EXEMPT:
+                return True
+            node = node.parent
+        return False
+
+
 class _KstrlGroup(click.Group):
-    """The CLI group, with one guarantee: a rejected budget ceiling is
-    reported, never raised.
+    """The CLI group, with two guarantees: a rejected budget ceiling and
+    unusable configuration are reported, never raised.
 
     ``BudgetConfigError`` is thrown deep inside config loading, which
     happens in `factory`, `run`, `retry`, the config report and the
@@ -521,14 +604,28 @@ class _KstrlGroup(click.Group):
     it HERE means no entry point can leak one, including entry points
     added later.
 
+    ``ConfigError`` is the same contract for the same reason (#272).
+    Before it, a typo's blast radius depended on which section it was in
+    and which command was run: ``KSTRL_MUTATION_THRESHOLD=many`` and
+    ``KSTRL_SECURITY_TIMEOUT=many`` both left a raw ``ValueError``
+    traceback out of `ks factory`, and a bad ``[linear]`` value aborted
+    `ks decompose` only after the architect had been paid for.
+    ``command_class`` puts the check that raises it in front of every
+    command body; this catches what it raises.
+
     Exit code 1 with an ``error:`` line, matching what `config show`
     already did for the same defect - one class of failure, one contract.
     """
 
+    command_class = _KstrlCommand
+    #: ``type`` is click's "same class as this group", so `ks config`,
+    #: `ks queue` and every later subgroup inherit ``command_class``.
+    group_class = type
+
     def invoke(self, ctx: click.Context) -> Any:
         try:
             return super().invoke(ctx)
-        except BudgetConfigError as exc:
+        except (BudgetConfigError, ConfigError) as exc:
             click.echo(f"error: {exc}", err=True)
             sys.exit(1)
 
@@ -3586,7 +3683,17 @@ def evolve(
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
     # R2.1: honor [evolution] in kstrl.toml + env, anchored to --root.
-    evo_config = EvolutionConfig.load(root_dir)
+    try:
+        evo_config = EvolutionConfig.load(root_dir)
+    except (ValueError, OSError) as exc:
+        # The entry preflight classifies [evolution] as DEGRADING and
+        # warns rather than stopping, because everywhere else the journal
+        # is an optional audit trail attached to work that is about
+        # something else. Here it is the work, so the same value is
+        # fatal - and this is the guard that keeps that from arriving as
+        # a traceback two lines after the preflight said "continuing".
+        ui_impl.err(f"[evolution] configuration is unusable: {exc}")
+        sys.exit(1)
 
     if not evo_config.enabled:
         ui_impl.err("Evolution is disabled in config")
@@ -4793,6 +4900,7 @@ def serve(
     Only infrastructure failures are retried, and only with positive
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
+    from kstrl.config_preflight import preflight_config
     from kstrl.serve import (
         REQUIRE_TIMEOUT_ENV,
         ServeConfig,
@@ -4844,6 +4952,16 @@ def serve(
         sys.exit(0)
 
     try:
+        # The WHOLE configuration, not just [serve]. This daemon spawns
+        # `ks factory` children, each of which would fail its own entry
+        # preflight and be classified from its exit code as a spec
+        # failure - so one typo in [verify] would poison queue items one
+        # after another until the breaker tripped, and the operator
+        # would be reading poison reports instead of a parse error.
+        # Exit 2 (this command's documented "cannot run" code) rather
+        # than the entry seam's exit 1, which is why `serve` is in
+        # _PREFLIGHT_EXEMPT: it does the same check, better.
+        preflight_config(root_dir, warn=ui_impl.warn)
         config = ServeConfig.load(root_dir)
     except (ServeError, ValueError) as exc:
         ui_impl.err(str(exc))

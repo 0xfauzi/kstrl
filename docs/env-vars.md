@@ -9,6 +9,17 @@ Every config dataclass has a `from_env()` classmethod that reads env vars, and a
 
 Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 
+When is a bad value caught? At command entry, before the command builds
+or spends anything. Every section below is resolved once by
+`kstrl/config_preflight.py`, and a value that will not parse stops the
+command with an `error:` line naming the section, the key or environment
+variable, and the value (exit 1). `[evolution]` is the one section that
+warns and continues, because the journal is an optional audit trail;
+losing it costs the record and nothing else. `ks init`, `ks config show`,
+`ks sense` and `ks serve` do not go through that seam: the first two are
+how you repair or read a broken config, and the last two run the same
+check themselves and report it as exit 2.
+
 ## Global / kstrlConfig (`[agent]`, `[run]`, `[paths]`, `[git]`, `[ui]`)
 
 | Env var | Type | Default | Notes |

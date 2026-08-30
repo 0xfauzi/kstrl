@@ -447,13 +447,28 @@ def resolve_config_file(root_dir: Path) -> Path:
     return root_dir / CONFIG_FILE_NAME
 
 
+class ConfigError(ValueError):
+    """Configuration the operator has to fix before anything can run.
+
+    A ``ValueError`` SUBCLASS, deliberately: every loader in this package
+    has always raised ``ValueError`` for a rejected value, and several
+    callers catch exactly that on purpose (``ks config show``,
+    ``EvolutionConfig.load_or_none``, the TUI config screen). Narrowing
+    the type would silently step outside those guards. What the subclass
+    adds is a name the CLI can catch at its entry seam and render as an
+    ``error:`` line, the way ``BudgetConfigError`` (also a ValueError)
+    already is - so a typo in kstrl.toml stops being an unhandled
+    traceback from wherever the run happened to reach first (#272).
+    """
+
+
 def _load_toml(path: Path) -> dict[str, Any]:
-    """Load and parse a TOML file. Raises ValueError on malformed input."""
+    """Load and parse a TOML file. Raises ConfigError on malformed input."""
     try:
         with open(path, "rb") as f:
             return tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"Invalid TOML in {path}: {exc}") from exc
+        raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
 
 
 def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
@@ -461,9 +476,10 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
 
     Shared by every config dataclass that has a corresponding
     ``[section]`` in the canonical kstrl.toml. Returns ``{}`` when the
-    file or the section is absent; raises ``ValueError`` with a clear
-    message when the file is malformed so every loader behaves
-    consistently. Sub-section keys that are not dicts (e.g. someone
+    file or the section is absent; raises :class:`ConfigError` (a
+    ``ValueError``) with a clear message when the file is malformed so
+    every loader behaves consistently. Sub-section keys that are not
+    dicts (e.g. someone
     wrote ``factory = "hi"`` instead of ``[factory]``) return ``{}``
     rather than crashing later in the per-key cast.
     """

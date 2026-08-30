@@ -13,6 +13,27 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `kstrl.toml` and the `KSTRL_*` environment are now resolved once, at
+  command entry, before a command constructs anything. They used to be
+  parsed lazily, by whichever config dataclass first needed its section,
+  so a typo failed at the first loader that reached it: on the decompose
+  path that is `LinearConfig.load`, which runs after the architect has
+  been invoked and paid for (measured at 119 to 210 seconds against a
+  frontier model on a real spec), and `KSTRL_MUTATION_THRESHOLD=many` or
+  `KSTRL_SECURITY_TIMEOUT=many` left a raw `ValueError` traceback out of
+  `ks factory`. The blast radius of a typo therefore depended on which
+  section it was in and which command was run. Every section is now
+  checked up front and the error names the section, the offending key or
+  environment variable, and its value. `[evolution]` is the one section
+  that warns and continues, because the journal is an optional audit
+  trail; every other section configures a gate, a budget, a boundary or
+  a destination, where substituting a default would measure the run with
+  something other than what the operator configured. `ks init`,
+  `ks config show`, `ks sense` and `ks serve` are exempt from the entry
+  seam: the first two are how an operator repairs or reads a broken
+  config, and the last two already run the same check themselves under
+  their own documented exit code 2 (#272).
+
 - Safe mode on the dashboard: six defects an independent review
   reproduced after the change merged. All three `dock: top` siblings
   reserved row zero and painted over each other, so the checkpoint
