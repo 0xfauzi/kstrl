@@ -37,6 +37,7 @@ from kstrl.verify import (
     DEFAULT_TEST_COMMAND,
     DEFAULT_TYPECHECK_COMMAND,
     SCOPED_TYPECHECK_COMMAND,
+    VERIFY_COMMANDS_PROMPT,
     ResolvedVerifyCommands,
     VerifyConfig,
     check_linter,
@@ -77,10 +78,11 @@ class _PromptCapturingAgent:
         yield COMPLETION_MARKER
 
 
-def _project(root: Path) -> KstrlConfig:
+def _project(root: Path, *, scaffold_prompt: bool = True) -> KstrlConfig:
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
-    (kstrl_dir / "prompt.md").write_text("STORY-PROMPT-BODY")
+    if scaffold_prompt:
+        (kstrl_dir / "prompt.md").write_text("STORY-PROMPT-BODY")
     (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}')
     return KstrlConfig(
         max_iterations=1,
@@ -135,13 +137,24 @@ def _write_feature_prd(root: Path) -> None:
     )
 
 
-def _engineer_prompt(root: Path, verify_config: VerifyConfig | None = None) -> str:
+def _engineer_prompt(
+    root: Path,
+    verify_config: VerifyConfig | None = None,
+    *,
+    scaffold_prompt: bool = True,
+) -> str:
     """The prompt the engineer was handed.
 
     ``verify_config=None`` is run_loop's own default and means "no gate
     runs", so it is what the no-verification entry points produce.
+
+    ``scaffold_prompt=False`` leaves no prompt.md, so run_loop falls back
+    to the harness DEFAULT_PROMPT. The stub body is right for the
+    assembly tests here; the fallback is what an un-customised project
+    actually runs, and is what tests/test_engineer_verify_instructions.py
+    asserts against.
     """
-    config = _project(root)
+    config = _project(root, scaffold_prompt=scaffold_prompt)
     agent = _PromptCapturingAgent()
     result = run_loop(
         config,
@@ -153,6 +166,17 @@ def _engineer_prompt(root: Path, verify_config: VerifyConfig | None = None) -> s
     assert result.completed is True
     assert agent.prompts
     return agent.prompts[0]
+
+
+def _block_is_injected(prompt: str) -> bool:
+    """Whether the resolved verification block itself reached the agent.
+
+    Searching for the bare heading text no longer answers that: since
+    #276 DEFAULT_PROMPT names the same string to point the engineer at
+    the block. As a markdown heading - line-initial, with its ``# `` -
+    it is only ever the block.
+    """
+    return f"\n{VERIFY_COMMANDS_PROMPT.splitlines()[0]}\n" in f"\n{prompt}"
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +609,7 @@ class TestNoVerificationEntryPoints:
         prompt = _prompt_from_cli(["understand", "--root", str(tmp_path)])
         assert DEFAULT_TEST_COMMAND not in prompt
         assert DEFAULT_LINT_COMMAND not in prompt
-        assert "Verification Commands (resolved by kstrl)" not in prompt
+        assert not _block_is_injected(prompt)
 
     def test_ks_feature_states_no_commands(self, tmp_path: Path) -> None:
         _write_feature_prd(tmp_path)
@@ -603,7 +627,7 @@ class TestNoVerificationEntryPoints:
             ]
         )
         assert DEFAULT_TEST_COMMAND not in prompt
-        assert "Verification Commands (resolved by kstrl)" not in prompt
+        assert not _block_is_injected(prompt)
 
 
 class TestParentReportsDivergence:

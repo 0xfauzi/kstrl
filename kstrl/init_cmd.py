@@ -19,8 +19,20 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.1.1"
+DEFAULT_PROMPT_VERSION = "1.2.0"
 
+# v1.2.0 (#276): step 9 defers to the verification block the harness
+# injects (verify.VERIFY_COMMANDS_PROMPT) instead of telling the agent to
+# find its own typecheck and test commands. #261 made
+# verify.resolve_verify_commands the only answer to "what does Phase 1
+# run" and injected it above this body every iteration, but step 9 still
+# told the agent to derive two of the three and never mentioned lint at
+# all - so a blocking `ruff check` failure was discovered by the gate
+# rather than by the agent, which costs a whole engineer iteration.
+# Step 14 carried a second copy of the same done-rule ("only after
+# tests/typecheck pass"), with the same lint omission, at the moment the
+# agent flips passes to true; it now refers to step 9 instead.
+#
 # The $prd_path / $progress_path / $codebase_map_path placeholders are
 # substituted by loop.run_loop (string.Template.safe_substitute) with the
 # per-component paths, so a decomposed component's agent reads the SAME
@@ -51,14 +63,16 @@ reviewer as already reading your diff while you write it.
    (verify only; do not switch)
 7. Pick the highest priority story where `passes` is `false` (lowest `priority` wins)
 8. Implement that ONE story (keep the change small and focused)
-9. Run feedback loops (Python + uv):
-   - Find the project's fastest typecheck and tests
-   - Use `uv run ...` to run them
-   - If the project has no typecheck/tests configured, add them (prefer `ruff` + `mypy`
-     or `pyright` + `pytest`)
-     and ensure they run fast and deterministically
-   - Do NOT mark the story as done unless typecheck AND tests pass. If they fail, fix and rerun;
-     only proceed when both are green.
+9. Run the verification commands:
+   - Run every command in the `Verification Commands (resolved by kstrl)` block
+     above, lint included, exactly as written. Do NOT derive your own or substitute
+     a narrower or broader variant (an added path, a `-k` filter, a dropped flag):
+     a command the gate will not run proves nothing.
+   - If that block is absent, no mechanical gate runs on this iteration. Verify in
+     proportion to what you changed.
+   - Do NOT mark the story as done until every command passes. If one fails because
+     the project has no such tooling configured, configure the tooling rather than
+     swapping the command.
 10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
    `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
    (skip if nothing new).
@@ -80,7 +94,7 @@ reviewer as already reading your diff while you write it.
     fail the mechanical check.
 13. Commit with message: `feat: [ID] - [Title]`
 14. Update `$prd_path`: set that story's `passes` to `true`
-    (only after tests/typecheck pass AND the self-critique is written)
+    (only after step 9's commands pass AND the self-critique is written)
 15. Append learnings to `$progress_path`
 
 ## PRD ambiguity
