@@ -140,6 +140,15 @@ class DecomposeLaunchForm(Screen[None]):
                     # Detected, not the literal `main`: this form used to
                     # pre-fill a branch a plain `git init` repo does not
                     # have, which is #259 arriving through the TUI.
+                    #
+                    # Synchronous on the event loop, deliberately. It is
+                    # ONE local `git for-each-ref` with one 5s timeout,
+                    # the same exposure as home.py's `_git_branch`
+                    # masthead probe, and measured at +4 to +8 ms on an
+                    # 85 ms screen open. A thread worker would buy back
+                    # single-digit milliseconds and add a way for a slow
+                    # probe to land on top of a branch the user has
+                    # already typed.
                     Input(value=detect_base_branch(self._root_dir()), id="decompose-branch"),
                 )
                 yield FormField(

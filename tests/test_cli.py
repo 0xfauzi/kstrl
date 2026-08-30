@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner, Result
@@ -486,14 +488,64 @@ class TestDetectBaseBranch:
     def test_stale_origin_head_is_demoted(self, tmp_path: Path) -> None:
         # origin/HEAD is only rewritten by an explicit `git remote
         # set-head`, so it survives a rename on the remote and can name
-        # a branch that no longer resolves. Verifying it before
-        # returning is what drops it to the rung below.
+        # a branch that no longer resolves. for-each-ref omits a
+        # symbolic ref whose target does not resolve, which is what
+        # drops it to the rung below.
         root = _repo_on(tmp_path, "master")
         (root / ".git" / "refs" / "remotes" / "origin").mkdir(parents=True)
         (root / ".git" / "refs" / "remotes" / "origin" / "HEAD").write_text(
             "ref: refs/remotes/origin/gone\n"
         )
         assert detect_base_branch(root) == "master"
+
+    @pytest.mark.parametrize("remote_default", ["release-2.0", "release/2.0"])
+    def test_origin_head_outside_the_candidate_set_still_wins(
+        self, tmp_path: Path, remote_default: str
+    ) -> None:
+        # The remote's answer does not have to be one of the four names
+        # we would otherwise guess, and it needs no confirming call:
+        # for-each-ref listed it, so its target resolves. The slashed
+        # case is here because %(symref) reports a full refname, and
+        # splitting it on the last "/" would answer "2.0".
+        upstream = _repo_on(tmp_path, remote_default, name="upstream")
+        clone = tmp_path / "clone"
+        spine_git("clone", "-q", str(upstream), str(clone), cwd=tmp_path)
+        spine_git("branch", "main", cwd=clone)
+        assert detect_base_branch(clone) == remote_default
+
+    def test_a_tag_is_not_a_base_branch(self, tmp_path: Path) -> None:
+        # A bare-name `rev-parse` resolves refs/tags before refs/heads,
+        # so a tag called `main` shadows the branch we mean. Only
+        # refs/heads/<name> and refs/remotes/origin/<name> are asked
+        # about, so the tag is invisible and `master` wins. The tag is
+        # `main` rather than a later candidate on purpose: `master` is
+        # hit at index 1, so tagging `develop` would never be consulted
+        # and the test would pass against the bug.
+        root = _repo_on(tmp_path, "master")
+        spine_git("tag", "main", cwd=root)
+        assert detect_base_branch(root) == "master"
+
+    def test_a_branch_below_a_candidate_name_does_not_count(self, tmp_path: Path) -> None:
+        # `git for-each-ref refs/heads/main` also matches
+        # `refs/heads/main/sub`; only an exact refname is a hit, so a
+        # repo with no `main` branch does not claim to have one. Built
+        # on `master` so the right answer is not the fallback, which
+        # would make a prefix-matching bug indistinguishable.
+        root = _repo_on(tmp_path, "master")
+        spine_git("branch", "main/sub", cwd=root)
+        assert detect_base_branch(root) == "master"
+
+    def test_detection_is_one_git_subprocess(self, tmp_path: Path) -> None:
+        # It runs on the Textual event loop when the decompose launch
+        # form composes, so the call count is the ceiling on how long
+        # the UI can freeze. One call, one timeout.
+        root = _repo_on(tmp_path, "release-2.0")  # the worst case: no candidate hits
+
+        with patch("kstrl.git.subprocess.run", wraps=subprocess.run) as run:
+            assert detect_base_branch(root) == "main"
+
+        assert run.call_count == 1
+        assert run.call_args.args[0][1] == "for-each-ref"
 
 
 class TestResolveBaseBranch:
