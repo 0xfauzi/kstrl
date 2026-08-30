@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, TextIO
 
-from kstrl.agents.base import UsageTotals, collect_usage, usage_coverage
+from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.autonomy import (
     AutonomyConfig,
@@ -2282,91 +2282,6 @@ def _expired_futures(
     return [f for f in running if not f.done() and f in deadlines and now >= deadlines[f]]
 
 
-# Rollup row order for the R3.1 usage table; phases outside this list
-# (future additions) sort after, alphabetically.
-_USAGE_PHASE_ORDER = ("engineer", "review", "security", "distill")
-
-
-def _format_usage_rollup(
-    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
-    run_usage: UsageTotals,
-) -> list[str]:
-    """Render the per-component, per-phase usage table (R3.1).
-
-    Token and cost columns are sums of CLI self-reports: codex reports
-    only a total (in/out columns stay 0), CustomAgent reports nothing.
-    Whenever some calls reported no usage the footer says so explicitly -
-    the totals are then lower bounds, not measurements (H4).
-
-    R8 (measured): the ``unreported_calls`` footer alone was not enough.
-    It fires only when a call reported NOTHING, so a cross-family
-    reviewer that reports tokens and no cost left it at 0 while
-    contributing $0 to a run whose cost total covered 8 of 13 calls -
-    the footer stayed silent on exactly the run it existed for. Each
-    axis now reports its own coverage, and names the roles that are
-    missing from it.
-    """
-    header = (
-        f"{'component':<24} {'phase':<10} {'calls':>5} "
-        f"{'tokens_in':>11} {'tokens_out':>11} {'tokens_total':>13} "
-        f"{'cost_usd':>9} {'time_s':>8}"
-    )
-    lines = [header]
-
-    def _phase_sort_key(phase: str) -> tuple[int, str]:
-        try:
-            return (_USAGE_PHASE_ORDER.index(phase), phase)
-        except ValueError:
-            return (len(_USAGE_PHASE_ORDER), phase)
-
-    def _row(label: str, phase: str, totals: UsageTotals) -> str:
-        # Each cell is gated by ITS OWN axis, never by known_calls (R8
-        # review finding 2). known_calls means only "reported
-        # something", so a cost-only invocation (known_calls=1,
-        # token_calls=0) printed `0 0 0` tokens while the footer said
-        # token coverage was EMPTY and the total was a lower bound - the
-        # row contradicted the footer directly under it.
-        #
-        # "-" means "no call in this row reported this figure", never
-        # "it was zero". Keyed on the call counters rather than on the
-        # totals so a genuinely reported 0 tokens / $0.0000 is not
-        # rendered as silence - the same distinction the ceilings make.
-        if totals.token_calls > 0:
-            tokens_in = f"{totals.input_tokens:,}"
-            tokens_out = f"{totals.output_tokens:,}"
-            tokens_total = f"{totals.total_tokens:,}"
-        else:
-            tokens_in = tokens_out = tokens_total = "-"
-        cost = f"{totals.cost_usd:.4f}" if totals.cost_calls > 0 else "-"
-        return (
-            f"{label:<24} {phase:<10} {totals.calls:>5} "
-            f"{tokens_in:>11} {tokens_out:>11} {tokens_total:>13} "
-            f"{cost:>9} {totals.duration_seconds:>8.0f}"
-        )
-
-    for comp_id in sorted(usage_meter):
-        phases = usage_meter[comp_id]
-        for phase in sorted(phases, key=_phase_sort_key):
-            lines.append(_row(comp_id, phase, phases[phase]))
-    lines.append(_row("TOTAL", "", run_usage))
-    if run_usage.unreported_calls > 0:
-        lines.append(
-            f"note: {run_usage.unreported_calls} of {run_usage.calls} "
-            "call(s) reported no token/cost data; token and cost totals "
-            "are lower bounds"
-        )
-    # Per-axis coverage, which the note above cannot express: a call can
-    # report tokens and no cost. Suppressed when nothing at all was
-    # reported, because the note above already says precisely that and
-    # three lines for one fact reads as noise.
-    if run_usage.known_calls > 0:
-        for axis in ("token", "cost"):
-            note = usage_coverage(usage_meter, axis=axis).note()
-            if note:
-                lines.append(f"note: {note}")
-    return lines
-
-
 def _record_autonomy_outcome(
     *,
     root_dir: Path,
@@ -3720,10 +3635,12 @@ def _run_factory_locked(
         ui.kv("Merge pending", str(len(factory_result.merge_pending)))
     ui.kv("Duration", f"{factory_duration:.0f}s")
     # R3.1 usage rollup: per component, per phase, plus the run total.
-    if pipeline.run_usage.calls > 0:
-        ui.subsection("Usage rollup")
-        for line in _format_usage_rollup(pipeline.usage_meter, pipeline.run_usage):
-            ui.info(f"  {line}")
+    print_usage_rollup(
+        ui,
+        pipeline.usage_meter,
+        pipeline.run_usage,
+        title="Usage rollup",
+    )
     if pipeline.token_budget_exceeded():
         ui.err(
             f"TOKEN BUDGET EXCEEDED: {pipeline.run_usage.total_tokens} total tokens "

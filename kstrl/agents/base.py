@@ -1,4 +1,4 @@
-"""Base agent protocol and usage metering types for kstrl."""
+"""Base agent protocol, usage metering types, and the usage rollup."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import logging
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
+
+if TYPE_CHECKING:
+    from kstrl.ui.base import UI
 
 logger = logging.getLogger(__name__)
 
@@ -416,6 +419,154 @@ def usage_coverage(
         roles=tuple(roles),
         ceiling=ceiling,
     )
+
+
+#: The architect's role name, which is also its pseudo-component id
+#: (``decompose.ARCHITECT_COMPONENT`` aliases this). Stated HERE because
+#: the ordering tuple below has to agree with it and cannot import
+#: ``decompose`` - the dependency runs the other way. The same reasoning
+#: as ``CEILING_AXES`` above: a name re-derived locally is a name two
+#: surfaces can disagree about, and here the disagreement would be
+#: silent, dropping the architect to the tail of the rollup.
+ARCHITECT_ROLE: Final = "architect"
+
+# Rollup row order for the R3.1 usage table, in the order the roles run:
+# the architect decomposes the spec before any component's engineer loop
+# starts (#257). Phases outside this list (future additions) sort after,
+# alphabetically.
+_USAGE_PHASE_ORDER: Final[tuple[str, ...]] = (
+    ARCHITECT_ROLE,
+    "engineer",
+    "review",
+    "security",
+    "distill",
+)
+
+
+def format_usage_rollup(
+    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
+    run_usage: UsageTotals,
+) -> list[str]:
+    """Render the per-component, per-phase usage table (R3.1).
+
+    Token and cost columns are sums of CLI self-reports: codex reports
+    only a total (in/out columns stay 0), CustomAgent reports nothing.
+    Whenever some calls reported no usage the footer says so explicitly -
+    the totals are then lower bounds, not measurements (H4).
+
+    R8 (measured): the ``unreported_calls`` footer alone was not enough.
+    It fires only when a call reported NOTHING, so a cross-family
+    reviewer that reports tokens and no cost left it at 0 while
+    contributing $0 to a run whose cost total covered 8 of 13 calls -
+    the footer stayed silent on exactly the run it existed for. Each
+    axis now reports its own coverage, and names the roles that are
+    missing from it.
+
+    Lives here rather than in ``factory`` because ``ks decompose`` prints
+    the same table for the architect alone, and a second renderer would
+    be a second place for the coverage rules to drift (#257).
+    """
+    header = (
+        f"{'component':<24} {'phase':<10} {'calls':>5} "
+        f"{'tokens_in':>11} {'tokens_out':>11} {'tokens_total':>13} "
+        f"{'cost_usd':>9} {'time_s':>8}"
+    )
+    lines = [header]
+
+    def _phase_sort_key(phase: str) -> tuple[int, str]:
+        try:
+            return (_USAGE_PHASE_ORDER.index(phase), phase)
+        except ValueError:
+            return (len(_USAGE_PHASE_ORDER), phase)
+
+    def _row(label: str, phase: str, totals: UsageTotals) -> str:
+        # Each cell is gated by ITS OWN axis, never by known_calls (R8
+        # review finding 2). known_calls means only "reported
+        # something", so a cost-only invocation (known_calls=1,
+        # token_calls=0) printed `0 0 0` tokens while the footer said
+        # token coverage was EMPTY and the total was a lower bound - the
+        # row contradicted the footer directly under it.
+        #
+        # "-" means "no call in this row reported this figure", never
+        # "it was zero". Keyed on the call counters rather than on the
+        # totals so a genuinely reported 0 tokens / $0.0000 is not
+        # rendered as silence - the same distinction the ceilings make.
+        if totals.token_calls > 0:
+            tokens_in = f"{totals.input_tokens:,}"
+            tokens_out = f"{totals.output_tokens:,}"
+            tokens_total = f"{totals.total_tokens:,}"
+        else:
+            tokens_in = tokens_out = tokens_total = "-"
+        cost = f"{totals.cost_usd:.4f}" if totals.cost_calls > 0 else "-"
+        return (
+            f"{label:<24} {phase:<10} {totals.calls:>5} "
+            f"{tokens_in:>11} {tokens_out:>11} {tokens_total:>13} "
+            f"{cost:>9} {totals.duration_seconds:>8.0f}"
+        )
+
+    for comp_id in sorted(usage_meter):
+        phases = usage_meter[comp_id]
+        for phase in sorted(phases, key=_phase_sort_key):
+            lines.append(_row(comp_id, phase, phases[phase]))
+    lines.append(_row("TOTAL", "", run_usage))
+    lines.extend(_usage_rollup_notes(usage_meter, run_usage))
+    return lines
+
+
+def _usage_rollup_notes(
+    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
+    run_usage: UsageTotals,
+) -> list[str]:
+    """The rollup's footer: what the table above does NOT account for.
+
+    Split from the renderer because measured: inlined, ``complexipy``
+    scores ``format_usage_rollup`` at 17 against the repo's gate of 15.
+    """
+    notes: list[str] = []
+    if run_usage.unreported_calls > 0:
+        notes.append(
+            f"note: {run_usage.unreported_calls} of {run_usage.calls} "
+            "call(s) reported no token/cost data; token and cost totals "
+            "are lower bounds"
+        )
+    # Per-axis coverage, which the note above cannot express: a call can
+    # report tokens and no cost. Suppressed when nothing at all was
+    # reported, because the note above already says precisely that and
+    # three lines for one fact reads as noise.
+    if run_usage.known_calls > 0:
+        for axis in ("token", "cost"):
+            note = usage_coverage(usage_meter, axis=axis).note()
+            if note:
+                notes.append(f"note: {note}")
+    return notes
+
+
+def print_usage_rollup(
+    ui: UI,
+    usage_meter: Mapping[str, Mapping[str, UsageTotals]],
+    run_usage: UsageTotals,
+    *,
+    title: str,
+) -> None:
+    """Put the rollup on a terminal, or print nothing at all.
+
+    The guard, the heading and the indent live here with the renderer so
+    the two commands that report spend cannot drift apart in the half the
+    operator actually reads. ``title`` is a parameter rather than a
+    constant because the two callers are NOT reporting the same thing:
+    ``ks factory`` renders a whole run, ``ks decompose`` renders one role,
+    and giving both the same heading would invite reading the run's total
+    as though it included the architect (#257 - it does not, until the
+    architect is metered inside the factory run).
+
+    Zero calls prints nothing: an empty table says "this ran and cost
+    nothing", which is the opposite of "this never ran".
+    """
+    if run_usage.calls == 0:
+        return
+    ui.subsection(title)
+    for line in format_usage_rollup(usage_meter, run_usage):
+        ui.info(f"  {line}")
 
 
 def _as_int(value: object) -> int | None:

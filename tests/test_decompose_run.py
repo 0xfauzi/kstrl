@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.agents.base import UsageRecord
 from kstrl.commandrun import open_command_run
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.reducer import load_run_state
@@ -85,9 +86,13 @@ def _spec_root(tmp_path: Path) -> Path:
     return spec_file
 
 
-def _decompose(tmp_path: Path, agent: object) -> object:
+def _decompose(
+    tmp_path: Path,
+    agent: object,
+    console: io.StringIO | None = None,
+) -> object:
     spec_file = _spec_root(tmp_path)
-    ui = PlainUI(no_color=True, file=io.StringIO())
+    ui = PlainUI(no_color=True, file=console if console is not None else io.StringIO())
     run = open_command_run(
         ui,
         tmp_path,
@@ -257,3 +262,201 @@ class TestDecomposeRun:
         )
         assert len(manifest.components) == 2
         assert not (tmp_path / ".kstrl" / "runs").exists()
+
+
+class MeteringAgent:
+    """A decompose agent that reports usage the way a real adapter does.
+
+    One double for every case #257 cares about, because the alternative
+    was three that each re-implemented an existing one in this file:
+
+    - ``cost=None`` is the codex shape, a token total and no price, which
+      is what the coverage footer exists for.
+    - several ``outputs`` drive the retry path, one record per attempt.
+    - ``crash=True`` is the agent that dies AFTER the call was billed.
+
+    The record is appended when the stream ends, where a real adapter
+    appends it (``kstrl/agents/claude_code.py``), except on the crash
+    path, where the money is spent before the failure.
+    """
+
+    def __init__(
+        self,
+        *outputs: str,
+        cost: float | None = 0.5,
+        crash: bool = False,
+    ) -> None:
+        self._outputs = list(outputs)
+        self._cost = cost
+        self._crash = crash
+        self.final_message: str | None = None
+        self.usage_records: list[UsageRecord] = []
+
+    @property
+    def name(self) -> str:
+        return "metering"
+
+    def _bill(self, total_tokens: int = 120) -> None:
+        self.usage_records.append(
+            UsageRecord(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=total_tokens,
+                cost_usd=self._cost,
+                duration_seconds=1.5,
+                source="claude-stream-json",
+            )
+        )
+
+    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+        # Attempt N reads output N, and the last one repeats if the
+        # architect retries more times than the test scripted.
+        output = self._outputs[min(len(self.usage_records), len(self._outputs) - 1)]
+        if self._crash:
+            self._bill()
+            raise RuntimeError("architect exploded")
+        yield from output.splitlines()
+        if output.strip():
+            self.final_message = output.splitlines()[-1]
+        self._bill()
+
+
+class TestArchitectUsageIsRecorded:
+    """#257: the architect was the one paid role with no meter, so five
+    real ``ks decompose`` runs each reported $0.00."""
+
+    def test_the_blocker_halt_still_records_the_spend(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The halt is the COMMON outcome on a first spec, so an
+        emit-after-success would have missed exactly the case the issue is
+        about."""
+        with pytest.raises(SpecBlockerError):
+            _decompose(tmp_path, MeteringAgent(BLOCKER_OUTPUT))
+
+        state, _ = load_run_state(tmp_path)
+        assert state.usage_calls == 1
+        assert state.cost_calls == 1
+        assert state.cost_usd == pytest.approx(0.5)
+        assert state.total_tokens == 120
+        architect = state.components["architect"]
+        assert architect.usage_calls == 1
+        assert architect.cost_usd == pytest.approx(0.5)
+
+    def test_the_success_path_records_the_spend(self, tmp_path: Path) -> None:
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT))
+        state, _ = load_run_state(tmp_path)
+        assert state.usage_calls == 1
+        assert state.cost_usd == pytest.approx(0.5)
+
+    def test_every_retry_is_charged(self, tmp_path: Path) -> None:
+        """A failed attempt cost real tokens; the meter never forgets it."""
+        _decompose(
+            tmp_path,
+            MeteringAgent("this is not json at all", VALID_DECOMPOSE_OUTPUT),
+        )
+        state, _ = load_run_state(tmp_path)
+        assert state.usage_calls == 2
+        assert state.cost_usd == pytest.approx(1.0)
+
+    def test_a_crash_after_the_call_still_records_the_spend(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        with pytest.raises(RuntimeError, match="architect exploded"):
+            _decompose(tmp_path, MeteringAgent("", crash=True))
+        state, _ = load_run_state(tmp_path)
+        assert state.cost_usd == pytest.approx(0.5)
+
+    def test_the_usage_event_names_the_architect_role(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The meter's phase key is the ROLE name, which is what the
+        coverage footer prints. It must be the fifth role's name, not the
+        ``decompose``/``audit`` lifecycle phases this component reports
+        elsewhere."""
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT))
+        run_dir = next(iter((tmp_path / ".kstrl" / "runs").iterdir()))
+        events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]
+        usage = [e for e in events if e.get("event") == "component_usage"]
+        assert len(usage) == 1
+        assert usage[0]["component"] == "architect"
+        assert usage[0]["data"]["phase"] == "architect"
+
+    def test_an_agent_that_reports_nothing_adds_no_phantom_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Zero calls means the architect never ran, and an empty table
+        says the opposite. ``MockDecomposeAgent`` has no ``usage_records``
+        at all, which is also every pre-R3.1 third-party agent."""
+        console = io.StringIO()
+        _decompose(tmp_path, MockDecomposeAgent(MINOR_ISSUE_OUTPUT), console)
+        assert "Architect usage" not in console.getvalue()
+        state, _ = load_run_state(tmp_path)
+        assert state.usage_calls == 0
+
+
+class TestArchitectUsageIsPrinted:
+    """The second half of #257: the number has to reach the operator, not
+    just the event stream."""
+
+    def test_the_rollup_prints_on_the_halt_path(self, tmp_path: Path) -> None:
+        console = io.StringIO()
+        with pytest.raises(SpecBlockerError):
+            _decompose(tmp_path, MeteringAgent(BLOCKER_OUTPUT), console)
+        printed = console.getvalue()
+        assert "Architect usage" in printed
+        rows = [line for line in printed.splitlines() if "architect" in line and "0.5000" in line]
+        assert len(rows) == 1, printed
+        assert "120" in rows[0]
+
+    def test_the_rollup_prints_on_the_success_path(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        console = io.StringIO()
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT), console)
+        assert "Architect usage" in console.getvalue()
+        assert "0.5000" in console.getvalue()
+
+    def test_the_heading_is_not_the_factory_run_heading(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`ks factory` decomposes and then prints its own "Usage rollup",
+        whose total EXCLUDES the architect until piece B. Two tables under
+        one heading would invite reading the later one as the whole
+        spend."""
+        console = io.StringIO()
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT), console)
+        assert "Usage rollup" not in console.getvalue()
+
+    def test_an_unpriced_call_gets_the_coverage_warning(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The codex case: tokens reported, no price. Without the footer
+        the operator reads a $0.00 total as "it was free"."""
+        console = io.StringIO()
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT, cost=None), console)
+        printed = console.getvalue()
+        assert "cost coverage is EMPTY" in printed
+        assert "0 of 1 metered call(s) reported a cost" in printed
+        assert "architect (1 of 1 call(s), 120 token(s) unpriced)" in printed
+        assert "lower bound" in printed
+        # No price is inferred for an uncovered call.
+        assert "0.0000" not in printed
+
+    def test_a_priced_call_gets_no_coverage_warning(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        console = io.StringIO()
+        _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT), console)
+        # Anchored on a printed table, so this cannot pass by printing
+        # nothing at all.
+        assert "Architect usage" in console.getvalue()
+        assert "coverage is" not in console.getvalue()

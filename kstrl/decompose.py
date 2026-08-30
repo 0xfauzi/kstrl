@@ -13,11 +13,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.agents.base import (
+    ARCHITECT_ROLE,
+    Agent,
+    collect_usage,
+    print_usage_rollup,
+)
 from kstrl.events import (
     ArtifactWritten,
     ComponentCompleted,
     ComponentFailed,
     ComponentStarted,
+    ComponentUsage,
     Event,
     EventBus,
     PhaseCompleted,
@@ -43,7 +50,6 @@ from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
 
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
     from kstrl.evolution import EvolutionJournal
     from kstrl.ui.base import UI
 
@@ -1158,7 +1164,50 @@ def _generate_component_prd(
     return prd_path
 
 
-ARCHITECT_COMPONENT = "architect"
+#: The architect is a one-role pseudo-component, so its component id and
+#: its role name are deliberately the same string. Aliased rather than
+#: restated so a rename cannot move one without the other and silently
+#: drop the architect to the tail of the usage rollup.
+ARCHITECT_COMPONENT = ARCHITECT_ROLE
+
+
+def _report_architect_usage(agent: Agent, ui: UI, bus: EventBus | None) -> None:
+    """Publish what the architect's LLM calls cost, to the bus and the
+    terminal (#257).
+
+    The component id is the pseudo-component ``_decompose_spec_impl``
+    already announced in the plan, so the event lands on an existing row
+    rather than conjuring one. The PHASE key is that same word because a
+    meter's phase key is the ROLE name - it is what the coverage footer
+    prints - and the taxonomy's fifth role is the architect. It is
+    deliberately not ``decompose``/``audit``, the lifecycle phases this
+    component reports elsewhere, which name steps rather than roles.
+
+    Called from a ``finally``, so it must not raise: ``collect_usage``
+    already swallows a malformed record set, and zero calls (an agent
+    predating R3.1, or one that never ran) reports nothing at all.
+    """
+    totals = collect_usage(agent)
+    if totals.calls == 0:
+        return
+    if bus is not None:
+        bus.emit(
+            ComponentUsage(
+                component=ARCHITECT_COMPONENT,
+                phase=ARCHITECT_ROLE,
+                **totals.to_dict(),
+            )
+        )
+    print_usage_rollup(
+        ui,
+        {ARCHITECT_COMPONENT: {ARCHITECT_ROLE: totals}},
+        totals,
+        # NOT "Usage rollup": `ks factory` decomposes and then prints its
+        # own run-level rollup, whose total excludes the architect until
+        # piece B. Two tables under one heading would invite reading the
+        # later one as the run's whole spend.
+        title="Architect usage",
+    )
 
 
 def _decompose_spec_impl(
@@ -1657,7 +1706,22 @@ def decompose_spec(
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
 ) -> Manifest:
-    """Run decomposition and guarantee a terminal event on every exit."""
+    """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
+    capture on every exit.
+
+    #257: the capture sits in a ``finally`` because the blocker halt is
+    the COMMON outcome on a first spec, and it is the path where the
+    operator most needs the number before editing and re-running. An
+    emit-after-return would miss exactly that case.
+
+    Consequence, stated plainly: ``RunCompleted`` is emitted by the impl
+    (both the halt site and the success tail) or by the ``except`` below,
+    so ``ComponentUsage`` trails it on EVERY path, not just the halt. No
+    consumer treats ``RunCompleted`` as a stream terminator - the reducer
+    sets a flag and keeps folding - and every reader folds the whole
+    stream, so position changes no total. A consumer that ever does stop
+    there has to move this emit, not just handle it.
+    """
     started = time.monotonic()
     try:
         return _decompose_spec_impl(
@@ -1692,3 +1756,5 @@ def decompose_spec(
                 )
             )
         raise
+    finally:
+        _report_architect_usage(agent, ui, bus)

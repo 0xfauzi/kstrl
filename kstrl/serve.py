@@ -377,10 +377,9 @@ class DailySpend:
     Only the third is unenforceable.
 
     ``unmetered_phases`` names phases known to spend without reporting
-    anything. The architect is always in it for a spec-decomposed item:
-    ``decompose_spec`` calls the agent but emits no usage events at all,
-    so its spend is real and invisible (#186 F3). Naming it is the honest
-    alternative to estimating it.
+    anything. The architect is always in it for a spec-decomposed item;
+    ``serve_cycle`` states why at the one place that fills this field.
+    Naming it is the honest alternative to estimating it (#186 F3).
     """
 
     date: str = ""
@@ -674,10 +673,10 @@ def run_dir_names(root_dir: Path) -> frozenset[str]:
     """Names of every run directory currently on disk.
 
     Snapshotted before and after a launch so the daemon charges only the
-    runs THIS invocation created (#186 F2). It also picks up a
-    decompose-kind run dir when one exists, which is the only way the
-    architect phase could ever be charged without changing the
-    architect's own instrumentation (#186 F3).
+    runs THIS invocation created (#186 F2). A decompose-kind run dir
+    carries the architect's usage event since #257, but the daemon's own
+    `ks factory` decomposes outside any run dir; see ``serve_cycle`` for
+    why that still leaves the architect unmetered here (#186 F3).
     """
     runs_root = state_dir(root_dir) / "runs"
     try:
@@ -2174,10 +2173,17 @@ def serve_cycle(
         covered_calls += spend.cost_calls
         total_calls += spend.usage_calls
 
-    # The architect always spends and never reports: decompose_spec calls
-    # the agent but emits no usage events at all, so its cost is real and
-    # invisible. Naming it keeps the day's total honestly labelled a
-    # floor instead of estimating it (#186 F3).
+    # The one statement of why the architect is unmetered HERE, which
+    # the two docstrings above point at rather than restate.
+    #
+    # #257 gave decompose_spec a ComponentUsage event, but it reaches a
+    # run directory only when a bus is passed, and the `ks factory` this
+    # daemon spawns decomposes BEFORE any run directory exists, so it
+    # passes none. The architect's spend is therefore still real and
+    # still invisible to a charge that reads run dirs off disk. Closing
+    # it needs the architect metered inside the factory run (#257 piece
+    # B). Until then, naming it keeps the day's total honestly labelled
+    # a floor instead of estimating it (#186 F3).
     unmetered = ("architect",)
     charged = ledger.charge(
         total,
