@@ -289,11 +289,6 @@ def _classify_check(error: str) -> tuple[str, str]:
 # difference is the number.
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
-# Leading Python exception name in a pytest failure message.
-_EXC_NAME_RE = re.compile(
-    r"^([A-Z][A-Za-z0-9]*(?:Error|Exception|Failure|Warning|Exit|Interrupt))\b"
-)
-
 _CATEGORY_BY_CHECK = {
     "linter": "verification",
     "typecheck": "verification",
@@ -355,23 +350,24 @@ def category_for_check(check_name: str) -> str:
 def signatures_from_verification(checks: Iterable[CheckResult]) -> list[str]:
     """Derive structured signatures from failed mechanical checks.
 
-    Prefers the parser's structured codes (ruff rule, mypy error code,
-    pytest exception type); falls back to a slug of the check message
-    when no parse is available."""
+    Prefers the parser's structured codes (linter rule, checker error
+    code, the exception a test died on); falls back to a slug of the
+    check message when no parse is available.
+
+    #258: this used to ask ``ParsedOutput.tool`` which of those it was,
+    against the exact strings "ruff", "mypy" and "pytest". That is a name
+    check standing in for a capability check, and it broke twice over as
+    soon as a gate could dispatch: a newly supported tool fell silently
+    through to the prose slug, and the unioned label a chained command
+    produces ("pytest+vitest") matched nothing at all. The parser now
+    names its own signature in ``ParsedFailure.code``, so this reads a
+    capability instead of guessing from a label."""
     signatures: list[str] = []
     for check in checks:
         if check.passed:
             continue
-        codes: list[str] = []
         parsed = check.parsed
-        if parsed is not None and parsed.failures:
-            if parsed.tool in ("ruff", "mypy"):
-                codes = [f.rule_or_test for f in parsed.failures if f.rule_or_test]
-            elif parsed.tool == "pytest":
-                for failure in parsed.failures:
-                    m = _EXC_NAME_RE.match(failure.message or "")
-                    if m:
-                        codes.append(re.sub(r"(?<!^)(?=[A-Z])", "-", m.group(1)).lower())
+        codes = [f.code for f in parsed.failures if f.code] if parsed is not None else []
         if codes:
             distinct = list(dict.fromkeys(codes))[:_MAX_SIGNATURES_PER_CHECK]
             signatures.extend(f"{check.name}:{code}" for code in distinct)
@@ -809,7 +805,8 @@ class EvolutionJournal:
                         suggested_change=(
                             f"Add to CLAUDE.md:\n"
                             f"> Avoid triggering linter rule {pattern.error_signature}. "
-                            f"Check ruff/flake8 docs for the correct pattern."
+                            f"Check the rule in your linter's documentation for the "
+                            f"correct pattern."
                         ),
                         source_patterns=[pattern.description],
                     )
@@ -822,15 +819,23 @@ class EvolutionJournal:
                         title=f"Adjust type-checking config for '{pattern.error_signature}'",
                         description=(
                             f"Type error pattern '{pattern.error_signature}' recurred in "
-                            f"{pattern.frequency} components. Consider adjusting pyproject.toml "
-                            f"or adding a CLAUDE.md note about the expected typing style."
+                            f"{pattern.frequency} components. Consider adjusting the type "
+                            f"checker's config or adding a CLAUDE.md note about the "
+                            f"expected typing style."
                         ),
                         proposal_type="computational",
                         target="pyproject",
+                        # Toolchain-neutral prose on purpose. The gate
+                        # dispatches per project (#258), so this code can
+                        # be a tsc TS-number as easily as a mypy code,
+                        # and `check_name` is the GATE, which carries no
+                        # toolchain. Naming [tool.mypy] here sent a
+                        # TypeScript project to edit a pyproject.toml it
+                        # does not have.
                         suggested_change=(
-                            f"Review [tool.mypy] or [tool.pyright] settings in pyproject.toml. "
-                            f"If this is a known false positive, add to ignore list. "
-                            f"Otherwise add to CLAUDE.md:\n"
+                            f"Review the type checker's configuration. If this is a known "
+                            f"false positive, add it to the ignore list. Otherwise add to "
+                            f"CLAUDE.md:\n"
                             f"> Ensure all functions have return type annotations to avoid "
                             f"'{pattern.error_signature}'."
                         ),

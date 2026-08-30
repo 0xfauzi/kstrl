@@ -441,33 +441,33 @@ class TestSaveProposals:
 
 class TestSignatureHelpers:
     def test_signatures_from_verification_uses_parser_codes(self) -> None:
-        from kstrl.parsers import ParsedFailure, ParsedOutput
+        from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK, parse_gate_output
         from kstrl.verify import CheckResult
 
-        ruff = ParsedOutput(
-            tool="ruff",
-            failures=[
-                ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
-                ParsedFailure(file="b.py", line=2, rule_or_test="S608", message="y"),
-                ParsedFailure(file="c.py", line=3, rule_or_test="E501", message="z"),
-            ],
+        # Real tool output through the real dispatcher rather than
+        # hand-built ParsedOutputs: the signature is only worth anything
+        # if the parser actually puts a code where this reads one, and a
+        # synthetic ParsedFailure can be given a code the parser never
+        # emits (#258).
+        ruff = parse_gate_output(
+            "a.py:1:1: E501 Line too long (120 > 100)\n"
+            "b.py:2:5: S608 Possible SQL injection vector\n"
+            "c.py:3:9: E501 Line too long (110 > 100)\n"
+            "Found 3 errors.\n",
+            GATE_LINT,
         )
-        mypy = ParsedOutput(
-            tool="mypy",
-            failures=[
-                ParsedFailure(file="a.py", line=4, rule_or_test="arg-type", message="m"),
-            ],
+        mypy = parse_gate_output(
+            'a.py:4: error: Argument 1 has incompatible type "str" [arg-type]\n'
+            "Found 1 error in 1 file (checked 2 source files)\n",
+            GATE_TYPECHECK,
         )
-        pytest_out = ParsedOutput(
-            tool="pytest",
-            failures=[
-                ParsedFailure(
-                    file="tests/test_a.py",
-                    rule_or_test="test_x",
-                    message="AssertionError: assert 1 == 2",
-                ),
-            ],
+        pytest_out = parse_gate_output(
+            "=========================== short test summary info ===========================\n"
+            "FAILED tests/test_a.py::test_x - AssertionError: assert 1 == 2\n"
+            "=============================== 1 failed in 0.10s ===============================\n",
+            GATE_TEST,
         )
+        assert (ruff.tool, mypy.tool, pytest_out.tool) == ("ruff", "mypy", "pytest")
         checks = [
             CheckResult(name="linter", passed=False, message="Linter failed", parsed=ruff),
             CheckResult(name="typecheck", passed=False, message="Typecheck failed", parsed=mypy),

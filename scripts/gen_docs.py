@@ -45,6 +45,7 @@ import click
 # them keeps this reference from drifting the way it had: it claimed
 # "uv run ruff check" without the path argument the gate actually
 # passes, and named only the scoped branch of the typecheck default.
+from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TOOLS, GATE_TYPECHECK
 from kstrl.verify import (
     DEFAULT_LINT_COMMAND,
     DEFAULT_TEST_COMMAND,
@@ -529,6 +530,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         f"else {DEFAULT_TYPECHECK_COMMAND}"
     ),
     ("verify", "lint_command"): f"empty = the harness default ({DEFAULT_LINT_COMMAND})",
+    ("verify", "test_tool"): "parser for the test gate's output; empty = every parser "
+    f"({', '.join(GATE_TOOLS[GATE_TEST])}), unioned",
+    ("verify", "typecheck_tool"): "parser for the typecheck gate's output; empty = every "
+    f"parser ({', '.join(GATE_TOOLS[GATE_TYPECHECK])}), unioned",
+    ("verify", "lint_tool"): "parser for the lint gate's output; empty = every parser "
+    f"({', '.join(GATE_TOOLS[GATE_LINT])}), unioned",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
     ("verify", "dead_code_cleanup"): "optional dead-code check",
@@ -678,6 +685,14 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     # intake_github.repo is validated as owner/name, so the generic
     # string sentinel is rejected by the loader.
     ("intake_github", "repo"): "sentinel-owner/sentinel-repo",
+    # The three verify tool keys are validated against their gate's
+    # registered parsers, so the probe has to use a real one. The SECOND
+    # entry, never the first: the probe asserts the loaded value differs
+    # from the default, and picking the primary would still differ from
+    # None but reads as if the primary were special.
+    ("verify", "test_tool"): GATE_TOOLS[GATE_TEST][1],
+    ("verify", "typecheck_tool"): GATE_TOOLS[GATE_TYPECHECK][1],
+    ("verify", "lint_tool"): GATE_TOOLS[GATE_LINT][1],
 }
 
 

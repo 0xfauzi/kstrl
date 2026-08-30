@@ -23,7 +23,9 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
-from tests.test_parsers import VITEST_FAILURE_OUTPUT
+from tests.helpers.tool_output import tool_output
+
+VITEST_FAILURE_OUTPUT = tool_output("vitest-2.1.9-writers-room.txt")
 
 
 class TestCheckPrdStories:
@@ -107,13 +109,14 @@ class TestCheckTestSuite:
         assert result.passed is False
         assert "timed out" in result.message
 
-    def test_unparsed_output_is_labelled_with_the_command(self, tmp_path: Path) -> None:
-        """#258: a vitest failure reached the engineer tagged [pytest].
+    def test_vitest_output_reaches_the_gate_parsed(self, tmp_path: Path) -> None:
+        """#258: a vitest failure reached the engineer tagged [pytest]
+        with every actionable line stripped out.
 
-        `check_test_suite` parses every gate as pytest whatever the
-        configured command was, so the label pointed the implementing
-        agent at the wrong toolchain and the wrong half of the repo.
-        The command is the one name that cannot be wrong.
+        The label was the first half of the fix and this is the second:
+        the gate dispatches, so the retry detail now carries the failing
+        file, its line, the test name and the assertion message that were
+        all in the raw output and all dropped.
         """
         script = tmp_path / "fake_vitest.py"
         script.write_text(f"import sys\nsys.stdout.write({VITEST_FAILURE_OUTPUT!r})\nsys.exit(1)\n")
@@ -122,12 +125,28 @@ class TestCheckTestSuite:
         result = check_test_suite(tmp_path, command=command, timeout=30.0)
 
         assert result.passed is False
+        assert result.parsed is not None
+        assert result.parsed.tool == "vitest"
+        assert "[pytest]" not in "".join(result.details)
+        detail = "".join(result.details)
+        assert "tests/failing.test.ts:5" in detail
+        assert "shows what a real vitest failure looks like" in detail
+        assert "expected false to be true" in detail
+
+    def test_output_no_parser_reads_is_still_labelled_with_the_command(
+        self, tmp_path: Path
+    ) -> None:
+        """The #258 labelling floor, kept for a toolchain kstrl has no
+        parser for. The command is the one name that cannot be wrong."""
+        script = tmp_path / "fake_cargo.py"
+        script.write_text("import sys\nprint('error: could not compile `draft`')\nsys.exit(101)\n")
+        command = f"{sys.executable} {script}"
+
+        result = check_test_suite(tmp_path, command=command, timeout=30.0)
+
+        assert result.passed is False
         assert result.details[0].startswith(f"[{command}]")
         assert "[pytest]" not in "".join(result.details)
-        # The parser identity is untouched, so evolution's exact-string
-        # switch on parsed.tool still resolves.
-        assert result.parsed is not None
-        assert result.parsed.tool == "pytest"
 
     def test_parsed_pytest_output_keeps_the_tool_label(self, tmp_path: Path) -> None:
         script = tmp_path / "fake_pytest.py"
@@ -154,15 +173,32 @@ class TestCheckTypecheck:
         result = check_typecheck(tmp_path, command="false", timeout=5.0)
         assert result.passed is False
 
-    def test_unparsed_output_is_labelled_with_the_command(self, tmp_path: Path) -> None:
-        """The typecheck gate runs whatever `typecheck_command` is and
-        parses it as mypy, so a `tsc` failure had the same #258
-        mislabel. All three gates go through one builder now; this pins
-        that the second one is not left behind."""
+    def test_tsc_output_reaches_the_gate_parsed(self, tmp_path: Path) -> None:
+        """#258: the typecheck gate parsed everything as mypy, so a real
+        `tsc` failure arrived with 0 findings under a `[mypy]` label. The
+        gate dispatches now, and the assertion is on the DETAIL rather
+        than the label: file, line, error code and message all present."""
+        raw = tool_output("tsc-5.6.3-plain.txt")
         script = tmp_path / "fake_tsc.py"
-        script.write_text(
-            "import sys\nprint('src/a.ts(5,3): error TS2322: not assignable')\nsys.exit(2)\n"
-        )
+        script.write_text(f"import sys\nsys.stdout.write({raw!r})\nsys.exit(2)\n")
+        command = f"{sys.executable} {script}"
+
+        result = check_typecheck(tmp_path, command=command, timeout=30.0)
+
+        assert result.passed is False
+        assert result.parsed is not None
+        assert result.parsed.tool == "tsc"
+        assert "  src/broken.ts:7 [TS2322] Type 'string' is not assignable" in result.details[0]
+        assert "[mypy]" not in "".join(result.details)
+
+    def test_output_no_parser_reads_is_still_labelled_with_the_command(
+        self, tmp_path: Path
+    ) -> None:
+        """The #258 labelling floor, kept: an unrecognised toolchain
+        falls back to the raw tail named by the command that ran, never
+        by a parser that did not read it."""
+        script = tmp_path / "fake_checker.py"
+        script.write_text("import sys\nprint('go: cannot find package')\nsys.exit(2)\n")
         command = f"{sys.executable} {script}"
 
         result = check_typecheck(tmp_path, command=command, timeout=30.0)

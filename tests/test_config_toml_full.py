@@ -98,6 +98,74 @@ self_critique_min_bullets = 5
         assert config.require_self_critique is True
         assert config.self_critique_min_bullets == 5
 
+    def test_tool_keys_default_to_auto(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # #258: None is "run every parser for the gate and union the
+        # failures", which is what makes a chained command work.
+        _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL", "KSTRL_VERIFY_LINT_TOOL")
+        _write(tmp_path / "kstrl.toml", '[verify]\ntest_command = "pytest"\n')
+        config = VerifyConfig.load(tmp_path)
+        assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (None, None, None)
+
+    def test_reads_the_tool_keys(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _clear_env(
+            monkeypatch,
+            "KSTRL_VERIFY_TEST_TOOL",
+            "KSTRL_VERIFY_TYPECHECK_TOOL",
+            "KSTRL_VERIFY_LINT_TOOL",
+        )
+        _write(
+            tmp_path / "kstrl.toml",
+            """
+[verify]
+test_tool = "vitest"
+typecheck_tool = "tsc"
+lint_tool = "eslint"
+""",
+        )
+        config = VerifyConfig.load(tmp_path)
+        assert (config.test_tool, config.typecheck_tool, config.lint_tool) == (
+            "vitest",
+            "tsc",
+            "eslint",
+        )
+
+    def test_env_overrides_the_toml_tool(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _write(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "vitest"\n')
+        monkeypatch.setenv("KSTRL_VERIFY_TEST_TOOL", "pytest")
+        assert VerifyConfig.load(tmp_path).test_tool == "pytest"
+
+    def test_an_unknown_tool_raises_rather_than_falling_back_to_auto(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Silently reverting to auto would be the failure the key exists
+        # to prevent: the operator wrote it to stop kstrl guessing.
+        _clear_env(monkeypatch, "KSTRL_VERIFY_TEST_TOOL")
+        _write(tmp_path / "kstrl.toml", '[verify]\ntest_tool = "jest"\n')
+        with pytest.raises(ValueError, match="unknown tool 'jest'"):
+            VerifyConfig.load(tmp_path)
+
+    def test_an_unknown_tool_in_the_environment_raises(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KSTRL_VERIFY_LINT_TOOL", "prettier")
+        with pytest.raises(ValueError, match="unknown tool 'prettier'"):
+            VerifyConfig.from_env()
+
 
 # ---------------------------------------------------------------------------
 # ContractConfig
