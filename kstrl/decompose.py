@@ -868,18 +868,27 @@ def persist_spec_issues(
     return path
 
 
-def _spec_audit_journal(root_dir: Path) -> EvolutionJournal | None:
-    """The evolution journal for this root, or None when it is off.
+def _spec_audit_journal(root_dir: Path, ui: UI) -> EvolutionJournal | None:
+    """The evolution journal for this root, or None when it is unusable.
 
     One loader for both directions of the audit trail: the read that
     builds the convergence report and the write that records this run.
     ``EvolutionConfig.load`` already anchors a relative journal path to
     ``root_dir``, so the path it hands back is absolute.
+
+    A config that will not parse degrades to "no journal" - the
+    convergence report goes quiet and the journal entry is skipped -
+    rather than raising, because a typo in an optional journal knob
+    must not cost the operator the findings of a paid architect run.
+    Which exceptions that covers is ``load_or_none``'s to know, not
+    this call site's.
     """
     from kstrl.evolution import EvolutionConfig, EvolutionJournal
 
-    config = EvolutionConfig.load(root_dir)
-    return EvolutionJournal(config) if config.enabled else None
+    config = EvolutionConfig.load_or_none(root_dir, warn=ui.warn)
+    if config is None or not config.enabled:
+        return None
+    return EvolutionJournal(config)
 
 
 def _record_spec_issues_event(
@@ -926,9 +935,16 @@ def _record_spec_issues_event(
 class SpecConvergence:
     """This spec audit measured against earlier audits of the same project.
 
-    ``repeated`` counts this run's issues whose text is unchanged from
-    the previous run. It is a floor on what carried over and never a
-    claim about which issues the architect considers resolved.
+    ``repeated`` counts the PREVIOUS run's issues whose text reappears
+    in this one, which is the side the report renders it as. Counting
+    the current side instead lets two current issues match one previous
+    issue and makes "did not come back" negative, because
+    ``_issue_identity`` drops severity and normalizes text while
+    ``_parse_spec_issues`` de-duplicates nothing. Counting the previous
+    list bounds the number by ``previous_total`` by construction.
+
+    It is a floor on what carried over and never a claim about which
+    issues the architect considers resolved.
     """
 
     current_counts: dict[str, int]
@@ -999,14 +1015,14 @@ def _build_convergence(
         return None
 
     previous_spec_file, previous_issues = audits[-1]
-    previous_ids = {_issue_identity(i) for i in previous_issues}
+    current_ids = {_issue_identity(i) for i in issues}
     current_counts = _issue_counts(issues)
     return SpecConvergence(
         current_counts=current_counts,
         previous_counts=_issue_counts(previous_issues),
         current_spec_file=spec_file,
         previous_spec_file=previous_spec_file,
-        repeated=sum(1 for i in issues if _issue_identity(i) in previous_ids),
+        repeated=sum(1 for i in previous_issues if _issue_identity(i) in current_ids),
         blocker_trend=(*trend, current_counts["blocker"]),
     )
 
@@ -1357,15 +1373,12 @@ def _decompose_spec_impl(
                 suggestion=issue.suggestion,
             )
         )
-    # #260: what this audit says about the previous one, read BEFORE
-    # this run is appended to the journal below - otherwise the
-    # "previous run" the report compares against would be this one.
-    journal = _spec_audit_journal(root_dir)
-    _surface_convergence(
-        _spec_convergence(spec_issues, journal, project_name, spec_path.name),
-        ui,
-    )
     blockers = [i for i in spec_issues if i.severity == "blocker"]
+    # The R1.7 artifact is written FIRST, before any optional journal
+    # work. On the halt path it is the only durable record the operator
+    # gets, so nothing that can fail is allowed upstream of it: #260
+    # briefly put a config load in front of this and a typo in an
+    # unrelated journal knob destroyed the findings of a paid run.
     artifact_path: Path | None = None
     try:
         artifact_path = persist_spec_issues(
@@ -1386,6 +1399,14 @@ def _decompose_spec_impl(
         # Loud but non-masking: the blocker halt (or the decompose
         # result) matters more than the artifact write failing.
         ui.err(f"Failed to persist spec issues to disk: {exc}")
+    # #260: what this audit says about the previous one, read BEFORE
+    # this run is appended to the journal below - otherwise the
+    # "previous run" the report compares against would be this one.
+    journal = _spec_audit_journal(root_dir, ui)
+    _surface_convergence(
+        _spec_convergence(spec_issues, journal, project_name, spec_path.name),
+        ui,
+    )
     _record_spec_issues_event(
         spec_issues,
         journal=journal,

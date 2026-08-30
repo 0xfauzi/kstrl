@@ -1109,6 +1109,43 @@ class TestSpecConvergenceReport:
         assert report.previous_counts == {"blocker": 1, "major": 1, "minor": 0}
         assert report.previous_spec_file == ""
 
+    def test_two_current_issues_matching_one_previous_cannot_overcount(self) -> None:
+        """`repeated` is rendered as a statement about the previous
+        run, so it must be counted over that side. Counting the current
+        side let two current issues match one previous issue and made
+        "did not come back" negative: `_issue_identity` drops severity
+        and normalizes text, and `_parse_spec_issues` de-duplicates
+        nothing, so this shape is reachable from real architect output.
+        """
+        report = _build_convergence(
+            [
+                self._issue("blocker", "ambiguity", "What fast means is undefined"),
+                self._issue("major", "ambiguity", "What  FAST  means is undefined"),
+            ],
+            "spec.md",
+            [self._entry([self._issue("blocker", "ambiguity", "What fast means is undefined")])],
+        )
+
+        assert report is not None
+        assert report.previous_total == 1
+        assert report.repeated == 1
+        assert report.previous_total - report.repeated == 0
+
+    def test_a_previous_issue_raised_twice_counts_twice_when_it_returns(self) -> None:
+        """The mirror case, and why this counts the previous list
+        rather than intersecting two identity sets: both of the
+        previous run's issues did come back, so 0 of 2 did not."""
+        duplicated = self._issue("blocker", "ambiguity", "same finding, said twice")
+        report = _build_convergence(
+            [self._issue("blocker", "ambiguity", "same finding, said twice")],
+            "spec.md",
+            [self._entry([duplicated, duplicated])],
+        )
+
+        assert report is not None
+        assert report.previous_total == 2
+        assert report.repeated == 2
+
 
 class TestSpecConvergenceThroughDecompose:
     """The report as the operator meets it, on the real code path."""
@@ -1225,3 +1262,89 @@ class TestSpecConvergenceThroughDecompose:
         output = self._run(tmp_path, [BLOCKER_ISSUE])
 
         assert "Spec Convergence" not in output
+
+    def test_the_rendered_overlap_never_goes_negative(self, tmp_path: Path) -> None:
+        """The end-to-end guard on the count: two current issues that
+        normalize to the previous run's single issue must not print
+        "2 reappear verbatim, -1 do not"."""
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        restated = dict(BLOCKER_ISSUE)
+        restated["severity"] = "major"
+        restated["summary"] = "  What   'FAST'  MEANS is not   defined  "
+        output = self._run(tmp_path, [BLOCKER_ISSUE, restated])
+
+        assert "Previous run raised 1 issue(s): 1 reappear verbatim, 0 do not." in output
+        assert "-1 do not" not in output
+
+    def test_a_bad_evolution_config_does_not_cost_the_audit_artifact(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """R1.7 says the artifact is written for halt, success and
+        clean-audit alike. Loading the journal config happens before
+        that write, so a config that will not parse must degrade to
+        "no journal", never abort the audit."""
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "many")
+
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()
+        assert "Evolution config unreadable" in output
+        assert "Spec Convergence" not in output
+
+    def test_malformed_toml_does_not_cost_the_audit_artifact_either(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other ValueError path into EvolutionConfig.load.
+
+        Scoped to the halt path on purpose: a malformed kstrl.toml also
+        fails LinearConfig.load further down decompose, which is
+        pre-existing behaviour this change does not touch. The halt
+        raises before that point, and the halt is the case where the
+        artifact is the only record the operator gets.
+        """
+        (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
+
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()
+        assert "Evolution config unreadable" in output
+
+    def test_the_artifact_is_written_before_any_journal_work(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The structural version of the two tests above, independent of
+        which exceptions the config guard happens to catch.
+
+        R1.7's artifact is the only durable record on the halt path, so
+        nothing that can fail belongs upstream of it. An error the guard
+        does not catch still leaves the artifact on disk.
+        """
+        import kstrl.evolution
+
+        def _explode(root_dir: Path | None = None) -> None:
+            raise RuntimeError("journal config exploded")
+
+        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+        with pytest.raises(RuntimeError, match="journal config exploded"):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="writers-room",
+                base_branch="main",
+                single_pr=False,
+                agent=MockDecomposeAgent(
+                    _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
+                ),
+                ui=PlainUI(no_color=True, file=io.StringIO()),
+                root_dir=tmp_path,
+            )
+
+        assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

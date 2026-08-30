@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -113,6 +113,34 @@ class EvolutionConfig:
         _apply_env_overrides(config, root_dir)
         _resolve_relative_paths(config, root_dir)
         return config
+
+    @classmethod
+    def load_or_none(
+        cls,
+        root_dir: Path,
+        warn: Callable[[str], None],
+    ) -> EvolutionConfig | None:
+        """:meth:`load`, but a config that will not parse returns None.
+
+        The journal is an optional audit trail and every caller loads it
+        in the middle of work that has already been paid for, so a typo
+        in one of its knobs should cost the journal, not the run.
+
+        Which exceptions that means is stated here rather than at a call
+        site, because it is a fact about :meth:`load`: ``ValueError``
+        from malformed TOML or a non-integer ``lookback_runs`` (from the
+        file or from ``KSTRL_EVOLUTION_LOOKBACK_RUNS``), and ``OSError``
+        from an unreadable ``kstrl.toml``. A future coercion added to
+        ``load`` is then covered here instead of silently escaping a
+        guard somebody wrote around a call.
+
+        Degrades loudly: ``warn`` is called with the parse failure.
+        """
+        try:
+            return cls.load(root_dir)
+        except (ValueError, OSError) as exc:
+            warn(f"Evolution config unreadable, skipping journal: {exc}")
+            return None
 
 
 def _apply_env_overrides(config: EvolutionConfig, root_dir: Path) -> None:
