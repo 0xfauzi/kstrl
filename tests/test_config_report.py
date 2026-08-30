@@ -76,6 +76,31 @@ class TestBuildConfigReport:
             "env",
         )
 
+    def test_verify_tool_keys_are_reported(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#258: the per-gate parser keys reach `ks config`.
+
+        They were added to VerifyConfig, gen_docs, the README and
+        docs/env-vars.md but not to this report, so the one setting an
+        operator reaches for when a gate is parsed by the wrong
+        toolchain had no row, no value and no source anywhere in the
+        resolved-config surface.
+        """
+        monkeypatch.setenv("KSTRL_VERIFY_TYPECHECK_TOOL", "tsc")
+        (tmp_path / "kstrl.toml").write_text('[verify]\ntest_tool = "vitest"\n', encoding="utf-8")
+        report = build_config_report(tmp_path)
+
+        assert _row(report.rows, "verify", "test_tool") == ConfigRow(
+            "verify", "test_tool", "'vitest'", "toml"
+        )
+        assert _row(report.rows, "verify", "typecheck_tool") == ConfigRow(
+            "verify", "typecheck_tool", "'tsc'", "env"
+        )
+        assert _row(report.rows, "verify", "lint_tool").source == "default"
+
     def test_absent_toml(self, tmp_path: Path) -> None:
         report = build_config_report(tmp_path)
         assert not report.toml_exists

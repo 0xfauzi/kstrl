@@ -1,0 +1,30 @@
+ RUN  v2.1.9 /tmp/writers-room/web
+ ❯ tests/failing.test.ts (2 tests | 1 failed) 3ms
+   × deliberate failure > shows what a real vitest failure looks like 2ms
+     → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/failing.test.ts > deliberate failure > shows what a real vitest failure looks like
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/failing.test.ts:5:19
+      3| describe("deliberate failure", () => {
+      4|   it("shows what a real vitest failure looks like", () => {
+      5|     expect(false).toBe(true);
+       |                   ^
+      6|   });
+      7|   it("passes", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  18:13:20
+   Duration  181ms (transform 16ms, setup 0ms, collect 11ms, tests 3ms, environment 0ms, prepare 31ms)

@@ -259,6 +259,9 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_VERIFY_TEST_CMD` | str | unset (uses `uv run pytest`) |
 | `KSTRL_VERIFY_TYPECHECK_CMD` | str | unset (uses `uv run mypy .`) |
 | `KSTRL_VERIFY_LINT_CMD` | str | unset (uses `uv run ruff check .`) |
+| `KSTRL_VERIFY_TEST_TOOL` | `pytest` \| `vitest` | unset = run both parsers and union the failures |
+| `KSTRL_VERIFY_TYPECHECK_TOOL` | `mypy` \| `tsc` | unset = run both parsers and union the failures |
+| `KSTRL_VERIFY_LINT_TOOL` | `ruff` \| `eslint` | unset = run both parsers and union the failures |
 | `KSTRL_DEAD_CODE_CLEANUP` | bool (`1`) | false |
 | `KSTRL_DEAD_CODE_CMD` | str | unset |
 | `KSTRL_MUTATION_TESTING` | bool (`1`) | false |

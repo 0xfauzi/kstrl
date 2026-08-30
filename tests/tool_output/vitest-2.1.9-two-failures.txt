@@ -1,0 +1,56 @@
+ RUN  v2.1.9 /repo
+
+ ❯ tests/failing.test.ts (3 tests | 1 failed) 3ms
+   × word counter > counts the words in a draft title 3ms
+     → expected 3 to be 4 // Object.is equality
+ ❯ tests/summary.test.ts (2 tests | 1 failed) 4ms
+   × draft summary > renders the title and the count 3ms
+     → expected { title: 'a draft', words: 2 } to deeply equal { title: 'a draft', words: 3 }
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/failing.test.ts > word counter > counts the words in a draft title
+AssertionError: expected 3 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 3
+
+ ❯ tests/failing.test.ts:5:41
+      3| describe("word counter", () => {
+      4|   it("counts the words in a draft title", () => {
+      5|     expect(countWords("a short title")).toBe(4);
+       |                                         ^
+      6|   });
+      7|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/summary.test.ts > draft summary > renders the title and the count
+AssertionError: expected { title: 'a draft', words: 2 } to deeply equal { title: 'a draft', words: 3 }
+
+- Expected
++ Received
+
+  Object {
+    "title": "a draft",
+-   "words": 3,
++   "words": 2,
+  }
+
+ ❯ tests/summary.test.ts:5:34
+      3| describe("draft summary", () => {
+      4|   it("renders the title and the count", () => {
+      5|     expect(summarize("a draft")).toEqual({ title: "a draft", words: 3 …
+       |                                  ^
+      6|   });
+      7|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 3 passed (5)
+   Start at  20:44:28
+   Duration  186ms (transform 24ms, setup 0ms, collect 22ms, tests 7ms, environment 0ms, prepare 50ms)

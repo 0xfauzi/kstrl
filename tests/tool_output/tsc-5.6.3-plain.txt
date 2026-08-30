@@ -1,0 +1,3 @@
+src/broken.ts(7,9): error TS2322: Type 'string' is not assignable to type 'number'.
+src/broken.ts(12,16): error TS2339: Property 'words' does not exist on type 'Draft'.
+src/index.ts(4,49): error TS2353: Object literal may only specify known properties, and 'extra' does not exist in type 'Draft'.

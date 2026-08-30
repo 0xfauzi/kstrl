@@ -1,0 +1,7 @@
+/repo/lint/draft.js:4:7: 'cache' is assigned a value but never used. [Error/no-unused-vars]
+/repo/lint/draft.js:4:7: 'cache' is never reassigned. Use 'const' instead. [Warning/prefer-const]
+/repo/lint/draft.js:5:12: Expected '===' and instead saw '=='. [Error/eqeqeq]
+/repo/lint/draft.js:6:12: 'missingHelper' is not defined. [Error/no-undef]
+/repo/lint/render.js:3:30: 'unusedOption' is defined but never used. [Error/no-unused-vars]
+
+5 problems

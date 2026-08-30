@@ -13,6 +13,7 @@ from kstrl.parsers import (
     parse_pytest_output,
     parse_ruff_output,
 )
+from tests.helpers.tool_output import tool_output
 
 # ---------------------------------------------------------------------------
 # parse_pytest_output
@@ -290,74 +291,34 @@ class TestFormatForPrompt:
 # Non-Python tool output (#258)
 # ---------------------------------------------------------------------------
 
-# Captured verbatim from a real `vitest run` (vitest 2.1.9) with one
-# deliberately failing test, ANSI escapes stripped. Every fixture in this
-# suite was Python tool output before this one, which is why the pytest
-# parser was never measured against anything it could not read.
-VITEST_FAILURE_OUTPUT = """\
- RUN  v2.1.9 /tmp/writers-room/web
- ❯ tests/failing.test.ts (2 tests | 1 failed) 3ms
-   × deliberate failure > shows what a real vitest failure looks like 2ms
-     → expected false to be true // Object.is equality
-
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
-
- FAIL  tests/failing.test.ts > deliberate failure > shows what a real vitest failure looks like
-AssertionError: expected false to be true // Object.is equality
-
-- Expected
-+ Received
-
-- true
-+ false
-
- ❯ tests/failing.test.ts:5:19
-      3| describe("deliberate failure", () => {
-      4|   it("shows what a real vitest failure looks like", () => {
-      5|     expect(false).toBe(true);
-       |                   ^
-      6|   });
-      7|   it("passes", () => {
-
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
-
- Test Files  1 failed (1)
-      Tests  1 failed | 1 passed (2)
-   Start at  18:13:20
-   Duration  181ms (transform 16ms, setup 0ms, collect 11ms, tests 3ms, environment 0ms, prepare 31ms)
-"""
-
-
-# Captured verbatim from a real `pytest` run where every test PASSED.
-# The polyglot gate chains toolchains (`uv run pytest && npm test`), so
-# the half that passes can be the half the parser understands.
-PYTEST_PASSING_OUTPUT = """\
-============================= test session starts ==============================
-platform darwin -- Python 3.12.8, pytest-9.1.1, pluggy-1.6.0
-rootdir: /tmp/writers-room
-collected 5 items
-
-tests/test_ok.py .....                                                   [100%]
-
-============================== 5 passed in 0.00s ===============================
-"""
+# Both captured from real runs; provenance and the two normalizations
+# applied live in tests/helpers/tool_output.py. The vitest one is the
+# reporter's own writers-room repo, one deliberately failing test. The
+# pytest one is a run where every test PASSED: the polyglot gate chains
+# toolchains (`uv run pytest && npm test`), so the half that passes can
+# be the half the parser understands.
+VITEST_FAILURE_OUTPUT = tool_output("vitest-2.1.9-writers-room.txt")
+PYTEST_PASSING_OUTPUT = tool_output("pytest-9.1.1-passing.txt")
 
 
 class TestNonPythonToolOutput:
-    """The pytest parser is applied to whatever `test_command` ran.
+    """What the pytest parser ALONE does with output pytest never wrote.
 
-    `check_test_suite` has no dispatch, so a polyglot repo's
-    `uv run pytest && (cd web && npm run test)` sends vitest output
-    through `parse_pytest_output`. These tests pin what that actually
-    does, measured rather than reasoned.
+    These pin the behaviour of one parser, not of the gate. The gate no
+    longer sends vitest output here unaccompanied: `check_test_suite`
+    dispatches through `gateparse.parse_gate_output`, which also runs the
+    vitest parser and unions the result (tests/test_gateparse.py). The
+    pytest parser is still exercised on foreign text because it remains
+    the test gate's PRIMARY, so its behaviour when it understands nothing
+    is what an unrecognised toolchain still falls back to.
     """
 
     def test_vitest_output_parses_no_structured_failures(self) -> None:
-        # The known gap, recorded rather than asserted as desirable: the
+        # Unchanged and still correct: this parser knows pytest. The
         # failing file, line, test name, assertion message and the
         # expected-versus-received diff are all in the raw output and
-        # none of them survive. Closing that needs a parser that knows
-        # vitest, which is the other half of #258.
+        # none of them survive HERE. Recovering them is the vitest
+        # parser's job, and the dispatcher's job to call it.
         parsed = parse_pytest_output(VITEST_FAILURE_OUTPUT)
         assert parsed.failures == []
 
@@ -379,9 +340,10 @@ class TestNonPythonToolOutput:
         assert "[pytest]" not in "".join(lines)
 
     def test_tool_identity_is_unchanged(self) -> None:
-        # evolution.signatures_from_verification switches on
-        # `parsed.tool` by exact string, so the label change must not
-        # move it. Only the prompt label is command-derived.
+        # `tool` names the PARSER; only the prompt label is derived from
+        # the command. Nothing switches on `tool` any more (#258 moved
+        # evolution onto ParsedFailure.code), but the two fields still
+        # have to stay distinct or the label fix collapses back.
         parsed = parse_pytest_output(VITEST_FAILURE_OUTPUT)
         parsed.command = "npm run test"
         assert parsed.tool == "pytest"

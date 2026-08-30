@@ -9,9 +9,11 @@ import signal
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from kstrl import git, licensing
 
@@ -23,16 +25,20 @@ from kstrl.adequacy import (
     is_test_path,
     layer0_blocks,
 )
-from kstrl.config import component_progress_path
+from kstrl.config import component_progress_path, relative_to_root
 from kstrl.findings import Finding
+from kstrl.gateparse import (
+    GATE_LINT,
+    GATE_TEST,
+    GATE_TYPECHECK,
+    parse_gate_output,
+    validate_tool,
+)
 from kstrl.guards import path_is_allowed
 from kstrl.parsers import (
     ParsedOutput,
     add_source_context,
     generate_fix_hint,
-    parse_mypy_output,
-    parse_pytest_output,
-    parse_ruff_output,
 )
 from kstrl.policy import (
     PolicyConfig,
@@ -212,6 +218,41 @@ class VerificationResult:
         return "\n".join(lines)
 
 
+def _optional_str(value: object) -> str | None:
+    """A toml scalar as a string, with the empty string meaning unset."""
+    return str(value) or None
+
+
+#: Every live ``[verify]`` toml key and how its value is coerced onto the
+#: dataclass. A table rather than a per-key ``if``: the chain it replaced
+#: was fourteen near-identical branches, and its cyclomatic complexity
+#: was already twice the repo's ratchet limit before #258 added three
+#: more keys to it. Order is the dataclass's, so a reader can diff the
+#: two lists by eye. Anything absent from this table is not a toml key.
+_VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
+    ("test_command", _optional_str),
+    ("typecheck_command", _optional_str),
+    ("lint_command", _optional_str),
+    # validate_tool already maps the empty string to None (auto) and
+    # raises on anything it does not recognise, so it needs no coercion
+    # in front of it.
+    ("test_tool", partial(validate_tool, GATE_TEST)),
+    ("typecheck_tool", partial(validate_tool, GATE_TYPECHECK)),
+    ("lint_tool", partial(validate_tool, GATE_LINT)),
+    ("check_diff_scope", bool),
+    ("check_bad_patterns", bool),
+    ("dead_code_cleanup", bool),
+    ("dead_code_command", _optional_str),
+    ("mutation_testing", bool),
+    ("mutation_threshold", float),
+    ("mutation_timeout", float),
+    ("subprocess_timeout", float),
+    ("require_self_critique", bool),
+    ("self_critique_min_bullets", int),
+    ("progress_file_path", _optional_str),
+)
+
+
 @dataclass
 class VerifyConfig:
     """Configuration for mechanical verification."""
@@ -219,6 +260,15 @@ class VerifyConfig:
     test_command: str | None = None
     typecheck_command: str | None = None
     lint_command: str | None = None
+    # Which parser reads each gate's output (#258). None is auto: every
+    # parser registered for the gate runs and their findings are unioned,
+    # which is what makes a chained command
+    # (`uv run pytest && npm run test`) yield BOTH toolchains' failures.
+    # Set one to pin the gate to a single parser. Accepted values are
+    # kstrl.gateparse.GATE_TOOLS[<gate>]; anything else raises on load.
+    test_tool: str | None = None
+    typecheck_tool: str | None = None
+    lint_tool: str | None = None
     check_diff_scope: bool = True
     check_bad_patterns: bool = True
     dead_code_cleanup: bool = False
@@ -250,6 +300,11 @@ class VerifyConfig:
             test_command=os.environ.get("KSTRL_VERIFY_TEST_CMD"),
             typecheck_command=os.environ.get("KSTRL_VERIFY_TYPECHECK_CMD"),
             lint_command=os.environ.get("KSTRL_VERIFY_LINT_CMD"),
+            test_tool=validate_tool(GATE_TEST, os.environ.get("KSTRL_VERIFY_TEST_TOOL")),
+            typecheck_tool=validate_tool(
+                GATE_TYPECHECK, os.environ.get("KSTRL_VERIFY_TYPECHECK_TOOL")
+            ),
+            lint_tool=validate_tool(GATE_LINT, os.environ.get("KSTRL_VERIFY_LINT_TOOL")),
             dead_code_cleanup=os.environ.get("KSTRL_DEAD_CODE_CLEANUP", "") == "1",
             dead_code_command=os.environ.get("KSTRL_DEAD_CODE_CMD"),
             mutation_testing=os.environ.get("KSTRL_MUTATION_TESTING", "") == "1",
@@ -272,34 +327,9 @@ class VerifyConfig:
             root_dir = Path.cwd()
         config = cls()
         section = load_toml_section(resolve_config_file(root_dir), "verify")
-        if "test_command" in section:
-            config.test_command = str(section["test_command"]) or None
-        if "typecheck_command" in section:
-            config.typecheck_command = str(section["typecheck_command"]) or None
-        if "lint_command" in section:
-            config.lint_command = str(section["lint_command"]) or None
-        if "check_diff_scope" in section:
-            config.check_diff_scope = bool(section["check_diff_scope"])
-        if "check_bad_patterns" in section:
-            config.check_bad_patterns = bool(section["check_bad_patterns"])
-        if "dead_code_cleanup" in section:
-            config.dead_code_cleanup = bool(section["dead_code_cleanup"])
-        if "dead_code_command" in section:
-            config.dead_code_command = str(section["dead_code_command"]) or None
-        if "mutation_testing" in section:
-            config.mutation_testing = bool(section["mutation_testing"])
-        if "mutation_threshold" in section:
-            config.mutation_threshold = float(section["mutation_threshold"])
-        if "mutation_timeout" in section:
-            config.mutation_timeout = float(section["mutation_timeout"])
-        if "subprocess_timeout" in section:
-            config.subprocess_timeout = float(section["subprocess_timeout"])
-        if "require_self_critique" in section:
-            config.require_self_critique = bool(section["require_self_critique"])
-        if "self_critique_min_bullets" in section:
-            config.self_critique_min_bullets = int(section["self_critique_min_bullets"])
-        if "progress_file_path" in section:
-            config.progress_file_path = str(section["progress_file_path"]) or None
+        for key, coerce in _VERIFY_TOML_FIELDS:
+            if key in section:
+                setattr(config, key, coerce(section[key]))
         # Env overrides. Each var is applied only when it is explicitly
         # set in the environment: the previous compare-against-default
         # heuristic silently dropped an env value that happened to equal
@@ -311,6 +341,9 @@ class VerifyConfig:
             "KSTRL_VERIFY_TEST_CMD": "test_command",
             "KSTRL_VERIFY_TYPECHECK_CMD": "typecheck_command",
             "KSTRL_VERIFY_LINT_CMD": "lint_command",
+            "KSTRL_VERIFY_TEST_TOOL": "test_tool",
+            "KSTRL_VERIFY_TYPECHECK_TOOL": "typecheck_tool",
+            "KSTRL_VERIFY_LINT_TOOL": "lint_tool",
             "KSTRL_DEAD_CODE_CLEANUP": "dead_code_cleanup",
             "KSTRL_DEAD_CODE_CMD": "dead_code_command",
             "KSTRL_MUTATION_TESTING": "mutation_testing",
@@ -809,6 +842,17 @@ def _failed_gate_result(
     """
     parsed.command = cmd
     for failure in parsed.failures:
+        # eslint's default formatter prints ABSOLUTE paths, so without
+        # this the engineer is handed a path rooted in kstrl's throwaway
+        # worktree: correct on disk, useless as an instruction, and not
+        # the path its own tools use. Deliberately the FILE only. The
+        # message is prose the tool wrote and may quote a path too
+        # (measured: vitest's load errors do); rewriting a tool's own
+        # sentences by string substitution is a different and less safe
+        # mechanism than resolving a path, and the file is the field the
+        # engineer acts on and add_source_context resolves.
+        if failure.file:
+            failure.file = relative_to_root(Path(failure.file), cwd)
         add_source_context(failure, cwd)
         if not failure.fix_hint:
             failure.fix_hint = generate_fix_hint(failure)
@@ -826,8 +870,13 @@ def check_test_suite(
     cwd: Path,
     command: str | None = None,
     timeout: float = 300.0,
+    tool: str | None = None,
 ) -> CheckResult:
-    """Run the project's test suite independently."""
+    """Run the project's test suite independently.
+
+    ``tool`` pins which parser reads the output; None runs every parser
+    registered for the gate and unions what they find (#258).
+    """
     start = time.monotonic()
     cmd = resolve_test_command(command)
 
@@ -835,7 +884,7 @@ def check_test_suite(
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
-            name="test_suite",
+            name=GATE_TEST,
             passed=False,
             message=f"Test suite timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
@@ -843,21 +892,17 @@ def check_test_suite(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        # Whatever `cmd` is, it is parsed as pytest: there is no
-        # dispatch. Recording the command lets an unparsed passthrough
-        # be labelled with what actually ran instead of claiming pytest
-        # produced output pytest never saw (#258).
         return _failed_gate_result(
-            "test_suite",
+            GATE_TEST,
             f"Tests failed (exit code {result.returncode})",
-            parse_pytest_output(output),
+            parse_gate_output(output, GATE_TEST, tool),
             cmd,
             cwd,
             start,
         )
 
     return CheckResult(
-        name="test_suite",
+        name=GATE_TEST,
         passed=True,
         message="Tests passed",
         duration_seconds=time.monotonic() - start,
@@ -868,8 +913,9 @@ def check_typecheck(
     cwd: Path,
     command: str | None = None,
     timeout: float = 300.0,
+    tool: str | None = None,
 ) -> CheckResult:
-    """Run typecheck independently."""
+    """Run typecheck independently. See ``check_test_suite`` for ``tool``."""
     start = time.monotonic()
     cmd = resolve_typecheck_command(command, cwd)
 
@@ -877,7 +923,7 @@ def check_typecheck(
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
-            name="typecheck",
+            name=GATE_TYPECHECK,
             passed=False,
             message=f"Typecheck timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
@@ -886,16 +932,16 @@ def check_typecheck(
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
         return _failed_gate_result(
-            "typecheck",
+            GATE_TYPECHECK,
             f"Typecheck failed (exit code {result.returncode})",
-            parse_mypy_output(output),
+            parse_gate_output(output, GATE_TYPECHECK, tool),
             cmd,
             cwd,
             start,
         )
 
     return CheckResult(
-        name="typecheck",
+        name=GATE_TYPECHECK,
         passed=True,
         message="Typecheck passed",
         duration_seconds=time.monotonic() - start,
@@ -906,8 +952,9 @@ def check_linter(
     cwd: Path,
     command: str | None = None,
     timeout: float = 300.0,
+    tool: str | None = None,
 ) -> CheckResult:
-    """Run linter independently."""
+    """Run linter independently. See ``check_test_suite`` for ``tool``."""
     start = time.monotonic()
     cmd = resolve_lint_command(command)
 
@@ -915,7 +962,7 @@ def check_linter(
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
         return CheckResult(
-            name="linter",
+            name=GATE_LINT,
             passed=False,
             message=f"Linter timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
@@ -924,16 +971,16 @@ def check_linter(
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
         return _failed_gate_result(
-            "linter",
+            GATE_LINT,
             f"Linter failed (exit code {result.returncode})",
-            parse_ruff_output(output),
+            parse_gate_output(output, GATE_LINT, tool),
             cmd,
             cwd,
             start,
         )
 
     return CheckResult(
-        name="linter",
+        name=GATE_LINT,
         passed=True,
         message="Linter passed",
         duration_seconds=time.monotonic() - start,
@@ -1788,6 +1835,7 @@ def run_mechanical_verification(
             worktree_path,
             config.test_command,
             config.subprocess_timeout,
+            config.test_tool,
         )
     )
 
@@ -1796,6 +1844,7 @@ def run_mechanical_verification(
             worktree_path,
             config.typecheck_command,
             config.subprocess_timeout,
+            config.typecheck_tool,
         )
     )
 
@@ -1804,6 +1853,7 @@ def run_mechanical_verification(
             worktree_path,
             config.lint_command,
             config.subprocess_timeout,
+            config.lint_tool,
         )
     )
 

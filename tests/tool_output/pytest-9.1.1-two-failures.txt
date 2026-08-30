@@ -1,0 +1,32 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /repo
+collected 4 items
+
+test_drafts.py F.F.                                                      [100%]
+
+=================================== FAILURES ===================================
+____________________ test_counts_the_words_in_a_draft_title ____________________
+
+    def test_counts_the_words_in_a_draft_title() -> None:
+>       assert count_words("a short title") == 4
+E       AssertionError: assert 3 == 4
+E        +  where 3 = count_words('a short title')
+
+test_drafts.py:13: AssertionError
+_____________________ test_renders_the_title_and_the_count _____________________
+
+    def test_renders_the_title_and_the_count() -> None:
+>       assert summarize("a draft") == {"title": "a draft", "words": 3}
+E       AssertionError: assert {'title': 'a ...', 'words': 2} == {'title': 'a ...', 'words': 3}
+E
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'words': 2} != {'words': 3}
+E         Use -v to get more diff
+
+test_drafts.py:21: AssertionError
+=========================== short test summary info ============================
+FAILED test_drafts.py::test_counts_the_words_in_a_draft_title - AssertionErro...
+FAILED test_drafts.py::test_renders_the_title_and_the_count - AssertionError:...
+========================= 2 failed, 2 passed in 0.01s ==========================

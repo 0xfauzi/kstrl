@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
     EvolutionConfig,
@@ -394,6 +396,56 @@ class TestProposeImprovements:
         assert proposals[0].target == "claude_md"
         assert proposals[1].target == "feedforward_config"
 
+    # Every branch of propose_improvements, not just the two that named
+    # a toolchain. `check_name` is the GATE, which carries no toolchain
+    # at all now that each gate dispatches per project (#258), so a code
+    # in any of these can be a tsc TS-number or an eslint rule as easily
+    # as a mypy or ruff one.
+    @pytest.mark.parametrize(
+        ("check_name", "signature", "expected_target"),
+        [
+            ("linter", "no-unused-vars", "claude_md"),
+            ("typecheck", "TS2322", "typecheck_config"),
+            ("test_suite", "assertion-error", "feedforward_config"),
+            ("review", "scope_creep", "claude_md"),
+            ("security", "injection", "claude_md"),
+        ],
+    )
+    def test_proposals_name_no_toolchain(
+        self, check_name: str, signature: str, expected_target: str
+    ) -> None:
+        """#258 review: a TypeScript project was sent to edit a pyproject.toml.
+
+        save_proposals writes the target verbatim into the proposal file
+        as `**Target**: ...`, one line above the prose, so the field is
+        as visible to the reader as the sentences are and has to be as
+        neutral. The whole proposal is searched, not just the suggested
+        change, because a name in the description or the target ships
+        just as far.
+        """
+        config = EvolutionConfig()
+        journal = EvolutionJournal(config)
+        patterns = [
+            FailurePattern(
+                description=f"{check_name} failure '{signature}' in 3/5 components",
+                frequency=3,
+                total_components=5,
+                affected_components=["a", "b", "c"],
+                check_name=check_name,
+                error_signature=signature,
+                category="verification",
+            )
+        ]
+
+        proposal = journal.propose_improvements(patterns)[0]
+        written = " ".join(
+            [proposal.target, proposal.title, proposal.description, proposal.suggested_change]
+        )
+
+        assert proposal.target == expected_target
+        for toolchain in ("pyproject", "mypy", "pyright", "ruff", "flake8"):
+            assert toolchain not in written, f"{check_name} proposal names {toolchain}"
+
     def test_propose_improvements_empty(self) -> None:
         config = EvolutionConfig()
         journal = EvolutionJournal(config)
@@ -441,33 +493,33 @@ class TestSaveProposals:
 
 class TestSignatureHelpers:
     def test_signatures_from_verification_uses_parser_codes(self) -> None:
-        from kstrl.parsers import ParsedFailure, ParsedOutput
+        from kstrl.gateparse import GATE_LINT, GATE_TEST, GATE_TYPECHECK, parse_gate_output
         from kstrl.verify import CheckResult
 
-        ruff = ParsedOutput(
-            tool="ruff",
-            failures=[
-                ParsedFailure(file="a.py", line=1, rule_or_test="E501", message="x"),
-                ParsedFailure(file="b.py", line=2, rule_or_test="S608", message="y"),
-                ParsedFailure(file="c.py", line=3, rule_or_test="E501", message="z"),
-            ],
+        # Real tool output through the real dispatcher rather than
+        # hand-built ParsedOutputs: the signature is only worth anything
+        # if the parser actually puts a code where this reads one, and a
+        # synthetic ParsedFailure can be given a code the parser never
+        # emits (#258).
+        ruff = parse_gate_output(
+            "a.py:1:1: E501 Line too long (120 > 100)\n"
+            "b.py:2:5: S608 Possible SQL injection vector\n"
+            "c.py:3:9: E501 Line too long (110 > 100)\n"
+            "Found 3 errors.\n",
+            GATE_LINT,
         )
-        mypy = ParsedOutput(
-            tool="mypy",
-            failures=[
-                ParsedFailure(file="a.py", line=4, rule_or_test="arg-type", message="m"),
-            ],
+        mypy = parse_gate_output(
+            'a.py:4: error: Argument 1 has incompatible type "str" [arg-type]\n'
+            "Found 1 error in 1 file (checked 2 source files)\n",
+            GATE_TYPECHECK,
         )
-        pytest_out = ParsedOutput(
-            tool="pytest",
-            failures=[
-                ParsedFailure(
-                    file="tests/test_a.py",
-                    rule_or_test="test_x",
-                    message="AssertionError: assert 1 == 2",
-                ),
-            ],
+        pytest_out = parse_gate_output(
+            "=========================== short test summary info ===========================\n"
+            "FAILED tests/test_a.py::test_x - AssertionError: assert 1 == 2\n"
+            "=============================== 1 failed in 0.10s ===============================\n",
+            GATE_TEST,
         )
+        assert (ruff.tool, mypy.tool, pytest_out.tool) == ("ruff", "mypy", "pytest")
         checks = [
             CheckResult(name="linter", passed=False, message="Linter failed", parsed=ruff),
             CheckResult(name="typecheck", passed=False, message="Typecheck failed", parsed=mypy),

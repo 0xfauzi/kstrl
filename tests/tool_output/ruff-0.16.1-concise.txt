@@ -1,0 +1,6 @@
+draft.py:1:8: F401 [*] `os` imported but unused
+draft.py:2:8: F401 [*] `sys` imported but unused
+draft.py:6:5: F841 Local variable `cache` is assigned to but never used
+loader.py:1:20: invalid-syntax: Expected `)`, found newline
+Found 4 errors.
+[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
