@@ -170,14 +170,12 @@ def run_feature(
     """
     component = params.feature_name
     bus = run.bus if run is not None else None
-    guard_ignored_paths: list[str] = []
-    try:
-        relative_log_dir = params.log_dir.relative_to(root_dir).as_posix()
-    except ValueError:
-        pass
-    else:
-        if relative_log_dir.startswith(".kstrl/logs/"):
-            guard_ignored_paths.append(relative_log_dir.rstrip("/") + "/")
+    # This flow used to hand `run_loop` its own `.kstrl/logs/<feature>/`
+    # entry. #274 removed it: every loop below runs with `cwd=root_dir`,
+    # `guard_state_root=root_dir` carves out `.kstrl/logs/` as part of
+    # the whole state directory, and `path_is_allowed` matches that as a
+    # prefix. Declaring it here as well would print two entries for one
+    # carve-out and read as wider than it is.
 
     def emit(event: Event) -> None:
         if bus is not None:
@@ -251,7 +249,7 @@ def run_feature(
             bus=bus,
             interaction=interaction,
             stop_check=stop_check,
-            guard_ignored_paths=guard_ignored_paths,
+            guard_state_root=root_dir,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -382,7 +380,7 @@ def run_feature(
             bus=bus,
             interaction=interaction,
             stop_check=stop_check,
-            guard_ignored_paths=guard_ignored_paths,
+            guard_state_root=root_dir,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -485,7 +483,7 @@ def run_feature(
                 bus=bus,
                 interaction=interaction,
                 stop_check=stop_check,
-                guard_ignored_paths=guard_ignored_paths,
+                guard_state_root=root_dir,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"

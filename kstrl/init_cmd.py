@@ -601,6 +601,13 @@ _GITIGNORE_BLOCK_HEADER = f"""{GITIGNORE_BLOCK_MARKER}
 
 # Ignored everywhere: kstrl's own runtime state, plus the one OS artifact
 # that lands in a working tree without anybody asking for it.
+#
+# `.kstrl/` stays here after #274 carved the state directory out at the
+# scope guard. The two answer different questions and neither subsumes
+# the other: the guard only decides whether a file counts as a scope
+# violation, while this line is what keeps `git add -A` from committing
+# kstrl's run journals into the project's history and thence into a PR.
+# Delete it and a --no-worktrees run starts shipping its own state.
 _COMMON_IGNORES = (
     ".kstrl/",
     ".DS_Store",

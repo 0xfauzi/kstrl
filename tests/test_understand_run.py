@@ -55,12 +55,14 @@ def _fake_run_loop(
         interaction: Any = None,
         stop_check: Any = None,
         guard_ignored_paths: Any = None,
+        guard_state_root: Any = None,
     ) -> LoopResult:
         record.update(
             bus=bus,
             interaction=interaction,
             agent=agent,
             guard_ignored_paths=guard_ignored_paths,
+            guard_state_root=guard_state_root,
         )
         for _ in agent.run("prompt", cwd):
             pass

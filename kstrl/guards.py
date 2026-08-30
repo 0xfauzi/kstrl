@@ -91,8 +91,18 @@ def check_violations(
 ) -> list[str]:
     """Check for files that violate ALLOWED_PATHS.
 
-    ``ignored_paths`` contains exact harness-owned files or directory
-    prefixes for this invocation, never a blanket state-directory bypass.
+    ``ignored_paths`` is harness-owned only: the exact files kstrl
+    requires this invocation's agent to write
+    (``config.component_harness_paths``, #264) plus the entries kstrl
+    itself creates under its state directory
+    (``statedir.state_dir_carve_out``, #274).
+
+    Still never a blanket state-directory bypass. ``.kstrl/`` as a bare
+    prefix is refused everywhere - ``decompose._ALLOWED_PATHS_EXCLUDE``
+    will not let an architect authorise it - and the state carve-out
+    names only the subtrees and files kstrl writes, so a path the
+    harness does not create (``.kstrl/notes.md``) is still a violation.
+
     Returns list of disallowed files.
     """
     if not allowed_paths:
@@ -139,6 +149,43 @@ def _revert_violation(
         ui.info(f"  Deleted: {file}")
 
 
+def _report_violations(
+    ui: UI,
+    allowed_paths: list[str],
+    ignored_paths: list[str] | None,
+    violations: list[str],
+) -> None:
+    """Print the scope failure, authored list and carve-out apart.
+
+    The two lists never merge (#264, #274). An operator reading a scope
+    failure has to be able to tell what THEY authorised from what the
+    harness added on their behalf, and a retry agent must not read
+    kstrl's own PRD, progress log or state directory as the thing it has
+    to stop writing - that is the one instruction it cannot obey and
+    still pass ``prd_stories``. Mirrors ``verify._diff_scope_details``,
+    which does the same for the Phase 1 half of the same question.
+
+    The parenthetical repeats ``verify._diff_scope_details`` and
+    ``factory._run_component`` word for word. Deliberate: the three
+    scope failures must read identically wherever they are caught, and
+    the claim itself has to be the same claim, because a retry agent
+    told "already in scope" at one guard and "not part of
+    ALLOWED_PATHS" at another has been given two different instructions
+    about the same files.
+    """
+    ui.channel_header("GUARD", "Disallowed changes")
+    ui.kv("ALLOWED_PATHS", ", ".join(allowed_paths))
+    if ignored_paths:
+        ui.kv("HARNESS_PATHS", ", ".join(ignored_paths))
+        ui.info(
+            "  (kstrl's own files, already in scope, no need to widen allowedPaths)",
+        )
+    ui.info("")
+    ui.info("Disallowed files:")
+    for f in violations:
+        ui.info(f"    - {f}")
+
+
 def enforce_allowed_paths(
     config: KstrlConfig,
     ui: UI,
@@ -153,8 +200,10 @@ def enforce_allowed_paths(
     - ok is True if enforcement passed (no violations or resolved)
     - violations is list of disallowed files
 
-    ``ignored_paths`` is the caller's exact set of harness-owned outputs
-    for the active run.
+    ``ignored_paths`` is the harness-owned set for the active run: the
+    caller's per-invocation files plus kstrl's own state directory. It
+    is reported separately from ``config.allowed_paths`` in the failure
+    block, never folded into it.
 
     ``baseline`` is the workspace as it stood before the agent started
     (``git.capture_workspace_baseline``). With one, the guard judges the
@@ -190,13 +239,7 @@ def enforce_allowed_paths(
     if not violations:
         return True, []
 
-    # Display violations
-    ui.channel_header("GUARD", "Disallowed changes")
-    ui.kv("ALLOWED_PATHS", ", ".join(config.allowed_paths))
-    ui.info("")
-    ui.info("Disallowed files:")
-    for f in violations:
-        ui.info(f"    - {f}")
+    _report_violations(ui, config.allowed_paths, ignored_paths, violations)
 
     if not config.interactive:
         ui.err(

@@ -360,6 +360,17 @@ class TestGuardsRunBeforeCompletion:
         self,
         tmp_path: Path,
     ) -> None:
+        """Still true after #274, for a different reason.
+
+        The loop used to derive this one entry from the bus's run id.
+        It now carves out ``.kstrl/runs/`` as part of the whole state
+        directory, and only when the CALLER declares which root owns
+        that directory - so ``guard_state_root`` is what makes this
+        pass, not the bus. ``tests/test_state_dir_scope.py`` pins both
+        halves, including the case this file cannot see: the same loop
+        inside a component worktree, where the carve-out is empty and
+        an agent-written ``.kstrl/`` is still a violation.
+        """
         config = self._git_repo(tmp_path)
         run_id = "understand-20260721-test"
         state_file = tmp_path / ".kstrl" / "runs" / run_id / "events.jsonl"
@@ -372,6 +383,7 @@ class TestGuardsRunBeforeCompletion:
             agent,
             tmp_path,
             bus=EventBus(run_id=run_id),
+            guard_state_root=tmp_path,
         )
 
         assert result.completed is True

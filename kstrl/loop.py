@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl import git, guards
+from kstrl import git, guards, statedir
 from kstrl.agents.base import UsageTotals, collect_usage
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
@@ -475,6 +475,12 @@ def run_loop(
     interaction: InteractionChannel | None = None,
     stop_check: Callable[[], bool] | None = None,
     guard_ignored_paths: list[str] | None = None,
+    # The project root whose `.kstrl/` this run writes (#274). Only the
+    # caller knows it: `cwd` is the component worktree in a factory run
+    # and the project root everywhere else, and the two are the same
+    # directory only under --no-worktrees. Left None the loop carves
+    # nothing out, which is the pre-#274 behaviour.
+    guard_state_root: Path | None = None,
     # The component's base branch. The in-loop scope guard measures from
     # here so it asks the same question check_diff_scope does; None (the
     # standalone `ks run` case) falls back to the starting HEAD.
@@ -618,7 +624,23 @@ def run_loop(
     # Guardrails info
     ui.subsection("Guardrails")
     guard_baseline: git.WorkspaceBaseline | None = None
+    # The complete set the guard must not count: the caller's
+    # per-invocation harness files (#264) and kstrl's own state
+    # directory (#274). Both are loop-invariant, so this is assembled
+    # once here rather than rebuilt every iteration.
+    #
+    # The state carve-out supersedes the `.kstrl/runs/<run_id>/` entry
+    # this loop used to derive from the bus. `.kstrl/runs/` covers it
+    # wherever kstrl actually writes it, and it is now absent inside a
+    # component worktree, which is a TIGHTENING: the run journal is
+    # never written there, so that entry could only ever have hidden a
+    # `.kstrl/runs/<run_id>/` path the AGENT wrote.
+    guard_ignored: list[str] = []
     if config.allowed_paths and is_repo:
+        guard_ignored = [
+            *(guard_ignored_paths or ()),
+            *statedir.state_dir_carve_out(cwd, guard_state_root),
+        ]
         ui.info(f"Enforcing ALLOWED_PATHS={','.join(config.allowed_paths)}")
         # R8 review finding 4: the guard's question is "what did THIS
         # agent change", and only a before-picture can answer it. Taken
@@ -745,15 +767,12 @@ def run_loop(
         # When enforcement fails the iteration is treated as failed even
         # if the marker was seen.
         if config.allowed_paths and is_repo:
-            ignored_paths = list(guard_ignored_paths or ())
-            if bus is not None and bus.run_id:
-                ignored_paths.append(f".kstrl/runs/{bus.run_id}/")
             ok, violations = guards.enforce_allowed_paths(
                 config,
                 ui,
                 cwd,
                 interaction=channel,
-                ignored_paths=ignored_paths,
+                ignored_paths=guard_ignored,
                 baseline=guard_baseline,
             )
             if not ok:
