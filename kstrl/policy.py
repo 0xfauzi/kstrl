@@ -160,6 +160,20 @@ def _basename(path: str) -> str:
     return path.rsplit("/", 1)[-1]
 
 
+def count_diff_size(
+    numstat: Sequence[tuple[int | None, int | None, str]],
+) -> tuple[int, int]:
+    """``(files, lines)`` for a ``git diff --numstat`` result, lockfiles
+    excluded.
+
+    Shared by the R8.1 size caps and the #265 divergence detector, which
+    must agree about how large a change is. Binary files report ``-`` for
+    both counts (``None`` here) and so contribute their file but no lines.
+    """
+    counted = [row for row in numstat if _basename(row[2]) not in LOCKFILE_BASENAMES]
+    return len(counted), sum((added or 0) + (removed or 0) for added, removed, _ in counted)
+
+
 def _env_bool(name: str, default: bool) -> bool:
     value = os.environ.get(name)
     return default if value is None else value == "1"
@@ -430,13 +444,7 @@ def evaluate_policy(
         )
 
     # 3. Size caps (lockfiles excluded from the count).
-    counted = [
-        (added, removed, path)
-        for (added, removed, path) in numstat
-        if _basename(path) not in LOCKFILE_BASENAMES
-    ]
-    n_files = len(counted)
-    n_lines = sum((added or 0) + (removed or 0) for (added, removed, _p) in counted)
+    n_files, n_lines = count_diff_size(numstat)
     if config.max_files_changed >= 0 and n_files > config.max_files_changed:
         violations.append(
             PolicyViolation(

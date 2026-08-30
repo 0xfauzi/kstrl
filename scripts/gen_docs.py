@@ -117,12 +117,23 @@ class SectionSpec:
     probe_undocumented_fields: bool
 
 
+def _all_field_names(cfg_cls: Any) -> list[str]:
+    """Every field name on a config dataclass, in declaration order.
+
+    Outside :func:`_section_specs` on purpose: an inline comprehension
+    per spec is what made that function's complexity grow with every
+    section registered, and both complexity gates measure it.
+    """
+    return [f.name for f in dataclasses.fields(cfg_cls)]
+
+
 def _section_specs() -> list[SectionSpec]:
     from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
     from kstrl.config import KstrlConfig
     from kstrl.contract import ContractConfig
+    from kstrl.divergence import DivergenceConfig
     from kstrl.evolution import EvolutionConfig
     from kstrl.factory import FactoryConfig
     from kstrl.feedforward import FeedforwardConfig
@@ -216,7 +227,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "timeout",
             "Timeout limits (seconds; 0 or less disables)",
-            identity_keys(TimeoutConfig, [f.name for f in dataclasses.fields(TimeoutConfig)]),
+            identity_keys(TimeoutConfig, _all_field_names(TimeoutConfig)),
             lambda root: TimeoutConfig.load(root_dir=root),
             TimeoutConfig(),
             probe_undocumented_fields=True,
@@ -251,7 +262,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "breaker",
             "No-progress circuit breaker (R7.5; 0 iterations disables)",
-            identity_keys(BreakerConfig, [f.name for f in dataclasses.fields(BreakerConfig)]),
+            identity_keys(BreakerConfig, _all_field_names(BreakerConfig)),
             lambda root: BreakerConfig.load(root_dir=root),
             BreakerConfig(),
             probe_undocumented_fields=True,
@@ -259,7 +270,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "sandbox",
             "OS-level agent sandboxing (R7.5; claude-code/codex only)",
-            identity_keys(SandboxConfig, [f.name for f in dataclasses.fields(SandboxConfig)]),
+            identity_keys(SandboxConfig, _all_field_names(SandboxConfig)),
             lambda root: SandboxConfig.load(root_dir=root),
             SandboxConfig(),
             probe_undocumented_fields=True,
@@ -267,7 +278,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "verify",
             "Phase 1 mechanical verification",
-            identity_keys(VerifyConfig, [f.name for f in dataclasses.fields(VerifyConfig)]),
+            identity_keys(VerifyConfig, _all_field_names(VerifyConfig)),
             lambda root: VerifyConfig.load(root_dir=root),
             VerifyConfig(),
             probe_undocumented_fields=True,
@@ -275,7 +286,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "fixtures",
             "Phase 1 approved-fixtures oracle (R7.2; default off)",
-            identity_keys(FixturesConfig, [f.name for f in dataclasses.fields(FixturesConfig)]),
+            identity_keys(FixturesConfig, _all_field_names(FixturesConfig)),
             lambda root: FixturesConfig.load(root_dir=root),
             FixturesConfig(),
             probe_undocumented_fields=True,
@@ -283,7 +294,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "policy",
             "Phase 1 policy envelope (R8.1; opt-in)",
-            identity_keys(PolicyConfig, [f.name for f in dataclasses.fields(PolicyConfig)]),
+            identity_keys(PolicyConfig, _all_field_names(PolicyConfig)),
             lambda root: PolicyConfig.load(root_dir=root),
             PolicyConfig(),
             probe_undocumented_fields=True,
@@ -291,7 +302,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "autonomy",
             "Autonomy ladder (R8.2; opt-in)",
-            identity_keys(AutonomyConfig, [f.name for f in dataclasses.fields(AutonomyConfig)]),
+            identity_keys(AutonomyConfig, _all_field_names(AutonomyConfig)),
             lambda root: AutonomyConfig.load(root_dir=root),
             AutonomyConfig(),
             probe_undocumented_fields=True,
@@ -299,7 +310,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "inbox",
             "Exception inbox (R8.3)",
-            identity_keys(InboxConfig, [f.name for f in dataclasses.fields(InboxConfig)]),
+            identity_keys(InboxConfig, _all_field_names(InboxConfig)),
             lambda root: InboxConfig.load(root_dir=root),
             InboxConfig(),
             probe_undocumented_fields=True,
@@ -307,9 +318,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "intake_github",
             "GitHub Issues remote inbox (R8.6)",
-            identity_keys(
-                GitHubIntakeConfig, [f.name for f in dataclasses.fields(GitHubIntakeConfig)]
-            ),
+            identity_keys(GitHubIntakeConfig, _all_field_names(GitHubIntakeConfig)),
             lambda root: GitHubIntakeConfig.load(root_dir=root),
             GitHubIntakeConfig(),
             probe_undocumented_fields=True,
@@ -317,7 +326,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "serve",
             "Continuous-intake daemon (R8.6)",
-            identity_keys(ServeConfig, [f.name for f in dataclasses.fields(ServeConfig)]),
+            identity_keys(ServeConfig, _all_field_names(ServeConfig)),
             lambda root: ServeConfig.load(root_dir=root),
             ServeConfig(),
             probe_undocumented_fields=True,
@@ -325,15 +334,23 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "queue",
             "Continuous intake queue (R8.6)",
-            identity_keys(QueueConfig, [f.name for f in dataclasses.fields(QueueConfig)]),
+            identity_keys(QueueConfig, _all_field_names(QueueConfig)),
             lambda root: QueueConfig.load(root_dir=root),
             QueueConfig(),
             probe_undocumented_fields=True,
         ),
         SectionSpec(
+            "divergence",
+            "Across-attempt review divergence detector (#265)",
+            identity_keys(DivergenceConfig, _all_field_names(DivergenceConfig)),
+            lambda root: DivergenceConfig.load(root_dir=root),
+            DivergenceConfig(),
+            probe_undocumented_fields=True,
+        ),
+        SectionSpec(
             "adequacy",
             "Test-suite adequacy gate (R8.5; opt-in, advisory first)",
-            identity_keys(AdequacyConfig, [f.name for f in dataclasses.fields(AdequacyConfig)]),
+            identity_keys(AdequacyConfig, _all_field_names(AdequacyConfig)),
             lambda root: AdequacyConfig.load(root_dir=root),
             AdequacyConfig(),
             probe_undocumented_fields=True,
@@ -341,7 +358,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "security",
             "Phase 2.5 security review",
-            identity_keys(SecurityConfig, [f.name for f in dataclasses.fields(SecurityConfig)]),
+            identity_keys(SecurityConfig, _all_field_names(SecurityConfig)),
             lambda root: SecurityConfig.load(root_dir=root),
             SecurityConfig(),
             probe_undocumented_fields=True,
@@ -349,7 +366,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "contract",
             "Phase 3 cross-component contract testing",
-            identity_keys(ContractConfig, [f.name for f in dataclasses.fields(ContractConfig)]),
+            identity_keys(ContractConfig, _all_field_names(ContractConfig)),
             lambda root: ContractConfig.load(root_dir=root),
             ContractConfig(),
             probe_undocumented_fields=True,
@@ -359,7 +376,7 @@ def _section_specs() -> list[SectionSpec]:
             "Phase 0 feedforward (computational, no LLM)",
             identity_keys(
                 FeedforwardConfig,
-                [f.name for f in dataclasses.fields(FeedforwardConfig)],
+                _all_field_names(FeedforwardConfig),
             ),
             lambda root: FeedforwardConfig.load(root_dir=root),
             FeedforwardConfig(),
@@ -388,7 +405,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "evolution",
             "Continuous-learning journal",
-            identity_keys(EvolutionConfig, [f.name for f in dataclasses.fields(EvolutionConfig)]),
+            identity_keys(EvolutionConfig, _all_field_names(EvolutionConfig)),
             lambda root: EvolutionConfig.load(root_dir=root),
             EvolutionConfig(),
             probe_undocumented_fields=True,
@@ -396,7 +413,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "notify",
             "Run-milestone notification hooks (R3.2)",
-            identity_keys(NotifyConfig, [f.name for f in dataclasses.fields(NotifyConfig)]),
+            identity_keys(NotifyConfig, _all_field_names(NotifyConfig)),
             lambda root: NotifyConfig.load(root_dir=root),
             NotifyConfig(),
             probe_undocumented_fields=True,
@@ -404,7 +421,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "linear",
             "Linear integration (R7.4; default off)",
-            identity_keys(LinearConfig, [f.name for f in dataclasses.fields(LinearConfig)]),
+            identity_keys(LinearConfig, _all_field_names(LinearConfig)),
             lambda root: LinearConfig.load(root_dir=root),
             LinearConfig(),
             probe_undocumented_fields=True,
@@ -570,6 +587,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "queue",
         "lease_ttl_seconds",
     ): "claim validity in seconds; the reaper recovers anything past this",
+    ("divergence", "enabled"): "fail a component whose change keeps growing while the review "
+    "keeps failing, instead of paying for another retry (#265)",
+    (
+        "divergence",
+        "growth_steps",
+    ): "consecutive growth steps required before the detector fires, so it "
+    "needs growth_steps + 1 measured attempts; the default is a structural "
+    "minimum, not a measured number",
     ("adequacy", "enabled"): "run the Layer 0 test-adequacy checks (opt-in)",
     ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
     ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",

@@ -261,6 +261,17 @@ comment_on_result = true           # post the verdict back to the source issue
 dry_run = false                    # true = poll and log, send no writebacks
 timeout_seconds = 60.0
 
+# Across-attempt divergence detector (#265). The retry loop can drive a
+# component the wrong way: the review fails, the engineer answers by writing
+# more code, the change grows, and the reviewer comes back no happier. Each
+# turn of that costs a full engineer run. The detector fails the component
+# once the change has grown at every one of `growth_steps` consecutive failed
+# reviews AND the reviewer never retired findings without raising new ones.
+# `ks retry` starts a fresh run with an empty history, so it is overridable.
+[divergence]
+enabled = true
+growth_steps = 2                   # consecutive growth steps; needs N+1 measured attempts
+
 # Test-suite adequacy gate (R8.5), Layer 0: reads the diff and changed test
 # files - no test execution, no coverage, no mutation tooling. Catches the
 # suite getting WEAKER (deleted tests, added skip/xfail, assertions removed)

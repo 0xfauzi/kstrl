@@ -365,6 +365,20 @@ class DiffChunked(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class ReviewDivergence(Event):
+    """#265: the retry loop was growing the change without the review
+    getting any closer to passing, so the component was failed rather
+    than retried. Parallel series, one entry per attempt in the window
+    that tripped it."""
+
+    type: ClassVar[str] = "review_divergence"
+    attempts: tuple[int, ...] = ()
+    lines_changed: tuple[int, ...] = ()
+    files_changed: tuple[int, ...] = ()
+    blocking_findings: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
 class ChunkBudgetInsufficient(Event):
     type: ClassVar[str] = "chunk_budget_insufficient"
     phase: str = ""

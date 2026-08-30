@@ -354,6 +354,33 @@ Opt-in and **advisory first**: findings are recorded without failing, so turning
 
 Layers 1 (patch coverage), 2 (diff-scoped mutation) and 3 (fixtures required at L3+) are not built; see `docs/dark-factory-roadmap.md` for why they wait on measured thresholds.
 
+## DivergenceConfig (`[divergence]`)
+
+Across-attempt divergence detector (#265). `NoProgressBreaker` (`[breaker]`) watches one engineer loop and halts when consecutive iterations change nothing; this watches the retry loop ABOVE it and halts on the mirror-image failure, where every attempt changes a great deal and none of it helps. The review fails, the engineer answers the findings by writing more code, the change grows, the reviewer comes back no happier, and the next retry costs another full engineer run.
+
+The predicate needs no threshold on size. Over the last `growth_steps + 1` **consecutive** attempts in which the reviewer ran and failed the component, it fires when the change grew strictly at every step AND at no step did the reviewer's blocking findings become a proper subset of the previous attempt's. The second half is what protects a converging component: answering a review finding almost always means writing code, so growth alone says nothing, and an attempt that retires findings without raising new ones resets the streak however much larger it made the change. Identity rather than count, because a count cannot tell a genuinely retired finding from a new one that replaced it.
+
+Growth is measured as lines changed against the base (`git diff --numstat`), deliberately not as hunk or diff-chunk size: #266 proposes dropping the pasted diff entirely, and a detector built on chunking would then measure a quantity nothing computes. Files touched is recorded as operator evidence but is not part of the predicate.
+
+Growth is counted through `policy.count_diff_size`, the same helper as the R8.1 size caps, so the two agree about how large a change is and the detector inherits their exclusion of machine-generated lockfiles - without which a dependency bump could supply the growth half of a trip on its own.
+
+**Blocking, not advisory**, which is a departure from the advisory-first default and is argued rather than assumed. The value of the detector is not paying for the attempt it forecloses, and a report-only outcome saves nothing. The doctrine's own carve-out is "every gate ships advisory unless it is mechanical and exact" (`docs/control-loop-design.md`), and this predicate is mechanical, with the limit stated honestly below. With the default `[factory] max_retries = 3` it forecloses exactly one remaining attempt, and `ks retry` starts a fresh run with an empty reading history, so an operator who disagrees pays one command.
+
+Unlike the other `FailureAction.FAIL` sites, which are proofs (an adversarial budget only shrinks, so retrying provably cannot recover it), this one is a forecast. That is why the predicate is deliberately conservative and why the kill switch and the `ks retry` override both exist.
+
+**What it cannot see.** The growth half is exact. The retirement half is a deterministic identity match over the reviewer's structured output, and identity is not exactness. A concern's key is its category plus the file it names, with the line number stripped, which over-collapses: two findings in one file share a key, which reads as improvement and holds the detector off - the safe direction. A criterion's key is the story id plus the criterion text the reviewer echoed, and that fails the other way: a reviewer that rewords a still-failing criterion between attempts produces a key the previous attempt did not have, so a genuine retirement can read as a new finding and the streak survives. That is the known false-positive channel and the first thing to check on a wrong trip.
+
+In `single_pr` mode every component shares one branch, so the reported numbers include components that already landed. The predicate survives it (`max_parallel` is forced to 1 there, so the offset is constant across one component's attempts and strict inequality is offset-invariant), but the numbers in the message are the branch's rather than the component's.
+
+The default `growth_steps = 2` is a **structural minimum, not a measured number**, and is recorded as unmeasured. One step is the ordinary shape of a converging retry (a finding is answered by writing code, and the new code draws a finding of its own), so a single step cannot tell a trend from a step; two consecutive steps is the smallest window in which "monotonic" carries information beyond "changed". Lower it to 1 to save one more attempt at the cost of false positives.
+
+Every "cannot tell" path declines to record a reading rather than guessing one - a crashed reviewer, a failed `git diff --numstat`, a failure whose blocking findings cannot be keyed. The predicate needs consecutive attempts, so a missing reading breaks the streak by itself and the loop keeps its retries.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_DIVERGENCE_ENABLED` | bool (`1`) | true |
+| `KSTRL_DIVERGENCE_GROWTH_STEPS` | int | 2 |
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

@@ -83,6 +83,13 @@ def _sample_events() -> list[ev.Event]:
         ev.DiffUnsplittable(component="comp-a", error="one hunk", diff_chars=99999),
         ev.DiffChunked(component="comp-a", chunks=3, diff_chars=50000),
         ev.ChunkBudgetInsufficient(component="comp-a", phase="review", chunks=4, remaining=2),
+        ev.ReviewDivergence(
+            component="comp-a",
+            attempts=(1, 2, 3),
+            lines_changed=(612, 1408, 2907),
+            files_changed=(4, 6, 7),
+            blocking_findings=(6, 1, 10),
+        ),
         ev.AdversarialAgentSelected(
             phase="review",
             agent_source="config",

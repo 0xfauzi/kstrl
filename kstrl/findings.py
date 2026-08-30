@@ -31,6 +31,12 @@ POLICY_CATEGORY_PREFIX = "policy_"
 # so no model tag - the gate, not an LLM, decided.
 ADEQUACY_CATEGORY_PREFIX = "adequacy_"
 
+# #265: the across-attempt divergence detector tripped - the change kept
+# growing while the reviewer's blocking findings never became a proper
+# subset of the previous attempt's. Mechanical like the policy and
+# adequacy families, so no model tag: the predicate decided, not an LLM.
+DIVERGENCE_CATEGORY = "review_divergence"
+
 # R10.3: one story the engineer marked passes=true that the reviewer did
 # not independently mark pass. The comparison is mechanical, but the
 # evidence is an LLM's verdict, so unlike the policy and adequacy
@@ -192,6 +198,23 @@ class Finding:
             explanation=explanation,
             suggestion=suggestion,
             tags=("adequacy", f"adequacy:{category}"),
+        )
+
+    @classmethod
+    def divergence(cls, explanation: str) -> Finding:
+        """Build a Finding for a #265 across-attempt divergence trip.
+
+        Severity ``fail`` because the trip ends the component: unlike the
+        adequacy family it is not judged against an invented threshold,
+        it is a deterministic reading of the loop's own trajectory.
+        """
+        return cls(
+            phase="review",
+            category=DIVERGENCE_CATEGORY,
+            severity="fail",
+            location="",
+            explanation=explanation,
+            tags=("divergence", "phase:review"),
         )
 
     @classmethod
