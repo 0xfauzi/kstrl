@@ -65,6 +65,26 @@ If `setpoint_agreement = "block"` is set together with `review_mode = "skip"`, t
 
 If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
 
+## Phase 2: the retry loop is diverging (#265)
+
+**Symptom**: `divergence detector tripped: the change is outgrowing the reviewer. Across attempts 1, 2, 3 the review failed every time, the change got larger at every step (...), and not one of the reviewer's blocking findings was retired at any step (...)`.
+
+In advisory mode (the default) this is a warning line and a `review_divergence` finding, and the component keeps retrying. Under `[divergence] mode = "block"` it is terminal, with `failed_check = divergence` and journal signature `review:divergence`.
+
+The loop drove a component the wrong way. Every retry hands the engineer the review findings and asks it to address them, the engineer correctly answers by writing more code, and the change gets larger while the reviewer stays exactly as unhappy. #265 measured one such component at $21.44 and 71 minutes across four attempts, with zero completions, and that is what motivated the detector. It is deliberately narrower than that run: on the #265 trajectory itself (6 blocking findings, then 1, then 10) attempt 2 retired findings, which resets the streak, so this predicate would not have fired there. It catches the case where nothing at all is being retired.
+
+**Diagnose**:
+
+- The message carries the whole case: the attempt numbers, lines changed (added plus removed) per attempt, files touched per attempt, and the reviewer's blocking-finding count per attempt. The same series is on the `review_divergence` event in `.kstrl/runs/<run_id>/events.jsonl`, with `blocking` recording whether the trip actually failed the component. In advisory mode the finding is also journalled to `.kstrl/evolution.jsonl` as `findings_superseded` when the attempt is retried, so it survives a component that later passes.
+- Read the per-attempt review findings alongside it. A genuine trip looks like the same objections restated attempt after attempt while the diff climbs. Retiring even ONE blocking finding at any step resets the streak, so a trip means none was retired at any of them.
+- The known false-positive channel is the reverse of what most people expect. The retirement half reconstructs a finding's identity from reviewer prose, and any instability there (a reworded criterion, a moved line, a rephrased explanation) makes an old key vanish, which reads as a retirement and resets the streak. The heuristic therefore errs toward staying quiet. If a trip looks wrong, the thing to check is whether the reviewer really was repeating itself verbatim, because that is what it takes to fire.
+
+**Resolve**: split the component into smaller ones, or narrow its PRD. The message says so because that is the only fix: the change has grown past what one review pass can converge on, and another attempt from the same branch can only add to it.
+
+`ks retry <comp_id>` is the override. It resets `retries` and clears the finding stream, and the detector's reading history is in-run only, so a retry starts with a clean slate and a full retry budget. That is the escape hatch when the operator disagrees with a blocking trip.
+
+To stop it failing components, set `[divergence] mode = "advisory"` (the default) so trips are recorded without blocking, or `mode = "skip"` to stop measuring. To make it more patient, raise `[divergence] growth_steps`; it must stay >= 1.
+
 ## Phase 2.5: security review failed (hard mode)
 
 **Symptom**: `Phase 2.5 FAILED for <comp_id>: N critical, M high`

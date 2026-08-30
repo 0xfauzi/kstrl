@@ -459,6 +459,14 @@ DEFAULT_KSTRL_TOML = """\
 # snooze_hours = 24.0              # default snooze TTL
 # notify_action_required = true    # notify only on action-required items
 
+# Across-attempt divergence detector (#265): record (or, in block mode, fail
+# on) a retry loop where the change got larger at every one of N consecutive
+# failed reviews AND not one of the reviewer's blocking findings was retired.
+# Advisory first; graduate to block once you have seen its output on real runs.
+[divergence]
+# mode = "advisory"                # skip | advisory | block
+# growth_steps = 2                 # consecutive steps; needs N+1 measured attempts, must be >= 1
+
 # Test-suite adequacy gate (R8.5) Layer 0: flags a diff that weakens the
 # suite and new tests with no falsifiable assertion. Opt-in, advisory first.
 [adequacy]

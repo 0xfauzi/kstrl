@@ -354,6 +354,41 @@ Opt-in and **advisory first**: findings are recorded without failing, so turning
 
 Layers 1 (patch coverage), 2 (diff-scoped mutation) and 3 (fixtures required at L3+) are not built; see `docs/dark-factory-roadmap.md` for why they wait on measured thresholds.
 
+## DivergenceConfig (`[divergence]`)
+
+Across-attempt divergence detector (#265). `NoProgressBreaker` (`[breaker]`) watches one engineer loop and halts when consecutive iterations change nothing; this watches the retry loop ABOVE it and halts on the mirror-image failure, where every attempt changes a great deal and none of it helps. The review fails, the engineer answers the findings by writing more code, the change gets larger, the reviewer comes back no happier, and the next retry costs another full engineer run.
+
+The predicate needs no threshold on size. Over the last `growth_steps + 1` **consecutive** attempts in which the reviewer ran and failed the component, it fires when the change got larger at every step AND not one of the reviewer's blocking findings was retired at any step. So a trip says something narrow and strong: the change keeps growing and nothing the reviewer objected to has gone away.
+
+The retirement half is deliberately weak, because of what a reviewer does on a changed diff: it raises something new almost every time. A stricter test ("the new finding set is a proper subset of the old one") reads the ordinary converging trajectory as failure - retire A, keep B, draw C; retire B, keep C, draw D - and would condemn exactly the component that was working. Identity rather than count, because a count cannot tell a genuinely retired finding from a new one that replaced it.
+
+Size is lines changed against the base (`git diff --numstat`), deliberately not hunk or diff-chunk size: #266 proposes dropping the pasted diff entirely, and a detector built on chunking would then measure a quantity nothing computes. It is counted through `policy.count_diff_size`, the same helper as the R8.1 size caps, so the two agree and the detector inherits their exclusion of machine-generated lockfiles - without which a dependency bump could supply the size half of a trip on its own.
+
+`lines_changed` is git's own sense of the phrase, **lines added plus lines removed**, the quantity `[policy] max_lines_changed` caps. It is churn, not file growth: deleting 300 pre-existing lines and writing 300 better ones raises it by 600. That is intended, because a component that keeps rewriting one region without answering a single objection is diverging exactly as much as one that keeps appending, but it means the number is never a claim that the artifact got bigger. Files touched is recorded as operator evidence and is not part of the predicate.
+
+**Which way the identity heuristic fails.** The size half is exact. The retirement half reconstructs a finding's identity from what the reviewer wrote: story id plus criterion text for a criterion, category plus file plus explanation for a concern. The weak reset buys one saving property: a trip requires that EVERY previously-blocking key still be present, so any instability in a key (a reworded criterion, a moved line, a rephrased explanation) makes an old key vanish, which counts as a retirement and resets the streak. **Key instability can therefore only produce misses, never false trips.**
+
+**What it would not have caught.** #265 motivated the detector; the shipped predicate would not have fired on that run, and saying otherwise would be inventing a result. The run went 6 blocking findings, then 1, then 10. Attempt 2 retired at least five of attempt 1's six whatever their identities were, so the streak resets there and one bad step afterwards is not two. Checked by exhaustive search rather than argued: over all 128,128 trajectories of shape 6 to 1 to 10 across a 16-key universe, the predicate trips on none. That is the deliberate price of not condemning the converging trajectory above.
+
+**Advisory by default.** `mode = "advisory"` records the trip as a finding and a `review_divergence` event and keeps retrying; `mode = "block"` fails the component instead of paying for another engineer run; `mode = "skip"` does not measure at all. The honest cost of the default is that it saves no money on the run it fires on, and the money was the point of the issue. It ships that way because of the paragraph above: a gate that cannot be shown to fire on the run it was built from, whose retirement half is a heuristic with no measured false-positive rate, has not earned the right to end a component. `docs/control-loop-design.md` sets the rule - a gate graduates to blocking when the operator has seen its output on real runs and can name what it caught and what it flagged wrongly - and advisory mode is what produces that evidence.
+
+Where to read that evidence: the `review_divergence` event in `.kstrl/runs/<run_id>/events.jsonl` carries the per-attempt series and a `blocked` flag; the finding reaches `.kstrl/evolution.jsonl` as `findings_superseded` when the attempt is retried, so it survives a component that later passes; and the message is printed as a warning line. It never reaches the PR body, and cannot: it is only ever recorded on a failing attempt, and `begin_attempt` clears the finding stream before the passing attempt that builds the PR.
+
+Unlike `[adequacy] layer0` and `[factory] setpoint_agreement`, the autonomy ladder deliberately does not harden this gate at L1 and above. Those gates ask whether an independent sensor confirmed a claim, and a run spending less human attention should insist on that harder. This one forecasts, from a heuristic with no measured false-positive rate, that further retries are not worth buying, and auto-hardening it at exactly the levels where nobody is watching is how an unattended run loses components to a gate whose output no operator has read.
+
+Under `mode = "block"` a trip routes through `FailureAction.FAIL` and opens an R8.3 inbox item through the generic halted-run path. Unlike the other FAIL sites, which are proofs (an adversarial budget only shrinks, so retrying provably cannot recover it), this one is a forecast. With the default `[factory] max_retries = 3` it forecloses exactly one remaining attempt, and `ks retry` starts a fresh run with an empty reading history, so an operator who disagrees pays one command. `docs/runbook.md` carries the triage entry.
+
+`growth_steps` must be >= 1; a non-positive value is rejected at load rather than quietly disabling the gate, because `mode = "skip"` is the way to turn it off. The default of 2 is a **structural minimum, not a measured number**, and is recorded as unmeasured. One step is the ordinary shape of a converging retry (a finding is answered by writing code, and the new code draws a finding of its own), so a single step cannot tell a trend from a step; two consecutive steps is the smallest window in which "monotonic" carries information beyond "changed".
+
+Every "cannot tell" path declines to record a reading rather than guessing one - a crashed reviewer, a failed `git diff --numstat`, a failure whose blocking findings cannot be keyed. The predicate needs consecutive attempts, so a missing reading breaks the streak by itself and the loop keeps its retries.
+
+In `single_pr` mode every component shares one branch, so the reported numbers include components that already landed. The predicate survives it (`max_parallel` is forced to 1 there, so the offset is constant across one component's attempts and strict inequality is offset-invariant), but the numbers in the message are the branch's rather than the component's.
+
+| Env var | Type | Default |
+|---|---|---|
+| `KSTRL_DIVERGENCE_MODE` | `skip` \| `advisory` \| `block` | `advisory` |
+| `KSTRL_DIVERGENCE_GROWTH_STEPS` | int (>= 1) | 2 |
+
 ## ContractConfig (`[contract]`)
 
 | Env var | Type | Default |

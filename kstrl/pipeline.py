@@ -50,6 +50,12 @@ from kstrl.agents.base import (
 )
 from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.context import IterationContext, IterationRecord
+from kstrl.divergence import (
+    AttemptReading,
+    DivergenceConfig,
+    detect_divergence,
+    review_finding_keys,
+)
 from kstrl.findings import (
     ADEQUACY_CATEGORY_PREFIX,
     POLICY_CATEGORY_PREFIX,
@@ -70,7 +76,7 @@ from kstrl.interaction import (
 from kstrl.loop import UNENFORCEABLE_CALLS
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.observability import NotifyHooks
-from kstrl.policy import PolicyConfig
+from kstrl.policy import PolicyConfig, count_diff_size
 from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
@@ -522,6 +528,19 @@ class ComponentPipeline:
         # evolution journal. The journal - not the event stream - is the
         # durable L2+ gate evidence.
         self.fact_utilization: dict[str, FactUtilization] = {}
+        # #265: one reading per attempt whose REVIEWER ran and failed the
+        # component, keyed by component id. Named for the phase rather
+        # than for the change: the predicate is phase-agnostic, so a
+        # second phase wiring into it later must get its own store or it
+        # would compare one phase's finding identities against another's.
+        #
+        # In-run only, deliberately: `ks retry` already resets `retries`
+        # and clears the finding stream, so an operator's explicit retry
+        # is meant to start from a clean slate and this history must not
+        # outlive it. It also stays out of IterationContext, which is
+        # rendered into the engineer's prompt - a cost governor has no
+        # business in the agent's context.
+        self.review_readings: dict[str, list[AttemptReading]] = {}
         # Components whose usage snapshot could not be retired
         # before this attempt launched; disk salvage is refused
         # for them (R8 review P2 on 22e99b4).
@@ -2792,6 +2811,168 @@ class ComponentPipeline:
             chunks=review_chunks,
         )
 
+    def _divergence_failure(
+        self,
+        comp: Component,
+        wt_path: Path,
+        review_result: ReviewResult,
+    ) -> str | None:
+        """#265: record this attempt's reading and ask whether the retry
+        loop is diverging. Returns the message that should FAIL the
+        component, or ``None`` when nothing should.
+
+        A trip is reported here whatever the mode - the line, the
+        finding and the event all go out before this returns - so the
+        return value carries the routing decision only, and ``None``
+        covering both "not diverging" and "recorded, keep retrying" is
+        not a lost fact: an advisory trip is already durable in the
+        event stream by then.
+
+        Every "cannot be told" path declines to record a reading rather
+        than recording a guessed one. The predicate needs CONSECUTIVE
+        attempts, so a missing reading breaks the streak by itself, which
+        is the fail-open direction: the loop keeps its retries.
+        """
+        config = DivergenceConfig.load(self.root_dir)
+        if not config.measures:
+            return None
+        if review_result.infrastructure_error:
+            # A crashed reviewer produced no verdict, so there is nothing
+            # to compare. Same rule as FailureEntry.infrastructure.
+            return None
+        keys = review_finding_keys(review_result)
+        if not keys:
+            # The review failed on something this predicate cannot key
+            # (an empty-location concern family, a hand-built result).
+            return None
+        try:
+            numstat = git.get_diff_numstat(
+                self.manifest.base_branch,
+                wt_path,
+                strict=True,
+            )
+        except git.GitDiffError as exc:
+            self.ui.warn(f"  Divergence detector could not measure {comp.id}: {exc}")
+            return None
+        # R8.1's size caps and this detector must agree about how large a
+        # change is, so both count through the same helper - which also
+        # brings its exclusion of machine-generated lockfiles, without
+        # which a dependency bump could supply the size half of a trip.
+        # The result is lines ADDED PLUS REMOVED, so it is churn rather
+        # than file growth; see the module docstring for why that is what
+        # the predicate wants.
+        files_changed, lines_changed = count_diff_size(numstat)
+        readings = self.review_readings.setdefault(comp.id, [])
+        readings.append(
+            AttemptReading(
+                attempt=comp.retries + 1,
+                lines_changed=lines_changed,
+                files_changed=files_changed,
+                finding_keys=keys,
+                # The reviewer's own count, NOT len(keys): keys
+                # deduplicate and the operator's line above this one
+                # ("Phase 2 FAILED: N failures") does not.
+                blocking_count=review_result.fail_count,
+            )
+        )
+        verdict = detect_divergence(readings, config)
+        if verdict is None:
+            return None
+        message = verdict.message
+        self._add_findings(
+            comp,
+            [Finding.divergence(message, severity="fail" if config.blocks else "advisory")],
+        )
+        self.bus.emit(
+            ev.ReviewDivergence(
+                component=comp.id,
+                attempts=tuple(r.attempt for r in verdict.readings),
+                lines_changed=tuple(r.lines_changed for r in verdict.readings),
+                files_changed=tuple(r.files_changed for r in verdict.readings),
+                blocking_findings=tuple(r.blocking_count for r in verdict.readings),
+                blocked=config.blocks,
+            )
+        )
+        # One event, one print site. Severity of the LINE follows the
+        # severity of the decision.
+        if config.blocks:
+            self.ui.err(f"  {message}")
+            return message
+        self.ui.warn(f"  {message}")
+        return None
+
+    def _review_failure(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        wt_path: Path,
+        review_result: ReviewResult,
+    ) -> ReviewPhaseResult:
+        """Phase 2's failure branch: build the retry context, then decide
+        between retrying and the #265 divergence wall."""
+        self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
+        # #265: before spending another engineer run, ask whether the
+        # last few have been spent moving away from a pass. Advisory by
+        # default: this records the trip and keeps retrying, and returns
+        # a message only under `[divergence] mode = "block"`.
+        #
+        # When it DOES block, it is FAIL rather than RETRY_OR_FAIL,
+        # because the whole value is not paying for the attempt it
+        # forecloses and an outcome that only reported would save
+        # nothing. Stated plainly, because the other FAIL sites do not
+        # work this way: budget exhaustion is a PROOF that retrying
+        # cannot help (a budget only shrinks), while this is a FORECAST
+        # from the loop's own trajectory. That gap is exactly why the
+        # default is advisory, and why the forecast is built to fail
+        # open - see the module docstring on which way its identity
+        # heuristic errs. Do not read the precedent the other way round
+        # and route a weaker forecast here.
+        divergence = self._divergence_failure(comp, wt_path, review_result)
+        if divergence is not None:
+            return ReviewPhaseResult(
+                ran=True,
+                result=review_result,
+                failure=PhaseFailure(
+                    action=FailureAction.FAIL,
+                    error=divergence,
+                    phase="review",
+                    check="divergence",
+                    signatures=["review:divergence"],
+                ),
+            )
+        # The retry context is built only on the branch that uses it: the
+        # divergence wall above ends the component, so parsing and
+        # re-rendering the accumulated context there would be work thrown
+        # straight away.
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        ctx.add_review_finding(
+            review_result.as_retry_context(),
+            attempt=comp.retries + 1,
+            phase="review",
+            infrastructure=review_result.infrastructure_error,
+        )
+        # R6.1: journal the finding categories that failed the gate
+        # ("review:scope_creep", "review:prd_criterion",
+        # "review:infrastructure"), not the flattened reason.
+        from kstrl.evolution import signatures_from_findings
+
+        return ReviewPhaseResult(
+            ran=True,
+            result=review_result,
+            failure=PhaseFailure(
+                action=FailureAction.RETRY_OR_FAIL,
+                error=(
+                    "Review infrastructure error"
+                    if review_result.infrastructure_error
+                    else "Review failed"
+                ),
+                phase="review",
+                check=("infrastructure" if review_result.infrastructure_error else "criteria"),
+                context_json=ctx.to_json(),
+                signatures=signatures_from_findings("review", review_result.as_findings()),
+            ),
+        )
+
     def _phase_review(
         self,
         comp: Component,
@@ -3074,39 +3255,7 @@ class ComponentPipeline:
             self._add_findings(comp, disagreements)
 
         if not review_result.passed:
-            reason = (
-                "Review infrastructure error"
-                if review_result.infrastructure_error
-                else "Review failed"
-            )
-            self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
-            ctx = IterationContext.from_json(comp_result.context_json or "{}")
-            ctx.add_review_finding(
-                review_result.as_retry_context(),
-                attempt=comp.retries + 1,
-                phase="review",
-                infrastructure=review_result.infrastructure_error,
-            )
-            # R6.1: journal the finding categories that failed the
-            # gate ("review:scope_creep", "review:prd_criterion",
-            # "review:infrastructure"), not the flattened reason.
-            from kstrl.evolution import signatures_from_findings
-
-            return ReviewPhaseResult(
-                ran=True,
-                result=review_result,
-                failure=PhaseFailure(
-                    action=FailureAction.RETRY_OR_FAIL,
-                    error=reason,
-                    phase="review",
-                    check=("infrastructure" if review_result.infrastructure_error else "criteria"),
-                    context_json=ctx.to_json(),
-                    signatures=signatures_from_findings(
-                        "review",
-                        review_result.as_findings(),
-                    ),
-                ),
-            )
+            return self._review_failure(comp, comp_result, wt_path, review_result)
 
         # R10.3: the review itself passed. It can still have declined to
         # confirm a story the engineer marked done, and in blocking mode

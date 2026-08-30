@@ -610,6 +610,7 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "policy",
     "autonomy",
     "adequacy",
+    "divergence",
     "inbox",
     "security",
     "contract",
@@ -675,6 +676,10 @@ EXPECTED_SCAFFOLD_KEYS = {
         "layer0",
         "require_strong_oracle",
         "flag_assertionless_tests",
+    },
+    "divergence": {
+        "mode",
+        "growth_steps",
     },
     "inbox": {
         "enabled",
