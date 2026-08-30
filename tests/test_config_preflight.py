@@ -358,6 +358,15 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert result.exit_code == 2
         assert "error" in json.loads(result.stdout)
 
+    def test_help_still_renders_for_a_command_that_is_not_exempt(self) -> None:
+        """Reading the help is part of fixing the file. click handles
+        ``--help`` while parsing, before ``Command.invoke``, so this is a
+        property of where the check sits rather than of the exemptions."""
+        result = _invoke(["factory", "--help"], toml=MALFORMED_TOML)
+
+        assert result.exit_code == 0
+        assert "Usage:" in result.output
+
     def test_serve_checks_the_whole_config_under_its_own_exit_2(self) -> None:
         """Exempt from the seam, not from the guarantee: the daemon calls
         the preflight itself, so a section it never reads still stops it
