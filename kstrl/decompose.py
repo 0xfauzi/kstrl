@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -13,11 +14,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.agents.base import (
+    ARCHITECT_ROLE,
+    Agent,
+    collect_usage,
+    print_usage_rollup,
+    usage_cursor,
+)
 from kstrl.events import (
     ArtifactWritten,
     ComponentCompleted,
     ComponentFailed,
     ComponentStarted,
+    ComponentUsage,
     Event,
     EventBus,
     PhaseCompleted,
@@ -42,8 +51,9 @@ from kstrl.manifest import (
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
-    from kstrl.agents.base import Agent
     from kstrl.evolution import EvolutionJournal
     from kstrl.ui.base import UI
 
@@ -1158,7 +1168,64 @@ def _generate_component_prd(
     return prd_path
 
 
-ARCHITECT_COMPONENT = "architect"
+#: The architect is a one-role pseudo-component, so its component id and
+#: its role name are deliberately the same string. Aliased rather than
+#: restated so a rename cannot move one without the other and silently
+#: drop the architect to the tail of the usage rollup.
+ARCHITECT_COMPONENT = ARCHITECT_ROLE
+
+
+def _report_architect_usage(
+    agent: Agent,
+    ui: UI,
+    bus: EventBus | None,
+    *,
+    since: int,
+) -> None:
+    """Publish what the architect's LLM calls cost, to the bus and the
+    terminal (#257).
+
+    ``since`` is the agent's record count before this decomposition ran.
+    ``decompose_spec`` is public and takes an ``Agent``, so a caller can
+    hold one across two calls - re-running after editing the spec is the
+    obvious way - and would then see run 1 folded into run 2's event AND
+    its table. Every in-tree caller passes a fresh agent; the offset
+    removes the dependency rather than documenting an invariant a caller
+    cannot see (#257 review).
+
+    The component id is the pseudo-component ``_decompose_spec_impl``
+    already announced in the plan, so the event lands on an existing row
+    rather than conjuring one. The PHASE key is that same word because a
+    meter's phase key is the ROLE name - it is what the coverage footer
+    prints - and the taxonomy's fifth role is the architect. It is
+    deliberately not ``decompose``/``audit``, the lifecycle phases this
+    component reports elsewhere, which name steps rather than roles.
+
+    Called from a ``finally``, so it must not raise: ``collect_usage``
+    already swallows a malformed record set, and zero calls (an agent
+    predating R3.1, or one that never ran) reports nothing at all.
+    """
+    totals = collect_usage(agent, since=since)
+    if totals.calls == 0:
+        return
+    if bus is not None:
+        bus.emit(
+            ComponentUsage(
+                component=ARCHITECT_COMPONENT,
+                phase=ARCHITECT_ROLE,
+                **totals.to_dict(),
+            )
+        )
+    print_usage_rollup(
+        ui,
+        {ARCHITECT_COMPONENT: {ARCHITECT_ROLE: totals}},
+        totals,
+        # NOT "Usage rollup": `ks factory` decomposes and then prints its
+        # own run-level rollup, whose total excludes the architect until
+        # piece B. Two tables under one heading would invite reading the
+        # later one as the run's whole spend.
+        title="Architect usage",
+    )
 
 
 def _decompose_spec_impl(
@@ -1657,8 +1724,25 @@ def decompose_spec(
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
 ) -> Manifest:
-    """Run decomposition and guarantee a terminal event on every exit."""
+    """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
+    capture on every exit.
+
+    #257: the capture sits in a ``finally`` because the blocker halt is
+    the COMMON outcome on a first spec, and it is the path where the
+    operator most needs the number before editing and re-running. An
+    emit-after-return would miss exactly that case.
+
+    Consequence, stated plainly: ``RunCompleted`` is emitted by the impl
+    (both the halt site and the success tail) or by the ``except`` below,
+    so ``ComponentUsage`` trails it on EVERY path, not just the halt. No
+    consumer treats ``RunCompleted`` as a stream terminator - the reducer
+    sets a flag and keeps folding - and every reader folds the whole
+    stream, so position changes no total. A consumer that ever does stop
+    there has to move this emit, not just handle it.
+    """
     started = time.monotonic()
+    # Read BEFORE the work so the report covers this call only.
+    usage_before = usage_cursor(agent)
     try:
         return _decompose_spec_impl(
             spec_path=spec_path,
@@ -1692,3 +1776,26 @@ def decompose_spec(
                 )
             )
         raise
+    finally:
+        # Isolated because a `finally` that raises REPLACES the exception
+        # propagating through it, which here would destroy the very halt
+        # this reporting exists to cover: the SpecBlockerError becomes a
+        # BrokenPipeError traceback and the documented exit code 2 is
+        # lost.
+        #
+        # Measured (2026-08-30), because the obvious repro is the wrong
+        # one: `ks decompose | head -5` does NOT do it. Both UIs default
+        # to sys.stderr (ui/plain.py, ui/rich_ui.py), so piping stdout
+        # leaves the stream the rollup writes to untouched. The shape
+        # that fires is `ks decompose 2>&1 | head -5`, which raises
+        # BrokenPipeError out of PlainUI._print's `print(...)` once the
+        # writes pass the pipe buffer.
+        #
+        # `collect_usage` and `EventBus.emit` are already defensive; the
+        # UI writes are not, and must not be made so inside
+        # `print_usage_rollup` - the factory epilogue shares it and a
+        # failed write there should be loud.
+        try:
+            _report_architect_usage(agent, ui, bus, since=usage_before)
+        except Exception as exc:  # noqa: BLE001 - accounting never gates a run
+            logger.warning("Failed to report architect usage: %s", exc)

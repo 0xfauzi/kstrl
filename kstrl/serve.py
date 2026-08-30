@@ -66,8 +66,9 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 
+from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
     control_file,
@@ -377,10 +378,9 @@ class DailySpend:
     Only the third is unenforceable.
 
     ``unmetered_phases`` names phases known to spend without reporting
-    anything. The architect is always in it for a spec-decomposed item:
-    ``decompose_spec`` calls the agent but emits no usage events at all,
-    so its spend is real and invisible (#186 F3). Naming it is the honest
-    alternative to estimating it.
+    anything. The architect is always in it for a spec-decomposed item;
+    ``serve_cycle`` states why at the one place that fills this field.
+    Naming it is the honest alternative to estimating it (#186 F3).
     """
 
     date: str = ""
@@ -670,14 +670,62 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
     )
 
 
+#: Run-id kind prefix of the runs this daemon's own child produces;
+#: ``owned_run_spend`` charges only these.
+#:
+#: Coupled to the spawned argv by CONVENTION, not derivation: `ks factory`
+#: gets this prefix from ``mint_run_id``'s default, not from its command
+#: name. Changing either without the other silently empties the charge,
+#: so a test pins the two together.
+SPAWNED_RUN_KIND: Final = "factory"
+
+
+def owned_run_spend(
+    root_dir: Path,
+    runs_before: frozenset[str],
+) -> tuple[list[str], RunSpend]:
+    """The run dirs a launch produced, and the spend they reported.
+
+    "Produced" is narrower than "new" (#257 review). `ks decompose` takes
+    no factory.lock, so an operator can start one on this repo at any
+    time and its dir appears inside the window. That was harmless while
+    decompose emitted no usage events; #257 gave it real spend, so
+    without the kind filter the daemon would charge the queue item for
+    money an operator spent by hand, and `max_daily_spend` could halt the
+    queue on it.
+
+    What the filter does and does not buy, stated honestly: it removes
+    the decompose class completely, but it does NOT make the remaining
+    attribution exact. ``.kstrl/factory.lock`` excludes concurrent
+    factory EXECUTION, not concurrent factory DIRS - ``--force-lock``
+    runs a second factory by design, and the embedded dashboard mkdirs
+    its run dir in ``run_embedded`` before ``run_factory`` takes the
+    lock. A foreign factory-kind dir can still land in the window. That
+    hole predates #257 and is unchanged by it; what #257 changed, and
+    this restores, is that decompose dirs now carry real money.
+    """
+    owned = sorted(
+        rid for rid in run_dir_names(root_dir) - runs_before if run_kind(rid) == SPAWNED_RUN_KIND
+    )
+    total = RunSpend()
+    for rid in owned:
+        spend = read_run_spend(root_dir, rid)
+        total = RunSpend(
+            cost_usd=total.cost_usd + spend.cost_usd,
+            cost_calls=total.cost_calls + spend.cost_calls,
+            usage_calls=total.usage_calls + spend.usage_calls,
+        )
+    return owned, total
+
+
 def run_dir_names(root_dir: Path) -> frozenset[str]:
     """Names of every run directory currently on disk.
 
-    Snapshotted before and after a launch so the daemon charges only the
-    runs THIS invocation created (#186 F2). It also picks up a
-    decompose-kind run dir when one exists, which is the only way the
-    architect phase could ever be charged without changing the
-    architect's own instrumentation (#186 F3).
+    Every kind, deliberately: this is the raw disk fact. Snapshotted
+    before and after a launch so the daemon can tell which dirs are new
+    (#186 F2), but "new" alone does not mean "ours" - ``owned_run_spend``
+    narrows the difference to ``SPAWNED_RUN_KIND`` before charging it,
+    and states why there.
     """
     runs_root = state_dir(root_dir) / "runs"
     try:
@@ -2163,21 +2211,26 @@ def serve_cycle(
         return result
 
     # 7. Charge the spend before deciding anything, so a classification
-    #    bug cannot also lose the accounting. Only NEW run dirs count.
-    owned_runs = sorted(run_dir_names(root_dir) - runs_before)
-    total = 0.0
-    covered_calls = 0
-    total_calls = 0
-    for rid in owned_runs:
-        spend = read_run_spend(root_dir, rid)
-        total += spend.cost_usd
-        covered_calls += spend.cost_calls
-        total_calls += spend.usage_calls
+    #    bug cannot also lose the accounting. NEW run dirs are not enough
+    #    to go on; `owned_run_spend` says why.
+    owned_runs, owned = owned_run_spend(root_dir, runs_before)
+    total = owned.cost_usd
+    covered_calls = owned.cost_calls
+    total_calls = owned.usage_calls
 
-    # The architect always spends and never reports: decompose_spec calls
-    # the agent but emits no usage events at all, so its cost is real and
-    # invisible. Naming it keeps the day's total honestly labelled a
-    # floor instead of estimating it (#186 F3).
+    # The one statement of why the architect is unmetered HERE, which
+    # the docstrings above point at rather than restate.
+    #
+    # #257 gave decompose_spec a ComponentUsage event, but it reaches a
+    # run directory only when a bus is passed, and the `ks factory` this
+    # daemon spawns decomposes BEFORE any run directory exists, so it
+    # passes none. Nor does the kind filter above recover it from
+    # somewhere else: a `ks decompose` an operator ran by hand is a
+    # DIFFERENT spend, correctly excluded, not this run's architect.
+    # So the architect's spend here is still real and still invisible.
+    # Closing it needs the architect metered inside the factory run
+    # (#257 piece B). Until then, naming it keeps the day's total
+    # honestly labelled a floor instead of estimating it (#186 F3).
     unmetered = ("architect",)
     charged = ledger.charge(
         total,

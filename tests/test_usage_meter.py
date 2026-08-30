@@ -24,12 +24,19 @@ import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kstrl.agents.base import UsageRecord, UsageTotals, collect_usage
+from kstrl.agents.base import (
+    UsageRecord,
+    UsageTotals,
+    collect_usage,
+    format_usage_rollup,
+    usage_cursor,
+)
 from kstrl.agents.claude_code import ClaudeCodeAgent, _usage_from_result_event
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
@@ -39,7 +46,6 @@ from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     _clear_partial_usage,
-    _format_usage_rollup,
     _read_partial_usage,
     _run_component,
     _salvage_aborted_usage,
@@ -2480,7 +2486,7 @@ class TestRollupRendering:
         run_usage.merge(engineer)
         run_usage.merge(review)
 
-        lines = _format_usage_rollup(
+        lines = format_usage_rollup(
             {"comp-a": {"review": review, "engineer": engineer}},
             run_usage,
         )
@@ -2500,7 +2506,7 @@ class TestRollupRendering:
     def test_unknown_usage_rendered_as_dash_with_note(self) -> None:
         unknown = UsageTotals()
         unknown.add_record(UsageRecord(duration_seconds=3.0))
-        lines = _format_usage_rollup({"comp-a": {"engineer": unknown}}, unknown)
+        lines = format_usage_rollup({"comp-a": {"engineer": unknown}}, unknown)
         assert "-" in lines[1]
         assert any("lower bounds" in line for line in lines)
 
@@ -4463,7 +4469,7 @@ class TestRollupReportsPerAxisCoverage:
 
     def test_the_measured_run_gets_a_cost_coverage_note(self) -> None:
         meter, run_usage = _measured_meter()
-        lines = _format_usage_rollup(meter, run_usage)
+        lines = format_usage_rollup(meter, run_usage)
         notes = [line for line in lines if line.startswith("note:")]
         assert len(notes) == 1
         assert "cost coverage is PARTIAL" in notes[0]
@@ -4475,7 +4481,7 @@ class TestRollupReportsPerAxisCoverage:
     def test_an_uncosted_row_renders_a_dash_not_a_zero(self) -> None:
         """`-` means "no call here reported a cost", never "free"."""
         meter, run_usage = _measured_meter()
-        lines = _format_usage_rollup(meter, run_usage)
+        lines = format_usage_rollup(meter, run_usage)
         review_rows = [line for line in lines if " review " in line]
         assert review_rows
         for row in review_rows:
@@ -4490,7 +4496,7 @@ class TestRollupReportsPerAxisCoverage:
             total_tokens=10,
             cost_usd=0.0,
         )
-        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        lines = format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert "0.0000" in lines[1]
 
     def test_a_cost_only_row_renders_dashes_not_zero_tokens(self) -> None:
@@ -4508,7 +4514,7 @@ class TestRollupReportsPerAxisCoverage:
             )
         )
         assert (totals.known_calls, totals.token_calls) == (1, 0)
-        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        lines = format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         rows = [line for line in lines if not line.startswith("note:")]
         # Both the component row and the TOTAL row showed numeric zeros.
         assert len(rows) == 3
@@ -4529,7 +4535,7 @@ class TestRollupReportsPerAxisCoverage:
             total_tokens=0,
             cost_usd=1.0,
         )
-        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        lines = format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert lines[1].split()[-4:-2] == ["0", "0"]
 
     def test_a_fully_covered_run_gets_no_coverage_note(self) -> None:
@@ -4541,7 +4547,7 @@ class TestRollupReportsPerAxisCoverage:
             total_tokens=10,
             cost_usd=1.0,
         )
-        lines = _format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
+        lines = format_usage_rollup({"comp-a": {"engineer": totals}}, totals)
         assert not [line for line in lines if line.startswith("note:")]
 
     def test_a_silent_run_keeps_exactly_one_note(self) -> None:
@@ -4549,10 +4555,121 @@ class TestRollupReportsPerAxisCoverage:
         so precisely; three lines for one fact would read as noise."""
         unknown = UsageTotals()
         unknown.add_record(UsageRecord(duration_seconds=3.0))
-        lines = _format_usage_rollup({"comp-a": {"engineer": unknown}}, unknown)
+        lines = format_usage_rollup({"comp-a": {"engineer": unknown}}, unknown)
         notes = [line for line in lines if line.startswith("note:")]
         assert len(notes) == 1
         assert "lower bounds" in notes[0]
+
+
+class TestUsageCursorIsRecordsNotCalls:
+    """#257 review: ``since`` is an index into ``usage_records``, so the
+    cursor must count RECORDS. ``collect_usage(...).calls`` happens to
+    equal that only because ``add_record`` increments unconditionally."""
+
+    class _Hostile:
+        """A record whose field access blows up mid-walk.
+
+        Not contrived: ``collect_usage`` wraps its whole loop in a
+        try/except precisely because a foreign or malformed record can do
+        this, and that guard is what makes ``calls`` disagree with
+        ``len(records)``.
+        """
+
+        @property
+        def input_tokens(self) -> int:
+            raise RuntimeError("malformed record")
+
+    @staticmethod
+    def _agent() -> SimpleNamespace:
+        """Four records; the second raises on field access."""
+        good = UsageRecord(total_tokens=5, source="claude-stream-json")
+        return SimpleNamespace(
+            usage_records=[good, TestUsageCursorIsRecordsNotCalls._Hostile(), good, good]
+        )
+
+    def test_a_walk_that_dies_partway_leaves_calls_short(self) -> None:
+        agent = self._agent()
+        # `calls` increments BEFORE the fields are read, so the record
+        # that raised is counted and the two after it are not.
+        assert collect_usage(agent).calls == 2
+        assert usage_cursor(agent) == 4
+
+    def test_the_short_offset_misattributes_the_unread_tail(self) -> None:
+        """Why the distinction is worth its own helper: seeding `since`
+        from `calls` hands the FIRST unit of work's unread records to the
+        SECOND one."""
+        agent = self._agent()
+        short = collect_usage(agent).calls
+        assert collect_usage(agent, since=short).calls == 2, "tail re-folded"
+        assert collect_usage(agent, since=usage_cursor(agent)).calls == 0
+
+    def test_a_cursor_over_a_normal_agent_is_the_record_count(self) -> None:
+        agent = SimpleNamespace(usage_records=[UsageRecord(), UsageRecord()])
+        assert usage_cursor(agent) == 2
+
+    def test_an_agent_without_records_has_a_zero_cursor(self) -> None:
+        """Folds everything, which is the pre-``since`` behavior."""
+        assert usage_cursor(object()) == 0
+
+    def test_a_hostile_records_attribute_degrades_to_zero(self) -> None:
+        class Boom:
+            @property
+            def usage_records(self) -> list[UsageRecord]:
+                raise RuntimeError("no records for you")
+
+        assert usage_cursor(Boom()) == 0
+
+
+class TestRollupRowsFollowTheOrderTheRolesRun:
+    """#257: the architect was missing from ``_USAGE_PHASE_ORDER``, and
+    unlisted phases sort last, so the role that runs FIRST printed after
+    distill."""
+
+    @staticmethod
+    def _phase_column(lines: list[str]) -> list[str]:
+        """Phase cells of the component rows, top to bottom."""
+        return [line.split()[1] for line in lines if line.startswith("comp-a ")]
+
+    @staticmethod
+    def _meter(*phases: str) -> tuple[dict[str, dict[str, UsageTotals]], UsageTotals]:
+        rows = {
+            phase: UsageTotals(
+                calls=1,
+                known_calls=1,
+                token_calls=1,
+                cost_calls=1,
+                total_tokens=1,
+            )
+            for phase in phases
+        }
+        run_usage = UsageTotals()
+        for totals in rows.values():
+            run_usage.merge(totals)
+        return {"comp-a": rows}, run_usage
+
+    def test_the_architect_prints_first(self) -> None:
+        meter, run_usage = self._meter(
+            "distill",
+            "security",
+            "review",
+            "engineer",
+            "architect",
+        )
+        lines = format_usage_rollup(meter, run_usage)
+        assert self._phase_column(lines) == [
+            "architect",
+            "engineer",
+            "review",
+            "security",
+            "distill",
+        ]
+
+    def test_an_unlisted_phase_still_sorts_last(self) -> None:
+        """The listed order is a whitelist, not a total order: a phase
+        added later must not silently displace a known one."""
+        meter, run_usage = self._meter("zeta", "architect", "engineer")
+        lines = format_usage_rollup(meter, run_usage)
+        assert self._phase_column(lines) == ["architect", "engineer", "zeta"]
 
 
 class TestCoverageReachesTheAuditTrail:
