@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
@@ -12,12 +13,19 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.statedir import STATE_DIR_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from kstrl.config import KstrlConfig
     from kstrl.ui.base import UI
+
+
+#: A repo-relative path inside kstrl's own state directory. Matched
+#: rather than string-compared so ``.kstrl-backup/x`` and ``sub/.kstrl/x``
+#: do not qualify: only the state directory AT THE WALK ROOT is kstrl's.
+_WITHIN_STATE_DIR = re.compile(rf"^{re.escape(STATE_DIR_NAME)}/")
 
 
 def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
@@ -122,8 +130,8 @@ def _revert_violation(
     ui: UI,
     cwd: Path | None,
     baseline: git.WorkspaceBaseline | None,
-) -> None:
-    """Undo one out-of-scope change.
+) -> bool:
+    """Undo one out-of-scope change. False when it was REFUSED.
 
     With a baseline the revert source is the BASELINE COMMIT, not the
     index: the violation may already be committed, and restoring from
@@ -132,7 +140,23 @@ def _revert_violation(
     violation and the next iteration would re-detect it forever. A file
     that did not exist at the baseline is dropped from the index and
     deleted, so it disappears from the delta the way a revert should.
+
+    Nothing under kstrl's own state directory is ever reverted (#274
+    review). The paths that reach here are by definition the ones the
+    carve-out does NOT cover, and ``statedir.STATE_NOT_CARVED`` keeps
+    exactly the authority-carrying entries countable: the work queue,
+    evolution proposals, the autonomy level, the pause marker. Deleting
+    an untracked file is how this function disposes of a violation, and
+    ``git.delete_untracked`` recurses into directories - so without this
+    refusal, making those paths VISIBLE to the guard would also hand
+    them to a deleter, and an operator choosing "Revert and continue"
+    could destroy the pause marker they had just written. Reporting a
+    file and destroying it are different powers; this function only has
+    the second, so it declines the cases where only the first is wanted.
     """
+    if _WITHIN_STATE_DIR.match(file):
+        ui.warn(f"  Refused (kstrl state, reported not reverted): {file}")
+        return False
     if baseline is not None and baseline.head is not None:
         if git.restore_file_from(file, baseline.head, cwd):
             ui.info(f"  Restored: {file}")
@@ -140,13 +164,30 @@ def _revert_violation(
             git.remove_from_index(file, cwd)
             git.delete_untracked(file, cwd)
             ui.info(f"  Deleted: {file}")
-        return
+        return True
     if git.is_file_tracked(file, cwd):
         git.restore_file(file, cwd)
         ui.info(f"  Restored: {file}")
     else:
         git.delete_untracked(file, cwd)
         ui.info(f"  Deleted: {file}")
+    return True
+
+
+def _revert_violations(
+    violations: list[str],
+    ui: UI,
+    cwd: Path | None,
+    baseline: git.WorkspaceBaseline | None,
+) -> list[str]:
+    """Revert what may be reverted; return what was refused.
+
+    Its own function so ``enforce_allowed_paths`` keeps one statement
+    here rather than a branch: the refusals have to travel back to the
+    caller, because reporting "reverted" for a file still on disk is the
+    silent-success failure this whole guard exists to avoid.
+    """
+    return [f for f in violations if not _revert_violation(f, ui, cwd, baseline)]
 
 
 def _report_violations(
@@ -272,11 +313,11 @@ def enforce_allowed_paths(
         # Quit
         return False, violations
     elif choice == 1:
-        # Revert
+        # Revert. Anything refused (kstrl's own state) is reported back
+        # unreverted rather than silently counted as handled.
         ui.info("Reverting disallowed changes...")
-        for f in violations:
-            _revert_violation(f, ui, cwd, baseline)
-        return True, []
+        refused = _revert_violations(violations, ui, cwd, baseline)
+        return not refused, refused
     else:
         # Continue anyway
         ui.warn("Continuing with disallowed changes")
