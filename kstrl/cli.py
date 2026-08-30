@@ -530,8 +530,9 @@ def _timestamp() -> str:
 # contract. An exemption that skipped the check would be the property
 # #272 removed, smuggled back in under a name.
 #
-# Matched on the command's name and on its parents', so `ks config show`
-# is covered by "config".
+# Keyed by the TOP-LEVEL command name (see `_KstrlCommand._top_level_name`),
+# so `ks config show` is covered by "config" while a later `ks queue init`
+# is not exempted by its leaf name.
 _PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "serve"})
 
 # Sections a command is ABOUT, promoted from degrading to fatal for that
@@ -563,10 +564,10 @@ def _preflight_root(ctx: click.Context) -> Path:
     is what those commands do themselves.
 
     ``understand_prompt`` is read beside ``prompt`` because that is the
-    option ``ks feature`` feeds to ``_resolve_root`` (cli.py:1498). Miss
-    it and the preflight validates the cwd while the command loads
-    another checkout's config, which fails SILENTLY, by passing. No
-    command declares both, so asking for both cannot be ambiguous.
+    option the ``feature`` command feeds to ``_resolve_root``. Miss it
+    and the preflight validates the cwd while the command loads another
+    checkout's config, which fails SILENTLY, by passing. No command
+    declares both, so asking for both cannot be ambiguous.
     """
 
     def _param(name: str) -> str | None:
