@@ -44,6 +44,7 @@ from kstrl.prd import PRD
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
+    from kstrl.evolution import EvolutionJournal
     from kstrl.ui.base import UI
 
 
@@ -711,7 +712,12 @@ def _validate_decompose_output(data: Any) -> list[str]:
     return errors
 
 
-_VALID_SEVERITIES = frozenset({"blocker", "major", "minor"})
+# Severities, worst first. The order ``_issue_counts`` counts in and
+# the convergence report renders in. ``_surface_spec_issues`` below
+# still enumerates its own three groups, because it pairs each with a
+# different UI emitter and a label that is not the severity name.
+_SEVERITY_ORDER = ("blocker", "major", "minor")
+_VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
 _VALID_KINDS = frozenset(
     {
         "ambiguity",
@@ -824,9 +830,12 @@ def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
 
 
 def _issue_counts(issues: list[SpecIssue]) -> dict[str, int]:
-    return {
-        sev: sum(1 for i in issues if i.severity == sev) for sev in ("blocker", "major", "minor")
-    }
+    """Per-severity counts, in ``_SEVERITY_ORDER``.
+
+    Counts this run's issues and a previous run's (rehydrated from the
+    journal by ``_stored_issues``) with the same code.
+    """
+    return {sev: sum(1 for i in issues if i.severity == sev) for sev in _SEVERITY_ORDER}
 
 
 def persist_spec_issues(
@@ -859,9 +868,32 @@ def persist_spec_issues(
     return path
 
 
+def _spec_audit_journal(root_dir: Path, ui: UI) -> EvolutionJournal | None:
+    """The evolution journal for this root, or None when it is unusable.
+
+    One loader for both directions of the audit trail: the read that
+    builds the convergence report and the write that records this run.
+    ``EvolutionConfig.load`` already anchors a relative journal path to
+    ``root_dir``, so the path it hands back is absolute.
+
+    A config that will not parse degrades to "no journal" - the
+    convergence report goes quiet and the journal entry is skipped -
+    rather than raising, because a typo in an optional journal knob
+    must not cost the operator the findings of a paid architect run.
+    Which exceptions that covers is ``load_or_none``'s to know, not
+    this call site's.
+    """
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+
+    config = EvolutionConfig.load_or_none(root_dir, warn=ui.warn)
+    if config is None or not config.enabled:
+        return None
+    return EvolutionJournal(config)
+
+
 def _record_spec_issues_event(
     issues: list[SpecIssue],
-    root_dir: Path,
+    journal: EvolutionJournal | None,
     project_name: str,
     spec_file: str,
     halted: bool,
@@ -872,16 +904,12 @@ def _record_spec_issues_event(
     Non-fatal on I/O errors, matching ``EvolutionJournal.record_run``,
     but the failure is surfaced as a warning rather than swallowed:
     the journal is an audit trail, so a silent skip would defeat it.
-    No ``run_id`` field: decompose runs before a factory run id exists.
+    No ``run_id`` field: decompose runs before a factory run id exists,
+    which is why ``EvolutionJournal.get_spec_issue_runs`` reads these
+    entries rather than the run-windowed reader.
     """
-    from kstrl.evolution import EvolutionConfig
-
-    evo_config = EvolutionConfig.load(root_dir)
-    if not evo_config.enabled:
+    if journal is None:
         return
-    journal_path = evo_config.journal_path
-    if not journal_path.is_absolute():
-        journal_path = root_dir / journal_path
     entry: dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "project": project_name,
@@ -893,11 +921,184 @@ def _record_spec_issues_event(
         "artifact": SPEC_ISSUES_REL_PATH.as_posix(),
     }
     try:
-        journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(journal_path, "a") as f:
-            f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        journal.append_entries([entry])
     except OSError as exc:
         ui.warn(f"Failed to record spec_issues journal event: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Convergence report (#260)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SpecConvergence:
+    """This spec audit measured against earlier audits of the same project.
+
+    ``repeated`` counts the PREVIOUS run's issues whose text reappears
+    in this one, which is the side the report renders it as. Counting
+    the current side instead lets two current issues match one previous
+    issue and makes "did not come back" negative, because
+    ``_issue_identity`` drops severity and normalizes text while
+    ``_parse_spec_issues`` de-duplicates nothing. Counting the previous
+    list bounds the number by ``previous_total`` by construction.
+
+    It is a floor on what carried over and never a claim about which
+    issues the architect considers resolved.
+    """
+
+    current_counts: dict[str, int]
+    previous_counts: dict[str, int]
+    current_spec_file: str
+    previous_spec_file: str
+    repeated: int
+    blocker_trend: tuple[int, ...]
+
+    @property
+    def previous_total(self) -> int:
+        return sum(self.previous_counts.values())
+
+
+def _issue_identity(issue: SpecIssue) -> tuple[str, str]:
+    """Match key for one issue: kind plus normalized summary text.
+
+    Whitespace is collapsed and case folded, which is all the
+    normalization the stored text supports. Severity is deliberately
+    not part of the key, so the same finding re-raised at a different
+    severity still matches.
+    """
+    return (issue.kind, " ".join(issue.summary.split()).casefold())
+
+
+def _stored_issues(entry: dict[str, Any]) -> list[SpecIssue] | None:
+    """Rehydrate one journal entry's issue list into ``SpecIssue``.
+
+    Returns None when the entry carries no issue list at all, the one
+    shape that cannot be compared. Every other malformation (a non-dict
+    issue, a missing field, a non-string value) is normalized here, so
+    a journal written by an older version reads without crashing.
+    ``location`` and ``suggestion`` are not read back: the report
+    compares counts and issue text only.
+    """
+    raw = entry.get("issues")
+    if not isinstance(raw, list):
+        return None
+    return [
+        SpecIssue(
+            severity=str(i.get("severity", "")),
+            kind=str(i.get("kind", "")),
+            summary=str(i.get("summary", "")),
+        )
+        for i in raw
+        if isinstance(i, dict)
+    ]
+
+
+def _build_convergence(
+    issues: list[SpecIssue],
+    spec_file: str,
+    history: list[dict[str, Any]],
+) -> SpecConvergence | None:
+    """Compare this run's issues with prior audits (``history``, oldest first).
+
+    Returns None when there is no comparable prior audit, so the first
+    run on a spec prints nothing.
+    """
+    audits: list[tuple[str, list[SpecIssue]]] = []
+    trend: list[int] = []
+    for entry in history:
+        stored = _stored_issues(entry)
+        if stored is not None:
+            audits.append((str(entry.get("spec_file", "")), stored))
+            trend.append(sum(1 for i in stored if i.severity == "blocker"))
+    if not audits:
+        return None
+
+    previous_spec_file, previous_issues = audits[-1]
+    current_ids = {_issue_identity(i) for i in issues}
+    current_counts = _issue_counts(issues)
+    return SpecConvergence(
+        current_counts=current_counts,
+        previous_counts=_issue_counts(previous_issues),
+        current_spec_file=spec_file,
+        previous_spec_file=previous_spec_file,
+        repeated=sum(1 for i in previous_issues if _issue_identity(i) in current_ids),
+        blocker_trend=(*trend, current_counts["blocker"]),
+    )
+
+
+def _spec_convergence(
+    issues: list[SpecIssue],
+    journal: EvolutionJournal | None,
+    project_name: str,
+    spec_file: str,
+) -> SpecConvergence | None:
+    """Read this project's audit history and compare this run to it.
+
+    Runs are matched by project name, not by spec path or content
+    hash: the spec is edited between every round by construction (so a
+    content hash never matches), and the recorded loop in #260 renamed
+    the file mid-loop (so the path does not either). A previous audit
+    of a different file is still reported, with the file names named.
+
+    MUST be called before this run's own entry is appended to the
+    journal, or the "previous run" it compares against is this one.
+    """
+    if journal is None:
+        return None
+    return _build_convergence(
+        issues,
+        spec_file,
+        # How far back the trend line reaches. The journal's existing
+        # lookback knob rather than a number invented here, read as
+        # "the last N spec audits" - decompose writes one audit per
+        # run, with or without a factory run behind it.
+        journal.get_spec_issue_runs(project_name, last_n=journal.config.lookback_runs),
+    )
+
+
+def _surface_convergence(report: SpecConvergence | None, ui: UI) -> None:
+    """Render the convergence report, or nothing on the first run.
+
+    ``None`` (no journal, or no previous audit of this project) renders
+    silently, so the common first-run case prints no noise and the
+    caller has no branch to carry.
+
+    Counts, deltas and the trend, with no "this spec is converging"
+    verdict attached: no measured threshold separates converging from
+    not. The recorded blocker counts for one spec went 7, 11, 1, 3, 4,
+    and the rise from 1 to 3 happened while the operator was resolving
+    real issues. The numbers are the evidence; the judgement about
+    whether to pay for another round is the operator's.
+    """
+    if report is None:
+        return
+    ui.section("Spec Convergence")
+    for severity in _SEVERITY_ORDER:
+        current = report.current_counts[severity]
+        previous = report.previous_counts[severity]
+        delta = current - previous
+        ui.kv(
+            severity.capitalize(),
+            f"{current} (previous run: {previous}, {f'{delta:+d}' if delta else 'no change'})",
+        )
+    ui.kv(
+        "Trend",
+        ", ".join(str(n) for n in report.blocker_trend) + " (blockers, oldest run first)",
+    )
+    ui.info(
+        f"Previous run raised {report.previous_total} issue(s): {report.repeated} "
+        f"reappear verbatim, {report.previous_total - report.repeated} do not."
+    )
+    ui.info(
+        "Matched on issue text, so a reworded issue counts as new: a floor on "
+        "what carried over, not a count of what the architect resolved."
+    )
+    if report.previous_spec_file and report.previous_spec_file != report.current_spec_file:
+        ui.info(
+            f"Runs are matched by project name: the previous audit read "
+            f"{report.previous_spec_file}, this one read {report.current_spec_file}."
+        )
 
 
 def _component_branch(comp_id: str, project_name: str, single_pr: bool) -> str:
@@ -1173,6 +1374,11 @@ def _decompose_spec_impl(
             )
         )
     blockers = [i for i in spec_issues if i.severity == "blocker"]
+    # The R1.7 artifact is written FIRST, before any optional journal
+    # work. On the halt path it is the only durable record the operator
+    # gets, so nothing that can fail is allowed upstream of it: #260
+    # briefly put a config load in front of this and a typo in an
+    # unrelated journal knob destroyed the findings of a paid run.
     artifact_path: Path | None = None
     try:
         artifact_path = persist_spec_issues(
@@ -1193,9 +1399,17 @@ def _decompose_spec_impl(
         # Loud but non-masking: the blocker halt (or the decompose
         # result) matters more than the artifact write failing.
         ui.err(f"Failed to persist spec issues to disk: {exc}")
+    # #260: what this audit says about the previous one, read BEFORE
+    # this run is appended to the journal below - otherwise the
+    # "previous run" the report compares against would be this one.
+    journal = _spec_audit_journal(root_dir, ui)
+    _surface_convergence(
+        _spec_convergence(spec_issues, journal, project_name, spec_path.name),
+        ui,
+    )
     _record_spec_issues_event(
         spec_issues,
-        root_dir=root_dir,
+        journal=journal,
         project_name=project_name,
         spec_file=spec_path.name,
         halted=bool(blockers),

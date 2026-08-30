@@ -969,3 +969,92 @@ class TestProposalIdMonotonicity:
         written = journal.save_proposals(clashing, output_dir)
         assert written == []
         assert (output_dir / "prop-001.md").read_text() == "# PROP-001: original\n"
+
+
+# ---------------------------------------------------------------------------
+# get_spec_issue_runs (#260)
+# ---------------------------------------------------------------------------
+
+
+class TestSpecIssueRuns:
+    """#260: the architect's own history, which carries no run_id."""
+
+    def _journal(self, tmp_path: Path, lines: list[str]) -> EvolutionJournal:
+        journal_path = tmp_path / "evolution.jsonl"
+        journal_path.write_text("".join(line + "\n" for line in lines))
+        return EvolutionJournal(EvolutionConfig(journal_path=journal_path))
+
+    def _spec_entry(self, project: str, blockers: int) -> str:
+        return json.dumps(
+            {
+                "timestamp": "2026-08-29T00:00:00Z",
+                "project": project,
+                "event_type": "spec_issues",
+                "spec_file": "spec.md",
+                "halted": blockers > 0,
+                "counts": {"blocker": blockers, "major": 0, "minor": 0},
+                "issues": [
+                    {"severity": "blocker", "kind": "ambiguity", "summary": f"issue {n}"}
+                    for n in range(blockers)
+                ],
+            }
+        )
+
+    def test_entries_without_run_id_are_returned(self, tmp_path: Path) -> None:
+        """The reason this method exists: a spec_issues entry is written
+        before a run id exists, so the run-windowed reader drops it."""
+        journal = self._journal(
+            tmp_path,
+            [self._spec_entry("writers-room", 7), self._spec_entry("writers-room", 11)],
+        )
+
+        assert journal._read_journal_entries() == []
+        runs = journal.get_spec_issue_runs("writers-room")
+        assert [r["counts"]["blocker"] for r in runs] == [7, 11]
+
+    def test_other_projects_and_event_types_are_excluded(self, tmp_path: Path) -> None:
+        journal = self._journal(
+            tmp_path,
+            [
+                self._spec_entry("writers-room", 7),
+                self._spec_entry("deckgen", 1),
+                json.dumps({"project": "writers-room", "event_type": "component_result"}),
+            ],
+        )
+
+        runs = journal.get_spec_issue_runs("writers-room")
+        assert len(runs) == 1
+        assert runs[0]["counts"]["blocker"] == 7
+
+    def test_torn_and_non_object_lines_are_skipped(self, tmp_path: Path) -> None:
+        """One unreadable line must not cost the reader the history."""
+        journal = self._journal(
+            tmp_path,
+            [
+                "{not json",
+                "[1, 2, 3]",
+                '"a bare string"',
+                "",
+                self._spec_entry("writers-room", 4),
+            ],
+        )
+
+        assert [r["counts"]["blocker"] for r in journal.get_spec_issue_runs("writers-room")] == [4]
+
+    def test_missing_journal_reads_as_empty(self, tmp_path: Path) -> None:
+        config = EvolutionConfig(journal_path=tmp_path / "absent.jsonl")
+        assert EvolutionJournal(config).get_spec_issue_runs("writers-room") == []
+
+    def test_run_windowed_reader_survives_non_object_lines(self, tmp_path: Path) -> None:
+        """A JSON array on its own line used to enter the entry list and
+        then blow up the ``.get("run_id")`` that follows."""
+        journal = self._journal(
+            tmp_path,
+            [
+                "[1, 2, 3]",
+                json.dumps({"run_id": "r1", "event_type": "component_result", "component": "a"}),
+            ],
+        )
+
+        entries = journal._read_journal_entries()
+        assert [e["component"] for e in entries] == ["a"]
