@@ -87,7 +87,7 @@ from kstrl.review import (
     setpoint_retry_context,
 )
 from kstrl.security import SecurityMode, SecurityResult
-from kstrl.verify import VerificationResult, VerifyConfig
+from kstrl.verify import VerificationResult
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
@@ -2525,7 +2525,7 @@ class ComponentPipeline:
                 verification=VerificationResult(passed=True, checks=[]),
             )
 
-        verify_config = self.factory_config.verify_config or VerifyConfig()
+        verify_config = self.factory_config.resolved_verify_config()
         self.ui.info(f"  Phase 1: mechanical verification for {comp.id}...")
         verify_start = time.monotonic()
         scope = self._resolve_verify_scope(comp, wt_path)

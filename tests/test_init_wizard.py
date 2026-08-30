@@ -16,6 +16,11 @@ from kstrl.init_wizard import (
 )
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.init_wizard import InitWizardScreen
+from kstrl.verify import (
+    DEFAULT_LINT_COMMAND,
+    DEFAULT_TEST_COMMAND,
+    DEFAULT_TYPECHECK_COMMAND,
+)
 
 
 class TestPlanScaffold:
@@ -138,6 +143,68 @@ class TestWizardScreen:
 
             screen.query_one("#wizard-agent-type", Select).value = agent_type
         return app, screen
+
+    def _rendered(self, app: KstrlTuiApp) -> str:
+        """Text actually painted on the terminal.
+
+        Asserting on the Text object is what let #261's first attempt
+        through: it built a two-line Text while styles.tcss pinned
+        `#wizard-detected` to `height: 1`, so the second line rendered
+        nowhere. The screenshot encodes spaces as `&#160;`, so normalize
+        before matching.
+        """
+        return app.export_screenshot().replace("&#160;", " ")
+
+    async def test_detected_line_renders_the_resolved_gate_commands(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#261: the wizard shows what Phase 1 will actually run, and it
+        has to be visible, not merely constructed."""
+        app, screen = await self._run_wizard(tmp_path)
+        try:
+            rendered = self._rendered(app)
+            assert "detected" in rendered
+            for command in (
+                DEFAULT_TEST_COMMAND,
+                DEFAULT_TYPECHECK_COMMAND,
+                DEFAULT_LINT_COMMAND,
+            ):
+                assert command in rendered, f"{command!r} not painted"
+            assert screen.query_one("#wizard-detected").size.height >= 4
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_configured_commands_are_the_ones_shown(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            '[verify]\nlint_command = "npx eslint ."\n',
+        )
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            rendered = self._rendered(app)
+            assert "npx eslint ." in rendered
+            assert DEFAULT_LINT_COMMAND not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_a_malformed_kstrl_toml_does_not_take_the_app_down(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """VerifyConfig.load raises ValueError on bad TOML by design.
+        The wizard is the screen an operator opens to repair a broken
+        scaffold, so it must survive one and say so."""
+        (tmp_path / "kstrl.toml").write_text("[verify\ntest_command = broken")
+        app, _ = await self._run_wizard(tmp_path)
+        try:
+            rendered = self._rendered(app)
+            assert "unreadable" in rendered
+            assert DEFAULT_TEST_COMMAND not in rendered
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
 
     async def test_happy_path_scaffolds_and_writes_agent(
         self,

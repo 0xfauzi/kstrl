@@ -41,6 +41,17 @@ from typing import Any
 
 import click
 
+# #261: the gate defaults are stated in exactly one place. Importing
+# them keeps this reference from drifting the way it had: it claimed
+# "uv run ruff check" without the path argument the gate actually
+# passes, and named only the scoped branch of the typecheck default.
+from kstrl.verify import (
+    DEFAULT_LINT_COMMAND,
+    DEFAULT_TEST_COMMAND,
+    DEFAULT_TYPECHECK_COMMAND,
+    SCOPED_TYPECHECK_COMMAND,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README_PATH = REPO_ROOT / "README.md"
 
@@ -512,9 +523,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("sandbox", "enabled"): "OS-sandbox the engineer's agent CLI (writes scoped to its "
     "worktree); ignored for custom agent commands",
     ("sandbox", "allow_network"): "re-open outbound network inside the sandbox (off = deny)",
-    ("verify", "test_command"): "empty = smart default (uv run pytest)",
-    ("verify", "typecheck_command"): "empty = smart default (uv run mypy)",
-    ("verify", "lint_command"): "empty = smart default (uv run ruff check)",
+    ("verify", "test_command"): f"empty = the harness default ({DEFAULT_TEST_COMMAND})",
+    ("verify", "typecheck_command"): (
+        f"empty = {SCOPED_TYPECHECK_COMMAND} when [tool.mypy] scopes it, "
+        f"else {DEFAULT_TYPECHECK_COMMAND}"
+    ),
+    ("verify", "lint_command"): f"empty = the harness default ({DEFAULT_LINT_COMMAND})",
     ("verify", "check_diff_scope"): "fail on changes outside allowed paths",
     ("verify", "check_bad_patterns"): "scan the diff for secret-like patterns",
     ("verify", "dead_code_cleanup"): "optional dead-code check",

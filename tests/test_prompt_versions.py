@@ -55,6 +55,7 @@ from kstrl.init_cmd import (
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
+from kstrl.verify import VERIFY_COMMANDS_PROMPT, VERIFY_COMMANDS_PROMPT_VERSION
 
 
 def _sha256(text: str) -> str:
@@ -67,6 +68,7 @@ _PROMPTS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
     "DEFAULT_PROMPT": DEFAULT_PROMPT,
+    "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -75,6 +77,7 @@ _VERSIONS: dict[str, str] = {
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
     "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
+    "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT_VERSION,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -106,6 +109,15 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     "DEFAULT_PROMPT": (
         "4f7370f5f4efb2d9b89ce6ae09fcbf7e5c3c8fb3db22cdeb07a9221ccbc638dc",
         "1.1.1",
+    ),
+    # 1.0.0 (#261): harness-authored instruction text prepended to the
+    # engineer prompt every iteration, naming the commands Phase 1 will
+    # run. Enrolled because it steers the engineer exactly as
+    # DEFAULT_PROMPT does. The TEMPLATE is what is hashed; the three
+    # command values are the operator's and are interpolated at run time.
+    "VERIFY_COMMANDS_PROMPT": (
+        "2b78ef192783332e3693d197fc135460a46275df30411a500d55902d0a9c5e4b",
+        "1.0.0",
     ),
 }
 

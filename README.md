@@ -348,9 +348,9 @@ allow_network = false  # re-open outbound network inside the sandbox (off = deny
 
 # Phase 1 mechanical verification
 [verify]
-test_command = ""              # empty = smart default (uv run pytest)
-typecheck_command = ""         # empty = smart default (uv run mypy)
-lint_command = ""              # empty = smart default (uv run ruff check)
+test_command = ""              # empty = the harness default (uv run pytest)
+typecheck_command = ""         # empty = uv run mypy when [tool.mypy] scopes it, else uv run mypy .
+lint_command = ""              # empty = the harness default (uv run ruff check .)
 check_diff_scope = true        # fail on changes outside allowed paths
 check_bad_patterns = true      # scan the diff for secret-like patterns
 dead_code_cleanup = false      # optional dead-code check

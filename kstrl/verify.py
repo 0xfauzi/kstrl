@@ -551,6 +551,247 @@ def check_prd_stories(prd_path: Path) -> CheckResult:
     )
 
 
+# ---------------------------------------------------------------------------
+# Resolved verification commands (#261)
+# ---------------------------------------------------------------------------
+#
+# The single source of truth for "what will Phase 1 actually run". Both
+# the gate (``check_test_suite`` / ``check_typecheck`` / ``check_linter``)
+# and the engineer prompt (``loop.run_loop``) answer that question by
+# calling the resolvers below, so the agent cannot be told a command the
+# gate will not run.
+#
+# ``ks init`` used to scaffold a second, hardcoded copy of these commands
+# into the generated CLAUDE.md. Every copy disagreed with the gate from
+# the moment init finished, and loop.run_loop prepends CLAUDE.md into the
+# engineer prompt, so the harness mechanically fed the agent the wrong
+# commands. The copy is gone; this module is the only source.
+
+#: Gate default when ``[verify] test_command`` is unset.
+DEFAULT_TEST_COMMAND = "uv run pytest"
+
+#: Gate default when ``[verify] lint_command`` is unset.
+DEFAULT_LINT_COMMAND = "uv run ruff check ."
+
+#: Gate fallback when ``[verify] typecheck_command`` is unset AND the
+#: project does not scope mypy itself. ``_default_typecheck_command``
+#: prefers ``uv run mypy`` (no path) whenever pyproject.toml does.
+DEFAULT_TYPECHECK_COMMAND = "uv run mypy ."
+
+#: What ``_default_typecheck_command`` uses instead when the project has
+#: scoped mypy via ``[tool.mypy] files`` or ``packages``.
+SCOPED_TYPECHECK_COMMAND = "uv run mypy"
+
+# Harness-authored instruction text injected into the engineer prompt on
+# every iteration, so it is enrolled in the H3 version/hash snapshot
+# (tests/test_prompt_versions.py) exactly like DEFAULT_PROMPT. Only the
+# TEMPLATE is snapshotted: the three command values are the operator's,
+# interpolated at run time, and H3 cannot and should not pin those.
+VERIFY_COMMANDS_PROMPT_VERSION = "1.0.0"
+
+VERIFY_COMMANDS_PROMPT = """\
+# Verification Commands (resolved by kstrl)
+
+These are the exact commands kstrl's mechanical verification gate runs on your
+work, resolved from this project's `kstrl.toml` `[verify]` section. Run them
+yourself before you report a story complete. They are authoritative: ignore any
+other verification command list, including one written in the project context
+above.
+
+- Test: `{test}`
+- Typecheck: `{typecheck}`
+- Lint: `{lint}`
+
+A command may chain several toolchains. Run all of it."""
+
+
+def _default_typecheck_command(cwd: Path) -> str:
+    """Choose a sensible default mypy invocation for ``cwd``.
+
+    Generic ``uv run mypy .`` is hostile to projects whose pyproject.toml
+    deliberately scopes mypy via ``[tool.mypy] files`` or ``packages``:
+    the ``.`` argument overrides those settings and pulls in test files
+    or vendored code that the project never intended to typecheck. When
+    the project has configured its own mypy scope, defer to it by
+    invoking ``uv run mypy`` with no path argument (mypy then reads the
+    config). When no such config is present, fall back to the broad
+    ``uv run mypy .`` so a green-field project still gets coverage.
+
+    This is the Gap 2 fix from the end-to-end factory validation run:
+    the factory's verify command was overriding the project's own
+    typecheck scope, leading to Phase 1 failures on diffs that were
+    actually fine. Gap 2 landed on the gate and not on ``ks init``, which
+    kept scaffolding ``mypy src/ --strict`` into CLAUDE.md - the very
+    shape it identified as wrong. #261 closed that half.
+    """
+    import tomllib
+
+    pyproject = cwd / "pyproject.toml"
+    if pyproject.is_file():
+        try:
+            with pyproject.open("rb") as fh:
+                data = tomllib.load(fh)
+        except (tomllib.TOMLDecodeError, OSError):
+            return DEFAULT_TYPECHECK_COMMAND
+        mypy_section = data.get("tool", {}).get("mypy", {})
+        if isinstance(mypy_section, dict):
+            # Acknowledged edge case: this heuristic does not consult
+            # ``[[tool.mypy.overrides]]`` (per-module relaxation) or
+            # modules-only configs. If a project relaxes via overrides
+            # but doesn't set ``files``/``packages``, the broad
+            # ``uv run mypy .`` default would override the relaxation.
+            # Real-world rare. Users can always override explicitly via
+            # ``--typecheck-command`` or env var.
+            if mypy_section.get("files") or mypy_section.get("packages"):
+                return SCOPED_TYPECHECK_COMMAND
+    return DEFAULT_TYPECHECK_COMMAND
+
+
+def resolve_test_command(command: str | None) -> str:
+    """The exact test command Phase 1 will run."""
+    return command or DEFAULT_TEST_COMMAND
+
+
+def resolve_typecheck_command(command: str | None, cwd: Path) -> str:
+    """The exact typecheck command Phase 1 will run in ``cwd``."""
+    return command or _default_typecheck_command(cwd)
+
+
+def resolve_lint_command(command: str | None) -> str:
+    """The exact lint command Phase 1 will run."""
+    return command or DEFAULT_LINT_COMMAND
+
+
+@dataclass(frozen=True)
+class ResolvedVerifyCommands:
+    """The concrete commands Phase 1 runs, after config and defaults.
+
+    Every field is a shell command line, so a chained polyglot command
+    (``uv run pytest -q && cd web && npm run test``) survives verbatim:
+    the resolver never splits or rewrites what the operator configured.
+    """
+
+    test: str
+    typecheck: str
+    lint: str
+
+    def format_for_prompt(self) -> str:
+        """Render the block injected into the engineer prompt.
+
+        Stated as authoritative because an agent working in a project
+        scaffolded before #261 may also be shown a stale CLAUDE.md list,
+        and has to know which one binds.
+        """
+        return VERIFY_COMMANDS_PROMPT.format(
+            test=self.test,
+            typecheck=self.typecheck,
+            lint=self.lint,
+        )
+
+
+def resolve_verify_commands(config: VerifyConfig, cwd: Path) -> ResolvedVerifyCommands:
+    """Resolve ``config`` against ``cwd`` into the commands Phase 1 runs.
+
+    ``cwd`` is the directory the gate will run in (the component's
+    worktree under the factory), because the typecheck default is a
+    function of that directory's pyproject.toml.
+    """
+    return ResolvedVerifyCommands(
+        test=resolve_test_command(config.test_command),
+        typecheck=resolve_typecheck_command(config.typecheck_command, cwd),
+        lint=resolve_lint_command(config.lint_command),
+    )
+
+
+# A CLAUDE.md verification bullet in the shape ``ks init`` used to
+# generate: ``- **Test**: `uv run pytest tests/ -v --tb=short```. Matched
+# anywhere in the file rather than under a specific heading, because the
+# heading text varies ("## Verification Commands", "## Verification
+# commands") while the bullet shape does not.
+_CLAUDE_MD_COMMAND_RE = re.compile(
+    r"^\s*[-*]\s+\*{2}(Test|Typecheck|Lint)\*{2}\s*:\s*`([^`]+)`\s*$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class ScrubbedProjectContext:
+    """CLAUDE.md text with stale verification bullets removed (#261)."""
+
+    text: str
+    #: One human-readable line per removed bullet, for ``ui.warn``.
+    divergences: list[str]
+
+
+def scrub_stale_verify_commands(
+    claude_md: str,
+    commands: ResolvedVerifyCommands,
+) -> ScrubbedProjectContext:
+    """Drop CLAUDE.md verification bullets that disagree with the gate.
+
+    Projects scaffolded before #261 carry a generated ``## Verification
+    Commands`` section whose three bullets disagree with what the gate
+    runs. ``loop.run_loop`` prepends CLAUDE.md into the engineer prompt,
+    so those bullets are instructions the agent follows and then fails
+    Phase 1 on.
+
+    Removal is per-bullet and only when the stated command differs from
+    the resolved one, so a project whose CLAUDE.md happens to be correct
+    is left byte-identical, and surrounding prose always survives. The
+    file on disk is never modified: this scrubs the in-memory copy that
+    goes into the prompt, and every removal is reported so the operator
+    can delete the stale section for good.
+    """
+    kept: list[str] = []
+    divergences: list[str] = []
+    by_label = {
+        "test": commands.test,
+        "typecheck": commands.typecheck,
+        "lint": commands.lint,
+    }
+    # keepends: what survives is re-joined with "", so a file with CRLF
+    # endings or no trailing newline round-trips byte for byte.
+    for line in claude_md.splitlines(keepends=True):
+        match = _CLAUDE_MD_COMMAND_RE.match(line)
+        if match is None:
+            kept.append(line)
+            continue
+        label = match.group(1).lower()
+        stated = match.group(2).strip()
+        resolved = by_label[label]
+        if stated == resolved:
+            kept.append(line)
+            continue
+        divergences.append(
+            f"CLAUDE.md tells the agent to {label} with `{stated}`, but the "
+            f"gate runs `{resolved}`. Dropping the stale line from the "
+            f"engineer prompt; delete it from CLAUDE.md and set [verify] in "
+            f"kstrl.toml instead."
+        )
+    return ScrubbedProjectContext(text="".join(kept), divergences=divergences)
+
+
+def scrub_project_claude_md(
+    root: Path,
+    commands: ResolvedVerifyCommands,
+) -> ScrubbedProjectContext | None:
+    """``scrub_stale_verify_commands`` on ``root``'s CLAUDE.md, or None.
+
+    None when the project has no readable CLAUDE.md. One place decides
+    where the file lives and what an unreadable one means, because two
+    callers need the same answer for different reasons: the engineer
+    loop wants ``.text`` (the copy that goes into the prompt) and the
+    factory preflight wants ``.divergences`` (what to tell the
+    operator), and they had drifted into two different missing-file
+    policies (#261).
+    """
+    try:
+        claude_md = (root / "CLAUDE.md").read_text()
+    except OSError:
+        return None
+    return scrub_stale_verify_commands(claude_md, commands)
+
+
 def check_test_suite(
     cwd: Path,
     command: str | None = None,
@@ -558,7 +799,7 @@ def check_test_suite(
 ) -> CheckResult:
     """Run the project's test suite independently."""
     start = time.monotonic()
-    cmd = command or "uv run pytest"
+    cmd = resolve_test_command(command)
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
@@ -594,46 +835,6 @@ def check_test_suite(
     )
 
 
-def _default_typecheck_command(cwd: Path) -> str:
-    """Choose a sensible default mypy invocation for ``cwd``.
-
-    Generic ``uv run mypy .`` is hostile to projects whose pyproject.toml
-    deliberately scopes mypy via ``[tool.mypy] files`` or ``packages``:
-    the ``.`` argument overrides those settings and pulls in test files
-    or vendored code that the project never intended to typecheck. When
-    the project has configured its own mypy scope, defer to it by
-    invoking ``uv run mypy`` with no path argument (mypy then reads the
-    config). When no such config is present, fall back to the broad
-    ``uv run mypy .`` so a green-field project still gets coverage.
-
-    This is the Gap 2 fix from the end-to-end factory validation run:
-    the factory's verify command was overriding the project's CLAUDE.md
-    typecheck contract, leading to Phase 1 failures on diffs that were
-    actually fine.
-    """
-    import tomllib
-
-    pyproject = cwd / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            with pyproject.open("rb") as fh:
-                data = tomllib.load(fh)
-        except (tomllib.TOMLDecodeError, OSError):
-            return "uv run mypy ."
-        mypy_section = data.get("tool", {}).get("mypy", {})
-        if isinstance(mypy_section, dict):
-            # Acknowledged edge case: this heuristic does not consult
-            # ``[[tool.mypy.overrides]]`` (per-module relaxation) or
-            # modules-only configs. If a project relaxes via overrides
-            # but doesn't set ``files``/``packages``, the broad
-            # ``uv run mypy .`` default would override the relaxation.
-            # Real-world rare. Users can always override explicitly via
-            # ``--typecheck-command`` or env var.
-            if mypy_section.get("files") or mypy_section.get("packages"):
-                return "uv run mypy"
-    return "uv run mypy ."
-
-
 def check_typecheck(
     cwd: Path,
     command: str | None = None,
@@ -641,7 +842,7 @@ def check_typecheck(
 ) -> CheckResult:
     """Run typecheck independently."""
     start = time.monotonic()
-    cmd = command or _default_typecheck_command(cwd)
+    cmd = resolve_typecheck_command(command, cwd)
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
@@ -684,7 +885,7 @@ def check_linter(
 ) -> CheckResult:
     """Run linter independently."""
     start = time.monotonic()
-    cmd = command or "uv run ruff check ."
+    cmd = resolve_lint_command(command)
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)

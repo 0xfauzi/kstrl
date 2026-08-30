@@ -33,6 +33,7 @@ from kstrl.tui import theme
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
 from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig, resolve_verify_commands
 
 if TYPE_CHECKING:
     pass
@@ -51,6 +52,44 @@ class WizardDone(Message):
         self.exit_code = exit_code
         self.transcript = transcript
         self.agent_note = agent_note
+
+
+_LABEL_WIDTH = 9
+
+
+def _detected_text(root: Path) -> Text:
+    """The project's language and the commands Phase 1 will run (#261).
+
+    The commands come from the gate's own resolver, so the wizard shows
+    what will actually run; it used to show init's guesses. One labelled
+    line each - see the `#wizard-detected` rule in styles.tcss for why
+    they cannot share a line.
+
+    VerifyConfig.load raises ValueError on malformed TOML by design
+    (config._load_toml), and this is the screen an operator opens to
+    repair a broken scaffold, so it reports one rather than taking the
+    app down on mount.
+    """
+    rows: list[tuple[str, str]] = [
+        ("detected", detect_context(root).get("language", "unknown")),
+    ]
+    try:
+        commands = resolve_verify_commands(VerifyConfig.load(root), root)
+    except (ValueError, OSError):
+        rows.append(("verify", "kstrl.toml is unreadable; cannot show gate commands"))
+    else:
+        rows += [
+            ("test", commands.test),
+            ("typecheck", commands.typecheck),
+            ("lint", commands.lint),
+        ]
+    text = Text()
+    for index, (label, value) in enumerate(rows):
+        if index:
+            text.append("\n")
+        text.append(f"{label:<{_LABEL_WIDTH}}  ", style=f"bold {theme.MUTED}")
+        text.append(value, style=theme.MUTED if index else "")
+    return text
 
 
 class InitWizardScreen(Screen[None]):
@@ -121,16 +160,9 @@ class InitWizardScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        root = getattr(self.app, "root_dir", Path.cwd())
+        root = Path(getattr(self.app, "root_dir", Path.cwd()))
         self.query_one("#wizard-directory", Input).value = str(root)
-        context = detect_context(Path(root))
-        detected = Text()
-        detected.append("detected  ", style=f"bold {theme.MUTED}")
-        detected.append(context.get("language", "unknown"))
-        for key in ("test_cmd", "typecheck_cmd", "lint_cmd"):
-            if context.get(key):
-                detected.append(f"  ·  {context[key]}", style=theme.MUTED)
-        self.query_one("#wizard-detected", Static).update(detected)
+        self.query_one("#wizard-detected", Static).update(_detected_text(root))
         self._show_stage("form")
 
     # -- stages --------------------------------------------------------------

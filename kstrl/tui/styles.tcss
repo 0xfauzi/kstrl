@@ -442,7 +442,15 @@ CheckpointModal {
     height: auto;
 }
 
-#wizard-detected, #wizard-errors {
+/* #261: one line per resolved gate command, and a chained polyglot
+   command wraps, so this cannot be `height: 1` - everything after the
+   first line renders nowhere. #wizard-errors stays at 1 so the form
+   does not shift when an error appears. */
+#wizard-detected {
+    height: auto;
+}
+
+#wizard-errors {
     height: 1;
 }
 
