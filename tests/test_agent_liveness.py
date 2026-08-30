@@ -16,11 +16,12 @@ seam. No test may spawn a real CLI; tests/conftest.py enforces that.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
-from kstrl.agents import liveness
+from kstrl.agents import liveness, proc
 from kstrl.agents.liveness import (
     CLAUDE_FAMILY,
     CODEX_FAMILY,
@@ -64,6 +65,7 @@ class TestClaudeProbe:
         assert probe_family(CLAUDE_FAMILY) == ProbeResult(live=True)
         # Cheapest model, non-interactive, machine-readable: the shape
         # the cost table in liveness.py's docstring was measured against.
+        # One attempt only, because the first one answered.
         assert seen == [["claude", "--print", "--output-format", "json", "--model", "haiku"]]
 
     def test_dead_agent_quotes_the_cli_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +93,51 @@ class TestClaudeProbe:
         stub_probe(monkeypatch, [])
 
         assert probe_family(CLAUDE_FAMILY) == ProbeResult(live=False, detail="no JSON result event")
+
+    @pytest.mark.parametrize("is_error", [False, True])
+    def test_interleaved_stderr_is_skipped_not_fatal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        is_error: bool,
+    ) -> None:
+        """DeadlineStreamer merges stderr into stdout (proc.py), so real
+        transcripts carry Node warnings and update notices around the
+        envelope. Parsing the whole stream as one document would fail on
+        any of them: a healthy CLI would read as dead, and a refusal
+        would lose the reason the operator needs.
+        """
+        stub_probe(
+            monkeypatch,
+            [
+                "(node:48211) ExperimentalWarning: WASI is an experimental feature",
+                "  (Use `node --trace-warnings ...` to show where the warning was created)",
+                *_claude_result(is_error=is_error, result="Credit balance is too low"),
+                "npm notice New major version of npm available!",
+            ],
+        )
+
+        result = probe_family(CLAUDE_FAMILY)
+
+        assert result.live is not is_error
+        assert result.detail == (None if not is_error else "Credit balance is too low")
+
+    def test_a_failed_haiku_attempt_falls_back_to_the_default_model(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An account or CLI version where the `haiku` alias is
+        unavailable must not condemn the whole claude family. The
+        fallback asks a weaker question: no --model at all, which is the
+        model a cross-family reviewer runs with.
+        """
+        seen = stub_probe(
+            monkeypatch,
+            _claude_result(is_error=True, result="Invalid model name: haiku"),
+            then=_claude_result(is_error=False),
+        )
+
+        assert probe_family(CLAUDE_FAMILY) == ProbeResult(live=True)
+        assert [("--model" in cmd) for cmd in seen] == [True, False]
 
     def test_missing_is_error_field_is_forgiving(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # An older or newer CLI that parses but omits the flag must not
@@ -187,9 +234,11 @@ class TestCodexProbe:
 
 class TestProbeRobustness:
     def test_hung_agent_hits_the_deadline(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        stub_probe(monkeypatch, ["some partial output"], timed_out=True)
+        seen = stub_probe(monkeypatch, ["some partial output"], timed_out=True)
 
         assert probe_family(CLAUDE_FAMILY) == ProbeResult(live=False, detail="no answer within 60s")
+        # A breach spends the whole budget, so the fallback never starts.
+        assert len(seen) == 1
 
     def test_missing_binary_is_dead_not_an_exception(
         self,
@@ -206,6 +255,41 @@ class TestProbeRobustness:
 
         assert result.live is False
         assert result.detail is not None and "codex" in result.detail
+
+    def test_an_explained_refusal_is_not_retried(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """codex has no weaker question to fall back to, so it gets one
+        attempt. An identical retry cannot change a verdict the CLI has
+        already explained, and measured it would double both the stall
+        and the token bill on the path that is already going wrong.
+        """
+        seen = stub_probe(
+            monkeypatch,
+            [_codex_event(type="turn.failed", error={"message": "usage limit reached"})],
+        )
+
+        result = probe_family(CODEX_FAMILY)
+
+        assert result.live is False
+        assert result.detail == "usage limit reached"
+        assert len(seen) == 1
+
+    def test_a_spent_budget_stops_the_walk(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A family that hangs must not be waited out once per attempt.
+        The budget bounds the WALK, so a first attempt that burns it
+        stops the fallback from starting.
+        """
+        monkeypatch.setattr(liveness, "PROBE_TIMEOUT_SECONDS", 0.0)
+        seen = stub_probe(
+            monkeypatch,
+            _claude_result(is_error=True, result="Invalid model name: haiku"),
+            then=_claude_result(is_error=False),
+        )
+
+        assert probe_family(CLAUDE_FAMILY).live is False
+        assert len(seen) == 1
 
     def test_result_is_cached_for_the_process(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen = stub_probe(monkeypatch, _claude_result(is_error=False))
@@ -251,6 +335,37 @@ class TestStreamSeam:
 
         assert lines == ["one", "two"]
         assert timed_out is False
+
+    def test_seam_runs_in_a_scratch_directory(self) -> None:
+        """A probe must not load the target project's CLAUDE.md, hooks
+        or MCP servers. A project hook that errors is the same class of
+        fault as the malformed ~/.codex/hooks.json that motivated #262,
+        and the probe exists to detect that, not to reproduce it.
+        """
+        lines, _ = _REAL_STREAM(["/bin/pwd"])
+
+        assert len(lines) == 1
+        cwd = Path(lines[0]).resolve()
+        assert cwd != Path.cwd().resolve()
+        assert "kstrl-probe-" in cwd.name
+
+    def test_seam_deregisters_the_streamer_on_the_timeout_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`finish` runs on both paths, so `proc._ACTIVE` never keeps a
+        streamer that is already dead. Otherwise a concurrent shutdown
+        signals an already-killed process group, and the reader and
+        writer threads are never joined.
+        """
+        monkeypatch.setattr(liveness, "PROBE_TIMEOUT_SECONDS", 0.1)
+        before = len(proc._ACTIVE)
+
+        lines, timed_out = _REAL_STREAM(["/bin/sleep", "30"])
+
+        assert timed_out is True
+        assert lines == []
+        assert len(proc._ACTIVE) == before
 
 
 class TestKillSwitch:

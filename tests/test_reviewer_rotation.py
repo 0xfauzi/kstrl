@@ -24,6 +24,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import (
     AdversarialAgentSelection,
     FactoryConfig,
+    FactoryResult,
     resolve_adversarial_selection,
     run_factory,
 )
@@ -51,7 +52,7 @@ from kstrl.security import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
-from tests.helpers.agent_probe import stub_probe
+from tests.helpers.agent_probe import set_cli_availability, stub_probe
 
 
 def _resolve(
@@ -541,6 +542,37 @@ class RecordingUI(PlainUI):
         super().warn(message)
 
 
+def _run_empty_factory(
+    tmp_path: Path,
+    config: FactoryConfig,
+    *,
+    base: KstrlConfig | None = None,
+    ui: RecordingUI | None = None,
+) -> FactoryResult:
+    """run_factory over a zero-component manifest.
+
+    Every test in TestHomogeneityWarningFires wants the run-level
+    selection and nothing else, so no components is the whole point: the
+    reviewer selection is resolved and announced before any component is
+    scheduled.
+    """
+    return run_factory(
+        Manifest(
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[],
+        ),
+        config,
+        base if base is not None else KstrlConfig(agent_type="claude-code"),
+        ui if ui is not None else RecordingUI(),
+        tmp_path,
+        manifest_path=tmp_path / "manifest.json",
+    )
+
+
 class TestHomogeneityWarningFires:
     def test_run_factory_warns_once_and_journals_selection(
         self,
@@ -550,28 +582,16 @@ class TestHomogeneityWarningFires:
         (family unknowable, so the warning fires regardless of which
         CLIs this machine has) prints the homogeneity warning for both
         enabled reviewer phases and journals the selection event."""
-        manifest = Manifest(
-            version="1",
-            spec_file="spec.md",
-            project_name="p",
-            base_branch="main",
-            single_pr=False,
-            components=[],
-        )
-        config = FactoryConfig(
-            review_mode=ReviewMode.HARD.value,
-            security_config=SecurityConfig(mode="hard"),
-            create_prs=False,
-        )
-        base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
-        result = run_factory(
-            manifest,
-            config,
-            base,
-            ui,
+        result = _run_empty_factory(
             tmp_path,
-            manifest_path=tmp_path / "manifest.json",
+            FactoryConfig(
+                review_mode=ReviewMode.HARD.value,
+                security_config=SecurityConfig(mode="hard"),
+                create_prs=False,
+            ),
+            base=KstrlConfig(agent_cmd="./fake-engineer.sh"),
+            ui=ui,
         )
         assert result.exit_code == 0
         homogeneity = [w for w in ui.warnings if "Homogeneity risk" in w]
@@ -589,30 +609,94 @@ class TestHomogeneityWarningFires:
         self,
         tmp_path: Path,
     ) -> None:
-        manifest = Manifest(
-            version="1",
-            spec_file="spec.md",
-            project_name="p",
-            base_branch="main",
-            single_pr=False,
-            components=[],
-        )
-        config = FactoryConfig(
-            review_mode=ReviewMode.SKIP.value,
-            security_config=None,
-            create_prs=False,
-        )
-        base = KstrlConfig(agent_cmd="./fake-engineer.sh")
         ui = RecordingUI()
-        run_factory(
-            manifest,
-            config,
-            base,
-            ui,
+        _run_empty_factory(
             tmp_path,
-            manifest_path=tmp_path / "manifest.json",
+            FactoryConfig(
+                review_mode=ReviewMode.SKIP.value,
+                security_config=None,
+                create_prs=False,
+            ),
+            base=KstrlConfig(agent_cmd="./fake-engineer.sh"),
+            ui=ui,
         )
         assert not [w for w in ui.warnings if "Homogeneity risk" in w]
+
+    def test_skip_mode_run_does_not_pay_for_a_probe(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#262 review: resolving is free, probing is not.
+
+        A run that will never dispatch an adversarial call must not buy
+        an answer it cannot use. Measured, that answer costs 4 to 6
+        seconds, and up to $0.174 when the claude fallback attempt runs.
+        """
+        # Both CLIs on PATH, so the rotation reaches the probe on a
+        # runner that has neither installed.
+        set_cli_availability(monkeypatch, claude=True, codex=True)
+        seen = stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
+
+        _run_empty_factory(
+            tmp_path,
+            FactoryConfig(
+                review_mode=ReviewMode.SKIP.value,
+                security_config=None,
+                create_prs=False,
+            ),
+        )
+
+        assert seen == []
+
+    def test_a_run_that_will_review_does_pay_for_a_probe(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The other half of the gate: it must not be a way to never probe.
+        # Both CLIs on PATH, so the rotation reaches the probe on a
+        # runner that has neither installed.
+        set_cli_availability(monkeypatch, claude=True, codex=True)
+        seen = stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
+
+        _run_empty_factory(
+            tmp_path,
+            FactoryConfig(
+                review_mode=ReviewMode.HARD.value,
+                security_config=None,
+                create_prs=False,
+            ),
+        )
+
+        assert len(seen) == 1
+
+    def test_skip_mode_still_probes_when_the_ladder_can_restore_review(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every autonomy bundle sets review_mode="hard", and the ladder
+        resolves AFTER the pipeline is already holding this selection.
+        So with the ladder enabled, review_mode="skip" is not proof that
+        review will not run, and the probe must not be skipped on it.
+        """
+        # Both CLIs on PATH, so the rotation reaches the probe on a
+        # runner that has neither installed.
+        set_cli_availability(monkeypatch, claude=True, codex=True)
+        (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = true\n")
+        seen = stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
+
+        _run_empty_factory(
+            tmp_path,
+            FactoryConfig(
+                review_mode=ReviewMode.SKIP.value,
+                security_config=None,
+                create_prs=False,
+            ),
+        )
+
+        assert len(seen) == 1
 
 
 class TestCalibrationReviewerOverride:

@@ -18,22 +18,15 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
-from kstrl.agents import ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent
+from kstrl.agents import ClaudeSdkAgent
 from kstrl.agents.liveness import ProbeResult
 from kstrl.cli import _agent_preflight, cli
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryResult
 from kstrl.ui.plain import PlainUI
+from tests.helpers.agent_probe import set_cli_availability
 
-
-def _availability(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    claude: bool,
-    codex: bool,
-) -> None:
-    monkeypatch.setattr(ClaudeCodeAgent, "is_available", classmethod(lambda cls: claude))
-    monkeypatch.setattr(CodexAgent, "is_available", classmethod(lambda cls: codex))
+_availability = set_cli_availability
 
 
 def _stub_run_loop(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
