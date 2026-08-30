@@ -509,10 +509,7 @@ class EvolutionJournal:
             entries.append(entry)
 
         try:
-            self.config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config.journal_path, "a") as f:
-                for entry in entries:
-                    f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            self.append_entries(entries)
         except OSError as exc:
             logger.warning(
                 "evolution journal write failed (non-fatal): %s: %s",
@@ -1118,26 +1115,77 @@ class EvolutionJournal:
         return rows[-last_n:]
 
     # ------------------------------------------------------------------
+    # get_spec_issue_runs
+    # ------------------------------------------------------------------
+
+    def get_spec_issue_runs(self, project: str, last_n: int = 10) -> list[dict[str, Any]]:
+        """The last N recorded spec audits for ``project``, oldest first (#260).
+
+        Deliberately NOT routed through :meth:`_read_journal_entries`:
+        that reader keeps only entries whose ``run_id`` is among the
+        last N distinct run ids, and a ``spec_issues`` entry carries no
+        ``run_id`` at all (decompose runs before a factory run id
+        exists), so every one of them is dropped there. Reading the raw
+        entries is what makes the architect's own history readable.
+
+        ``last_n`` counts spec audits, not factory runs - a spec audit
+        happens once per decompose, whether or not a factory run
+        follows. Windowed here rather than by the caller, matching
+        :meth:`get_experiment_trends`.
+
+        Nothing is assumed about an entry beyond it being a JSON
+        object, so journals written by older versions read cleanly.
+        """
+        runs = [
+            entry
+            for entry in self._read_all_entries()
+            if entry.get("event_type") == "spec_issues" and entry.get("project") == project
+        ]
+        return runs[-last_n:] if last_n > 0 else []
+
+    # ------------------------------------------------------------------
+    # append_entries
+    # ------------------------------------------------------------------
+
+    def append_entries(self, entries: list[dict[str, Any]]) -> None:
+        """Append entries to the journal in JSONL form.
+
+        The one writer of the journal's line format. Raises ``OSError``
+        rather than handling it, because the two callers surface a
+        failed write differently: :meth:`record_run` logs it, while
+        decompose warns through the run's UI.
+        """
+        self.config.journal_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config.journal_path, "a") as f:
+            for entry in entries:
+                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _read_all_entries(self) -> list[dict[str, Any]]:
+        """Every well-formed JSON object in the journal, in file order.
+
+        Delegates to ``observability.read_progress_events``: the
+        journal and the progress log are the same JSONL-of-objects
+        convention, and the tolerant-read policy (missing file, blank
+        line, torn line, non-object line - all skipped) should be one
+        policy rather than two. One unreadable line must not cost the
+        reader the rest of the history.
+        """
+        from kstrl.observability import read_progress_events
+
+        return read_progress_events(self.config.journal_path)
+
     def _read_journal_entries(self, lookback_runs: int = 10) -> list[dict[str, Any]]:
-        """Read JSONL journal and return entries from the last N distinct runs."""
-        try:
-            lines = self.config.journal_path.read_text().strip().splitlines()
-        except OSError:
-            return []
+        """Read JSONL journal and return entries from the last N distinct runs.
 
-        entries: list[dict[str, Any]] = []
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-
+        Entries without a ``run_id`` are dropped, because the window is
+        defined in terms of runs. ``spec_issues`` entries are exactly
+        that case; :meth:`get_spec_issue_runs` reads those instead.
+        """
+        entries = self._read_all_entries()
         if not entries:
             return []
 

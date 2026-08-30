@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,7 +11,10 @@ import pytest
 
 from kstrl.decompose import (
     SpecBlockerError,
+    SpecIssue,
+    _build_convergence,
     _extract_json,
+    _issue_dicts,
     _parse_spec_issues,
     _validate_decompose_output,
     decompose_spec,
@@ -738,26 +742,49 @@ MINOR_ISSUE: dict[str, object] = {
 }
 
 
-class TestSpecIssuesPersistence:
-    """R1.7: red-team output becomes a durable artifact + journal event."""
+def _run_decompose(
+    tmp_path: Path,
+    output: str,
+    *,
+    spec_name: str = "spec.md",
+    project_name: str = "test",
+) -> str:
+    """Decompose a spec against a mock agent; returns the UI output.
 
-    def _run(
-        self,
-        tmp_path: Path,
-        output: str,
-    ) -> Path:
-        spec_file = tmp_path / "spec.md"
-        spec_file.write_text("# Spec\nBuild it.")
-        (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+    A blocker halt is swallowed, because what decompose printed and
+    wrote before raising is what these tests are about.
+    """
+    spec_file = tmp_path / spec_name
+    spec_file.write_text("# Spec\nBuild it.")
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+    buffer = io.StringIO()
+    try:
         decompose_spec(
             spec_path=spec_file,
-            project_name="test",
+            project_name=project_name,
             base_branch="main",
             single_pr=False,
             agent=MockDecomposeAgent(output),
-            ui=PlainUI(no_color=True),
+            ui=PlainUI(no_color=True, file=buffer),
             root_dir=tmp_path,
         )
+    except SpecBlockerError:
+        pass
+    return buffer.getvalue()
+
+
+def _read_spec_issue_events(tmp_path: Path) -> list[dict[str, object]]:
+    journal = tmp_path / ".kstrl" / "evolution.jsonl"
+    assert journal.exists(), "journal event was not written"
+    entries = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
+    return [e for e in entries if e.get("event_type") == "spec_issues"]
+
+
+class TestSpecIssuesPersistence:
+    """R1.7: red-team output becomes a durable artifact + journal event."""
+
+    def _run(self, tmp_path: Path, output: str) -> Path:
+        _run_decompose(tmp_path, output)
         return tmp_path / "scripts" / "kstrl" / "spec-issues.json"
 
     def test_artifact_written_on_halt(self, tmp_path: Path) -> None:
@@ -820,12 +847,6 @@ class TestSpecIssuesPersistence:
         assert content["halted"] is False
         assert content["issues"] == []
 
-    def _read_journal_events(self, tmp_path: Path) -> list[dict[str, object]]:
-        journal = tmp_path / ".kstrl" / "evolution.jsonl"
-        assert journal.exists(), "journal event was not written"
-        entries = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
-        return [e for e in entries if e.get("event_type") == "spec_issues"]
-
     def test_journal_event_on_halt(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
@@ -843,7 +864,7 @@ class TestSpecIssuesPersistence:
                 root_dir=tmp_path,
             )
 
-        events = self._read_journal_events(tmp_path)
+        events = _read_spec_issue_events(tmp_path)
         assert len(events) == 1
         assert events[0]["halted"] is True
         assert events[0]["counts"] == {"blocker": 1, "major": 0, "minor": 0}
@@ -854,7 +875,7 @@ class TestSpecIssuesPersistence:
             tmp_path,
             _single_component_output([_story()], spec_issues=[MINOR_ISSUE]),
         )
-        events = self._read_journal_events(tmp_path)
+        events = _read_spec_issue_events(tmp_path)
         assert len(events) == 1
         assert events[0]["halted"] is False
         assert events[0]["counts"] == {"blocker": 0, "major": 0, "minor": 1}
@@ -964,3 +985,243 @@ class TestPrdValidationInsideRetryLoop:
         assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         # The audit artifact is deliberately kept.
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()
+
+
+class TestSpecConvergenceReport:
+    """#260: what this audit says about the previous one."""
+
+    def _issue(self, severity: str, kind: str, summary: str) -> SpecIssue:
+        return SpecIssue(severity=severity, kind=kind, summary=summary)
+
+    def _entry(
+        self,
+        issues: list[SpecIssue] | None,
+        spec_file: str = "spec.md",
+    ) -> dict[str, object]:
+        """One prior journal entry, in the shape decompose writes."""
+        entry: dict[str, object] = {"event_type": "spec_issues", "spec_file": spec_file}
+        if issues is not None:
+            entry["issues"] = _issue_dicts(issues)
+        return entry
+
+    def test_first_run_has_nothing_to_compare(self) -> None:
+        assert _build_convergence([self._issue("blocker", "ambiguity", "a")], "spec.md", []) is None
+
+    def test_entry_without_an_issue_list_is_not_a_comparison(self) -> None:
+        """An entry that cannot be counted is not evidence, and a
+        journal holding only such entries reads as no history."""
+        assert _build_convergence([], "spec.md", [self._entry(None)]) is None
+
+    def test_counts_and_deltas_against_the_previous_run(self) -> None:
+        report = _build_convergence(
+            [
+                self._issue("blocker", "ambiguity", "new one"),
+                self._issue("blocker", "contradiction", "another"),
+                self._issue("minor", "other", "small"),
+            ],
+            "spec.md",
+            [self._entry([self._issue("blocker", "ambiguity", "old one")])],
+        )
+
+        assert report is not None
+        assert report.current_counts == {"blocker": 2, "major": 0, "minor": 1}
+        assert report.previous_counts == {"blocker": 1, "major": 0, "minor": 0}
+        assert report.previous_total == 1
+
+    def test_repeats_match_on_normalized_text(self) -> None:
+        """Collapsed whitespace and folded case still match, and so does
+        a changed severity; different wording does not."""
+        report = _build_convergence(
+            [
+                self._issue("major", "ambiguity", "What   'FAST' means\nis not defined"),
+                self._issue("blocker", "ambiguity", "What fast means is undefined"),
+            ],
+            "spec.md",
+            [
+                self._entry(
+                    [
+                        self._issue("blocker", "ambiguity", "What 'fast' means is not defined"),
+                        self._issue("minor", "other", "gone"),
+                    ]
+                )
+            ],
+        )
+
+        assert report is not None
+        assert report.repeated == 1
+        assert report.previous_total == 2
+
+    def test_same_summary_under_a_different_kind_is_not_a_repeat(self) -> None:
+        report = _build_convergence(
+            [self._issue("blocker", "contradiction", "same words")],
+            "spec.md",
+            [self._entry([self._issue("blocker", "ambiguity", "same words")])],
+        )
+
+        assert report is not None
+        assert report.repeated == 0
+
+    def test_trend_spans_every_recorded_run_and_ends_with_this_one(self) -> None:
+        history = [
+            self._entry([self._issue("blocker", "ambiguity", f"r1-{n}") for n in range(7)]),
+            self._entry([self._issue("blocker", "ambiguity", f"r2-{n}") for n in range(11)]),
+            self._entry([self._issue("blocker", "ambiguity", "r3-0")]),
+            self._entry([self._issue("blocker", "ambiguity", f"r4-{n}") for n in range(3)]),
+        ]
+
+        report = _build_convergence(
+            [self._issue("blocker", "ambiguity", f"r5-{n}") for n in range(4)],
+            "spec-slice-1.md",
+            history,
+        )
+
+        assert report is not None
+        assert report.blocker_trend == (7, 11, 1, 3, 4)
+
+    def test_previous_spec_file_is_carried_for_the_rename_case(self) -> None:
+        report = _build_convergence(
+            [],
+            "spec-slice-1.md",
+            [self._entry([], spec_file="spec.md")],
+        )
+
+        assert report is not None
+        assert report.previous_spec_file == "spec.md"
+        assert report.current_spec_file == "spec-slice-1.md"
+
+    def test_malformed_stored_issues_do_not_crash_the_reader(self) -> None:
+        """Journals written by older versions, and any entry an
+        operator hand-edited, must read rather than raise."""
+        history: list[dict[str, object]] = [
+            {
+                "event_type": "spec_issues",
+                "issues": [
+                    "not a dict",
+                    {"severity": "blocker"},
+                    {"summary": None, "kind": 7, "severity": "major"},
+                ],
+            }
+        ]
+
+        report = _build_convergence([], "spec.md", history)
+
+        assert report is not None
+        assert report.previous_counts == {"blocker": 1, "major": 1, "minor": 0}
+        assert report.previous_spec_file == ""
+
+
+class TestSpecConvergenceThroughDecompose:
+    """The report as the operator meets it, on the real code path."""
+
+    def _run(
+        self,
+        tmp_path: Path,
+        issues: list[dict[str, object]],
+        spec_name: str = "spec.md",
+        project_name: str = "writers-room",
+    ) -> str:
+        return _run_decompose(
+            tmp_path,
+            _single_component_output([_story()], spec_issues=issues),
+            spec_name=spec_name,
+            project_name=project_name,
+        )
+
+    def test_first_run_prints_no_report(self, tmp_path: Path) -> None:
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+        assert "Spec Convergence" not in output
+
+    def test_second_run_compares_against_the_first(self, tmp_path: Path) -> None:
+        """Also pins the ordering: the history is read before this run
+        is appended, so "previous run" is never this run."""
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        output = self._run(
+            tmp_path,
+            [
+                BLOCKER_ISSUE,
+                {
+                    "severity": "blocker",
+                    "kind": "contradiction",
+                    "summary": "Stage is recorded twice",
+                    "location": "",
+                    "suggestion": "",
+                },
+                MINOR_ISSUE,
+            ],
+        )
+
+        assert "Spec Convergence" in output
+        assert "Blocker:" in output
+        assert "2 (previous run: 1, +1)" in output
+        assert "Minor:" in output
+        assert "1 (previous run: 0, +1)" in output
+        assert "1, 2 (blockers, oldest run first)" in output
+        assert "Previous run raised 1 issue(s): 1 reappear verbatim, 0 do not." in output
+
+    def test_journal_entries_still_carry_no_run_id(self, tmp_path: Path) -> None:
+        """The report reads entries the run-windowed reader drops; if a
+        run_id ever appears here, that reader would start windowing
+        spec audits by factory run and this feature would go quiet."""
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        events = _read_spec_issue_events(tmp_path)
+
+        assert events and all("run_id" not in e for e in events)
+
+    def test_a_legacy_entry_without_run_id_does_not_break_the_read(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        journal = tmp_path / ".kstrl" / "evolution.jsonl"
+        journal.parent.mkdir(parents=True)
+        journal.write_text(
+            json.dumps({"event_type": "component_result", "component": "legacy"}) + "\n"
+        )
+
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert "1 (previous run: 1, no change)" in output
+        assert "1, 1 (blockers, oldest run first)" in output
+
+    def test_a_rename_is_reported_rather_than_hidden(self, tmp_path: Path) -> None:
+        self._run(tmp_path, [BLOCKER_ISSUE], spec_name="spec.md")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], spec_name="spec-slice-1.md")
+
+        assert "the previous audit read spec.md, this one read spec-slice-1.md" in output
+
+    def test_a_different_project_has_its_own_history(self, tmp_path: Path) -> None:
+        self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="deckgen")
+
+        assert "Spec Convergence" not in output
+
+    def test_a_clean_audit_still_reports_the_drop(self, tmp_path: Path) -> None:
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        output = self._run(tmp_path, [])
+
+        assert "0 (previous run: 1, -1)" in output
+        assert "1, 0 (blockers, oldest run first)" in output
+        assert "Previous run raised 1 issue(s): 0 reappear verbatim, 1 do not." in output
+
+    def test_the_window_is_the_journal_lookback(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        for _ in range(3):
+            self._run(tmp_path, [BLOCKER_ISSUE])
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert "1, 1, 1 (blockers, oldest run first)" in output
+
+    def test_no_report_when_the_journal_is_off(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._run(tmp_path, [BLOCKER_ISSUE])
+        monkeypatch.setenv("KSTRL_EVOLUTION_ENABLED", "0")
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert "Spec Convergence" not in output
