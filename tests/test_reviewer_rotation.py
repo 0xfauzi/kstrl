@@ -17,6 +17,8 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
+
 from kstrl import calibration
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
@@ -49,6 +51,7 @@ from kstrl.security import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
+from tests.helpers.agent_probe import stub_probe
 
 
 def _resolve(
@@ -121,6 +124,69 @@ class TestSelectionMatrix:
         assert sel.warning is not None
         assert "codex CLI is not available" in sel.warning
         assert "Self-preference bias" in sel.warning
+
+    def test_claude_engineer_downgrades_when_codex_is_installed_but_dead(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#262: PATH said yes, the CLI could not run a turn.
+
+        The whole point of the probe. Before it, this run selected codex
+        for review on the strength of the binary existing, paid the full
+        engineer bill, and only then failed every adversarial dispatch.
+        A dead cross CLI now takes the same route a missing one takes.
+        """
+        stub_probe(
+            monkeypatch,
+            [json.dumps({"type": "turn.failed", "error": {"message": "usage limit reached"}})],
+        )
+
+        sel = _resolve(engineer_type="claude-code", fallback_type="claude-code")
+
+        assert sel.source == "same-family-fallback"
+        assert sel.agent_type == "claude-code"
+        assert sel.warning is not None
+        assert "codex CLI is installed but cannot run a turn" in sel.warning
+        assert "(usage limit reached)" in sel.warning
+        assert "Self-preference bias" in sel.warning
+        # "Install codex" is useless advice to someone who has it.
+        assert "Install the codex CLI" not in sel.warning
+
+    def test_live_cross_family_cli_still_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
+
+        sel = _resolve(engineer_type="claude-code", fallback_type="claude-code")
+
+        assert sel.source == "cross-family-default"
+        assert sel.agent_type == "codex"
+        assert sel.warning is None
+
+    def test_absent_cross_family_cli_is_never_probed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A missing binary is already an answer; spending a probe turn
+        # to confirm it would be money for nothing.
+        seen = stub_probe(monkeypatch, [])
+
+        _resolve(
+            engineer_type="claude-code",
+            fallback_type="claude-code",
+            codex_available=False,
+        )
+
+        assert seen == []
+
+    def test_review_and_security_share_one_probe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        seen = stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
+
+        _resolve(engineer_type="claude-code", fallback_type="claude-code")
+        _resolve("security", engineer_type="claude-code", fallback_type="claude-code")
+
+        assert len(seen) == 1
 
     def test_codex_engineer_falls_back_when_claude_absent(self) -> None:
         # auto-detect with claude missing resolves the engineer to

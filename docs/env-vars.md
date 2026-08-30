@@ -28,6 +28,7 @@ Precedence: **CLI flag > env var > `kstrl.toml` > dataclass default**.
 | `MODEL_REASONING_EFFORT` | str | unset | `low\|medium\|high\|max` |
 | `KSTRL_AGENT_TYPE` | str | unset | `claude-code\|claude-sdk\|codex\|auto` (`claude-sdk` needs the `sdk` extra: `uv sync --extra sdk`) |
 | `KSTRL_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Non-positive or unparseable values are ignored |
+| `KSTRL_AGENT_PROBE` | bool | true | Liveness-probe the agent CLI before any spend (#262): one trivial turn per model family per process. `0` skips it and restores the pre-#262 behaviour of trusting PATH. **Env only** - deliberately no `kstrl.toml` key, because the cross-family probe runs where no config object is in scope. Measured cost per family: claude 4.8s / $0.019 ($0.0027 warm), codex 6.9s / no cost reported. `ks understand` and `ks feature` probe one family; `ks run`, `ks factory` and `ks retry` probe up to two. `ks serve` runs a fresh `ks factory` per queue item, so set this to `0` there if the per-item toll matters |
 | `KSTRL_UI` | str | auto | `auto\|rich\|plain` |
 | `KSTRL_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |

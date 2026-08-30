@@ -125,6 +125,39 @@ def isolate_kstrl_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def forbid_agent_cli_spend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two locks on the #262 liveness probe, because it spends money.
+
+    Dozens of tests reach ``_agent_preflight`` and a handful get far
+    enough to probe. A probe shells out to a real ``claude`` or
+    ``codex`` and bills a real account, so:
+
+    1. ``KSTRL_AGENT_PROBE=0`` switches probing off for every test, the
+       same switch an operator has.
+    2. The subprocess seam is replaced with one that FAILS the test, so a
+       test that deliberately re-enables the switch (or reaches the probe
+       by a path nobody predicted) still cannot spawn a CLI. Tests that
+       exercise the probe re-arm both through
+       ``tests.helpers.agent_probe.stub_probe``; a later ``setattr`` on
+       the same attribute wins while it is active.
+
+    The result cache is process-global, so it is cleared per test too.
+    """
+    from kstrl.agents import liveness
+
+    def _forbidden(*args: object, **kwargs: object) -> tuple[list[str], bool]:
+        raise AssertionError(
+            "A test reached the agent liveness probe and would have spawned "
+            "a real CLI. Use tests.helpers.agent_probe.stub_probe, or leave "
+            "KSTRL_AGENT_PROBE=0 as this fixture sets it."
+        )
+
+    monkeypatch.setenv(liveness.PROBE_ENV_VAR, "0")
+    monkeypatch.setattr(liveness, "_stream", _forbidden)
+    liveness.reset_probe_cache()
+
+
 def snapshot_kstrl_dir(kstrl_dir: Path) -> dict[str, str]:
     """Fingerprint every entry under ``kstrl_dir``.
 

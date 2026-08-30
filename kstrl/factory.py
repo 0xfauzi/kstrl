@@ -119,6 +119,7 @@ from kstrl.verify import (
 )
 
 if TYPE_CHECKING:
+    from kstrl.agents.liveness import ProbeResult
     from kstrl.ui.base import UI
 
 
@@ -659,6 +660,85 @@ class AdversarialAgentSelection:
     warning: str | None = None
 
 
+def _resolve_cross_family(
+    cross_type: str | None,
+    *,
+    claude_available: bool,
+    codex_available: bool,
+) -> ProbeResult | None:
+    """The opposite family's liveness, or None when there is none to ask.
+
+    Liveness is deliberately NOT folded into
+    ``claude_available``/``codex_available``: those two also decide which
+    family the ENGINEER belongs to, and a claude CLI that is installed
+    but dead must still be recorded as a claude engineer, because
+    ``get_agent`` will construct it from PATH regardless. Mixing
+    liveness in there would invert the rotation while the audit trail
+    claimed it held - the exact failure ``_cli_family`` warns about.
+
+    The probe sits behind the installed check, so a machine with one CLI
+    pays nothing and only the family this run would actually dispatch to
+    is ever probed. ``probe_family`` caches per process, so the review
+    and security resolutions share one probe, and it is inert when
+    ``KSTRL_AGENT_PROBE=0``.
+    """
+    if cross_type is None:
+        return None
+    installed = codex_available if cross_type == "codex" else claude_available
+    if not installed:
+        return None
+    from kstrl.agents.liveness import probe_family
+
+    return probe_family(cross_type)
+
+
+def _homogeneity_warning(
+    phase: str,
+    engineer_family: str | None,
+    cross_type: str | None,
+    cross: ProbeResult | None,
+) -> str:
+    """The self-preference risk statement for a same-family fallback.
+
+    Three causes, three remedies: an unknowable engineer family, a
+    cross CLI that is not installed, and (#262) one that is installed
+    but cannot run. The last quotes the CLI's own refusal, because
+    "install codex" is useless advice to someone who already has it.
+    """
+    tail = (
+        "Self-preference bias means a same-family reviewer systematically "
+        "misses the bug classes its own family produces. "
+    )
+    if engineer_family is None:
+        return (
+            "Homogeneity risk (R7.1): the engineer runs a custom agent "
+            "command, so its model family is unknown and the "
+            f"cross-family default cannot be applied; the {phase} "
+            f"reviewer falls back to the same configuration. {tail}"
+            f"Set an explicit {phase} agent config on a different model "
+            "family to restore cross-family review."
+        )
+    same_family = (
+        f"so the {phase} reviewer runs on the same model family as the "
+        f"engineer ({engineer_family}). {tail}"
+    )
+    if cross is not None:
+        because = f" ({cross.detail})" if cross.detail else ""
+        return (
+            f"Homogeneity risk (R7.1): the {cross_type} CLI is installed "
+            f"but cannot run a turn{because}, {same_family}"
+            f"Fix the {cross_type} CLI (authentication, quota, config) for "
+            f"cross-family review, or set an explicit {phase} agent config "
+            "to accept the risk silently."
+        )
+    return (
+        f"Homogeneity risk (R7.1): the {cross_type} CLI is not available, "
+        f"{same_family}"
+        f"Install the {cross_type} CLI for cross-family review, or set an "
+        f"explicit {phase} agent config to accept the risk silently."
+    )
+
+
 def resolve_adversarial_selection(
     phase: str,
     *,
@@ -682,15 +762,24 @@ def resolve_adversarial_selection(
        fallback, exactly as before R7.1. No warning - an operator who
        pins a same-family reviewer has decided so deliberately.
     2. Otherwise, when the engineer's family is known and the opposite
-       family's CLI is available, the reviewer defaults to that family
-       (adapter-default model; reasoning deliberately not inherited -
-       effort strings do not transfer across families).
+       family's CLI is both installed and able to complete a turn, the
+       reviewer defaults to that family (adapter-default model;
+       reasoning deliberately not inherited - effort strings do not
+       transfer across families).
     3. Otherwise the reviewer falls back to the same configuration as
        today (same family as the engineer) and ``warning`` names the
        self-preference risk.
 
-    ``claude_available``/``codex_available`` default to probing the
-    real CLIs; tests inject both.
+    ``claude_available``/``codex_available`` default to asking PATH;
+    tests inject both.
+
+    Step 2 also LIVENESS-PROBES the cross family (#262), which costs one
+    trivial CLI turn per process - an installed CLI that cannot
+    authenticate or has exhausted its quota used to be selected here,
+    and the run then paid the whole engineer bill before finding out.
+    ``KSTRL_AGENT_PROBE=0`` switches that off. A dead cross CLI takes
+    the SAME path a missing one always took: downgrade to same-family
+    review with the homogeneity warning, never a hard failure.
     """
     from kstrl.agents import ClaudeCodeAgent, CodexAgent
 
@@ -716,8 +805,12 @@ def resolve_adversarial_selection(
 
     engineer_family = _cli_family(engineer_cmd, engineer_type, claude_available)
     cross_type = _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
-    cross_available = codex_available if cross_type == "codex" else claude_available
-    if cross_type is not None and cross_available:
+    cross = _resolve_cross_family(
+        cross_type,
+        claude_available=claude_available,
+        codex_available=codex_available,
+    )
+    if cross is not None and cross.live:
         return AdversarialAgentSelection(
             phase=phase,
             agent_cmd=None,
@@ -728,28 +821,7 @@ def resolve_adversarial_selection(
             identity=_agent_identity(None, cross_type, None, claude_available),
         )
 
-    if engineer_family is None:
-        warning = (
-            f"Homogeneity risk (R7.1): the engineer runs a custom agent "
-            f"command, so its model family is unknown and the "
-            f"cross-family default cannot be applied; the {phase} "
-            f"reviewer falls back to the same configuration. "
-            "Self-preference bias means a same-family reviewer "
-            "systematically misses the bug classes its own family "
-            f"produces. Set an explicit {phase} agent config on a "
-            "different model family to restore cross-family review."
-        )
-    else:
-        warning = (
-            f"Homogeneity risk (R7.1): the {cross_type} CLI is not "
-            f"available, so the {phase} reviewer runs on the same model "
-            f"family as the engineer ({engineer_family}). "
-            "Self-preference bias means a same-family reviewer "
-            "systematically misses the bug classes its own family "
-            f"produces. Install the {cross_type} CLI for cross-family "
-            f"review, or set an explicit {phase} agent config to accept "
-            "the risk silently."
-        )
+    warning = _homogeneity_warning(phase, engineer_family, cross_type, cross)
     return AdversarialAgentSelection(
         phase=phase,
         agent_cmd=fallback_cmd,
