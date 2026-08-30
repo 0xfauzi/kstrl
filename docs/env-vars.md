@@ -15,10 +15,13 @@ or spends anything. Every section below is resolved once by
 command with an `error:` line naming the section, the key or environment
 variable, and the value (exit 1). `[evolution]` is the one section that
 warns and continues, because the journal is an optional audit trail;
-losing it costs the record and nothing else. `ks init`, `ks config show`,
-`ks sense` and `ks serve` do not go through that seam: the first two are
-how you repair or read a broken config, and the last two run the same
-check themselves and report it as exit 2.
+losing it costs the record and nothing else. `ks evolve` is the one
+command that section is fatal for, because there the journal is the work.
+
+Four commands skip the seam and none skip the check: `ks init` writes
+the file, `ks config show` prints its rows and then reports the same
+verdict, and `ks sense` and `ks serve` run the check themselves and
+report it as exit 2 (with a JSON error document for `ks sense --json`).
 
 ## Global / kstrlConfig (`[agent]`, `[run]`, `[paths]`, `[git]`, `[ui]`)
 

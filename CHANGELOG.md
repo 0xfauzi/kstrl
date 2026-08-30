@@ -28,11 +28,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   that warns and continues, because the journal is an optional audit
   trail; every other section configures a gate, a budget, a boundary or
   a destination, where substituting a default would measure the run with
-  something other than what the operator configured. `ks init`,
-  `ks config show`, `ks sense` and `ks serve` are exempt from the entry
-  seam: the first two are how an operator repairs or reads a broken
-  config, and the last two already run the same check themselves under
-  their own documented exit code 2 (#272).
+  something other than what the operator configured. Four commands are
+  exempt from the entry seam and none from the check: `ks init` writes
+  the file, so refusing to run it would take away the recovery path;
+  `ks config show` prints its resolved rows and then reports the same
+  verdict, so it cannot disagree with the seam; and `ks sense` and
+  `ks serve` run the check themselves under their own documented exit
+  code 2, which for `ks sense --json` carries a JSON error document a
+  script can read (#272).
 
 - Safe mode on the dashboard: six defects an independent review
   reproduced after the change merged. All three `dock: top` siblings
