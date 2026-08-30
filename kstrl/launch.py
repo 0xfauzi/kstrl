@@ -34,7 +34,11 @@ class FactoryLaunch:
 class DecomposeLaunch:
     spec_path: Path = Path("scripts/kstrl/spec.md")
     project_name: str = ""
-    base_branch: str = "main"
+    # Empty means "ask the repo": a data container cannot know the base
+    # branch, and the literal `main` it used to carry is a branch a
+    # plain `git init` repo does not have (#259). The session layer
+    # resolves it through git.detect_base_branch.
+    base_branch: str = ""
     single_pr: bool = False
 
 

@@ -22,6 +22,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Select, Switch
 
+from kstrl.git import detect_base_branch, resolve_base_branch
 from kstrl.launch import DecomposeLaunch, FactoryLaunch
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.form import FormErrors, FormField
@@ -113,6 +114,9 @@ class FactoryLaunchForm(Screen[None]):
 class DecomposeLaunchForm(Screen[None]):
     BINDINGS = [Binding("escape", "app.pop_screen", "Back")]
 
+    def _root_dir(self) -> Path:
+        return Path(getattr(self.app, "root_dir", Path.cwd()))
+
     def compose(self) -> ComposeResult:
         yield ContextBar(
             "launch",
@@ -133,7 +137,19 @@ class DecomposeLaunchForm(Screen[None]):
                 )
                 yield FormField(
                     "base branch",
-                    Input(value="main", id="decompose-branch"),
+                    # Detected, not the literal `main`: this form used to
+                    # pre-fill a branch a plain `git init` repo does not
+                    # have, which is #259 arriving through the TUI.
+                    #
+                    # Synchronous on the event loop, deliberately. It is
+                    # ONE local `git for-each-ref` with one 5s timeout,
+                    # the same exposure as home.py's `_git_branch`
+                    # masthead probe, and measured at +4 to +8 ms on an
+                    # 85 ms screen open. A thread worker would buy back
+                    # single-digit milliseconds and add a way for a slow
+                    # probe to land on top of a branch the user has
+                    # already typed.
+                    Input(value=detect_base_branch(self._root_dir()), id="decompose-branch"),
                 )
                 yield FormField(
                     "single PR",
@@ -148,10 +164,12 @@ class DecomposeLaunchForm(Screen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id != "decompose-start":
             return
-        root_dir = getattr(self.app, "root_dir", Path.cwd())
+        root_dir = self._root_dir()
         raw_spec = self.query_one("#decompose-spec", Input).value.strip()
         project = self.query_one("#decompose-project", Input).value.strip()
-        branch = self.query_one("#decompose-branch", Input).value.strip() or "main"
+        branch = resolve_base_branch(
+            self.query_one("#decompose-branch", Input).value.strip(), root_dir
+        )
         errors: list[str] = []
         spec_path = (
             (Path(raw_spec) if Path(raw_spec).is_absolute() else root_dir / raw_spec)

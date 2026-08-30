@@ -27,6 +27,7 @@ from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.retry import RetryScreen
 from kstrl.tui.session import LaunchError, start_run_session
+from tests.spine_utils import git as spine_git
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
 
 
@@ -76,6 +77,17 @@ class FakeSession:
     def close(self) -> None:
         self.closed = True
         self.channel.detach()
+
+
+def _git_repo_on(root: Path, branch: str) -> Path:
+    """One-commit repo at ``root`` whose only branch is ``branch``."""
+    spine_git("init", "-q", "-b", branch, cwd=root)
+    spine_git("config", "user.email", "launch@test", cwd=root)
+    spine_git("config", "user.name", "Launch Test", cwd=root)
+    (root / "a.txt").write_text("a\n")
+    spine_git("add", "-A", cwd=root)
+    spine_git("commit", "-q", "-m", "init", cwd=root)
+    return root
 
 
 def _home_app(tmp_path: Path) -> KstrlTuiApp:
@@ -303,6 +315,35 @@ class TestStartRunSession:
         )
         assert len(manifest["components"]) == 2
 
+    def test_decompose_session_resolves_an_unset_base_branch(self, tmp_path: Path) -> None:
+        """#259: DecomposeLaunch carries no base branch of its own, so
+        the session asks the repo instead of writing a manifest against
+        a `main` that a `git init` repo on `master` does not have."""
+        _git_repo_on(tmp_path, "trunk")
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Spec\nBuild it.")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        (tmp_path / "kstrl.toml").write_text(
+            '[agent]\ncommand = "fake-agent"\n',
+            encoding="utf-8",
+        )
+        assert DecomposeLaunch().base_branch == ""
+        with patch(
+            "kstrl.agents.get_agent",
+            return_value=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
+        ):
+            session = start_run_session(
+                DecomposeLaunch(spec_path=spec_file, project_name="demo"),
+                tmp_path,
+            )
+        try:
+            session.handle.join(timeout=15)
+            assert session.handle.exit_code == 0
+        finally:
+            session.close()
+        written = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json")
+        assert written.base_branch == "trunk"
+
 
 class TestLaunchForms:
     async def test_factory_form_validates_then_launches(
@@ -373,6 +414,35 @@ class TestLaunchForms:
             await pilot.pause(0.3)
             assert len(specs) == 1
             assert specs[0].project_name == "demo"
+
+    async def test_decompose_form_offers_the_detected_base_branch(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#259 through the TUI: the field used to pre-fill the literal
+        `main`, so a plain `git init` repo on `master` launched a run
+        whose every worktree cut names a branch that does not exist."""
+        _git_repo_on(tmp_path, "master")
+        app = _home_app(tmp_path)
+        specs: list[Any] = []
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            app.push_screen(DecomposeLaunchForm())
+            await pilot.pause(0.2)
+            from textual.widgets import Button, Input
+
+            form = app.screen
+            assert form.query_one("#decompose-branch", Input).value == "master"
+
+            (tmp_path / "spec.md").write_text("# spec")
+            form.query_one("#decompose-spec", Input).value = "spec.md"
+            form.query_one("#decompose-project", Input).value = "demo"
+            # Clearing the field must not resurrect the literal either.
+            form.query_one("#decompose-branch", Input).value = ""
+            form.query_one("#decompose-start", Button).press()
+            await pilot.pause(0.3)
+            assert specs[0].base_branch == "master"
 
 
 class TestRetryScreen:

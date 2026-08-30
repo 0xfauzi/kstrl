@@ -173,8 +173,8 @@ def test_sense_enforces_allowed_path(tmp_path: Path) -> None:
     result, document = _sense_json(root, "--allowed-path", "docs/**")
 
     assert result.exit_code == 1
-    # No origin in this repo: detection falls back to main, which is
-    # the branch the feature commit diverged from.
+    # No origin in this repo, so detection reaches the candidate rung
+    # and finds the local `main` the feature commit diverged from.
     assert document["base_branch"] == "main"
     scope = _check(document, "diff_scope")
     assert scope["passed"] is False
@@ -337,10 +337,38 @@ def test_sense_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
     assert "checks" not in document
 
 
-def test_sense_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
-    """No origin and no `main`: detection falls back to a branch that
-    does not exist, and the fallback must not read as a clean diff."""
+def test_sense_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
+    """No origin, and the base is `trunk` rather than `main` (#259).
+
+    This repo used to be the exit-2 fixture below: detection returned
+    the literal `main`, the diff failed, and the test pinned that as
+    correct. The ladder now asks the repo, so the diff is real and the
+    measurement is against the branch that exists.
+    """
     root = _diverged_repo(tmp_path, base="trunk")
+
+    result, document = _sense_json(root, "--allowed-path", "docs/**")
+
+    assert document["base_branch"] == "trunk"
+    # A real diff was read against trunk: the out-of-scope file is
+    # named, rather than a clean tree nobody managed to measure.
+    scope = _check(document, "diff_scope")
+    assert scope["passed"] is False
+    assert "src/a.py" in "".join(scope["details"])
+    assert result.exit_code == 1
+
+
+def test_sense_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
+    """No origin and no branch the ladder knows: detection falls back to
+    a branch that does not exist, and the fallback must not read as a
+    clean diff.
+
+    `release-2.0` is deliberately outside the candidate set, which is
+    the only way the fallback is still reachable now that the ladder
+    checks the repo (#259). The branch HEAD is on is NOT a rung, so
+    standing on `feature` cannot rescue this into a silent empty diff.
+    """
+    root = _diverged_repo(tmp_path, base="release-2.0")
 
     result = _invoke("--root", str(root), "--json")
 

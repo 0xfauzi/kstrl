@@ -17,6 +17,152 @@ DEFAULT_TIMEOUT = 30.0
 # Network fetches get a longer budget than local plumbing calls.
 FETCH_TIMEOUT = 120.0
 
+# Long-lived branch names `detect_base_branch` tries, in order, when the
+# remote has not recorded a default. `main` first because it is the
+# modern default and a renamed repo keeps only that name; `master` next
+# because it is what `git init` still produces when `init.defaultBranch`
+# is unset (#259).
+BASE_BRANCH_CANDIDATES = ("main", "master", "trunk", "develop")
+
+# Answer when no candidate resolves. Deliberately still a guess, and the
+# callers surface it as one.
+BASE_BRANCH_FALLBACK = "main"
+
+# Local plumbing, called on the way into a command and on the Textual
+# event loop when the decompose launch form composes.
+_BASE_BRANCH_PROBE_TIMEOUT = 5.0
+
+_ORIGIN_REF_PREFIX = "refs/remotes/origin/"
+_ORIGIN_HEAD_REF = f"{_ORIGIN_REF_PREFIX}HEAD"
+
+# The exact refs a candidate may live at, mapped back to its name.
+# ``refs/heads/<name>`` and ``refs/remotes/origin/<name>`` are the two
+# :func:`resolve_base_ref` consults, so asking about exactly these asks
+# the question the consumers will ask. Frozen at import: the inputs are.
+_BASE_BRANCH_REFS: dict[str, str] = {
+    ref: name
+    for name in BASE_BRANCH_CANDIDATES
+    for ref in (f"refs/heads/{name}", f"{_ORIGIN_REF_PREFIX}{name}")
+}
+
+
+def detect_base_branch(cwd: Path) -> str:
+    """Base branch of the repo at ``cwd``, asked of the repo itself (#259).
+
+    Used by ``ks run`` (manifest base), ``ks decompose`` and
+    ``ks factory`` (worktree base), ``ks sense`` (diff base) and the TUI
+    launch forms.
+
+    The ladder, and what each rung fails on:
+
+    1. ``origin/HEAD``: the remote's own answer, so it outranks any
+       guess. Only ``git clone`` and an explicit ``git remote set-head``
+       ever write it, so a repo that grew a remote by hand does not have
+       it, and neither does a plain ``git init``. It can also go stale
+       when the remote renames its default branch.
+    2. The first of ``main``, ``master``, ``trunk``, ``develop`` that
+       exists. Fails when the project's long-lived branch is named
+       something else (``release``, ``stable``), and picks the earlier
+       name when a repo carries two of them mid-migration.
+    3. The literal ``main``.
+
+    All of it is ONE ``git for-each-ref`` over the candidates' two
+    possible refs plus ``origin/HEAD``, which is what makes the whole
+    ladder cost a single subprocess. Three measured properties of that
+    command carry the rungs above:
+
+    - It lists a ref only when the ref resolves, and a symbolic ref only
+      when its target resolves. So a stale ``origin/HEAD`` naming a
+      deleted branch is simply absent, which is rung 1's demotion, and
+      a listed ``origin/HEAD`` needs no confirming call even when its
+      target is outside the candidate set.
+    - ``%(symref)`` reports ``origin/HEAD``'s target in the same
+      listing, folding rung 1 in for free.
+    - Asking for ``refs/heads/<name>`` and ``refs/remotes/origin/<name>``
+      by exact path asks about BRANCHES. A bare-name ``rev-parse`` would
+      also match a TAG (git's search order puts ``refs/tags`` ahead of
+      ``refs/heads``), and a tag is not something to cut a worktree
+      from. The listing is filtered on exact refnames because a pattern
+      also matches at a slash boundary: with no ``main`` branch but a
+      ``main/sub`` one, ``refs/heads/main`` matches ``refs/heads/main/sub``.
+
+    Deliberately NOT a rung: the branch HEAD is on. It always resolves,
+    so it would end the ladder every time, and diffing a branch against
+    itself is empty - which the diff-scope and bad-pattern checks read
+    as "nothing changed, all within scope". That converts a loud
+    cannot-measure (`ks sense` exit 2, naming ``--base``) into a silent
+    green on a tree nobody measured, and cannot-measure is never a pass.
+    A guess the caller reports as a guess beats a wrong answer delivered
+    as a measurement.
+
+    Any failure to ask git - no repo, git missing, timeout - falls back
+    to ``main``; the caller can always override with a flag.
+
+    Measured on macOS with a warm cache: one subprocess and 3.0 to
+    4.0 ms in every repo shape, flat because the shape no longer decides
+    how many calls run. The rung-at-a-time version this replaced took 2
+    to 9 subprocesses and 8 to 31 ms, and its nine sequential 5 s
+    timeouts stacked into a 45 s ceiling - which the decompose launch
+    form would have paid on the UI thread.
+    """
+    try:
+        listing = subprocess.run(
+            [
+                "git",
+                "for-each-ref",
+                "--format=%(refname)%09%(symref)",
+                _ORIGIN_HEAD_REF,
+                *_BASE_BRANCH_REFS,
+            ],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=_BASE_BRANCH_PROBE_TIMEOUT,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return BASE_BRANCH_FALLBACK
+    if listing.returncode != 0:
+        return BASE_BRANCH_FALLBACK
+
+    remote_default = ""
+    present: set[str] = set()
+    for line in listing.stdout.splitlines():
+        refname, _, symref = line.partition("\t")
+        symref = symref.strip()
+        # "refs/remotes/origin/main" -> "main". Stripping the known
+        # prefix rather than splitting on the last "/", because a remote
+        # may well default to a slashed branch and rsplit turns
+        # "release/2.0" into "2.0". The startswith is not decoration: an
+        # unguarded removeprefix returns its input untouched, so an
+        # origin/HEAD symrefing outside refs/remotes/origin/ (measured:
+        # one pointing at refs/heads/dev) yielded the whole refname as
+        # the answer. Every character in it passes validate_branch_name,
+        # so it reached the manifest and `gh pr create --base` before
+        # anything noticed. Leaving remote_default empty demotes it to
+        # the candidate rung instead.
+        if refname == _ORIGIN_HEAD_REF and symref.startswith(_ORIGIN_REF_PREFIX):
+            remote_default = symref.removeprefix(_ORIGIN_REF_PREFIX)
+        elif refname in _BASE_BRANCH_REFS:
+            present.add(_BASE_BRANCH_REFS[refname])
+
+    if remote_default:
+        return remote_default
+    for name in BASE_BRANCH_CANDIDATES:
+        if name in present:
+            return name
+    return BASE_BRANCH_FALLBACK
+
+
+def resolve_base_branch(base_branch: str | None, cwd: Path) -> str:
+    """An explicit base branch, else the one :func:`detect_base_branch` finds.
+
+    One spelling for the "the flag wins, otherwise ask the repo" rule
+    every entry point needs: the two CLI commands that take
+    ``--base-branch``, ``ks sense``'s ``--base``, and the TUI launch
+    form's branch field (#259).
+    """
+    return base_branch or detect_base_branch(cwd)
+
 
 def resolve_base_ref(
     base_branch: str,

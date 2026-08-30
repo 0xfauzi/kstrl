@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
 from kstrl.factory import FactoryConfig
+from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.spine_utils import git as spine_git
 
@@ -416,3 +420,230 @@ class TestInboxRetryManifestLoad:
         result = self._run(tmp_path, item_id)
         assert result.exit_code == 0
         assert "Requeued comp-a" in result.output
+
+
+def _repo_on(tmp_path: Path, branch: str, name: str = "proj") -> Path:
+    """One-commit git repo whose only branch is ``branch``, with no remote."""
+    root = tmp_path / name
+    root.mkdir()
+    spine_git("init", "-q", "-b", branch, cwd=root)
+    spine_git("config", "user.email", "base@test", cwd=root)
+    spine_git("config", "user.name", "Base Test", cwd=root)
+    (root / "a.txt").write_text("a\n")
+    spine_git("add", "-A", cwd=root)
+    spine_git("commit", "-q", "-m", "init", cwd=root)
+    return root
+
+
+class TestDetectBaseBranch:
+    """#259: the ladder asks the repository instead of guessing `main`.
+
+    Every case builds a real repo; none of them mock git, because the
+    bug being fixed was precisely that the code never asked git.
+    """
+
+    @pytest.mark.parametrize("branch", BASE_BRANCH_CANDIDATES)
+    def test_every_candidate_is_detected_when_it_is_the_only_branch(
+        self, tmp_path: Path, branch: str
+    ) -> None:
+        # `master` is the reported repro: `git init` with
+        # init.defaultBranch unset gives it, and kstrl answered `main`
+        # in two seconds. The whole tuple is covered so a name added to
+        # it cannot ship untested.
+        assert detect_base_branch(_repo_on(tmp_path, branch)) == branch
+
+    def test_main_wins_when_both_names_exist(self, tmp_path: Path) -> None:
+        root = _repo_on(tmp_path, "master")
+        spine_git("branch", "main", cwd=root)
+        assert detect_base_branch(root) == "main"
+
+    def test_current_branch_is_not_the_answer(self, tmp_path: Path) -> None:
+        # Standing on a feature branch must not make that branch the
+        # base: diffing it against itself is empty, which the diff-scope
+        # and bad-pattern checks would read as a clean tree.
+        root = _repo_on(tmp_path, "master")
+        spine_git("checkout", "-q", "-b", "feature/x", cwd=root)
+        assert detect_base_branch(root) == "master"
+
+    def test_unknown_branch_name_falls_back_to_main(self, tmp_path: Path) -> None:
+        # No candidate resolves, so the answer stays the guess the
+        # callers report as a guess: `ks sense` exits 2 naming --base
+        # rather than measuring an empty diff and calling it clean.
+        assert detect_base_branch(_repo_on(tmp_path, "release-2.0")) == "main"
+
+    def test_not_a_repository_falls_back_to_main(self, tmp_path: Path) -> None:
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        assert detect_base_branch(plain) == "main"
+
+    def test_origin_head_outranks_local_candidates(self, tmp_path: Path) -> None:
+        upstream = _repo_on(tmp_path, "trunk", name="upstream")
+        clone = tmp_path / "clone"
+        spine_git("clone", "-q", str(upstream), str(clone), cwd=tmp_path)
+        # A local `main` exists too; the remote's own answer still wins.
+        spine_git("branch", "main", cwd=clone)
+        assert spine_git("symbolic-ref", "refs/remotes/origin/HEAD", cwd=clone).endswith("/trunk")
+        assert detect_base_branch(clone) == "trunk"
+
+    def test_stale_origin_head_is_demoted(self, tmp_path: Path) -> None:
+        # origin/HEAD is only rewritten by an explicit `git remote
+        # set-head`, so it survives a rename on the remote and can name
+        # a branch that no longer resolves. for-each-ref omits a
+        # symbolic ref whose target does not resolve, which is what
+        # drops it to the rung below.
+        root = _repo_on(tmp_path, "master")
+        (root / ".git" / "refs" / "remotes" / "origin").mkdir(parents=True)
+        (root / ".git" / "refs" / "remotes" / "origin" / "HEAD").write_text(
+            "ref: refs/remotes/origin/gone\n"
+        )
+        assert detect_base_branch(root) == "master"
+
+    @pytest.mark.parametrize("remote_default", ["release-2.0", "release/2.0"])
+    def test_origin_head_outside_the_candidate_set_still_wins(
+        self, tmp_path: Path, remote_default: str
+    ) -> None:
+        # The remote's answer does not have to be one of the four names
+        # we would otherwise guess, and it needs no confirming call:
+        # for-each-ref listed it, so its target resolves. The slashed
+        # case is here because %(symref) reports a full refname, and
+        # splitting it on the last "/" would answer "2.0".
+        upstream = _repo_on(tmp_path, remote_default, name="upstream")
+        clone = tmp_path / "clone"
+        spine_git("clone", "-q", str(upstream), str(clone), cwd=tmp_path)
+        spine_git("branch", "main", cwd=clone)
+        assert detect_base_branch(clone) == remote_default
+
+    def test_origin_head_pointing_outside_the_remote_is_demoted(self, tmp_path: Path) -> None:
+        # origin/HEAD is normally a symref into refs/remotes/origin/;
+        # this one is hand-built to point straight at a local head, the
+        # shape that made an unguarded removeprefix answer with a whole
+        # refname. See git.detect_base_branch for why that got so far.
+        root = _repo_on(tmp_path, "master")
+        (root / ".git" / "refs" / "remotes" / "origin").mkdir(parents=True)
+        (root / ".git" / "refs" / "remotes" / "origin" / "HEAD").write_text(
+            "ref: refs/heads/master\n"
+        )
+        assert detect_base_branch(root) == "master"
+
+    def test_a_tag_is_not_a_base_branch(self, tmp_path: Path) -> None:
+        # A bare-name `rev-parse` resolves refs/tags before refs/heads,
+        # so a tag called `main` shadows the branch we mean. Only
+        # refs/heads/<name> and refs/remotes/origin/<name> are asked
+        # about, so the tag is invisible and `master` wins. The tag is
+        # `main` rather than a later candidate on purpose: `master` is
+        # hit at index 1, so tagging `develop` would never be consulted
+        # and the test would pass against the bug.
+        root = _repo_on(tmp_path, "master")
+        spine_git("tag", "main", cwd=root)
+        assert detect_base_branch(root) == "master"
+
+    def test_a_branch_below_a_candidate_name_does_not_count(self, tmp_path: Path) -> None:
+        # `git for-each-ref refs/heads/main` also matches
+        # `refs/heads/main/sub`; only an exact refname is a hit, so a
+        # repo with no `main` branch does not claim to have one. Built
+        # on `master` so the right answer is not the fallback, which
+        # would make a prefix-matching bug indistinguishable.
+        root = _repo_on(tmp_path, "master")
+        spine_git("branch", "main/sub", cwd=root)
+        assert detect_base_branch(root) == "master"
+
+    def test_detection_is_one_git_subprocess(self, tmp_path: Path) -> None:
+        # It runs on the Textual event loop when the decompose launch
+        # form composes, so the call count is the ceiling on how long
+        # the UI can freeze. One call, one timeout.
+        root = _repo_on(tmp_path, "release-2.0")  # the worst case: no candidate hits
+
+        with patch("kstrl.git.subprocess.run", wraps=subprocess.run) as run:
+            assert detect_base_branch(root) == "main"
+
+        assert run.call_count == 1
+        assert run.call_args.args[0][1] == "for-each-ref"
+
+
+class TestResolveBaseBranch:
+    """The one spelling of "the flag wins, otherwise ask the repo"."""
+
+    def test_explicit_value_is_returned_unasked(self, tmp_path: Path) -> None:
+        root = _repo_on(tmp_path, "master")
+        assert resolve_base_branch("release-2.0", root) == "release-2.0"
+
+    @pytest.mark.parametrize("absent", [None, ""])
+    def test_absent_value_detects(self, tmp_path: Path, absent: str | None) -> None:
+        root = _repo_on(tmp_path, "master")
+        assert resolve_base_branch(absent, root) == "master"
+
+
+class TestBaseBranchFlagDefaults:
+    """#259: --base-branch defaults to detection, not the literal `main`.
+
+    `ks factory` is the command that spends money, and it had the
+    literal default without even the detection call.
+    """
+
+    @staticmethod
+    def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+        import kstrl.cli as cli_mod
+        from kstrl.decompose import SpecBlockerError, SpecIssue
+
+        seen: dict[str, object] = {}
+
+        def fake_decompose(**kwargs: object) -> None:
+            seen.update(kwargs)
+            # Halt before anything is provisioned; the assertion is on
+            # what the CLI resolved, not on what decompose does with it.
+            raise SpecBlockerError(
+                [SpecIssue(severity="blocker", kind="ambiguity", summary="halt")]
+            )
+
+        monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)
+        return seen
+
+    @staticmethod
+    def _spec(root: Path) -> Path:
+        spec = root / "spec.md"
+        spec.write_text("# Spec\n")
+        return spec
+
+    def _invoke(self, command: str, root: Path, *extra: str) -> Result:
+        return CliRunner().invoke(
+            cli,
+            [
+                command,
+                "--spec",
+                str(self._spec(root)),
+                "--project-name",
+                "test",
+                "--root",
+                str(root),
+                "--agent-cmd",
+                "true",
+                "--ui",
+                "plain",
+                "--no-color",
+                *extra,
+            ],
+        )
+
+    def test_decompose_detects_when_flag_is_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        root = _repo_on(tmp_path, "master")
+        assert self._invoke("decompose", root).exit_code == 2
+        assert seen["base_branch"] == "master"
+
+    def test_factory_detects_when_flag_is_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        root = _repo_on(tmp_path, "master")
+        assert self._invoke("factory", root).exit_code == 2
+        assert seen["base_branch"] == "master"
+
+    def test_explicit_flag_still_wins(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen = self._capture(monkeypatch)
+        root = _repo_on(tmp_path, "master")
+        assert self._invoke("factory", root, "--base-branch", "trunk").exit_code == 2
+        assert seen["base_branch"] == "trunk"

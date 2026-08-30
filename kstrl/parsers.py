@@ -31,6 +31,25 @@ class ParsedOutput:
     total_errors: int = 0
     failures: list[ParsedFailure] = field(default_factory=list)
     raw_summary: str = ""  # last line(s) summary from the tool
+    # The command the gate actually ran, when the caller knows it. Only
+    # used to label a passthrough; the parser identity stays `tool`.
+    command: str = ""
+
+    @property
+    def prompt_label(self) -> str:
+        """What to call the output in the retry prompt.
+
+        Parsed failures prove this parser understood the output, so the
+        tool name is earned. With none, the parser may simply be the
+        wrong one: `check_test_suite` runs whatever `test_command` is
+        configured and always parses it as pytest, so a vitest failure
+        reached the engineer tagged ``[pytest]`` and pointed it at the
+        wrong toolchain (#258). Naming the command that actually ran is
+        the one label that cannot be wrong.
+        """
+        if self.failures or not self.command:
+            return self.tool
+        return self.command
 
     def format_for_prompt(self, max_failures: int = 10, include_source: bool = True) -> list[str]:
         """Format failures as structured lines optimized for LLM consumption.
@@ -40,7 +59,7 @@ class ParsedOutput:
         lines: list[str] = []
 
         if self.raw_summary:
-            lines.append(f"[{self.tool}] {self.raw_summary}")
+            lines.append(f"[{self.prompt_label}] {self.raw_summary}")
 
         if not self.failures:
             return lines
@@ -89,6 +108,18 @@ _PYTEST_SUMMARY_RE = re.compile(r"=+\s+(?P<summary>.+?)\s+=+\s*$")
 # Extract failure count from summary like "3 failed"
 _PYTEST_FAILED_COUNT_RE = re.compile(r"(\d+)\s+failed")
 _PYTEST_ERROR_COUNT_RE = re.compile(r"(\d+)\s+error")
+
+
+def _pytest_failure_count(summary: str) -> int:
+    """Failures plus errors reported by a pytest-shaped summary line."""
+    count = 0
+    failed_m = _PYTEST_FAILED_COUNT_RE.search(summary)
+    if failed_m:
+        count += int(failed_m.group(1))
+    error_m = _PYTEST_ERROR_COUNT_RE.search(summary)
+    if error_m:
+        count += int(error_m.group(1))
+    return count
 
 
 def parse_pytest_output(raw: str) -> ParsedOutput:
@@ -148,23 +179,33 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
         if m:
             result.raw_summary = m.group("summary").strip()
 
-    # Extract total error count from summary
-    if result.raw_summary:
-        failed_m = _PYTEST_FAILED_COUNT_RE.search(result.raw_summary)
-        error_m = _PYTEST_ERROR_COUNT_RE.search(result.raw_summary)
-        count = 0
-        if failed_m:
-            count += int(failed_m.group(1))
-        if error_m:
-            count += int(error_m.group(1))
-        result.total_errors = count
-    else:
-        result.total_errors = len(result.failures)
-
-    # Fallback: if we parsed nothing useful, preserve raw tail as summary
-    if not result.failures and not result.raw_summary:
+    # Nothing structured parsed AND no summary reporting a failure: what
+    # we matched, if anything, is not describing whatever failed this
+    # gate, so prefer the raw tail. Two measured cases (#258), both from
+    # a polyglot repo running `uv run pytest && npm test`:
+    #
+    # - vitest alone: nothing matched at all, so there is no summary.
+    # - pytest PASSING then vitest failing: `_PYTEST_SUMMARY_RE` matches
+    #   pytest's footer, so the summary became "5 passed in 0.00s" and
+    #   the failed gate's entire retry detail told the engineer that
+    #   five tests passed, with the vitest failure dropped.
+    #
+    # The consequence for purely passing input is deliberate: the tail
+    # replaces a clean footer. Only `check_test_suite` calls this, and
+    # only on a nonzero exit, so "no failure in sight" always means the
+    # parse missed it.
+    #
+    # The tail is still only the last few lines, so a foreign tool's
+    # file, line and assertion detail is dropped either way; recovering
+    # that needs a parser that knows the tool, which is the other half
+    # of #258.
+    if not result.failures and _pytest_failure_count(result.raw_summary) == 0:
         tail = lines[-5:] if len(lines) > 5 else lines
         result.raw_summary = "\n".join(tail)
+
+    result.total_errors = (
+        _pytest_failure_count(result.raw_summary) if result.raw_summary else len(result.failures)
+    )
 
     return result
 

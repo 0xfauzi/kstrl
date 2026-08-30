@@ -792,6 +792,36 @@ def scrub_project_claude_md(
     return scrub_stale_verify_commands(claude_md, commands)
 
 
+def _failed_gate_result(
+    name: str,
+    message: str,
+    parsed: ParsedOutput,
+    cmd: str,
+    cwd: Path,
+    start: float,
+) -> CheckResult:
+    """Enrich a parse and package it as the gate's failing CheckResult.
+
+    One home for all three gates because the enrichment has to happen at
+    every one of them and forgetting a step is SILENT: without
+    ``parsed.command`` the prompt label falls back to the parser name,
+    which is exactly the #258 mislabel returning unannounced.
+    """
+    parsed.command = cmd
+    for failure in parsed.failures:
+        add_source_context(failure, cwd)
+        if not failure.fix_hint:
+            failure.fix_hint = generate_fix_hint(failure)
+    return CheckResult(
+        name=name,
+        passed=False,
+        message=message,
+        details=parsed.format_for_prompt(),
+        duration_seconds=time.monotonic() - start,
+        parsed=parsed,
+    )
+
+
 def check_test_suite(
     cwd: Path,
     command: str | None = None,
@@ -813,18 +843,17 @@ def check_test_suite(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        parsed = parse_pytest_output(output)
-        for failure in parsed.failures:
-            add_source_context(failure, cwd)
-            if not failure.fix_hint:
-                failure.fix_hint = generate_fix_hint(failure)
-        return CheckResult(
-            name="test_suite",
-            passed=False,
-            message=f"Tests failed (exit code {result.returncode})",
-            details=parsed.format_for_prompt(),
-            duration_seconds=time.monotonic() - start,
-            parsed=parsed,
+        # Whatever `cmd` is, it is parsed as pytest: there is no
+        # dispatch. Recording the command lets an unparsed passthrough
+        # be labelled with what actually ran instead of claiming pytest
+        # produced output pytest never saw (#258).
+        return _failed_gate_result(
+            "test_suite",
+            f"Tests failed (exit code {result.returncode})",
+            parse_pytest_output(output),
+            cmd,
+            cwd,
+            start,
         )
 
     return CheckResult(
@@ -856,18 +885,13 @@ def check_typecheck(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        parsed = parse_mypy_output(output)
-        for failure in parsed.failures:
-            add_source_context(failure, cwd)
-            if not failure.fix_hint:
-                failure.fix_hint = generate_fix_hint(failure)
-        return CheckResult(
-            name="typecheck",
-            passed=False,
-            message=f"Typecheck failed (exit code {result.returncode})",
-            details=parsed.format_for_prompt(),
-            duration_seconds=time.monotonic() - start,
-            parsed=parsed,
+        return _failed_gate_result(
+            "typecheck",
+            f"Typecheck failed (exit code {result.returncode})",
+            parse_mypy_output(output),
+            cmd,
+            cwd,
+            start,
         )
 
     return CheckResult(
@@ -899,18 +923,13 @@ def check_linter(
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
-        parsed = parse_ruff_output(output)
-        for failure in parsed.failures:
-            add_source_context(failure, cwd)
-            if not failure.fix_hint:
-                failure.fix_hint = generate_fix_hint(failure)
-        return CheckResult(
-            name="linter",
-            passed=False,
-            message=f"Linter failed (exit code {result.returncode})",
-            details=parsed.format_for_prompt(),
-            duration_seconds=time.monotonic() - start,
-            parsed=parsed,
+        return _failed_gate_result(
+            "linter",
+            f"Linter failed (exit code {result.returncode})",
+            parse_ruff_output(output),
+            cmd,
+            cwd,
+            start,
         )
 
     return CheckResult(

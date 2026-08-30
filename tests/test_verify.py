@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +23,7 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
+from tests.test_parsers import VITEST_FAILURE_OUTPUT
 
 
 class TestCheckPrdStories:
@@ -105,6 +107,43 @@ class TestCheckTestSuite:
         assert result.passed is False
         assert "timed out" in result.message
 
+    def test_unparsed_output_is_labelled_with_the_command(self, tmp_path: Path) -> None:
+        """#258: a vitest failure reached the engineer tagged [pytest].
+
+        `check_test_suite` parses every gate as pytest whatever the
+        configured command was, so the label pointed the implementing
+        agent at the wrong toolchain and the wrong half of the repo.
+        The command is the one name that cannot be wrong.
+        """
+        script = tmp_path / "fake_vitest.py"
+        script.write_text(f"import sys\nsys.stdout.write({VITEST_FAILURE_OUTPUT!r})\nsys.exit(1)\n")
+        command = f"{sys.executable} {script}"
+
+        result = check_test_suite(tmp_path, command=command, timeout=30.0)
+
+        assert result.passed is False
+        assert result.details[0].startswith(f"[{command}]")
+        assert "[pytest]" not in "".join(result.details)
+        # The parser identity is untouched, so evolution's exact-string
+        # switch on parsed.tool still resolves.
+        assert result.parsed is not None
+        assert result.parsed.tool == "pytest"
+
+    def test_parsed_pytest_output_keeps_the_tool_label(self, tmp_path: Path) -> None:
+        script = tmp_path / "fake_pytest.py"
+        script.write_text(
+            "import sys\n"
+            "print('=========== short test summary info ===========')\n"
+            "print('FAILED tests/test_a.py::test_x - AssertionError: nope')\n"
+            "print('=========== 1 failed in 0.10s ===========')\n"
+            "sys.exit(1)\n"
+        )
+
+        result = check_test_suite(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
+
+        assert result.passed is False
+        assert result.details[0].startswith("[pytest]")
+
 
 class TestCheckTypecheck:
     def test_passing(self, tmp_path: Path) -> None:
@@ -114,6 +153,23 @@ class TestCheckTypecheck:
     def test_failing(self, tmp_path: Path) -> None:
         result = check_typecheck(tmp_path, command="false", timeout=5.0)
         assert result.passed is False
+
+    def test_unparsed_output_is_labelled_with_the_command(self, tmp_path: Path) -> None:
+        """The typecheck gate runs whatever `typecheck_command` is and
+        parses it as mypy, so a `tsc` failure had the same #258
+        mislabel. All three gates go through one builder now; this pins
+        that the second one is not left behind."""
+        script = tmp_path / "fake_tsc.py"
+        script.write_text(
+            "import sys\nprint('src/a.ts(5,3): error TS2322: not assignable')\nsys.exit(2)\n"
+        )
+        command = f"{sys.executable} {script}"
+
+        result = check_typecheck(tmp_path, command=command, timeout=30.0)
+
+        assert result.passed is False
+        assert result.details[0].startswith(f"[{command}]")
+        assert "[mypy]" not in "".join(result.details)
 
 
 class TestDefaultTypecheckCommand:

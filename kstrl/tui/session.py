@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, EventBus, RunPaths
+from kstrl.git import resolve_base_branch
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
     DecomposeLaunch,
@@ -274,7 +275,7 @@ def _prepare_decompose(
                     manifest = decompose_spec(
                         spec_path=spec_path,
                         project_name=spec.project_name,
-                        base_branch=spec.base_branch,
+                        base_branch=resolve_base_branch(spec.base_branch, root_dir),
                         single_pr=spec.single_pr,
                         agent=agent,
                         ui=ui,
