@@ -46,6 +46,7 @@ from kstrl.events import RunPaths
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
+    FactoryLockHeldError,
     FactoryResult,
     _clear_partial_usage,
     _read_partial_usage,
@@ -5385,6 +5386,33 @@ class TestCoverageCountsTheArchitect:
         assert "1.5100" in total, total
 
 
+def _invoke_factory_cli(
+    args: list[str],
+    *,
+    setup: Callable[[Path], None] | None = None,
+    catch_exceptions: bool = False,
+) -> Any:
+    """`ks factory` in an isolated filesystem holding a spec and a manifest.
+
+    ``setup`` seeds anything else the case needs (a kstrl.toml, say).
+    ``catch_exceptions`` is for the tests that assert an exception did
+    NOT escape - with the default, an escaping one fails the test as a
+    traceback rather than as the assertion that explains it.
+    """
+    from click.testing import CliRunner
+
+    from kstrl.cli import cli
+
+    runner = CliRunner()
+    with runner.isolated_filesystem() as fs:
+        root = Path(fs)
+        (root / "s.md").write_text("# spec\n")
+        _make_manifest([_component("comp-a")]).save(root / "m.json")
+        if setup is not None:
+            setup(root)
+        return runner.invoke(cli, args, catch_exceptions=catch_exceptions)
+
+
 class TestFactoryHandsTheArchitectSpendToTheRun:
     """The wiring, at the one command that has both an architect and a
     run. Without it every property above is true of a seat that nothing
@@ -5446,26 +5474,13 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
         return captured
 
-    @staticmethod
-    def _invoke(args: list[str]) -> Any:
-        from click.testing import CliRunner
-
-        from kstrl.cli import cli
-
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            (root / "s.md").write_text("# spec\n")
-            _make_manifest([_component("comp-a")]).save(root / "m.json")
-            return runner.invoke(cli, args, catch_exceptions=False)
-
     def test_the_spec_path_passes_what_the_decompose_agent_spent(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         captured = self._install(monkeypatch)
 
-        result = self._invoke(
+        result = _invoke_factory_cli(
             [
                 "factory",
                 "--spec",
@@ -5493,7 +5508,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         and the seat must not be filled from an agent that never ran."""
         captured = self._install(monkeypatch)
 
-        result = self._invoke(
+        result = _invoke_factory_cli(
             [
                 "factory",
                 "--manifest",
@@ -5518,7 +5533,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         """
         captured = self._install(monkeypatch, halt=True)
 
-        result = self._invoke(
+        result = _invoke_factory_cli(
             [
                 "factory",
                 "--spec",
@@ -5533,3 +5548,201 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
 
         assert result.exit_code == 2
         assert "called" not in captured, "no run may start after a blocker halt"
+
+
+class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
+    """#257 review: the architect record claimed to precede every early
+    exit, and two reachable ones preceded IT."""
+
+    @staticmethod
+    def _cyclic_manifest() -> Manifest:
+        """What an LLM architect can hand back and `ks factory` accepts
+        (`decompose.py` warns on DAG errors and returns anyway)."""
+        return _make_manifest(
+            [
+                _component("comp-a", deps=["comp-b"]),
+                _component("comp-b", deps=["comp-a"]),
+            ]
+        )
+
+    @staticmethod
+    def _run(root: Path, manifest: Manifest, manifest_path: Path | None = None) -> Any:
+        with patch("kstrl.git.get_diff_content", return_value=""):
+            return run_factory(
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                manifest_path,
+                architect_usage=_architect_usage(4.0),
+            )
+
+    def test_a_cyclic_manifest_still_records_the_architect(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The run directory exists, so the spend has somewhere to go.
+
+        The reachability argument lives at the record site in
+        `factory._run_factory_locked`; this pins the outcome.
+        """
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        result = self._run(root, self._cyclic_manifest())
+
+        assert result.exit_code == 1, "the cyclic DAG must still fail the run"
+        events = _usage_events(root, "architect")
+        assert len(events) == 1, "the spend must reach the run directory"
+        assert events[0]["data"]["cost_usd"] == pytest.approx(4.0)
+
+    def test_the_dag_check_still_rejects_before_the_manifest_is_stamped(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Moving the meter up must not drag manifest mutation with it.
+
+        A rejected DAG leaves the manifest unstamped and unsaved, so it
+        cannot read afterwards as a run that is still in flight.
+        """
+        root = _setup_project(tmp_path, ["comp-a", "comp-b"])
+        manifest = self._cyclic_manifest()
+        manifest_path = root / "scripts" / "kstrl" / "manifest.json"
+
+        self._run(root, manifest, manifest_path)
+
+        assert manifest.run_id == ""
+        assert not manifest_path.exists()
+
+    def test_a_refused_lock_records_nothing_because_no_run_exists(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other early exit, and accepted residue rather than a fix:
+        the lock is refused before a run id is minted, so there is
+        nowhere on disk to write. `serve.RunSpend.unmetered_phases` says
+        how the daemon accounts for that."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        manifest = _make_manifest([_component("comp-a")])
+
+        with patch(
+            "kstrl.factory._acquire_run_lock",
+            side_effect=FactoryLockHeldError("held by another run"),
+        ):
+            result = self._run(root, manifest)
+
+        assert result.exit_code == 2
+        assert not (root / ".kstrl" / "runs").exists()
+
+
+class TestTheJournalKeepsTheArchitectRow:
+    """#257 review: ``record_run`` iterates the MANIFEST, so an architect
+    key in ``usage_by_component`` was silently dropped while
+    ``run_usage`` - which includes it - fed the TSV's total_cost_usd. The
+    journal's rows stopped summing to its own total."""
+
+    def test_the_architect_reaches_the_journal(self, tmp_path: Path) -> None:
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        roles = [e for e in _read_journal(run.root) if e.get("event_type") == "role_usage"]
+        assert len(roles) == 1
+        assert roles[0]["component_id"] == "architect"
+        assert roles[0]["usage"]["architect"]["cost_usd"] == pytest.approx(1.5)
+
+    def test_the_journal_rows_sum_to_the_run_total(self, tmp_path: Path) -> None:
+        """The property that was broken, asserted as arithmetic rather
+        than as the presence of a key."""
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        rows = sum(
+            phase["cost_usd"]
+            for e in _read_journal(run.root)
+            if e.get("event_type") in ("component_result", "role_usage")
+            for phase in e.get("usage", {}).values()
+        )
+        tsv = (run.root / ".kstrl" / "experiments.tsv").read_text().splitlines()
+        # Keyed by header, not by index: a column appended to the TSV
+        # must not silently move what this reads.
+        totals = dict(zip(tsv[0].split("\t"), tsv[-1].split("\t"), strict=True))
+        assert rows == pytest.approx(1.51)
+        assert rows == pytest.approx(float(totals["total_cost_usd"]))
+
+    def test_a_run_with_no_extra_role_adds_no_row(self, tmp_path: Path) -> None:
+        """A resume has no architect, and every other usage key IS a
+        manifest component. The new branch must add nothing."""
+        run = _run_with_architect_spend(tmp_path, None)
+
+        assert [e for e in _read_journal(run.root) if e.get("event_type") == "role_usage"] == []
+
+    def test_the_role_row_is_not_counted_as_a_component_outcome(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Three readers in evolution.py aggregate over component_result.
+        The architect has no status, no retries and no findings, so it
+        must not arrive wearing that type and skew them."""
+        run = _run_with_architect_spend(tmp_path, _architect_usage(1.5))
+
+        results = [e for e in _read_journal(run.root) if e.get("event_type") == "component_result"]
+        assert [e["component_id"] for e in results] == ["comp-a"]
+
+
+class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:
+    """#257 review: the toml-notes sweep loaded the evolution config
+    unguarded, between `decompose_spec` being paid for and `run_factory`
+    being entered, where the spend exists only in a local variable.
+
+    ``cli._collect_evolution_notes`` carries the reasoning, including
+    what this does NOT fix.
+    """
+
+    @staticmethod
+    def _captured_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        """Stop at the factory boundary and record whether we got there."""
+        from kstrl import cli as cli_mod
+
+        captured: dict[str, Any] = {}
+
+        def fake_run_factory(*args: Any, **kwargs: Any) -> Any:
+            captured["called"] = True
+            return FactoryResult()
+
+        monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
+        return captured
+
+    ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
+
+    def test_a_bad_evolution_knob_does_not_leak_a_traceback(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reproduced against the real CLI before the fix: exit 1 with a
+        raw ValueError traceback and no error line."""
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "many")
+        captured = self._captured_run(monkeypatch)
+
+        result = _invoke_factory_cli(self.ARGS, catch_exceptions=True)
+
+        assert not isinstance(result.exception, ValueError), result.exception
+        assert result.exit_code == 0, result.output
+        assert "Evolution config unreadable" in result.output
+        # The run still happens: an unreadable audit knob costs the NOTE
+        # line, never the work the operator asked for.
+        assert captured.get("called") is True
+
+    def test_a_readable_config_still_produces_its_notes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The guard must not silence the sweep it wraps, or a toml
+        section that takes effect would stop announcing itself (R2.1)."""
+        monkeypatch.delenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", raising=False)
+        self._captured_run(monkeypatch)
+
+        result = _invoke_factory_cli(
+            self.ARGS,
+            setup=lambda root: (root / "kstrl.toml").write_text("[evolution]\nlookback_runs = 7\n"),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "lookback_runs" in result.output
+        assert "Evolution config unreadable" not in result.output

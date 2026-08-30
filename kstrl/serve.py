@@ -650,14 +650,21 @@ class RunSpend:
 
     @property
     def unmetered_phases(self) -> tuple[str, ...]:
-        """Roles that spent on this launch without reaching the meter.
+        """Roles that spent on THIS RUN without reaching the meter.
+
+        The one member of this class that does not survive summation,
+        which is why a launch spanning several runs is a
+        :class:`LaunchSpend` and not a bigger ``RunSpend``: the answer is
+        all-or-nothing, so on a sum one run's architect would clear
+        another's (#257 review). ``cost_usd`` and ``uncovered_calls``
+        add up fine; this does not.
 
         It stopped being a constant in #257 piece B. `ks factory` now
         hands the architect's spend to the run it decomposed for, so a
-        launch that got as far as executing carries an architect row
-        inside the run dir the daemon just charged - already counted in
-        ``cost_usd``, and naming it unmetered on top of that would brand
-        every honest day's figure a floor.
+        run that got as far as executing carries an architect row inside
+        the dir the daemon just charged - already counted in
+        ``cost_usd``, and naming it unmetered on top of that would call
+        a measured figure a floor.
 
         Zero calls does NOT mean zero spend, which is why the fallback is
         the pessimistic one. Three separate cases land on it and all
@@ -668,6 +675,47 @@ class RunSpend:
         labelled a floor rather than estimated (#186 F3).
         """
         return () if self.architect_calls > 0 else (ARCHITECT_ROLE,)
+
+
+@dataclass(frozen=True)
+class LaunchSpend:
+    """What ONE launch spent, across every run directory it produced.
+
+    Separate from :class:`RunSpend` because a launch is not simply a
+    bigger run. The dollar and call figures add up; ``unmetered_phases``
+    does not, so summing runs into a single ``RunSpend`` and reading the
+    property off the total let a run that reported an architect clear
+    the claim for a sibling that had none, and the day was reported
+    exact on the strength of a different run's spend (#257 review).
+
+    Stating it as its own type is what makes that misuse unreachable
+    rather than merely documented: there is no ``architect_calls`` here
+    to sum, and ``unmetered_phases`` is correct by construction.
+    """
+
+    cost_usd: float = 0.0
+    cost_calls: int = 0
+    usage_calls: int = 0
+    unmetered_phases: tuple[str, ...] = ()
+
+    @classmethod
+    def over(cls, spends: Sequence[RunSpend]) -> LaunchSpend:
+        """Fold each run's reading into the launch's."""
+        # A launch that produced no directory at all is accounted for as
+        # one empty run rather than as nothing: it spent nothing this
+        # code can see, but a blocker halt spends an architect's worth of
+        # money and leaves it nowhere on disk. An empty RunSpend reports
+        # exactly that, so the pessimistic answer arrives by the same
+        # path as every other one.
+        readings = list(spends) or [RunSpend()]
+        return cls(
+            cost_usd=sum(reading.cost_usd for reading in readings),
+            cost_calls=sum(reading.cost_calls for reading in readings),
+            usage_calls=sum(reading.usage_calls for reading in readings),
+            unmetered_phases=tuple(
+                sorted({phase for reading in readings for phase in reading.unmetered_phases})
+            ),
+        )
 
 
 def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
@@ -710,8 +758,8 @@ SPAWNED_RUN_KIND: Final = "factory"
 def owned_run_spend(
     root_dir: Path,
     runs_before: frozenset[str],
-) -> tuple[list[str], RunSpend]:
-    """The run dirs a launch produced, and the spend they reported.
+) -> tuple[list[str], LaunchSpend]:
+    """The run dirs a launch produced, and what they add up to.
 
     "Produced" is narrower than "new" (#257 review). `ks decompose` takes
     no factory.lock, so an operator can start one on this repo at any
@@ -730,20 +778,15 @@ def owned_run_spend(
     lock. A foreign factory-kind dir can still land in the window. That
     hole predates #257 and is unchanged by it; what #257 changed, and
     this restores, is that decompose dirs now carry real money.
+
+    That the window can hold more than one dir is exactly why the return
+    is a :class:`LaunchSpend`: see its docstring for what does and does
+    not survive being added together.
     """
     owned = sorted(
         rid for rid in run_dir_names(root_dir) - runs_before if run_kind(rid) == SPAWNED_RUN_KIND
     )
-    total = RunSpend()
-    for rid in owned:
-        spend = read_run_spend(root_dir, rid)
-        total = RunSpend(
-            cost_usd=total.cost_usd + spend.cost_usd,
-            cost_calls=total.cost_calls + spend.cost_calls,
-            usage_calls=total.usage_calls + spend.usage_calls,
-            architect_calls=total.architect_calls + spend.architect_calls,
-        )
-    return owned, total
+    return owned, LaunchSpend.over([read_run_spend(root_dir, rid) for rid in owned])
 
 
 def run_dir_names(root_dir: Path) -> frozenset[str]:
@@ -2250,9 +2293,10 @@ def serve_cycle(
         total,
         covered_calls=covered_calls,
         total_calls=total_calls,
-        # Derived, not asserted: since #257 piece B the architect reaches
-        # the meter on a launch that executed, and `RunSpend` states what
-        # zero calls does and does not prove.
+        # Derived per run and unioned, not asserted: since #257 piece B
+        # the architect reaches the meter on a run that executed, and
+        # `RunSpend.unmetered_phases` states what zero calls does and
+        # does not prove.
         unmetered_phases=owned.unmetered_phases,
         metered_run=bool(owned_runs),
     )

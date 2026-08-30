@@ -29,6 +29,7 @@ from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
     SPAWNED_RUN_KIND,
     DailySpend,
+    LaunchSpend,
     RunOutcome,
     RunSpend,
     ServeConfig,
@@ -47,6 +48,7 @@ from kstrl.serve import (
     consecutive_poison_count,
     factory_lock_held,
     next_local_midnight,
+    owned_run_spend,
     process_group_alive,
     reap_leases,
     resolve_merge_gate,
@@ -2204,6 +2206,57 @@ class TestRunOwnership:
         spend = SpendLedger(tmp_path).read()
         assert "architect" in spend.unmetered_phases
         assert spend.spent_usd == pytest.approx(1.0)
+
+    def test_one_runs_architect_cannot_clear_anothers(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#257 review: ``unmetered_phases`` is all-or-nothing, so
+        reading it off the SUM let a sibling borrow an architect it never
+        had.
+
+        Two factory-kind dirs land in one launch window - a documented
+        hole this module already names (``--force-lock``, the embedded
+        dashboard's early mkdir). One reports an architect, one does not.
+        The day must stay a floor, because half its money is still
+        unaccounted for.
+        """
+        queue = _queue(tmp_path)
+        _add(queue)
+
+        def fake_spend(root: Path, run_id: str) -> RunSpend:
+            metered = run_id.endswith("aaa")
+            return RunSpend(
+                cost_usd=2.0,
+                cost_calls=1,
+                usage_calls=1,
+                architect_calls=1 if metered else 0,
+            )
+
+        runner = _stub_runner(
+            RunOutcome(0),
+            extra_run_ids=("factory-20260730-000001.000000-ccc",),
+        )
+        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+            serve_cycle(tmp_path, runner=runner)
+
+        spend = SpendLedger(tmp_path).read()
+        assert "architect" in spend.unmetered_phases
+        assert spend.lower_bound
+        # Both dirs are still charged; only the CLAIM is per run.
+        assert spend.spent_usd == pytest.approx(4.0)
+
+    def test_a_launch_with_no_run_dir_still_names_the_architect(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The fold is over an empty list on the halt path, and an empty
+        union would say "nothing unmetered" about a launch that may have
+        spent an architect's worth of money."""
+        runs, launch = owned_run_spend(tmp_path, frozenset())
+
+        assert runs == []
+        assert launch == LaunchSpend(unmetered_phases=("architect",))
 
 
 class TestPauseIsAtomic:
