@@ -161,8 +161,23 @@ class DeadlineStreamer:
                 pass
 
     def _breach(self) -> None:
+        """Deadline hit: kill the group and leave the registry clean.
+
+        The deregistration belongs here rather than only in ``finish``
+        because every adapter returns early on ``timed_out`` without
+        calling it, so a killed streamer used to sit in ``_ACTIVE``
+        until garbage collection and a later
+        ``kill_active_process_groups`` would signal a corpse. ``kill``
+        has already waited out the SIGTERM/SIGKILL grace, so the child
+        is gone and the pipe is closed; the joins are bounded for the
+        unreapable-grandchild case above. ``discard`` is idempotent, so
+        a caller that does reach ``finish`` stays correct.
+        """
         self.timed_out = True
         self.kill()
+        self._reader.join(timeout=1.0)
+        self._writer.join(timeout=1.0)
+        _ACTIVE.discard(self)
 
     def _signal_group(self, sig: signal.Signals) -> None:
         pid = self._proc.pid

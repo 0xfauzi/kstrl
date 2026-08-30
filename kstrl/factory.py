@@ -119,6 +119,7 @@ from kstrl.verify import (
 )
 
 if TYPE_CHECKING:
+    from kstrl.agents.liveness import ProbeResult
     from kstrl.ui.base import UI
 
 
@@ -519,6 +520,25 @@ def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None:
     return None
 
 
+def review_enabled(config: FactoryConfig) -> bool:
+    """Will Phase 2 run a reviewer at all?
+
+    One predicate rather than a repeated ``!= ReviewMode.SKIP.value``,
+    because both readers carry the same caveat about WHEN they may ask
+    (the autonomy ladder can force review back on) and two copies of a
+    caveat drift.
+    """
+    return config.review_mode != ReviewMode.SKIP.value
+
+
+def security_enabled(config: FactoryConfig) -> bool:
+    """Will Phase 2.5 run a security reviewer at all?"""
+    return (
+        config.security_config is not None
+        and config.security_config.mode != SecurityMode.SKIP.value
+    )
+
+
 def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
     """Warning when the set-point gate is on but can never run, else None.
 
@@ -537,7 +557,7 @@ def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
     """
     if config.setpoint_agreement != "block":
         return None
-    if config.review_mode == ReviewMode.SKIP.value:
+    if not review_enabled(config):
         return (
             "setpoint_agreement is 'block' but review_mode is 'skip': no "
             "reviewer runs, so no story can be confirmed and the "
@@ -659,6 +679,131 @@ class AdversarialAgentSelection:
     warning: str | None = None
 
 
+@dataclass(frozen=True)
+class _AdversarialGates:
+    """What this run's config permits the adversarial phases to do."""
+
+    review: bool
+    security: bool
+    may_dispatch: bool
+
+
+def _ladder_can_force_review() -> bool:
+    """Could any autonomy level turn a skip-mode run back into a
+    reviewing one? Computed rather than asserted in prose, so it cannot
+    quietly stop being true when a bundle changes."""
+    return any(
+        flag_bundle_for(level).review_mode != ReviewMode.SKIP.value for level in AutonomyLevel
+    )
+
+
+def _adversarial_phase_gates(
+    factory_config: FactoryConfig,
+    autonomy_config: AutonomyConfig,
+) -> _AdversarialGates:
+    """Which adversarial phases are on, and may any of them dispatch.
+
+    ``may_dispatch`` is a spend decision (#262 review): resolving the
+    reviewer is free, but the cross-family LIVENESS PROBE costs a real
+    CLI turn, so it must not fire for a run that will never dispatch an
+    adversarial call.
+
+    ``review_mode = "skip"`` is only proof of that when the autonomy
+    ladder cannot put review back, and the ladder resolves further down
+    ``_run_factory_locked``, after the pipeline is already holding this
+    selection.
+    """
+    review = review_enabled(factory_config)
+    security = security_enabled(factory_config)
+    may_dispatch = review or security or (autonomy_config.enabled and _ladder_can_force_review())
+    return _AdversarialGates(review=review, security=security, may_dispatch=may_dispatch)
+
+
+def _resolve_cross_family(
+    cross_type: str | None,
+    *,
+    claude_available: bool,
+    codex_available: bool,
+    may_dispatch_adversarial: bool,
+) -> ProbeResult | None:
+    """The opposite family's liveness, or None when there is none to ask.
+
+    Liveness is deliberately NOT folded into
+    ``claude_available``/``codex_available``: those two also decide which
+    family the ENGINEER belongs to, and a claude CLI that is installed
+    but dead must still be recorded as a claude engineer, because
+    ``get_agent`` will construct it from PATH regardless. Mixing
+    liveness in there would invert the rotation while the audit trail
+    claimed it held - the exact failure ``_cli_family`` warns about.
+
+    The probe sits behind the installed check, so a machine with one CLI
+    pays nothing and only the family this run would actually dispatch to
+    is ever probed. ``probe_family`` caches per process, so the review
+    and security resolutions share one probe, and it is inert when
+    ``KSTRL_AGENT_PROBE=0``.
+
+    ``may_dispatch_adversarial=False`` resolves on PATH alone, exactly
+    as this did before #262: the answer cannot change a run that will
+    never call a reviewer, so buying it with a CLI turn would be spend
+    for nothing.
+    """
+    if cross_type is None:
+        return None
+    installed = codex_available if cross_type == "codex" else claude_available
+    if not installed:
+        return None
+    from kstrl.agents.liveness import UNPROBED, probe_family
+
+    return probe_family(cross_type) if may_dispatch_adversarial else UNPROBED
+
+
+def _homogeneity_warning(
+    phase: str,
+    engineer_family: str | None,
+    cross_type: str | None,
+    cross: ProbeResult | None,
+) -> str:
+    """The self-preference risk statement for a same-family fallback.
+
+    Three causes, three remedies: an unknowable engineer family, a
+    cross CLI that is not installed, and (#262) one that is installed
+    but cannot run. The last quotes the CLI's own refusal, because
+    "install codex" is useless advice to someone who already has it.
+    """
+    tail = (
+        "Self-preference bias means a same-family reviewer systematically "
+        "misses the bug classes its own family produces. "
+    )
+    if engineer_family is None:
+        return (
+            "Homogeneity risk (R7.1): the engineer runs a custom agent "
+            "command, so its model family is unknown and the "
+            f"cross-family default cannot be applied; the {phase} "
+            f"reviewer falls back to the same configuration. {tail}"
+            f"Set an explicit {phase} agent config on a different model "
+            "family to restore cross-family review."
+        )
+    same_family = (
+        f"so the {phase} reviewer runs on the same model family as the "
+        f"engineer ({engineer_family}). {tail}"
+    )
+    if cross is not None:
+        because = f" ({cross.detail})" if cross.detail else ""
+        return (
+            f"Homogeneity risk (R7.1): the {cross_type} CLI is installed "
+            f"but cannot run a turn{because}, {same_family}"
+            f"Fix the {cross_type} CLI (authentication, quota, config) for "
+            f"cross-family review, or set an explicit {phase} agent config "
+            "to accept the risk silently."
+        )
+    return (
+        f"Homogeneity risk (R7.1): the {cross_type} CLI is not available, "
+        f"{same_family}"
+        f"Install the {cross_type} CLI for cross-family review, or set an "
+        f"explicit {phase} agent config to accept the risk silently."
+    )
+
+
 def resolve_adversarial_selection(
     phase: str,
     *,
@@ -673,6 +818,7 @@ def resolve_adversarial_selection(
     engineer_type: str | None,
     claude_available: bool | None = None,
     codex_available: bool | None = None,
+    may_dispatch_adversarial: bool = True,
 ) -> AdversarialAgentSelection:
     """Resolve which agent reviews this run's diffs (R7.1).
 
@@ -682,15 +828,26 @@ def resolve_adversarial_selection(
        fallback, exactly as before R7.1. No warning - an operator who
        pins a same-family reviewer has decided so deliberately.
     2. Otherwise, when the engineer's family is known and the opposite
-       family's CLI is available, the reviewer defaults to that family
-       (adapter-default model; reasoning deliberately not inherited -
-       effort strings do not transfer across families).
+       family's CLI is both installed and able to complete a turn, the
+       reviewer defaults to that family (adapter-default model;
+       reasoning deliberately not inherited - effort strings do not
+       transfer across families).
     3. Otherwise the reviewer falls back to the same configuration as
        today (same family as the engineer) and ``warning`` names the
        self-preference risk.
 
-    ``claude_available``/``codex_available`` default to probing the
-    real CLIs; tests inject both.
+    ``claude_available``/``codex_available`` default to asking PATH;
+    tests inject both.
+
+    Step 2 also LIVENESS-PROBES the cross family (#262), at most once
+    per process and at most twice per family - an installed CLI that
+    cannot authenticate or has exhausted its quota used to be selected
+    here, and the run then paid the whole engineer bill before finding
+    out. A dead cross CLI takes the SAME path a missing one always took:
+    downgrade to same-family review with the homogeneity warning, never
+    a hard failure. ``KSTRL_AGENT_PROBE=0`` switches the probe off
+    globally; ``may_dispatch_adversarial=False`` switches it off for one
+    resolution whose answer cannot change the run.
     """
     from kstrl.agents import ClaudeCodeAgent, CodexAgent
 
@@ -716,8 +873,13 @@ def resolve_adversarial_selection(
 
     engineer_family = _cli_family(engineer_cmd, engineer_type, claude_available)
     cross_type = _CROSS_FAMILY_TYPE.get(engineer_family) if engineer_family else None
-    cross_available = codex_available if cross_type == "codex" else claude_available
-    if cross_type is not None and cross_available:
+    cross = _resolve_cross_family(
+        cross_type,
+        claude_available=claude_available,
+        codex_available=codex_available,
+        may_dispatch_adversarial=may_dispatch_adversarial,
+    )
+    if cross is not None and cross.live:
         return AdversarialAgentSelection(
             phase=phase,
             agent_cmd=None,
@@ -728,28 +890,7 @@ def resolve_adversarial_selection(
             identity=_agent_identity(None, cross_type, None, claude_available),
         )
 
-    if engineer_family is None:
-        warning = (
-            f"Homogeneity risk (R7.1): the engineer runs a custom agent "
-            f"command, so its model family is unknown and the "
-            f"cross-family default cannot be applied; the {phase} "
-            f"reviewer falls back to the same configuration. "
-            "Self-preference bias means a same-family reviewer "
-            "systematically misses the bug classes its own family "
-            f"produces. Set an explicit {phase} agent config on a "
-            "different model family to restore cross-family review."
-        )
-    else:
-        warning = (
-            f"Homogeneity risk (R7.1): the {cross_type} CLI is not "
-            f"available, so the {phase} reviewer runs on the same model "
-            f"family as the engineer ({engineer_family}). "
-            "Self-preference bias means a same-family reviewer "
-            "systematically misses the bug classes its own family "
-            f"produces. Install the {cross_type} CLI for cross-family "
-            f"review, or set an explicit {phase} agent config to accept "
-            "the risk silently."
-        )
+    warning = _homogeneity_warning(phase, engineer_family, cross_type, cross)
     return AdversarialAgentSelection(
         phase=phase,
         agent_cmd=fallback_cmd,
@@ -2674,6 +2815,12 @@ def _run_factory_locked(
         )
     )
 
+    # Loaded here rather than at the ladder resolution below because the
+    # #262 probe gate needs it first; it is a pure config read, and the
+    # ladder still resolves in its original place for the reason its own
+    # comment gives (the policy hash must record the clamped envelope).
+    autonomy_config = AutonomyConfig.load(root_dir)
+
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
     # prints once per run, not per component. Explicit config always
@@ -2681,8 +2828,10 @@ def _run_factory_locked(
     # from the engineer when that CLI is available. The selection is an
     # audit-trail event: same-family and cross-family runs must stay
     # distinguishable in the progress log.
+    gates = _adversarial_phase_gates(factory_config, autonomy_config)
     review_selection = resolve_adversarial_selection(
         "review",
+        may_dispatch_adversarial=gates.may_dispatch,
         explicit_cmd=factory_config.review_agent_cmd,
         explicit_type=factory_config.review_agent_type,
         explicit_model=factory_config.review_model,
@@ -2698,6 +2847,7 @@ def _run_factory_locked(
         sec_cfg = factory_config.security_config
         security_selection = resolve_adversarial_selection(
             "security",
+            may_dispatch_adversarial=gates.may_dispatch,
             explicit_cmd=sec_cfg.agent_cmd,
             explicit_type=sec_cfg.agent_type,
             explicit_model=sec_cfg.model,
@@ -2708,14 +2858,9 @@ def _run_factory_locked(
             engineer_cmd=base_config.agent_cmd,
             engineer_type=base_config.agent_type,
         )
-    _review_phase_enabled = factory_config.review_mode != ReviewMode.SKIP.value
-    _security_phase_enabled = (
-        factory_config.security_config is not None
-        and factory_config.security_config.mode != SecurityMode.SKIP.value
-    )
     for _sel, _enabled in (
-        (review_selection, _review_phase_enabled),
-        (security_selection, _security_phase_enabled),
+        (review_selection, gates.review),
+        (security_selection, gates.security),
     ):
         if _sel is None or not _enabled:
             continue
@@ -2863,7 +3008,6 @@ def _run_factory_locked(
     # Ordering matters: the level is resolved BEFORE the policy hash is
     # taken, because the bundle can clamp the envelope (deps_allow_new),
     # and the manifest must record the envelope actually enforced.
-    autonomy_config = AutonomyConfig.load(root_dir)
     autonomy_active = autonomy_config.enabled
     autonomy_level: AutonomyLevel | None = None
     if autonomy_active:

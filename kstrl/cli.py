@@ -30,6 +30,7 @@ from kstrl.agents import (
     get_agent,
 )
 from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
+from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
@@ -56,6 +57,7 @@ from kstrl.events import (
 from kstrl.factory import (
     BudgetConfigError,
     FactoryConfig,
+    _cli_family,
     run_factory,
     validate_cost_ceiling,
     validate_token_ceiling,
@@ -228,12 +230,36 @@ def _agent_preflight(
     return "auto", None, None
 
 
+def _probe_target_family(agent_cmd: str | None, canonical: str | None) -> str | None:
+    """Which CLI family this config's turns would run on, or None.
+
+    None means there is no CLI turn to probe. ``claude-sdk`` is the
+    Claude FAMILY reached over the SDK transport rather than through the
+    ``claude`` binary, so that carve-out is the only fact stated here;
+    everything else defers to ``_cli_family``, the mirror of
+    ``get_agent``'s dispatch that the R7.1 rotation already depends on
+    (a custom command returns None there, and the auto-detect preference
+    order stays stated once).
+    """
+    if canonical == "claude-sdk":
+        return None
+    return _cli_family(agent_cmd, canonical, ClaudeCodeAgent.is_available())
+
+
 def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
     """Run the agent preflight against a resolved config; exit(1) on failure.
 
     On success, canonicalizes ``config.agent_type`` in place so every
     downstream ``get_agent`` call selects the same agent the preflight
     verified.
+
+    A CLI on PATH that cannot complete a turn warns rather than exiting
+    (#262). A probe wrong in the pessimistic direction - a network blip,
+    a CLI startup quirk - would otherwise turn a working setup into a
+    hard failure before any work happened, and a genuinely dead engineer
+    CLI fails on its own first call anyway. The value is the message:
+    the operator reads the CLI's own refusal instead of a confused
+    downstream error.
     """
     canonical, error, hint = _agent_preflight(config.agent_cmd, config.agent_type)
     if error is not None:
@@ -242,6 +268,20 @@ def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
             ui_impl.info(hint)
         sys.exit(1)
     config.agent_type = canonical
+    family = _probe_target_family(config.agent_cmd, canonical)
+    if family is None:
+        return
+    probe = probe_family(family)
+    if probe.live:
+        return
+    cli_name = "claude" if family == CLAUDE_FAMILY else "codex"
+    detail = f": {probe.detail}" if probe.detail else ""
+    ui_impl.warn(f"{cli_name} is installed but cannot run a turn{detail}")
+    ui_impl.info(
+        f"Check {cli_name}'s authentication, quota and config. The run "
+        f"continues, but every {cli_name} call is likely to fail. "
+        f"Set {PROBE_ENV_VAR}=0 to skip this check."
+    )
 
 
 def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:

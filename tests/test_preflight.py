@@ -18,19 +18,15 @@ import pytest
 from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
-from kstrl.agents import ClaudeCodeAgent, CodexAgent
+from kstrl.agents import ClaudeSdkAgent
+from kstrl.agents.liveness import ProbeResult
 from kstrl.cli import _agent_preflight, cli
+from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryResult
+from kstrl.ui.plain import PlainUI
+from tests.helpers.agent_probe import set_cli_availability
 
-
-def _availability(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    claude: bool,
-    codex: bool,
-) -> None:
-    monkeypatch.setattr(ClaudeCodeAgent, "is_available", classmethod(lambda cls: claude))
-    monkeypatch.setattr(CodexAgent, "is_available", classmethod(lambda cls: codex))
+_availability = set_cli_availability
 
 
 def _stub_run_loop(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -540,3 +536,125 @@ class TestFactoryPreflightWiring:
         assert result.exit_code != 0
         assert "Unknown agent type" in result.output
         assert not called
+
+
+class TestAgentLivenessPreflight:
+    """#262: a CLI on PATH that cannot run a turn WARNS; it never blocks.
+
+    The probe's own criteria are covered in tests/test_agent_liveness.py.
+    What matters here is the preflight's contract: the operator is told,
+    in the CLI's own words, and the run still starts. Blocking would
+    trade a silent late failure for a new early one, and a probe wrong in
+    the pessimistic direction would then take down a working machine.
+    """
+
+    def _probe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        result: ProbeResult,
+    ) -> list[str]:
+        asked: list[str] = []
+
+        def fake_probe(family: str) -> ProbeResult:
+            asked.append(family)
+            return result
+
+        monkeypatch.setattr(cli_mod, "probe_family", fake_probe)
+        return asked
+
+    def test_dead_engineer_cli_warns_and_the_run_continues(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _availability(monkeypatch, claude=False, codex=True)
+        self._probe(
+            monkeypatch,
+            ProbeResult(live=False, detail="You've hit your usage limit."),
+        )
+        calls = _stub_run_loop(monkeypatch)
+        _scaffold(tmp_path)
+        (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "codex"\n')
+
+        result = CliRunner().invoke(
+            cli,
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "codex is installed but cannot run a turn" in result.output
+        assert "You've hit your usage limit." in result.output
+        assert "KSTRL_AGENT_PROBE=0" in result.output
+        assert len(calls) == 1
+
+    def test_live_engineer_cli_says_nothing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _availability(monkeypatch, claude=True, codex=False)
+        self._probe(monkeypatch, ProbeResult(live=True))
+        _stub_run_loop(monkeypatch)
+        _scaffold(tmp_path)
+        (tmp_path / "kstrl.toml").write_text('[agent]\ntype = "claude"\n')
+
+        result = CliRunner().invoke(
+            cli,
+            ["understand", "1", "--root", str(tmp_path), "--ui", "plain"],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "cannot run a turn" not in result.output
+
+    def test_custom_command_is_not_probed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # agent_type stays "claude-code" deliberately: _agent_preflight
+        # returns the configured type UNCHANGED when a command is set,
+        # so a probe keyed on the type alone would run `claude` for a
+        # run that never invokes it.
+        _availability(monkeypatch, claude=True, codex=True)
+        asked = self._probe(monkeypatch, ProbeResult(live=False))
+        config = KstrlConfig()
+        config.agent_cmd = "echo hi"
+        config.agent_type = "claude-code"
+
+        cli_mod._check_agent_preflight(config, PlainUI())
+
+        assert asked == []
+
+    def test_claude_sdk_is_not_routed_to_a_probe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The SDK transport is the Claude family for rotation purposes
+        # but does not shell out to the `claude` binary, so there is no
+        # CLI turn the preflight could ask for.
+        monkeypatch.setattr(ClaudeSdkAgent, "is_available", classmethod(lambda cls: True))
+        asked = self._probe(monkeypatch, ProbeResult(live=False))
+        config = KstrlConfig()
+        config.agent_type = "claude-sdk"
+
+        cli_mod._check_agent_preflight(config, PlainUI())
+
+        assert asked == []
+
+    @pytest.mark.parametrize(
+        ("claude", "expected"),
+        [(True, "claude-code"), (False, "codex")],
+    )
+    def test_auto_probes_the_family_get_agent_would_pick(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        claude: bool,
+        expected: str,
+    ) -> None:
+        _availability(monkeypatch, claude=claude, codex=True)
+        asked = self._probe(monkeypatch, ProbeResult(live=True))
+        config = KstrlConfig()
+        config.agent_type = "auto"
+
+        cli_mod._check_agent_preflight(config, PlainUI())
+
+        assert asked == [expected]
