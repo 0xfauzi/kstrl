@@ -31,6 +31,25 @@ class ParsedOutput:
     total_errors: int = 0
     failures: list[ParsedFailure] = field(default_factory=list)
     raw_summary: str = ""  # last line(s) summary from the tool
+    # The command the gate actually ran, when the caller knows it. Only
+    # used to label a passthrough; the parser identity stays `tool`.
+    command: str = ""
+
+    @property
+    def prompt_label(self) -> str:
+        """What to call the output in the retry prompt.
+
+        Parsed failures prove this parser understood the output, so the
+        tool name is earned. With none, the parser may simply be the
+        wrong one: `check_test_suite` runs whatever `test_command` is
+        configured and always parses it as pytest, so a vitest failure
+        reached the engineer tagged ``[pytest]`` and pointed it at the
+        wrong toolchain (#258). Naming the command that actually ran is
+        the one label that cannot be wrong.
+        """
+        if self.failures or not self.command:
+            return self.tool
+        return self.command
 
     def format_for_prompt(self, max_failures: int = 10, include_source: bool = True) -> list[str]:
         """Format failures as structured lines optimized for LLM consumption.
@@ -40,7 +59,7 @@ class ParsedOutput:
         lines: list[str] = []
 
         if self.raw_summary:
-            lines.append(f"[{self.tool}] {self.raw_summary}")
+            lines.append(f"[{self.prompt_label}] {self.raw_summary}")
 
         if not self.failures:
             return lines
@@ -148,6 +167,23 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
         if m:
             result.raw_summary = m.group("summary").strip()
 
+    # Fallback: if we parsed nothing useful, preserve raw tail as summary.
+    # This runs BEFORE the count below because the count reads
+    # raw_summary. The other order reported total_errors == 0 on output
+    # whose own tail said "1 failed" - measured on real vitest output
+    # (#258). Preemptive, not a live misread: nothing in kstrl/ reads
+    # total_errors today (the gate's verdict is the exit code), so this
+    # stops a future reader taking 0 for "clean" rather than fixing a
+    # current one. The mypy and ruff parsers never had the bug; they set
+    # summary and count together in their line loops.
+    # The tail is still only the last few lines, so a foreign tool's
+    # file, line and assertion detail is dropped either way; recovering
+    # that needs a parser that knows the tool, which is the other half
+    # of #258.
+    if not result.failures and not result.raw_summary:
+        tail = lines[-5:] if len(lines) > 5 else lines
+        result.raw_summary = "\n".join(tail)
+
     # Extract total error count from summary
     if result.raw_summary:
         failed_m = _PYTEST_FAILED_COUNT_RE.search(result.raw_summary)
@@ -160,11 +196,6 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
         result.total_errors = count
     else:
         result.total_errors = len(result.failures)
-
-    # Fallback: if we parsed nothing useful, preserve raw tail as summary
-    if not result.failures and not result.raw_summary:
-        tail = lines[-5:] if len(lines) > 5 else lines
-        result.raw_summary = "\n".join(tail)
 
     return result
 

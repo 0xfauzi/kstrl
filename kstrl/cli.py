@@ -61,6 +61,7 @@ from kstrl.factory import (
     validate_token_ceiling,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
+from kstrl.git import detect_base_branch, resolve_base_branch
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
 from kstrl.interaction import (
     PromptKind,
@@ -145,31 +146,6 @@ def _console_ui(
 
 def _use_cli_value(ctx: click.Context, name: str) -> bool:
     return ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
-
-
-def _detect_base_branch(cwd: Path) -> str:
-    """Base branch of the repo at ``cwd``: ``origin/HEAD``'s target, else main.
-
-    Shared by ``ks run`` (manifest base) and ``ks sense`` (diff base).
-    Any failure to ask git - no repo, no remote, git missing, timeout -
-    falls back to ``main``; the caller can always override with a flag.
-    """
-    import subprocess as _sp
-
-    try:
-        head_ref = _sp.run(
-            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if head_ref.returncode == 0:
-            # "refs/remotes/origin/main" -> "main"
-            return head_ref.stdout.strip().rsplit("/", 1)[-1]
-    except Exception:
-        pass
-    return "main"
 
 
 # Accepted spellings for the agent type across the config surface.
@@ -704,7 +680,7 @@ def run(
     effective_branch = config.kstrl_branch or prd_branch or "kstrl/run"
 
     # Detect base branch from git
-    detected_base = _detect_base_branch(root_dir)
+    detected_base = detect_base_branch(root_dir)
 
     # Build single-component manifest from PRD
     rel_prd = str(config.prd_file)
@@ -1586,8 +1562,8 @@ def feature(
 )
 @click.option(
     "--base-branch",
-    default="main",
-    help="Base git branch",
+    default=None,
+    help="Base git branch (default: auto-detected from the repository)",
 )
 @click.option(
     "--single-pr",
@@ -1635,7 +1611,7 @@ def decompose(
     spec: Path,
     root: Path | None,
     project_name: str,
-    base_branch: str,
+    base_branch: str | None,
     single_pr: bool,
     agent_cmd: str | None,
     model: str | None,
@@ -1680,12 +1656,17 @@ def decompose(
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
+    # decompose_spec takes a `str` base and runs it through
+    # validate_branch_name, so the flag's None is resolved here rather
+    # than deeper, the way `ks sense` already resolves --base (#259).
+    effective_base = resolve_base_branch(base_branch, root_dir)
+
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
         try:
             manifest = decompose_spec(
                 spec_path=spec,
                 project_name=project_name,
-                base_branch=base_branch,
+                base_branch=effective_base,
                 single_pr=single_pr,
                 agent=agent,
                 ui=core_ui,
@@ -1789,8 +1770,8 @@ def decompose(
 )
 @click.option(
     "--base-branch",
-    default="main",
-    help="Base git branch",
+    default=None,
+    help="Base git branch (default: auto-detected from the repository)",
 )
 @click.option(
     "--single-pr",
@@ -2047,7 +2028,7 @@ def factory(
     manifest_path: Path | None,
     root: Path | None,
     project_name: str | None,
-    base_branch: str,
+    base_branch: str | None,
     single_pr: bool,
     max_parallel: int | None,
     max_retries: int | None,
@@ -2166,7 +2147,11 @@ def factory(
             manifest = decompose_spec(
                 spec_path=spec,
                 project_name=project_name,
-                base_branch=base_branch,
+                # The --manifest path above is untouched: a manifest
+                # already carries its own base_branch. Only the --spec
+                # path has a flag to resolve, and detection is the
+                # default rather than the literal "main" (#259).
+                base_branch=resolve_base_branch(base_branch, root_dir),
                 single_pr=single_pr,
                 agent=agent,
                 ui=ui_impl,
@@ -3125,7 +3110,7 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     type=str,
     default=None,
     help="Base branch for the diff-scope and bad-pattern checks "
-    "(default: the branch origin/HEAD points at, else main)",
+    "(default: auto-detected from the repository)",
 )
 @click.option(
     "--prd",
@@ -3213,7 +3198,7 @@ def sense(
         # loaders' own validation errors (PolicyConfigError is one).
         _sense_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
 
-    base = base_branch or _detect_base_branch(path)
+    base = resolve_base_branch(base_branch, path)
 
     # Every check below that consumes the diff reads it through the
     # LENIENT git helpers, which map a bad ref, a missing base or a

@@ -17,6 +17,92 @@ DEFAULT_TIMEOUT = 30.0
 # Network fetches get a longer budget than local plumbing calls.
 FETCH_TIMEOUT = 120.0
 
+# Long-lived branch names `detect_base_branch` tries, in order, when the
+# remote has not recorded a default. `main` first because it is the
+# modern default and a renamed repo keeps only that name; `master` next
+# because it is what `git init` still produces when `init.defaultBranch`
+# is unset (#259).
+BASE_BRANCH_CANDIDATES = ("main", "master", "trunk", "develop")
+
+# Answer when no candidate resolves. Deliberately still a guess, and the
+# callers surface it as one.
+BASE_BRANCH_FALLBACK = "main"
+
+# Local plumbing, called on the way into a command.
+_BASE_BRANCH_PROBE_TIMEOUT = 5.0
+
+
+def detect_base_branch(cwd: Path) -> str:
+    """Base branch of the repo at ``cwd``, asked of the repo itself (#259).
+
+    Used by ``ks run`` (manifest base), ``ks decompose`` and
+    ``ks factory`` (worktree base), ``ks sense`` (diff base) and the TUI
+    launch forms.
+
+    The ladder, and what each rung fails on:
+
+    1. ``origin/HEAD``: the remote's own answer, so it outranks any
+       guess. Only ``git clone`` and an explicit ``git remote set-head``
+       ever write it, so a repo that grew a remote by hand does not have
+       it, and neither does a plain ``git init``. It can also go stale
+       when the remote renames its default branch.
+    2. The first of ``main``, ``master``, ``trunk``, ``develop`` that
+       resolves. Fails when the project's long-lived branch is named
+       something else (``release``, ``stable``), and picks the earlier
+       name when a repo carries two of them mid-migration.
+    3. The literal ``main``.
+
+    Every rung above the fallback is confirmed with :func:`resolve_ref`
+    before it is returned. That is deliberately the same resolver the
+    consumers use - :func:`get_diff_names` and the worktree cut both go
+    through :func:`resolve_base_ref`, which prefers ``origin/<name>`` -
+    so a name this ladder accepts is one they can actually diff,
+    including in a clone that carries the remote-tracking ref only. It
+    is also what demotes a stale ``origin/HEAD`` to the rung below it.
+
+    Deliberately NOT a rung: the branch HEAD is on. It always resolves,
+    so it would end the ladder every time, and diffing a branch against
+    itself is empty - which the diff-scope and bad-pattern checks read
+    as "nothing changed, all within scope". That converts a loud
+    cannot-measure (`ks sense` exit 2, naming ``--base``) into a silent
+    green on a tree nobody measured, and cannot-measure is never a pass.
+    A guess the caller reports as a guess beats a wrong answer delivered
+    as a measurement.
+
+    Any failure to ask git - no repo, git missing, timeout - falls back
+    to ``main``; the caller can always override with a flag.
+    """
+    remote_default = ""
+    try:
+        head_ref = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=_BASE_BRANCH_PROBE_TIMEOUT,
+        )
+        if head_ref.returncode == 0:
+            # "refs/remotes/origin/main" -> "main"
+            remote_default = head_ref.stdout.strip().rsplit("/", 1)[-1]
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    for name in (remote_default, *BASE_BRANCH_CANDIDATES):
+        if name and resolve_ref(name, cwd, timeout=_BASE_BRANCH_PROBE_TIMEOUT):
+            return name
+    return BASE_BRANCH_FALLBACK
+
+
+def resolve_base_branch(base_branch: str | None, cwd: Path) -> str:
+    """An explicit base branch, else the one :func:`detect_base_branch` finds.
+
+    One spelling for the "the flag wins, otherwise ask the repo" rule
+    every entry point needs: the two CLI commands that take
+    ``--base-branch``, ``ks sense``'s ``--base``, and the TUI launch
+    form's branch field (#259).
+    """
+    return base_branch or detect_base_branch(cwd)
+
 
 def resolve_base_ref(
     base_branch: str,
@@ -323,6 +409,11 @@ def resolve_ref(
 
     Tries the local ref first, then ``origin/<ref>``: a fresh worktree
     may carry the remote-tracking ref only.
+
+    OSError is caught alongside the timeout, matching
+    :func:`resolve_base_ref` next door: "git is not installed" is one of
+    the ways a ref does not resolve, and a function whose contract is
+    already "the sha, or None" should not make its callers guard it.
     """
     for candidate in (ref, f"origin/{ref}"):
         try:
@@ -333,7 +424,7 @@ def resolve_ref(
                 text=True,
                 timeout=timeout,
             )
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, OSError):
             return None
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
