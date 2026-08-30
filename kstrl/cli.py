@@ -29,7 +29,7 @@ from kstrl.agents import (
     CodexAgent,
     get_agent,
 )
-from kstrl.agents.base import Agent
+from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
 from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
@@ -2149,7 +2149,17 @@ def factory(
     if max_total_tokens is not None:
         validate_token_ceiling(max_total_tokens, "--max-total-tokens")
 
-    # Get or create manifest
+    # Get or create manifest.
+    #
+    # #257: a --spec run also pays for the architect here, before any run
+    # id or run directory exists, so what it cost has to be carried into
+    # the run by hand for `--max-cost-usd` to bound five roles instead of
+    # four. A --manifest resume ran no architect and leaves this empty.
+    #
+    # Only the paths that reach run_factory are covered: a blocker halt
+    # exits below, before there is anywhere on disk to record it.
+    # `decompose_spec` prints the number to the terminal on that path.
+    architect_usage = UsageTotals()
     if manifest_path:
         try:
             manifest = Manifest.load(manifest_path)
@@ -2162,6 +2172,11 @@ def factory(
             ui_impl.err("--project-name is required with --spec")
             sys.exit(2)
 
+        # Read BEFORE the work, and sliced from there afterwards, the
+        # same way `decompose_spec` reports it - so the two derivations
+        # of "what the architect spent" cannot disagree, and neither
+        # rests on an invariant about who else touched this agent.
+        usage_before = usage_cursor(agent)
         try:
             manifest = decompose_spec(
                 spec_path=spec,
@@ -2183,6 +2198,7 @@ def factory(
         except ValueError as exc:
             ui_impl.err(str(exc))
             sys.exit(1)
+        architect_usage = collect_usage(agent, since=usage_before)
 
     # Build configs (R2.1). Resolution order for every phase config:
     # explicit CLI flag > env > kstrl.toml > dataclass default. The
@@ -2507,6 +2523,7 @@ def factory(
                 base_config,
                 root_dir,
                 manifest_path,
+                architect_usage=architect_usage,
             )
         )
 
@@ -2521,6 +2538,7 @@ def factory(
             root_dir,
             manifest_path=manifest_path,
             stop=stop,
+            architect_usage=architect_usage,
         )
     finally:
         uninstall()

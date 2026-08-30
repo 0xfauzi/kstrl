@@ -430,6 +430,30 @@ class EvolutionJournal:
     def __init__(self, config: EvolutionConfig) -> None:
         self.config = config
 
+    @classmethod
+    def open(
+        cls,
+        root_dir: Path,
+        warn: Callable[[str], None],
+    ) -> EvolutionJournal | None:
+        """The journal for ``root_dir``, or None when it is unusable.
+
+        Every writer asks the same two questions in the same order -
+        does the config parse, and is the journal switched on - and does
+        the same thing on either No. Asking them here rather than at each
+        site is what stops the pair drifting: measured, the four writers
+        that existed before #257 disagreed, with two of them omitting the
+        parse guard entirely and raising a config typo into work that had
+        already been paid for.
+
+        Which exceptions "does not parse" covers is ``load_or_none``'s to
+        know, not a call site's. Degrades loudly through ``warn``.
+        """
+        config = EvolutionConfig.load_or_none(root_dir, warn=warn)
+        if config is None or not config.enabled:
+            return None
+        return cls(config)
+
     # ------------------------------------------------------------------
     # record_run
     # ------------------------------------------------------------------

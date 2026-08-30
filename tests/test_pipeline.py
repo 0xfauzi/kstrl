@@ -29,6 +29,7 @@ from kstrl.factory import (
     FactoryConfig,
     FactoryResult,
 )
+from kstrl.findings import Finding
 from kstrl.fixtures import FixturesConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.knowledge import Fact, KnowledgeConfig, measure_fact_utilization
@@ -2051,3 +2052,42 @@ class TestFactUtilizationRecording:
         assert outcome is not None
         assert outcome.distill.utilization.measured is False
         assert "utilization" not in calls
+
+
+class TestJournalConfigNeverGatesAnAttempt:
+    """#257 sweep: the third caller of ``EvolutionConfig.load`` that
+    could raise ValueError into work already paid for."""
+
+    def test_an_unparseable_journal_config_does_not_break_a_retry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``journal_superseded_findings`` runs between a failed attempt
+        and the retry that supersedes it. A bad [evolution] knob raised
+        straight through it, so a typo turned a normal retry into a
+        crashed run. The entry is an audit trail; losing it is the
+        acceptable outcome, losing the retry is not.
+        """
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "many")
+        console = io.StringIO()
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            ui=PlainUI(no_color=True, file=console),
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        comp.findings = [
+            Finding(
+                phase="review",
+                category="scope_creep",
+                severity="major",
+                location="a.py",
+                explanation="unrelated refactor",
+            )
+        ]
+
+        pipeline.journal_superseded_findings(comp)
+
+        assert "Evolution config unreadable" in console.getvalue()
+        assert not (tmp_path / ".kstrl" / "evolution.jsonl").exists()

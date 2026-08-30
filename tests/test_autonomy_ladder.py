@@ -862,6 +862,28 @@ class TestTransitionAudit:
             commit_transition(state, record, tmp_path)
         assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
 
+    def test_an_unparseable_journal_config_is_not_fatal_either(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#257 sweep: the guard here caught only OSError, and
+        ``EvolutionConfig.load`` raises ValueError on a malformed
+        [evolution] section. The state save has already happened by
+        then, so a typo in an unrelated knob would leave the ladder
+        saved and unjournaled - exactly the drift this function exists
+        to prevent.
+        """
+        from kstrl.autonomy import commit_transition
+
+        (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
+        state = _eligible_state()
+        record = state.promote(actor="human", ack="ok")
+
+        with pytest.warns(RuntimeWarning, match="Evolution config unreadable"):
+            commit_transition(state, record, tmp_path)
+
+        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
+
 
 class TestPromotionAuthority:
     """A caller-supplied string is not a human acknowledgement."""

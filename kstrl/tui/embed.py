@@ -47,6 +47,7 @@ from kstrl.ui.bridge import EventBridgeUI, NullPrompter
 from kstrl.ui.plain import PlainUI
 
 if TYPE_CHECKING:
+    from kstrl.agents.base import UsageTotals
     from kstrl.config import KstrlConfig
     from kstrl.factory import FactoryConfig
     from kstrl.manifest import Manifest
@@ -192,7 +193,14 @@ def run_factory_embedded(
     manifest_path: Path | None,
     *,
     poll_interval: float = 0.2,
+    architect_usage: UsageTotals | None = None,
 ) -> int:
+    """`ks factory --tui`: the same run, rendered in the dashboard.
+
+    ``architect_usage`` carries the architect's spend the way the plain path
+    does (#257); without it the ceiling would bound one fewer role in
+    the TUI than on a terminal, for no reason an operator could see.
+    """
     from kstrl.factory import run_factory
 
     def _target(ctx: EmbeddedContext) -> int:
@@ -207,6 +215,7 @@ def run_factory_embedded(
             stop=ctx.stop,
             run_id=ctx.run_id,
             notify_capture_output=True,
+            architect_usage=architect_usage,
         ).exit_code
 
     return run_embedded(

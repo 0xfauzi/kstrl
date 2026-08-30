@@ -19,6 +19,7 @@ Real-git tests (no LLM):
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from pathlib import Path
@@ -165,6 +166,42 @@ def _tracked_changes(root: Path) -> list[str]:
     ]
 
 
+def _marker_run_configs(root: Path) -> tuple[FactoryConfig, KstrlConfig]:
+    """A no-retry deferred-merge run against ``MARKER_TEST_CMD``.
+
+    Two tests drive the same failing tier and differ only in what they
+    assert about the aftermath, so the setup is stated once. Extracted
+    rather than copied a third time (#257 review); the other tests in
+    this file vary the factory config in ways this cannot express and
+    keep building their own.
+    """
+    return (
+        FactoryConfig(
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=0,
+            retry_delay=0,
+            review_mode="skip",
+            contract_config=ContractConfig(
+                mode=ContractMode.TIER.value,
+                test_command=MARKER_TEST_CMD,
+                timeout=60,
+            ),
+        ),
+        KstrlConfig(
+            prompt_file=root / "scripts" / "kstrl" / "prompt.md",
+            prd_file=root / "scripts" / "kstrl" / "prd.json",
+            sleep_seconds=0,
+            agent_cmd="echo unused",
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
+        ),
+    )
+
+
 def _read_journal_events(root: Path, event_type: str) -> list[dict[str, object]]:
     """Read evolution-journal entries of one event type. Since R2.1
     run_factory loads EvolutionConfig via ``load(root_dir)``, which
@@ -274,29 +311,7 @@ class TestContractFailureExitsNonzero:
         _init_repo(root)
         _commit_on_branch(root, "kstrl/factory/a", {"bad_marker.txt": "boom\n"})
         manifest = _make_manifest([_component("a", "kstrl/factory/a")])
-        factory_config = FactoryConfig(
-            use_worktrees=True,
-            create_prs=False,
-            max_parallel=1,
-            max_retries=0,
-            retry_delay=0,
-            review_mode="skip",
-            contract_config=ContractConfig(
-                mode=ContractMode.TIER.value,
-                test_command=MARKER_TEST_CMD,
-                timeout=60,
-            ),
-        )
-        base = KstrlConfig(
-            prompt_file=root / "scripts" / "kstrl" / "prompt.md",
-            prd_file=root / "scripts" / "kstrl" / "prd.json",
-            sleep_seconds=0,
-            agent_cmd="echo unused",
-            kstrl_branch="",
-            kstrl_branch_explicit=True,
-            ui_mode="plain",
-            no_color=True,
-        )
+        factory_config, base = _marker_run_configs(root)
 
         result = run_factory(
             manifest,
@@ -324,6 +339,46 @@ class TestContractFailureExitsNonzero:
         assert _tracked_changes(root) == []
         assert not (root / ".git" / "MERGE_HEAD").exists()
         assert not (root / "bad_marker.txt").exists()
+
+    def test_an_unparseable_journal_config_does_not_abort_the_run(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#257 sweep: ``_record_contract_event`` loaded the journal
+        config unguarded, and ``EvolutionConfig.load`` raises ValueError
+        on a bad knob. That propagates straight out of the contract loop,
+        so a typo would abort a run whose work is already paid for and
+        already sitting on a branch. The journal is an audit trail: it
+        may be lost, it may not take the run with it.
+
+        ``KSTRL_EVOLUTION_LOOKBACK_RUNS`` rather than a malformed
+        kstrl.toml on purpose - it breaks the evolution config and
+        nothing else on this path, so the test measures the guard rather
+        than the first loader to notice.
+        """
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "many")
+        root = tmp_path / "repo"
+        _init_repo(root)
+        _commit_on_branch(root, "kstrl/factory/a", {"bad_marker.txt": "boom\n"})
+        manifest = _make_manifest([_component("a", "kstrl/factory/a")])
+        factory_config, base = _marker_run_configs(root)
+        console = io.StringIO()
+
+        result = run_factory(
+            manifest,
+            factory_config,
+            base,
+            PlainUI(no_color=True, file=console),
+            root,
+        )
+
+        # The contract phase still ran and still reported, loudly.
+        assert result.exit_code == 1
+        assert result.contract_failures
+        # The journal was skipped, and said so.
+        assert "Evolution config unreadable" in console.getvalue()
+        assert _read_journal_events(root, "contract_result") == []
 
 
 class TestBreakerRetryReentersScheduling:

@@ -24,6 +24,7 @@ import pytest
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
     SPAWNED_RUN_KIND,
@@ -2031,23 +2032,22 @@ class TestRunOwnership:
             assert load.call_count == 0, "must not read another run"
 
     def test_read_run_spend_reads_a_named_run(self, tmp_path: Path) -> None:
-        """The positive case, so the guard cannot be over-broad."""
+        """The positive case, so the guard cannot be over-broad.
+
+        The double is a REAL ``RunState``: a hand-rolled object carrying
+        only the three fields this function read at the time silently
+        became wrong the moment it read a fourth (#257 piece B).
+        """
         with patch("kstrl.reducer.load_run_state") as load:
             load.return_value = (
-                type(
-                    "S",
-                    (),
-                    {
-                        "cost_usd": 1.25,
-                        "cost_calls": 2,
-                        "usage_calls": 3,
-                    },
-                )(),
+                RunState(cost_usd=1.25, cost_calls=2, usage_calls=3),
                 None,
             )
             spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
         assert spend.cost_usd == 1.25
         assert spend.uncovered_calls == 1
+        # No architect row on this run, so nothing claims one.
+        assert spend.architect_calls == 0
 
     def test_a_concurrent_decompose_is_not_charged_to_the_queue(
         self,
@@ -2099,17 +2099,111 @@ class TestRunOwnership:
         assert SPAWNED_RUN_KIND in KNOWN_KINDS
         assert run_kind(current_run_id()) == SPAWNED_RUN_KIND
 
-    def test_the_architect_is_recorded_as_unmetered(
+    def test_an_architect_that_reached_no_run_dir_is_named_unmetered(
         self,
         tmp_path: Path,
     ) -> None:
-        """#186 F3: decompose spends and emits no usage events at all."""
+        """#186 F3, and still true after #257 piece B.
+
+        This launch left a run dir with no architect row, which is what
+        every case in ``RunSpend.unmetered_phases`` looks like from here:
+        the daemon cannot see the spend, so it must not pretend the day's
+        figure is exact.
+        """
         queue = _queue(tmp_path)
         _add(queue)
         serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
         spend = SpendLedger(tmp_path).read()
         assert "architect" in spend.unmetered_phases
         assert spend.lower_bound, "unmetered architect spend makes it a floor"
+
+    def test_a_metered_architect_is_not_also_named_unmetered(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#257 piece B: the claim stopped being a constant.
+
+        `ks factory` now seeds the architect's spend into the run it
+        decomposed for, so a launch that executed carries an architect
+        row inside the very run dir this daemon charged. Repeating
+        "unmetered: architect" on top of that would brand every honest
+        day's total a floor, which is the failure mode ``lower_bound``
+        exists to flag.
+        """
+        queue = _queue(tmp_path)
+        _add(queue)
+
+        def fake_spend(root: Path, run_id: str) -> RunSpend:
+            return RunSpend(
+                cost_usd=3.0,
+                cost_calls=2,
+                usage_calls=2,
+                architect_calls=1,
+            )
+
+        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+            serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
+
+        spend = SpendLedger(tmp_path).read()
+        assert spend.unmetered_phases == ()
+        assert not spend.lower_bound
+        # Charged ONCE. The architect's dollars are already inside the
+        # run's cost_usd; architect_calls only answers "did it report".
+        assert spend.spent_usd == pytest.approx(3.0)
+
+    def test_the_architect_row_is_read_off_the_run_state(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The seat #257 piece B writes to and the one serve reads from
+        are the same key, which is the only reason the check above can
+        distinguish a metered architect from a silent one."""
+        state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
+        state.components["architect"] = ComponentState(
+            component_id="architect",
+            usage_calls=1,
+            cost_calls=1,
+            cost_usd=2.0,
+        )
+        with patch("kstrl.reducer.load_run_state") as load:
+            load.return_value = (state, None)
+            spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
+        assert spend.architect_calls == 1
+
+    def test_a_decompose_run_dir_never_supplies_the_architect_row(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The kind filter and the unmetered claim must not fight.
+
+        An operator's hand-run `ks decompose` reports an architect and
+        is deliberately NOT charged (piece A). It must not silently
+        satisfy this launch's architect claim either, or the daemon
+        would call the day exact on the strength of somebody else's
+        spend.
+        """
+        queue = _queue(tmp_path)
+        _add(queue)
+
+        def fake_spend(root: Path, run_id: str) -> RunSpend:
+            architect = 1 if run_id.startswith("decompose-") else 0
+            return RunSpend(
+                cost_usd=1.0,
+                cost_calls=1,
+                usage_calls=1,
+                architect_calls=architect,
+            )
+
+        runner = _stub_runner(
+            RunOutcome(0),
+            extra_run_ids=("decompose-20260730-000001.000000-bbb",),
+        )
+        with patch("kstrl.serve.read_run_spend", side_effect=fake_spend):
+            serve_cycle(tmp_path, runner=runner)
+
+        spend = SpendLedger(tmp_path).read()
+        assert "architect" in spend.unmetered_phases
+        assert spend.spent_usd == pytest.approx(1.0)
 
 
 class TestPauseIsAtomic:

@@ -68,6 +68,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Protocol
 
+from kstrl.agents.base import ARCHITECT_ROLE
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -378,9 +379,9 @@ class DailySpend:
     Only the third is unenforceable.
 
     ``unmetered_phases`` names phases known to spend without reporting
-    anything. The architect is always in it for a spec-decomposed item;
-    ``serve_cycle`` states why at the one place that fills this field.
-    Naming it is the honest alternative to estimating it (#186 F3).
+    anything. What goes in it is derived per launch by
+    :attr:`RunSpend.unmetered_phases`, which states when and why. Naming
+    a phase there is the honest alternative to estimating it (#186 F3).
     """
 
     date: str = ""
@@ -635,6 +636,9 @@ class RunSpend:
     cost_usd: float = 0.0
     cost_calls: int = 0
     usage_calls: int = 0
+    #: Calls the run recorded against the architect, read for one
+    #: question only: see :attr:`unmetered_phases`.
+    architect_calls: int = 0
 
     @property
     def uncovered_calls(self) -> int:
@@ -643,6 +647,27 @@ class RunSpend:
     @property
     def lower_bound(self) -> bool:
         return self.uncovered_calls > 0
+
+    @property
+    def unmetered_phases(self) -> tuple[str, ...]:
+        """Roles that spent on this launch without reaching the meter.
+
+        It stopped being a constant in #257 piece B. `ks factory` now
+        hands the architect's spend to the run it decomposed for, so a
+        launch that got as far as executing carries an architect row
+        inside the run dir the daemon just charged - already counted in
+        ``cost_usd``, and naming it unmetered on top of that would brand
+        every honest day's figure a floor.
+
+        Zero calls does NOT mean zero spend, which is why the fallback is
+        the pessimistic one. Three separate cases land on it and all
+        three deserve it: a blocker halt, which exits `ks factory` before
+        any run directory exists so the decompose bill is nowhere on disk
+        to charge; an adapter that reports no usage; and a resume that
+        ran no architect at all. Naming the role keeps the day's total
+        labelled a floor rather than estimated (#186 F3).
+        """
+        return () if self.architect_calls > 0 else (ARCHITECT_ROLE,)
 
 
 def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
@@ -663,10 +688,12 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
         state, _source = load_run_state(root_dir, run_id)
     except OSError:
         return RunSpend()
+    architect = state.components.get(ARCHITECT_ROLE)
     return RunSpend(
         cost_usd=state.cost_usd,
         cost_calls=state.cost_calls,
         usage_calls=state.usage_calls,
+        architect_calls=architect.usage_calls if architect is not None else 0,
     )
 
 
@@ -714,6 +741,7 @@ def owned_run_spend(
             cost_usd=total.cost_usd + spend.cost_usd,
             cost_calls=total.cost_calls + spend.cost_calls,
             usage_calls=total.usage_calls + spend.usage_calls,
+            architect_calls=total.architect_calls + spend.architect_calls,
         )
     return owned, total
 
@@ -2218,25 +2246,14 @@ def serve_cycle(
     covered_calls = owned.cost_calls
     total_calls = owned.usage_calls
 
-    # The one statement of why the architect is unmetered HERE, which
-    # the docstrings above point at rather than restate.
-    #
-    # #257 gave decompose_spec a ComponentUsage event, but it reaches a
-    # run directory only when a bus is passed, and the `ks factory` this
-    # daemon spawns decomposes BEFORE any run directory exists, so it
-    # passes none. Nor does the kind filter above recover it from
-    # somewhere else: a `ks decompose` an operator ran by hand is a
-    # DIFFERENT spend, correctly excluded, not this run's architect.
-    # So the architect's spend here is still real and still invisible.
-    # Closing it needs the architect metered inside the factory run
-    # (#257 piece B). Until then, naming it keeps the day's total
-    # honestly labelled a floor instead of estimating it (#186 F3).
-    unmetered = ("architect",)
     charged = ledger.charge(
         total,
         covered_calls=covered_calls,
         total_calls=total_calls,
-        unmetered_phases=unmetered,
+        # Derived, not asserted: since #257 piece B the architect reaches
+        # the meter on a launch that executed, and `RunSpend` states what
+        # zero calls does and does not prove.
+        unmetered_phases=owned.unmetered_phases,
         metered_run=bool(owned_runs),
     )
     result.charged_usd = total

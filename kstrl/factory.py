@@ -2479,6 +2479,7 @@ def run_factory(
     stop: StopController | None = None,
     run_id: str | None = None,
     notify_capture_output: bool = False,
+    architect_usage: UsageTotals | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -2495,6 +2496,16 @@ def run_factory(
     Holds the run-level ``.kstrl/factory.lock`` flock for the whole run
     (R0.5, H-7); a contending invocation is refused with exit code 2
     unless it passes ``--force-lock``.
+
+    ``architect_usage`` is what the caller already spent ON THIS RUN's
+    behalf, before the run existed: `ks factory` decomposes the spec
+    itself and only then calls this (#257). Passing it is what makes
+    ``max_cost_usd`` bound the architect - see
+    :meth:`ComponentPipeline.record_architect_usage`. Named for the role
+    rather than generically, because the body records it as the
+    architect unconditionally: a second pre-run role would have to grow
+    the signature rather than quietly borrow this one's row. None for
+    every caller that resumes from a manifest, which ran no architect.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
@@ -2528,6 +2539,7 @@ def run_factory(
             stop=stop,
             run_id_override=run_id,
             notify_capture_output=notify_capture_output,
+            architect_usage=architect_usage,
         )
     finally:
         run_lock.release()
@@ -2545,6 +2557,7 @@ def _run_factory_locked(
     stop: StopController | None = None,
     run_id_override: str | None = None,
     notify_capture_output: bool = False,
+    architect_usage: UsageTotals | None = None,
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -2878,6 +2891,17 @@ def _run_factory_locked(
         fresh_base_retry_ids=fresh_base_retry_ids,
         component_failure_signatures=component_failure_signatures,
     )
+
+    # #257: the architect's spend, incurred by the caller before this run
+    # existed, enters the meter here. Deliberately the FIRST thing done
+    # to the pipeline, ahead of the preflights and the ceiling banner:
+    # the money is already gone, and every path from here that returns
+    # early - a failed preflight, a blown ceiling at the scheduling gate
+    # - must still leave it recorded in the run directory rather than
+    # reporting a run that cost nothing. The cost of that ordering is
+    # that a coverage warning about an unpriced architect prints just
+    # ahead of the "Cost ceiling" line rather than just after it.
+    pipeline.record_architect_usage(architect_usage)
 
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
     # Re-poll before scheduling so confirmed merges unblock dependents.
@@ -3454,12 +3478,12 @@ def _run_factory_locked(
         that a breaker retry later resolves. Non-fatal on I/O errors,
         matching EvolutionJournal.record_run.
         """
-        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
+        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
 
         # R2.1: honor [evolution] in kstrl.toml + env, resolved against
         # the factory root rather than whatever the process CWD is.
-        evo_config = EvolutionConfig.load(root_dir)
-        if not evo_config.enabled:
+        journal = EvolutionJournal.open(root_dir, warn=ui.warn)
+        if journal is None:
             return
         entry = {
             "schema_version": JOURNAL_SCHEMA_VERSION,
@@ -3476,9 +3500,7 @@ def _run_factory_locked(
             "duration_seconds": round(cr.duration_seconds, 2),
         }
         try:
-            evo_config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(evo_config.journal_path, "a") as f:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            journal.append_entries([entry])
         except OSError as exc:
             # Evolution recording is non-fatal, but never silent (R6.1).
             ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")

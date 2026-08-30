@@ -808,11 +808,20 @@ def commit_transition(
         "reason": record.reason,
         "evidence": record.evidence,
     }
+    # load_or_none, not load: a typo in an [evolution] knob raises
+    # ValueError, which this OSError guard does not catch, and the
+    # ladder would then fail to record a transition it has already
+    # SAVED - the exact drift this function exists to prevent.
+    config = EvolutionConfig.load_or_none(
+        root_dir,
+        warn=lambda message: warnings.warn(message, RuntimeWarning, stacklevel=2),
+    )
     try:
-        journal_path = EvolutionConfig.load(root_dir).journal_path
-        journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(journal_path, "a") as handle:
-            handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        if config is not None:
+            journal_path = config.journal_path
+            journal_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(journal_path, "a") as handle:
+                handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
     except OSError as exc:
         warnings.warn(
             f"autonomy: journal append failed (non-fatal): {exc}",
