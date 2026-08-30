@@ -166,4 +166,8 @@ ignore_names = ["cancel_futures"]
 # env value in a test asserting ValueError. Excetra is a project name.
 # unparseable and pre-empt are accepted spellings codespell dislikes.
 ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
-skip = "uv.lock,*/package-lock.json,.git"
+# tests/tool_output/ is captured tool output kept as evidence (#258).
+# pytest truncates its short-summary lines to the terminal width, which
+# cuts the exception name off mid-word - the very behaviour those
+# fixtures exist to pin. Spell-correcting a capture would falsify it.
+skip = "uv.lock,*/package-lock.json,.git,tests/tool_output/*"

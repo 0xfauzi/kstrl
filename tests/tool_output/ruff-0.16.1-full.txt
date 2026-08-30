@@ -1,0 +1,46 @@
+F401 [*] `os` imported but unused
+ --> draft.py:1:8
+  |
+1 | import os
+  |        ^^
+2 | import sys
+  |
+help: Remove unused import: `os`
+  |
+  - import os
+1 | import sys
+  |
+
+F401 [*] `sys` imported but unused
+ --> draft.py:2:8
+  |
+1 | import os
+2 | import sys
+  |        ^^^
+help: Remove unused import: `sys`
+  |
+1 | import os
+  - import sys
+2 |
+  |
+
+F841 Local variable `cache` is assigned to but never used
+ --> draft.py:6:5
+  |
+5 | def render(title, unused_arg):
+6 |     cache = 1
+  |     ^^^^^
+7 |     return f"<article>{title}</article>"
+  |
+help: Remove assignment to unused variable `cache`
+
+invalid-syntax: Expected `)`, found newline
+ --> loader.py:1:20
+  |
+1 | def load_draft(path
+  |                    ^
+2 |     return path
+  |
+
+Found 4 errors.
+[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

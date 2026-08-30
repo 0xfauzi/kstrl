@@ -8,6 +8,8 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
     CheckResult,
@@ -16,6 +18,7 @@ from kstrl.verify import (
     check_bad_patterns,
     check_dead_code,
     check_diff_scope,
+    check_linter,
     check_mutation_score,
     check_prd_stories,
     check_self_critique,
@@ -162,6 +165,38 @@ class TestCheckTestSuite:
 
         assert result.passed is False
         assert result.details[0].startswith("[pytest]")
+
+
+class TestLinterGateReadsRuffDefaults:
+    """#258 review: the lint gate could not read its own default command.
+
+    `DEFAULT_LINT_COMMAND` is `uv run ruff check .`, and ruff's default
+    output format has been `full` since 0.9. The parser read only
+    `--output-format=concise`, so the gate's primary parser returned
+    zero failures on the harness's own default invocation and the whole
+    retry detail was the `Found N errors.` footer.
+    """
+
+    def _run(self, tmp_path: Path, fixture: str) -> CheckResult:
+        raw = tool_output(fixture)
+        script = tmp_path / "fake_ruff.py"
+        script.write_text(f"import sys\nsys.stdout.write({raw!r})\nsys.exit(1)\n")
+        return check_linter(tmp_path, command=f"{sys.executable} {script}", timeout=30.0)
+
+    @pytest.mark.parametrize(
+        "fixture",
+        ["ruff-0.16.1-full.txt", "ruff-0.16.1-concise.txt"],
+        ids=["default-full", "concise"],
+    )
+    def test_the_gate_carries_file_line_and_rule(self, tmp_path: Path, fixture: str) -> None:
+        result = self._run(tmp_path, fixture)
+
+        assert result.passed is False
+        assert result.parsed is not None
+        assert result.parsed.tool == "ruff"
+        detail = "".join(result.details)
+        assert "draft.py:1 [F401]" in detail
+        assert "loader.py:1 [invalid-syntax]" in detail
 
 
 class TestCheckTypecheck:

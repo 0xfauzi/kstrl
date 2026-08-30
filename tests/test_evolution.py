@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
     EvolutionConfig,
@@ -393,6 +395,56 @@ class TestProposeImprovements:
         assert "S608" in proposals[0].title
         assert proposals[0].target == "claude_md"
         assert proposals[1].target == "feedforward_config"
+
+    # Every branch of propose_improvements, not just the two that named
+    # a toolchain. `check_name` is the GATE, which carries no toolchain
+    # at all now that each gate dispatches per project (#258), so a code
+    # in any of these can be a tsc TS-number or an eslint rule as easily
+    # as a mypy or ruff one.
+    @pytest.mark.parametrize(
+        ("check_name", "signature", "expected_target"),
+        [
+            ("linter", "no-unused-vars", "claude_md"),
+            ("typecheck", "TS2322", "typecheck_config"),
+            ("test_suite", "assertion-error", "feedforward_config"),
+            ("review", "scope_creep", "claude_md"),
+            ("security", "injection", "claude_md"),
+        ],
+    )
+    def test_proposals_name_no_toolchain(
+        self, check_name: str, signature: str, expected_target: str
+    ) -> None:
+        """#258 review: a TypeScript project was sent to edit a pyproject.toml.
+
+        save_proposals writes the target verbatim into the proposal file
+        as `**Target**: ...`, one line above the prose, so the field is
+        as visible to the reader as the sentences are and has to be as
+        neutral. The whole proposal is searched, not just the suggested
+        change, because a name in the description or the target ships
+        just as far.
+        """
+        config = EvolutionConfig()
+        journal = EvolutionJournal(config)
+        patterns = [
+            FailurePattern(
+                description=f"{check_name} failure '{signature}' in 3/5 components",
+                frequency=3,
+                total_components=5,
+                affected_components=["a", "b", "c"],
+                check_name=check_name,
+                error_signature=signature,
+                category="verification",
+            )
+        ]
+
+        proposal = journal.propose_improvements(patterns)[0]
+        written = " ".join(
+            [proposal.target, proposal.title, proposal.description, proposal.suggested_change]
+        )
+
+        assert proposal.target == expected_target
+        for toolchain in ("pyproject", "mypy", "pyright", "ruff", "flake8"):
+            assert toolchain not in written, f"{check_name} proposal names {toolchain}"
 
     def test_propose_improvements_empty(self) -> None:
         config = EvolutionConfig()

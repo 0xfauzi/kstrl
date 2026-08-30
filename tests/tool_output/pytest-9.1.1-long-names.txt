@@ -1,0 +1,72 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /repo
+collected 5 items
+
+test_drafts.py FFFFE                                                     [100%]
+
+==================================== ERRORS ====================================
+___________ ERROR at setup of test_uses_a_fixture_that_cannot_build ____________
+
+    @pytest.fixture
+    def broken_fixture() -> str:
+>       raise RuntimeError("the fixture could not build a draft")
+E       RuntimeError: the fixture could not build a draft
+
+test_drafts.py:16: RuntimeError
+=================================== FAILURES ===================================
+_____ test_counts_the_words_in_a_draft_title_and_keeps_the_original_casing _____
+
+    def test_counts_the_words_in_a_draft_title_and_keeps_the_original_casing() -> None:
+>       assert count_words("a short title") == 4
+E       AssertionError: assert 3 == 4
+E        +  where 3 = count_words('a short title')
+
+test_drafts.py:20: AssertionError
+______ TestDraftLoading.test_loads_a_draft_from_disk_when_the_path_exists ______
+
+self = <test_drafts.TestDraftLoading object at 0x1044b8e30>
+
+    def test_loads_a_draft_from_disk_when_the_path_exists(self) -> None:
+>       assert load_draft("index.md") == "# Index"
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+test_drafts.py:25:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = 'index.md'
+
+    def load_draft(path: str) -> str:
+>       raise FileNotFoundError(path)
+E       FileNotFoundError: index.md
+
+test_drafts.py:11: FileNotFoundError
+________________ test_every_title_has_exactly_one_word[a draft] ________________
+
+title = 'a draft'
+
+    @pytest.mark.parametrize("title", ["a draft", "another draft"])
+    def test_every_title_has_exactly_one_word(title: str) -> None:
+>       assert count_words(title) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = count_words('a draft')
+
+test_drafts.py:30: AssertionError
+_____________ test_every_title_has_exactly_one_word[another draft] _____________
+
+title = 'another draft'
+
+    @pytest.mark.parametrize("title", ["a draft", "another draft"])
+    def test_every_title_has_exactly_one_word(title: str) -> None:
+>       assert count_words(title) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = count_words('another draft')
+
+test_drafts.py:30: AssertionError
+=========================== short test summary info ============================
+FAILED test_drafts.py::test_counts_the_words_in_a_draft_title_and_keeps_the_original_casing
+FAILED test_drafts.py::TestDraftLoading::test_loads_a_draft_from_disk_when_the_path_exists
+FAILED test_drafts.py::test_every_title_has_exactly_one_word[a draft] - Asser...
+FAILED test_drafts.py::test_every_title_has_exactly_one_word[another draft]
+ERROR test_drafts.py::test_uses_a_fixture_that_cannot_build - RuntimeError: t...
+========================== 4 failed, 1 error in 0.01s ==========================

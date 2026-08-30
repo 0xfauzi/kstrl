@@ -193,7 +193,7 @@ class HarnessProposal:
     title: str
     description: str
     proposal_type: str  # "computational" or "inferential"
-    target: str  # what to change: "claude_md", "pyproject", "feedforward_config"
+    target: str  # what to change: "claude_md", "typecheck_config", "feedforward_config"
     suggested_change: str  # the actual proposed content/config change
     source_patterns: list[str]  # pattern descriptions that led to this proposal
 
@@ -824,7 +824,12 @@ class EvolutionJournal:
                             f"expected typing style."
                         ),
                         proposal_type="computational",
-                        target="pyproject",
+                        # Not "pyproject": save_proposals writes this
+                        # verbatim as "**Target**: ..." into the
+                        # proposal file, so a TypeScript project got a
+                        # proposal naming a file it does not have,
+                        # directly above prose that carefully did not.
+                        target="typecheck_config",
                         # Toolchain-neutral prose on purpose. The gate
                         # dispatches per project (#258), so this code can
                         # be a tsc TS-number as easily as a mypy code,

@@ -23,7 +23,13 @@ from kstrl.gateparse import (
     parse_gate_output,
     validate_tool,
 )
-from kstrl.parsers import parse_mypy_output, parse_pytest_output, parse_ruff_output, strip_ansi
+from kstrl.parsers import (
+    exception_code,
+    parse_mypy_output,
+    parse_pytest_output,
+    parse_ruff_output,
+    strip_ansi,
+)
 from kstrl.verify import CheckResult
 from tests.helpers.tool_output import tool_output
 
@@ -37,6 +43,19 @@ ESLINT_STYLISH = tool_output("eslint-8.57.1-stylish.txt")
 ESLINT_UNIX = tool_output("eslint-8.57.1-unix.txt")
 ESLINT_COMPACT = tool_output("eslint-8.57.1-compact.txt")
 ESLINT_9_STYLISH = tool_output("eslint-9.39.5-stylish.txt")
+RUFF_FULL = tool_output("ruff-0.16.1-full.txt")
+RUFF_CONCISE = tool_output("ruff-0.16.1-concise.txt")
+PYTEST_LONG_NAMES = tool_output("pytest-9.1.1-long-names.txt")
+PYTEST_CROSS_FILE = tool_output("pytest-9.1.1-raised-in-another-file.txt")
+
+# mypy needs no capture of its own: two lines is the whole format, and
+# the footer is the half that matters here, because tsc opens its own
+# with the same five words.
+MYPY_FAILURE = (
+    'a.py:2: error: Incompatible return value type (got "int", expected "str")'
+    "  [return-value]\n"
+    "Found 1 error in 1 file (checked 1 source file)\n"
+)
 
 
 class TestVitest:
@@ -182,6 +201,145 @@ class TestEslint:
         assert "prefer-const" in codes
 
 
+class TestRuff:
+    """The lint gate's PRIMARY parser, measured against ruff 0.16.1."""
+
+    @pytest.mark.parametrize("raw", [RUFF_CONCISE, RUFF_FULL], ids=["concise", "full"])
+    def test_both_output_formats_parse_identically(self, raw: str) -> None:
+        # `full` is ruff's DEFAULT since 0.9, so it is what kstrl's own
+        # DEFAULT_LINT_COMMAND (`uv run ruff check .`) produces, and it
+        # is two lines per diagnostic rather than one. Measured before
+        # the fix: 0 failures parsed, and the whole retry detail was
+        # `[uv run ruff check .] Found 4 errors.` The gate's primary
+        # parser could not read its own tool's default output.
+        parsed = parse_gate_output(raw, GATE_LINT)
+
+        # Messages are compared too, which is what pins that ruff's
+        # `[*]` autofix marker never reaches the engineer: it describes
+        # the fix, not the defect, and it sits between the rule and the
+        # message in both formats.
+        assert parsed.tool == "ruff"
+        assert [(f.file, f.line, f.code, f.message) for f in parsed.failures] == [
+            ("draft.py", 1, "F401", "`os` imported but unused"),
+            ("draft.py", 2, "F401", "`sys` imported but unused"),
+            ("draft.py", 6, "F841", "Local variable `cache` is assigned to but never used"),
+            ("loader.py", 1, "invalid-syntax", "Expected `)`, found newline"),
+        ]
+
+    @pytest.mark.parametrize("raw", [RUFF_CONCISE, RUFF_FULL], ids=["concise", "full"])
+    def test_a_syntax_error_keeps_its_file_and_line(self, raw: str) -> None:
+        # Ruff reports a file it cannot parse as `invalid-syntax`, with
+        # no rule code. Requiring a code-shaped rule slot dropped these
+        # entirely, which is the worst class to drop: a syntax error's
+        # file and line are the two things an agent cannot guess from
+        # the message.
+        syntax = [f for f in parse_gate_output(raw, GATE_LINT).failures if f.file == "loader.py"]
+
+        assert len(syntax) == 1
+        assert (syntax[0].line, syntax[0].code) == (1, "invalid-syntax")
+        assert syntax[0].message == "Expected `)`, found newline"
+
+    def test_the_two_formats_do_not_double_count_each_other(self) -> None:
+        # The parser runs a concise pass and a full pass over the same
+        # text. Neither format contains the other's shape, so a repo
+        # that somehow emitted both would still count each once.
+        assert len(parse_gate_output(RUFF_CONCISE + RUFF_FULL, GATE_LINT).failures) == 8
+
+
+class TestPytestTracebacks:
+    """The summary line alone cannot carry the failure (#258 review)."""
+
+    def test_long_test_names_still_yield_a_code_and_a_line(self) -> None:
+        # pytest truncates the short summary to the terminal width, 80
+        # columns under a pipe, and truncates the MESSAGE first. In this
+        # captured run two of five failures carry no message at all and
+        # one carries `AssertionErro...`, so reading the summary alone
+        # made the evolution signature depend on how long somebody had
+        # made the test name. The traceback block has it untruncated.
+        parsed = parse_gate_output(PYTEST_LONG_NAMES, GATE_TEST)
+
+        assert parsed.tool == "pytest"
+        assert [(f.line, f.code) for f in parsed.failures] == [
+            (20, "assertion-error"),
+            (11, "file-not-found-error"),
+            (30, "assertion-error"),
+            (30, "assertion-error"),
+            (16, "runtime-error"),
+        ]
+
+    def test_a_parametrized_id_with_spaces_parses(self) -> None:
+        # `FAILED f.py::test_x[a draft] - ...` did not match at all: the
+        # test id was `[^\s]+`. Every parametrized failure whose id
+        # contained a space was dropped from the parse in silence.
+        tests = [f.rule_or_test for f in parse_gate_output(PYTEST_LONG_NAMES, GATE_TEST).failures]
+        assert "test_every_title_has_exactly_one_word[a draft]" in tests
+
+    def test_a_class_based_test_is_matched_to_its_block(self) -> None:
+        # The short summary spells it `TestClass::test_method` and the
+        # traceback header spells it `TestClass.test_method`.
+        failure = next(
+            f
+            for f in parse_gate_output(PYTEST_LONG_NAMES, GATE_TEST).failures
+            if f.rule_or_test.startswith("TestDraftLoading")
+        )
+        assert (failure.line, failure.message) == (11, "FileNotFoundError: index.md")
+
+    def test_a_setup_error_is_matched_to_its_block(self) -> None:
+        # Its block header reads `ERROR at setup of <name>`.
+        failure = next(
+            f
+            for f in parse_gate_output(PYTEST_LONG_NAMES, GATE_TEST).failures
+            if f.rule_or_test == "test_uses_a_fixture_that_cannot_build"
+        )
+        assert failure.code == "runtime-error"
+
+    def test_file_and_line_come_from_the_same_frame(self) -> None:
+        # The summary names the file the TEST lives in; the traceback
+        # names the file the exception was RAISED in. Taking the line
+        # from one and the file from the other produced `test_cross.py:17`
+        # for a 7-line test file, and add_source_context would have
+        # printed whatever sat at line 17 of some longer file. The
+        # raising frame is also the better instruction.
+        parsed = parse_gate_output(PYTEST_CROSS_FILE, GATE_TEST)
+
+        assert len(parsed.failures) == 1
+        failure = parsed.failures[0]
+        assert (failure.file, failure.line) == ("loader.py", 17)
+        assert failure.rule_or_test == "test_loads_a_draft_from_a_helper_module_in_another_file"
+        assert failure.code == "file-not-found-error"
+
+    def test_a_summary_with_no_traceback_keeps_what_it_had(self) -> None:
+        # Nothing is fabricated when the block is absent: `--tb=no` and
+        # `-q` runs still parse, with line 0 as before.
+        raw = (
+            "=========================== short test summary info ============================\n"
+            "FAILED tests/test_a.py::test_x - AssertionError: nope\n"
+            "========================= 1 failed in 0.10s ==========================\n"
+        )
+        parsed = parse_gate_output(raw, GATE_TEST)
+
+        assert len(parsed.failures) == 1
+        assert parsed.failures[0].line == 0
+        assert parsed.failures[0].code == "assertion-error"
+
+
+class TestExceptionCode:
+    """A bare `Error:` is the commonest shape in JavaScript."""
+
+    def test_a_bare_error_yields_a_code(self) -> None:
+        # The class-name prefix used to be mandatory, so `Error` itself
+        # could not match. That is every vitest suite-load failure and
+        # every plain `throw new Error(...)`.
+        assert exception_code("Error: Failed to load url ../src/x") == "error"
+
+    def test_the_vitest_suite_load_fixture_carries_a_code(self) -> None:
+        parsed = parse_gate_output(VITEST_SUITE_ERROR, GATE_TEST)
+        assert [f.code for f in parsed.failures] == ["error"]
+
+    def test_a_word_merely_starting_with_error_is_not_a_code(self) -> None:
+        assert exception_code("Errors were found in the config") == ""
+
+
 class TestAutoDispatch:
     """Unset `tool` means: run every parser for the gate, union the result."""
 
@@ -257,30 +415,57 @@ class TestParserContract:
         assert parsed.failures == []
         assert parsed.raw_summary != ""
 
-    @pytest.mark.parametrize(
-        ("gate", "owner", "raw"),
-        [
-            (GATE_TEST, "pytest", PYTEST_FAILURES),
-            (GATE_TEST, "vitest", VITEST_FAILURES),
-            (GATE_TEST, "vitest", VITEST_SUITE_ERROR),
-            (GATE_TYPECHECK, "tsc", TSC_PLAIN),
-            (GATE_TYPECHECK, "tsc", TSC_PRETTY),
-            (GATE_LINT, "eslint", ESLINT_STYLISH),
-            (GATE_LINT, "eslint", ESLINT_UNIX),
-            (GATE_LINT, "eslint", ESLINT_COMPACT),
-            (GATE_LINT, "eslint", ESLINT_9_STYLISH),
-        ],
-    )
+    # Every parser of every gate appears as an owner, so the loop below
+    # also asserts the negative for each of its gate-mates. The earlier
+    # version listed only pytest, vitest, tsc and eslint, which left
+    # "eslint does not claim ruff output" and "tsc does not claim mypy
+    # output" asserted nowhere. The second of those was in fact broken.
+    _OWNED = [
+        (GATE_TEST, "pytest", PYTEST_FAILURES),
+        (GATE_TEST, "pytest", PYTEST_LONG_NAMES),
+        (GATE_TEST, "vitest", VITEST_FAILURES),
+        (GATE_TEST, "vitest", VITEST_SUITE_ERROR),
+        (GATE_TYPECHECK, "mypy", MYPY_FAILURE),
+        (GATE_TYPECHECK, "tsc", TSC_PLAIN),
+        (GATE_TYPECHECK, "tsc", TSC_PRETTY),
+        (GATE_LINT, "ruff", RUFF_CONCISE),
+        (GATE_LINT, "ruff", RUFF_FULL),
+        (GATE_LINT, "eslint", ESLINT_STYLISH),
+        (GATE_LINT, "eslint", ESLINT_UNIX),
+        (GATE_LINT, "eslint", ESLINT_COMPACT),
+        (GATE_LINT, "eslint", ESLINT_9_STYLISH),
+    ]
+
+    @pytest.mark.parametrize(("gate", "owner", "raw"), _OWNED)
     def test_only_the_owning_parser_claims_a_fixture(self, gate: str, owner: str, raw: str) -> None:
         # `_union` concatenates without deduplicating, so two parsers
         # matching the same line double the failures the engineer sees
-        # and double total_errors, on the DEFAULT path. That invariant
-        # is currently held by one hand-tightened regex (ruff's rule
-        # slot); this is what says so out loud, for every pair.
+        # and double total_errors, on the DEFAULT path.
         for name in GATE_TOOLS[gate]:
             found = TOOL_PARSERS[name](strip_ansi(raw)).failures
             assert (found != []) is (name == owner), (
                 f"{name} should {'' if name == owner else 'not '}claim this fixture"
+            )
+
+    @pytest.mark.parametrize(("gate", "owner", "raw"), _OWNED)
+    def test_a_foreign_parser_claims_no_summary_either(
+        self, gate: str, owner: str, raw: str
+    ) -> None:
+        # The failures check above does not cover this, and it is not
+        # harmless: `_union` joins every non-empty summary, so a footer
+        # two parsers both claim reaches the engineer TWICE. Measured on
+        # a chained `mypy && tsc` gate, where tsc's `^Found \d+ error`
+        # also matched mypy's footer, and tsc's own count went missing.
+        #
+        # A parser that understood nothing is still allowed its raw tail
+        # fallback, which is several lines; what it may not do is single
+        # out one line of another tool's output and call it a summary.
+        for name in GATE_TOOLS[gate]:
+            if name == owner:
+                continue
+            summary = TOOL_PARSERS[name](strip_ansi(raw)).raw_summary
+            assert "\n" in summary or summary == "", (
+                f"{name} claimed a single line of {owner} output as its summary: {summary!r}"
             )
 
 
@@ -356,6 +541,22 @@ class TestEvolutionSignatures:
         sigs = self._signatures(PYTEST_FAILURES + VITEST_FAILURES, GATE_TEST, "test_suite")
         assert sigs == ["test_suite:assertion-error"]
         assert not any("failed" in s.split(":", 1)[1] for s in sigs)
+
+    def test_a_syntax_error_signs_as_itself(self) -> None:
+        # `invalid-syntax` reaching the journal at all depends on the
+        # ruff rule slot accepting a non-code diagnostic.
+        assert "linter:invalid-syntax" in self._signatures(RUFF_FULL, GATE_LINT, "linter")
+
+    def test_long_test_names_do_not_change_the_signature(self) -> None:
+        # The whole point of reading the traceback: two runs of the same
+        # suite must sign the same way whatever the tests are called.
+        # Before, a name long enough to truncate the summary line left
+        # the code empty and the signature fell back to a prose slug.
+        assert self._signatures(PYTEST_LONG_NAMES, GATE_TEST, "test_suite") == [
+            "test_suite:assertion-error",
+            "test_suite:file-not-found-error",
+            "test_suite:runtime-error",
+        ]
 
     def test_a_gate_no_parser_read_still_produces_a_signature(self) -> None:
         # No codes means the message slug, which is the pre-existing

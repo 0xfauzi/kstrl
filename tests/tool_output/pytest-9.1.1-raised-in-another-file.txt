@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /repo
+collected 1 item
+
+test_cross.py F                                                          [100%]
+
+=================================== FAILURES ===================================
+___________ test_loads_a_draft_from_a_helper_module_in_another_file ____________
+
+    def test_loads_a_draft_from_a_helper_module_in_another_file() -> None:
+>       assert load_draft("index.md") == "# Index"
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+test_cross.py:7:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = 'index.md'
+
+    def load_draft(path: str) -> str:
+>       raise FileNotFoundError(path)
+E       FileNotFoundError: index.md
+
+loader.py:17: FileNotFoundError
+=========================== short test summary info ============================
+FAILED test_cross.py::test_loads_a_draft_from_a_helper_module_in_another_file
+============================== 1 failed in 0.01s ===============================

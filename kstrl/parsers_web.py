@@ -172,7 +172,22 @@ _TSC_PRETTY_RE = re.compile(
 )
 
 # --pretty only; the piped form prints no footer at all.
-_TSC_SUMMARY_RE = re.compile(r"^Found\s+\d+\s+error")
+#
+# Matched POSITIVELY against tsc's three measured tails rather than by
+# the leading `Found N error`, because mypy's footer opens with the same
+# five words and the two share the typecheck gate:
+#
+#   tsc   Found 3 errors in 2 files.
+#   tsc   Found 2 errors in the same file, starting at: src/only.ts:6
+#   tsc   Found 1 error in src/only.ts:2
+#   mypy  Found 1 error in 1 file (checked 1 source file)
+#
+# Measured on a chained `mypy && tsc` gate, the loose pattern had the
+# tsc parser claim mypy's footer, so the unioned raw_summary carried it
+# TWICE and tsc's own count not at all.
+_TSC_SUMMARY_RE = re.compile(
+    r"^Found\s+\d+\s+errors?\s+in\s+(?:\d+\s+files?\.$|the\s+same\s+file,|\S+:\d+$)"
+)
 
 
 def parse_tsc_output(raw: str) -> ParsedOutput:

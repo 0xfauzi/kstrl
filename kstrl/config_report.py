@@ -187,26 +187,16 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "keep_worktrees_on_failure",
             ],
         ),
-        (
-            "verify",
-            VerifyConfig.load,
-            [
-                "test_command",
-                "typecheck_command",
-                "lint_command",
-                "check_diff_scope",
-                "check_bad_patterns",
-                "dead_code_cleanup",
-                "dead_code_command",
-                "mutation_testing",
-                "mutation_threshold",
-                "mutation_timeout",
-                "subprocess_timeout",
-                "require_self_critique",
-                "self_critique_min_bullets",
-                "progress_file_path",
-            ],
-        ),
+        # Derived, not hand-listed. The hand-written copy of this list
+        # went stale the moment #258 added the three `*_tool` keys: they
+        # reached VerifyConfig, gen_docs, the README and env-vars.md and
+        # not this list, so `ks config` and the config screen showed no
+        # row for the one setting an operator reaches for when a gate is
+        # parsed by the wrong toolchain. Every scalar field of
+        # VerifyConfig IS a documented kstrl.toml key, which gen_docs
+        # already enforces, so the field list is the key list and a
+        # second copy of it can only ever be wrong.
+        ("verify", VerifyConfig.load, [f.name for f in dataclass_fields(VerifyConfig)]),
         (
             "security",
             SecurityConfig.load,
@@ -287,6 +277,67 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
     ]
 
 
+def _base_sources(
+    resolved: KstrlConfig, noenv: KstrlConfig, defaults: KstrlConfig
+) -> dict[str, str]:
+    """Per-field source for KstrlConfig, computed BEFORE the flag overlay.
+
+    A flag replaces whatever source the value had, so it has to be
+    applied after this, not folded into it.
+    """
+    sources: dict[str, str] = {}
+    for f in dataclass_fields(KstrlConfig):
+        if getattr(resolved, f.name) != getattr(noenv, f.name):
+            sources[f.name] = "env"
+        elif getattr(noenv, f.name) != getattr(defaults, f.name):
+            sources[f.name] = "toml"
+        else:
+            sources[f.name] = "default"
+    return sources
+
+
+def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow]:
+    """Rows for the sections KstrlConfig fans out over."""
+    return [
+        ConfigRow(
+            section=section,
+            key=toml_key,
+            value=format_row_value(section, toml_key, getattr(resolved, field_name)),
+            source=sources[field_name],
+        )
+        for section, keys in SHOW_SECTIONS
+        for toml_key, field_name in keys
+    ]
+
+
+def _phase_rows(
+    section: str,
+    knob_fields: list[str],
+    resolved: Any,
+    noenv: Any,
+    toml_keys: set[str],
+) -> list[ConfigRow]:
+    """Rows for one phase config, each tagged with where its value came from."""
+    rows: list[ConfigRow] = []
+    for field_name in knob_fields:
+        value = getattr(resolved, field_name)
+        if value != getattr(noenv, field_name):
+            source = "env"
+        elif field_name in toml_keys:
+            source = "toml"
+        else:
+            source = "default"
+        rows.append(
+            ConfigRow(
+                section=section,
+                key=field_name,
+                value=format_config_value(value),
+                source=source,
+            )
+        )
+    return rows
+
+
 def build_config_report(
     root_dir: Path,
     *,
@@ -313,57 +364,23 @@ def build_config_report(
 
     defaults_base = kstrl_config_defaults(root_dir)
 
-    # Per-field sources for KstrlConfig, computed BEFORE the flag
-    # overlay (a flag replaces whatever source the value had).
-    base_sources: dict[str, str] = {}
-    for f in dataclass_fields(KstrlConfig):
-        if getattr(resolved_base, f.name) != getattr(noenv_base, f.name):
-            base_sources[f.name] = "env"
-        elif getattr(noenv_base, f.name) != getattr(defaults_base, f.name):
-            base_sources[f.name] = "toml"
-        else:
-            base_sources[f.name] = "default"
-
+    base_sources = _base_sources(resolved_base, noenv_base, defaults_base)
     if overlay is not None:
         for name in overlay(resolved_base):
             base_sources[name] = "flag"
     resolved_base.ui_mode = normalize_ui_mode(resolved_base.ui_mode)
 
-    rows: list[ConfigRow] = []
-    for section, keys in SHOW_SECTIONS:
-        for toml_key, field_name in keys:
-            rows.append(
-                ConfigRow(
-                    section=section,
-                    key=toml_key,
-                    value=format_row_value(
-                        section,
-                        toml_key,
-                        getattr(resolved_base, field_name),
-                    ),
-                    source=base_sources[field_name],
-                )
-            )
+    rows = _base_rows(resolved_base, base_sources)
     for section, _, knob_fields in phase_sections:
-        resolved = phase_resolved[section]
-        noenv = phase_noenv[section]
-        toml_keys = phase_toml_keys[section]
-        for field_name in knob_fields:
-            value = getattr(resolved, field_name)
-            if value != getattr(noenv, field_name):
-                source = "env"
-            elif field_name in toml_keys:
-                source = "toml"
-            else:
-                source = "default"
-            rows.append(
-                ConfigRow(
-                    section=section,
-                    key=field_name,
-                    value=format_config_value(value),
-                    source=source,
-                )
+        rows.extend(
+            _phase_rows(
+                section,
+                knob_fields,
+                phase_resolved[section],
+                phase_noenv[section],
+                phase_toml_keys[section],
             )
+        )
 
     return ConfigReport(
         root_dir=root_dir,
