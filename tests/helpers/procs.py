@@ -34,6 +34,11 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
+from kstrl import procgroup
+from kstrl.procgroup import read_group_liveness
+
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
     """The pid a fake agent wrote, waiting out the write.
@@ -57,62 +62,52 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
 def group_has_live_member(pgid: int) -> bool:
     """Whether any non-zombie process is still in process group ``pgid``.
 
-    A zombie has already died and is only waiting to be reaped, so it is
-    not an orphan and must not count as one. This is NOT
-    ``os.killpg(pgid, 0)``: measured while writing #292, with the
-    parent alive and not yet reaping, that call reported a SIGKILLed
-    group as present for the whole 6s observation window and never
-    converged, because a zombie stays signalable. Building a wait loop on
-    it would trade a machine-state flake for a reap-timing one.
+    The reading, and the evidence for why it is not ``os.killpg(pgid, 0)``
+    and why absence needs a control, lives in ``kstrl.procgroup``. #298
+    centralised it: two copies of one ``ps`` parse with slightly
+    different failure handling is how the suite's answer and the daemon's
+    drift apart.
 
-    Only the two columns the question needs are requested. Asking ``ps``
-    for command lines as well measured 23.5ms per call against 11.6ms for
-    this on a 895-process machine, and this runs inside a poll loop.
-
-    RAISES rather than reports absence when it cannot see. A helper that
-    answers "nothing is there" because ``ps`` failed is the same defect
-    #292 exists to remove, one level down: measured with ``ps`` forced to
-    return 127, this reported the caller's OWN live process group as dead
-    and ``wait_for_group_to_die`` returned True, so the orphan assertion
-    would have passed having measured nothing. ``ps`` is absent or
-    restricted often enough to matter, on ``hidepid`` mounts and in
-    minimal containers.
-
-    So absence is only ever reported by a call that proved it can see
-    something: the caller's own process group is alive by construction,
-    and if that is missing from the output the output is not evidence.
+    What stays HERE is the POLICY, because it is the opposite of the
+    daemon's. This RAISES when it cannot see, where
+    ``serve.process_group_alive`` degrades. A test that answers "nothing
+    is there" because ``ps`` failed has measured nothing and passed,
+    which is the #292 defect one level down; a daemon that raises over a
+    diagnostic stops doing its job. A test has nothing to protect.
     """
-    out = subprocess.run(
-        ["ps", "-A", "-o", "pgid=,stat="],
-        capture_output=True,
-        text=True,
-    )
-    if out.returncode != 0:
-        raise AssertionError(
-            f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. "
-            f"Process-group liveness cannot be measured here, and "
-            f"reporting 'no live member' would be a false negative."
+    liveness = read_group_liveness(pgid)
+    if liveness.live is None:
+        raise AssertionError(liveness.reason)
+    return liveness.live
+
+
+def fake_ps(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+    raises: BaseException | None = None,
+) -> None:
+    """Make ``kstrl.procgroup``'s ``ps`` return this, or raise this.
+
+    One patch target in one place. Before #298 the fake was hand-rolled
+    at six call sites across two files, and rewiring them when the
+    reading moved is what showed the cost: a site missed keeps passing
+    while measuring nothing, which is exactly what #292 exists to stop.
+    """
+
+    def fake(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if raises is not None:
+            raise raises
+        return subprocess.CompletedProcess(
+            args=list(procgroup.PS_ARGV),
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
         )
 
-    ours = str(os.getpgrp())
-    saw_own_group = False
-    found = False
-    for line in out.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        if parts[0] == ours:
-            saw_own_group = True
-        if parts[0] == str(pgid) and not parts[1].startswith("Z"):
-            found = True
-
-    if not saw_own_group:
-        raise AssertionError(
-            f"ps did not report this process's own group ({ours}), so it "
-            f"cannot be trusted to report the absence of group {pgid}. "
-            f"Restricted or filtered ps output."
-        )
-    return found
+    monkeypatch.setattr(procgroup.subprocess, "run", fake)
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:

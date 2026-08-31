@@ -607,13 +607,17 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
         nothing reaps, so a test built on it would hang to its deadline
         on every run where the pool worker is slow.
 
-        The assertion on `process_group_alive` is deliberately pinning a
-        FLAW, not a contract. `serve.terminate_process_group` uses it to
-        decide whether a run was reaped, so it inherits the blind spot;
-        that is a production issue of its own and out of #292's scope,
-        but if somebody fixes it this test should start failing and be
-        turned into the ordinary assertion.
+        The assertion on `process_group_alive` USED to pin a flaw: #292
+        left the production check on the killpg spelling and this test
+        asserted True so that whoever fixed it would see the coupling.
+        #298 fixed it, so it now asserts the contract. What keeps that
+        assertion honest is `signal_probe_alive` on the line above it:
+        the old spelling, on the same group at the same moment, still
+        reports the group as present. Without that control, a False here
+        could mean the zombie had simply been reaped and the test would
+        have measured nothing.
         """
+        from kstrl.procgroup import signal_probe_alive
         from kstrl.serve import process_group_alive
 
         parent = subprocess.Popen(
@@ -638,9 +642,15 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
                 "a reaped-pending zombie was counted as a live member"
             )
 
-            # The primitive this check exists instead of, on the same
-            # group at the same moment, still saying it is alive.
-            assert process_group_alive(pgid) is True
+            # The control: this really is the zombie window, not a group
+            # that quietly went away. The primitive production used
+            # before #298 still reports it as present.
+            assert signal_probe_alive(pgid) is True, (
+                "the zombie was already reaped, so the assertion below would prove nothing"
+            )
+            assert process_group_alive(pgid) is False, (
+                "a reaped-pending zombie must not count as a live member"
+            )
         finally:
             parent.kill()
             parent.wait(timeout=10)

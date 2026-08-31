@@ -59,6 +59,7 @@ import socket
 import subprocess
 import sys
 import time
+import warnings
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -69,6 +70,7 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
+from kstrl.procgroup import read_group_liveness, signal_probe_alive
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -1520,16 +1522,42 @@ def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
 
 
 def process_group_alive(pgid: int) -> bool:
-    """Whether any process remains in ``pgid``."""
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    """Whether any RUNNING process remains in ``pgid``.
+
+    A zombie does not count. It has already died and is only waiting to
+    be reaped, so a caller asking "may a factory still be writing to this
+    repo" is answered No by it, and a signal probe answers Yes (#298; the
+    reasoning and the measurements are in ``kstrl.procgroup``).
+
+    FAIL DIRECTION when ``ps`` cannot be trusted: fall back to the signal
+    probe, which is the pre-#298 behaviour. That is a deliberate choice
+    between three options and not a default. Raising would take the
+    daemon down over a diagnostic. Reporting "alive" unconditionally is
+    the conservative direction for the one caller, but on a machine with
+    no ``ps`` it makes EVERY timed-out run unreapable and therefore
+    poisoned, which trades a rare wrong answer for a permanent one. The
+    probe is right whenever the group is genuinely gone, which is the
+    common case, and its only error is over-reporting alive - the safe
+    direction for ``terminate_process_group``, which then declines to
+    call the run reaped. So the degraded path is no worse than what this
+    function did everywhere before, and the ``ps`` path is exact.
+
+    The degrade WARNS rather than passing silently. Without it the two
+    answers are indistinguishable downstream: a run poisoned with "its
+    process group could not be confirmed reaped, so a factory may still
+    be executing against this repo" would be a misdiagnosis when the real
+    cause was an unreadable ``ps``, and nothing would say so.
+    """
+    liveness = read_group_liveness(pgid)
+    if liveness.live is not None:
+        return liveness.live
+    warnings.warn(
+        f"kstrl: {liveness.reason} Falling back to a signal probe, which "
+        f"counts an unreaped zombie as alive, so group {pgid} may be "
+        f"reported as running when nothing in it is.",
+        stacklevel=2,
+    )
+    return signal_probe_alive(pgid)
 
 
 # ---------------------------------------------------------------------------

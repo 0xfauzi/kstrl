@@ -15,6 +15,7 @@ would cost dollars per assertion at a measured $1.70-2.60 per iteration.
 from __future__ import annotations
 
 import os
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -73,6 +74,7 @@ from kstrl.workqueue import (
     Queue,
     QueueConfig,
 )
+from tests.helpers import procs
 
 # --------------------------------------------------------------------------
 # helpers
@@ -1885,9 +1887,12 @@ class TestProcessGroupSupervision:
         signalled: list[tuple[int, int]] = []
 
         def recording_killpg(target: int, sig: int) -> None:
-            # signal 0 is the liveness PROBE, not a kill; counting it
-            # would let "never signal the group" pass, since the probe
-            # runs either way.
+            # signal 0 is a liveness PROBE, not a kill; counting it would
+            # let "never signal the group" pass, since a probe runs
+            # either way. Since #298 the probe lives in kstrl.procgroup
+            # and cannot reach this patch at all, but the filter stays:
+            # it states the rule rather than relying on where the probe
+            # currently happens to live.
             if sig != 0:
                 signalled.append((target, sig))
             real_killpg(target, sig)
@@ -1964,6 +1969,101 @@ class TestProcessGroupSupervision:
         adopted = [e for e in queue.journal_entries() if e["reason"].startswith("lease adopted")]
         assert adopted, "the child pid must be recorded as the lease owner"
         assert adopted[0]["detail"]["lease_pid"] == 424242
+
+
+class TestGroupLivenessDegradesRatherThanGuessing:
+    """#298: what `process_group_alive` does when `ps` gives no answer.
+
+    Only the POLICY is here. The reading's tri-state and its parse are
+    pinned in `tests/test_procgroup.py`, and the zombie case itself needs
+    a real unreaped tree and lives in
+    `tests/test_shutdown.py::test_a_zombie_does_not_count_as_a_live_member`.
+    What this class covers is the fallback that #298 introduced, which
+    would otherwise ship untested: `ps` is normally present and normally
+    works, so nothing else exercises the degraded path.
+
+    Why degrading rather than raising or reporting a blanket "alive" is
+    argued in `process_group_alive`'s docstring.
+    """
+
+    #: Every way `ps` can give no answer, and the id says which is which.
+    #: The assertion is the same for all four because the contract is:
+    #: whatever went wrong, fall back rather than guess.
+    BLIND_PS = [
+        pytest.param({"returncode": 127, "stderr": "ps: not found"}, id="nonzero_exit"),
+        pytest.param({"raises": FileNotFoundError(2, "no ps")}, id="binary_absent"),
+        pytest.param(
+            # TimeoutExpired is a SubprocessError, not an OSError, so it
+            # takes a different branch from the one above.
+            {"raises": subprocess.TimeoutExpired(cmd=["ps"], timeout=5.0)},
+            id="wedged",
+        ),
+        # rc=0 but our own group hidden, which is what hidepid looks like.
+        pytest.param({"stdout": "    1 Ss\n"}, id="filtered_output"),
+    ]
+
+    @pytest.mark.parametrize("blind", BLIND_PS)
+    def test_a_blind_ps_falls_back_to_the_signal_probe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        blind: dict[str, object],
+    ) -> None:
+        """Positive control: the fallback must still see a live group."""
+        procs.fake_ps(monkeypatch, **blind)  # type: ignore[arg-type]
+        with pytest.warns(UserWarning, match="signal probe"):
+            assert process_group_alive(os.getpgrp()) is True
+
+    def test_the_fallback_still_reports_a_group_that_is_really_gone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The guard must not make absence unreportable, which would
+        poison every timed-out run on a machine with no `ps`."""
+        child = subprocess.Popen(
+            ["sleep", "30"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        pgid = os.getpgid(child.pid)
+        procs.kill_group(pgid)
+        child.wait(timeout=10)
+
+        procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
+        with pytest.warns(UserWarning):
+            assert process_group_alive(pgid) is False
+
+    def test_the_degrade_is_recorded_rather_than_silent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`terminate_process_group` turns this answer into a poison
+        reason blaming a possibly-live factory. When the real cause was
+        an unreadable `ps` that reason is a misdiagnosis, so the warning
+        has to carry what went wrong, not just that something did."""
+        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
+        with pytest.warns(UserWarning) as caught:
+            process_group_alive(os.getpgrp())
+        message = str(caught[0].message)
+        assert "ps failed" in message, "the operator must learn ps was the cause"
+        assert "zombie" in message, "and which way the fallback is wrong"
+
+    def test_a_working_ps_is_the_answer_and_the_probe_is_not_consulted(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Ordering, so a later edit cannot quietly restore the probe as
+        the primary and reintroduce #298. A negative pre-filter on
+        `killpg` ESRCH was measured and declined; if it is ever adopted,
+        this becomes "a probe that says maybe does not decide"."""
+        calls: list[int] = []
+
+        def recording_killpg(target: int, sig: int) -> None:
+            calls.append(sig)
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", recording_killpg)
+        assert process_group_alive(os.getpgrp()) is True
+        assert calls == [], "the signal probe is the fallback, not the answer"
 
 
 class TestRunOwnership:

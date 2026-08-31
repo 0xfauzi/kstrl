@@ -191,6 +191,12 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
 
     Why absence is only reportable by a call that proved it can see
     something is argued in ``tests/helpers/procs.py``. These pin it.
+
+    The reading moved to ``kstrl.procgroup`` in #298, so the ``ps``
+    double is ``procs.fake_ps``. What is under test here is still the
+    helper's POLICY: a test that cannot see must fail. The daemon on
+    the same reading degrades instead, which ``tests/test_serve.py``
+    pins.
     """
 
     def test_it_sees_its_own_process_group(self) -> None:
@@ -201,12 +207,7 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
     def test_a_failing_ps_raises_instead_of_reporting_absence(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def broken(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess(
-                args=["ps"], returncode=127, stdout="", stderr="ps: command not found"
-            )
-
-        monkeypatch.setattr(procs.subprocess, "run", broken)
+        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
         with pytest.raises(AssertionError, match="ps failed"):
             procs.group_has_live_member(os.getpgrp())
 
@@ -216,12 +217,7 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
         """rc=0 but our own processes hidden, which is what a ``hidepid``
         mount looks like. Exit status alone is not enough."""
 
-        def filtered(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess(
-                args=["ps"], returncode=0, stdout="    1 Ss\n  517 Ss\n", stderr=""
-            )
-
-        monkeypatch.setattr(procs.subprocess, "run", filtered)
+        procs.fake_ps(monkeypatch, stdout="    1 Ss\n  517 Ss\n")
         with pytest.raises(AssertionError, match="own group"):
             procs.group_has_live_member(os.getpgrp())
 
@@ -232,12 +228,7 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
         guard has to survive it rather than being swallowed by the poll
         loop."""
 
-        def broken(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess(
-                args=["ps"], returncode=127, stdout="", stderr="boom"
-            )
-
-        monkeypatch.setattr(procs.subprocess, "run", broken)
+        procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
         with pytest.raises(AssertionError, match="ps failed"):
             procs.wait_for_group_to_die(os.getpgrp(), timeout=1.0)
 
