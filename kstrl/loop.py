@@ -439,14 +439,35 @@ def build_project_context(
     gate will run in. There is no second copy for the agent to read, so
     it cannot be told a command the gate will not run.
 
-    ``verify_config`` is the config Phase 1 will run with, and ``None``
-    means NO mechanical gate runs for this invocation, so no commands are
-    stated. None is the default on purpose: `ks understand` and
-    `ks feature` call ``run_loop`` directly and run no verification at
-    all, so a default that assumed a gate told a read-only mapping run to
-    execute the whole test suite on every pass. Only a caller that can
-    name the gate it will run gets to make the claim, and the factory
-    passes the exact object ``pipeline._phase_verify`` reads.
+    ``verify_config`` is the config the checks will run with, and
+    ``None`` means NOTHING runs them for this invocation, so no commands
+    are stated. None is the default on purpose: a default that assumed a
+    gate told a read-only mapping run to execute the whole test suite on
+    every pass. Only a caller that can name what it will run gets to make
+    the claim.
+
+    Who names one, as of #288:
+
+    - ``pipeline._phase_verify`` (the factory) passes the exact object
+      its gate reads. It HALTS on a failure.
+    - ``feature_cmd`` passes the object its report reads, to the
+      implement and repair loops only. It does NOT halt: a failing check
+      is reported and the flow proceeds. So the commands the block names
+      are exactly the commands that run, which is #261's whole claim, but
+      ``verify.VERIFY_COMMANDS_PROMPT``'s word "gate" overstates the
+      consequence on that path. Correcting the wording is an H3 prompt
+      change (version bump, snapshot move, calibration re-run) and is
+      tracked rather than done here.
+    - ``ks understand``, and ``ks feature``'s understand loop, still pass
+      None. Nothing checks an understand file, so None is still true
+      there.
+
+    Note the second effect of passing one: ``scrub_project_claude_md``
+    below only runs when there ARE resolved commands, so a caller that
+    starts naming its checks also starts having pre-#261 CLAUDE.md
+    verification bullets dropped from the prompt copy, with a ui.warn
+    each. That is the intended #261 behaviour, and it never writes to the
+    file on disk.
     """
     commands = resolve_verify_commands(verify_config, cwd) if verify_config is not None else None
 

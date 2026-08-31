@@ -201,6 +201,19 @@ class CheckResult:
     findings: list[Finding] = field(default_factory=list)
 
 
+def _capped_detail_lines(check: CheckResult, limit: int | None) -> list[str]:
+    """``check``'s details, indented, truncated to ``limit`` if given.
+
+    The truncation is never silent: what is dropped is counted on a final
+    line, because a report that quietly shows you 12 of 400 failures is a
+    report you would act on wrongly.
+    """
+    lines = [f"      {line}" for detail in check.details for line in detail.splitlines()]
+    if limit is None or len(lines) <= limit:
+        return lines
+    return [*lines[:limit], f"      ... {len(lines) - limit} more line(s) not shown"]
+
+
 @dataclass
 class VerificationResult:
     """Aggregated result of all mechanical checks."""
@@ -218,7 +231,12 @@ class VerificationResult:
                     lines.append(f"  {detail}")
         return "\n".join(lines)
 
-    def report_lines(self, *, durations: bool = True) -> list[str]:
+    def report_lines(
+        self,
+        *,
+        durations: bool = True,
+        max_detail_lines: int | None = None,
+    ) -> list[str]:
         """One line per check, then the indented details of each failure.
 
         The TERMINAL rendering of this object, in one place: ``ks sense``
@@ -232,6 +250,19 @@ class VerificationResult:
         recorded and an unrecorded run, and a timing makes two runs of
         the same work disagree. The figure is not lost there - it goes on
         the ``VerificationResultEvent``.
+
+        ``max_detail_lines`` caps the details PER CHECK and appends a
+        line saying how many were dropped, so a truncation is never
+        silent. `ks feature` needs that too, and for a different reason:
+        under the embedded TUI every one of these lines becomes a
+        ``Log`` event on the run bus, and a failing gate's details are
+        ``ParsedOutput.format_for_prompt`` - every parsed failure with a
+        source-context snippet. A 40-failure suite is hundreds of events
+        per report, up to ``2 + repair_max_runs`` times a run, which is
+        the event-stream flood ``commandrun._StreamFilterSink`` exists to
+        prevent. ``as_context`` already truncates at 10 for the same
+        reason. None (the default, and ``ks sense``) prints everything:
+        there the measurement IS the whole output.
         """
         width = max((len(check.name) for check in self.checks), default=0)
         lines: list[str] = []
@@ -241,9 +272,7 @@ class VerificationResult:
             lines.append(f"  {check.name.ljust(width)}  {verdict}  {check.message}{timing}")
             if check.passed:
                 continue
-            lines.extend(
-                f"      {line}" for detail in check.details for line in detail.splitlines()
-            )
+            lines.extend(_capped_detail_lines(check, max_detail_lines))
         return lines
 
 
@@ -2109,6 +2138,40 @@ DIFF_DEPENDENT_CHECKS: tuple[str, ...] = (
 )
 
 
+def self_critique_progress_path(
+    config: VerifyConfig,
+    worktree_path: Path,
+    prd_path: Path | None,
+) -> Path | None:
+    """The log ``check_self_critique`` would read, or None if it will not run.
+
+    Read the log the engineer was actually pointed at: a factory
+    component writes NEXT TO its PRD (the only location inside its
+    allowedPaths), so resolving a repo-root default here would check a
+    file that was never written and fail the component for the harness's
+    own path confusion. An explicit config wins. ``prd_path`` is
+    worktree-absolute at the factory call site, so the derived sibling is
+    too; the join is a no-op for an absolute path and still anchors a
+    relative one. With neither a PRD nor an explicit path there is no log
+    to read, so the check is skipped rather than run against a path that
+    cannot exist.
+
+    Extracted (#288 review) because a caller has to be able to ask
+    whether this check will run BEFORE the run, to say so: `ks feature`
+    announces its report up front, and the announcement was silently
+    wrong for an operator who had set ``require_self_critique``. Two
+    copies of the rule is how the announcement and the run disagree, so
+    there is one, and :func:`run_mechanical_verification` calls it too.
+    """
+    if not config.require_self_critique:
+        return None
+    if config.progress_file_path is not None:
+        return worktree_path / Path(config.progress_file_path)
+    if prd_path is not None:
+        return worktree_path / component_progress_path(prd_path, None)
+    return None
+
+
 def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
     """``config`` with every :data:`DIFF_DEPENDENT_CHECKS` toggle off.
 
@@ -2291,32 +2354,14 @@ def run_mechanical_verification(
             )
         )
 
-    if config.require_self_critique:
-        # Read the log the engineer was actually pointed at: a factory
-        # component writes NEXT TO its PRD (the only location inside its
-        # allowedPaths), so resolving a repo-root default here would
-        # check a file that was never written and fail the component for
-        # the harness's own path confusion. An explicit config wins.
-        # prd_path is worktree-absolute at the factory call site, so the
-        # derived sibling is too; the join is a no-op for an absolute
-        # path and still anchors a relative one. With neither a PRD nor
-        # an explicit path there is no log to read, so the check is
-        # skipped rather than run against a path that cannot exist.
-        progress_path: Path | None = None
-        if config.progress_file_path is not None:
-            progress_path = worktree_path / Path(config.progress_file_path)
-        elif prd_path is not None:
-            progress_path = worktree_path / component_progress_path(
-                prd_path,
-                None,
+    progress_path = self_critique_progress_path(config, worktree_path, prd_path)
+    if progress_path is not None:
+        checks.append(
+            check_self_critique(
+                progress_path,
+                config.self_critique_min_bullets,
             )
-        if progress_path is not None:
-            checks.append(
-                check_self_critique(
-                    progress_path,
-                    config.self_critique_min_bullets,
-                )
-            )
+        )
 
     if prd_path is not None and fixtures_config is not None and fixtures_config.enabled:
         # Imported lazily: fixtures.py imports CheckResult/run_scrubbed

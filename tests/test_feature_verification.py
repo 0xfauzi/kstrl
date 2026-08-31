@@ -19,13 +19,16 @@ from unittest.mock import patch
 from kstrl import events as ev
 from kstrl.commandrun import CommandRun
 from kstrl.config import KstrlConfig
-from kstrl.feature_cmd import (
-    FeatureParams,
-    resolve_feature_verify_config,
-    run_feature,
-)
+from kstrl.feature_cmd import FeatureParams, run_feature
+from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE, LoopResult
-from kstrl.verify import DIFF_DEPENDENT_CHECKS, VerifyConfig
+from kstrl.verify import (
+    DIFF_DEPENDENT_CHECKS,
+    CheckResult,
+    VerificationResult,
+    VerifyConfig,
+    run_mechanical_verification,
+)
 from tests.test_feature_cmd import (
     NOOP_VERIFY_COMMAND,
     ScriptedChannel,
@@ -35,12 +38,17 @@ from tests.test_feature_cmd import (
     _ui,
 )
 
-#: The only checks ``run_mechanical_verification`` may produce on this
-#: path. Pinned rather than derived: this tuple going stale IS the
-#: regression it guards against, because a new check that reads
-#: ``git diff <base>...HEAD`` would otherwise start reporting a pass over
-#: an empty diff and nothing would say so.
+#: The three checks that read no diff and so are honest on this path.
 HONEST_CHECKS = ("test_suite", "typecheck", "linter")
+
+#: Everything ``run_mechanical_verification`` is ALLOWED to produce here.
+#: ``self_critique`` is opt-in (both ``require_self_critique`` and
+#: ``progress_file_path``), reads no diff, and is announced when it runs.
+#: A name outside this set reaching the report is the regression: either
+#: it reads a diff, in which case it reports a pass over an empty one, or
+#: it does not, in which case somebody has to decide whether it belongs
+#: and update the announcement and the runbook with it.
+ALLOWED_CHECKS = frozenset({*HONEST_CHECKS, "self_critique"})
 
 
 SABOTAGE_LINE = "SABOTAGE: 3 findings"
@@ -97,6 +105,7 @@ def _drive(
     params: FeatureParams | None = None,
     channel: ScriptedChannel | None = None,
     loop: Any = None,
+    stop_check: Any = None,
 ) -> tuple[int, list[ev.Event], str]:
     """Run the flow, returning (exit code, emitted events, UI text)."""
     ui, stream = _ui()
@@ -119,12 +128,39 @@ def _drive(
             tmp_path,
             interaction=channel,
             run=run,
+            stop_check=stop_check,
         )
     return code, captured, stream.getvalue()
 
 
 def _verifications(captured: list[ev.Event]) -> list[ev.VerificationResultEvent]:
     return [e for e in captured if isinstance(e, ev.VerificationResultEvent)]
+
+
+def _uncapped(root: Path) -> list[CheckResult]:
+    """The same measurement, run again with no rendering cap applied.
+
+    Used to show the cap is a RENDERING limit: the CheckResult the report
+    was built from still carries every line, so nothing is lost from the
+    ``parsed`` payload the factory's repair loop reads.
+    """
+    result = run_mechanical_verification(
+        worktree_path=root,
+        prd_path=None,
+        base_branch="",
+        allowed_paths_error=None,
+        allowed_paths=None,
+        config=resolve_feature_verify_config(root),
+        read_only=True,
+    )
+    return list(result.checks)
+
+
+def _report(captured: list[ev.Event], phase: str) -> ev.VerificationResultEvent:
+    """The one report for ``phase``. Raises if there is not exactly one."""
+    matches = [e for e in _verifications(captured) if e.phase == phase]
+    assert len(matches) == 1, [e.phase for e in _verifications(captured)]
+    return matches[0]
 
 
 class TestTheCheckActuallyRuns:
@@ -147,18 +183,16 @@ class TestTheCheckActuallyRuns:
         _write_kstrl_toml(tmp_path, failing="lint")
         _, captured, _ = _drive(tmp_path)
 
-        results = _verifications(captured)
-        assert len(results) == 1
-        assert results[0].passed is False
-        assert results[0].checks == HONEST_CHECKS
-        assert results[0].failures == ("Linter failed (exit code 1)",)
-        assert results[0].component == "demo"
+        report = _report(captured, "implement")
+        assert report.passed is False
+        assert report.checks == HONEST_CHECKS
+        assert report.failures == ("Linter failed (exit code 1)",)
+        assert report.component == "demo"
         # #288: which loop was measured, and that nothing gated on it.
         # Without these a consumer filtering events.jsonl by type reads
         # this next to phase_completed(implement, passed=True) as a
         # contradiction.
-        assert results[0].phase == "implement"
-        assert results[0].advisory is True
+        assert report.advisory is True
 
     def test_the_report_does_not_change_the_phase_verdict(self, tmp_path: Path) -> None:
         """A failing check reports; it does not halt, and it does not
@@ -178,11 +212,10 @@ class TestTheCheckActuallyRuns:
         code, captured, text = _drive(tmp_path)
 
         assert "verification: PASS (3 checks)" in text
-        results = _verifications(captured)
-        assert len(results) == 1
-        assert results[0].passed is True
-        assert results[0].checks == HONEST_CHECKS
-        assert results[0].failures == ()
+        report = _report(captured, "implement")
+        assert report.passed is True
+        assert report.checks == HONEST_CHECKS
+        assert report.failures == ()
         assert code == 0
 
     def test_the_commands_that_run_are_the_project_s_own(self, tmp_path: Path) -> None:
@@ -192,7 +225,7 @@ class TestTheCheckActuallyRuns:
         _write_kstrl_toml(tmp_path, failing="test")
         _, captured, text = _drive(tmp_path)
 
-        assert _verifications(captured)[0].failures == ("Tests failed (exit code 1)",)
+        assert _report(captured, "implement").failures == ("Tests failed (exit code 1)",)
         assert SABOTAGE_LINE in text
 
 
@@ -209,37 +242,77 @@ class TestOnlyHonestChecksRun:
         _write_kstrl_toml(tmp_path, extra=ALL_CHECKS_ON_WITH_PHASES)
         _, captured, _ = _drive(tmp_path)
 
-        assert _verifications(captured)[0].checks == HONEST_CHECKS
+        assert _report(captured, "implement").checks == HONEST_CHECKS
 
-    def test_a_verify_toggle_this_test_has_never_heard_of_cannot_reach_the_report(
+    def test_no_verify_setting_of_any_type_can_add_an_unannounced_check(
         self,
         tmp_path: Path,
     ) -> None:
         """The fail-OPEN hole, closed by introspection rather than by a
         list somebody has to remember to extend.
 
-        The test above enables the four toggles this change knows about.
-        A seventh diff-reading check added later, gated by a NEW
-        ``[verify]`` bool that defaults False, would sail past it: the
-        narrowing does not know the field, the operator turns it on, and
-        it reports a pass over an empty diff. So enable EVERY boolean
-        ``[verify]`` field there is, and require the check set to still
-        be exactly the three that read no diff.
+        An earlier version of this test enabled every BOOLEAN
+        ``[verify]`` field and claimed to close the hole. It did not: the
+        one field that gates a check and is not a bool is
+        ``progress_file_path``, a str, and setting it plus
+        ``require_self_critique`` put a fourth row in the report that the
+        announcement never named and the runbook said could not run
+        (#288 review, verified). So drive EVERY field of the dataclass,
+        whatever its type, and assert against a declared allowlist rather
+        than an equality that only holds for the defaults.
         """
-        toggles = [
-            f.name
-            for f in dataclasses.fields(VerifyConfig)
-            if f.type in ("bool", bool) or isinstance(getattr(VerifyConfig(), f.name), bool)
-        ]
-        assert "check_diff_scope" in toggles, toggles
+        settings: list[str] = []
+        blank = VerifyConfig()
+        for field in dataclasses.fields(VerifyConfig):
+            if field.name.endswith("_command") or field.name.endswith("_tool"):
+                continue  # driven by _write_kstrl_toml; a tool name is validated
+            current = getattr(blank, field.name)
+            if isinstance(current, bool):
+                settings.append(f"{field.name} = true\n")
+            elif isinstance(current, (int, float)):
+                settings.append(f"{field.name} = 5\n")
+            elif current is None or isinstance(current, str):
+                settings.append(f'{field.name} = "progress.txt"\n')
+        assert any("check_diff_scope" in line for line in settings), settings
+        assert any("progress_file_path" in line for line in settings), settings
+
         _write_kstrl_toml(
             tmp_path,
-            extra="".join(f"{name} = true\n" for name in toggles)
-            + "\n[policy]\nenabled = true\n\n[adequacy]\nenabled = true\n",
+            extra="".join(settings) + "\n[policy]\nenabled = true\n\n[adequacy]\nenabled = true\n",
         )
-        _, captured, _ = _drive(tmp_path)
+        _, captured, text = _drive(tmp_path)
 
-        assert _verifications(captured)[0].checks == HONEST_CHECKS
+        produced = set(_report(captured, "implement").checks)
+        assert produced & set(DIFF_DEPENDENT_CHECKS) == set(), produced
+        assert produced <= ALLOWED_CHECKS, produced
+        # And whatever DID run was announced. Anything in the table that
+        # the announcement never named is the defect this test exists for.
+        for name in produced - set(HONEST_CHECKS):
+            assert name in text
+
+    def test_self_critique_is_announced_when_the_operator_opts_into_it(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """It reads no diff, so it is allowed here, but it is a FOURTH
+        check and the announcement has to say so before it blocks."""
+        _write_kstrl_toml(
+            tmp_path,
+            extra='require_self_critique = true\nprogress_file_path = "progress.txt"\n',
+        )
+        (tmp_path / "progress.txt").write_text(
+            "## Self-Critique\n- If a happens, b, which is wrong because c.\n"
+            "- If d happens, e, which is wrong because f.\n"
+            "- If g happens, h, which is wrong because i.\n",
+            encoding="utf-8",
+        )
+        _, captured, text = _drive(tmp_path)
+
+        report = _report(captured, "implement")
+        assert "self_critique" in report.checks
+        assert report.passed is True
+        assert "reading:" in text
+        assert "self_critique" in text
 
     def test_the_narration_names_what_was_not_measured(self, tmp_path: Path) -> None:
         _write_kstrl_toml(tmp_path)
@@ -264,6 +337,86 @@ class TestOnlyHonestChecksRun:
         assert config.test_command == commands["test"]
         assert config.typecheck_command == commands["typecheck"]
         assert config.lint_command == commands["lint"]
+
+
+class TestBaselineAttribution:
+    """#288 review finding 5: the report measures the whole checkout, so
+    without a before-picture pre-existing breakage reads as the agent's.
+    """
+
+    def test_a_baseline_runs_before_the_implement_loop(self, tmp_path: Path) -> None:
+        _write_kstrl_toml(tmp_path)
+        _, captured, text = _drive(tmp_path)
+
+        baseline = _report(captured, "baseline")
+        implement = _report(captured, "implement")
+        assert baseline.seq < implement.seq
+        # Before the loop, not merely before the report of it.
+        started = next(
+            e for e in captured if isinstance(e, ev.PhaseStarted) and e.phase == "implement"
+        )
+        assert baseline.seq < started.seq
+        assert "Verification report (baseline)" in text
+
+    def test_pre_existing_breakage_is_named_as_pre_existing(self, tmp_path: Path) -> None:
+        """The whole point. Lint was already red before the agent ran, so
+        the implement verdict must not read as the agent breaking it."""
+        _write_kstrl_toml(tmp_path, failing="lint")
+        _, captured, text = _drive(tmp_path)
+
+        assert _report(captured, "baseline").failures == ("Linter failed (exit code 1)",)
+        assert "already failing before the implement loop: linter" in text
+
+    def test_a_failure_the_baseline_did_not_have_is_not_excused(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other half: a check that was green at baseline and red
+        afterwards must NOT be labelled pre-existing.
+
+        The lint command is fixed for the whole run (resolved once), and
+        it fails only if a marker file exists. The stubbed implement loop
+        creates that file, which is what an agent breaking lint looks
+        like to this flow.
+        """
+        root = tmp_path
+        root.mkdir(parents=True, exist_ok=True)
+        broken = "the-agent-broke-lint"
+        lint = f"if [ -f {broken} ]; then echo '{SABOTAGE_LINE}'; exit 1; fi"
+        (root / "kstrl.toml").write_text(
+            "[verify]\n"
+            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+            f"lint_command = {json.dumps(lint)}\n",
+            encoding="utf-8",
+        )
+        calls: list[int] = []
+
+        def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
+            calls.append(1)
+            if len(calls) == 2:  # the implement loop
+                (root / broken).write_text("", encoding="utf-8")
+            return LoopResult(completed=True, iterations=1, exit_code=0)
+
+        _, captured, text = _drive(tmp_path, loop=fake)
+
+        assert _report(captured, "baseline").passed is True
+        assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
+        assert "already failing before the implement loop" not in text
+
+    def test_the_baseline_is_machine_readable_without_the_terminal(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Under --implementation-auto-run the event stream is the report,
+        so the attribution has to be derivable from it alone."""
+        _write_kstrl_toml(tmp_path, failing="lint")
+        _, captured, _ = _drive(tmp_path)
+
+        pre_existing = set(_report(captured, "baseline").failures) & set(
+            _report(captured, "implement").failures
+        )
+        assert pre_existing == {"Linter failed (exit code 1)"}
 
 
 class TestExitPathRule:
@@ -298,6 +451,8 @@ class TestExitPathRule:
         assert _verifications(captured) == []
 
     def test_no_report_when_the_prd_has_no_stories(self, tmp_path: Path) -> None:
+        """The baseline sits AFTER this check, so a run that will never
+        start an engineer loop does not pay for a test suite either."""
         _write_kstrl_toml(tmp_path, failing="lint")
         code, captured, _ = _drive(
             tmp_path, codes=(0,), params=_feature_params(tmp_path, stories=0)
@@ -305,14 +460,16 @@ class TestExitPathRule:
         assert code == 0
         assert _verifications(captured) == []
 
-    def test_no_report_when_the_engineer_never_ran_an_iteration(self, tmp_path: Path) -> None:
+    def test_no_loop_report_when_the_engineer_never_ran_an_iteration(
+        self,
+        tmp_path: Path,
+    ) -> None:
         """iterations == 0 is the loop halting in preflight (a failed
         branch checkout, a stop request before iteration 1). There is no
-        agent output to measure."""
+        agent output to measure, so only the baseline is reported."""
         _write_kstrl_toml(tmp_path, failing="lint")
-        _, captured, text = _drive(tmp_path, codes=(0, 1), iterations=0)
-        assert _verifications(captured) == []
-        assert "Verification report" not in text
+        _, captured, _ = _drive(tmp_path, codes=(0, 1), iterations=0)
+        assert [e.phase for e in _verifications(captured)] == ["baseline"]
 
     def test_no_report_when_the_operator_asked_the_loop_to_stop(
         self,
@@ -322,47 +479,134 @@ class TestExitPathRule:
         non-zero and the iterations guard alone would let the report
         through. Somebody who pressed stop must not then be made to wait
         out a test suite: measured on this repo at 246s, and bounded only
-        by 3 x subprocess_timeout (900s at the default) in general."""
+        by 3 x subprocess_timeout (900s at the default)."""
         _write_kstrl_toml(tmp_path, failing="lint")
-        _, captured, text = _drive(tmp_path, codes=(0, STOP_EXIT_CODE))
-        assert _verifications(captured) == []
-        assert "Verification report" not in text
+        _, captured, _ = _drive(tmp_path, codes=(0, STOP_EXIT_CODE))
+        assert [e.phase for e in _verifications(captured)] == ["baseline"]
+
+    def test_no_report_when_a_stop_arrived_during_the_final_iteration(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#288 review finding 2. ``run_loop`` returns STOP_EXIT_CODE only
+        from its top-of-iteration probe, so a stop pressed DURING the last
+        iteration comes back as an ordinary completed exit 0 and the
+        exit-code guard never fires. The stop flag is still set, and that
+        is what has to be consulted."""
+        _write_kstrl_toml(tmp_path, failing="lint")
+        calls: list[int] = []
+        stopped = [False]
+
+        def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
+            calls.append(1)
+            if len(calls) == 2:  # during the implement loop, not before it
+                stopped[0] = True
+            return LoopResult(completed=True, iterations=1, exit_code=0)
+
+        _, captured, text = _drive(
+            tmp_path,
+            loop=fake,
+            stop_check=lambda: stopped[0],
+        )
+        # The baseline ran (nothing was stopped yet); nothing after it did.
+        assert [e.phase for e in _verifications(captured)] == ["baseline"]
+        assert "Verification report (implement)" not in text
 
     def test_every_repair_attempt_reports_and_says_which(self, tmp_path: Path) -> None:
         """One report per engineer loop, each naming its own loop. Without
         the phase field a consumer filtering events.jsonl by type could
-        count three and not tell them apart."""
+        count four and not tell them apart."""
         _write_kstrl_toml(tmp_path, failing="lint")
         params = _feature_params(tmp_path, repair_max_runs=2)
         _, captured, _ = _drive(tmp_path, codes=(0, 1, 1, 1), params=params)
 
         results = _verifications(captured)
-        assert [r.phase for r in results] == ["implement", "repair-1", "repair-2"]
+        assert [r.phase for r in results] == ["baseline", "implement", "repair-1", "repair-2"]
         assert all(r.passed is False for r in results)
         assert all(r.advisory is True for r in results)
+
+
+class TestTheReportCannotKillTheRun:
+    """#288 review finding 1: an advisory report may not halt the flow."""
+
+    def test_a_crashing_measurement_is_recorded_not_raised(self, tmp_path: Path) -> None:
+        """``check_test_suite`` catches TimeoutExpired and nothing else, so
+        a Popen that fails on EMFILE or a removed cwd would otherwise
+        propagate out of an advisory report and truncate the run record."""
+        _write_kstrl_toml(tmp_path)
+
+        def boom(**kwargs: Any) -> VerificationResult:
+            raise OSError(24, "Too many open files")
+
+        with patch("kstrl.feature_verify.run_mechanical_verification", boom):
+            code, captured, text = _drive(tmp_path)
+
+        assert code == 0
+        assert "verification: could not run" in text
+        assert "Too many open files" in text
+        report = _report(captured, "implement")
+        # An EMPTY checks tuple with passed=False is the unambiguous
+        # "nothing was measured": never mistakable for a pass.
+        assert report.passed is False
+        assert report.checks == ()
+        assert report.failures == ("OSError: [Errno 24] Too many open files",)
+
+    def test_the_run_record_is_still_complete(self, tmp_path: Path) -> None:
+        """The failure mode: events.jsonl ending at phase_started with no
+        phase_completed and no run_completed, which a dashboard reads as a
+        component running forever."""
+        _write_kstrl_toml(tmp_path)
+
+        def boom(**kwargs: Any) -> VerificationResult:
+            raise OSError(24, "Too many open files")
+
+        with patch("kstrl.feature_verify.run_mechanical_verification", boom):
+            _, captured, _ = _drive(tmp_path)
+
+        assert any(isinstance(e, ev.PhaseCompleted) and e.phase == "implement" for e in captured)
+        assert any(isinstance(e, ev.ComponentCompleted) for e in captured)
+        assert any(isinstance(e, ev.RunCompleted) for e in captured)
 
 
 class TestTheReportDoesNotDistortTheRunRecord:
     def test_the_phase_duration_excludes_the_report(self, tmp_path: Path) -> None:
         """The implement phase's duration is the engineer loop's own, so
-        it stays comparable to a pre-#288 run. Asserted against the
-        report's own duration rather than a threshold: the gate commands
-        here are near-instant, so a wall-clock bound would measure the
-        machine. The report is emitted first, so a phase duration that
-        included it would have to be at least as large."""
+        it stays comparable to a pre-#288 run. Asserted structurally, not
+        against a wall-clock threshold: the report is emitted inside the
+        phase bracket, which is exactly the position that would have
+        folded its duration in, and the phase's own reported duration must
+        be no larger than the wall clock available before the report
+        started."""
         _write_kstrl_toml(tmp_path)
         _, captured, _ = _drive(tmp_path)
 
         implement = next(
             e for e in captured if isinstance(e, ev.PhaseCompleted) and e.phase == "implement"
         )
-        report = _verifications(captured)[0]
-        # The report lands INSIDE the phase bracket, which is what would
-        # have folded its wall clock into the phase's duration.
+        report = _report(captured, "implement")
         assert report.seq < implement.seq
-        # The loop is a stub that returns instantly, so the phase's own
-        # work rounds to 0.0s. Anything larger is the report leaking in.
-        assert implement.duration_seconds == 0.0
+        # The report's own measurement is not inside the phase's figure.
+        # Both are wall clocks, so this is an ordering claim, not an
+        # equality one: an implement duration that included the report
+        # would be at least as large as the report's own duration, and
+        # the stubbed loop does no work at all.
+        assert implement.duration_seconds < report.duration_seconds + 1.0
+
+    def test_the_announced_command_is_the_command_that_ran(self, tmp_path: Path) -> None:
+        """#288 review finding 9: the announcement and the run must not
+        resolve the commands independently, or the terminal can name one
+        command while a different one produces the verdict. Asserted on
+        the command the failing gate itself recorded, not on the config.
+        """
+        commands = _write_kstrl_toml(tmp_path, failing="lint")
+        _, _, text = _drive(tmp_path)
+
+        linter = next(c for c in _uncapped(tmp_path) if c.name == "linter")
+        assert linter.parsed is not None
+        ran = linter.parsed.command
+        assert ran == commands["lint"]
+        announced = [line for line in text.splitlines() if "running:" in line and ran in line]
+        assert announced, (ran, text)
 
     def test_the_terminal_says_what_it_is_running_before_it_blocks(
         self,
@@ -375,12 +619,74 @@ class TestTheReportDoesNotDistortTheRunRecord:
         _, _, text = _drive(tmp_path)
 
         running = [line for line in text.splitlines() if "running:" in line]
-        assert len(running) == 3
+        assert len(running) == 6  # baseline plus implement, three each
         for command in commands.values():
             assert any(command in line for line in running)
         # Before, not after: the announcement has to precede the verdict
         # it is warning the operator to wait for.
         assert text.index("running:") < text.index("verification: PASS")
+
+    def test_failure_details_are_capped_and_the_truncation_is_stated(self) -> None:
+        """#288 review finding 8, at the renderer.
+
+        Under the embedded TUI every printed line is one Log event on the
+        run bus. Measured: a 40-finding ruff run against files that exist
+        renders 81 detail lines from ONE check (10 shown findings, each
+        with a 7-line source snippet, plus the "and 30 more" line). The
+        truncation must be stated, because a report that quietly shows 12
+        of 200 lines is one you would act on wrongly.
+        """
+        check = CheckResult(
+            name="linter",
+            passed=False,
+            message="Linter failed (exit code 1)",
+            details=["\n".join(f"finding {n}" for n in range(200))],
+        )
+        result = VerificationResult(passed=False, checks=[check])
+
+        capped = result.report_lines(durations=False, max_detail_lines=12)
+        assert len(capped) == 14  # verdict + 12 details + the count
+        assert capped[-1].strip() == "... 188 more line(s) not shown"
+        # ks sense is uncapped: there the measurement IS the whole output.
+        assert len(result.report_lines()) == 201
+
+    def test_the_feature_report_caps_but_ks_sense_does_not(self, tmp_path: Path) -> None:
+        """End to end on a REAL parsed lint failure, so the cap is wired
+        and not merely available.
+
+        Measured on a 40-finding ruff run against files that exist: the
+        parser shows 10 findings, each with a 7-line source snippet, for
+        81 detail lines from ONE check. Three checks in a report and one
+        report per engineer loop, so the uncapped number reaching the run
+        bus grows with the number of loops.
+        """
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        findings = []
+        for n in range(1, 41):
+            (tmp_path / f"mod_{n}.py").write_text(
+                "\n".join(f"code line {i}" for i in range(1, 30)), encoding="utf-8"
+            )
+            findings.append(f"mod_{n}.py:10:1: F401 `os` imported but unused")
+        (tmp_path / "findings.txt").write_text("\n".join(findings) + "\n", encoding="utf-8")
+        lint = "cat findings.txt; exit 1"
+        (tmp_path / "kstrl.toml").write_text(
+            "[verify]\n"
+            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+            f"lint_command = {json.dumps(lint)}\n",
+            encoding="utf-8",
+        )
+        _, captured, text = _drive(tmp_path)
+
+        # The measurement itself is unharmed: only the rendering is cut.
+        check = next(c for c in _uncapped(tmp_path) if c.name == "linter")
+        uncapped = sum(len(d.splitlines()) for d in check.details)
+        assert uncapped > 40, uncapped
+
+        assert "mod_1.py:10 [F401]" in text
+        assert "more line(s) not shown" in text
+        assert "mod_10.py:10 [F401]" not in text
+        assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
 
 
 class TestVerifyConfigThreading:
