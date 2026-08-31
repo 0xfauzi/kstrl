@@ -37,6 +37,14 @@ logger = logging.getLogger(__name__)
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
+#: The exit code a loop returns when ``stop_check`` asked it to stop:
+#: the shell's 128 + SIGINT, so an operator's Ctrl-C and a TUI stop
+#: request read the same downstream. Named because a caller has to be
+#: able to tell "the operator stopped this" from "it failed" - #288's
+#: verification report refuses to run a test suite on the way out of a
+#: stop.
+STOP_EXIT_CODE = 130
+
 # How many NON-REPORTING agent calls the RUN must accumulate before an
 # enabled ceiling is declared unenforceable (see LoopBudget.halt_reason).
 # Applied PER CEILING: tokenless calls condemn the token ceiling,
@@ -431,14 +439,35 @@ def build_project_context(
     gate will run in. There is no second copy for the agent to read, so
     it cannot be told a command the gate will not run.
 
-    ``verify_config`` is the config Phase 1 will run with, and ``None``
-    means NO mechanical gate runs for this invocation, so no commands are
-    stated. None is the default on purpose: `ks understand` and
-    `ks feature` call ``run_loop`` directly and run no verification at
-    all, so a default that assumed a gate told a read-only mapping run to
-    execute the whole test suite on every pass. Only a caller that can
-    name the gate it will run gets to make the claim, and the factory
-    passes the exact object ``pipeline._phase_verify`` reads.
+    ``verify_config`` is the config the checks will run with, and
+    ``None`` means NOTHING runs them for this invocation, so no commands
+    are stated. None is the default on purpose: a default that assumed a
+    gate told a read-only mapping run to execute the whole test suite on
+    every pass. Only a caller that can name what it will run gets to make
+    the claim.
+
+    Who names one, as of #288:
+
+    - ``pipeline._phase_verify`` (the factory) passes the exact object
+      its gate reads. It HALTS on a failure.
+    - ``feature_cmd`` passes the object its report reads, to the
+      implement and repair loops only. It does NOT halt: a failing check
+      is reported and the flow proceeds. So the commands the block names
+      are exactly the commands that run, which is #261's whole claim, but
+      ``verify.VERIFY_COMMANDS_PROMPT``'s word "gate" overstates the
+      consequence on that path. Correcting the wording is an H3 prompt
+      change (version bump, snapshot move, calibration re-run) and is
+      tracked rather than done here.
+    - ``ks understand``, and ``ks feature``'s understand loop, still pass
+      None. Nothing checks an understand file, so None is still true
+      there.
+
+    Note the second effect of passing one: ``scrub_project_claude_md``
+    below only runs when there ARE resolved commands, so a caller that
+    starts naming its checks also starts having pre-#261 CLAUDE.md
+    verification bullets dropped from the prompt copy, with a ui.warn
+    each. That is the intended #261 behaviour, and it never writes to the
+    file on disk.
     """
     commands = resolve_verify_commands(verify_config, cwd) if verify_config is not None else None
 
@@ -611,7 +640,7 @@ def run_loop(
     elif not config.auto_checkout:
         ui.info("Branch: auto_checkout disabled; using current branch")
     else:
-        branch, source = _determine_branch(config)
+        branch, source = determine_branch(config)
         if branch:
             if not git.checkout_branch(branch, ui, cwd, source):
                 ui.err(f"Failed to checkout branch: {branch}")
@@ -685,7 +714,7 @@ def run_loop(
             return LoopResult(
                 completed=False,
                 iterations=iteration - 1,
-                exit_code=130,
+                exit_code=STOP_EXIT_CODE,
                 duration_seconds=time.monotonic() - loop_start,
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,
@@ -909,13 +938,18 @@ def run_loop(
     )
 
 
-def _determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
+def determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
     """Determine which branch to use.
 
     Returns:
         Tuple of (branch_name, source) where:
         - branch_name: Branch to checkout, "" to skip, None if not configured
         - source: Source description (e.g. "from KSTRL_BRANCH", "from PRD")
+
+    Public since #288 review round 2: ``feature_verify.baseline_skip_reason``
+    has to know which branch this loop will check out BEFORE the loop
+    runs, and a second copy of the precedence rule is a second thing that
+    can disagree with the checkout that actually happens.
     """
     # If a branch is configured directly on the config, prefer it.
     # `kstrl_branch_explicit` is used to indicate whether it came from KSTRL_BRANCH/--branch.

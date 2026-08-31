@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -201,6 +201,19 @@ class CheckResult:
     findings: list[Finding] = field(default_factory=list)
 
 
+def _capped_detail_lines(check: CheckResult, limit: int | None) -> list[str]:
+    """``check``'s details, indented, truncated to ``limit`` if given.
+
+    The truncation is never silent: what is dropped is counted on a final
+    line, because a report that quietly shows you 12 of 400 failures is a
+    report you would act on wrongly.
+    """
+    lines = [f"      {line}" for detail in check.details for line in detail.splitlines()]
+    if limit is None or len(lines) <= limit:
+        return lines
+    return [*lines[:limit], f"      ... {len(lines) - limit} more line(s) not shown"]
+
+
 @dataclass
 class VerificationResult:
     """Aggregated result of all mechanical checks."""
@@ -217,6 +230,50 @@ class VerificationResult:
                 for detail in check.details[:10]:
                     lines.append(f"  {detail}")
         return "\n".join(lines)
+
+    def report_lines(
+        self,
+        *,
+        durations: bool = True,
+        max_detail_lines: int | None = None,
+    ) -> list[str]:
+        """One line per check, then the indented details of each failure.
+
+        The TERMINAL rendering of this object, in one place: ``ks sense``
+        and ``ks feature``'s #288 report print the same table, and before
+        this existed they printed it from two copies of the same
+        f-string.
+
+        ``durations=False`` drops the wall-clock column. `ks feature`
+        needs that: its narration sits inside a longer flow that
+        ``tests/test_feature_run.py`` compares BYTE FOR BYTE between a
+        recorded and an unrecorded run, and a timing makes two runs of
+        the same work disagree. The figure is not lost there - it goes on
+        the ``VerificationResultEvent``.
+
+        ``max_detail_lines`` caps the details PER CHECK and appends a
+        line saying how many were dropped, so a truncation is never
+        silent. `ks feature` needs that too, and for a different reason:
+        under the embedded TUI every one of these lines becomes a
+        ``Log`` event on the run bus, and a failing gate's details are
+        ``ParsedOutput.format_for_prompt`` - every parsed failure with a
+        source-context snippet. A 40-failure suite is hundreds of events
+        per report, up to ``2 + repair_max_runs`` times a run, which is
+        the event-stream flood ``commandrun._StreamFilterSink`` exists to
+        prevent. ``as_context`` already truncates at 10 for the same
+        reason. None (the default, and ``ks sense``) prints everything:
+        there the measurement IS the whole output.
+        """
+        width = max((len(check.name) for check in self.checks), default=0)
+        lines: list[str] = []
+        for check in self.checks:
+            verdict = "pass" if check.passed else "FAIL"
+            timing = f"  ({check.duration_seconds:.2f}s)" if durations else ""
+            lines.append(f"  {check.name.ljust(width)}  {verdict}  {check.message}{timing}")
+            if check.passed:
+                continue
+            lines.extend(_capped_detail_lines(check, max_detail_lines))
+        return lines
 
 
 def _optional_str(value: object) -> str | None:
@@ -746,7 +803,17 @@ def _default_typecheck_command(cwd: Path) -> str:
         try:
             with pyproject.open("rb") as fh:
                 data = tomllib.load(fh)
-        except (tomllib.TOMLDecodeError, OSError):
+        except (ValueError, OSError):
+            # ``ValueError`` rather than ``TOMLDecodeError``, which it
+            # subclasses. ``tomllib.load`` decodes the stream as utf-8
+            # itself, so a pyproject.toml carrying one non-utf-8 byte -
+            # a latin-1 name, a stray 0x80 - raises UnicodeDecodeError,
+            # which IS a ValueError and escaped this fail-closed except
+            # entirely (#288 review round 2). It reached an ADVISORY
+            # verification report through resolve_verify_commands and
+            # took `ks feature` down before the agent had run. This is
+            # the encoding rule CLAUDE.md states: a reader of any file
+            # must catch ValueError alongside OSError.
             return DEFAULT_TYPECHECK_COMMAND
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):
@@ -802,6 +869,37 @@ class ResolvedVerifyCommands:
             typecheck=self.typecheck,
             lint=self.lint,
         )
+
+
+def pin_verify_commands(config: VerifyConfig, cwd: Path) -> VerifyConfig:
+    """A copy of ``config`` whose three command fields are already resolved.
+
+    Resolution is not a pure function of the config: ``resolve_typecheck_command``
+    falls back to ``_default_typecheck_command(cwd)``, which re-reads
+    ``cwd/pyproject.toml`` and answers ``uv run mypy`` when
+    ``[tool.mypy] files`` or ``packages`` is present and ``uv run mypy .``
+    when it is not. Adding a mypy scope is an ordinary engineer story, so
+    a caller that resolves more than once during a run can get two
+    different commands from one config (#288 review round 2).
+
+    Pinning is what makes every later resolution the identity: once the
+    fields are non-None, ``resolve_*_command`` returns them unchanged. So
+    the report's announcement, the command that actually runs, and the
+    ``VERIFY_COMMANDS_PROMPT`` block ``build_project_context`` renders
+    for the engineer are provably one string per command for the whole
+    run, rather than three independent reads that agree by luck.
+
+    Do NOT use this on the factory's per-component path without thinking:
+    there each component has its own worktree, and the right pyproject to
+    resolve against is that worktree's, not the caller's ``cwd``.
+    """
+    resolved = resolve_verify_commands(config, cwd)
+    return replace(
+        config,
+        test_command=resolved.test,
+        typecheck_command=resolved.typecheck,
+        lint_command=resolved.lint,
+    )
 
 
 def resolve_verify_commands(config: VerifyConfig, cwd: Path) -> ResolvedVerifyCommands:
@@ -2062,6 +2160,148 @@ def _scope_checks(
     return []
 
 
+#: Every check :func:`run_mechanical_verification` appends that answers
+#: its question by reading ``git diff <base>...HEAD``.
+#:
+#: Beside the function that appends them, because a caller that has no
+#: measurable base has to know which checks that rules out, and deriving
+#: the list by reading this module's source is how two callers end up
+#: disagreeing about it. ``mutation_testing`` belongs here even though
+#: ``read_only=True`` already skips it: it mutates the files the diff
+#: names, so with no diff there is nothing for it to mutate either.
+DIFF_DEPENDENT_CHECKS: tuple[str, ...] = (
+    "diff_scope",
+    "bad_patterns",
+    "policy_envelope",
+    "test_adequacy",
+    "dead_code",
+    "mutation_testing",
+)
+
+
+def self_critique_progress_path(
+    config: VerifyConfig,
+    worktree_path: Path,
+    prd_path: Path | None,
+) -> Path | None:
+    """The log ``check_self_critique`` would read, or None if it will not run.
+
+    Read the log the engineer was actually pointed at: a factory
+    component writes NEXT TO its PRD (the only location inside its
+    allowedPaths), so resolving a repo-root default here would check a
+    file that was never written and fail the component for the harness's
+    own path confusion. An explicit config wins. ``prd_path`` is
+    worktree-absolute at the factory call site, so the derived sibling is
+    too; the join is a no-op for an absolute path and still anchors a
+    relative one. With neither a PRD nor an explicit path there is no log
+    to read, so the check is skipped rather than run against a path that
+    cannot exist.
+
+    Extracted (#288 review) because a caller has to be able to ask
+    whether this check will run BEFORE the run, to say so: `ks feature`
+    announces its report up front, and the announcement was silently
+    wrong for an operator who had set ``require_self_critique``. Two
+    copies of the rule is how the announcement and the run disagree, so
+    there is one, and :func:`run_mechanical_verification` calls it too.
+    """
+    if not config.require_self_critique:
+        return None
+    if config.progress_file_path is not None:
+        return worktree_path / Path(config.progress_file_path)
+    if prd_path is not None:
+        return worktree_path / component_progress_path(prd_path, None)
+    return None
+
+
+def run_undiffed_verification(
+    worktree_path: Path,
+    config: VerifyConfig,
+) -> VerificationResult:
+    """Mechanical verification over a tree with no base to diff against.
+
+    The ONLY safe entry point for that case, and it is a function rather
+    than a documented convention because :func:`narrow_to_undiffed`
+    cannot deliver the guarantee its name promises (#288 review round
+    2). Its ``replace`` reaches four of the six
+    :data:`DIFF_DEPENDENT_CHECKS`; ``policy_envelope`` and
+    ``test_adequacy`` are gated by ``policy_config`` and
+    ``adequacy_config``, which are separate ARGUMENTS to
+    :func:`run_mechanical_verification`, and ``allowed_paths_error``
+    outranks the ``check_diff_scope`` toggle entirely because
+    :func:`_scope_checks` reads it first and appends the ungated
+    ``scope_unreadable`` on any non-None value. So a second caller
+    writing ``config=narrow_to_undiffed(cfg), policy_config=pc`` gets
+    ``policy_envelope`` reporting a PASS over an empty diff: the exact
+    defect the narrowing is named for, reintroduced by an argument the
+    narrowing cannot see.
+
+    This owns all of them. There is no parameter here for anything that
+    consumes a diff, so the four suppressed by config and the three
+    suppressed by argument are suppressed the same way: by not being
+    reachable. ``read_only=True`` for the same reason ``ks sense`` uses
+    it (R10.1) - the two checks that would rewrite the tree they measure
+    are forbidden.
+
+    ``base_branch=""`` is the honest value for "there is no base here"
+    and is never read, because nothing left running consumes one.
+    ``prd_path=None`` skips the PRD-derived checks: ``prd_stories``
+    re-reads a flag the agent itself set, which is a self-report rather
+    than an independent measurement.
+
+    The structural version of this - one object owning every argument
+    that decides whether a check can honestly run - is tracked on #305.
+    """
+    return run_mechanical_verification(
+        worktree_path=worktree_path,
+        prd_path=None,
+        base_branch="",
+        allowed_paths=None,
+        allowed_paths_error=None,
+        config=narrow_to_undiffed(config),
+        read_only=True,
+    )
+
+
+def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
+    """``config`` with every :data:`DIFF_DEPENDENT_CHECKS` toggle off.
+
+    Prefer :func:`run_undiffed_verification`, which owns the arguments
+    this cannot reach. Exported on its own only because the announcement
+    side of a report needs the narrowed config to say what will run.
+
+    For a caller whose tree has no base it can honestly diff against -
+    `ks feature` (#288), where nothing commits for the agent and the
+    branch the loop checks out may BE the base branch, so
+    ``base...HEAD`` is routinely empty and a diff-based check would
+    report ``0 files, all within scope`` over work it never saw.
+
+    An empty diff is indistinguishable from nothing changed: the lenient
+    git helpers return an empty file list either way, and even
+    ``get_diff_names(..., strict=True)`` returns ``[]`` without raising.
+    So the only honest answer is not to run those checks, which is what
+    this does.
+
+    Note what it does NOT cover, because the toggles cannot. ``policy``
+    and ``adequacy`` are separate config objects and are suppressed by
+    not being passed at all. And ``allowed_paths_error`` outranks
+    ``check_diff_scope`` entirely: :func:`_scope_checks` reads it first
+    and, on ANY non-None value, appends :func:`check_scope_unreadable`
+    instead, which is ungated by this config and fails closed by design
+    (#294). So a caller relying on this narrowing must still leave that
+    argument None, but for the opposite reason to the one that held
+    before #294: the risk is no longer a ``diff_scope`` PASS over a diff
+    it never saw, it is a hard scope_unreadable FAIL over a scope the
+    caller never had.
+    """
+    return replace(
+        config,
+        check_diff_scope=False,
+        check_bad_patterns=False,
+        dead_code_cleanup=False,
+        mutation_testing=False,
+    )
+
+
 def run_mechanical_verification(
     worktree_path: Path,
     prd_path: Path | None,
@@ -2214,32 +2454,14 @@ def run_mechanical_verification(
             )
         )
 
-    if config.require_self_critique:
-        # Read the log the engineer was actually pointed at: a factory
-        # component writes NEXT TO its PRD (the only location inside its
-        # allowedPaths), so resolving a repo-root default here would
-        # check a file that was never written and fail the component for
-        # the harness's own path confusion. An explicit config wins.
-        # prd_path is worktree-absolute at the factory call site, so the
-        # derived sibling is too; the join is a no-op for an absolute
-        # path and still anchors a relative one. With neither a PRD nor
-        # an explicit path there is no log to read, so the check is
-        # skipped rather than run against a path that cannot exist.
-        progress_path: Path | None = None
-        if config.progress_file_path is not None:
-            progress_path = worktree_path / Path(config.progress_file_path)
-        elif prd_path is not None:
-            progress_path = worktree_path / component_progress_path(
-                prd_path,
-                None,
+    progress_path = self_critique_progress_path(config, worktree_path, prd_path)
+    if progress_path is not None:
+        checks.append(
+            check_self_critique(
+                progress_path,
+                config.self_critique_min_bullets,
             )
-        if progress_path is not None:
-            checks.append(
-                check_self_critique(
-                    progress_path,
-                    config.self_critique_min_bullets,
-                )
-            )
+        )
 
     if prd_path is not None and fixtures_config is not None and fixtures_config.enabled:
         # Imported lazily: fixtures.py imports CheckResult/run_scrubbed

@@ -7,20 +7,58 @@ with: uv run pytest tests/test_tui_snapshots.py --snapshot-update
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.widgets import component_table
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
 SIZE = (120, 36)
 
 
+class _FrozenClock:
+    """Stands in for the ``time`` module inside one widget module.
+
+    ``component_table`` reads exactly one thing from ``time``, so this is
+    the whole surface. Replacing the module REFERENCE in that module's
+    globals rather than patching ``time.time`` itself keeps the freeze
+    scoped to the widget under snapshot: every other clock in the
+    process, pytest's own included, is untouched.
+    """
+
+    def __init__(self, frozen: float) -> None:
+        self._frozen = frozen
+
+    def time(self) -> float:
+        return self._frozen
+
+
 @pytest.fixture()
-def fixed_run(tmp_path: Path) -> tuple[Path, Path]:
+def fixed_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """The fixture run, with the board's age clock frozen where the run ended.
+
+    ``test_overview_snapshot`` already froze the activity feed's stamps
+    for determinism and missed this one. ``ComponentTable.update_state``
+    renders ``int(time.time() - comp.last_event_ts)`` per component, and
+    the fixture stamps its events with "now", so the stored SVG pins
+    ``0s`` three times. Measured against this fixture: an offset of 0.9s
+    still renders ``['0s', '0s', '0s']`` and 1.1s renders
+    ``['1s', '1s', '1s']``. So any run where more than one second of real
+    time passes between this fixture and the render produces a different
+    SVG and fails, which is a load-dependent flake rather than a
+    regression. Seen once locally in three full-suite runs and once on
+    CI.
+
+    Frozen AFTER ``write_fake_run`` returns, which is the same instant
+    the stored snapshots were generated at, so the pinned ages stay
+    ``0s`` and no snapshot has to move.
+    """
     run_dir = write_fake_run(tmp_path, FakeRunSpec(components=3))
+    monkeypatch.setattr(component_table, "time", _FrozenClock(time.time()))
     return tmp_path, run_dir
 
 

@@ -281,7 +281,7 @@ def test_load_toml_empty_branch_does_not_mark_explicit(
 ) -> None:
     """kstrl.toml.example documents `branch = ""` as 'empty = use PRD
     branchName'. An empty TOML branch must therefore NOT mark explicit,
-    so loop._determine_branch falls through to PRD lookup instead of
+    so loop.determine_branch falls through to PRD lookup instead of
     skipping checkout. Env var KSTRL_BRANCH="" retains its historical
     explicit-skip meaning - that path is tested elsewhere."""
     for var in ("KSTRL_BRANCH",):

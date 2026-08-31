@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -48,9 +49,50 @@ class ScriptedChannel:
         )
 
 
-def _params(tmp_path: Path, *, stories: int = 1, repair_max_runs: int = 0) -> FeatureParams:
+#: A ``[verify]`` command that succeeds without executing anything: the
+#: gates run through ``verify.run_scrubbed``, which hands a string to
+#: ``/bin/sh``, so this costs one shell fork and no exec. POSIX-only,
+#: like the rest of this suite.
+NOOP_VERIFY_COMMAND = "exit 0"
+
+
+def _write_fast_verify_toml(root: Path) -> None:
+    """Point ``[verify]`` at three no-op commands, unless the test wrote its own.
+
+    #288 made ``run_feature`` run the mechanical checks after every
+    engineer loop, so a project with no ``kstrl.toml`` here would resolve
+    the DEFAULTS and really shell out to ``uv run pytest`` / ``mypy`` /
+    ``ruff`` inside a tmp directory. Measured across this file and
+    test_feature_run.py: 0.90s before #288, 5.75s on the defaults, 1.1s
+    on these.
+
+    Fixed strings, so the narration is the same bytes on every run, which
+    ``test_narration_identical_with_and_without_recording`` asserts.
+    """
+    config = root / "kstrl.toml"
+    if config.exists():
+        return
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[verify]\n"
+        f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+        f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
+        f"lint_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n",
+        encoding="utf-8",
+    )
+
+
+def _params(
+    tmp_path: Path,
+    *,
+    stories: int = 1,
+    repair_max_runs: int = 0,
+    implementation_auto_run: bool = False,
+    no_verify: bool = False,
+) -> FeatureParams:
     feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
+    _write_fast_verify_toml(tmp_path)
     understand = feature_dir / "understand.md"
     understand.write_text("# understanding\n")
     prd_path = feature_dir / "prd.json"
@@ -79,7 +121,8 @@ def _params(tmp_path: Path, *, stories: int = 1, repair_max_runs: int = 0) -> Fe
         understand_iterations=2,
         understand_prompt_file=None,
         prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
-        implementation_auto_run=False,
+        implementation_auto_run=implementation_auto_run,
+        no_verify=no_verify,
         repair_max_runs=repair_max_runs,
         repair_iterations=2,
         repair_agent_cmd=None,
@@ -89,13 +132,18 @@ def _params(tmp_path: Path, *, stories: int = 1, repair_max_runs: int = 0) -> Fe
     )
 
 
-def _loop_results(*codes: int) -> Any:
-    """run_loop stub returning the given exit codes in order."""
+def _loop_results(*codes: int, iterations: int = 1) -> Any:
+    """run_loop stub returning the given exit codes in order.
+
+    ``iterations`` is what each LoopResult reports; zero is the loop
+    halting in preflight, which #288's report treats as "no agent
+    output to measure".
+    """
     remaining = list(codes)
 
     def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
         code = remaining.pop(0)
-        return LoopResult(completed=code == 0, iterations=1, exit_code=code)
+        return LoopResult(completed=code == 0, iterations=iterations, exit_code=code)
 
     return fake
 

@@ -3,13 +3,38 @@
 Mechanical extraction from cli.feature (TUI surface C2): the click
 shell resolves configs/paths/validation and builds FeatureParams; this
 module runs the flow and RETURNS the exit code (no sys.exit - the flow
-must be hostable on a worker thread). Narration is byte-identical to
-the pre-extraction command.
+must be hostable on a worker thread). Narration was byte-identical to
+the pre-extraction command; #288 has since added calls to
+``feature_verify.report_verification``, and nothing else.
 
 The review gate goes through the interaction seam: the terminal wires
 UiInteractionChannel (unchanged semantics incl. the non-TTY
 "Interactive review required" refusal); the embedded TUI (C3) passes
 its queue channel so the gate opens as a modal.
+
+#288: once before the implement loop and after every engineer loop that
+actually called the agent, the flow calls
+``feature_verify.report_verification``, which runs the read-only
+mechanical checks against the operator's checkout and REPORTS what they
+found, to the terminal and to the event stream. It is a report, not a
+gate: control flow, exit codes and the repair loop are untouched by the
+verdict, and the only value that comes back is the failing-check set
+this module carries to the next report so pre-existing breakage is named
+as pre-existing.
+
+Two consequences of naming the gate to the implement and repair loops
+that are not the report itself. The engineer prompt gains the resolved
+VERIFY_COMMANDS_PROMPT block, whose wording says a "gate" runs those
+commands where this flow only reports them - the COMMANDS it names are
+exactly the commands that run, which is the load-bearing half, but the
+consequence it implies is stronger than the truth, and correcting the
+wording is an H3 prompt change with a calibration cost (#288 review).
+And ``loop.build_project_context`` now also runs
+``scrub_project_claude_md`` here, so a project whose CLAUDE.md carries
+pre-#261 ``- **Test**: ...`` bullets gets them dropped from the prompt
+copy, with a ui.warn per divergence. That is #261 working as designed,
+one path later than it was written for, and it never touches the file on
+disk.
 """
 
 from __future__ import annotations
@@ -40,6 +65,11 @@ from kstrl.events import (
     RunCompleted,
     RunPlan,
     RunStarted,
+)
+from kstrl.feature_verify import (
+    baseline_skip_reason,
+    report_verification,
+    resolve_feature_verify_config,
 )
 from kstrl.interaction import (
     InteractionChannel,
@@ -83,6 +113,16 @@ class FeatureParams:
     #: only by luck; nothing failed when they diverged.
     prompt_file: Path
     implementation_auto_run: bool
+    #: ``--no-verify``. False runs the #288 advisory reports; True runs
+    #: none of them and threads no ``verify_config`` into any loop, so
+    #: the engineer prompt loses the VERIFY_COMMANDS_PROMPT block too.
+    #: `ks run` and `ks factory` have always offered this; `ks feature`
+    #: did not, and #288 gave it an unconditional ``2 + repair_max_runs``
+    #: full test-suite runs with no way to decline (review round 2).
+    #: Setting ``[verify] test_command`` to a no-op is not the same
+    #: escape: the SAME config feeds the engineer's prompt, so that
+    #: workaround lies to the agent about what will be run on its work.
+    no_verify: bool
     repair_max_runs: int
     repair_iterations: int
     repair_agent_cmd: str | None
@@ -244,6 +284,14 @@ def run_feature(
 
     timeouts = TimeoutConfig.load(root_dir)
     breaker_config = BreakerConfig.load(root_dir)
+    # #288: the config the implement and repair loops are TOLD about and
+    # the config the report below RUNS with are the same object, so the
+    # engineer prompt's "these are the exact commands kstrl's mechanical
+    # verification gate runs on your work" is true on this path. The
+    # understand loop is deliberately left on the default None: no gate
+    # runs on an understand file, so #261's rule that None states nothing
+    # is still the correct and truthful value there.
+    verify_config = resolve_feature_verify_config(root_dir, no_verify=params.no_verify)
 
     emit(PhaseStarted(component=component, phase="understand", attempt=1))
     phase_start = time.monotonic()
@@ -376,6 +424,38 @@ def run_feature(
         run_config.kstrl_branch = params.branch_override
         run_config.kstrl_branch_explicit = True
 
+    # The pre-implement BASELINE (#288 review). This report measures the
+    # whole checkout, not the diff, so without a before-picture a
+    # checkout whose lint was already red reads as the agent having
+    # broken lint - and under --implementation-auto-run, where the event
+    # stream is the only report, nothing distinguishes the two. That is
+    # the same honesty argument that disabled the six diff-based checks,
+    # so it has to apply to the three that were kept.
+    #
+    # ONE extra measurement per run, not per loop: every later report
+    # carries this set forward, so the whole chain is attributable for
+    # the price of the first. Measured on this repo: 246s, essentially
+    # all test suite, against 317-348s for the engineer loop it precedes.
+    # It also front-loads the answer - an operator learns their tree is
+    # already broken before paying for an agent, rather than after.
+    #
+    # ``baseline_skip_reason`` is the third of the three ways the two
+    # sides of the comparison could stop being the same measurement, and
+    # the only one that cannot be fixed by resolving something once:
+    # ``run_loop`` checks out the PRD's branch AFTER this point, so on a
+    # PRD naming an existing branch that is not the current one, this
+    # would measure a tree the loop never sees. It refuses there.
+    baseline_failing = report_verification(
+        ui,
+        emit,
+        component,
+        root_dir,
+        verify_config,
+        "baseline",
+        stop_check=stop_check,
+        skip_reason=baseline_skip_reason(run_config, root_dir),
+    )
+
     emit(PhaseStarted(component=component, phase="implement", attempt=1))
     phase_start = time.monotonic()
     run_log = _log_path(params, "run")
@@ -392,6 +472,7 @@ def run_feature(
             interaction=interaction,
             stop_check=stop_check,
             guard_state_root=root_dir,
+            verify_config=verify_config,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -406,6 +487,27 @@ def run_feature(
         )
         fail(detail)
         raise
+    # Stopped BEFORE the report, so the phase's duration is still the
+    # engineer loop's own and stays comparable to a pre-#288 run. The
+    # report carries its own duration on its event.
+    phase_duration = round(time.monotonic() - phase_start, 2)
+    # The return is DISCARDED here and at every repair report. Only the
+    # baseline's failing set may be carried, because "already failing
+    # before the implement loop" is a claim about the tree as it was
+    # before the loop and about nothing else. Re-assigning it made every
+    # repair report excuse the failure the implement loop had just caused
+    # (#288 review round 2).
+    report_verification(
+        ui,
+        emit,
+        component,
+        root_dir,
+        verify_config,
+        "implement",
+        loop_result=result,
+        stop_check=stop_check,
+        baseline_failing=baseline_failing,
+    )
     implementation_completed = result.completed and result.exit_code == 0
     implementation_detail = phase_detail(
         result.exit_code,
@@ -417,7 +519,7 @@ def run_feature(
             phase="implement",
             passed=implementation_completed,
             detail=implementation_detail,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
+            duration_seconds=phase_duration,
         )
     )
     if implementation_completed:
@@ -495,6 +597,7 @@ def run_feature(
                 interaction=interaction,
                 stop_check=stop_check,
                 guard_state_root=root_dir,
+                verify_config=verify_config,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
@@ -509,6 +612,18 @@ def run_feature(
             )
             fail(detail)
             raise
+        phase_duration = round(time.monotonic() - phase_start, 2)
+        report_verification(
+            ui,
+            emit,
+            component,
+            root_dir,
+            verify_config,
+            f"repair-{attempt}",
+            loop_result=repair_result,
+            stop_check=stop_check,
+            baseline_failing=baseline_failing,
+        )
         repair_completed = repair_result.completed and repair_result.exit_code == 0
         repair_detail = phase_detail(
             repair_result.exit_code,
@@ -520,7 +635,7 @@ def run_feature(
                 phase=f"repair-{attempt}",
                 passed=repair_completed,
                 detail=repair_detail,
-                duration_seconds=round(time.monotonic() - phase_start, 2),
+                duration_seconds=phase_duration,
             )
         )
         if repair_completed:

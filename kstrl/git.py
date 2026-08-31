@@ -295,6 +295,40 @@ def branch_exists(
         return False
 
 
+def current_branch(
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """The branch HEAD is on, or None (detached, unborn, not a repo).
+
+    ``--abbrev-ref`` prints the literal ``HEAD`` on a detached head, and
+    that is reported as None rather than passed through: a caller
+    comparing this against a branch NAME must not get a match from a
+    string that is not a branch.
+
+    Read-only, and the counterpart of :func:`branch_exists`: together
+    they answer whether a :func:`checkout_branch` would move the working
+    tree, which is what #288's pre-implement baseline has to know before
+    it is worth measuring anything.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    if not name or name == "HEAD":
+        return None
+    return name
+
+
 def checkout_branch(
     branch: str,
     ui: UI,

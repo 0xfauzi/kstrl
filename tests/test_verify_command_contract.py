@@ -46,6 +46,7 @@ from kstrl.verify import (
     resolve_verify_commands,
     scrub_stale_verify_commands,
 )
+from tests.test_feature_cmd import _write_fast_verify_toml
 
 # The chained command from the repo that found this bug: a Python
 # backend plus a TypeScript frontend, which is the only way to gate a
@@ -160,6 +161,15 @@ def _feature_cli_args(root: Path, *, auto_run: bool = False) -> list[str]:
 def _write_feature_prd(root: Path) -> None:
     feature_dir = root / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
+    # #288 review: `ks feature` now RUNS the [verify] commands after each
+    # engineer loop, so a project with no kstrl.toml resolves the
+    # DEFAULTS and these tests really spawn `uv run pytest` /
+    # `uv run mypy .` / `uv run ruff check .` from inside pytest, in a
+    # temp dir with no pyproject for uv to resolve against. Measured:
+    # 0.32s for a CLI feature test against 0.01s for its siblings, with
+    # "collected 0 items" in the captured output. On a cold runner each
+    # command can block up to [verify] subprocess_timeout (300s).
+    _write_fast_verify_toml(root)
     # ks feature refuses to start without one.
     (root / "scripts" / "kstrl" / "codebase_map.md").write_text("# map\n")
     (feature_dir / "prd.json").write_text(
