@@ -310,6 +310,9 @@ _CATEGORY_BY_CHECK = {
     "typecheck": "verification",
     "test_suite": "verification",
     "diff_scope": "verification",
+    # #294 split this out of diff_scope; diff_scope stays because
+    # journal entries written before the split carry its signatures.
+    "scope_source": "verification",
     "bad_patterns": "verification",
     "self_critique": "verification",
     "dead_code": "verification",
@@ -359,7 +362,23 @@ def split_signature(signature: str) -> tuple[str, str]:
 
 
 def category_for_check(check_name: str) -> str:
-    """Map a check/gate name to a FailurePattern category."""
+    """Map a check/gate name to a FailurePattern category.
+
+    An unlisted name falls through to "iteration", which files a Phase 1
+    gate under the engineer loop. Enrolling a new check in
+    ``_CATEGORY_BY_CHECK`` is a convention with no mechanism, and
+    measured on this tree the convention does not hold: AST-walking
+    ``kstrl/`` for ``CheckResult`` names finds ``fixtures``,
+    ``policy_envelope`` and ``test_adequacy`` absent from the table, so
+    three verification gates are already miscategorised here. That
+    predates #294 and correcting it changes recorded categorisation, so
+    it is not that change's to make; it is noted so the table is not
+    read as evidence that remembering is working. The repo has the
+    instrument for it - ``tests/test_prompt_versions.py``,
+    ``tests/test_atomicio.py`` and ``tests/test_process_scoping.py`` all
+    AST-walk for exactly this shape of unenrolled declaration - and
+    nothing points one at this table yet.
+    """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 
 

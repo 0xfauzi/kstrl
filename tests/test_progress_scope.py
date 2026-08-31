@@ -909,12 +909,13 @@ class TestInLoopGuardSeesTheComponentScope:
         tripwire yielded (no scope, run unguarded) while Phase 1 failed
         closed on its own separate read. One snapshot cannot hold two
         answers, so it holds the strict one - an unresolved scope
-        carries an error, which fails ``check_diff_scope`` CLOSED. The
-        tripwire is still not the thing that fails the component: with
-        no authored list it simply does not fire, exactly as before.
+        carries an error, which fails Phase 1 CLOSED under
+        ``check_scope_source`` (#294). The tripwire is still not the
+        thing that fails the component: with no authored list it simply
+        does not fire, exactly as before.
         """
         from kstrl.config import KstrlConfig
-        from kstrl.verify import check_diff_scope
+        from kstrl.verify import check_scope_source
 
         comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
         scope = ComponentScope.resolve(comp, tmp_path, KstrlConfig())
@@ -922,12 +923,7 @@ class TestInLoopGuardSeesTheComponentScope:
         assert scope.source == "unresolved"
         assert scope.error is not None
 
-        gate = check_diff_scope(
-            tmp_path,
-            "main",
-            scope.allowed_paths,
-            allowed_paths_error=scope.error,
-        )
+        gate = check_scope_source(scope.error)
         assert not gate.passed
 
     def test_the_guard_reports_which_files_it_rejected(self) -> None:
@@ -1640,7 +1636,8 @@ class TestUnreadablePrdIsCaught:
         tmp_path: Path,
     ) -> None:
         """Fail-closed only works if the failure is CAUGHT: Phase 1 must
-        hand check_diff_scope an allowed_paths_error, not raise.
+        receive an allowed_paths_error to fail check_scope_source on
+        (#294), not raise.
 
         The unreadable file is the PRE-RUN copy now (#269), because that
         is the one scope is read from. A worktree copy that cannot be
