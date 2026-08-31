@@ -90,7 +90,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 - **Encoding is a two-sided contract.** `atomicio` pins utf-8 on write and leaves `ensure_ascii` at its default, so JSON lands as pure ASCII that any locale can read back. Do not "improve" that to `ensure_ascii=False`: #291 tried it, and it made kstrl the SOURCE of non-ASCII bytes on ordinary LLM output (one curly quote in a component description), which broke six readers under `LC_ALL=C`. A reader of any file kstrl writes must still name `encoding="utf-8"`, and must catch `ValueError` alongside `OSError`, because `UnicodeDecodeError` is a `ValueError` and escapes a fail-closed `except OSError`. `init_cmd._read_text_or_none` is the worked example.
 - Tests assert on a process they can name (a pid from a pidfile, a pgid they created), never on what else the machine is running. `pgrep -f "sleep 60"` matches an unrelated `sleep 600` in any session, which is #292. Helpers live in `tests/helpers/procs.py`; `tests/test_process_scoping.py` AST-walks `tests/` and fails on a new `pgrep`/`pkill`/`killall`/`pidof`.
 - Cross-module JSON extraction from agent output reuses `decompose._extract_json` + `decompose._select_agent_output`.
-- Diff truncation uses the shared `git.truncate_diff_for_prompt` helper.
+- The review and security reviewers do NOT receive a diff: they run with `cwd` set to the worktree and are told to run git themselves (#266). Paste sites that remain (HITL checkpoint excerpt, knowledge distiller) truncate through `git.truncate_diff_for_prompt`.
 
 ### Gotchas
 

@@ -312,7 +312,7 @@ def tag_finding_with_model(finding: Finding, model_id: str) -> Finding:
     """Return a copy of *finding* tagged ``model:<id>`` (R7.1).
 
     Idempotent: a finding already carrying a model tag is returned
-    unchanged, so merged chunk results and resumed manifests cannot
+    unchanged, so resumed manifests cannot
     stack conflicting identities. An empty ``model_id`` is a no-op -
     tagging with an unknown identity would be a fabricated claim."""
     if not model_id:

@@ -44,6 +44,7 @@ how often they cry wolf on clean code.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import warnings
@@ -60,8 +61,10 @@ from kstrl.decompose import (
     _parse_spec_issues,
     _select_agent_output,
     build_decompose_prompt,
-    generate_data_delimiter,
 )
+from kstrl.delimiters import generate_data_delimiter
+from kstrl.git import get_diff_stat, pasted_change_source, repo_change_source
+from kstrl.policy import parse_added_lines
 from kstrl.review import (
     REVIEWER_PROMPT,
     VALID_CONCERN_CATEGORIES,
@@ -79,6 +82,7 @@ from kstrl.security import (
     _build_security_prompt,
     parse_security_output,
 )
+from tests.conftest import make_review_repo
 
 CALIBRATION_ENABLED = "1" in (
     os.environ.get("KSTRL_RUN_CALIBRATION"),
@@ -108,6 +112,28 @@ REPORT_MODEL_LABEL = calibration.reviewer_override_label(
     REVIEWER_AGENT_TYPE,
     REVIEWER_MODEL,
 )
+
+# #266: how the reviewer roles obtain the fixture change.
+#
+# "repo" (the default) is the production path: the fixture is
+# materialised into a real git repo and the reviewer is run inside it
+# with the same prompt production uses, so it has to run git itself.
+# "paste" renders the same prompt around an inline diff instead, which
+# is the only way to isolate a prompt-body change from a delivery
+# change: run both and the difference between them is the delivery
+# mechanism, run one and a moved number has two candidate causes.
+#
+# The fixtures cannot simply be `git apply`-ed - they are hand-written
+# and their hunk headers do not match their bodies (measured: 17 of 22
+# are rejected as "corrupt patch") - so "repo" reconstructs the images
+# from the hunk bodies instead. See _materialize_fixture_repo.
+CHANGE_SOURCE_MODE = (
+    os.environ.get("KSTRL_CALIBRATION_CHANGE_SOURCE", "repo").strip().lower() or "repo"
+)
+if CHANGE_SOURCE_MODE not in {"repo", "paste"}:
+    raise ValueError(
+        f"KSTRL_CALIBRATION_CHANGE_SOURCE={CHANGE_SOURCE_MODE!r}; expected 'repo' or 'paste'"
+    )
 
 FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
 RESULTS_DIR = FIXTURES_DIR / "_results"
@@ -160,6 +186,134 @@ def render_verification(meta: dict) -> str:
         message = str(check.get("message", ""))
         lines.append(f"- {name}: {status} - {message}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# #266: turning a fixture diff back into a repository
+# ---------------------------------------------------------------------------
+
+
+def _split_file_segments(diff_text: str) -> list[str]:
+    """One string per ``diff --git`` segment, in order."""
+    segments: list[str] = []
+    current: list[str] = []
+    for line in diff_text.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            if current:
+                segments.append("".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        segments.append("".join(current))
+    return segments
+
+
+def _segment_path(segment: str) -> str:
+    for line in segment.splitlines():
+        if line.startswith("+++ b/"):
+            return line[len("+++ b/") :].strip()
+        if line.startswith("--- a/") and "/dev/null" not in line:
+            return line[len("--- a/") :].strip()
+    raise ValueError(f"fixture segment names no path: {segment.splitlines()[0][:80]}")
+
+
+def _segment_images(segment: str) -> tuple[str, str]:
+    """``(pre_image, post_image)`` reconstructed from a segment's hunks.
+
+    Rebuilt from the hunk BODIES, never the hunk headers: the fixtures
+    are hand-written and their ``@@ -0,0 +1,32 @@`` counts do not match
+    what follows, which is why ``git apply`` rejects most of them. Every
+    fixture is a single hunk per file, so concatenating hunk bodies
+    reproduces each file exactly; a multi-hunk fixture would lose the
+    unchanged gaps between hunks, and would need a real patch instead.
+    """
+    pre: list[str] = []
+    post: list[str] = []
+    in_body = False
+    for line in segment.splitlines():
+        if line.startswith("@@ "):
+            in_body = True
+            continue
+        if not in_body or line.startswith("\\"):
+            continue
+        marker, body = line[:1], line[1:]
+        if marker == " ":
+            pre.append(body)
+            post.append(body)
+        elif marker == "+":
+            post.append(body)
+        elif marker == "-":
+            pre.append(body)
+    return (
+        "".join(f"{line}\n" for line in pre),
+        "".join(f"{line}\n" for line in post),
+    )
+
+
+def _materialize_fixture_repo(diff_text: str, repo: Path) -> Path:
+    """Build a repo whose ``main...HEAD`` is the fixture's change.
+
+    The reviewer then reads exactly the code the pasted diff carried,
+    through the production path, so a detection delta between the two
+    modes is about DELIVERY and not about different code being reviewed.
+
+    Built on ``tests.conftest.make_review_repo`` rather than a second
+    git-repo builder: the invariant that matters here - no remote, so
+    the reviewer's ``main...HEAD`` and the harness's are the same range -
+    is that helper's, and restating it would let the two drift.
+    """
+    if (repo / ".git").is_dir():
+        # Already built for an earlier run of the same fixture. The N
+        # runs of a consistency gate share one tmp_path, and rebuilding
+        # would re-init over the existing repo and then fail with
+        # "nothing to commit" - which is how this was found.
+        return repo
+    segments = [
+        (_segment_path(seg), _segment_images(seg)) for seg in _split_file_segments(diff_text)
+    ]
+    if not segments:
+        # #266 review finding 5: a fixture with no `diff --git` line
+        # yields no segments, and building a repo from nothing would
+        # measure the reviewer against whatever the default change is.
+        # Fail loudly - a calibration harness that reports a number for
+        # code the fixture does not contain is worse than one that stops.
+        raise ValueError(
+            "fixture diff contains no 'diff --git' segments; there is no "
+            "change to materialise and a default one would be measured instead"
+        )
+    base = {path: pre for path, (pre, _post) in segments if pre}
+    # Every file new means an empty base, and a repo with no commit has
+    # no ``main`` for the reviewer's range to name.
+    make_review_repo(
+        repo,
+        files={path: post for path, (_pre, post) in segments},
+        base_files=base or {".gitkeep": ""},
+    )
+    return repo
+
+
+def _change_source(diff_content: str, tmp_path: Path) -> tuple[str, Path, str]:
+    """``(change_source_block, cwd, data_delimiter)`` for the mode.
+
+    The delimiter comes BACK from the builder rather than going in: the
+    pasted variant frames untrusted bytes in a section of its own, and
+    the prompt must authenticate that same token. Returning them
+    together is what stops the two being generated independently, which
+    would leave the diff wrapped in a delimiter the prompt never names.
+    The repo variant frames nothing, so it takes a fresh token.
+    """
+    if CHANGE_SOURCE_MODE == "repo":
+        # Keyed on the DIFF, not on the directory: the cache below exists
+        # so the N runs of one fixture share a repo, and a path-only key
+        # would silently hand a second fixture the first one's code -
+        # the worst failure mode there is for a measurement harness,
+        # because it reports a number rather than an error.
+        digest = hashlib.sha256(diff_content.encode("utf-8")).hexdigest()[:12]
+        repo = _materialize_fixture_repo(diff_content, tmp_path / f"fixture-repo-{digest}")
+        return repo_change_source("main"), repo, generate_data_delimiter()
+    block, delimiter = pasted_change_source(diff_content)
+    return block, tmp_path, delimiter
 
 
 # Skip per-test (not module-level) so structural sanity tests in
@@ -258,7 +412,13 @@ def _get_reviewer_calibration_agent():
     """Agent for the reviewer and security roles: the base calibration
     agent unless the R7.1 reviewer-family override
     (KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
-    family for the same-family vs cross-family baseline comparison."""
+    family for the same-family vs cross-family baseline comparison.
+
+    #266: read-only, like production. It matters here for the same
+    reason it matters there - the reviewer runs inside the fixture repo
+    and a reviewer that writes what it reads has changed the evidence -
+    and it also keeps the measured number attributable to the
+    invocation the factory actually makes."""
     from kstrl.agents import get_agent
 
     return get_agent(
@@ -266,6 +426,7 @@ def _get_reviewer_calibration_agent():
         model=REVIEWER_MODEL or CALIBRATION_MODEL,
         model_reasoning_effort=None,
         agent_type=REVIEWER_AGENT_TYPE or "claude-code",
+        read_only=True,
     )
 
 
@@ -866,12 +1027,15 @@ def _security_run_once(
     """One security-reviewer run over a fixture diff with its real PRD."""
     prd_text = meta.get("prd", "(synthetic fixture; PRD intentionally omitted)")
     # R5.3: build through the harness path so calibration exercises the
-    # per-run data delimiters exactly as production does.
-    prompt = _build_security_prompt(prd_text, diff_content)
+    # per-run data delimiters exactly as production does. #266: and the
+    # change-acquisition block, which in the default "repo" mode is the
+    # production one.
+    change_source, cwd, delimiter = _change_source(diff_content, tmp_path)
+    prompt = _build_security_prompt(prd_text, change_source, delimiter)
     # R7.1: security is a reviewer role - it honors the family override.
     agent = _get_reviewer_calibration_agent()
     try:
-        output = _collect(agent, prompt, tmp_path)
+        output = _collect(agent, prompt, cwd)
     except Exception as exc:  # noqa: BLE001
         raise _AgentUnavailable(str(exc)) from exc
     raw = _select_agent_output(agent, output)
@@ -991,16 +1155,17 @@ def _reviewer_run_once(
     prd_text = meta.get("prd", "(no PRD)")
     # R5.3: build_review_prompt needs a PRD file on disk, so calibration
     # formats the template directly but with a real per-run delimiter.
+    change_source, cwd, delimiter = _change_source(diff_content, tmp_path)
     prompt = REVIEWER_PROMPT.format(
         prd_content=prd_text,
-        diff_content=diff_content,
+        change_source=change_source,
         verification_summary=render_verification(meta),
-        data_delimiter=generate_data_delimiter(),
+        data_delimiter=delimiter,
     )
     # R7.1: the reviewer role honors the family override.
     agent = _get_reviewer_calibration_agent()
     try:
-        output = _collect(agent, prompt, tmp_path)
+        output = _collect(agent, prompt, cwd)
     except Exception as exc:  # noqa: BLE001
         raise _AgentUnavailable(str(exc)) from exc
     raw = _select_agent_output(agent, output)
@@ -1178,6 +1343,33 @@ def test_architect_emits_sensible_allowed_paths(
 # ---------------------------------------------------------------------------
 # Static sanity (always runs, even without calibration env var)
 # ---------------------------------------------------------------------------
+
+
+class TestMaterialization:
+    """#295 finding 5: the harness must fail rather than measure the
+    reviewer against code the fixture does not contain."""
+
+    def test_a_diff_with_no_segments_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="no 'diff --git' segments"):
+            _materialize_fixture_repo("not a diff at all\n", tmp_path / "empty")
+
+    def test_a_real_fixture_round_trips_its_line_counts(self, tmp_path: Path) -> None:
+        """The reconstruction is only sound if the repo it builds carries
+        exactly the lines the pasted diff carried; otherwise "repo" and
+        "paste" mode would be measuring different code and the two could
+        not be compared."""
+        artifact = FIXTURES_DIR / "concerns" / "01_dead_code.diff"
+        text = artifact.read_text(encoding="utf-8")
+        repo = _materialize_fixture_repo(text, tmp_path / "fixture")
+        # policy.parse_added_lines rather than a fourth hand-rolled
+        # `startswith("+") and not startswith("+++")`: it gates the
+        # header exclusion on a preceding `--- ` line, so an added
+        # CONTENT line that happens to start "+++" is counted - which is
+        # what _segment_images does too. A hand-rolled predicate would
+        # disagree with the builder it is checking.
+        stat = get_diff_stat("main", repo)
+        assert stat.insertions == len(parse_added_lines(text))
+        assert stat.deletions == 0
 
 
 class TestFixtureStructure:

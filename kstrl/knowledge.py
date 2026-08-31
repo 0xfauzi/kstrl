@@ -35,8 +35,8 @@ from kstrl.decompose import (
     _extract_json,
     _select_agent_output,
     collect_agent_output,
-    generate_data_delimiter,
 )
+from kstrl.delimiters import generate_data_delimiter
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent

@@ -85,10 +85,10 @@ Why lines changed, and not hunk size
 ------------------------------------
 The obvious measurement for #265 is the largest single hunk, because
 that is the quantity the reviewer's chunker fails on. It is also the
-wrong one. #266 proposes dropping the pasted diff entirely - the
-reviewer already runs inside the worktree with git on its path - and
-chunking, hunks and the prompt cap all disappear with it. A detector
-built on hunk size would then be measuring something nothing computes.
+wrong one. #266 dropped the pasted diff entirely - the reviewer
+already runs inside the worktree with git on its path - and chunking,
+hunks and the prompt cap went with it. A detector built on hunk size
+would now be measuring something nothing computes.
 
 Lines changed against the base survives that. It needs no diff string to
 exist: the reading is taken from the branch, not from a prompt.

@@ -278,6 +278,23 @@ reviewers' output as much as it distrusts the engineer's.
     iteration is monotone from below, so it settles at the FEWEST parts in at
     most one round per digit width; the loop is still bounded and fails closed
     if the bound is ever reached.
+  - Note (2026-08-31, #266): SUPERSEDED, and the whole mechanism deleted. The
+    cap it defended, `DEFAULT_PROMPT_DIFF_CHAR_LIMIT`, was a budget for pasting
+    a diff into a prompt, and the reviewer roles never needed the paste: they
+    have always run with `cwd` set to the worktree, with git on the path. They
+    now read the change themselves, so there is no cap, no chunking, no
+    unsplittable hunk, and no partial review. `split_diff_for_prompt`,
+    `_split_file_segment`, `DiffUnsplittableError`, `run_chunked_review`,
+    `merge_review_results`, their security twins, `ReviewResult.partial`,
+    `SecurityResult.partial`, and the `diff_chunked` / `diff_unsplittable` /
+    `chunk_budget_insufficient` events are gone. What is NOT dropped is the
+    property chunking bought: every byte reached some prompt. Its replacement
+    is an attestation - the reviewer reports the diffstat it measured and the
+    harness compares it against `git diff --numstat`, refusing a hard-mode
+    review whose figure is not git's (`git.diffstat_disagreement` states what
+    that does and does not catch). The E2 Self-Critique strip goes with the
+    paste it operated on and becomes a prompt instruction instead; that is a
+    weakening, recorded here rather than left to be discovered.
 - [x] R1.5 (M) **Scope-guard hardening** [H-4, H-5, MED scope-none-fallthrough]
   - `git.get_diff_names`: use `--name-status -M`; rename/copy sources count as
     changed paths for scope purposes.

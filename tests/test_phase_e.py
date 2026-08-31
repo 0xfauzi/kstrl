@@ -11,12 +11,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
-from kstrl.git import strip_self_critique_from_diff
 from kstrl.knowledge import _coerce_facts, _parse_fact_md
 from kstrl.manifest import Component, Manifest
-from kstrl.review import ReviewResult, parse_review_output
+from kstrl.review import REVIEWER_PROMPT, ReviewResult, parse_review_output
+from kstrl.security import SECURITY_PROMPT
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
@@ -363,34 +365,60 @@ class TestE6HitlCheckpoint:
 
 
 # ---------------------------------------------------------------------------
-# E2 - strip Self-Critique from diff
+# E2 - the engineer's Self-Critique must not anchor the reviewer
 # ---------------------------------------------------------------------------
 
 
-class TestE2StripSelfCritique:
-    def test_strips_self_critique_block(self) -> None:
-        diff = """\
-diff --git a/scripts/kstrl/progress.txt b/scripts/kstrl/progress.txt
-+## Iteration 1 - US-001
-+- What I did: added the function
-+## Self-Critique
-+- Failure mode 1: empty input crashes the parser
-+- Failure mode 2: concurrent writes race
-+- Failure mode 3: timeout swallowed silently
-+---
-+
-diff --git a/src/x.py b/src/x.py
-+def add(a, b): return a + b
-"""
-        result = strip_self_critique_from_diff(diff)
-        assert "Failure mode 1" not in result
-        assert "Self-Critique" not in result
-        # The actual code change must survive
-        assert "def add(a, b)" in result
+class TestE2SelfCritiqueIsNotEvidence:
+    """#266 moved E2 from a mechanism to an instruction, and that is a
+    real weakening worth pinning.
 
-    def test_no_block_returns_unchanged(self) -> None:
-        diff = "+def f(): pass\n"
-        assert strip_self_critique_from_diff(diff) == diff
+    Before, the harness held the diff and deleted the engineer's
+    ``## Self-Critique`` block out of it with a regex before either
+    reviewer saw it, so the anchoring was impossible rather than
+    discouraged. The reviewers now read the repository themselves and
+    the harness no longer stands between them and the bytes, so the
+    block IS visible to them and the only remaining defence is telling
+    them what it is worth. These tests assert the instruction is
+    present in both prompts; nothing can assert that it is obeyed, and
+    the calibration fixtures carry no self-critique block, so no
+    measurement covers it either.
+    """
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [REVIEWER_PROMPT, SECURITY_PROMPT],
+        ids=["reviewer", "security"],
+    )
+    def test_prompt_says_the_self_critique_is_not_evidence(self, prompt: str) -> None:
+        assert "SELF-CRITIQUE IS NOT EVIDENCE" in prompt
+        assert "## Self-Critique" in prompt
+        assert "author's account of its own work" in prompt
+
+    @pytest.mark.parametrize(
+        "prompt,sentence",
+        [
+            (REVIEWER_PROMPT, "confirm it in the code or report it"),
+            (
+                SECURITY_PROMPT,
+                "confirm the mitigation in the code or report the vulnerability",
+            ),
+        ],
+        ids=["reviewer", "security"],
+    )
+    def test_prompt_demands_independent_confirmation(
+        self,
+        prompt: str,
+        sentence: str,
+    ) -> None:
+        """The instruction has to say what to DO, not just what to
+        distrust: a named failure mode must be confirmed in the code or
+        reported, which is the behaviour the deleted regex bought.
+
+        Paired per prompt rather than disjoined over both: an ``or``
+        lets each prompt pass on the OTHER's sentence, so deleting the
+        reviewer's line would go unnoticed."""
+        assert sentence in prompt
 
 
 # ---------------------------------------------------------------------------
