@@ -32,6 +32,7 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,20 @@ def group_has_live_member(pgid: int) -> bool:
     is there" because ``ps`` failed has measured nothing and passed,
     which is the #292 defect one level down; a daemon that raises over a
     diagnostic stops doing its job. A test has nothing to protect.
+
+    THE COMMON-MODE RISK, stated because sharing a reading with the code
+    under test is a real cost and not an obviously free one. The suite's
+    orphan assertions and the daemon's reap check now run the same parse,
+    so one parse bug could blind both at once. Two arguments answer it,
+    and neither is "it will not happen". First, a second hand-written
+    parse would not have been independent of the failure it is supposed
+    to catch: both copies read the same ``ps -A -o pgid=,stat=`` and both
+    would break together on a column shift, which is the named risk.
+    Second, ``read_group_liveness`` no longer rests on the parse alone
+    for the dangerous direction. A "gone" now requires either a zombie
+    row it demonstrably saw, or ``killpg`` ESRCH from the kernel - so a
+    parse that DROPS a running row yields "cannot see" rather than a
+    confident "gone", and this helper then raises rather than passing.
     """
     liveness = read_group_liveness(pgid)
     if liveness.live is None:
@@ -87,27 +102,71 @@ def fake_ps(
     returncode: int = 0,
     stdout: str = "",
     stderr: str = "",
-    raises: BaseException | None = None,
-) -> None:
-    """Make ``kstrl.procgroup``'s ``ps`` return this, or raise this.
+    raises: Callable[[], BaseException] | None = None,
+) -> list[dict[str, object]]:
+    """Answer ``kstrl.procgroup``'s ``ps`` with this. Returns the call log.
 
-    One patch target in one place. Before #298 the fake was hand-rolled
-    at six call sites across two files, and rewiring them when the
-    reading moved is what showed the cost: a site missed keeps passing
-    while measuring nothing, which is exactly what #292 exists to stop.
+    DELEGATES every other command to the real ``subprocess.run``. That is
+    load-bearing, not politeness: ``procgroup.subprocess`` IS the stdlib
+    module, so ``setattr`` on it replaces ``run`` for the whole process,
+    not for ``procgroup``. Measured before this guard existed: under
+    ``fake_ps(stdout="1 Ss\n")`` a plain
+    ``subprocess.run(["git", "rev-parse", "HEAD"])`` returned
+    ``stdout='1 Ss\n'`` and ``args=['ps','-A','-o','pgid=,stat=']``. Any
+    test that combined this helper with a git or fixture subprocess call
+    would have measured nothing and passed, which is the #292 class this
+    module exists to prevent.
+
+    ``raises`` is a FACTORY rather than an instance. A module-level
+    exception object re-raised by every parametrized case accumulates a
+    traceback frame and an ``__context__`` per raise, so it retains every
+    test frame and its locals until interpreter exit.
+
+    The returned list records the args and kwargs each intercepted ``ps``
+    call received, so a test can assert on what was passed - the
+    ``timeout=`` in particular, which is the only bound stopping a wedged
+    ``ps`` from hanging the daemon and which no test could otherwise see.
     """
+    real_run = subprocess.run
+    calls: list[dict[str, object]] = []
 
-    def fake(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake(*args: object, **kwargs: object) -> object:
+        argv = list(args[0]) if args and isinstance(args[0], (list, tuple)) else []
+        if argv != list(procgroup.PS_ARGV):
+            return real_run(*args, **kwargs)  # type: ignore[arg-type]
+        calls.append({"argv": argv, "kwargs": dict(kwargs)})
         if raises is not None:
-            raise raises
+            raise raises()
         return subprocess.CompletedProcess(
-            args=list(procgroup.PS_ARGV),
+            args=argv,
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
         )
 
     monkeypatch.setattr(procgroup.subprocess, "run", fake)
+    return calls
+
+
+def dead_group(timeout: float = 10.0) -> int:
+    """A process group that is spawned, killed and reaped. Returns its pgid.
+
+    The pgid of a group that provably held a process and provably holds
+    none now, which is what a test needs to assert that absence is still
+    reportable. Lives here rather than being copied into each suite
+    because a copied fixture is one that stops matching the helper it
+    feeds.
+    """
+    child = subprocess.Popen(
+        ["sleep", "30"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    pgid = os.getpgid(child.pid)
+    kill_group(pgid)
+    child.wait(timeout=timeout)
+    return pgid
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:
@@ -127,7 +186,7 @@ def kill_group(pgid: int) -> None:
     ``sleep 60`` on a shared machine is precisely what #292 is about: the
     old test's own failures poisoned every later run of it. Observed
     while verifying that change, a failing run of the pre-fix file left
-    an orphan behind that then matched the next run's ``pgrep``.
+    an orphan behind that then matched the next run's machine-wide search.
     """
     try:
         os.killpg(pgid, signal.SIGKILL)

@@ -172,6 +172,11 @@ class RunOutcome:
     #: signalled and reaped. False means a descendant may still be alive,
     #: which must never be treated as "the run is over" (#186 F1).
     group_reaped: bool = False
+    #: Why the reap check could not measure, when it could not. A
+    #: `group_reaped=False` reached this way means "we could not see",
+    #: not "a factory is still running", and the poison reason an
+    #: operator reads says so. Empty when the check measured cleanly.
+    group_reap_detail: str = ""
 
 
 class FactoryRunner(Protocol):
@@ -1428,7 +1433,7 @@ def run_supervised(
             output_tail=_tail(output),
         )
     except subprocess.TimeoutExpired:
-        reaped = terminate_process_group(process, pgid)
+        termination = terminate_process_group(process, pgid)
         try:
             output, _ = process.communicate(timeout=10)
         except (subprocess.TimeoutExpired, ValueError, OSError):
@@ -1437,7 +1442,8 @@ def run_supervised(
             returncode=(process.returncode if process.returncode is not None else -9),
             timed_out=True,
             output_tail=_tail(output),
-            group_reaped=reaped,
+            group_reaped=termination.reaped,
+            group_reap_detail=termination.degraded,
         )
 
 
@@ -1456,13 +1462,31 @@ def _tail(output: str | None) -> str:
 GROUP_TERM_GRACE_SECONDS = 15.0
 
 
+@dataclass(frozen=True)
+class GroupTermination:
+    """Whether the group was confirmed reaped, and why not if not.
+
+    A bare bool was not enough: `serve_cycle` turns `reaped=False` into a
+    poison reason telling the operator a factory may still be running,
+    and when the real cause was an unreadable `ps` that reason is a
+    misdiagnosis. `degraded` carries the correction into the durable
+    record rather than only into a warning on stderr, which a detached
+    daemon does not keep.
+    """
+
+    reaped: bool
+    #: Empty when the answer was measured. Non-empty when it was not, and
+    #: then it says what could not be seen.
+    degraded: str = ""
+
+
 def terminate_process_group(
     process: subprocess.Popen[str],
     pgid: int | None = None,
-) -> bool:
-    """SIGTERM then SIGKILL a child's whole process group; True if reaped.
+) -> GroupTermination:
+    """SIGTERM then SIGKILL a child's whole process group.
 
-    Returns False when the group could not be confirmed gone, so a
+    ``reaped`` is False when the group could not be confirmed gone, so a
     caller never reports a timed-out run as finished while a factory may
     still be writing to the repo (#186 F1).
 
@@ -1480,7 +1504,7 @@ def terminate_process_group(
     if pgid is None:
         # No group to signal and no id to check: the most we can honestly
         # say is whether the direct child is gone.
-        return process.poll() is not None
+        return GroupTermination(process.poll() is not None)
 
     for sig, wait in (
         (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS),
@@ -1489,16 +1513,21 @@ def terminate_process_group(
         try:
             os.killpg(pgid, sig)
         except ProcessLookupError:
-            return True
-        except OSError:
-            return False
+            return GroupTermination(True)
+        except OSError as exc:
+            return GroupTermination(False, f"could not signal group {pgid}: {exc}")
         try:
             process.wait(timeout=wait)
         except subprocess.TimeoutExpired:
             continue
         # The direct child is gone; confirm the group is too.
-        return not process_group_alive(pgid)
-    return not process_group_alive(pgid)
+        return _confirm_group_gone(pgid)
+    return _confirm_group_gone(pgid)
+
+
+def _confirm_group_gone(pgid: int) -> GroupTermination:
+    alive, degraded = _group_liveness_for_reap(pgid)
+    return GroupTermination(not alive, degraded)
 
 
 def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
@@ -1521,8 +1550,8 @@ def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
     return pgid
 
 
-def process_group_alive(pgid: int) -> bool:
-    """Whether any RUNNING process remains in ``pgid``.
+def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:
+    """(is anything RUNNING in ``pgid``, why that answer is degraded).
 
     A zombie does not count. It has already died and is only waiting to
     be reaped, so a caller asking "may a factory still be writing to this
@@ -1536,28 +1565,40 @@ def process_group_alive(pgid: int) -> bool:
     the conservative direction for the one caller, but on a machine with
     no ``ps`` it makes EVERY timed-out run unreapable and therefore
     poisoned, which trades a rare wrong answer for a permanent one. The
-    probe is right whenever the group is genuinely gone, which is the
-    common case, and its only error is over-reporting alive - the safe
-    direction for ``terminate_process_group``, which then declines to
-    call the run reaped. So the degraded path is no worse than what this
-    function did everywhere before, and the ``ps`` path is exact.
+    probe is right whenever the group is genuinely gone, and its only
+    error is over-reporting alive - the safe direction for
+    ``terminate_process_group``, which then declines to call the run
+    reaped. So the degraded path is no worse than what this function did
+    everywhere before, and the ``ps`` path is exact.
 
-    The degrade WARNS rather than passing silently. Without it the two
-    answers are indistinguishable downstream: a run poisoned with "its
-    process group could not be confirmed reaped, so a factory may still
-    be executing against this repo" would be a misdiagnosis when the real
-    cause was an unreadable ``ps``, and nothing would say so.
+    The degrade is both WARNED and RETURNED. The warning is for an
+    attached operator; the returned string is what reaches the queue's
+    poison reason, because a daemon detached from its stderr keeps only
+    the record. Without it the operator reads "a factory may still be
+    executing against this repo" when the truth was "the check could not
+    see", which is the misdiagnosis this string exists to prevent.
     """
     liveness = read_group_liveness(pgid)
     if liveness.live is not None:
-        return liveness.live
+        return liveness.live, ""
     warnings.warn(
         f"kstrl: {liveness.reason} Falling back to a signal probe, which "
         f"counts an unreaped zombie as alive, so group {pgid} may be "
         f"reported as running when nothing in it is.",
         stacklevel=2,
     )
-    return signal_probe_alive(pgid)
+    return signal_probe_alive(pgid), liveness.reason
+
+
+def process_group_alive(pgid: int) -> bool:
+    """Whether any RUNNING process remains in ``pgid``.
+
+    The bool half of ``_group_liveness_for_reap``, which is where the
+    reasoning lives. Callers that record why an answer was degraded want
+    that function instead.
+    """
+    alive, _ = _group_liveness_for_reap(pgid)
+    return alive
 
 
 # ---------------------------------------------------------------------------
@@ -1609,6 +1650,27 @@ def check_budget(
             f"(${spend.spent_usd:.2f} spent{floor})"
         ),
         resume_after=next_local_midnight(),
+    )
+
+
+def _unreaped_timeout_detail(outcome: RunOutcome) -> str:
+    """The poison reason for a timed-out run whose group was not confirmed gone.
+
+    Says WHY it was not confirmed when the check could not measure.
+    Without that the operator reads a claim about a live factory when the
+    real cause was a blind reap check, and acts on the wrong one. The
+    warning `_group_liveness_for_reap` emits goes to stderr, which a
+    detached daemon does not keep; this is the durable half.
+    """
+    detail = (
+        "the run timed out and its process group could not be confirmed "
+        "reaped, so a factory may still be executing against this repo"
+    )
+    if not outcome.group_reap_detail:
+        return detail
+    return (
+        f"{detail}. The check could not measure, so this is 'unknown' "
+        f"rather than 'still running': {outcome.group_reap_detail}"
     )
 
 
@@ -2293,10 +2355,7 @@ def serve_cycle(
     if outcome.timed_out and not outcome.group_reaped:
         # A descendant may still be running against this repo. Do NOT
         # release the item for another attempt (#186 F1).
-        detail = (
-            "the run timed out and its process group could not be confirmed "
-            "reaped, so a factory may still be executing against this repo"
-        )
+        detail = _unreaped_timeout_detail(outcome)
         with queue_lock(root_dir, blocking=True):
             current = queue.get(running.item_id)
             if current is not None:

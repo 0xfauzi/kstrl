@@ -40,6 +40,7 @@ from kstrl.serve import (
     ServeStateError,
     SpendLedger,
     Verdict,
+    _group_liveness_for_reap,
     backoff_seconds,
     caffeinate_prefix,
     check_budget,
@@ -1753,7 +1754,7 @@ class TestProcessGroupSupervision:
             text=True,
         )
         pgid = os.getpgid(proc.pid)
-        assert terminate_process_group(proc) is True
+        assert terminate_process_group(proc).reaped is True
         assert not process_group_alive(pgid)
 
     def test_a_mocked_popen_never_signals_a_broad_group(self) -> None:
@@ -1777,7 +1778,7 @@ class TestProcessGroupSupervision:
         with patch("kstrl.serve.os.killpg") as killpg:
             with patch("kstrl.serve.os.getpgid", return_value=99999):
                 fake.poll.return_value = 0
-                assert terminate_process_group(fake) is True
+                assert terminate_process_group(fake).reaped is True
             assert killpg.call_count == 0, "must never signal a bogus group"
 
     def test_our_own_process_group_is_never_signalled(self) -> None:
@@ -1889,17 +1890,20 @@ class TestProcessGroupSupervision:
         def recording_killpg(target: int, sig: int) -> None:
             # signal 0 is a liveness PROBE, not a kill; counting it would
             # let "never signal the group" pass, since a probe runs
-            # either way. Since #298 the probe lives in kstrl.procgroup
-            # and cannot reach this patch at all, but the filter stays:
-            # it states the rule rather than relying on where the probe
-            # currently happens to live.
+            # either way. The filter is NOT redundant now the probe lives
+            # in kstrl.procgroup: `os` is one shared module object, so
+            # patching kstrl.serve.os.killpg patches procgroup's too.
+            # Measured - under this patch, procgroup.signal_probe_alive(4242)
+            # records calls == [(4242, 0)]. Drop the filter and on any run
+            # where ps is blind the probe's (pgid, 0) satisfies
+            # "the group must actually be signalled" on its own.
             if sig != 0:
                 signalled.append((target, sig))
             real_killpg(target, sig)
 
         try:
             with patch("kstrl.serve.os.killpg", side_effect=recording_killpg):
-                reaped = terminate_process_group(proc, pgid)
+                reaped = terminate_process_group(proc, pgid).reaped
         finally:
             if process_group_alive(pgid):
                 real_killpg(pgid, 9)
@@ -1918,7 +1922,7 @@ class TestProcessGroupSupervision:
             text=True,
         )
         proc.wait(timeout=10)
-        assert terminate_process_group(proc) is True
+        assert terminate_process_group(proc).reaped is True
 
     def test_an_unreaped_timeout_poisons_instead_of_retrying(
         self,
@@ -1974,32 +1978,49 @@ class TestProcessGroupSupervision:
 class TestGroupLivenessDegradesRatherThanGuessing:
     """#298: what `process_group_alive` does when `ps` gives no answer.
 
-    Only the POLICY is here. The reading's tri-state and its parse are
-    pinned in `tests/test_procgroup.py`, and the zombie case itself needs
-    a real unreaped tree and lives in
+    Only the POLICY is here. The reading's tri-state, its parse and the
+    two conditions under which a "gone" is evidence are pinned in
+    `tests/test_procgroup.py`, and the zombie case itself needs a real
+    unreaped tree and lives in
     `tests/test_shutdown.py::test_a_zombie_does_not_count_as_a_live_member`.
-    What this class covers is the fallback that #298 introduced, which
-    would otherwise ship untested: `ps` is normally present and normally
-    works, so nothing else exercises the degraded path.
 
     Why degrading rather than raising or reporting a blanket "alive" is
-    argued in `process_group_alive`'s docstring.
+    argued in `_group_liveness_for_reap`'s docstring.
     """
 
     #: Every way `ps` can give no answer, and the id says which is which.
-    #: The assertion is the same for all four because the contract is:
+    #: The assertion is the same for all of them because the contract is:
     #: whatever went wrong, fall back rather than guess.
+    #:
+    #: `raises` holds FACTORIES, not exception instances. An instance
+    #: built here at class-body evaluation lives for the session, and each
+    #: `raise` appends a frame to its `__traceback__` and sets its
+    #: `__context__`, so it would retain every test frame that ever raised
+    #: it and their locals until interpreter exit.
     BLIND_PS = [
         pytest.param({"returncode": 127, "stderr": "ps: not found"}, id="nonzero_exit"),
-        pytest.param({"raises": FileNotFoundError(2, "no ps")}, id="binary_absent"),
+        pytest.param(
+            {"raises": lambda: FileNotFoundError(2, "no ps")},
+            id="binary_absent",
+        ),
         pytest.param(
             # TimeoutExpired is a SubprocessError, not an OSError, so it
             # takes a different branch from the one above.
-            {"raises": subprocess.TimeoutExpired(cmd=["ps"], timeout=5.0)},
+            {"raises": lambda: subprocess.TimeoutExpired(cmd=["ps"], timeout=5.0)},
             id="wedged",
         ),
-        # rc=0 but our own group hidden, which is what hidepid looks like.
-        pytest.param({"stdout": "    1 Ss\n"}, id="filtered_output"),
+        pytest.param(
+            # UnicodeDecodeError is a ValueError, which escapes a
+            # fail-closed `except OSError` entirely.
+            {"raises": lambda: UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")},
+            id="undecodable",
+        ),
+        pytest.param(
+            # rc=0, but the listing does not hold our own group, which the
+            # kernel says is occupied. A filtered listing, not an empty one.
+            {"stdout": "    1 Ss\n"},
+            id="filtered_output",
+        ),
     ]
 
     @pytest.mark.parametrize("blind", BLIND_PS)
@@ -2019,16 +2040,7 @@ class TestGroupLivenessDegradesRatherThanGuessing:
     ) -> None:
         """The guard must not make absence unreportable, which would
         poison every timed-out run on a machine with no `ps`."""
-        child = subprocess.Popen(
-            ["sleep", "30"],
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        pgid = os.getpgid(child.pid)
-        procs.kill_group(pgid)
-        child.wait(timeout=10)
-
+        pgid = procs.dead_group()
         procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
         with pytest.warns(UserWarning):
             assert process_group_alive(pgid) is False
@@ -2048,22 +2060,100 @@ class TestGroupLivenessDegradesRatherThanGuessing:
         assert "ps failed" in message, "the operator must learn ps was the cause"
         assert "zombie" in message, "and which way the fallback is wrong"
 
+    def test_the_degrade_reason_is_returned_not_only_warned(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A warning goes to stderr, and a daemon detached from its stderr
+        keeps only the record. So the reason has to come back as a value."""
+        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
+        with pytest.warns(UserWarning):
+            alive, degraded = _group_liveness_for_reap(os.getpgrp())
+        assert alive is True
+        assert "ps failed" in degraded
+
+    def test_a_measured_answer_carries_no_degrade_reason(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The negative control: an empty string must mean "measured
+        cleanly", or the poison reason gains a caveat on every run."""
+        procs.fake_ps(monkeypatch, stdout=f"{os.getpgrp()} Ss\n")
+        assert _group_liveness_for_reap(os.getpgrp()) == (True, "")
+
     def test_a_working_ps_is_the_answer_and_the_probe_is_not_consulted(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Ordering, so a later edit cannot quietly restore the probe as
-        the primary and reintroduce #298. A negative pre-filter on
-        `killpg` ESRCH was measured and declined; if it is ever adopted,
-        this becomes "a probe that says maybe does not decide"."""
+        the primary and reintroduce #298.
+
+        Scoped to the case where `ps` reports a RUNNING member. A `ps`
+        that reports no row does consult `killpg`, deliberately: that is
+        the kernel control that makes a "gone" evidence rather than a
+        listing's silence.
+        """
         calls: list[int] = []
 
         def recording_killpg(target: int, sig: int) -> None:
             calls.append(sig)
 
+        procs.fake_ps(monkeypatch, stdout=f"{os.getpgrp()} Ss\n")
         monkeypatch.setattr("kstrl.procgroup.os.killpg", recording_killpg)
         assert process_group_alive(os.getpgrp()) is True
-        assert calls == [], "the signal probe is the fallback, not the answer"
+        assert calls == [], "a listing that shows a runner settles it on its own"
+
+
+class TestTheReapDegradeReachesTheDurableRecord:
+    """#298 follow-up: the poison reason an operator actually reads.
+
+    `serve_cycle` writes "a factory may still be executing against this
+    repo" into the queue item, the ledger and the remote report. When the
+    real cause was a blind reap check that sentence is a misdiagnosis,
+    and a warning on stderr does not correct it for a detached daemon.
+    """
+
+    def test_a_degraded_reap_says_so_in_the_poison_reason(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path, max_attempts=3)
+        _add(queue)
+        serve_cycle(
+            tmp_path,
+            runner=_stub_runner(
+                RunOutcome(
+                    returncode=-9,
+                    timed_out=True,
+                    group_reaped=False,
+                    group_reap_detail="ps failed (rc=127): 'not found'.",
+                ),
+            ),
+        )
+        item = queue.items()[0]
+        assert item.state is ItemState.POISON
+        assert "could not be confirmed reaped" in item.poison_reason
+        assert "ps failed (rc=127)" in item.poison_reason, (
+            "the recorded reason must say the check could not measure"
+        )
+        assert "unknown" in item.poison_reason
+
+    def test_an_undegraded_reap_reason_gains_no_caveat(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The negative control, or every poison reason grows a tail."""
+        queue = _queue(tmp_path, max_attempts=3)
+        _add(queue)
+        serve_cycle(
+            tmp_path,
+            runner=_stub_runner(
+                RunOutcome(returncode=-9, timed_out=True, group_reaped=False),
+            ),
+        )
+        item = queue.items()[0]
+        assert "could not be confirmed reaped" in item.poison_reason
+        assert "could not measure" not in item.poison_reason
 
 
 class TestRunOwnership:

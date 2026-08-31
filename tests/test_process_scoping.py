@@ -214,11 +214,20 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
     def test_filtered_ps_output_raises_instead_of_reporting_absence(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """rc=0 but our own processes hidden, which is what a ``hidepid``
-        mount looks like. Exit status alone is not enough."""
+        """rc=0 but our own processes hidden, which is what a filtered
+        listing looks like. Exit status alone is not enough.
+
+        #298 replaced the control that decides this. It used to check
+        that our own group appeared in the listing, which was satisfied
+        by construction on every real ps and so could never fire. It now
+        asks the kernel: the listing holds no row for this group, and
+        ``killpg`` says the group is occupied, so the listing is not
+        showing everything. The helper's POLICY is unchanged, which is
+        the point of the test: it still refuses to convert a listing it
+        cannot trust into an absence."""
 
         procs.fake_ps(monkeypatch, stdout="    1 Ss\n  517 Ss\n")
-        with pytest.raises(AssertionError, match="own group"):
+        with pytest.raises(AssertionError, match="kernel reports"):
             procs.group_has_live_member(os.getpgrp())
 
     def test_wait_for_group_to_die_does_not_convert_that_into_success(
