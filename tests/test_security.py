@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.git import repo_change_source
 from kstrl.security import (
     SECURITY_PROMPT,
     SecurityConfig,
@@ -19,6 +20,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
+from tests.conftest import ReviewRepo, make_review_repo, with_observed_diffstat
 
 
 class MockSecurityAgent:
@@ -239,49 +241,25 @@ class TestPassesThreshold:
 
 
 class TestRunSecurityReview:
-    def _setup_repo(self, tmp_path: Path) -> Path:
-        import subprocess
-
-        subprocess.run(
-            ["git", "init", "-q", "-b", "main", str(tmp_path)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True,
-            capture_output=True,
-        )
-        (tmp_path / "stub").write_text("x")
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "add", "stub"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
-            check=True,
-            capture_output=True,
-        )
-        prd_path = tmp_path / "prd.json"
-        prd_path.write_text('{"branchName": "test", "userStories": []}')
-        return prd_path
+    def _setup_repo(self, tmp_path: Path) -> ReviewRepo:
+        """#266: the security reviewer reads the worktree it runs in, so
+        the fixture has to be a repo with a real change on it - not just
+        an initialised repo whose HEAD is the base. A zero-length change
+        would make a reviewer reply that reports nothing look correct."""
+        repo = make_review_repo(tmp_path / "repo")
+        (repo.path / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+        return repo
 
     def test_skip_mode_short_circuits(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         config = SecurityConfig(mode=SecurityMode.SKIP.value)
         agent = MockSecurityAgent("should not be called")
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -289,15 +267,15 @@ class TestRunSecurityReview:
         assert result.findings == []
 
     def test_advisory_passes_even_with_findings(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
-        agent = MockSecurityAgent(VALID_SECURITY_OUTPUT)
+        agent = MockSecurityAgent(with_observed_diffstat(VALID_SECURITY_OUTPUT, repo))
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -305,18 +283,18 @@ class TestRunSecurityReview:
         assert len(result.findings) == 2
 
     def test_hard_fails_on_critical(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         config = SecurityConfig(
             mode=SecurityMode.HARD.value,
             fail_threshold="high",
         )
-        agent = MockSecurityAgent(VALID_SECURITY_OUTPUT)
+        agent = MockSecurityAgent(with_observed_diffstat(VALID_SECURITY_OUTPUT, repo))
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -324,7 +302,7 @@ class TestRunSecurityReview:
         assert result.passed is False
 
     def test_hard_passes_with_only_low(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         output = json.dumps(
             {
                 "findings": [
@@ -337,7 +315,7 @@ class TestRunSecurityReview:
                 ]
             }
         )
-        agent = MockSecurityAgent(output)
+        agent = MockSecurityAgent(with_observed_diffstat(output, repo))
         config = SecurityConfig(
             mode=SecurityMode.HARD.value,
             fail_threshold="high",
@@ -345,9 +323,9 @@ class TestRunSecurityReview:
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -377,14 +355,14 @@ class TestRunSecurityReview:
     def test_agent_crash_hard_mode_fails(self, tmp_path: Path) -> None:
         """Hard mode must surface infrastructure errors as a failure -
         otherwise a flaky API silently approves every diff."""
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
             self._boom_agent(),
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -394,14 +372,14 @@ class TestRunSecurityReview:
 
     def test_agent_crash_advisory_mode_passes(self, tmp_path: Path) -> None:
         """Advisory mode should warn but not block."""
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
             self._boom_agent(),
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -412,15 +390,15 @@ class TestRunSecurityReview:
         """If the agent returns un-parseable output in hard mode, we
         must NOT silently overwrite passed=False via _passes_threshold
         on the (empty) findings list."""
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         agent = MockSecurityAgent("garbage that is not JSON at all")
         config = SecurityConfig(mode=SecurityMode.HARD.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -428,15 +406,15 @@ class TestRunSecurityReview:
         assert result.infrastructure_error is True
 
     def test_parse_failure_advisory_mode_passes(self, tmp_path: Path) -> None:
-        prd_path = self._setup_repo(tmp_path)
+        repo = self._setup_repo(tmp_path)
         agent = MockSecurityAgent("garbage")
         config = SecurityConfig(mode=SecurityMode.ADVISORY.value)
         ui = PlainUI(no_color=True)
         result = run_security_review(
             agent,
-            prd_path,
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             config,
             ui,
         )
@@ -501,13 +479,14 @@ class TestResultFormatting:
 
 def test_prompt_renders_with_placeholders() -> None:
     """The SECURITY_PROMPT must format cleanly with the three
-    placeholders the runner provides (R5.3 added data_delimiter)."""
+    placeholders the runner provides (R5.3 added data_delimiter; #266
+    replaced diff_content with change_source)."""
     rendered = SECURITY_PROMPT.format(
         prd_content="some prd",
-        diff_content="some diff",
+        change_source=repo_change_source("origin/main"),
         data_delimiter="KSTRL-DATA-test",
     )
     assert "some prd" in rendered
-    assert "some diff" in rendered
+    assert "git diff origin/main...HEAD" in rendered
     # Sanity: the schema example should be intact
     assert "findings" in rendered

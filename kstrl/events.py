@@ -351,20 +351,6 @@ class DiffFetchFailed(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
-class DiffUnsplittable(Event):
-    type: ClassVar[str] = "diff_unsplittable"
-    error: str = ""
-    diff_chars: int = 0
-
-
-@dataclass(frozen=True, kw_only=True)
-class DiffChunked(Event):
-    type: ClassVar[str] = "diff_chunked"
-    chunks: int = 0
-    diff_chars: int = 0
-
-
-@dataclass(frozen=True, kw_only=True)
 class ReviewDivergence(Event):
     """#265: the retry loop was growing the change without the review
     retiring a single one of its blocking findings. Parallel series, one
@@ -383,14 +369,6 @@ class ReviewDivergence(Event):
     #: Named apart from ``blocking_findings`` above, which counts the
     #: reviewer's findings and is a different sense of the word.
     blocked: bool = False
-
-
-@dataclass(frozen=True, kw_only=True)
-class ChunkBudgetInsufficient(Event):
-    type: ClassVar[str] = "chunk_budget_insufficient"
-    phase: str = ""
-    chunks: int = 0
-    remaining: int = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -957,34 +935,6 @@ class V1CompatSink:
             )
         elif isinstance(event, DiffFetchFailed):
             log.emit("diff_fetch_failed", comp, {"error": event.error})
-        elif isinstance(event, DiffUnsplittable):
-            log.emit(
-                "diff_unsplittable",
-                comp,
-                {
-                    "error": event.error,
-                    "diff_chars": event.diff_chars,
-                },
-            )
-        elif isinstance(event, DiffChunked):
-            log.emit(
-                "diff_chunked",
-                comp,
-                {
-                    "chunks": event.chunks,
-                    "diff_chars": event.diff_chars,
-                },
-            )
-        elif isinstance(event, ChunkBudgetInsufficient):
-            log.emit(
-                "chunk_budget_insufficient",
-                comp,
-                {
-                    "phase": event.phase,
-                    "chunks": event.chunks,
-                    "remaining": event.remaining,
-                },
-            )
         elif isinstance(event, AdversarialAgentSelected):
             log.emit(
                 "adversarial_agent_selected",

@@ -193,3 +193,126 @@ def claude_sandbox_drops_skip_permissions(
     flag; allowing network keeps it (the pre-R7.5 invocation shape).
     """
     return config is not None and config.enabled and not config.allow_network
+
+
+# ---------------------------------------------------------------------------
+# Reviewer sandbox (#266)
+# ---------------------------------------------------------------------------
+#
+# Not an operator knob and deliberately not a field of SandboxConfig:
+# the reviewer reads the worktree it is judging, so "may it write?" has
+# exactly one defensible answer and no configuration surface. A reviewer
+# that mutates the tree under review has changed the evidence.
+#
+# Measured on this machine, 2026-08-31 (codex-cli 0.150.1, claude 2.1.251),
+# in a scratch git repo with a two-file change on a feature branch:
+#
+# - ``codex exec --sandbox read-only``: ran ``git diff main...HEAD
+#   --numstat`` and reported the totals correctly (7 insertions, 0
+#   deletions, 2 files); the write attempt was refused by the CLI itself
+#   ("patch rejected: writing is blocked by read-only sandbox") and
+#   ``git status --porcelain`` stayed empty. This is OS-level: it is the
+#   same enforcement the workspace-write mode uses, with the workspace
+#   moved out of the writable set.
+#
+# - ``claude --print`` with the settings payload below and WITHOUT
+#   ``--dangerously-skip-permissions``: same git command, same correct
+#   totals, and the write was refused ("file write operations require
+#   explicit approval"), including the shell-redirection fallback,
+#   leaving the tree clean. This is PERMISSION-layer, not OS-level, and
+#   the difference is load-bearing: a control probe with ``deny`` on the
+#   file tools but a blanket ``Bash`` allow DID write the file by shell
+#   redirection. Breadth of the Bash allowance is what decides it, so
+#   the allowance is an explicit list of read-only git verbs rather than
+#   a bare "Bash". Anything outside the list is not approved, and a
+#   headless run cannot prompt, so it is refused.
+#
+# Also measured: "MultiEdit" is not a known tool name in claude 2.1.251
+# (the CLI warns "matches no known tool"), so it is absent below.
+
+#: Read-only git verbs the reviewer is allowed to shell out to. Scoped
+#: to plumbing that cannot mutate a repository: no ``add``, ``commit``,
+#: ``checkout``, ``clean``, ``stash``, or ``restore``.
+CLAUDE_REVIEW_GIT_COMMANDS: tuple[str, ...] = (
+    "git diff",
+    "git log",
+    "git show",
+    "git status",
+    "git rev-parse",
+    "git ls-files",
+    "git blame",
+    "git cat-file",
+    "git describe",
+)
+
+#: Tools the reviewer must never use. WebFetch/WebSearch are here for
+#: the same reason ``allow_network`` defaults off: a reviewer with the
+#: diff and an outbound channel is an exfiltration path.
+CLAUDE_REVIEW_DENY_TOOLS: tuple[str, ...] = (
+    "Write",
+    "Edit",
+    "NotebookEdit",
+    "WebFetch",
+    "WebSearch",
+)
+
+#: Non-Bash tools the reviewer needs to read the worktree.
+CLAUDE_REVIEW_ALLOW_TOOLS: tuple[str, ...] = ("Read", "Glob", "Grep")
+
+
+def codex_review_sandbox_args() -> list[str]:
+    """``codex exec`` argv fragment for a read-only reviewer.
+
+    ``read-only`` is one of the CLI's three sandbox policies and denies
+    both writes and network to model-generated shell commands. No
+    ``sandbox_workspace_write.*`` override is passed: that key governs
+    the workspace-write policy only, and setting it here would be a
+    no-op that reads like a guarantee.
+    """
+    return ["--sandbox", "read-only"]
+
+
+def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
+    """Claude settings JSON for a read-only reviewer.
+
+    Read-only is layered ON TOP of the operator's intent rather than
+    replacing it, and that is where this differs from the codex mapping.
+    There, ``--sandbox read-only`` is strictly tighter than ``--sandbox
+    workspace-write`` and simply supersedes it. Here the two payloads
+    are disjoint: the operator's carries the OS-level ``sandbox`` object
+    (and ``allowUnsandboxedCommands: false``, the escape hatch this
+    module always closes) while the reviewer's carries permission rules.
+    Emitting only the reviewer's would silently drop OS-level sandboxing
+    for the one role with the least business writing anything.
+
+    Paired with :func:`claude_review_drops_skip_permissions`: the
+    permission rules are permission-layer, so they only bite when the
+    adapter is NOT passing ``--dangerously-skip-permissions``.
+    """
+    base = claude_sandbox_settings(config)
+    settings: dict[str, object] = json.loads(base) if base else {}
+    permissions = settings.get("permissions")
+    operator_allow = list(permissions.get("allow", [])) if isinstance(permissions, dict) else []
+    review_allow = [
+        *CLAUDE_REVIEW_ALLOW_TOOLS,
+        *(f"Bash({verb}:*)" for verb in CLAUDE_REVIEW_GIT_COMMANDS),
+    ]
+    # The reviewer's deny list wins over anything the operator payload
+    # allowed - the operator's list re-allows the file tools an engineer
+    # needs, and a reviewer must not have them. Claude resolves deny
+    # ahead of allow, but a rule in both lists would still be a
+    # contradiction on the page, so it is dropped here.
+    settings["permissions"] = {
+        "deny": list(CLAUDE_REVIEW_DENY_TOOLS),
+        "allow": [
+            rule
+            for rule in dict.fromkeys([*operator_allow, *review_allow])
+            if rule not in CLAUDE_REVIEW_DENY_TOOLS
+        ],
+    }
+    return json.dumps(settings)
+
+
+def claude_review_sandbox_args(config: SandboxConfig | None = None) -> list[str]:
+    """``claude --print`` argv fragment for a read-only reviewer."""
+    return ["--settings", claude_review_sandbox_settings(config)]

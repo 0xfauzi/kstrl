@@ -150,17 +150,9 @@ def _recording_hooks(
             VerificationResult(passed=True, checks=[]),
         ),
         run_review=_rec("review", ReviewResult(passed=True, mode="advisory")),
-        run_chunked_review=_rec(
-            "chunked_review",
-            ReviewResult(passed=True, mode="hard"),
-        ),
         run_security_review=_rec(
             "security",
             SecurityResult(passed=True, mode="advisory"),
-        ),
-        run_chunked_security_review=_rec(
-            "chunked_security",
-            SecurityResult(passed=True, mode="hard"),
         ),
         distill_facts=_rec("distill", (1, "1 fact written")),
         measure_fact_utilization=_rec(
@@ -492,44 +484,6 @@ class TestVerifyAndDiffTransitions:
         assert comp.failed_phase == "diff"
         assert comp.failed_check == "git_diff"
 
-    def test_unsplittable_hard_mode_diff_retries(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from kstrl.git import DiffUnsplittableError
-
-        monkeypatch.setattr(
-            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT",
-            10,
-        )
-
-        def _unsplittable(*args: Any, **kwargs: Any) -> list[str]:
-            raise DiffUnsplittableError("one file exceeds the cap")
-
-        monkeypatch.setattr(
-            "kstrl.git.split_diff_for_prompt",
-            _unsplittable,
-        )
-        pipeline, manifest, _, _ = _make_pipeline(
-            tmp_path,
-            config=_factory_config(review_mode="hard"),
-        )
-        comp = manifest.get_component("comp-a")
-        assert comp is not None
-        pipeline.begin_attempt(comp)
-        outcome = pipeline.process_result("comp-a", _success("comp-a"))
-        assert outcome is not None
-        assert outcome.transition == Transition.RETRYING
-        assert comp.failed_phase == "review"
-        assert comp.failed_check == "diff_chunking"
-        # R8: the residual unsplittable case is a single over-cap HUNK,
-        # so the retry guidance must name hunk granularity - "make each
-        # file smaller" no longer describes the fix now that oversized
-        # files are chunked on hunk boundaries.
-        retry_ctx = pipeline.component_contexts["comp-a"]
-        assert "hunk" in retry_ctx
-
 
 class TestReviewAndSecurityTransitions:
     def test_review_failure_retries(self, tmp_path: Path) -> None:
@@ -575,41 +529,6 @@ class TestReviewAndSecurityTransitions:
         assert comp.review_passed is None
         assert "review" not in calls
         assert any(f.is_phase_skip for f in comp.findings)
-
-    def test_chunk_budget_insufficient_fails_without_retry(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setattr(
-            "kstrl.git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT",
-            10,
-        )
-        monkeypatch.setattr(
-            "kstrl.git.split_diff_for_prompt",
-            lambda *a, **k: ["c1", "c2", "c3"],
-        )
-        pipeline, manifest, result, _ = _make_pipeline(
-            tmp_path,
-            config=_factory_config(
-                review_mode="hard",
-                max_adversarial_calls=1,
-                max_retries=3,
-            ),
-        )
-        comp = manifest.get_component("comp-a")
-        assert comp is not None
-        pipeline.begin_attempt(comp)
-        outcome = pipeline.process_result("comp-a", _success("comp-a"))
-        assert outcome is not None
-        # R1.4: retrying cannot recover adversarial budget - fail direct,
-        # with NO retry consumed even though retries remain.
-        assert outcome.transition == Transition.FAILED
-        assert comp.retries == 0
-        assert comp.status == ComponentStatus.FAILED.value
-        assert comp.failed_check == "adversarial_budget"
-        assert comp.review_passed is False
-        assert result.failed == ["comp-a"]
 
     def test_security_failure_retries(self, tmp_path: Path) -> None:
         pipeline, manifest, _, _ = _make_pipeline(

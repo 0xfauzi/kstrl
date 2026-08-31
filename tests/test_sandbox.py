@@ -134,12 +134,12 @@ def _mock_proc(lines: list[str]) -> MagicMock:
     return proc
 
 
-def _claude_cmd(sandbox: SandboxConfig | None) -> list[str]:
+def _claude_cmd(sandbox: SandboxConfig | None, read_only: bool = False) -> list[str]:
     with patch(
         "subprocess.Popen",
         return_value=_mock_proc(["done\n"]),
     ) as popen:
-        agent = ClaudeCodeAgent(sandbox=sandbox)
+        agent = ClaudeCodeAgent(sandbox=sandbox, read_only=read_only)
         list(agent.run("test", cwd=Path("/tmp")))
     cmd = popen.call_args[0][0]
     assert isinstance(cmd, list)
@@ -171,6 +171,7 @@ class TestCodexAdapterPassThrough:
         self,
         monkeypatch: pytest.MonkeyPatch,
         sandbox: SandboxConfig | None,
+        read_only: bool = False,
     ) -> list[str]:
         monkeypatch.setattr(
             CodexAgent,
@@ -181,7 +182,7 @@ class TestCodexAdapterPassThrough:
             "subprocess.Popen",
             return_value=_mock_proc(["done\n"]),
         ) as popen:
-            agent = CodexAgent(sandbox=sandbox)
+            agent = CodexAgent(sandbox=sandbox, read_only=read_only)
             list(agent.run("test", cwd=Path("/tmp")))
         cmd = popen.call_args[0][0]
         assert isinstance(cmd, list)
@@ -279,3 +280,83 @@ class TestFactoryWorkerPassThrough:
             enabled=True,
             allow_network=True,
         )
+
+
+class TestReadOnlyReviewerPassThrough:
+    """#266: the reviewer roles read the tree they are judging, so they
+    must not be able to write it.
+
+    Every assertion here is pinned to a probe run on 2026-08-31
+    (codex-cli 0.150.1, claude 2.1.251) recorded in kstrl/sandbox.py:
+    codex refused the write at the OS layer while `git diff --numstat`
+    still ran; claude refused it at the permission layer, including the
+    shell-redirection fallback, and a control probe with the same deny
+    list but a blanket ``Bash`` allow DID write the file.
+    """
+
+    def test_codex_reviewer_gets_the_read_only_policy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cmd = TestCodexAdapterPassThrough()._codex_cmd(monkeypatch, None, read_only=True)
+        assert cmd[cmd.index("--sandbox") + 1] == "read-only"
+
+    def test_codex_read_only_supersedes_the_operator_sandbox(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``[sandbox] enabled`` maps to workspace-write, which permits
+        writes to exactly the tree under review. read-only is strictly
+        tighter, and a gate may be tightened and never loosened."""
+        cmd = TestCodexAdapterPassThrough()._codex_cmd(
+            monkeypatch,
+            SandboxConfig(enabled=True, allow_network=True),
+            read_only=True,
+        )
+        assert cmd[cmd.index("--sandbox") + 1] == "read-only"
+        assert "workspace-write" not in cmd
+
+    def test_claude_reviewer_denies_the_write_tools(self) -> None:
+        cmd = _claude_cmd(None, read_only=True)
+        settings = json.loads(cmd[cmd.index("--settings") + 1])
+        assert set(settings["permissions"]["deny"]) >= {"Write", "Edit", "NotebookEdit"}
+
+    def test_claude_reviewer_allows_only_read_only_git(self) -> None:
+        cmd = _claude_cmd(None, read_only=True)
+        allow = json.loads(cmd[cmd.index("--settings") + 1])["permissions"]["allow"]
+        assert "Bash" not in allow
+        assert "Bash(git diff:*)" in allow
+        for mutating in ("git add", "git commit", "git checkout", "git clean", "git restore"):
+            assert not any(mutating in rule for rule in allow)
+
+    def test_claude_reviewer_drops_skip_permissions(self) -> None:
+        """The claude rules are permission-layer, not OS-level, so they
+        bite only without ``--dangerously-skip-permissions``. This is the
+        one asymmetry with codex and it is worth pinning: the flag coming
+        back would silently disarm the whole policy."""
+        assert "--dangerously-skip-permissions" not in _claude_cmd(None, read_only=True)
+        assert "--dangerously-skip-permissions" in _claude_cmd(None)
+
+    def test_claude_read_only_LAYERS_over_the_operator_sandbox(self) -> None:
+        """Unlike codex, the two claude payloads are DISJOINT: the
+        operator's carries the OS-level sandbox object, the reviewer's
+        carries permission rules. Replacing rather than merging would
+        silently drop OS-level enforcement for the one role with the
+        least business writing anything."""
+        cmd = _claude_cmd(SandboxConfig(enabled=True, allow_network=False), read_only=True)
+        settings = json.loads(cmd[cmd.index("--settings") + 1])
+        assert settings["sandbox"]["enabled"] is True
+        assert settings["sandbox"]["allowUnsandboxedCommands"] is False
+        # The operator payload re-allows the file tools an engineer needs;
+        # the reviewer's deny list has to win over them.
+        allow = settings["permissions"]["allow"]
+        assert "Write" not in allow
+        assert "Edit" not in allow
+        assert "Bash(git diff:*)" in allow
+
+    def test_get_agent_plumbs_read_only_to_every_adapter(self) -> None:
+        from kstrl.agents import get_agent
+
+        for agent_type in ("codex", "claude-code"):
+            agent = get_agent(agent_type=agent_type, read_only=True)
+            assert agent._read_only is True  # type: ignore[union-attr]

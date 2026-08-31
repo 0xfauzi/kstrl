@@ -125,8 +125,8 @@ class FailureAction(Enum):
 
     # Normal gate failure: retry with context, or FAILED once exhausted.
     RETRY_OR_FAIL = "retry_or_fail"
-    # A wall retrying can never fix (R1.4 chunk-budget insufficiency):
-    # fail directly without burning engineer iterations.
+    # A wall retrying can never fix (the adversarial budget only
+    # shrinks): fail directly without burning engineer iterations.
     FAIL = "fail"
     # R3.1/R8 run-level ceiling (max_total_tokens or max_cost_usd): fail
     # loudly via the budget path (synthetic finding + budget_exceeded
@@ -158,11 +158,16 @@ class VerifyPhaseResult:
 
 @dataclass(frozen=True)
 class DiffPhaseResult:
-    """Shared diff fetch + R1.4 hard-mode chunking decision."""
+    """The component's diff, fetched once and shared by the phases that
+    still take one as text: fact-utilization measurement, the knowledge
+    distiller, the HITL checkpoint excerpt and the PR body.
+
+    #266: the review and security phases are NOT among them any more.
+    They run inside the worktree and read git themselves, so there is no
+    prompt-sized diff to prepare for them, no chunking decision to make,
+    and no way for a diff to be too large to review."""
 
     diff: str = ""
-    review_diff: str = ""
-    chunks: list[str] | None = None
     failure: PhaseFailure | None = None
 
 
@@ -339,9 +344,7 @@ class PipelineHooks:
 
     run_mechanical_verification: Callable[..., VerificationResult]
     run_review: Callable[..., ReviewResult]
-    run_chunked_review: Callable[..., ReviewResult]
     run_security_review: Callable[..., SecurityResult]
-    run_chunked_security_review: Callable[..., SecurityResult]
     distill_facts: Callable[..., tuple[int, str]]
     # No build_knowledge_context seam by design (#191). The distill
     # phase once rebuilt the knowledge prefix to measure utilization
@@ -513,10 +516,9 @@ class ComponentPipeline:
         # run-level total. Phases: "engineer" (loop iterations, reported
         # by the worker), "review", "security", "distill" (fresh agent
         # instance per phase, so an instance's accumulated usage_records
-        # ARE that phase's spend - chunked reviews reuse one instance for
-        # N calls and land here as N records). Retried attempts
-        # accumulate: every attempt cost real tokens, so the meter never
-        # forgets a failed attempt.
+        # ARE that phase's spend). Retried attempts accumulate: every
+        # attempt cost real tokens, so the meter never forgets a failed
+        # attempt.
         self.usage_meter: dict[str, dict[str, UsageTotals]] = {}
         # #191: the knowledge prefix each component's engineer ACTUALLY
         # saw, captured by the factory at submit time. Keyed by
@@ -557,10 +559,7 @@ class ComponentPipeline:
         # E4: adversarial-call counter shared across review / security /
         # knowledge phases. When max_adversarial_calls is 0 the budget is
         # unbounded; otherwise the LLM phase is skipped once the budget
-        # is exhausted, with an informational log line. R1.4 exception:
-        # hard-mode chunked reviews never skip-on-exhausted; they either
-        # cover every chunk (one call each) or fail the component as an
-        # infrastructure error.
+        # is exhausted, with an informational log line.
         self._adversarial_calls = 0
 
         # R6.4: monotonic start of each component's current attempt, so
@@ -583,9 +582,7 @@ class ComponentPipeline:
         self._adversarial_calls += 1
 
     def adversarial_budget_remaining(self) -> int | None:
-        """Calls left in the budget, or None when unbounded (R1.4:
-        chunked reviews need one call per chunk and must know whether
-        the whole diff can be covered before starting)."""
+        """Calls left in the budget, or None when unbounded."""
         cap = self.factory_config.max_adversarial_calls
         if cap <= 0:
             return None
@@ -1131,8 +1128,8 @@ class ComponentPipeline:
 
         Yields None when no run dir is configured (progress logging
         disabled) or the file cannot be opened - transcripts are
-        observability and must never gate a phase (chunk 4). Repeated
-        invocations (retries, chunked passes) append.
+        observability and must never gate a phase. Repeated
+        invocations (retries) append.
         """
         if self.run_paths is None:
             yield None
@@ -1408,10 +1405,10 @@ class ComponentPipeline:
         signatures: list[str] | None = None,
     ) -> Transition:
         """Mark a component FAILED with no retry. Direct callers are
-        conditions a retry can never fix (R1.4: chunked-review budget
-        insufficiency - the adversarial budget only shrinks, so
-        re-running the engineer would burn LLM calls to hit the same
-        wall); retry_or_fail routes here once retries are exhausted."""
+        conditions a retry can never fix (the adversarial budget only
+        shrinks, so re-running the engineer would burn LLM calls to hit
+        the same wall); retry_or_fail routes here once retries are
+        exhausted."""
         self._record_failure_signatures(comp, phase, error, signatures)
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
@@ -1448,8 +1445,8 @@ class ComponentPipeline:
         ceilings: tuple[str, ...] = (),
     ) -> Transition:
         """R3.1/R8: halt LOUDLY on a blown run-level ceiling. Mirrors the
-        R1.2/R1.4 synthetic-finding pattern (chunk_budget_insufficient):
-        a typed Finding in the stream, a progress-log event, and a FAILED
+        R1.2 synthetic-finding pattern: a typed Finding in the
+        stream, a progress-log event, and a FAILED
         component - never a silent degrade. Retrying cannot un-spend what
         was spent, so this fails directly instead of burning retries.
 
@@ -2250,8 +2247,6 @@ class ComponentPipeline:
             comp_result,
             wt_path,
             verify.verification,
-            diff.review_diff,
-            diff.chunks,
         )
         self._phase_completed(
             comp,
@@ -2274,8 +2269,6 @@ class ComponentPipeline:
             comp,
             comp_result,
             wt_path,
-            diff.review_diff,
-            diff.chunks,
         )
         self._phase_completed(
             comp,
@@ -2310,7 +2303,7 @@ class ComponentPipeline:
         if self.factory_config.create_prs and not self.factory_config.single_pr:
             checkpoint = self._phase_checkpoint(
                 comp,
-                diff_text=diff.review_diff,
+                diff_text=diff.diff,
             )
             if checkpoint == CheckpointDecision.REJECTED:
                 return PipelineOutcome(
@@ -2689,13 +2682,19 @@ class ComponentPipeline:
         comp_result: ComponentResult,
         wt_path: Path,
     ) -> DiffPhaseResult:
-        """Fetch the component diff once and share it across Phase 2,
-        Phase 2.5, and knowledge distillation. Without this each phase
-        would shell out to `git diff` independently, redundantly
-        rebuilding the same patch on every component.
+        """Fetch the component diff once and share it with every phase
+        that consumes one as text: fact-utilization measurement, the
+        knowledge distiller, the HITL checkpoint and the PR body.
+        Without this each would shell out to `git diff` independently,
+        redundantly rebuilding the same patch on every component.
 
-        R1.3 (H-14): a git failure here used to yield "" and all three
-        consumers silently reviewed an empty diff and passed. Now it
+        #266: the review and security phases are no longer consumers.
+        They read the worktree they already run in, so this diff is not
+        on their path at all, and neither is the size cap that used to
+        govern it.
+
+        R1.3 (H-14): a git failure here used to yield "" and every
+        consumer silently worked from an empty diff and passed. Now it
         is an infrastructure failure for the component: record the
         infra finding, journal it, and retry/fail closed.
         """
@@ -2713,7 +2712,8 @@ class ComponentPipeline:
                         phase="diff",
                         explanation=(
                             f"git diff against {self.manifest.base_branch} failed; "
-                            f"review/security/knowledge cannot run: {exc}"
+                            f"knowledge distillation and the PR body cannot "
+                            f"be built: {exc}"
                         ),
                     )
                 ],
@@ -2737,109 +2737,7 @@ class ComponentPipeline:
                 )
             )
 
-        # R1.4: strip the engineer's Self-Critique block ONCE and share
-        # the stripped diff with BOTH reviewers (E2 anti-anchoring now
-        # applies to Phase 2.5 too, not just Phase 2). The knowledge
-        # distiller keeps the unstripped shared_diff: the self-critique
-        # is the engineer's own account, and anti-anchoring targets
-        # adversarial reviewers, not the distiller.
-        review_diff = git.strip_self_critique_from_diff(shared_diff)
-
-        # R1.4 (H-16): a diff over the prompt cap must never be
-        # partially reviewed in hard mode - a rogue engineer could pad
-        # the first 50KB with benign churn and land a malicious hunk
-        # after the cut. Split once on file (and, for an over-budget
-        # file, hunk) boundaries; both hard-mode phases reuse the same
-        # chunks (one budget call per chunk).
-        # Advisory phases keep the single truncated pass, which
-        # run_review/run_security_review annotate as PARTIAL.
-        review_mode = ReviewMode(self.factory_config.review_mode)
-        sec_config = self.factory_config.security_config
-        oversized = len(review_diff) > git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT
-        needs_chunks = oversized and (
-            review_mode == ReviewMode.HARD
-            or (sec_config is not None and sec_config.mode == SecurityMode.HARD.value)
-        )
-        review_chunks: list[str] | None = None
-        if needs_chunks:
-            try:
-                review_chunks = git.split_diff_for_prompt(review_diff)
-            except git.DiffUnsplittableError as exc:
-                # Fail closed via the retry path: unlike budget
-                # exhaustion, the engineer CAN fix this by producing a
-                # smaller diff, so the retry context carries the signal.
-                # R8 narrowed what reaches here: chunking now splits
-                # within an over-budget file on hunk boundaries, so the
-                # residual case is a SINGLE hunk over the cap - hundreds
-                # of contiguous changed lines with no context line to
-                # break on. That is genuinely unreviewable by a human or
-                # an LLM at this cap, so charging the engineer a retry
-                # to restructure it is the right trade; the retry
-                # guidance below names hunk granularity, since "make
-                # each file smaller" no longer describes the fix.
-                self.ui.err(f"  Diff unsplittable for {comp.id}: {exc}")
-                self._add_findings(
-                    comp,
-                    [
-                        Finding.infrastructure_error(
-                            phase="review",
-                            explanation=(
-                                "Hard-mode review requires chunking the "
-                                f"oversized diff, but it cannot be split: {exc} "
-                                "(R1.4: an unreviewable diff must not merge)"
-                            ),
-                        )
-                    ],
-                )
-                self.bus.emit(
-                    ev.DiffUnsplittable(
-                        component=comp.id,
-                        error=str(exc),
-                        diff_chars=len(review_diff),
-                    )
-                )
-                ctx = IterationContext.from_json(
-                    comp_result.context_json or "{}",
-                )
-                ctx.add_review_finding(
-                    f"The diff is too large to review ({exc}). Split the "
-                    "change into smaller contiguous edits so that every "
-                    "individual hunk fits the "
-                    f"{git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT // 1000}"
-                    "KB review cap; whole files may exceed it, since "
-                    "oversized files are chunked on hunk boundaries.",
-                    # R10.2: the diff rank. This fires while preparing
-                    # the diff for the reviewer, inside _phase_diff, so
-                    # the reviewer produced no reading this attempt.
-                    attempt=comp.retries + 1,
-                    phase="diff",
-                    infrastructure=True,
-                )
-                return DiffPhaseResult(
-                    diff=shared_diff,
-                    review_diff=review_diff,
-                    failure=PhaseFailure(
-                        action=FailureAction.RETRY_OR_FAIL,
-                        error=(f"Review diff unsplittable at the prompt cap: {exc}"),
-                        phase="review",
-                        check="diff_chunking",
-                        context_json=ctx.to_json(),
-                        signatures=["review:diff-unsplittable"],
-                    ),
-                )
-            self.bus.emit(
-                ev.DiffChunked(
-                    component=comp.id,
-                    chunks=len(review_chunks),
-                    diff_chars=len(review_diff),
-                )
-            )
-
-        return DiffPhaseResult(
-            diff=shared_diff,
-            review_diff=review_diff,
-            chunks=review_chunks,
-        )
+        return DiffPhaseResult(diff=shared_diff)
 
     def _divergence_failure(
         self,
@@ -3009,12 +2907,9 @@ class ComponentPipeline:
         comp_result: ComponentResult,
         wt_path: Path,
         verification: VerificationResult,
-        review_diff: str,
-        review_chunks: list[str] | None,
     ) -> ReviewPhaseResult:
         """Phase 2: second-opinion review against the PRD."""
         review_mode = ReviewMode(self.factory_config.review_mode)
-        chunked_review = review_mode == ReviewMode.HARD and review_chunks is not None
         review_skip_reason: str | None = None
         # R10.3: "the operator turned the reviewer off" and "the
         # reviewer ran out of budget" are both SKIP, and the set-point
@@ -3025,10 +2920,7 @@ class ComponentPipeline:
         budget_downgraded = False
         if review_mode == ReviewMode.SKIP:
             review_skip_reason = "review disabled (mode=skip)"
-        elif not chunked_review and not self.adversarial_budget_ok():
-            # Chunked hard-mode reviews never downgrade to SKIP on an
-            # exhausted budget: their budget rule is "cover every chunk
-            # or fail as infrastructure" (handled below).
+        elif not self.adversarial_budget_ok():
             self.ui.warn(
                 f"  Phase 2 SKIPPED for {comp.id}: "
                 f"adversarial LLM budget "
@@ -3039,48 +2931,6 @@ class ComponentPipeline:
             )
             review_mode = ReviewMode.SKIP
             budget_downgraded = True
-        if review_mode == ReviewMode.HARD and review_chunks is not None:
-            remaining = self.adversarial_budget_remaining()
-            if remaining is not None and remaining < len(review_chunks):
-                # R1.4: the budget cannot cover the chunks. Retrying
-                # cannot recover budget, so fail directly instead of
-                # burning engineer iterations on a deterministic wall.
-                error = (
-                    f"Chunked review needs {len(review_chunks)} "
-                    f"adversarial calls but only {remaining} remain in "
-                    f"max_adversarial_calls "
-                    f"({self.factory_config.max_adversarial_calls}); "
-                    "refusing a partial hard-mode review (R1.4)"
-                )
-                self.ui.err(f"  Phase 2 FAILED for {comp.id}: {error}")
-                comp.review_passed = False
-                self._add_findings(
-                    comp,
-                    [
-                        Finding.infrastructure_error(
-                            phase="review",
-                            explanation=error,
-                        )
-                    ],
-                )
-                self.bus.emit(
-                    ev.ChunkBudgetInsufficient(
-                        component=comp.id,
-                        phase="review",
-                        chunks=len(review_chunks),
-                        remaining=remaining,
-                    )
-                )
-                return ReviewPhaseResult(
-                    ran=False,
-                    failure=PhaseFailure(
-                        action=FailureAction.FAIL,
-                        error=f"Review infrastructure error: {error}",
-                        phase="review",
-                        check="adversarial_budget",
-                        signatures=["review:chunk-budget-insufficient"],
-                    ),
-                )
         if review_mode == ReviewMode.SKIP:
             comp.review_passed = None
             self._record_phase_skip(
@@ -3099,7 +2949,7 @@ class ComponentPipeline:
             #
             # FAIL, not RETRY_OR_FAIL: retrying cannot recover budget,
             # so a retry would burn engineer iterations against a
-            # deterministic wall (the R1.4 chunk-budget precedent above).
+            # deterministic wall.
             if (
                 budget_downgraded
                 and self._setpoint_blocking()[0]
@@ -3127,12 +2977,8 @@ class ComponentPipeline:
 
         from kstrl.agents import get_agent
 
-        if not chunked_review:
-            self.adversarial_budget_consume()
-        chunk_note = (
-            f", {len(review_chunks)} chunks" if chunked_review and review_chunks is not None else ""
-        )
-        self.ui.info(f"  Phase 2: review ({review_mode.value}{chunk_note}) for {comp.id}...")
+        self.adversarial_budget_consume()
+        self.ui.info(f"  Phase 2: review ({review_mode.value}) for {comp.id}...")
 
         # Forensic home for full raw reviewer output on parse failures
         # (R1.2; mirrors knowledge.py's _debug/<run_id>/ layout).
@@ -3151,39 +2997,24 @@ class ComponentPipeline:
                 self.review_selection.model,
                 self.review_selection.reasoning,
                 self.review_selection.agent_type,
+                # #266: the reviewer reads the tree it is judging, so it
+                # must not be able to write it. Unconditional, and not an
+                # operator knob: measured, an unsandboxed reviewer left
+                # __pycache__/ behind in the worktree it was judging.
+                read_only=True,
             )
-            if review_mode == ReviewMode.HARD and review_chunks is not None:
-                # R1.4: one pass per chunk, each consuming budget;
-                # any chunk failure fails the merged result.
-                with self._phase_transcript(comp.id, "review") as on_line:
-                    review_result = self.hooks.run_chunked_review(
-                        review_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        self.manifest.base_branch,
-                        verification,
-                        review_mode,
-                        self.ui,
-                        diff_chunks=review_chunks,
-                        budget_remaining=self.adversarial_budget_remaining(),
-                        consume_budget=self.adversarial_budget_consume,
-                        debug_dir=adversarial_debug_dir,
-                        on_line=on_line,
-                    )
-            else:
-                with self._phase_transcript(comp.id, "review") as on_line:
-                    review_result = self.hooks.run_review(
-                        review_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        self.manifest.base_branch,
-                        verification,
-                        review_mode,
-                        self.ui,
-                        diff_content=review_diff,
-                        debug_dir=adversarial_debug_dir,
-                        on_line=on_line,
-                    )
+            with self._phase_transcript(comp.id, "review") as on_line:
+                review_result = self.hooks.run_review(
+                    review_agent,
+                    wt_path / comp.prd_path,
+                    wt_path,
+                    self.manifest.base_branch,
+                    verification,
+                    review_mode,
+                    self.ui,
+                    debug_dir=adversarial_debug_dir,
+                    on_line=on_line,
+                )
         except Exception as exc:  # noqa: BLE001
             self.ui.warn(f"  Review crashed: {exc}")
             review_result = ReviewResult(
@@ -3196,9 +3027,9 @@ class ComponentPipeline:
                 reviewer_model=self.review_selection.identity,
             )
         # R3.1: the instance is fresh per phase, so its accumulated
-        # records are exactly this review's spend (N records for a
-        # chunked review). Recorded before pass/fail handling so a
-        # failed or crashed review still counts.
+        # records are exactly this review's spend. Recorded before
+        # pass/fail handling so a failed or crashed review still
+        # counts.
         if review_agent is not None:
             self._record_usage(comp.id, "review", collect_usage(review_agent))
         breached = self.breached_ceiling()
@@ -3475,8 +3306,6 @@ class ComponentPipeline:
         comp: Component,
         comp_result: ComponentResult,
         wt_path: Path,
-        review_diff: str,
-        review_chunks: list[str] | None,
     ) -> SecurityPhaseResult:
         """Phase 2.5: security review (adversarial pass focused on
         vulns). Runs as a separate LLM call with its own threat-model
@@ -3484,11 +3313,6 @@ class ComponentPipeline:
         Hard-mode fails the component on findings at or above
         SecurityConfig.fail_threshold OR on infrastructure errors."""
         sec_config = self.factory_config.security_config
-        chunked_security = (
-            sec_config is not None
-            and sec_config.mode == SecurityMode.HARD.value
-            and review_chunks is not None
-        )
         if sec_config is None:
             self._record_phase_skip(
                 comp,
@@ -3509,10 +3333,7 @@ class ComponentPipeline:
                 ran=False,
                 skip_reason="security review disabled (mode=skip)",
             )
-        if not chunked_security and not self.adversarial_budget_ok():
-            # As with Phase 2: chunked hard-mode security never
-            # downgrades to SKIP on an exhausted budget - it covers
-            # every chunk or fails as infrastructure below.
+        if not self.adversarial_budget_ok():
             self.ui.warn(f"  Phase 2.5 SKIPPED for {comp.id}: adversarial LLM budget exhausted")
             self._record_phase_skip(
                 comp,
@@ -3523,61 +3344,10 @@ class ComponentPipeline:
                 ran=False,
                 skip_reason="adversarial LLM budget exhausted",
             )
-        if sec_config.mode == SecurityMode.HARD.value and review_chunks is not None:
-            remaining = self.adversarial_budget_remaining()
-            if remaining is not None and remaining < len(review_chunks):
-                # R1.4: same rule as Phase 2 - budget cannot cover the
-                # chunks, and retrying cannot recover budget.
-                error = (
-                    f"Chunked security review needs {len(review_chunks)} "
-                    f"adversarial calls but only {remaining} remain in "
-                    f"max_adversarial_calls "
-                    f"({self.factory_config.max_adversarial_calls}); "
-                    "refusing a partial hard-mode security review (R1.4)"
-                )
-                self.ui.err(f"  Phase 2.5 FAILED for {comp.id}: {error}")
-                self._add_findings(
-                    comp,
-                    [
-                        Finding.infrastructure_error(
-                            phase="security",
-                            explanation=error,
-                        )
-                    ],
-                )
-                self.bus.emit(
-                    ev.ChunkBudgetInsufficient(
-                        component=comp.id,
-                        phase="security",
-                        chunks=len(review_chunks),
-                        remaining=remaining,
-                    )
-                )
-                return SecurityPhaseResult(
-                    ran=False,
-                    failure=PhaseFailure(
-                        action=FailureAction.FAIL,
-                        error=(f"Security review infrastructure error: {error}"),
-                        phase="security",
-                        check="adversarial_budget",
-                        signatures=["security:chunk-budget-insufficient"],
-                    ),
-                )
-
-        if not chunked_security:
-            # Chunked passes consume per-chunk inside
-            # run_chunked_security_review instead.
-            self.adversarial_budget_consume()
+        self.adversarial_budget_consume()
         from kstrl.agents import get_agent as _get_sec_agent
 
-        chunk_note = (
-            f", {len(review_chunks)} chunks"
-            if chunked_security and review_chunks is not None
-            else ""
-        )
-        self.ui.info(
-            f"  Phase 2.5: security review ({sec_config.mode}{chunk_note}) for {comp.id}..."
-        )
+        self.ui.info(f"  Phase 2.5: security review ({sec_config.mode}) for {comp.id}...")
         sec_result = None
         sec_agent: Any = None
         # R7.1: the run-level selection already folded in the
@@ -3598,38 +3368,21 @@ class ComponentPipeline:
                 self.security_selection.model,
                 self.security_selection.reasoning,
                 self.security_selection.agent_type,
+                # #266: same rule as Phase 2 - a reviewer must not be
+                # able to write the tree it is judging.
+                read_only=True,
             )
-            if sec_config.mode == SecurityMode.HARD.value and review_chunks is not None:
-                # R1.4: one pass per chunk, each consuming budget
-                # via consume_budget; any chunk failure fails the
-                # merged result.
-                with self._phase_transcript(comp.id, "security") as on_line:
-                    sec_result = self.hooks.run_chunked_security_review(
-                        sec_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        self.manifest.base_branch,
-                        sec_config,
-                        self.ui,
-                        diff_chunks=review_chunks,
-                        budget_remaining=self.adversarial_budget_remaining(),
-                        consume_budget=self.adversarial_budget_consume,
-                        debug_dir=adversarial_debug_dir,
-                        on_line=on_line,
-                    )
-            else:
-                with self._phase_transcript(comp.id, "security") as on_line:
-                    sec_result = self.hooks.run_security_review(
-                        sec_agent,
-                        wt_path / comp.prd_path,
-                        wt_path,
-                        self.manifest.base_branch,
-                        sec_config,
-                        self.ui,
-                        diff_content=review_diff,
-                        debug_dir=adversarial_debug_dir,
-                        on_line=on_line,
-                    )
+            with self._phase_transcript(comp.id, "security") as on_line:
+                sec_result = self.hooks.run_security_review(
+                    sec_agent,
+                    wt_path / comp.prd_path,
+                    wt_path,
+                    self.manifest.base_branch,
+                    sec_config,
+                    self.ui,
+                    debug_dir=adversarial_debug_dir,
+                    on_line=on_line,
+                )
         except Exception as exc:  # noqa: BLE001
             # Agent infrastructure failed before run_security_review
             # could classify the outcome. Synthesize an infra result

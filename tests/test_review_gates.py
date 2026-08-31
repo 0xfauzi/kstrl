@@ -37,6 +37,7 @@ from kstrl.review import (
 from kstrl.security import SecurityConfig, SecurityMode, parse_security_output
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.conftest import ReviewRepo
 
 
 class MockReviewAgent:
@@ -132,22 +133,21 @@ _VERIFICATION = VerificationResult(
 
 
 class TestR11Coverage:
-    def test_empty_review_fails_hard_mode(self, tmp_path: Path) -> None:
+    def test_empty_review_fails_hard_mode(self, review_repo: ReviewRepo) -> None:
         """{"stories":[],"concerns":[]} used to parse to passed=True
         (CRIT-5). With a PRD story expecting a verdict it is now an
         infrastructure error and hard mode blocks."""
-        prd_path = tmp_path / "prd.json"
+        prd_path = review_repo.path / "prd.json"
         _write_prd(prd_path, ["US-001"])
         agent = MockReviewAgent(json.dumps({"stories": [], "concerns": []}))
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             _VERIFICATION,
             ReviewMode.HARD,
             PlainUI(no_color=True),
-            diff_content="+change\n",
         )
         assert result.passed is False
         assert result.infrastructure_error is True
@@ -253,10 +253,10 @@ class TestR11VerdictWhitelist:
 
 
 class TestR12InfrastructurePaths:
-    def _run(self, mode: ReviewMode, tmp_path: Path) -> ReviewResult:
+    def _run(self, mode: ReviewMode, repo: ReviewRepo) -> ReviewResult:
         from kstrl.decompose import AgentOutputTooLarge
 
-        prd_path = tmp_path / "prd.json"
+        prd_path = repo.path / "prd.json"
         _write_prd(prd_path, ["US-001"])
         agent = MockReviewAgent("irrelevant")
         with patch(
@@ -266,19 +266,18 @@ class TestR12InfrastructurePaths:
             return run_review(
                 agent,
                 prd_path,
-                tmp_path,
-                "main",
+                repo.path,
+                repo.base_branch,
                 _VERIFICATION,
                 mode,
                 PlainUI(no_color=True),
-                diff_content="+x\n",
             )
 
     def test_oversized_output_is_infra_and_blocks_hard_mode(
         self,
-        tmp_path: Path,
+        review_repo: ReviewRepo,
     ) -> None:
-        result = self._run(ReviewMode.HARD, tmp_path)
+        result = self._run(ReviewMode.HARD, review_repo)
         assert result.infrastructure_error is True
         assert result.passed is False
         findings = result.as_findings()
@@ -287,25 +286,24 @@ class TestR12InfrastructurePaths:
 
     def test_oversized_output_in_advisory_passes_but_leaves_trace(
         self,
-        tmp_path: Path,
+        review_repo: ReviewRepo,
     ) -> None:
-        result = self._run(ReviewMode.ADVISORY, tmp_path)
+        result = self._run(ReviewMode.ADVISORY, review_repo)
         assert result.infrastructure_error is True
         assert result.passed is True
         assert result.as_findings()[0].is_infrastructure_error
 
-    def test_agent_crash_never_raises(self, tmp_path: Path) -> None:
-        prd_path = tmp_path / "prd.json"
+    def test_agent_crash_never_raises(self, review_repo: ReviewRepo) -> None:
+        prd_path = review_repo.path / "prd.json"
         _write_prd(prd_path, ["US-001"])
         result = run_review(
             CrashingAgent(),
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             _VERIFICATION,
             ReviewMode.HARD,
             PlainUI(no_color=True),
-            diff_content="+x\n",
         )
         assert result.infrastructure_error is True
         assert result.passed is False

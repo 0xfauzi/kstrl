@@ -17,6 +17,7 @@ from kstrl.review import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
+from tests.conftest import ReviewRepo, with_observed_diffstat
 
 
 class MockReviewAgent:
@@ -326,9 +327,9 @@ class TestConcerns:
 
     def test_advisory_mode_downgrades_concern_failures(
         self,
-        tmp_path: Path,
+        review_repo: ReviewRepo,
     ) -> None:
-        prd_path = tmp_path / "prd.json"
+        prd_path = review_repo.path / "prd.json"
         prd_path.write_text(
             json.dumps(
                 {
@@ -372,7 +373,7 @@ class TestConcerns:
                 ],
             }
         )
-        agent = MockReviewAgent(output)
+        agent = MockReviewAgent(with_observed_diffstat(output, review_repo))
         ui = PlainUI(no_color=True)
         verification = VerificationResult(
             passed=True,
@@ -381,12 +382,11 @@ class TestConcerns:
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             verification,
             ReviewMode.ADVISORY,
             ui,
-            diff_content="+change\n",
         )
         # Concern was downgraded; review passes; concern survives as advisory
         assert result.passed is True
@@ -411,9 +411,9 @@ class TestRunReview:
         assert result.passed is True
         assert result.mode == "skip"
 
-    def test_hard_mode_with_failures(self, tmp_path: Path) -> None:
+    def test_hard_mode_with_failures(self, review_repo: ReviewRepo) -> None:
         # Create valid PRD for prompt building
-        prd_path = tmp_path / "prd.json"
+        prd_path = review_repo.path / "prd.json"
         prd_path.write_text(
             json.dumps(
                 {
@@ -432,7 +432,7 @@ class TestRunReview:
             )
         )
 
-        agent = MockReviewAgent(VALID_REVIEW_OUTPUT)
+        agent = MockReviewAgent(with_observed_diffstat(VALID_REVIEW_OUTPUT, review_repo))
         ui = PlainUI(no_color=True)
         verification = VerificationResult(
             passed=True,
@@ -442,18 +442,17 @@ class TestRunReview:
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             verification,
             ReviewMode.HARD,
             ui,
-            diff_content="+change\n",
         )
         assert result.passed is False
         assert result.mode == "hard"
 
-    def test_advisory_mode_downgrades_failures(self, tmp_path: Path) -> None:
-        prd_path = tmp_path / "prd.json"
+    def test_advisory_mode_downgrades_failures(self, review_repo: ReviewRepo) -> None:
+        prd_path = review_repo.path / "prd.json"
         prd_path.write_text(
             json.dumps(
                 {
@@ -472,7 +471,7 @@ class TestRunReview:
             )
         )
 
-        agent = MockReviewAgent(VALID_REVIEW_OUTPUT)
+        agent = MockReviewAgent(with_observed_diffstat(VALID_REVIEW_OUTPUT, review_repo))
         ui = PlainUI(no_color=True)
         verification = VerificationResult(
             passed=True,
@@ -482,12 +481,11 @@ class TestRunReview:
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             verification,
             ReviewMode.ADVISORY,
             ui,
-            diff_content="+change\n",
         )
         assert result.passed is True
         assert result.mode == "advisory"

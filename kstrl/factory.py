@@ -98,14 +98,12 @@ from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
-    run_chunked_review,
     run_review,
 )
 from kstrl.sandbox import SandboxConfig
 from kstrl.security import (
     SecurityConfig,
     SecurityMode,
-    run_chunked_security_review,
     run_security_review,
 )
 from kstrl.shutdown import StopController
@@ -2930,9 +2928,7 @@ def _run_factory_locked(
         hooks=PipelineHooks(
             run_mechanical_verification=run_mechanical_verification,
             run_review=run_review,
-            run_chunked_review=run_chunked_review,
             run_security_review=run_security_review,
-            run_chunked_security_review=run_chunked_security_review,
             distill_facts=distill_facts,
             measure_fact_utilization=measure_fact_utilization,
             cleanup_worktree=_cleanup_worktree,

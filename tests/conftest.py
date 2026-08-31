@@ -16,11 +16,16 @@ learning loop consumes. Two layers fix that:
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import subprocess
 from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
+from kstrl.git import DiffStat, get_diff_stat
 
 # Repository root that contains this test suite, independent of CWD.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -265,3 +270,156 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     state the dependency explicitly.
     """
     _clear_kstrl_env(monkeypatch)
+
+
+# ---------------------------------------------------------------------------
+# A real repository for the reviewer roles (#266)
+# ---------------------------------------------------------------------------
+#
+# The review and security phases stopped taking a diff as a string and
+# started reading the worktree they run in, which makes "a git repo with
+# a change on it" the minimum context they need. A stub cannot stand in:
+# the harness resolves the base ref and measures ``git diff --numstat``
+# against it, so a directory that is not a repository is (correctly) an
+# infrastructure error rather than a reviewable change.
+
+
+@dataclass(frozen=True)
+class ReviewRepo:
+    """A git repo on a feature branch with a committed change on it."""
+
+    path: Path
+    base_branch: str
+    stat: DiffStat
+
+    @property
+    def prd_path(self) -> Path:
+        """Where ``make_review_repo`` seeds the component PRD."""
+        return self.path / "prd.json"
+
+    def review_json(self, **overrides: object) -> str:
+        """A reviewer reply whose diffstat matches this repo's."""
+        payload: dict[str, object] = {
+            "observedDiffstat": self.stat.as_payload(),
+            "stories": [
+                {
+                    "storyId": "US-001",
+                    "storyTitle": "Story US-001",
+                    "criteria": [
+                        {
+                            "criterion": "AC1",
+                            "verdict": "pass",
+                            "explanation": "checked",
+                            "suggestion": "",
+                        }
+                    ],
+                }
+            ],
+            "concerns": [],
+            "exhaustively_searched": True,
+            "overallNotes": "",
+        }
+        payload.update(overrides)
+        return json.dumps(payload)
+
+    def security_json(self, **overrides: object) -> str:
+        """A security reply whose diffstat matches this repo's."""
+        payload: dict[str, object] = {
+            "observedDiffstat": self.stat.as_payload(),
+            "findings": [],
+            "exhaustively_searched": True,
+            "overallNotes": "",
+        }
+        payload.update(overrides)
+        return json.dumps(payload)
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+DEFAULT_REVIEW_PRD = json.dumps(
+    {
+        "branchName": "test",
+        "userStories": [
+            {
+                "id": "US-001",
+                "title": "Story US-001",
+                "acceptanceCriteria": ["AC1"],
+                "priority": 1,
+                "passes": True,
+                "notes": "",
+            }
+        ],
+    }
+)
+
+
+def make_review_repo(
+    path: Path,
+    files: dict[str, str] | None = None,
+    base_files: dict[str, str] | None = None,
+) -> ReviewRepo:
+    """Create a repo on ``main`` whose feature branch holds ``files``.
+
+    ``base_files`` are committed on ``main`` first, so a test can build a
+    change that MODIFIES something rather than only adding.
+
+    No remote, so ``git.resolve_base_ref`` leaves the base as ``main``
+    and the reviewer's range and the harness's are the same range by
+    construction.
+
+    A ``prd.json`` is written into the worktree AFTER the change commit,
+    so it is untracked and contributes nothing to the diffstat: every
+    caller needs a PRD on disk and none of them wants it counted.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q")
+    _git(path, "config", "user.email", "kstrl@test.invalid")
+    _git(path, "config", "user.name", "kstrl tests")
+    _write_all(path, base_files or {"README.md": "base\n"})
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "base")
+    _git(path, "branch", "-M", "main")
+    _git(path, "checkout", "-qb", "feature")
+    _write_all(path, files or {"src/mod.py": "def added() -> int:\n    return 1\n"})
+    _git(path, "add", "-A")
+    _git(path, "commit", "-qm", "change")
+    repo = ReviewRepo(path=path, base_branch="main", stat=get_diff_stat("main", path))
+    repo.prd_path.write_text(DEFAULT_REVIEW_PRD, encoding="utf-8")
+    return repo
+
+
+def _write_all(root: Path, files: dict[str, str]) -> None:
+    for name, body in files.items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+
+
+def with_observed_diffstat(raw_output: str, repo: ReviewRepo) -> str:
+    """Stamp ``repo``'s real diffstat onto a canned reviewer reply.
+
+    #266 made ``observedDiffstat`` mandatory, so a fixture reply without
+    one is discarded as unverified coverage - correct, and useless for a
+    test whose subject is something else (verdict downgrading, budget
+    accounting, transcript streaming). This keeps those tests about
+    their own subject; the coverage check has its own tests in
+    ``test_review_payload.py``.
+    """
+    payload = json.loads(raw_output)
+    payload["observedDiffstat"] = repo.stat.as_payload()
+    return json.dumps(payload)
+
+
+@pytest.fixture
+def review_repo(tmp_path: Path) -> ReviewRepo:
+    """The default one-file change, for tests that only need a repo."""
+    return make_review_repo(tmp_path / "review-repo")

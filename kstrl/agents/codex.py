@@ -12,7 +12,11 @@ from pathlib import Path
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
-from kstrl.sandbox import SandboxConfig, codex_sandbox_args
+from kstrl.sandbox import (
+    SandboxConfig,
+    codex_review_sandbox_args,
+    codex_sandbox_args,
+)
 
 # Measured against codex CLI 0.134.0 (R3.1): plain `codex exec` output
 # ends with a two-line trailer - a line reading "tokens used" followed by
@@ -43,6 +47,7 @@ class CodexAgent:
         model: str | None = None,
         reasoning_effort: str | None = None,
         sandbox: SandboxConfig | None = None,
+        read_only: bool = False,
     ):
         """Initialize Codex agent.
 
@@ -53,10 +58,16 @@ class CodexAgent:
                 ``--sandbox workspace-write`` plus the network-access
                 config override (measured against codex 0.134.0 - see
                 kstrl.sandbox)
+            read_only: #266 - the agent may read the tree and must not
+                write it (the reviewer roles). Maps to ``--sandbox
+                read-only`` and OVERRIDES ``sandbox``: read-only is
+                strictly tighter than any operator intent, and autonomy
+                is allowed to tighten a gate and never to loosen one.
         """
         self._model = model
         self._reasoning_effort = reasoning_effort
         self._sandbox = sandbox
+        self._read_only = read_only
         self._final_message: str | None = None
         self._usage_records: list[UsageRecord] = []
 
@@ -71,6 +82,19 @@ class CodexAgent:
     def is_available(cls) -> bool:
         """Check if codex CLI is available."""
         return shutil.which("codex") is not None
+
+    def _sandbox_argv(self) -> list[str]:
+        """The ``--sandbox`` fragment for this agent's posture.
+
+        Read-only wins over the operator's intent: ``read-only`` is
+        strictly tighter than ``workspace-write``, and a gate may be
+        tightened and never loosened. A method rather than a branch
+        inside ``run``, which is already the most complex function in
+        this module.
+        """
+        if self._read_only:
+            return codex_review_sandbox_args()
+        return codex_sandbox_args(self._sandbox)
 
     def run(
         self,
@@ -100,7 +124,7 @@ class CodexAgent:
             # Translate unified effort levels to codex-specific values
             codex_effort = "xhigh" if self._reasoning_effort == "max" else self._reasoning_effort
             cmd.extend(["-c", f'model_reasoning_effort="{codex_effort}"'])
-        cmd.extend(codex_sandbox_args(self._sandbox))
+        cmd.extend(self._sandbox_argv())
 
         # Use --output-last-message when supported by the codex CLI.
         last_msg_file: Path | None = None
