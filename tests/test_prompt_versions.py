@@ -74,7 +74,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import git
+from kstrl import git, verify
 from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
@@ -91,7 +91,11 @@ from kstrl.init_cmd import (
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
-from kstrl.verify import VERIFY_COMMANDS_PROMPT, VERIFY_COMMANDS_PROMPT_VERSION
+from kstrl.verify import (
+    VERIFY_COMMANDS_PROMPT,
+    VERIFY_COMMANDS_PROMPT_VERSION,
+    ResolvedVerifyCommands,
+)
 
 
 def _sha256(text: str) -> str:
@@ -277,9 +281,15 @@ def test_prompt_snapshot_unchanged(name: str) -> None:
 # the words, or wraps unhashed instructions around it. Each test asserts
 # the render EQUALS the enrolled body (catching added or dropped words),
 # then patches the constant and asserts the render followed (catching a
-# copy that happens to be byte-identical today). Only these two are
-# covered: this is a guard on the change-source pair, not a general
-# mechanism over the enrolled set.
+# copy that happens to be byte-identical today).
+#
+# Covered: the three prompts whose renderer takes no arguments this test
+# cannot supply. Seven of the eight enrolled prompts are rendered through
+# `.format` (DEFAULT_PROMPT alone ships verbatim); DECOMPOSE_PROMPT
+# (decompose.py), REVIEWER_PROMPT (review.py), SECURITY_PROMPT
+# (security.py) and DISTILL_PROMPT (knowledge.py) carry the same orphan
+# exposure and have no guard. This is a guard on three renderers, not a
+# general mechanism over the enrolled set.
 
 
 def test_repo_change_source_renders_the_enrolled_body(
@@ -312,6 +322,24 @@ def test_pasted_change_source_renders_the_enrolled_body(
     assert block == f"SENTINEL {token} DIFF BODY", (
         "pasted_change_source does not read PASTED_CHANGE_SOURCE_PROMPT, so "
         "the enrolled constant is an orphan and the reviewer's words are not "
+        "under H3 snapshot protection."
+    )
+
+
+def test_verify_commands_render_the_enrolled_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """VERIFY_COMMANDS_PROMPT reaches the engineer through
+    ``ResolvedVerifyCommands.format_for_prompt`` (kstrl/verify.py), which
+    carries the same orphan exposure as the change-source pair."""
+    commands = ResolvedVerifyCommands(test="TEST CMD", typecheck="TYPECHECK CMD", lint="LINT CMD")
+    assert commands.format_for_prompt() == VERIFY_COMMANDS_PROMPT.format(
+        test="TEST CMD", typecheck="TYPECHECK CMD", lint="LINT CMD"
+    ), "format_for_prompt renders something other than its enrolled body."
+    monkeypatch.setattr(verify, "VERIFY_COMMANDS_PROMPT", "SENTINEL {test} {typecheck} {lint}")
+    assert commands.format_for_prompt() == "SENTINEL TEST CMD TYPECHECK CMD LINT CMD", (
+        "format_for_prompt does not read VERIFY_COMMANDS_PROMPT, so the "
+        "enrolled constant is an orphan and the engineer's words are not "
         "under H3 snapshot protection."
     )
 
