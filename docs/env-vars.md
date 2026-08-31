@@ -18,10 +18,16 @@ warns and continues, because the journal is an optional audit trail;
 losing it costs the record and nothing else. `ks evolve` is the one
 command that section is fatal for, because there the journal is the work.
 
-Four commands skip the seam and none skip the check: `ks init` writes
-the file, `ks config show` prints its rows and then reports the same
-verdict, and `ks sense` and `ks serve` run the check themselves and
-report it as exit 2 (with a JSON error document for `ks sense --json`).
+`ks init` skips the check: it writes the file, and refusing to replace a
+file it cannot parse would take away the recovery path. `ks config show`,
+`ks sense` and `ks serve` skip only the entry seam and run the same check
+themselves: `config show` prints every row it can resolve and then names
+each rejected section with its key and value, and the other two report
+through their documented exit 2 (with a JSON error document for
+`ks sense --json`).
+
+When everything else refuses, `ks config show` is the command guaranteed
+to run and tell you which section, key and value to fix.
 
 ## Global / kstrlConfig (`[agent]`, `[run]`, `[paths]`, `[git]`, `[ui]`)
 

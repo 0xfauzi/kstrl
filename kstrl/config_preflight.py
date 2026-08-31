@@ -76,6 +76,12 @@ from kstrl.config_report import scrubbed_environ
 #:
 #: ``ValueError`` is the house type (``ConfigError``,
 #: ``PolicyConfigError`` and ``BudgetConfigError`` all derive from it).
+#: ``BudgetConfigError`` is deliberately collected like any other and
+#: not re-raised: re-raising it abandoned the traversal at ``[factory]``,
+#: which is second in the list, so one bad ceiling hid every later
+#: section and the operator fixed the ceiling only to meet ``[verify]``
+#: on the next run. ``_KstrlGroup.invoke`` still renders it for the
+#: paths that raise it outside this check, such as ``--max-cost-usd``.
 #: ``TypeError`` joins it because ``float(["600"])`` - a toml array where
 #: a number belongs - raises that instead. ``RuntimeError`` is there for
 #: the domain errors that derive from IT: ``ServeError`` rejects
@@ -187,13 +193,33 @@ def preflight_config(
     by the traceback the warning promised would not come. A command
     that is ABOUT a section declares that here rather than remembering
     its own guard.
-
-    Deliberately NOT swallowed here: ``BudgetConfigError``, which
-    ``_KstrlGroup.invoke`` already renders with its own message, and
-    which is about a value that parses fine and cannot bound anything.
     """
-    from kstrl.factory import BudgetConfigError
+    problems = collect_config_problems(root_dir, warn, required=required)
+    if problems:
+        raise ConfigError(
+            "configuration rejected before anything was started; "
+            "fix it and run again:\n  " + "\n  ".join(problems)
+        )
 
+
+def collect_config_problems(
+    root_dir: Path,
+    warn: Callable[[str], None],
+    *,
+    required: frozenset[str] = frozenset(),
+) -> list[str]:
+    """:func:`preflight_config`, but returning the problems instead of
+    raising on them.
+
+    Split out for ``ks config show``, which has to REPORT every rejected
+    section next to the rows it could resolve rather than stop at the
+    first one. A raising check and a reporting one reading different
+    section lists is exactly the drift this module exists to prevent, so
+    there is one traversal and the raise sits on top of it.
+
+    A malformed document still raises: no section can be resolved when
+    the file will not parse, so there is nothing to report beside.
+    """
     toml_path = resolve_config_file(root_dir)
     problems: list[str] = []
     # One parse of the file for the whole check, blame helpers included.
@@ -212,20 +238,13 @@ def preflight_config(
         for section in config_sections():
             try:
                 section.loader(root_dir)
-            except BudgetConfigError:
-                raise
             except _REJECTIONS as exc:
                 detail = _detail(section, toml_path, root_dir, exc)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
                 else:
                     warn(f"{detail} - continuing without it")
-
-    if problems:
-        raise ConfigError(
-            "configuration rejected before anything was started; "
-            "fix it and run again:\n  " + "\n  ".join(problems)
-        )
+    return problems
 
 
 def _detail(
@@ -257,21 +276,29 @@ def _blamed_env_var(
     message: str,
 ) -> str | None:
     """The environment variable whose REMOVAL makes this loader accept
-    the configuration, if exactly one does.
+    the configuration, if EXACTLY ONE does.
 
     Measured, not guessed: a variable is named only when taking it out
-    of the environment demonstrably fixes the load. Nothing is reported
-    when the fault is in the file, or when two inputs are wrong at once.
+    of the environment demonstrably fixes the load. The sweep runs to
+    the end and reports nothing when two variables each fix it on their
+    own, because then neither is "the one to change" and naming the
+    alphabetically first contradicts the message beside it. Reproduced
+    on ``[linear]`` with ``KSTRL_LINEAR_ENABLED=1`` and an empty
+    ``KSTRL_LINEAR_TEAM_ID``: removing either satisfies the loader, and
+    the earlier code blamed ENABLED while the message told the operator
+    to set TEAM_ID.
 
     An EMPTY environment is tried first, and a loader that still fails
-    there ends the search: the file is at fault, and no single variable
-    can be. That gate is what keeps the common case at one extra load
-    rather than one per variable (measured with 83 variables set: 34.3
-    ms of fruitless sweep for a file fault, against 0.5 ms with it).
+    there ends the search: the file is at fault, and no variable can be.
+    That gate is what keeps a file fault at one extra load rather than
+    one per variable (measured with 83 variables set: 34.3 ms of
+    fruitless sweep before the gate, 0.5 ms after).
 
-    Mutating ``os.environ`` is PROCESS-WIDE, which is why this runs only
-    on the error path at command entry, where the command body has not
-    started and no other thread of ours is alive. That is the constraint
+    Runs whenever a section is REJECTED, which includes a degrading
+    section on an otherwise successful command. Both are before the
+    command body, which is the property that matters: mutating
+    ``os.environ`` is PROCESS-WIDE, and here nothing has been built and
+    no other thread of ours is alive. That is the constraint
     ``config_report.scrubbed_environ``, reused here, already documents.
     """
     with scrubbed_environ():
@@ -280,6 +307,7 @@ def _blamed_env_var(
         except Exception:
             return None
 
+    culprits: list[str] = []
     for name in sorted(os.environ):
         saved = os.environ.pop(name)
         try:
@@ -292,10 +320,12 @@ def _blamed_env_var(
             # The value is echoed only where the loader's own message
             # already quotes it. Nothing has decided that an arbitrary
             # environment value may be printed, so nothing prints one.
-            return f"set by {name}={saved}" if repr(saved) in message else f"set by {name}"
+            culprits.append(
+                f"set by {name}={saved}" if repr(saved) in message else f"set by {name}"
+            )
         finally:
             os.environ[name] = saved
-    return None
+    return culprits[0] if len(culprits) == 1 else None
 
 
 def _blamed_toml_value(

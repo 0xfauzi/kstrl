@@ -28,14 +28,19 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   that warns and continues, because the journal is an optional audit
   trail; every other section configures a gate, a budget, a boundary or
   a destination, where substituting a default would measure the run with
-  something other than what the operator configured. Four commands are
-  exempt from the entry seam and none from the check: `ks init` writes
-  the file, so refusing to run it would take away the recovery path;
-  `ks config show` prints its resolved rows and then reports the same
-  verdict, so it cannot disagree with the seam; and `ks sense` and
-  `ks serve` run the check themselves under their own documented exit
-  code 2, which for `ks sense --json` carries a JSON error document a
-  script can read (#272).
+  something other than what the operator configured. Bare `ks` on a
+  terminal is checked too, before the home shell opens, because the TUI
+  launches runs in-process.
+
+  One command is exempt from the check itself: `ks init`, which writes
+  the file, and would otherwise refuse to replace the very file it
+  cannot parse. Three more skip only the entry seam and run the same
+  check in their own bodies, under their own contracts: `ks config show`
+  prints every row it can resolve and then names each rejected section
+  with its key and value, `ks sense` reports through exit 2 and a JSON
+  error document, and `ks serve` through exit 2 before it can poison a
+  queue item. `ks config show` is the surface guaranteed to run and
+  explain whatever else refuses (#272).
 
 - Safe mode on the dashboard: six defects an independent review
   reproduced after the change merged. All three `dock: top` siblings

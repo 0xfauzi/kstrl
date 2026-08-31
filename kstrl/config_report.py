@@ -40,6 +40,10 @@ class ConfigReport:
     toml_path: Path
     toml_exists: bool
     rows: tuple[ConfigRow, ...]
+    #: Sections whose loader rejected the configuration, so no row could
+    #: be built for them. The report is still returned: see
+    #: :func:`build_config_report`.
+    unresolved: tuple[str, ...] = ()
 
 
 # (toml section, [(toml key, KstrlConfig field)]) - the documented
@@ -345,17 +349,39 @@ def build_config_report(
 
     ``overlay`` is the CLI's flag layer: it mutates the resolved
     KstrlConfig and returns the field names it overrode (tagged
-    ``flag``). Raises ValueError when a loader rejects the config -
-    presentation of that error is the caller's job.
+    ``flag``).
+
+    A PHASE section whose loader rejects the config costs that section's
+    rows and is named in ``unresolved``; it does not cost the report.
+    One typo used to abort the whole thing before a single row printed,
+    which made ``ks config show`` the LEAST informative surface in the
+    CLI at the exact moment it is the one an operator opens: every other
+    command named the section, the key and the value, and this one said
+    ``error: could not convert string to float: 'many'``.
+
+    The base config still raises, because a malformed document or a bad
+    ``[run]`` value leaves nothing to render beside the failure.
     """
     toml_path = resolve_config_file(root_dir)
     phase_sections = _phase_sections()
+    unresolved: list[str] = []
+
+    def _resolve(name: str, loader: Any) -> Any:
+        try:
+            return loader(root_dir)
+        except (ValueError, TypeError, RuntimeError):
+            # The same rejection set config_preflight._REJECTIONS states.
+            # WHY it was rejected is that module's job to report; this
+            # one records only that the rows cannot be built.
+            if name not in unresolved:
+                unresolved.append(name)
+            return None
 
     resolved_base = KstrlConfig.load(root_dir)
-    phase_resolved = {name: loader(root_dir) for name, loader, _ in phase_sections}
+    phase_resolved = {name: _resolve(name, loader) for name, loader, _ in phase_sections}
     with scrubbed_environ():
         noenv_base = KstrlConfig.load(root_dir)
-        phase_noenv = {name: loader(root_dir) for name, loader, _ in phase_sections}
+        phase_noenv = {name: _resolve(name, loader) for name, loader, _ in phase_sections}
     phase_toml_keys = {
         name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
     }
@@ -370,6 +396,8 @@ def build_config_report(
 
     rows = _base_rows(resolved_base, base_sources)
     for section, _, knob_fields in phase_sections:
+        if section in unresolved:
+            continue
         rows.extend(
             _phase_rows(
                 section,
@@ -385,4 +413,5 @@ def build_config_report(
         toml_path=toml_path,
         toml_exists=toml_path.exists(),
         rows=tuple(rows),
+        unresolved=tuple(unresolved),
     )

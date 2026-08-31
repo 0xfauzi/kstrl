@@ -16,7 +16,9 @@ classified as degrading still degrades.
 from __future__ import annotations
 
 import ast
+import io
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -272,6 +274,59 @@ class TestWhatItNames:
         assert "max_core_tokens" not in message
         assert "max_sibling_tokens" not in message
 
+    def test_two_variables_that_each_fix_it_blame_neither(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Removing either variable satisfies the loader, so neither is
+        "the one to change". Naming the alphabetically first one made
+        the tool blame KSTRL_LINEAR_ENABLED while the message beside it
+        told the operator to set KSTRL_LINEAR_TEAM_ID."""
+        (tmp_path / "kstrl.toml").write_text('[linear]\nteam_id = "abc"\n')
+        monkeypatch.setenv("KSTRL_LINEAR_ENABLED", "1")
+        monkeypatch.setenv("KSTRL_LINEAR_TEAM_ID", "")
+
+        with pytest.raises(ConfigError) as caught:
+            preflight_config(tmp_path, warn=lambda _message: None)
+
+        message = str(caught.value)
+        assert "[linear]" in message
+        assert "set by KSTRL_LINEAR_ENABLED" not in message
+        assert "set by KSTRL_LINEAR_TEAM_ID" not in message
+
+    def test_one_variable_that_fixes_it_is_still_named(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The uniqueness rule must not cost the attribution it guards."""
+        monkeypatch.setenv("KSTRL_SECURITY_TIMEOUT", "many")
+
+        with pytest.raises(ConfigError) as caught:
+            preflight_config(tmp_path, warn=lambda _message: None)
+
+        assert "set by KSTRL_SECURITY_TIMEOUT=many" in str(caught.value)
+
+    def test_a_rejected_ceiling_does_not_hide_a_later_section(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`[factory]` is second in the traversal, so re-raising its
+        BudgetConfigError abandoned every section after it: the operator
+        fixed the ceiling, re-ran, and met `[verify]` for the first
+        time."""
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_cost_usd = nan\n\n[verify]\nmutation_threshold = 'many'\n"
+        )
+
+        with pytest.raises(ConfigError) as caught:
+            preflight_config(tmp_path, warn=lambda _message: None)
+
+        message = str(caught.value)
+        assert "max_cost_usd" in message
+        assert "[verify]" in message
+
     def test_a_clean_config_raises_nothing(self, tmp_path: Path) -> None:
         """The example config ships as documentation; it has to pass."""
         example = REPO_ROOT / "kstrl.toml.example"
@@ -288,6 +343,67 @@ class TestTheRootIsTheOneTheCommandWillUse:
     level click has not parsed ``--root`` yet, so a preflight there would
     read the config of whatever directory the operator happened to be
     standing in."""
+
+    @staticmethod
+    def _other_checkout(tmp_path: Path, toml: str) -> Path:
+        """A second project, with a prompt file at the layout
+        ``_resolve_root`` recognises."""
+        other = tmp_path / "other"
+        (other / "scripts" / "kstrl").mkdir(parents=True)
+        (other / "kstrl.toml").write_text(toml)
+        (other / "scripts" / "kstrl" / "prompt.md").write_text("# prompt\n")
+        return other
+
+    def test_a_stale_prompt_file_does_not_redirect_a_command_that_ignores_it(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Only `run`, `understand` and `feature` derive a root from a
+        prompt path; `status` and the rest use ``root or cwd`` and never
+        read PROMPT_FILE. Reading it for them made one stale export in a
+        shell profile refuse `ks status` on an unrelated checkout's
+        broken file."""
+        other = self._other_checkout(tmp_path, MALFORMED_TOML)
+        monkeypatch.setenv("PROMPT_FILE", str(other / "scripts" / "kstrl" / "prompt.md"))
+
+        result = _invoke(["status"], toml="[factory]\nmax_parallel = 2\n")
+
+        assert "Invalid TOML" not in result.output
+        assert "configuration rejected" not in result.output
+
+    def test_a_stale_prompt_file_does_not_hide_the_commands_own_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The same bug's other half, and the dangerous one: the
+        redirect made the check validate the OTHER checkout, so a
+        command whose own config was broken PASSED. A preflight that
+        passes is invisible."""
+        other = self._other_checkout(tmp_path, "[factory]\nmax_parallel = 2\n")
+        monkeypatch.setenv("PROMPT_FILE", str(other / "scripts" / "kstrl" / "prompt.md"))
+
+        result = _invoke(["status"], toml='[verify]\nmutation_threshold = "many"\n')
+
+        assert result.exit_code == 1
+        assert "[verify] could not convert string to float: 'many'" in result.output
+
+    def test_a_command_that_declares_prompt_still_reads_the_env_var(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The fix narrows the inputs to what a command declares; it
+        does not drop env support for the three commands that resolve
+        their root that way."""
+        other = self._other_checkout(tmp_path, MALFORMED_TOML)
+        monkeypatch.setenv("PROMPT_FILE", str(other / "scripts" / "kstrl" / "prompt.md"))
+
+        result = _invoke(["run", "--agent-cmd", "true"])
+
+        assert result.exit_code == 1
+        assert "Invalid TOML" in result.output
 
     def test_the_prompt_option_feature_actually_uses_derives_the_root(
         self,
@@ -425,6 +541,17 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert result.exit_code == 0
         assert "Usage:" in result.output
 
+    def test_serve_print_plist_keeps_the_documented_exit_2(self) -> None:
+        """`--print-plist` returns before the config load, so it used to
+        skip the check and then exit 1 through the group's ConfigError
+        handler - contradicting this command's own documented exit 2 for
+        a bad kstrl.toml, on the one path an operator uses while setting
+        up an unattended daemon."""
+        result = _invoke(["serve", "--print-plist", "--no-color"], toml=MALFORMED_TOML)
+
+        assert result.exit_code == 2
+        assert "Invalid TOML" in result.output
+
     def test_serve_checks_the_whole_config_under_its_own_exit_2(self) -> None:
         """Exempt from the seam, not from the guarantee: the daemon calls
         the preflight itself, so a section it never reads still stops it
@@ -437,6 +564,132 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
 
         assert result.exit_code == 2
         assert "[verify]" in result.output
+
+
+class _Tty(io.StringIO):
+    """A stream that claims to be a terminal, so the bare-`ks` branch
+    takes the home-shell path instead of printing help."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+class TestTheHomeShellIsNotAFifthExemption:
+    """Bare `ks` on a TTY runs the GROUP callback, so
+    ``_KstrlCommand.invoke`` never fires for it. That made the home shell
+    an undocumented fifth exemption, and the most expensive one: the TUI
+    launches runs IN-PROCESS (``tui/session.py`` calls ``run_factory``
+    and ``decompose_spec`` directly), so a bad ``[linear]`` value paid
+    for the architect and then aborted. The original #272 defect, on the
+    path a user reaches by typing `ks`.
+    """
+
+    @staticmethod
+    def _bare_ks(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        toml: str,
+    ) -> tuple[int, list[Path]]:
+        import kstrl.tui.home as home_mod
+
+        (tmp_path / "kstrl.toml").write_text(toml)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("KSTRL_NO_TUI", raising=False)
+        opened: list[Path] = []
+        monkeypatch.setattr(
+            home_mod,
+            "run_home_shell",
+            lambda root: (opened.append(root), 0)[1],
+        )
+        monkeypatch.setattr(sys, "stdout", _Tty())
+        monkeypatch.setattr(sys, "stdin", _Tty())
+
+        try:
+            cli.main([], standalone_mode=False)
+        except SystemExit as exc:
+            return int(exc.code or 0), opened
+        return 0, opened
+
+    def test_a_rejected_section_stops_the_shell_before_it_opens(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        code, opened = self._bare_ks(
+            tmp_path,
+            monkeypatch,
+            '[linear]\ntimeout_seconds = "soon"\n',
+        )
+
+        assert opened == []
+        assert code == 1
+
+    def test_a_usable_config_still_opens_the_shell(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The guard must not cost the entry point it protects."""
+        code, opened = self._bare_ks(tmp_path, monkeypatch, "[factory]\nmax_parallel = 2\n")
+
+        assert opened == [Path.cwd()]
+        assert code == 0
+
+
+class TestConfigShowIsTheSurfaceThatAlwaysWorks:
+    """Every command refuses on an unusable section, so one command has
+    to always run and always explain. Before this it was the LEAST
+    informative surface in the CLI: ``build_config_report`` raised before
+    a single row printed, and `ks config show` said
+    ``error: could not convert string to float: 'many'`` while every
+    other command named the section, the key and the value.
+    """
+
+    def test_a_rejected_rendered_section_costs_its_rows_not_the_report(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`[verify]` is one of the 15 sections this report RENDERS, so
+        it is the case the earlier covering test missed by using
+        `[queue]`, which is one of the 11 it does not."""
+        result = _invoke(["config", "show"], toml='[verify]\nmutation_threshold = "many"\n')
+
+        assert result.exit_code == 1
+        # Rows first, for everything that resolved.
+        assert "[agent]" in result.output
+        assert "  type = " in result.output
+        # Then the verdict, in the words every other command uses.
+        assert "[verify] could not convert string to float: 'many'" in result.output
+        assert "mutation_threshold = 'many'" in result.output
+
+    def test_it_still_explains_when_every_other_command_refuses(self) -> None:
+        """The escape hatch is a command, not a flag: universal fatality
+        is only defensible while one surface always answers."""
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("KSTRL_LINEAR_ENABLED", "1")
+            refused = _invoke(["status"])
+            explained = _invoke(["config", "show"])
+
+        assert refused.exit_code == 1
+        assert explained.exit_code == 1
+        assert "[agent]" in explained.output
+        assert "[linear]" in explained.output
+        assert "KSTRL_LINEAR_TEAM_ID" in explained.output
+
+    def test_a_base_section_failure_is_reported_in_the_seam_s_words(self) -> None:
+        """No rows are possible when the base config is rejected, but the
+        message still names the section, the key and the value rather
+        than the bare coercion error."""
+        result = _invoke(["config", "show"], toml='[run]\nmax_iterations = "many"\n')
+
+        assert result.exit_code == 1
+        assert "[run] max_iterations = 'many'" in result.output
+
+    def test_a_clean_config_still_exits_zero(self) -> None:
+        result = _invoke(["config", "show"], toml="[factory]\nmax_parallel = 2\n")
+
+        assert result.exit_code == 0, result.output
+        assert "Rejected sections" not in result.output
 
 
 class TestTheExemptionKeysOffTheTopLevelName:

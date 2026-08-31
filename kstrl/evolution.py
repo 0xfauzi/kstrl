@@ -140,6 +140,16 @@ class EvolutionConfig:
         input, and two lists that disagree would degrade the same value
         at startup and then raise on it mid-run.
 
+        The cost of that widening, stated because it is real: a
+        ``TypeError`` from a DEFECT inside :meth:`load` - a None where a
+        path belongs, a signature that stopped matching - now reads as
+        "config unreadable, skipping journal" rather than surfacing. It
+        cannot be narrowed to the toml-array case without inspecting the
+        message, which would be guessing. The journal going quiet is the
+        signal that a defect is hiding here, so treat a "skipping
+        journal" warning on a config that looks correct as a bug report
+        about this method rather than about the operator's file.
+
         Degrades loudly: ``warn`` is called with the parse failure.
         """
         try:
