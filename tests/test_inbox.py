@@ -29,6 +29,7 @@ from kstrl.inbox import (
     notifiable,
     summarize,
 )
+from tests.helpers.component_prd import write_component_prd
 
 
 def _box(tmp_path: Path, **kwargs: object) -> Inbox:
@@ -425,6 +426,7 @@ def _run_factory(
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("p")
+    write_component_prd(tmp_path, "scripts/kstrl/feature/comp-a/prd.json")
     (tmp_path / "kstrl.toml").write_text(
         f"[autonomy]\nenabled = {'true' if autonomy else 'false'}\n"
         "[policy]\nenabled = true\n"

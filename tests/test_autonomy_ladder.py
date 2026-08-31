@@ -29,6 +29,7 @@ from kstrl.autonomy import (
     manual_override_notes,
 )
 from kstrl.autonomy_replay import RunRecord, load_runs, replay, replay_file
+from tests.helpers.component_prd import write_component_prd
 
 
 def _eligible_state(level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED) -> AutonomyState:
@@ -488,6 +489,9 @@ def _run_factory_with_autonomy(
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
+    # Without it the run is refused before it starts (#293 review): a
+    # component whose pre-run PRD will not read has no plan-time scope.
+    write_component_prd(tmp_path, "scripts/kstrl/feature/comp-a/prd.json")
     (tmp_path / "kstrl.toml").write_text(
         f"[autonomy]\nenabled = {'true' if enabled else 'false'}\n"
         f"[policy]\nenabled = {'true' if policy_enabled else 'false'}\n"

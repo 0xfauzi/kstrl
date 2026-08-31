@@ -104,6 +104,13 @@ def _sample_events() -> list[ev.Event]:
             max_total_tokens=1000,
             max_adversarial_calls=10,
         ),
+        ev.ComponentScopeResolved(
+            component="comp-a",
+            scope_source="component_prd",
+            origin="scripts/kstrl/feature/comp-a/prd.json",
+            allowed_paths=("src/", "tests/"),
+            harness_paths=("scripts/kstrl/codebase_map.md",),
+        ),
         ev.PhaseStarted(component="comp-a", phase="review", attempt=1),
         ev.PhaseCompleted(
             component="comp-a", phase="review", passed=True, detail="", duration_seconds=30.0
