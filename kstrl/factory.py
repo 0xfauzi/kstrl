@@ -111,9 +111,11 @@ from kstrl.shutdown import StopController
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
+    SCOPE_UNREADABLE_CHECK,
     VerifyConfig,
     resolve_verify_commands,
     run_mechanical_verification,
+    scope_unreadable_error,
     scrub_project_claude_md,
 )
 
@@ -2450,6 +2452,73 @@ def _resolve_max_parallel(factory_config: FactoryConfig, ui: UI) -> int:
     return max_parallel
 
 
+def _refused_before_launch(
+    pipeline: ComponentPipeline,
+    comp: Component,
+    run_scope: RunScope,
+) -> bool:
+    """Every reason to fail a READY component instead of launching it.
+
+    Returns True when the component was transitioned without a launch,
+    which the caller counts so the scheduling loop re-derives its ready
+    set rather than stopping while schedulable siblings remain.
+
+    One function because the three refusals share a shape and a
+    contract - fail loudly, spend nothing, do not halt the run - and
+    because the scheduling loop is already far past the repo's
+    complexity gate, so a fourth inline branch is a refusal at commit
+    time. None of them halts: by this point siblings may have merged,
+    and discarding their work to punish one component is the worse
+    trade.
+    """
+    # R3.1 scheduling gate: a blown ceiling (tokens or cost) fails
+    # pending components loudly instead of launching an engineer loop
+    # that would only add spend.
+    if pipeline.budget_exceeded():
+        pipeline.fail_for_budget(comp, "scheduling")
+        return True
+    # R8 review: a loop that emits COMPLETE returns before its own
+    # budget check, so an adapter that finishes on its first silent call
+    # never halts itself - the ordinary success path for a custom
+    # agent_cmd. This gate is what stops the run handing out NEW work
+    # under a ceiling that can no longer fire. Halts only when EVERY
+    # configured ceiling is dead: a cost-reporting adapter still
+    # enforces max_cost_usd even though its token cap is beyond saving.
+    #
+    # Identity is derived inside fail_for_budget: nothing was BREACHED
+    # here, so the rule falls through to the dead ceilings and names
+    # only those actually configured.
+    unenforceable = pipeline.budget_unenforceable()
+    if unenforceable is not None:
+        pipeline.fail_for_budget(comp, "scheduling", reason=unenforceable)
+        return True
+    # #294: the LAST point before spend. The plan-time preflight refuses
+    # an unresolved scope before the run starts, but it only inspects
+    # components that are PENDING then, and the contract breaker resets
+    # a COMPLETED component to PENDING inside the scheduling loop, long
+    # after _run_preflights returned. Without this gate such a component
+    # runs a full engineer loop - up to max_iterations LLM calls - and
+    # only then does Phase 1 refuse it. Measured against the same
+    # dogfooding run _preflight_component_scope cites (14.49 dollars /
+    # 41 minutes for three attempts), Phase 1's FAIL alone still left
+    # roughly 4.83 dollars and 14 minutes on the table per reset.
+    #
+    # This also closes --no-verify, which returns from _phase_verify
+    # before the ungated check can run: a component with no trustworthy
+    # scope now never launches, so it cannot merge with the guard inert.
+    comp_scope = run_scope.for_component(comp.id)
+    if not comp_scope.is_trustworthy:
+        pipeline.fail(
+            comp,
+            scope_unreadable_error(f"Error: {comp_scope.error}"),
+            phase="scope",
+            check=SCOPE_UNREADABLE_CHECK,
+            signatures=[f"{SCOPE_UNREADABLE_CHECK}:no-trustworthy-scope"],
+        )
+        return True
+    return False
+
+
 def _abort_inflight(
     executor: ProcessPoolExecutor | _InlineExecutor,
     running_futures: dict[Future[ComponentResult], str],
@@ -3532,34 +3601,10 @@ def _run_factory_locked(
                 # still-schedulable siblings.
                 transitioned_without_launch = 0
                 for comp in ready[:slots]:
-                    # R3.1 scheduling gate: a blown ceiling (tokens or
-                    # cost) fails pending components loudly instead of
-                    # launching an engineer loop that would only add
-                    # spend.
-                    if pipeline.budget_exceeded():
-                        pipeline.fail_for_budget(comp, "scheduling")
-                        transitioned_without_launch += 1
-                        continue
-                    # R8 review: a loop that emits COMPLETE returns before
-                    # its own budget check, so an adapter that finishes on
-                    # its first silent call never halts itself - the
-                    # ordinary success path for a custom agent_cmd. This
-                    # gate is what stops the run handing out NEW work
-                    # under a ceiling that can no longer fire. Halts only
-                    # when EVERY configured ceiling is dead: a cost-
-                    # reporting adapter still enforces max_cost_usd even
-                    # though its token cap is beyond saving.
-                    unenforceable = pipeline.budget_unenforceable()
-                    if unenforceable is not None:
-                        # Identity is derived inside fail_for_budget:
-                        # nothing was BREACHED here, so the rule falls
-                        # through to the dead ceilings and names only
-                        # those actually configured.
-                        pipeline.fail_for_budget(
-                            comp,
-                            "scheduling",
-                            reason=unenforceable,
-                        )
+                    # Budget ceilings and an untrustworthy plan-time
+                    # scope: three conditions that fail the component
+                    # loudly rather than spending an engineer loop on it.
+                    if _refused_before_launch(pipeline, comp, run_scope):
                         transitioned_without_launch += 1
                         continue
                     pipeline.begin_attempt(comp)

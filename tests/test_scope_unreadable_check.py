@@ -15,20 +15,33 @@ the scheduler launches anything. That preflight is not a proof of
 unreachability: it only inspects PENDING components, and the contract
 breaker resets a COMPLETED one to PENDING mid-run, long after it
 returned. ``run_mechanical_verification`` is also a public entry point.
-So the state is reachable in production, and naming it correctly is not
-the whole fix - it is also failed rather than retried.
+So the state is reachable in production, and naming it correctly was
+never the whole fix.
+
+Note what this file does NOT assert, because #294 removed it: a retry
+prompt. The check routes to ``FailureAction.FAIL``, and
+``_route_failure`` discards ``context_json`` on that path, so no attempt
+2 exists and ``IterationContext`` is never rendered for this failure.
+The surviving audience is the operator. Every text assertion here reads
+what the operator reads.
 
 This file pins what is new here:
 
-1. The engineer-facing retry text names the real cause and no longer
-   names the diff, and it names a remedy that actually works.
-2. The component is FAILED, not retried: no engineer attempt is spent
-   on a verdict nothing in the worktree can change.
+1. The refusal names the real cause, no longer names the diff, does not
+   assert a cause it cannot know, and names a remedy that works.
+2. The component is FAILED, not retried, and the recorded error carries
+   the file to restore rather than only the fact of the failure.
 3. The old route is GONE rather than shadowed: ``check_diff_scope``
-   cannot be handed the error at all, by keyword OR positionally.
+   cannot be handed the error at all, by keyword OR positionally, and an
+   ambiguous empty sentinel refuses rather than passing.
 4. Every consumer that keys on the check-name string was decided - the
    journal's category, signature and proposal move to the new name, the
    in-loop guard keeps the old one.
+
+The cheapest refusal is not here: ``factory``'s launch gate refuses an
+untrustworthy scope BEFORE the engineer runs, which is the only place
+the spend is actually saved, and it lives in
+``tests/test_scope_launch_gate.py``.
 
 Two claims deliberately live elsewhere rather than being restated here,
 because both files already asserted them before #294 and the split only
@@ -50,7 +63,6 @@ from pathlib import Path
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.context import IterationContext
 from kstrl.evolution import (
     EvolutionConfig,
     EvolutionJournal,
@@ -59,111 +71,106 @@ from kstrl.evolution import (
     signatures_from_verification,
     split_signature,
 )
-from kstrl.factory import ComponentResult, _worker_scope
+from kstrl.factory import _worker_scope
 from kstrl.manifest import Component
 from kstrl.pipeline import FailureAction
 from kstrl.scope import ComponentScope
 from kstrl.verify import (
+    NO_CAUSE_RECORDED,
+    SCOPE_UNREADABLE_CHECK,
     CheckResult,
-    VerificationResult,
-    VerifyConfig,
     _scope_checks,
     check_diff_scope,
     check_scope_unreadable,
-    run_mechanical_verification,
 )
-from tests.test_progress_scope import _component as _progress_scope_component_factory
-from tests.test_progress_scope import _pipeline as _progress_scope_pipeline
+from tests.helpers.verify_phase import phase_verify_action, verify_with_cheap_gates
 
 #: A realistic value: this is the shape ``ComponentScope.resolve``
 #: records when the pre-run PRD will not load.
 SCOPE_ERROR = "pre-run PRD not found: scripts/kstrl/comp-a/prd.json"
 
 
-def _verify(root: Path, *, error: str | None) -> VerificationResult:
-    """Phase 1 with only the cheap gates on.
-
-    No git repository is set up, and none is needed: with an
-    ``allowed_paths_error`` ``_scope_checks`` returns before any git
-    call, ``prd_path`` is None, ``check_bad_patterns`` is off, and
-    dead-code / mutation / self-critique are off by default. Measured:
-    building a repo with a real diff first changes no assertion in this
-    file and roughly doubles its runtime.
-    """
-    return run_mechanical_verification(
-        root,
-        None,
-        "main",
-        None,
-        VerifyConfig(
-            test_command="true",
-            typecheck_command="true",
-            lint_command="true",
-            check_bad_patterns=False,
-            subprocess_timeout=30.0,
-        ),
-        allowed_paths_error=error,
-    )
-
-
 @pytest.fixture(scope="module")
-def retry_prompt(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """The text attempt 2's engineer actually reads, built once.
+def refusal_text(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """Everything the refusal says, as one string, built once.
 
-    Deterministic, and the three tests below assert three different
-    substrings of it, so a per-test rebuild is three
-    ``run_mechanical_verification`` runs (measured at 9.9 ms each) for
-    one string.
+    NOT a retry prompt. #294 routes this check to
+    ``FailureAction.FAIL``, and ``_route_failure`` discards
+    ``PhaseFailure.context_json`` on that path, so no attempt 2 exists
+    and ``IterationContext`` is never rendered for this failure. The
+    surviving readers are the operator, through the PR body, the
+    HALTED_RUN inbox item and ``ks sense``, and whoever reads the
+    journal later. An earlier version of this file asserted the same
+    substrings against a retry prompt that production can no longer
+    produce.
+
+    Deterministic, and the tests below assert different substrings of
+    it, so a per-test rebuild is one ``run_mechanical_verification`` run
+    each (measured at 9.9 ms) for one string.
     """
-    result = _verify(tmp_path_factory.mktemp("scope-source"), error=SCOPE_ERROR)
+    result = verify_with_cheap_gates(
+        tmp_path_factory.mktemp("scope-unreadable"),
+        allowed_paths_error=SCOPE_ERROR,
+    )
     assert not result.passed
-    ctx = IterationContext()
-    ctx.add_verification_failure(result.as_context(), attempt=1)
-    return ctx.format_for_prompt()
+    return result.as_context()
 
 
-class TestTheEngineerIsToldWhatActuallyFailed:
-    """The retry prompt is the only thing the next attempt reads."""
+class TestTheRefusalNamesWhatActuallyFailed:
+    """What a reader is told, and whether they can act on it."""
 
-    def test_the_failure_line_names_the_unreadable_scope(self, retry_prompt: str) -> None:
-        assert "- scope_unreadable: FAIL" in retry_prompt
-        assert SCOPE_ERROR in retry_prompt
+    def test_the_failure_line_names_the_unreadable_scope(self, refusal_text: str) -> None:
+        assert "- scope_unreadable: FAIL" in refusal_text
+        assert SCOPE_ERROR in refusal_text
 
-    def test_the_prompt_never_names_the_diff_check(self, retry_prompt: str) -> None:
-        """The token the engineer acts on. Under the old behaviour this
-        line read ``- diff_scope: FAIL``, which is an instruction to
+    def test_it_never_names_the_diff_check(self, refusal_text: str) -> None:
+        """The token a reader acts on. Under the old behaviour this line
+        read ``- diff_scope: FAIL``, which reads as an instruction to
         change a diff that cannot change the verdict."""
-        assert "diff_scope" not in retry_prompt
+        assert "diff_scope" not in refusal_text
 
-    def test_the_prompt_says_the_worktree_cannot_fix_it(self, retry_prompt: str) -> None:
-        """Naming the cause is not enough on its own: the engineer is
-        still told "Fix the current failures" by the context footer, so
-        the detail has to say that fixing it from here is impossible."""
-        assert "NOT something an engineer can fix from inside the worktree" in retry_prompt
-        assert "neither narrowing nor widening the diff changes this verdict" in retry_prompt
+    def test_it_says_the_worktree_cannot_fix_it(self, refusal_text: str) -> None:
+        """The check still runs inside Phase 1, whose other failures are
+        all things an engineer fixes, so this one has to say plainly
+        that it is not."""
+        assert "NOT something an engineer can fix from inside the worktree" in refusal_text
+        assert "neither narrowing nor widening the diff changes this verdict" in refusal_text
 
-    def test_the_remedy_it_names_is_one_that_works(self, retry_prompt: str) -> None:
-        """The defect #294 is about, one layer out. An earlier draft
-        told the reader to "set --allowed-paths for the run", and
+    def test_it_does_not_assert_a_cause_it_cannot_know(self, refusal_text: str) -> None:
+        """Two producers with different remedies: an unreadable PRD, and
+        ``RunScope.for_component``'s stand-in for a component that got
+        no plan-time scope at all. Asserting the first sends an operator
+        on the second to inspect a file that reads perfectly."""
+        assert "The Error line above names which of two faults this is" in refusal_text
+        assert "the manifest and the run's resolved scope disagree" in refusal_text
+
+    def test_the_remedy_it_names_is_one_that_works(self, refusal_text: str) -> None:
+        """#294's own defect, one layer out. An earlier draft told the
+        reader to "set --allowed-paths for the run", and
         ``ComponentScope.resolve`` returns unresolved BEFORE it consults
         that flag, so an operator following the text restarts the run
-        and hits the identical refusal. Proven against resolve itself in
-        ``test_the_run_flag_provably_cannot_clear_it`` below."""
-        assert "Restore that file in the main checkout" in retry_prompt
-        assert "A run-wide --allowed-paths cannot stand in for it" in retry_prompt
+        and hits the identical refusal."""
+        assert "A run-wide --allowed-paths fixes neither" in refusal_text
+        assert "scope resolution refuses before it reaches the flag" in refusal_text
 
     def test_the_run_flag_provably_cannot_clear_it(self, tmp_path: Path) -> None:
         """The evidence behind the sentence above, so the remediation
         text cannot drift back to offering the flag."""
         comp = Component("comp-a", "A", "", [], "scripts/kstrl/comp-a/prd.json", "b")
-        scope = ComponentScope.resolve(
-            comp,
-            tmp_path,
-            KstrlConfig(allowed_paths=["src/"]),
-        )
+        scope = ComponentScope.resolve(comp, tmp_path, KstrlConfig(allowed_paths=["src/"]))
         assert scope.source == "unresolved"
         assert scope.allowed_paths is None
         assert scope.is_trustworthy is False
+
+    def test_the_recorded_error_names_the_file_to_restore(self, tmp_path: Path) -> None:
+        """``pipeline.fail`` writes the routed error to ``comp.error``,
+        the ComponentFailed event, the notification hook and the
+        HALTED_RUN inbox detail. A fixed string left every one of those
+        saying only THAT the scope was unreadable, while the path sat in
+        the check details, where none of them look."""
+        action, error = phase_verify_action(tmp_path, [check_scope_unreadable(SCOPE_ERROR)])
+        assert action is FailureAction.FAIL
+        assert SCOPE_ERROR in error
 
 
 class TestTheOldRouteIsGoneNotShadowed:
@@ -194,10 +201,14 @@ class TestTheOldRouteIsGoneNotShadowed:
         with pytest.raises(TypeError):
             check_diff_scope(Path("."), "main", None, SCOPE_ERROR)  # type: ignore[misc]
 
-    def test_an_empty_error_means_unset_not_a_causeless_refusal(self) -> None:
-        """``is not None`` made ``allowed_paths_error=""`` hard-fail
-        Phase 1 with a detail rendering as the bare "Error: ". Empty
-        means unset here as it does everywhere else in the module."""
+    def test_an_empty_error_refuses_and_still_names_a_cause(self) -> None:
+        """Two review rounds hit this from opposite sides and both were
+        right about the defect. Truthiness let an empty sentinel PASS a
+        ``diff_scope`` that had no allowlist to compare, a fail-open in
+        the one check whose job is to fail closed. ``is not None`` alone
+        refused while rendering the bare "Error: ", naming no cause.
+        Neither problem requires the other: refuse, and substitute a
+        placeholder."""
         checks = _scope_checks(
             Path("."),
             "main",
@@ -206,8 +217,10 @@ class TestTheOldRouteIsGoneNotShadowed:
             harness_paths=None,
             compare=True,
         )
-        assert [c.name for c in checks] == ["diff_scope"]
-        assert checks[0].passed is True
+        assert [c.name for c in checks] == [SCOPE_UNREADABLE_CHECK]
+        assert checks[0].passed is False
+        assert checks[0].details[0] == f"Error: {NO_CAUSE_RECORDED}"
+        assert checks[0].details[0] != "Error: "
 
 
 class TestTheConsumersOfTheCheckName:
@@ -266,33 +279,6 @@ class TestTheConsumersOfTheCheckName:
         assert _worker_scope(untrustworthy) == ([], [])
 
 
-def _verify_action(tmp_path: Path, failing: list[CheckResult]) -> FailureAction:
-    """The action the REAL ``_phase_verify`` routes these checks to.
-
-    Drives ``ComponentPipeline._phase_verify`` with the verification
-    hook stubbed, rather than re-deriving the condition in the test: a
-    test that reimplements the branch it is checking passes when the
-    branch is deleted.
-    """
-    comp = _progress_scope_component_factory()
-    pipeline = _progress_scope_pipeline(
-        tmp_path,
-        comp,
-        tmp_path,
-        run_mechanical_verification=lambda *a, **k: VerificationResult(
-            passed=False,
-            checks=failing,
-        ),
-    )
-    result = pipeline._phase_verify(
-        comp,
-        ComponentResult(comp.id, success=True, iterations=1, duration_seconds=1.0),
-        tmp_path,
-    )
-    assert result.failure is not None
-    return result.failure.action
-
-
 class TestItIsAWallNotAGate:
     """#294 made the state identifiable; that is only useful if the
     control loop then acts on it."""
@@ -304,18 +290,18 @@ class TestItIsAWallNotAGate:
         the identical prompt into the identical refusal.
         ``_preflight_component_scope`` prices that burn at 14.49 dollars
         and 41 minutes over three attempts."""
-        action = _verify_action(tmp_path, [check_scope_unreadable(SCOPE_ERROR)])
+        action, _ = phase_verify_action(tmp_path, [check_scope_unreadable(SCOPE_ERROR)])
         assert action is FailureAction.FAIL
 
     def test_an_ordinary_check_still_retries(self, tmp_path: Path) -> None:
         """The wall is what this one check reports, not the attempt."""
-        action = _verify_action(tmp_path, [CheckResult("linter", False, "E501")])
+        action, _ = phase_verify_action(tmp_path, [CheckResult("linter", False, "E501")])
         assert action is FailureAction.RETRY_OR_FAIL
 
     def test_a_mixed_failure_still_fails(self, tmp_path: Path) -> None:
         """A readable scope is a precondition for judging the rest, so
         an unreadable one is decisive whatever else also failed."""
-        action = _verify_action(
+        action, _ = phase_verify_action(
             tmp_path,
             [CheckResult("linter", False, "E501"), check_scope_unreadable(SCOPE_ERROR)],
         )
@@ -337,9 +323,15 @@ class TestTheAuditTrail:
         assert SCOPE_ERROR in finding.explanation
 
     def test_the_duration_is_measured_not_asserted(self) -> None:
-        """Every other check in verify.py brackets its work with
-        ``time.monotonic``, and ``ks sense`` publishes the number. A
-        hardcoded 0.0 would be an unmeasured value printed as a
-        measurement."""
-        assert "time.monotonic()" in inspect.getsource(check_scope_unreadable)
-        assert check_scope_unreadable(SCOPE_ERROR).duration_seconds >= 0.0
+        """``ks sense`` prints this per check and emits it into its JSON
+        document, so a hardcoded 0.0 would be an unmeasured value
+        published as a measurement.
+
+        Strictly greater than zero, which is the whole test: ``>= 0.0``
+        is true of the literal it is meant to catch, and grepping the
+        source for ``time.monotonic()`` is satisfied by a comment.
+        Measured over 20000 calls before relying on it: zero of them
+        returned 0.0, minimum 417 ns, median 500 ns. The work being
+        timed is only the construction of the result, which is honest -
+        the check does no I/O and says so."""
+        assert check_scope_unreadable(SCOPE_ERROR).duration_seconds > 0.0

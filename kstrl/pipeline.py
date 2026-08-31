@@ -90,7 +90,12 @@ from kstrl.review import (
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import RunScope
 from kstrl.security import SecurityMode, SecurityResult
-from kstrl.verify import SCOPE_UNREADABLE_CHECK, CheckResult, VerificationResult
+from kstrl.verify import (
+    SCOPE_UNREADABLE_CHECK,
+    CheckResult,
+    VerificationResult,
+    scope_unreadable_error,
+)
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
@@ -357,13 +362,10 @@ def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
     that: "a wall retrying can never fix... fail directly without
     burning engineer iterations".
 
-    ``factory._preflight_component_scope`` prices the burn this avoids
-    at 14.49 dollars and 41 minutes over three attempts. That preflight
-    catches the ordinary case, but only for components PENDING when the
-    run started: the contract breaker resets a COMPLETED component to
-    PENDING mid-run, long after the preflight returned, so a component
-    whose pre-run PRD went missing between runs reaches Phase 1 with an
-    unresolved snapshot and no preflight in front of it.
+    Reaching here at all means the component got past
+    ``factory``'s two pre-engineer refusals, which is the cheap place to
+    catch this and where the cost is actually saved. This is the
+    backstop for a caller that has neither.
 
     Any other failing check alongside it still fails rather than
     retries: a readable scope is a precondition for judging the rest, so
@@ -372,14 +374,13 @@ def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
 
     Its own function so ``_phase_verify`` spends no cognitive complexity
     on the choice: that method is already over the repo's gate and is
-    judged against its own previous value, so two ternaries inline there
-    are a refusal at commit time.
+    judged against its own previous value, so ternaries inline there are
+    a refusal at commit time.
     """
-    if any(c.name == SCOPE_UNREADABLE_CHECK for c in failing):
-        return (
-            FailureAction.FAIL,
-            "Component scope could not be read; retrying cannot change it",
-        )
+    for check in failing:
+        if check.name == SCOPE_UNREADABLE_CHECK:
+            cause = check.details[0] if check.details else check.message
+            return FailureAction.FAIL, scope_unreadable_error(cause)
     return FailureAction.RETRY_OR_FAIL, "Mechanical verification failed"
 
 
