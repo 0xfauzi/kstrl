@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import time
 from collections import deque
 from collections.abc import Callable
@@ -13,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
 from kstrl.names import validate_branch_name, validate_component_id
 
@@ -338,20 +337,10 @@ class Manifest:
         }
 
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Atomic write: temp file in same directory then os.replace
-        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".manifest-")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(data, f, indent=2)
-                f.write("\n")
-            os.replace(tmp_path, str(path))
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        # #291: shared so the manifest keeps the mode the operator gave
+        # it. This file is git-tracked, and the copy that used to live
+        # here rewrote it 0o600 in the locale encoding.
+        atomic_write_json(path, data)
 
     @classmethod
     def validate_schema(cls, data: Any) -> list[str]:

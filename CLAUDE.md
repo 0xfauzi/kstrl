@@ -86,7 +86,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 
 ### Codebase Patterns
 
-- Atomic file writes use `tempfile.mkstemp` + `os.replace` (`manifest.py:189`, mirrored in `knowledge.py::write_facts`).
+- Atomic file writes go through `kstrl/atomicio.py` (`atomic_write_text` / `atomic_write_json`), never a hand-rolled `tempfile.mkstemp` + `os.replace`. `mkstemp` creates 0600 and `os.replace` carries that onto the destination, so a hand-rolled copy silently retightens an operator's 0644 file and leaves the encoding to the locale; #291 found ten copies of the pattern, six carrying that bug. `tests/test_atomicio.py` AST-walks `kstrl/` and fails on a new `mkstemp` call. The helper preserves an existing file's mode and creates a new one at the umask default, and deliberately has no `mode` parameter.
 - Cross-module JSON extraction from agent output reuses `decompose._extract_json` + `decompose._select_agent_output`.
 - Diff truncation uses the shared `git.truncate_diff_for_prompt` helper.
 

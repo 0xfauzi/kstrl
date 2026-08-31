@@ -9,7 +9,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from collections import Counter
@@ -21,6 +20,7 @@ from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
+from kstrl.atomicio import atomic_write_json
 from kstrl.autonomy import (
     AutonomyConfig,
     AutonomyLevel,
@@ -1739,32 +1739,17 @@ def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
 
     The worker owns its UsageRecords in memory; the abort path
     (``_abort_inflight``) SIGKILLs the process, so without this file the
-    spend of a killed worker is simply lost. mkstemp + os.replace is the
-    repo's atomic-write convention (manifest.py:381) and is what makes
-    the file safe to read from a process that may be killing the writer:
-    a reader sees the previous complete snapshot or the new one, never a
-    torn one.
+    spend of a killed worker is simply lost. ``atomicio`` owns the
+    atomic-write convention (#291) and is what makes the file safe to
+    read from a process that may be killing the writer: a reader sees the
+    previous complete snapshot or the new one, never a torn one.
 
     Accounting only - every failure is swallowed. A worker must not die
     because its usage file could not be written.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent),
-            suffix=".tmp",
-            prefix=".usage-",
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(totals.to_dict(), fh)
-            os.replace(tmp_path, str(path))
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        atomic_write_json(path, totals.to_dict())
     except (OSError, TypeError, ValueError):
         return
 

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import secrets
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +19,7 @@ from kstrl.agents.base import (
     print_usage_rollup,
     usage_cursor,
 )
+from kstrl.atomicio import atomic_write_json
 from kstrl.events import (
     ArtifactWritten,
     ComponentCompleted,
@@ -809,21 +808,14 @@ SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Atomic JSON write: temp file in the same directory then
-    ``os.replace`` (same pattern as ``Manifest.save`` and
-    ``knowledge.write_facts``)."""
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(payload, f, indent=2)
-            f.write("\n")
-        os.replace(tmp_name, str(path))
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    """Atomic JSON write for the artifacts decompose persists.
+
+    Delegates to ``atomicio`` since #291: its own copy of the pattern
+    took ``scripts/kstrl/manifest.json`` and each component's
+    ``prd.json`` - both git-tracked and operator-owned - from 0o644 to
+    0o600 on every rewrite, and wrote them in the locale encoding.
+    """
+    atomic_write_json(path, payload)
 
 
 def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:

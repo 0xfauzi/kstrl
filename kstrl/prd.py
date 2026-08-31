@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
+
+from kstrl.atomicio import atomic_write_json
 
 
 @dataclass
@@ -434,29 +434,14 @@ class PRD:
             data["allowedPaths"] = self.allowed_paths
         if self.fixtures is not None:
             data["fixtures"] = self.fixtures
-        # R10.3: written atomically, via the tempfile + os.replace
-        # pattern this codebase uses for every other file it must not
-        # leave half-written (manifest.save, knowledge.write_facts,
-        # decompose's PRD writer). Until R10.3 nothing in kstrl called
+        # R10.3: written atomically, through the shared helper that owns
+        # that pattern for every file kstrl must not leave half-written
+        # (#291; manifest.save, knowledge.write_facts, decompose's PRD
+        # writer go through the same one). Until R10.3 nothing in kstrl called
         # this method: the PRD was written once by the architect and
         # then edited only by the agent. The set-point check made the
         # harness a writer of a file the next attempt reads, and a torn
         # write there costs the run. The bytes are unchanged - two-space
         # indent, one trailing newline - so a save of an unmodified PRD
         # is byte-identical to what the architect wrote.
-        fd, tmp_name = tempfile.mkstemp(
-            dir=str(path.parent),
-            suffix=".tmp",
-            prefix=f".{path.name}-",
-        )
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(data, f, indent=2)
-                f.write("\n")
-            os.replace(tmp_name, str(path))
-        except BaseException:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-            raise
+        atomic_write_json(path, data)

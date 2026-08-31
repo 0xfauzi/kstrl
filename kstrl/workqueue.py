@@ -65,7 +65,6 @@ import json
 import os
 import secrets
 import shutil
-import tempfile
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -75,6 +74,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import IO, Any
 
+from kstrl.atomicio import atomic_write_text
 from kstrl.statedir import (
     CONTROL_PAUSE,
     control_file,
@@ -583,29 +583,18 @@ class JournalEntry:
 
 
 def atomic_write(target: Path, content: str) -> None:
-    """Write ``content`` to ``target`` atomically.
+    """Write ``content`` to ``target`` atomically, creating its directory.
 
-    ``tempfile.mkstemp`` in the destination directory plus ``os.replace``
-    - the pattern established at ``manifest.py:189`` and mirrored in
-    ``knowledge.write_facts``. Same-directory temp keeps the replace on
-    one filesystem, which is what makes it atomic.
+    The write itself is ``atomicio.atomic_write_text``; this adds the
+    ``mkdir`` that queue callers rely on, because they write into staging
+    directories they have not created yet.
+
+    Before #291 this carried its own ``mkstemp`` copy, which took a
+    git-tracked 0o644 spec file to 0o600 on every rewrite and left the
+    encoding to the locale.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(target.parent),
-        prefix=f".{target.name}-",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-        os.replace(tmp_path, str(target))
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    atomic_write_text(target, content)
 
 
 @contextmanager

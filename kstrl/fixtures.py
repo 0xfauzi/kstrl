@@ -24,12 +24,12 @@ import os
 import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl.atomicio import atomic_write_json
 from kstrl.prd import PRD
 from kstrl.verify import CheckResult, run_scrubbed
 
@@ -702,7 +702,7 @@ def save_snapshot(
 
     Only saves results for fixtures that passed. The snapshot captures the actual
     output so future runs can detect behavioral regressions. Written
-    atomically (mkstemp + os.replace) per the codebase convention.
+    atomically through ``atomicio``, which owns that pattern (#291).
     """
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot_path = snapshot_dir / f"{component_id}.json"
@@ -724,21 +724,7 @@ def save_snapshot(
         "entries": snapshot_entries,
     }
 
-    fd, tmp_name = tempfile.mkstemp(
-        dir=snapshot_dir,
-        prefix=f".{component_id}-",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w") as fh:
-            fh.write(json.dumps(snapshot_data, indent=2) + "\n")
-        os.replace(tmp_name, snapshot_path)
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    atomic_write_json(snapshot_path, snapshot_data)
 
 
 def check_snapshot_regression(
