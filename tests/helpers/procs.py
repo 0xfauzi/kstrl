@@ -32,7 +32,13 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
+
+import pytest
+
+from kstrl import procgroup
+from kstrl.procgroup import read_group_liveness
 
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
@@ -57,62 +63,133 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
 def group_has_live_member(pgid: int) -> bool:
     """Whether any non-zombie process is still in process group ``pgid``.
 
-    A zombie has already died and is only waiting to be reaped, so it is
-    not an orphan and must not count as one. This is NOT
-    ``os.killpg(pgid, 0)``: measured while writing #292, with the
-    parent alive and not yet reaping, that call reported a SIGKILLed
-    group as present for the whole 6s observation window and never
-    converged, because a zombie stays signalable. Building a wait loop on
-    it would trade a machine-state flake for a reap-timing one.
+    The reading, and the evidence for why it is not ``os.killpg(pgid, 0)``
+    and why absence needs a control, lives in ``kstrl.procgroup``. #298
+    centralised it: two copies of one ``ps`` parse with slightly
+    different failure handling is how the suite's answer and the daemon's
+    drift apart.
 
-    Only the two columns the question needs are requested. Asking ``ps``
-    for command lines as well measured 23.5ms per call against 11.6ms for
-    this on a 895-process machine, and this runs inside a poll loop.
+    What stays HERE is the POLICY, because it is the opposite of the
+    daemon's. This RAISES when it cannot see, where
+    ``serve.process_group_alive`` degrades. A test that answers "nothing
+    is there" because ``ps`` failed has measured nothing and passed,
+    which is the #292 defect one level down; a daemon that raises over a
+    diagnostic stops doing its job. A test has nothing to protect.
 
-    RAISES rather than reports absence when it cannot see. A helper that
-    answers "nothing is there" because ``ps`` failed is the same defect
-    #292 exists to remove, one level down: measured with ``ps`` forced to
-    return 127, this reported the caller's OWN live process group as dead
-    and ``wait_for_group_to_die`` returned True, so the orphan assertion
-    would have passed having measured nothing. ``ps`` is absent or
-    restricted often enough to matter, on ``hidepid`` mounts and in
-    minimal containers.
-
-    So absence is only ever reported by a call that proved it can see
-    something: the caller's own process group is alive by construction,
-    and if that is missing from the output the output is not evidence.
+    THE COMMON-MODE RISK, stated because sharing a reading with the code
+    under test is a real cost and not an obviously free one. The suite's
+    orphan assertions and the daemon's reap check now run the same parse,
+    so one parse bug could blind both at once. Two arguments answer it,
+    and neither is "it will not happen". First, a second hand-written
+    parse would not have been independent of the failure it is supposed
+    to catch: both copies read the same ``ps -A -o pgid=,stat=`` and both
+    would break together on a column shift, which is the named risk.
+    Second, ``read_group_liveness`` no longer rests on the parse alone
+    for the dangerous direction. A "gone" now requires either a zombie
+    row it demonstrably saw, or ``killpg`` ESRCH from the kernel - so a
+    parse that DROPS a running row yields "cannot see" rather than a
+    confident "gone", and this helper then raises rather than passing.
     """
-    out = subprocess.run(
-        ["ps", "-A", "-o", "pgid=,stat="],
-        capture_output=True,
-        text=True,
+    liveness = read_group_liveness(pgid)
+    if liveness.live is None:
+        raise AssertionError(liveness.reason)
+    return liveness.live
+
+
+def fake_ps(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+    raises: Callable[[], BaseException] | None = None,
+) -> list[dict[str, object]]:
+    """Answer ``kstrl.procgroup``'s ``ps`` with this. Returns the call log.
+
+    DELEGATES every other command to the real ``subprocess.run``. That is
+    load-bearing, not politeness: ``procgroup.subprocess`` IS the stdlib
+    module, so ``setattr`` on it replaces ``run`` for the whole process,
+    not for ``procgroup``. Measured before this guard existed: under
+    ``fake_ps(stdout="1 Ss\n")`` a plain
+    ``subprocess.run(["git", "rev-parse", "HEAD"])`` returned
+    ``stdout='1 Ss\n'`` and ``args=['ps','-A','-o','pgid=,stat=']``. Any
+    test that combined this helper with a git or fixture subprocess call
+    would have measured nothing and passed, which is the #292 class this
+    module exists to prevent.
+
+    ``raises`` is a FACTORY rather than an instance. A module-level
+    exception object re-raised by every parametrized case accumulates a
+    traceback frame and an ``__context__`` per raise, so it retains every
+    test frame and its locals until interpreter exit.
+
+    The returned list records the args and kwargs each intercepted ``ps``
+    call received, so a test can assert on what was passed - the
+    ``timeout=`` in particular, which is the only bound stopping a wedged
+    ``ps`` from hanging the daemon and which no test could otherwise see.
+    """
+    real_run = subprocess.run
+    calls: list[dict[str, object]] = []
+
+    def fake(*args: object, **kwargs: object) -> object:
+        argv = list(args[0]) if args and isinstance(args[0], (list, tuple)) else []
+        if argv != list(procgroup.PS_ARGV):
+            return real_run(*args, **kwargs)  # type: ignore[arg-type]
+        calls.append({"argv": argv, "kwargs": dict(kwargs)})
+        if raises is not None:
+            raise raises()
+        return subprocess.CompletedProcess(
+            args=argv,
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(procgroup.subprocess, "run", fake)
+    return calls
+
+
+def ps_is_readable() -> bool:
+    """Whether `kstrl.procgroup` can actually measure on this machine.
+
+    A test that asserts on `process_group_alive` needs this: where `ps`
+    is absent or filtered the production call degrades to the signal
+    probe, which counts a zombie as alive by design, so a #298 assertion
+    would fail with a message pointing at kstrl rather than at the
+    missing binary. Uses the caller's own group, which is alive by
+    construction, so a False here is about `ps` and never about timing.
+    """
+    return read_group_liveness(os.getpgrp()).live is True
+
+
+def dead_group(timeout: float = 10.0) -> int:
+    """A process group that is spawned, killed and reaped. Returns its pgid.
+
+    The pgid of a group that provably held a process and provably holds
+    none now, which is what a test needs to assert that absence is still
+    reportable. Lives here rather than being copied into each suite
+    because a copied fixture is one that stops matching the helper it
+    feeds.
+    """
+    child = subprocess.Popen(
+        ["sleep", "30"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    if out.returncode != 0:
-        raise AssertionError(
-            f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. "
-            f"Process-group liveness cannot be measured here, and "
-            f"reporting 'no live member' would be a false negative."
-        )
-
-    ours = str(os.getpgrp())
-    saw_own_group = False
-    found = False
-    for line in out.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        if parts[0] == ours:
-            saw_own_group = True
-        if parts[0] == str(pgid) and not parts[1].startswith("Z"):
-            found = True
-
-    if not saw_own_group:
-        raise AssertionError(
-            f"ps did not report this process's own group ({ours}), so it "
-            f"cannot be trusted to report the absence of group {pgid}. "
-            f"Restricted or filtered ps output."
-        )
-    return found
+    try:
+        pgid = os.getpgid(child.pid)
+        kill_group(pgid)
+        child.wait(timeout=timeout)
+        return pgid
+    finally:
+        # kill_group swallows every OSError, so a SIGKILL that did not
+        # land leaves `child.wait` to time out and the Popen dropped
+        # unreaped with a real `sleep 30` still on the machine. That is
+        # the orphan class #292 exists to stop, planted by the helper
+        # written to stop it.
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=timeout)
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:
@@ -132,7 +209,7 @@ def kill_group(pgid: int) -> None:
     ``sleep 60`` on a shared machine is precisely what #292 is about: the
     old test's own failures poisoned every later run of it. Observed
     while verifying that change, a failing run of the pre-fix file left
-    an orphan behind that then matched the next run's ``pgrep``.
+    an orphan behind that then matched the next run's machine-wide search.
     """
     try:
         os.killpg(pgid, signal.SIGKILL)
