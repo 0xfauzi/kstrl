@@ -25,6 +25,7 @@ from textual.widgets import Button, Footer, Input, Select, Static
 from kstrl.init_cmd import run_init
 from kstrl.init_wizard import (
     AGENT_TYPES,
+    ScaffoldEntry,
     apply_agent_settings,
     detect_context,
     plan_scaffold,
@@ -90,6 +91,40 @@ def _detected_text(root: Path) -> Text:
         text.append(f"{label:<{_LABEL_WIDTH}}  ", style=f"bold {theme.MUTED}")
         text.append(value, style=theme.MUTED if index else "")
     return text
+
+
+def _plan_row(entry: ScaffoldEntry, display: object) -> list[tuple[str, str]]:
+    """The styled segments for one scaffold-preview row.
+
+    Its own function so the four-way choice does not live inside
+    ``_render_preview``, which already carries the agent-settings
+    branch and sits at the cognitive-complexity ceiling.
+
+    #286: "exists - kept" alone reads as "your scaffold is fine", and
+    this preview is the surface most likely to be read that way. A
+    label can only attach to a file that exists, i.e. to a "keep", so
+    that row is replaced rather than competing with create or append.
+    """
+    if entry.stale_label:
+        return [
+            ("  ! older template  ", f"bold {theme.WARNING}"),
+            (f"{display}", theme.WARNING),
+            (f"  (shipped at {entry.stale_label})\n", theme.MUTED),
+        ]
+    if entry.action == "keep":
+        return [
+            ("  · exists - kept   ", theme.MUTED),
+            (f"{display}\n", theme.MUTED),
+        ]
+    if entry.action == "append":
+        return [
+            ("  ~ append block    ", f"bold {theme.ACCENT}"),
+            (f"{display}\n", ""),
+        ]
+    return [
+        ("  + will create    ", f"bold {theme.ACCENT}"),
+        (f"{display}\n", ""),
+    ]
 
 
 class InitWizardScreen(Screen[None]):
@@ -194,15 +229,8 @@ class InitWizardScreen(Screen[None]):
                 display = entry.path.relative_to(directory)
             except ValueError:
                 display = entry.path
-            if entry.action == "keep":
-                plan.append("  · exists - kept   ", style=theme.MUTED)
-                plan.append(f"{display}\n", style=theme.MUTED)
-            elif entry.action == "append":
-                plan.append("  ~ append block    ", style=f"bold {theme.ACCENT}")
-                plan.append(f"{display}\n")
-            else:
-                plan.append("  + will create    ", style=f"bold {theme.ACCENT}")
-                plan.append(f"{display}\n")
+            for text, style in _plan_row(entry, display):
+                plan.append(text, style=style)
         agent_type, model, reasoning = self._agent_values()
         if any((agent_type, model, reasoning)):
             if (directory / "kstrl.toml").exists():

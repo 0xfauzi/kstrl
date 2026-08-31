@@ -9,6 +9,8 @@ from threading import Event
 from typing import cast
 from unittest.mock import patch
 
+import pytest
+
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.init_wizard import (
     apply_agent_settings,
@@ -235,6 +237,58 @@ class TestWizardScreen:
             assert (tmp_path / "scripts" / "kstrl" / "prompt.md").exists()
             content = (tmp_path / "kstrl.toml").read_text()
             assert 'type = "codex"' in content
+        finally:
+            await self._pilot_ctx.__aexit__(None, None, None)
+
+    async def test_preview_flags_a_stale_prompt_instead_of_kept(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#286: "exists - kept" on its own reads as "your scaffold is
+        fine", and this preview is the surface most likely to be read
+        that way. A prompt that is an unedited OLDER kstrl template says
+        so here, with the label it shipped under."""
+        import hashlib
+
+        from kstrl import init_cmd
+        from kstrl.init_cmd import ScaffoldedTemplate
+
+        old_body = "# old engineer instructions\n"
+        new_body = "# new engineer instructions\n"
+
+        def digest(text: str) -> str:
+            return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        monkeypatch.setattr(
+            init_cmd,
+            "SCAFFOLDED_TEMPLATES",
+            (
+                ScaffoldedTemplate(
+                    filename="prompt.md",
+                    constant_name="DEFAULT_PROMPT",
+                    body=new_body,
+                    history=((digest(old_body), "9.0.0"), (digest(new_body), "9.1.0")),
+                ),
+            ),
+        )
+        prompt = tmp_path / "scripts" / "kstrl" / "prompt.md"
+        prompt.parent.mkdir(parents=True)
+        prompt.write_text(old_body)
+
+        app, screen = await self._run_wizard(tmp_path)
+        try:
+            from textual.widgets import Button, Static
+
+            screen.query_one("#wizard-preview-btn", Button).press()
+            await self._pilot.pause(0.2)
+            plan = str(screen.query_one("#wizard-plan", Static).content)
+            assert "older template" in plan
+            assert "shipped at 9.0.0" in plan
+            # The row is the prompt's, and only the prompt's.
+            stale_rows = [line for line in plan.splitlines() if "older template" in line]
+            assert len(stale_rows) == 1
+            assert "prompt.md" in stale_rows[0]
         finally:
             await self._pilot_ctx.__aexit__(None, None, None)
 

@@ -76,6 +76,12 @@ class FeatureParams:
     log_dir: Path
     understand_iterations: int
     understand_prompt_file: Path | None
+    #: The engineer prompt the implement and repair loops run on. Set by
+    #: the caller so the CLI preflight that warns about a stale prompt
+    #: (#286) and the loop that reads it are the SAME path by
+    #: construction. It was a literal repeated in both modules, agreeing
+    #: only by luck; nothing failed when they diverged.
+    prompt_file: Path
     implementation_auto_run: bool
     repair_max_runs: int
     repair_iterations: int
@@ -358,7 +364,7 @@ def run_feature(
         ui.warn("PRD has no user stories. Skipping implementation.")
         skip("PRD has no user stories")
         return 0
-    run_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+    run_config.prompt_file = params.prompt_file
     if params.allowed_paths_override is not None:
         run_config.allowed_paths = params.allowed_paths_override
     if params.branch_override is not None:
@@ -448,7 +454,7 @@ def run_feature(
         )
         repair_config = copy.deepcopy(base_config)
         repair_config.prd_file = repair_prd
-        repair_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+        repair_config.prompt_file = params.prompt_file
         repair_config.max_iterations = params.repair_iterations
         if params.allowed_paths_override is not None:
             repair_config.allowed_paths = params.allowed_paths_override

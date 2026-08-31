@@ -65,7 +65,7 @@ from kstrl.factory import (
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.git import detect_base_branch, resolve_base_branch
-from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init
+from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init, staleness_notice
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,
@@ -316,6 +316,48 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
         for error in errors:
             ui_impl.info(f"  - {error}")
         sys.exit(1)
+
+
+def _check_prompt_preflight(path: Path | None, ui_impl: UI) -> None:
+    """Tell the OPERATOR when a prompt file is an older kstrl template (#286).
+
+    Here, in the parent process, on the console UI, and BEFORE the TUI
+    branch of every command that has one. That placement is the whole
+    point of this function existing rather than the check living in
+    ``run_loop`` beside the read: on a factory run ``run_loop`` executes
+    in a pool worker whose UI writes to that component's engineer.jsonl,
+    so a warning there reaches nobody. #261's CLAUDE.md divergence
+    warning was written that way and #275 had to lift it into the parent
+    for exactly this reason.
+
+    Advisory only, never fatal: the run is still correct with an older
+    prompt, just missing whatever the newer template fixed.
+
+    Two limits, stated rather than papered over.
+
+    Under the default interactive ``ks factory`` the dashboard
+    deliberately drops ``Log`` events, so this lands on the plain
+    terminal before Textual takes the screen and is in scrollback again
+    when it exits. Putting it in the feed would mean a typed event,
+    which is the right shape for something DISCOVERED mid-run and the
+    wrong shape for a start-up fact about a file on disk.
+
+    The home shell's own factory launch (``tui/session._prepare_factory``)
+    is not covered, because it has no non-fatal notice channel: its only
+    pre-run signal is ``LaunchError``, and a stale prompt is advisory,
+    not fatal. Giving the launcher an advisory channel is UI work that
+    would also carry every other factory advisory it currently swallows.
+
+    ``ks init`` is the surface that both reports this and fixes it, and
+    it is reachable from every path.
+    """
+    if path is None:
+        return
+    notice = staleness_notice(path)
+    if notice is None:
+        return
+    ui_impl.warn(notice.headline)
+    ui_impl.info(notice.advice)
 
 
 def _apply_cli_overrides(
@@ -968,6 +1010,7 @@ def run(
     # then validate the PRD - both BEFORE any agent invocation.
     _check_agent_preflight(config, ui_impl)
     _check_prd_preflight(config.prd_file, ui_impl)
+    _check_prompt_preflight(config.prompt_file, ui_impl)
 
     # Single-component factory invocation
     from kstrl.config import load_toml_section
@@ -1063,14 +1106,21 @@ def run(
     is_flag=True,
     help="Disable colors",
 )
-def init(directory: Path, ui: str, no_color: bool) -> None:
+@click.option(
+    "--upgrade-prompts",
+    is_flag=True,
+    help="Rewrite any scaffolded prompt template that is still a "
+    "pristine older kstrl template. A template you have edited is "
+    "reported and left alone.",
+)
+def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> None:
     """Initialize kstrl in a project directory.
 
     DIRECTORY is the target project directory (default: current directory).
     """
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
-    exit_code = run_init(directory, ui_impl)
+    exit_code = run_init(directory, ui_impl, upgrade_prompts=upgrade_prompts)
     sys.exit(exit_code)
 
 
@@ -1262,6 +1312,7 @@ def understand(
 
     # R2.4 preflight: accept whichever agent the resolved config selects.
     _check_agent_preflight(config, ui_impl)
+    _check_prompt_preflight(config.prompt_file, ui_impl)
 
     sandbox_cfg = SandboxConfig.load(root_dir)
     if sandbox_cfg.enabled and config.agent_cmd:
@@ -1737,14 +1788,41 @@ def feature(
         max_budget_usd=base_config.agent_budget_usd,
     )
 
+    # ``understand_prompt_file`` is the OVERRIDE feature_cmd applies, so
+    # None means "leave the understand loop on the resolved config".
+    # ``understand_reads`` is the file that loop will actually open,
+    # which is what the #286 preflight has to be pointed at; they differ
+    # in exactly the PROMPT_FILE case.
     if _use_cli_value(ctx, "understand_prompt"):
         understand_prompt_file: Path | None = _resolve_path(
             root_dir, understand_prompt, kstrl_dir / "feature_understand_prompt.md"
         )
+        understand_reads = understand_prompt_file
     elif "PROMPT_FILE" not in os.environ:
         understand_prompt_file = kstrl_dir / "feature_understand_prompt.md"
+        understand_reads = understand_prompt_file
     else:
         understand_prompt_file = None
+        understand_reads = base_config.prompt_file
+
+    # #286: the two prompts this command actually opens, and only those.
+    #
+    # The engineer prompt is the scaffolded file rather than
+    # ``base_config.prompt_file``: `ks feature` has always run its
+    # implement and repair loops on `scripts/kstrl/prompt.md`, ignoring
+    # [paths] prompt and PROMPT_FILE. Warning about the resolved path
+    # would name a file the command never opens and stay silent about
+    # the stale one it does. That was a literal in feature_cmd matching
+    # a literal here; it is now passed on FeatureParams below, so the
+    # path warned about and the path read cannot drift apart.
+    #
+    # ``understand_reads`` is resolved above: checking the engineer path
+    # alone lost the PROMPT_FILE case, where the understand loop stays on
+    # the resolved config because feature_cmd only overrides it for a
+    # non-None ``understand_prompt_file``.
+    engineer_prompt_file = kstrl_dir / "prompt.md"
+    _check_prompt_preflight(engineer_prompt_file, ui_impl)
+    _check_prompt_preflight(understand_reads, ui_impl)
 
     params = FeatureParams(
         prd_path=prd_path,
@@ -1755,6 +1833,7 @@ def feature(
         log_dir=log_dir,
         understand_iterations=understand_iterations_value,
         understand_prompt_file=understand_prompt_file,
+        prompt_file=engineer_prompt_file,
         implementation_auto_run=implementation_auto_run,
         repair_max_runs=repair_max_runs,
         repair_iterations=repair_iterations,
@@ -2775,6 +2854,10 @@ def factory(
         if default_prompt.exists():
             base_config.prompt_file = default_prompt
 
+    # #286: after the fallback above, so it speaks about the file every
+    # worker will actually copy into its worktree.
+    _check_prompt_preflight(base_config.prompt_file, ui_impl)
+
     # R0.5 (H-15): state saves back to the file it was loaded from.
     # --manifest /custom.json persists to /custom.json; --spec runs keep
     # the default scripts/kstrl/manifest.json that decompose wrote.
@@ -3762,6 +3845,7 @@ def retry(
         keep_worktrees_on_failure=keep_worktrees_on_failure,
     )
     _check_agent_preflight(base_config, ui_impl)
+    _check_prompt_preflight(base_config.prompt_file, ui_impl)
 
     stop = StopController()
     uninstall = install_signal_handlers(stop)
