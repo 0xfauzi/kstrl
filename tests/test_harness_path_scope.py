@@ -27,7 +27,6 @@ The tests here pin four things:
 from __future__ import annotations
 
 import io
-import json
 import subprocess
 from pathlib import Path
 from typing import Any, cast, get_args
@@ -59,6 +58,7 @@ from kstrl.manifest import Component, Manifest
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import check_diff_scope
+from tests.helpers.component_prd import write_component_prd
 from tests.test_progress_scope import _base_config, _pipeline
 
 COMPONENT_ID = "document-format"
@@ -115,16 +115,21 @@ def _write_prd(
     branch: str | None = None,
     fixtures: list[dict[str, Any]] | None = None,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    body: dict[str, Any] = {
-        "branchName": branch or f"kstrl/factory/{COMPONENT_ID}",
-        "userStories": [dict(STORY)] if stories is None else stories,
-    }
-    if allowed is not None:
-        body["allowedPaths"] = allowed
-    if fixtures is not None:
-        body["fixtures"] = fixtures
-    path.write_text(json.dumps(body))
+    """This module's PRD defaults, written by the shared writer.
+
+    An absolute ``path`` rather than root + relative, because these
+    tests write the same component's PRD into two trees and read like
+    that. The content defaults are what stays here: STORY is named in
+    assertions, and the branch matches this module's component.
+    """
+    write_component_prd(
+        path.parent,
+        path.name,
+        branch=branch or f"kstrl/factory/{COMPONENT_ID}",
+        allowed_paths=allowed,
+        stories=[dict(STORY)] if stories is None else stories,
+        fixtures=fixtures,
+    )
 
 
 def _scope(root: Path | None = None) -> ComponentScope:

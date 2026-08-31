@@ -206,9 +206,11 @@ class PRD:
             for s in data["userStories"]
         ]
 
+        # No coercion of a non-list allowedPaths (#293 review):
+        # validate_schema above rejects one outright, so this was
+        # unreachable, and reading a malformed scope as "no scope" is
+        # exactly the conflation #269/#293 removed elsewhere.
         allowed_paths = data.get("allowedPaths")
-        if allowed_paths is not None and not isinstance(allowed_paths, list):
-            allowed_paths = None
         return cls(
             branch_name=data["branchName"],
             user_stories=stories,

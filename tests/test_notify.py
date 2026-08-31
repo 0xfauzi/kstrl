@@ -31,6 +31,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.ui.plain import PlainUI
+from tests.helpers.component_prd import write_component_prd
 from tests.spine_utils import (
     base_config,
     component,
@@ -225,7 +226,13 @@ def _setup_plain_project(tmp_path: Path) -> Path:
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+    write_component_prd(tmp_path, "scripts/kstrl/prd.json")
+    # The PRDs _two_component_manifest names. Without them the run is
+    # refused before it starts (#293 review): a component whose pre-run
+    # PRD will not read has no plan-time scope, and every attempt would
+    # fail Phase 1 identically.
+    for comp_id in ("a", "b"):
+        write_component_prd(tmp_path, f"{comp_id}.json")
     return tmp_path
 
 

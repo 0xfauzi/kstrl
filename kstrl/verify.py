@@ -1887,6 +1887,24 @@ def check_dead_code(
     )
 
 
+def _diff_scope_runs(config: VerifyConfig, allowed_paths_error: str | None) -> bool:
+    """Whether Phase 1 appends the ``diff_scope`` check at all.
+
+    ``[verify] check_diff_scope`` turns off the scope COMPARISON. It
+    does NOT turn off the report that no trustworthy scope could be
+    established (#293 review): left gated on the toggle alone, that
+    signal was dropped entirely, and with a None authored list the
+    in-loop guard is inert too, so the component ran and merged with no
+    scope enforcement at all and nothing said. Same argument
+    ``check_prd_stories`` makes for carrying the tamper refusal rather
+    than leaving it on a check an operator can switch off.
+
+    Costs no git call in that second case: ``check_diff_scope`` returns
+    on the error before it reads a diff.
+    """
+    return config.check_diff_scope or allowed_paths_error is not None
+
+
 def run_mechanical_verification(
     worktree_path: Path,
     prd_path: Path | None,
@@ -1971,7 +1989,7 @@ def run_mechanical_verification(
         )
     )
 
-    if config.check_diff_scope:
+    if _diff_scope_runs(config, allowed_paths_error):
         checks.append(
             check_diff_scope(
                 worktree_path,

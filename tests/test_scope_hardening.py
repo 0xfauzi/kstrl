@@ -18,6 +18,7 @@ Three defect classes are covered:
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 from collections.abc import Iterator
@@ -33,9 +34,16 @@ from kstrl.decompose import (
     _validate_decompose_output,
     decompose_spec,
 )
-from kstrl.factory import ComponentResult, FactoryConfig, run_factory
+from kstrl.factory import (
+    ComponentResult,
+    FactoryConfig,
+    FactoryResult,
+    _preflight_component_scope,
+    run_factory,
+)
 from kstrl.git import _parse_name_status_z, get_diff_names
 from kstrl.manifest import Component, Manifest
+from kstrl.scope import RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     CheckResult,
@@ -44,6 +52,7 @@ from kstrl.verify import (
     check_diff_scope,
     run_mechanical_verification,
 )
+from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -444,76 +453,105 @@ def _factory_fixtures(tmp_path: Path) -> tuple[Manifest, FactoryConfig, KstrlCon
     return manifest, config, base
 
 
+#: Where _factory_fixtures' single component says its PRD is.
+COMP_PRD_REL = "scripts/kstrl/feature/comp-a/prd.json"
+
+
 class TestFactoryScopeSiteFailsClosed:
-    """The factory's PRD-load site forwards load failures into the
-    diff_scope check instead of swallowing them into None."""
+    """A pre-run PRD that will not read stops the run BEFORE it spends.
 
-    def test_corrupt_prd_forwards_error(self, tmp_path: Path) -> None:
+    It used to be forwarded into Phase 1 as ``allowed_paths_error`` and
+    failed the diff_scope check closed there, which is still the
+    backstop for any caller that reaches Phase 1 with one. But since
+    #269 the scope is a plan-time snapshot, fixed for the life of the
+    run, so that verdict can never change: the component would pay a
+    full engineer loop and fail identically on every retry - #264's
+    measured $14.49 and 41 minutes. The preflight refuses it instead
+    (#293 review).
+    """
+
+    def _refuse(
+        self,
+        tmp_path: Path,
+        prd_body: str | None = None,
+    ) -> tuple[FactoryResult, list[str], io.StringIO]:
+        """Run the factory and report what it spent. Nothing, ideally.
+
+        ``prd_body`` is written AFTER the fixtures, which own the
+        creation of scripts/kstrl.
+        """
         manifest, config, base = _factory_fixtures(tmp_path)
-        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a"
-        feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text("{not valid json")
+        if prd_body is not None:
+            write_component_prd(tmp_path, COMP_PRD_REL, body=prd_body)
+        called: list[str] = []
+        out = io.StringIO()
 
-        captured: dict[str, Any] = {}
+        def spy_component(*args: Any, **kwargs: Any) -> ComponentResult:
+            called.append("engineer")
+            return ComponentResult("comp-a", success=True, iterations=1)
 
         def spy_rmv(*args: Any, **kwargs: Any) -> VerificationResult:
-            # *args/**kwargs, not the real 13-parameter signature
-            # restated: a stub that repeats it fails at call time
-            # with a TypeError that reads as a test bug the next time a
-            # keyword is added, and this test asserts on three values.
-            # allowed_paths is positional index 3 at the one call site
-            # (pipeline._phase_verify).
-            captured["allowed_paths"] = args[3]
-            captured["allowed_paths_error"] = kwargs.get("allowed_paths_error")
-            captured["harness_paths"] = kwargs.get("harness_paths")
-            return VerificationResult(
-                passed=True,
-                checks=[CheckResult("diff_scope", True, "ok")],
-            )
+            called.append("verify")
+            return VerificationResult(passed=True, checks=[])
 
-        success = ComponentResult("comp-a", success=True, iterations=1)
         with (
-            patch("kstrl.factory._run_component", return_value=success),
-            patch(
-                "kstrl.factory.run_mechanical_verification",
-                side_effect=spy_rmv,
-            ),
+            patch("kstrl.factory._run_component", side_effect=spy_component),
+            patch("kstrl.factory.run_mechanical_verification", side_effect=spy_rmv),
         ):
-            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+            result = run_factory(
+                manifest,
+                config,
+                base,
+                PlainUI(no_color=True, file=out),
+                tmp_path,
+            )
+        return result, called, out
 
-        assert captured["allowed_paths"] is None
-        assert captured["allowed_paths_error"] is not None
-        assert "PRD failed to parse" in str(captured["allowed_paths_error"])
+    def test_a_corrupt_prd_is_refused_before_any_engineer_call(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        result, called, out = self._refuse(tmp_path, "{not valid json")
 
-    def test_missing_prd_forwards_error(self, tmp_path: Path) -> None:
+        assert result.exit_code == 2
+        assert called == [], "the run paid for work it could never pass"
+        printed = out.getvalue()
+        assert "Refusing to run: components cannot pass the scope check" in printed
+        assert "PRD failed to parse" in printed
+        assert "scripts/kstrl/feature/comp-a/prd.json" in printed
+
+    def test_a_missing_prd_is_refused_before_any_engineer_call(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        result, called, out = self._refuse(tmp_path)
+
+        assert result.exit_code == 2
+        assert called == []
+        assert "PRD not found" in out.getvalue()
+
+    def test_the_run_wide_flag_does_not_paper_over_it(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The refusal survives the flag being present (#293 review).
+
+        Only the preflight's half is asserted here.
+        ``test_scope_snapshot`` owns what ``ComponentScope.resolve``
+        decides and why; this is the layer that has to act on it, and
+        it acts on the SAME snapshot object it is handed rather than
+        one it resolved for itself.
+        """
         manifest, config, base = _factory_fixtures(tmp_path)
-        # No PRD file written at all.
-        captured: dict[str, Any] = {}
+        write_component_prd(tmp_path, COMP_PRD_REL, body="{not valid json")
+        base.allowed_paths = ["src/"]
 
-        def spy_rmv(*args: Any, **kwargs: Any) -> VerificationResult:
-            # *args/**kwargs, not the real 13-parameter signature
-            # restated: a stub that repeats it fails at call time
-            # with a TypeError that reads as a test bug the next time a
-            # keyword is added, and this test asserts on three values.
-            # allowed_paths is positional index 3 at the one call site
-            # (pipeline._phase_verify).
-            captured["allowed_paths_error"] = kwargs.get("allowed_paths_error")
-            return VerificationResult(
-                passed=True,
-                checks=[CheckResult("diff_scope", True, "ok")],
-            )
+        run_scope = RunScope.resolve(manifest, tmp_path, base)
+        assert run_scope.for_component("comp-a").source == "unresolved"
 
-        success = ComponentResult("comp-a", success=True, iterations=1)
-        with (
-            patch("kstrl.factory._run_component", return_value=success),
-            patch(
-                "kstrl.factory.run_mechanical_verification",
-                side_effect=spy_rmv,
-            ),
-        ):
-            run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
-
-        assert "PRD not found" in str(captured["allowed_paths_error"])
+        errors = _preflight_component_scope(manifest, run_scope)
+        assert len(errors) == 1
+        assert "cannot stand in for it" in errors[0]
 
     def test_legacy_prd_without_allowed_paths_stays_unconstrained(
         self,
@@ -522,25 +560,7 @@ class TestFactoryScopeSiteFailsClosed:
         """The legitimate-disable case: a PRD that loads fine but has
         no allowedPaths field must NOT produce an error."""
         manifest, config, base = _factory_fixtures(tmp_path)
-        feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a"
-        feature_dir.mkdir(parents=True)
-        (feature_dir / "prd.json").write_text(
-            json.dumps(
-                {
-                    "branchName": "test",
-                    "userStories": [
-                        {
-                            "id": "US-001",
-                            "title": "T",
-                            "acceptanceCriteria": ["AC"],
-                            "priority": 1,
-                            "passes": True,
-                            "notes": "",
-                        }
-                    ],
-                }
-            )
-        )
+        write_component_prd(tmp_path, COMP_PRD_REL, stories=[PASSING_STORY])
 
         captured: dict[str, Any] = {}
 

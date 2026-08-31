@@ -34,6 +34,7 @@ from kstrl.fixtures import FixturesConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 
 
 def _git(root: Path, *args: str) -> None:
@@ -52,6 +53,17 @@ def _init_repo(root: Path) -> None:
     (root / "README.md").write_text("seed\n")
     _git(root, "add", "README.md")
     _git(root, "commit", "-m", "seed")
+    # The pre-run copies the plan-time scope snapshot reads (#269).
+    # Without them the run is refused before scheduling (#293 review),
+    # which is exactly what this test needs NOT to happen. Same stories
+    # as the worktree copy the worktree stub writes, or Phase 1 reads
+    # the difference as the engineer rewriting its own story set.
+    for comp_id in ("comp-a", "comp-b"):
+        write_component_prd(
+            root,
+            f"scripts/kstrl/feature/{comp_id}/prd.json",
+            stories=[PASSING_STORY],
+        )
 
 
 def _component(comp_id: str, deps: list[str] | None = None) -> Component:
@@ -156,12 +168,10 @@ class TestUnifiedSchedulingLoop:
             if comp_id == "comp-a":
                 raise RuntimeError("worktree add failed (simulated)")
             wt = tmp_path / ".kstrl" / "worktrees" / "run" / comp_id
-            prd = wt / "scripts" / "kstrl" / "feature" / comp_id / "prd.json"
-            prd.parent.mkdir(parents=True, exist_ok=True)
-            prd.write_text(
-                '{"branchName": "test", "userStories": [{"id": "US-001", '
-                '"title": "T", "acceptanceCriteria": ["AC1"], "priority": 1, '
-                '"passes": true, "notes": ""}]}'
+            write_component_prd(
+                wt,
+                f"scripts/kstrl/feature/{comp_id}/prd.json",
+                stories=[PASSING_STORY],
             )
             return wt
 

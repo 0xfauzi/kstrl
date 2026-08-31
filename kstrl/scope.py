@@ -66,8 +66,9 @@ if TYPE_CHECKING:
 #: - ``component_prd``: the component's own ``allowedPaths``, written by
 #:   the architect and read from the pre-run tree.
 #: - ``run_flag``: the run-wide ``--allowed-paths``, used when the PRD
-#:   carries no scope of its own (legacy PRDs predate the field) or
-#:   could not be read at all.
+#:   carries no scope of its own (legacy PRDs predate the field). NOT
+#:   when the PRD could not be read: that is ``unresolved``, because a
+#:   scope nobody could read is not a scope that does not exist.
 #: - ``unconstrained``: neither, which ``check_diff_scope`` treats as no
 #:   constraint. The historical behaviour for legacy PRDs.
 #: - ``unresolved``: no trustworthy scope could be established. Phase 1
@@ -104,12 +105,32 @@ class ComponentScope:
     harness_paths: list[str] = field(default_factory=list)
     source: ScopeSource = "unresolved"
     #: The file or flag the authored list came from, for the audit
-    #: record. A repository-relative PRD path, ``--allowed-paths``, or
-    #: empty when nothing supplied one.
+    #: record: a repository-relative PRD path, ``--allowed-paths``, or
+    #: empty when nothing supplied one. Empty means empty (#293
+    #: review) - an ``unconstrained`` or ``unresolved`` snapshot names
+    #: no origin, because naming the PRD would record it as the source
+    #: of a list it did not supply. Where the list should have come
+    #: from is the ``error``'s business, and it names that path.
     origin: str = ""
-    #: Set only for ``unresolved``. Reaches ``check_diff_scope`` as
-    #: ``allowed_paths_error``, which fails the check closed.
+    #: Set only for ``unresolved``. Refuses the component at
+    #: ``factory._preflight_component_scope`` before any engineer call,
+    #: and reaches ``check_diff_scope`` as ``allowed_paths_error``,
+    #: which fails the check closed, if it ever gets past that.
     error: str | None = None
+
+    @property
+    def is_trustworthy(self) -> bool:
+        """Whether anything may be ENFORCED from this snapshot.
+
+        False only for ``unresolved``. The one predicate, so the two
+        consumers holding the object ask the same question rather than
+        each re-deriving it from a different field: the preflight
+        refuses on it, and ``factory._worker_scope`` declines to hand
+        the in-loop guard a list it does not have. An unconstrained
+        snapshot IS trustworthy - "the architect authored no scope" is
+        knowledge, and the historical no-constraint pass.
+        """
+        return self.error is None
 
     @classmethod
     def resolve(
@@ -137,18 +158,38 @@ class ComponentScope:
         gets to set; adopting it makes Phase 1 enforce what the engineer
         was already being held to in-loop.
 
-        An unreadable PRD does not abort scheduling (R8 review finding
+        A PRD that will not READ is a different thing from a PRD that
+        carries no scope, and the flag does NOT cover the first
+        (#293 review). "No allowedPaths" is knowledge: the architect
+        wrote none, so the operator's run-wide list is the intended
+        authority. "Could not read it" is the absence of knowledge: the
+        component may have had a narrow authored scope, and silently
+        enforcing the operator's typically much broader list in its
+        place is a widening nobody chose. So the error WINS over the
+        flag - R1.5's own principle, moved to plan time - and the
+        component gets an ``unresolved`` snapshot that
+        ``factory._preflight_component_scope`` refuses before any spend
+        and ``check_diff_scope`` fails closed on if it ever gets past
+        that.
+
+        An earlier version of this docstring justified the opposite
+        ordering with "the same unreadable file also fails
+        ``check_prd_stories``". That is FALSE under worktrees:
+        ``check_prd_stories`` reads ``wt_path / prd_path``, and a
+        repository that tracks its component PRDs gives the worktree a
+        valid copy from the branch while the working-tree copy in the
+        main checkout is truncated or unreadable. Nothing else would
+        have noticed.
+
+        It still does not abort scheduling by raising (R8 review finding
         5: OSError, not just FileNotFoundError, because a PRD path that
-        is a directory raises IsADirectoryError). It yields the flag
-        when there is one - operator authority survives a broken PRD -
-        and otherwise an ``unresolved`` snapshot whose error fails
-        Phase 1 closed. Such a run fails either way: the same unreadable
-        file also fails ``check_prd_stories``.
+        is a directory raises IsADirectoryError). The failure becomes a
+        recorded snapshot and then a refusal, not an exception.
 
         The four outcomes share one tail deliberately. Returning early
         from each ``except`` arm meant writing the ``run_flag`` fallback
         twice, in two methods, so a reader had to hold both to see that
-        "PRD unreadable" and "PRD carries no scope" converge.
+        the ordering below is the whole policy.
         """
         harness = base_config.component_harness_files(comp.prd_path, root_dir)
         run_flag = list(base_config.allowed_paths) or None
@@ -157,21 +198,24 @@ class ComponentScope:
         try:
             prd = PRD.load(root_dir / comp.prd_path)
         except FileNotFoundError as exc:
-            error = f"pre-run PRD not found: {exc}"
+            error = f"pre-run PRD not found ({comp.prd_path}): {exc}"
         except OSError as exc:
-            error = f"pre-run PRD could not be read: {exc}"
+            error = f"pre-run PRD could not be read ({comp.prd_path}): {exc}"
         except ValueError as exc:
-            error = f"pre-run PRD failed to parse: {exc}"
+            error = f"pre-run PRD failed to parse ({comp.prd_path}): {exc}"
         else:
             authored = list(prd.allowed_paths or ()) or None
 
         if authored is not None:
             return cls(authored, harness, "component_prd", comp.prd_path)
+        # Before the flag, never after it: an unreadable PRD is not an
+        # absent scope, and a run-wide list must not stand in for one
+        # nobody could read.
+        if error is not None:
+            return cls(None, harness, "unresolved", "", error)
         if run_flag is not None:
             return cls(run_flag, harness, "run_flag", RUN_FLAG_ORIGIN)
-        if error is not None:
-            return cls(None, harness, "unresolved", comp.prd_path, error)
-        return cls(None, harness, "unconstrained", comp.prd_path)
+        return cls(None, harness, "unconstrained")
 
 
 @dataclass(frozen=True)

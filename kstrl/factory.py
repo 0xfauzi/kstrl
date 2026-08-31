@@ -1557,13 +1557,24 @@ def _preflight_component_scope(
       ``git diff`` and can never BE a scope violation. There was nothing
       to guard, and refusing the run contradicted a documented feature.
 
-    What is left is narrow and real: an authored ``allowedPaths`` entry
-    that cannot match a changed file at all. Each distinct SCOPE is
-    examined once, not each component: the snapshot's fallback is the
-    run-wide ``--allowed-paths`` flag, so one bad entry there is shared
-    by every component and N copies of the same paragraph help nobody.
-    Two components with genuinely different authored lists are both
-    reported, each naming its own complete list.
+    Two things are refused, and both are unwinnable rather than merely
+    wrong:
+
+    - An ``unresolved`` snapshot: the pre-run PRD would not read and no
+      run-wide flag stood in for it (#293 review). This is the one
+      verdict the engineer cannot change. ``check_diff_scope`` fails
+      closed on ``scope.error``, and the snapshot is FIXED for the life
+      of the run, so every retry re-runs an identical attempt into an
+      identical failure - the measured cost above, in the one branch
+      the plan-time snapshot would otherwise have kept. It is reported
+      per component, not deduplicated, because each names its own file.
+    - An authored ``allowedPaths`` entry that cannot match a changed
+      file at all. Each distinct SCOPE is examined once, not each
+      component: the snapshot's fallback is the run-wide
+      ``--allowed-paths`` flag, so one bad entry there is shared by
+      every component and N copies of the same paragraph help nobody.
+      Two components with genuinely different authored lists are both
+      reported, each naming its own complete list.
     """
     errors: list[str] = []
     seen: set[tuple[str, ...]] = set()
@@ -1571,6 +1582,17 @@ def _preflight_component_scope(
         if comp.status != ComponentStatus.PENDING.value:
             continue
         scope = run_scope.for_component(comp.id)
+        if not scope.is_trustworthy:
+            errors.append(
+                f"component '{comp.id}': {scope.error}. Phase 1 fails "
+                "closed on a scope it could not establish, and the "
+                "snapshot is fixed for the run, so every attempt would "
+                "fail identically. Restore that file in the main "
+                "checkout. A run-wide --allowed-paths cannot stand in "
+                "for it: a scope that could not be READ is not a scope "
+                "that does not exist."
+            )
+            continue
         if scope.allowed_paths is None or tuple(scope.allowed_paths) in seen:
             continue
         seen.add(tuple(scope.allowed_paths))
@@ -1590,10 +1612,18 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
 
     The terminal gets a summary rather than N paragraphs, because the
     per-component detail is already in the journal and an operator
-    watching a 12-component run does not need 12 identical lines. The
-    exception is a component whose scope could not be established: that
-    one is named, because it is the case that will fail Phase 1 closed
-    later and the operator should hear it now rather than then.
+    watching a 12-component run does not need 12 identical lines.
+
+    A component whose scope could not be established is deliberately
+    NOT warned about here (#293 review). This function is handed every
+    component in the manifest, including ones this run will never
+    schedule, so a warning saying "Phase 1 will fail it closed" was
+    false for a completed or failed component whose PRD has since been
+    archived - alarming an operator about work that is not going to
+    happen. The PENDING ones are refused outright by
+    ``_preflight_component_scope`` moments later, which is louder than
+    a warning and stops the run; the event above keeps the record for
+    every component either way.
     """
     resolved = run_scope.by_component
     if not resolved:
@@ -1614,12 +1644,6 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
         f"  Scope resolved for {len(resolved)} component(s): "
         + ", ".join(f"{count} from {source}" for source, count in sorted(counts.items()))
     )
-    for comp_id, scope in resolved.items():
-        if scope.error:
-            ui.warn(
-                f"  No trustworthy scope for '{comp_id}' "
-                f"({scope.error}); Phase 1 will fail it closed"
-            )
 
 
 def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
@@ -1841,8 +1865,17 @@ def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
     declares nothing (reporting more, never less). Fresh lists, so the
     worker's config cannot write back into a snapshot the parent holds
     for the rest of the run.
+
+    An UNTRUSTWORTHY snapshot gets the same answer, deliberately and by
+    name rather than by ``allowed_paths or ()`` quietly reading None as
+    "no constraint" (#293 review). This guard is a tripwire that fails
+    open; the two layers that fail closed on that state are
+    ``_preflight_component_scope``, which refuses the run before this
+    function is ever reached, and Phase 1. Asking
+    ``is_trustworthy`` keeps the collapse a stated decision rather than
+    an accident of the expression.
     """
-    if scope is None:
+    if scope is None or not scope.is_trustworthy:
         return [], []
     return list(scope.allowed_paths or ()), list(scope.harness_paths)
 

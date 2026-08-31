@@ -46,7 +46,12 @@ from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify import (
+    CheckResult,
+    VerificationResult,
+    VerifyConfig,
+    run_mechanical_verification,
+)
 from tests.test_harness_path_scope import (
     AUTHORED,
     COMPONENT_ID,
@@ -269,11 +274,16 @@ class TestSnapshotResolution:
         assert scope.error is not None
 
     @pytest.mark.parametrize(
-        ("allowed", "flag", "source"),
+        ("allowed", "flag", "source", "origin"),
         [
-            (AUTHORED, [], "component_prd"),
-            (None, ["fallback/"], "run_flag"),
-            (None, [], "unconstrained"),
+            (AUTHORED, [], "component_prd", PRD_REL),
+            (None, ["fallback/"], "run_flag", "--allowed-paths"),
+            # Nothing supplied a list, so nothing is named as having
+            # supplied one (#293 review). Recording the PRD here made
+            # the audit trail say the file was the origin of a list it
+            # did not provide, which is the opposite of what the record
+            # is for.
+            (None, [], "unconstrained", ""),
         ],
     )
     def test_provenance_names_the_authority(
@@ -282,13 +292,113 @@ class TestSnapshotResolution:
         allowed: list[str] | None,
         flag: list[str],
         source: str,
+        origin: str,
     ) -> None:
         _setup_project(tmp_path, allowed=allowed)
         base = _base_config(tmp_path)
         base.allowed_paths = flag
         scope = ComponentScope.resolve(_component(), tmp_path, base)
         assert scope.source == source
-        assert scope.origin in (PRD_REL, "--allowed-paths")
+        assert scope.origin == origin
+
+    def test_an_unreadable_prd_beats_the_run_wide_flag(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A scope that could not be READ is not a scope that does not
+        exist (#293 review).
+
+        The flag used to win here, silently: the component's authored
+        list, possibly narrow, was replaced by the operator's run-wide
+        one, possibly much broader, with `error=None` so nothing warned
+        and nothing failed closed. The two cases are not the same
+        thing, and only one of them is knowledge.
+        """
+        _setup_project(tmp_path, allowed=None)
+        (tmp_path / PRD_REL).write_text("{not valid json")
+        base = _base_config(tmp_path)
+        base.allowed_paths = ["fallback/"]
+
+        scope = ComponentScope.resolve(_component(), tmp_path, base)
+
+        assert scope.source == "unresolved"
+        assert scope.allowed_paths is None
+        assert scope.error is not None and "failed to parse" in scope.error
+
+    def test_a_legacy_prd_still_takes_the_flag(self, tmp_path: Path) -> None:
+        """The other half of that rule, so the fix cannot be read as
+        'the flag no longer works'. A PRD that LOADS and carries no
+        allowedPaths is knowledge, and the operator's list is the
+        intended authority for it."""
+        _setup_project(tmp_path, allowed=None)
+        base = _base_config(tmp_path)
+        base.allowed_paths = ["fallback/"]
+
+        scope = ComponentScope.resolve(_component(), tmp_path, base)
+
+        assert scope.source == "run_flag"
+        assert scope.allowed_paths == ["fallback/"]
+        assert scope.error is None
+
+
+class TestAnUnresolvedScopeCannotBeSwitchedOff:
+    """The fail-closed signal does not depend on an unrelated toggle.
+
+    ``[verify] check_diff_scope = false`` turns off the scope
+    COMPARISON. It used to also drop the report that no trustworthy
+    scope could be established, because ``allowed_paths_error`` was only
+    consumed inside that gate - and with no authored list the in-loop
+    guard is inert too, so the component ran and merged with no scope
+    enforcement at all and nothing said (#293 review). Same argument
+    ``check_prd_stories`` makes for carrying the tamper refusal.
+    """
+
+    def _verify(
+        self,
+        root: Path,
+        *,
+        check_diff_scope: bool,
+        allowed_paths: list[str] | None = None,
+        error: str | None = "pre-run PRD not found: nothing to trust",
+    ) -> VerificationResult:
+        return run_mechanical_verification(
+            root,
+            root / PRD_REL,
+            "main",
+            allowed_paths,
+            VerifyConfig(
+                check_diff_scope=check_diff_scope,
+                test_command="true",
+                typecheck_command="true",
+                lint_command="true",
+                check_bad_patterns=False,
+                subprocess_timeout=30.0,
+            ),
+            allowed_paths_error=error,
+        )
+
+    @pytest.mark.parametrize("check_diff_scope", [False, True])
+    def test_the_refusal_does_not_depend_on_the_toggle(
+        self,
+        tmp_path: Path,
+        check_diff_scope: bool,
+    ) -> None:
+        _setup_project(tmp_path)
+        result = self._verify(tmp_path, check_diff_scope=check_diff_scope)
+        assert not result.passed
+        assert [c.name for c in result.checks if not c.passed] == ["diff_scope"]
+
+    def test_the_toggle_still_removes_the_comparison(self, tmp_path: Path) -> None:
+        """It must not become "diff_scope always runs": with no error
+        the toggle is exactly as off as it was."""
+        _setup_project(tmp_path)
+        result = self._verify(
+            tmp_path,
+            check_diff_scope=False,
+            allowed_paths=list(AUTHORED),
+            error=None,
+        )
+        assert "diff_scope" not in [c.name for c in result.checks]
 
 
 class TestScopeIsRecorded:
