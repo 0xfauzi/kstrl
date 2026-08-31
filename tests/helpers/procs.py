@@ -148,6 +148,19 @@ def fake_ps(
     return calls
 
 
+def ps_is_readable() -> bool:
+    """Whether `kstrl.procgroup` can actually measure on this machine.
+
+    A test that asserts on `process_group_alive` needs this: where `ps`
+    is absent or filtered the production call degrades to the signal
+    probe, which counts a zombie as alive by design, so a #298 assertion
+    would fail with a message pointing at kstrl rather than at the
+    missing binary. Uses the caller's own group, which is alive by
+    construction, so a False here is about `ps` and never about timing.
+    """
+    return read_group_liveness(os.getpgrp()).live is True
+
+
 def dead_group(timeout: float = 10.0) -> int:
     """A process group that is spawned, killed and reaped. Returns its pgid.
 
@@ -163,10 +176,20 @@ def dead_group(timeout: float = 10.0) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    pgid = os.getpgid(child.pid)
-    kill_group(pgid)
-    child.wait(timeout=timeout)
-    return pgid
+    try:
+        pgid = os.getpgid(child.pid)
+        kill_group(pgid)
+        child.wait(timeout=timeout)
+        return pgid
+    finally:
+        # kill_group swallows every OSError, so a SIGKILL that did not
+        # land leaves `child.wait` to time out and the Popen dropped
+        # unreaped with a real `sleep 30` still on the machine. That is
+        # the orphan class #292 exists to stop, planted by the helper
+        # written to stop it.
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=timeout)
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:

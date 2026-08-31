@@ -20,50 +20,52 @@ the suite's orphan assertions, is "is anything in this group still
 executing". A zombie is not. So this module asks ``ps`` for group
 membership and excludes state ``Z``.
 
-WHEN A "GONE" IS TRUSTWORTHY, which is the whole safety argument.
-``ps`` may not show everything: a descendant that changed uid, a
-restricted listing, a truncated read. Absence from the listing is
-therefore not on its own evidence of absence from the machine, and a
-wrong "gone" is the dangerous direction - ``serve`` releases the item and
+WHEN A "GONE" IS TRUSTWORTHY, which is the whole safety argument. A
+wrong "gone" is the dangerous direction: ``serve`` releases the item and
 a second factory starts on a repo the first is still writing to (#186
-F1). So a "gone" is only ever returned with a reason it can be trusted:
+F1). ``ps`` may not show everything - a ``hidepid`` mount hides
+individual PROCESSES owned by other uids, so a group can show one
+visible zombie while hiding a running descendant that changed uid. That
+means "every row I saw for this group is a zombie" is NOT on its own a
+safe conclusion; it is only safe once the listing is known to be
+complete. So a "gone" needs both a listing that can be trusted and one
+of two positive findings:
 
-* ``ps`` listed at least one row for the group and every one is a
-  zombie. The listing demonstrably CAN see this group, so its verdict on
-  that group's members is evidence. This is the #298 case.
-* ``ps`` listed no row for the group, and ``killpg(pgid, 0)`` raises
-  ESRCH. That is the kernel saying the group holds no process at all,
-  which is a stronger fact than a listing's silence and is immune to
-  filtering.
+* THE LISTING IS COMPLETE. ``ps -A`` reported pid 1. Under ``hidepid``
+  the caller sees only its own uid's processes, and pid 1 belongs to
+  root; if we are root, nothing is hidden from us in the first place.
+  Either way, seeing pid 1 rules out a uid-filtered view. Measured on
+  this tree: pid 1 appears as ``['1', '1', 'Ss']`` in every listing while
+  running as uid 501. This costs nothing - ``pid=,pgid=,stat=`` measured
+  16.11ms per call against 16.10ms for ``pgid=,stat=`` on a 945-process
+  machine, inside the noise.
+* Then either every row listed for the group is a zombie, or the group
+  has no rows at all AND ``killpg(pgid, 0)`` raises ESRCH - the kernel
+  saying the group holds no process, which no listing filter can fake.
 
-Anything else, meaning no row and a kernel that says the group is
-occupied, is reported as "cannot see" rather than as absence.
+Anything else is "cannot see".
 
-The control this REPLACED did not work, and it is written down because
-the docstring claimed it did. It checked that the caller's own process
-group appeared in the listing. ``subprocess.run`` does not ``setpgid``,
-so the ``ps`` child itself runs in the caller's group and ``ps -A``
-always lists it: measured on this tree, our own pgid appeared four times
-in every listing, the last row being ``ps``. The check was therefore
-satisfied by construction on every successful call and could never fire.
-``hidepid`` does not hide a caller's own uid either, so it did not even
-cover the case it named. Measured against a listing with one live group
-filtered out, the old rule returned a CONFIDENT "gone" for a group that
-was still running; the rule above returns "cannot see".
+TWO CONTROLS THAT DID NOT WORK, written down because each was claimed in
+this docstring before it was measured. The first checked that the
+caller's own process group appeared in the listing; ``subprocess.run``
+does not ``setpgid``, so the ``ps`` child runs in the caller's group and
+``ps -A`` always lists it - our own pgid appeared four times in every
+listing, the last row being ``ps`` itself. Satisfied by construction, it
+could never fire. The second was "every listed row is a zombie, so the
+listing can see this group": true, but seeing SOME of a group is not
+seeing ALL of it, which is exactly the ``hidepid`` case above.
 
-COST, and the row trim that was measured and REJECTED. Only the two
+COST, and the row trim that was measured and REJECTED. Only the three
 columns the question needs are requested: asking for command lines as
-well measured 23.5ms per call against 11.6ms for this on a 895-process
-machine (#292), re-measured for #298 at 11.29ms over 50 calls on a
-913-process machine against 0.00089ms for the signal probe. The kernel
-control above costs 0.00054ms and is paid only on the "gone" path.
-Trimming ROWS is the larger factor and is deliberately not done: ``ps -g
-<pgid>,<ours>`` measured 2.07ms against 14.52ms on a 1011-process
-machine, a 7x cut, but ``-g`` selects by SESSION, and Linux procps
-documents it as session or effective group NAME. A process-group id is
-not generally a session id, so on Linux that listing would come back
-without the target, which is exactly the filtered case above and would
-now cost a spurious "cannot see" on every call.
+well measured 23.5ms per call against 11.6ms for two columns on a
+895-process machine (#292). The kernel control costs 0.00054ms and is
+paid only on the "no rows" path. Trimming ROWS is the larger factor and
+is deliberately not done: ``ps -g <pgid>,<ours>`` measured 2.07ms against
+14.52ms on a 1011-process machine, a 7x cut, but ``-g`` selects by
+SESSION, and Linux procps documents it as session or effective group
+NAME. A process-group id is not generally a session id, so on Linux that
+listing would come back without the target, which is the filtered case
+above and would now cost a spurious "cannot see" on every call.
 
 That cost is affordable because the production path is not hot:
 ``serve.terminate_process_group`` asks once per timed-out run, on the way
@@ -72,14 +74,21 @@ call converged on its first poll: 14 real ``ps`` forks totalling 275ms
 against a 246.5s suite, 0.11% of wall clock.
 
 POSIX only. ``ps`` group listings and ``killpg`` do not exist on Windows.
-The production caller reaches this only behind ``serve._safe_pgid``,
-which returns None without ``os.killpg``; the test helper has no such
-gate and its suite skips on Windows.
 
-This module is the ONLY place in the tree that shells out to ``ps``, and
-``tests/test_procgroup.py`` fails on a second one. A rule with no
-mechanism is not a plan: the argument for centralising the parse is that
-two copies drift, and nothing but a net stops a third landing.
+WHAT THE ``ps`` TIMEOUT DOES NOT COVER, stated because an earlier version
+of this docstring claimed a bound it does not have. ``PS_TIMEOUT_SECONDS``
+bounds a ``ps`` that is slow but killable. It does NOT bound one wedged
+in an uninterruptible read (a hung NFS mount, a dead container runtime):
+CPython's ``subprocess.run`` handles its own timeout by calling
+``process.kill()`` and then ``process.wait()`` with NO timeout, and
+``Popen.__exit__`` waits again, so a D-state child that cannot be killed
+blocks the call indefinitely. Tracked as #309.
+
+This module is the only place in ``kstrl/`` or ``tests/`` that shells out
+to ``ps``, and ``tests/test_procgroup.py`` fails on a second one in
+either root. A rule with no mechanism is not a plan: the argument for
+centralising the parse is that two copies drift, and nothing but a net
+stops a third landing.
 """
 
 from __future__ import annotations
@@ -88,17 +97,18 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-#: The two columns the question needs and no more. See COST above.
-PS_ARGV = ("ps", "-A", "-o", "pgid=,stat=")
+#: The three columns the question needs and no more. ``pid`` is there for
+#: the completeness control, not for identifying anything. See the
+#: docstring above for why each is load-bearing and what it costs.
+PS_ARGV = ("ps", "-A", "-o", "pid=,pgid=,stat=")
 
-#: A bound on how long a diagnostic may stall the caller. 440x the
-#: 11.29ms measured above, so it cannot fire on a slow machine; a ``ps``
-#: that takes longer than this is wedged, which is exactly the case where
-#: the caller wants "cannot see" rather than a hang.
+#: A bound on how long a KILLABLE ``ps`` may stall the caller. 440x the
+#: 11.29ms measured for the call, so it cannot fire on a slow machine.
+#: It does not bound an unkillable one; see the docstring and #309.
 PS_TIMEOUT_SECONDS = 5.0
 
-#: Said once, because two branches report it and reflowed copies of one
-#: sentence are how the two answers drift apart.
+#: Said once, because several branches report it and reflowed copies of
+#: one sentence are how the two answers drift apart.
 _UNMEASURABLE = (
     "Process-group liveness cannot be measured here, and reporting "
     "'no live member' would be a false negative."
@@ -110,19 +120,36 @@ class GroupLiveness:
     """Whether a group holds a running process, or why that is unknown."""
 
     #: True: at least one non-zombie member. False: none, and the answer
-    #: earned one of the two trust conditions in the module docstring.
-    #: None: nothing was measured, and ``reason`` says what went wrong.
+    #: earned the trust conditions in the module docstring. None: nothing
+    #: was measured, and ``reason`` says what went wrong.
     live: bool | None
     reason: str = ""
+
+
+def _may_signal_group(pgid: int) -> bool:
+    """Whether ``killpg(pgid, ...)`` is safe to issue at all.
+
+    ``killpg(1, sig)`` is ``kill(-1, sig)``: every process this user owns.
+    ``serve._safe_pgid``, ``verify._signal_process_group`` and
+    ``agents.proc`` each carry a copy of this rule (#308); this module
+    needs its own because nothing enforces that its callers came through
+    one of them, and a docstring saying they do is a convention, not a
+    mechanism.
+
+    This module only ever sends signal 0, so unlike those three it does
+    NOT exclude the caller's own group: probing it is harmless and is a
+    question the suite legitimately asks. The broadcast pgid is the part
+    that must be refused whatever the signal.
+    """
+    return hasattr(os, "killpg") and pgid > 1
 
 
 def read_group_liveness(pgid: int) -> GroupLiveness:
     """Whether any non-zombie process is in group ``pgid``.
 
     Absence is only ever reported by a call that earned the right to
-    report it. Which two conditions those are, and the measurement
-    showing the control this replaced was satisfied by construction, are
-    in the module docstring.
+    report it. The conditions, and the measurements showing that two
+    earlier controls could not, are in the module docstring.
     """
     try:
         out = subprocess.run(
@@ -145,49 +172,70 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
             None,
             f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. {_UNMEASURABLE}",
         )
+    return _interpret(_read_listing(out.stdout, pgid), pgid)
 
-    rows, running = _count_group_rows(out.stdout, pgid)
-    if running:
+
+@dataclass(frozen=True)
+class _Listing:
+    """What one ``ps`` read saw, before any of it is believed."""
+
+    #: pid 1 was present, so the view is not filtered to our own uid.
+    complete: bool
+    #: Rows carrying this pgid, and how many of them are not zombies.
+    rows: int
+    running: int
+
+
+def _interpret(listing: _Listing, pgid: int) -> GroupLiveness:
+    if listing.running:
         return GroupLiveness(True)
-    if rows:
-        # ps can demonstrably see this group, and everything it holds is
-        # a zombie. #298.
+    if not listing.complete:
+        return GroupLiveness(
+            None,
+            f"ps did not list pid 1, so the view is filtered to this uid "
+            f"and a running member of group {pgid} owned by another uid "
+            f"would be invisible. {_UNMEASURABLE}",
+        )
+    if listing.rows:
+        # A complete listing that shows this group holding only zombies.
+        # #298's case.
         return GroupLiveness(False)
     if _kernel_says_group_is_empty(pgid):
         return GroupLiveness(False)
     return GroupLiveness(
         None,
         f"ps listed no process in group {pgid}, but the kernel reports "
-        f"that group is not empty, so the listing does not show every "
-        f"process (a descendant that changed uid, or a restricted ps). "
-        f"{_UNMEASURABLE}",
+        f"that group is not empty, so the listing did not show every "
+        f"process. {_UNMEASURABLE}",
     )
 
 
-def _count_group_rows(stdout: str, pgid: int) -> tuple[int, int]:
-    """(rows ``ps`` listed for ``pgid``, how many are not zombies).
+def _read_listing(stdout: str, pgid: int) -> _Listing:
+    """Parse ``pid pgid stat`` rows into the three facts that decide it.
 
-    Returned positionally, so the order is pinned by direct tests in
-    ``tests/test_procgroup.py`` rather than by the type checker: both
-    fields are ``int`` and a swap would type-check cleanly.
+    Fields are named on ``_Listing`` rather than returned positionally,
+    because all three would type-check in any order.
     """
     want = str(pgid)
+    complete = False
     rows = 0
     running = 0
     for line in stdout.splitlines():
         parts = line.split()
-        # A row with no state column would IndexError below. Real ps does
-        # not emit one; a filtered or truncated listing might.
-        if len(parts) < 2:
+        # A row missing a column would IndexError below. Real ps does not
+        # emit one; a filtered or truncated listing might.
+        if len(parts) < 3:
             continue
-        if parts[0] != want:
+        pid, group, state = parts[0], parts[1], parts[2]
+        complete = complete or pid == "1"
+        if group != want:
             continue
         rows += 1
         # "Z" is the zombie state on both macOS and Linux, and flags may
         # follow it ("Z+", "Zl"), so match the prefix rather than the cell.
-        if not parts[1].startswith("Z"):
+        if not state.startswith("Z"):
             running += 1
-    return rows, running
+    return _Listing(complete=complete, rows=rows, running=running)
 
 
 def _kernel_says_group_is_empty(pgid: int) -> bool:
@@ -196,8 +244,11 @@ def _kernel_says_group_is_empty(pgid: int) -> bool:
     ESRCH is the one conclusive answer. Success and ``EPERM`` both mean
     something is there, and any other ``OSError`` means the question was
     not answered. Neither is emptiness, and reading them as emptiness is
-    the false negative this control exists to prevent.
+    the false negative this control exists to prevent. A pgid we must not
+    signal is likewise not emptiness.
     """
+    if not _may_signal_group(pgid):
+        return False
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
@@ -217,9 +268,14 @@ def signal_probe_alive(pgid: int) -> bool:
     refusing us, which is the closest to "alive" a signal can report, and
     on a zombie-only group that is measurably the branch taken.
 
+    A pgid this module must not signal reads as ALIVE, which is the
+    conservative direction: the caller then declines to call a run reaped.
+
     Prefer ``read_group_liveness``. This answers the question #298 was
     about getting wrong.
     """
+    if not _may_signal_group(pgid):
+        return True
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:

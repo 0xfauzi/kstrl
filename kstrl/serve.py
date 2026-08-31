@@ -59,7 +59,6 @@ import socket
 import subprocess
 import sys
 import time
-import warnings
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -176,7 +175,13 @@ class RunOutcome:
     #: `group_reaped=False` reached this way means "we could not see",
     #: not "a factory is still running", and the poison reason an
     #: operator reads says so. Empty when the check measured cleanly.
+    #: Set on the reaped path too, where it means the "gone" itself was
+    #: not measured, which is the unsafe direction and so is reported.
     group_reap_detail: str = ""
+    #: Positive evidence the group IS occupied, as opposed to merely
+    #: unconfirmed. Kept apart from `group_reap_detail` because reporting
+    #: a refused signal as "unknown" states the opposite of the truth.
+    group_occupied_detail: str = ""
 
 
 class FactoryRunner(Protocol):
@@ -1444,6 +1449,7 @@ def run_supervised(
             output_tail=_tail(output),
             group_reaped=termination.reaped,
             group_reap_detail=termination.degraded,
+            group_occupied_detail=termination.occupied,
         )
 
 
@@ -1462,22 +1468,32 @@ def _tail(output: str | None) -> str:
 GROUP_TERM_GRACE_SECONDS = 15.0
 
 
+#: How often to re-check the group while waiting out a signal's grace
+#: period. Each check forks ``ps`` at ~11ms, so 0.25s costs ~4% of a core
+#: on a path that runs once per timed-out run.
+GROUP_POLL_SECONDS = 0.25
+
+
 @dataclass(frozen=True)
 class GroupTermination:
-    """Whether the group was confirmed reaped, and why not if not.
+    """Whether the group was confirmed reaped, and what is known if not.
 
     A bare bool was not enough: `serve_cycle` turns `reaped=False` into a
     poison reason telling the operator a factory may still be running,
-    and when the real cause was an unreadable `ps` that reason is a
-    misdiagnosis. `degraded` carries the correction into the durable
-    record rather than only into a warning on stderr, which a detached
-    daemon does not keep.
+    and the three ways of not being sure need different words. The two
+    strings are kept apart because conflating them told the operator the
+    OPPOSITE of the truth in the one case where they must act.
     """
 
     reaped: bool
-    #: Empty when the answer was measured. Non-empty when it was not, and
-    #: then it says what could not be seen.
+    #: Why the check could not MEASURE. Empty when it did. This is the
+    #: "unknown" case: an unreadable `ps`, a filtered listing.
     degraded: str = ""
+    #: Positive evidence the group IS occupied. EPERM from `killpg` means
+    #: the kernel found processes in that group and refused us, so the
+    #: group is definitely not empty. Reporting that as "unknown" would
+    #: downgrade the strongest signal a factory is alive.
+    occupied: str = ""
 
 
 def terminate_process_group(
@@ -1489,6 +1505,17 @@ def terminate_process_group(
     ``reaped`` is False when the group could not be confirmed gone, so a
     caller never reports a timed-out run as finished while a factory may
     still be writing to the repo (#186 F1).
+
+    ESCALATION IS DRIVEN BY THE GROUP, NOT BY THE DIRECT CHILD. An
+    earlier version returned as soon as ``process.wait()`` returned, which
+    made the SIGKILL leg reachable only when the DIRECT CHILD outlived the
+    grace period. Measured: a leader that dies on SIGTERM with a
+    descendant holding ``SIG_IGN`` for it returned
+    ``GroupTermination(reaped=False)`` in 0.07s with the descendant still
+    running and SIGKILL never sent, so nothing ever killed it and a
+    factory kept writing to the repo. That is the exact hazard this
+    function exists to prevent, so the grace period is now spent watching
+    the GROUP and the next signal is sent whenever anything is left.
 
     ``pgid`` should be captured at SPAWN time. Looking it up here fails
     once the direct child has been reaped - and that is precisely the
@@ -1502,11 +1529,20 @@ def terminate_process_group(
         except (ProcessLookupError, OSError):
             pgid = None
     if pgid is None:
-        # No group to signal and no id to check: the most we can honestly
-        # say is whether the direct child is gone.
-        return GroupTermination(process.poll() is not None)
+        # No group to signal and no id to check. Whether the direct child
+        # is gone is the most that can honestly be said, and saying so is
+        # not the same as having measured the group.
+        return GroupTermination(
+            process.poll() is not None,
+            degraded=(
+                "no process-group id was available, so only the direct "
+                "child was inspected and any descendant it left is "
+                "unaccounted for"
+            ),
+        )
 
-    for sig, wait in (
+    outcome = GroupTermination(False, degraded="the group was never signalled")
+    for sig, grace in (
         (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS),
         (signal.SIGKILL, 10.0),
     ):
@@ -1515,19 +1551,40 @@ def terminate_process_group(
         except ProcessLookupError:
             return GroupTermination(True)
         except OSError as exc:
-            return GroupTermination(False, f"could not signal group {pgid}: {exc}")
-        try:
-            process.wait(timeout=wait)
-        except subprocess.TimeoutExpired:
-            continue
-        # The direct child is gone; confirm the group is too.
-        return _confirm_group_gone(pgid)
-    return _confirm_group_gone(pgid)
+            # EPERM is not "could not measure": the kernel FOUND processes
+            # in this group and refused us. That is evidence of a live
+            # group, and the operator has to act on it.
+            return GroupTermination(
+                False,
+                occupied=f"the kernel refused signal {sig} to group {pgid}: {exc}",
+            )
+        outcome = _wait_out_grace(process, pgid, grace)
+        if outcome.reaped:
+            return outcome
+    return outcome
+
+
+def _wait_out_grace(
+    process: subprocess.Popen[str],
+    pgid: int,
+    grace: float,
+) -> GroupTermination:
+    """Reap the direct child, then watch the GROUP until it goes or time runs out."""
+    deadline = time.monotonic() + grace
+    try:
+        process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        pass
+    outcome = _confirm_group_gone(pgid)
+    while not outcome.reaped and time.monotonic() < deadline:
+        time.sleep(GROUP_POLL_SECONDS)
+        outcome = _confirm_group_gone(pgid)
+    return outcome
 
 
 def _confirm_group_gone(pgid: int) -> GroupTermination:
     alive, degraded = _group_liveness_for_reap(pgid)
-    return GroupTermination(not alive, degraded)
+    return GroupTermination(not alive, degraded=degraded)
 
 
 def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
@@ -1571,23 +1628,30 @@ def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:
     reaped. So the degraded path is no worse than what this function did
     everywhere before, and the ``ps`` path is exact.
 
-    The degrade is both WARNED and RETURNED. The warning is for an
-    attached operator; the returned string is what reaches the queue's
-    poison reason, because a daemon detached from its stderr keeps only
-    the record. Without it the operator reads "a factory may still be
-    executing against this repo" when the truth was "the check could not
-    see", which is the misdiagnosis this string exists to prevent.
+    The degrade is RETURNED, not warned. An earlier version called
+    ``warnings.warn`` here, which under ``PYTHONWARNINGS=error`` (a common
+    CI setting) RAISES out of the reap check: measured, it escaped
+    ``run_supervised``'s ``except subprocess.TimeoutExpired``, which does
+    not catch ``UserWarning``, and out of ``serve_cycle``, which wraps
+    nothing - so on a machine without ``ps`` one timed-out run crashed the
+    daemon. That is the same crash the undecodable-listing test exists to
+    prevent, through a different door. The message also interpolated the
+    pgid and an exception repr, so every such run added a distinct
+    permanent key to ``__warningregistry__``.
+
+    So the reason travels as a value and ``serve_cycle`` reports it
+    through the ``ServeObserver`` the daemon already threads everywhere
+    else, which is bounded, is the operator's real log channel, and
+    cannot raise.
     """
     liveness = read_group_liveness(pgid)
     if liveness.live is not None:
         return liveness.live, ""
-    warnings.warn(
-        f"kstrl: {liveness.reason} Falling back to a signal probe, which "
-        f"counts an unreaped zombie as alive, so group {pgid} may be "
-        f"reported as running when nothing in it is.",
-        stacklevel=2,
+    return signal_probe_alive(pgid), (
+        f"{liveness.reason} Falling back to a signal probe, which counts "
+        f"an unreaped zombie as alive, so group {pgid} may be reported as "
+        f"running when nothing in it is."
     )
-    return signal_probe_alive(pgid), liveness.reason
 
 
 def process_group_alive(pgid: int) -> bool:
@@ -1653,25 +1717,50 @@ def check_budget(
     )
 
 
+def _report_reap_degrade(obs: ServeObserver, outcome: RunOutcome) -> None:
+    """Say out loud when the reap check could not measure.
+
+    Reported on BOTH paths, and the reaped one is why this exists. When
+    ``ps`` is blind the fallback signal probe can answer "gone", the run
+    is called reaped and the item is released for another attempt - the
+    unsafe direction, reached on a doubly-unverified answer, and until
+    this was added it was recorded nowhere at all. The poison reason
+    covers the not-reaped path; nothing covered this one.
+    """
+    if not outcome.timed_out or not outcome.group_reap_detail:
+        return
+    if outcome.group_reaped:
+        obs.warn(
+            f"  the timed-out run was released as reaped on an UNMEASURED "
+            f"check: {outcome.group_reap_detail}"
+        )
+        return
+    obs.warn(f"  the reap check could not measure: {outcome.group_reap_detail}")
+
+
 def _unreaped_timeout_detail(outcome: RunOutcome) -> str:
     """The poison reason for a timed-out run whose group was not confirmed gone.
 
-    Says WHY it was not confirmed when the check could not measure.
-    Without that the operator reads a claim about a live factory when the
-    real cause was a blind reap check, and acts on the wrong one. The
-    warning `_group_liveness_for_reap` emits goes to stderr, which a
-    detached daemon does not keep; this is the durable half.
+    Three different things are worth three different sentences, and
+    collapsing them is how an operator acts on the wrong one. Positive
+    evidence the group is occupied must NOT be softened into "unknown";
+    an unmeasurable check must not be reported as a live factory.
     """
     detail = (
         "the run timed out and its process group could not be confirmed "
         "reaped, so a factory may still be executing against this repo"
     )
-    if not outcome.group_reap_detail:
-        return detail
-    return (
-        f"{detail}. The check could not measure, so this is 'unknown' "
-        f"rather than 'still running': {outcome.group_reap_detail}"
-    )
+    if outcome.group_occupied_detail:
+        return (
+            f"{detail}. The group is CONFIRMED occupied, not merely "
+            f"unconfirmed: {outcome.group_occupied_detail}"
+        )
+    if outcome.group_reap_detail:
+        return (
+            f"{detail}. The check could not measure, so this is 'unknown' "
+            f"rather than 'still running': {outcome.group_reap_detail}"
+        )
+    return detail
 
 
 def _floor_note(spend: DailySpend) -> str:
@@ -2351,6 +2440,8 @@ def serve_cycle(
         timeout_seconds=cfg.factory_timeout_seconds,
         on_spawn=_adopt,
     )
+
+    _report_reap_degrade(obs, outcome)
 
     if outcome.timed_out and not outcome.group_reaped:
         # A descendant may still be running against this repo. Do NOT

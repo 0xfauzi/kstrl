@@ -25,8 +25,10 @@ from kstrl.procgroup import (
     PS_ARGV,
     PS_TIMEOUT_SECONDS,
     GroupLiveness,
-    _count_group_rows,
     _kernel_says_group_is_empty,
+    _Listing,
+    _may_signal_group,
+    _read_listing,
     read_group_liveness,
     signal_probe_alive,
 )
@@ -35,8 +37,12 @@ from tests.helpers import procs
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-class TestTheScanReadsStatesNotJustGroups:
-    """``_count_group_rows`` returns two ints positionally, so both are pinned."""
+class TestTheListingReadsStatesNotJustGroups:
+    """``_read_listing`` returns three facts, and all three are pinned.
+
+    Rows are ``pid pgid stat``. The pid column exists only for the
+    completeness control below; nothing identifies a process by it.
+    """
 
     @pytest.mark.parametrize(
         ("state", "counts_as_running"),
@@ -61,47 +67,75 @@ class TestTheScanReadsStatesNotJustGroups:
         state: str,
         counts_as_running: bool,
     ) -> None:
-        rows, running = _count_group_rows(f"7 {state}\n9 Ss\n", pgid=7)
-        assert rows == 1, "the row must be counted whatever its state"
-        assert bool(running) is counts_as_running
+        listing = _read_listing(f"1 1 Ss\n50 7 {state}\n", pgid=7)
+        assert listing.rows == 1, "the row must be counted whatever its state"
+        assert bool(listing.running) is counts_as_running
 
-    def test_the_two_counts_are_not_transposed(self) -> None:
-        """Both fields are int, so a swap type-checks. Only a case with
-        the two answers DIFFERENT can catch it."""
-        assert _count_group_rows("7 Z\n", pgid=7) == (1, 0)
-        assert _count_group_rows("7 Ss\n7 Z\n", pgid=7) == (2, 1)
+    def test_the_three_facts_are_not_transposed(self) -> None:
+        """All three would type-check in any order, so only cases where
+        they DIFFER can catch a swap."""
+        assert _read_listing("1 1 Ss\n50 7 Z\n", pgid=7) == _Listing(
+            complete=True, rows=1, running=0
+        )
+        assert _read_listing("50 7 Ss\n51 7 Z\n", pgid=7) == _Listing(
+            complete=False, rows=2, running=1
+        )
 
     def test_a_ragged_row_is_skipped_without_dropping_its_neighbours(self) -> None:
-        """A row with no state column would IndexError. The rows either
-        side of it must still be read, or the skip is a silent
-        truncation."""
-        assert _count_group_rows("\n  7\n9 Ss\n7 Ss\n", pgid=7) == (1, 1)
+        """A row missing a column would IndexError. The rows either side
+        of it must still be read, or the skip is a silent truncation."""
+        listing = _read_listing("\n  7\n1 1 Ss\n50 7 Ss\n", pgid=7)
+        assert listing == _Listing(complete=True, rows=1, running=1)
 
     def test_a_group_id_is_matched_whole_not_as_a_prefix(self) -> None:
         """#292 in miniature: 7 must not match 70."""
-        assert _count_group_rows("70 Ss\n9 Ss\n", pgid=7) == (0, 0)
+        assert _read_listing("1 1 Ss\n50 70 Ss\n", pgid=7).rows == 0
+
+    def test_pid_one_is_what_marks_the_listing_complete(self) -> None:
+        assert _read_listing("50 7 Ss\n", pgid=7).complete is False
+        assert _read_listing("1 1 Ss\n50 7 Ss\n", pgid=7).complete is True
 
 
 class TestAGoneIsOnlyReportedWhenItIsEvidence:
-    """The safety argument, which the own-group control did not carry.
+    """The safety argument, and the two controls that could not carry it.
 
-    That control asked whether the caller's own group appeared in the
-    listing. Measured on this tree: ``subprocess.run`` does not setpgid,
-    so the ``ps`` child runs in the caller's group and ``ps -A`` always
-    lists it - our own pgid appeared four times in every real listing,
-    the last row being ``ps`` itself. It was satisfied by construction
-    and could never fire, so a listing missing a live target was reported
-    as a confident "gone". These pin what replaced it.
+    The first asked whether the caller's own group appeared in the
+    listing. Measured: `subprocess.run` does not setpgid, so the `ps`
+    child runs in the caller's group and `ps -A` always lists it. It was
+    satisfied by construction.
+
+    The second was "every listed row for this group is a zombie, so the
+    listing can see this group". Seeing SOME of a group is not seeing all
+    of it: `hidepid` hides individual PROCESSES by uid, so a group can
+    show a visible zombie while hiding a running descendant that changed
+    uid, which is the threat the module docstring names.
+
+    What replaced both: pid 1 in the listing proves the view is not
+    filtered to our uid, because pid 1 belongs to root and, if we are
+    root, nothing is hidden from us anyway.
     """
 
-    def test_a_listing_that_saw_only_zombies_is_evidence_of_gone(
+    def test_a_complete_listing_showing_only_zombies_is_gone(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """#298's case. ps demonstrably sees the group, so its verdict on
-        that group's members is evidence and no kernel check is needed."""
-        procs.fake_ps(monkeypatch, stdout="4242 Z\n4242 Z+\n")
+        """#298's case, and it still needs the completeness control."""
+        procs.fake_ps(monkeypatch, stdout="1 1 Ss\n50 4242 Z\n51 4242 Z+\n")
         assert read_group_liveness(4242) == GroupLiveness(False)
+
+    def test_zombies_in_a_FILTERED_listing_are_not_gone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The round-2 hole. Same rows, no pid 1: a running descendant
+        that changed uid would be invisible, so "only zombies here" is an
+        inference about a listing that is known to be partial. Reporting
+        gone would let serve_cycle requeue onto a live repo (#186 F1)."""
+        procs.fake_ps(monkeypatch, stdout="50 4242 Z\n51 4242 Z+\n")
+        liveness = read_group_liveness(4242)
+        assert liveness.live is None
+        assert "did not list pid 1" in liveness.reason
+        assert "another uid" in liveness.reason
 
     def test_a_missing_group_the_kernel_calls_empty_is_gone(self) -> None:
         """The other trustworthy route: the kernel, not the listing."""
@@ -111,26 +145,59 @@ class TestAGoneIsOnlyReportedWhenItIsEvidence:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """The bug the own-group control could not catch.
-
-        A live group absent from the listing - a descendant that changed
-        uid, a restricted ps - used to read as a confident "gone", which
-        makes `terminate_process_group` report reaped and `serve_cycle`
-        requeue onto a repo a factory is still writing to (#186 F1).
-        """
-        # Our own group is alive by construction, and the listing omits it.
-        procs.fake_ps(monkeypatch, stdout="1 Ss\n")
+        # Our own group is alive by construction, and pid 1 is listed so
+        # the view is complete; the group simply is not in it.
+        procs.fake_ps(monkeypatch, stdout="1 1 Ss\n")
         liveness = read_group_liveness(os.getpgrp())
         assert liveness.live is None
         assert "kernel reports" in liveness.reason
-        assert "not empty" in liveness.reason
 
     def test_a_running_row_still_reads_live(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        procs.fake_ps(monkeypatch, stdout="4242 Ss\n")
+        """Live needs no control: seeing a runner is positive evidence,
+        and a filtered listing can only ever show FEWER processes."""
+        procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         assert read_group_liveness(4242) == GroupLiveness(True)
+
+
+class TestTheGroupIdIsGuardedBeforeAnySignal:
+    """#298 round 2: this module signals, so it carries the guard.
+
+    `killpg(1, sig)` is `kill(-1, sig)`, every process this user owns.
+    `serve._safe_pgid` has this rule and the module docstring used to
+    appeal to it, which is a convention, not a mechanism: nothing
+    enforces that callers came through it. The triplication across
+    serve / verify / agents.proc is #308; this is procgroup's own half.
+    """
+
+    @pytest.mark.parametrize("pgid", [-1, 0, 1])
+    def test_a_broadcast_pgid_is_never_signalled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        pgid: int,
+    ) -> None:
+        calls: list[tuple[int, int]] = []
+
+        def recording(target: int, sig: int) -> None:
+            calls.append((target, sig))
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", recording)
+        assert _kernel_says_group_is_empty(pgid) is False
+        assert signal_probe_alive(pgid) is True
+        assert calls == [], "kill(-1, sig) must never be issued"
+
+    def test_the_refusals_fail_in_the_conservative_direction(self) -> None:
+        """Not empty, and alive: both keep a caller from calling a run
+        reaped on a question that was never asked."""
+        assert _may_signal_group(1) is False
+        assert _kernel_says_group_is_empty(1) is False
+        assert signal_probe_alive(1) is True
+
+    def test_a_real_group_is_still_signalled(self) -> None:
+        """The positive control, or the guard could be rejecting all."""
+        assert _may_signal_group(os.getpgrp()) is True
 
 
 class TestTheKernelControl:
@@ -237,7 +304,7 @@ class TestThePsCallIsBounded:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        calls = procs.fake_ps(monkeypatch, stdout="4242 Ss\n")
+        calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
         assert calls, "the fake must have intercepted the ps call"
         assert calls[0]["kwargs"]["timeout"] == PS_TIMEOUT_SECONDS
@@ -248,7 +315,7 @@ class TestThePsCallIsBounded:
     ) -> None:
         """Left to the locale, a stray byte under LC_ALL=C raises a
         ValueError out of a function whose contract is not to raise."""
-        calls = procs.fake_ps(monkeypatch, stdout="4242 Ss\n")
+        calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
         assert calls[0]["kwargs"]["encoding"] == "utf-8"
         assert calls[0]["kwargs"]["errors"] == "replace"
@@ -270,7 +337,7 @@ class TestTheFakeDoesNotAnswerForEveryCommand:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        procs.fake_ps(monkeypatch, stdout="4242 Ss\n")
+        procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         out = subprocess.run(
             ["echo", "not-the-fake"],
             capture_output=True,
@@ -286,7 +353,7 @@ class TestTheFakeDoesNotAnswerForEveryCommand:
     ) -> None:
         """The positive control: without it the delegation above could be
         passing because nothing is faked at all."""
-        procs.fake_ps(monkeypatch, stdout="4242 Ss\n")
+        procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         assert read_group_liveness(4242) == GroupLiveness(True)
 
 
@@ -337,10 +404,32 @@ class TestTheSignalProbeIsKeptAsTheDegradedReading:
 # The centralisation has a mechanism, not just a docstring.
 # ---------------------------------------------------------------------------
 
-#: Callables whose string arguments are a command line.
+#: Callables whose string arguments are a command line. ``popen`` and
+#: ``getstatusoutput`` were missing from the first version, so
+#: ``os.popen("ps -A")`` in ``kstrl/`` passed the net silently.
 _SUBPROCESS_CALLS = frozenset(
-    {"run", "Popen", "call", "check_call", "check_output", "getoutput", "system"}
+    {
+        "run",
+        "Popen",
+        "popen",
+        "call",
+        "check_call",
+        "check_output",
+        "getoutput",
+        "getstatusoutput",
+        "system",
+    }
 )
+
+#: The roots this net walks, and therefore the exact reach of the claim
+#: ``kstrl/procgroup.py`` makes. ``spike/`` is deliberately outside: it
+#: holds throwaway measurement scripts (``spike/tui0/measure.py`` calls
+#: ``ps`` today) that are not part of the package or its suite, and
+#: widening the net to cover them would mean either failing on evidence
+#: or carrying an allowlist that rots. The docstring in ``procgroup``
+#: names these two roots rather than "the tree" for the same reason: a
+#: mechanism cited for a claim it does not cover is worse than none.
+_SCANNED_ROOTS = ("kstrl", "tests")
 
 #: The one file allowed to shell out to ``ps``: the module whose whole
 #: reason for existing is that there is exactly one parse of its output.
@@ -421,8 +510,7 @@ def _ps_call_lines(source: str) -> list[int]:
 
 
 def _scannable_sources() -> list[Path]:
-    roots = (REPO_ROOT / "kstrl", REPO_ROOT / "tests")
-    return [p for root in roots for p in sorted(root.rglob("*.py"))]
+    return [p for root in _SCANNED_ROOTS for p in sorted((REPO_ROOT / root).rglob("*.py"))]
 
 
 class TestOnlyOneModuleShellsOutToPs:
@@ -459,6 +547,14 @@ class TestOnlyOneModuleShellsOutToPs:
     def test_the_net_walks_a_real_tree(self) -> None:
         assert len(_scannable_sources()) > 100
 
+    def test_the_claim_names_the_roots_the_net_actually_walks(self) -> None:
+        """A mechanism cited for a claim it does not cover is worse than
+        none. `spike/` calls ps and is outside the net, so the module's
+        docstring must say "kstrl/ or tests/", not "the tree"."""
+        text = (REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
+        claim = "only place in ``kstrl/`` or ``tests/``"
+        assert claim in text, f"{_PS_OWNER} must scope its uniqueness claim to {_SCANNED_ROOTS}"
+
     @pytest.mark.parametrize(
         "body",
         [
@@ -466,6 +562,8 @@ class TestOnlyOneModuleShellsOutToPs:
             'subprocess.run(["/bin/ps", "-eo", "pid="])',
             'subprocess.Popen("ps -A", shell=True)',
             'sp.check_output(("ps", "-A"))',
+            'os.popen("ps -A")',
+            'subprocess.getstatusoutput("ps -A")',
         ],
     )
     def test_the_net_catches_a_planted_call(self, body: str) -> None:

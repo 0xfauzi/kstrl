@@ -226,8 +226,8 @@ class TestTheLivenessHelperCannotPassByMeasuringNothing:
         the point of the test: it still refuses to convert a listing it
         cannot trust into an absence."""
 
-        procs.fake_ps(monkeypatch, stdout="    1 Ss\n  517 Ss\n")
-        with pytest.raises(AssertionError, match="kernel reports"):
+        procs.fake_ps(monkeypatch, stdout="  90 517 Ss\n  91 517 Ss\n")
+        with pytest.raises(AssertionError, match="did not list pid 1"):
             procs.group_has_live_member(os.getpgrp())
 
     def test_wait_for_group_to_die_does_not_convert_that_into_success(

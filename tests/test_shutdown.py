@@ -37,6 +37,7 @@ from kstrl.ui.plain import PlainUI
 from tests import spine_utils
 from tests.helpers.procs import (
     kill_group,
+    ps_is_readable,
     read_pid,
     wait_for_group_to_die,
 )
@@ -619,6 +620,14 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
         """
         from kstrl.procgroup import signal_probe_alive
         from kstrl.serve import process_group_alive
+
+        if not ps_is_readable():
+            pytest.skip(
+                "ps is absent or filtered here, so process_group_alive "
+                "degrades to the signal probe, which counts a zombie as "
+                "alive by design. The assertion below would fail pointing "
+                "at kstrl rather than at the environment."
+            )
 
         parent = subprocess.Popen(
             [
