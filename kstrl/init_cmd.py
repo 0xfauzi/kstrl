@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from kstrl import git
 from kstrl.prd import PRD
@@ -585,6 +589,214 @@ DEFAULT_KSTRL_TOML = """\
 # renders these, so the vocabulary belongs beside the code that decides.
 ScaffoldAction = Literal["create", "keep", "append"]
 
+
+# ---------------------------------------------------------------------------
+# #286 / H3b: telling an operator their scaffolded prompt is an older
+# harness template than the one this kstrl ships. The policy and the
+# argument for it live in docs/adversarial-roadmap.md H3b.
+#
+# The key is the file's own SHA-256, not a version stamped into it,
+# because a scaffolded file is byte-identical to the constant it came
+# from: `_create_if_missing` writes the body verbatim and loop.run_loop
+# substitutes $prd_path and friends at READ time. So a digest lookup
+# classifies files written long before this mechanism existed, separates
+# a pristine older scaffold from an edited one exactly, and writes
+# nothing into a file the operator owns.
+#
+# MAINTENANCE. Each tuple is (sha256, label) oldest first, CURRENT LAST.
+# When a template body changes, APPEND its new row; never edit or drop
+# an old one, because an old row is the only record that can recognise a
+# file already on someone's disk. ``label`` is the identifier that body
+# shipped under: the ``*_VERSION`` constant where the template has one,
+# otherwise the date it first appeared. Enforced by
+# tests/test_prompt_versions.py and tests/test_prompt_staleness.py.
+
+
+@dataclass(frozen=True)
+class ScaffoldedTemplate:
+    """A file `ks init` writes from a harness constant, plus the digest
+    of every body that constant has ever had."""
+
+    filename: str
+    constant_name: str
+    body: str
+    history: tuple[tuple[str, str], ...]
+
+    @property
+    def current_label(self) -> str:
+        """The identifier of the body this kstrl ships."""
+        return self.history[-1][1]
+
+
+# Harvested from this repository's full history by hashing the constant
+# at every commit that changed it (including the pre-rename `ralph`
+# era, whose bodies could still be sitting in a migrated checkout).
+SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
+    ScaffoldedTemplate(
+        filename="prompt.md",
+        constant_name="DEFAULT_PROMPT",
+        body=DEFAULT_PROMPT,
+        history=(
+            # No DEFAULT_PROMPT_VERSION constant existed yet; labelled by
+            # the date the body first shipped.
+            (
+                "15810563f3843b6634f6207d052710d72aa4fda0aa32ac86aa7718de86d34140",
+                "pre-1.0.0 (2026-01-15)",
+            ),
+            (
+                "9eb6d8f4c956d6fcacf2f39eed4a696e2755ce2ae0e24f53d08e98227fc37fc3",
+                "pre-1.0.0 (2026-01-28)",
+            ),
+            (
+                "5ec3e510a0dbd6ff41b181259b707f33a715715648cee0607ae5db6cf9992046",
+                "pre-1.0.0 (2026-05-27)",
+            ),
+            ("a4a3a090139c370d7eecd12e3ef98055352110722750bb7b4cbf9bc50b1b9125", "1.0.0"),
+            ("aa7fa6acb045dc6105d1a4c4ce8b687e1e04289c7b751eb0373b7c59dca3f7ae", "1.1.0"),
+            ("4f7370f5f4efb2d9b89ce6ae09fcbf7e5c3c8fb3db22cdeb07a9221ccbc638dc", "1.1.1"),
+            # Never merged: an in-review draft of #276 revised before it
+            # landed. Recorded because a checkout of that branch could
+            # have scaffolded from it.
+            ("9bde9b20785f3740396906d1d199c2228c553c11ae956dc2f85d8aa2439fb49b", "1.2.0"),
+            ("392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384", "1.3.0"),
+        ),
+    ),
+    # The understand templates are H3-exempt (they produce documentation,
+    # not adversarial-role output) so they carry no version constant, and
+    # their labels are dates. They go stale the same way and the
+    # mechanism is indifferent to which kind of label a row holds.
+    ScaffoldedTemplate(
+        filename="understand_prompt.md",
+        constant_name="DEFAULT_UNDERSTAND_PROMPT",
+        body=DEFAULT_UNDERSTAND_PROMPT,
+        history=(
+            ("5514376b0beeb484755d2d7d5effbe9a749b2d0972ddd30e7911e47bcf73e4ff", "2026-01-14"),
+            ("1e700b55db8316392de146c549ef9fe9acf503af5c6ba2780f9d341728ac39c4", "2026-01-15"),
+            ("fd02d9e3f2e559db5625c4db2d81ef0d24df481a4f4d4f5506fddd9b0962c53a", "2026-07-20"),
+            ("cfd43bfeb80eaaf559ccb32d993fc2c5b2471ff90c7816648743135c2aa29688", "2026-07-21"),
+        ),
+    ),
+    ScaffoldedTemplate(
+        filename="feature_understand_prompt.md",
+        constant_name="DEFAULT_FEATURE_UNDERSTAND_PROMPT",
+        body=DEFAULT_FEATURE_UNDERSTAND_PROMPT,
+        history=(
+            ("5096447a6228e93d7d824ff5e1a334ef3eaf9edc9314a3fb7c6f7f04936cf06f", "2026-01-28"),
+            ("e05fedd0ea1aff624966f4ee1e572c1af6f3926dd1b38b64678fdd6525a6f31a", "2026-07-20"),
+            ("eb3637acf1918da23e27ad3f4d30bab32b1edd797b4bd1b5587b82b656affb09", "2026-07-21"),
+        ),
+    ),
+)
+
+# absent        - no file there; run_loop falls back to the constant and
+#                 says so itself.
+# current       - byte-identical to the body this kstrl ships.
+# stale         - byte-identical to an OLDER body this kstrl once shipped.
+# unrecognised  - matches nothing kstrl has ever shipped. Says nothing
+#                 about who wrote it, which is the point: an edited file
+#                 and a file from a build outside this history are
+#                 indistinguishable, so neither is claimed to be stale.
+TemplateStatus = Literal["absent", "current", "stale", "unrecognised"]
+
+
+@dataclass(frozen=True)
+class TemplateState:
+    """What a scaffolded file on disk is, against the shipped history."""
+
+    template: ScaffoldedTemplate
+    path: Path
+    status: TemplateStatus
+    shipped_label: str | None = None
+
+
+def _classify(template: ScaffoldedTemplate, path: Path) -> TemplateState:
+    """Classify ``path`` as a copy of ``template``.
+
+    An unreadable file is ``unrecognised``: we cannot prove it is a body
+    we shipped, so we make no claim about it (the same reason
+    ``_gitignore_state`` leaves an unreadable .gitignore alone).
+    """
+    if not path.exists():
+        return TemplateState(template=template, path=path, status="absent")
+    text = _read_text_or_none(path)
+    if text is None:
+        return TemplateState(template=template, path=path, status="unrecognised")
+    labels = dict(template.history)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if digest not in labels:
+        return TemplateState(template=template, path=path, status="unrecognised")
+    return TemplateState(
+        template=template,
+        path=path,
+        status="current" if digest == template.history[-1][0] else "stale",
+        shipped_label=labels[digest],
+    )
+
+
+def classify_scaffolded_path(path: Path) -> TemplateState | None:
+    """Classify ``path``, or None when kstrl does not scaffold that name.
+
+    Matching on the basename rather than the full path is deliberate:
+    ``--prompt`` and ``PROMPT_FILE`` can point anywhere, and a file the
+    operator named something else is not a scaffold we can speak about.
+    """
+    template = next((t for t in SCAFFOLDED_TEMPLATES if t.filename == path.name), None)
+    return None if template is None else _classify(template, path)
+
+
+def classify_scaffold(root: Path) -> list[TemplateState]:
+    """Classify every template `ks init` scaffolds under ``root``."""
+    kstrl_dir = root / "scripts" / "kstrl"
+    return [_classify(t, kstrl_dir / t.filename) for t in SCAFFOLDED_TEMPLATES]
+
+
+class StalenessNotice(NamedTuple):
+    """The two operator-facing lines about one stale scaffold."""
+
+    headline: str
+    advice: str
+
+
+def staleness_notice(path: Path) -> StalenessNotice | None:
+    """What to tell an operator about ``path``, or None to say nothing.
+
+    None whenever there is nothing TRUE to say: the file is current, it
+    is missing, it is not a template kstrl scaffolds, or it matches no
+    body kstrl ever shipped (see ``unrecognised``).
+    """
+    state = classify_scaffolded_path(path)
+    if state is None or state.status != "stale":
+        return None
+    # No count of how far behind: the ledger records bodies, not
+    # releases (one row never reached main), so "N revisions behind" is
+    # a number an operator cannot reconcile with the changelog. The two
+    # labels are the actionable fact and both are exact.
+    #
+    # The remedy is only offered where it works. `ks init` scaffolds and
+    # upgrades under scripts/kstrl/ only, so pointing an operator whose
+    # [paths] prompt lives elsewhere at --upgrade-prompts would name an
+    # action that silently does nothing to their file.
+    if path.parent.match("scripts/kstrl"):
+        remedy = "Run `ks init --upgrade-prompts` to take the current one."
+    else:
+        remedy = (
+            "`ks init --upgrade-prompts` only rewrites the copy under "
+            "scripts/kstrl/, so move this one there or replace it by hand."
+        )
+    return StalenessNotice(
+        headline=(
+            f"{path} is the {state.template.filename} kstrl shipped at "
+            f"{state.shipped_label}, unedited; this kstrl ships "
+            f"{state.template.current_label}."
+        ),
+        advice=(
+            "`ks init` never overwrites it, so every change to that "
+            f"template since {state.shipped_label} has missed this "
+            f"project. {remedy}"
+        ),
+    )
+
+
 # First line of the .gitignore block `ks init` writes. Its presence is
 # the whole idempotency test: an existing .gitignore is a user-owned
 # file, so the block is appended once and never rewritten.
@@ -719,12 +931,16 @@ Measure before you spend (no agent, no cost):
 """
 
 
-def run_init(directory: Path, ui: UI) -> int:
+def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     """Initialize kstrl harness in a project directory.
 
     Args:
         directory: Target project directory
         ui: UI for output
+        upgrade_prompts: Rewrite any scaffolded prompt template that is a
+            pristine older harness body (#286). Off by default, because
+            `ks init` is otherwise non-destructive by design; this is the
+            operator's explicit opt-in to that one overwrite.
 
     Returns:
         Exit code (0=success, 1=validation failure, 2=directory not found)
@@ -754,6 +970,10 @@ def run_init(directory: Path, ui: UI) -> int:
         ui.ok("Created scripts/kstrl/")
     else:
         ui.ok("scripts/kstrl/ exists")
+
+    if upgrade_prompts:
+        ui.section("Upgrade prompt templates")
+        _upgrade_scaffolded_templates(root, ui)
 
     ui.section("Create defaults")
     _create_if_missing(root / "kstrl.toml", kstrl_toml_for(root), ui)
@@ -865,12 +1085,90 @@ def kstrl_toml_for(root: Path) -> str:
 
 
 def _create_if_missing(path: Path, content: str, ui: UI) -> None:
-    """Create file if it doesn't exist."""
+    """Create file if it doesn't exist.
+
+    "already exists" was the whole report before #286, and it is the
+    line an operator re-running `ks init` reads to decide whether their
+    scaffold is in good shape. When the file is an OLDER harness
+    template it now says so here too, because that is the moment the
+    question is being asked.
+    """
     if path.exists():
         ui.info(f"  {path.name} already exists")
+        notice = staleness_notice(path)
+        if notice is not None:
+            ui.warn(f"  {notice.headline}")
+            ui.info(f"  {notice.advice}")
     else:
         path.write_text(content)
         ui.ok(f"  Created {path.name}")
+
+
+def _atomic_write(target: Path, content: str) -> None:
+    """``tempfile.mkstemp`` in the destination directory + ``os.replace``.
+
+    The house pattern (``manifest.py``, ``knowledge.write_facts``,
+    ``decompose._atomic_write_json``), written out here rather than
+    imported from ``workqueue.atomic_write``. That import would put
+    ``kstrl.workqueue`` in ``kstrl.loop``'s static import closure, via
+    loop's deferred ``init_cmd`` import, and #274's
+    ``tests/test_state_dir_scope.py`` refuses that: the loop must not be
+    able to reach a module that writes the state entries the scope guard
+    still counts. ``decompose`` carries its own copy for its own
+    reasons, so this is the second, not the first.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(target.parent),
+        prefix=f".{target.name}-",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_path, str(target))
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
+    """Rewrite pristine older scaffolds with the body kstrl ships now.
+
+    Safe to overwrite precisely because the digest proved the file is
+    byte-identical to a template kstrl itself wrote: there is nothing of
+    the operator's in it to lose. Anything the history does not
+    recognise is left alone and reported, never merged or guessed at.
+
+    The write is atomic (``_atomic_write`` below) rather than a plain
+    ``Path.write_text``: this is the one path in `ks init` that REPLACES
+    bytes rather than creating a file, and an interruption mid-write
+    would truncate the very prompt this feature exists to protect, into
+    a body no ledger row recognises and so nothing will offer to fix.
+    """
+    for state in classify_scaffold(root):
+        name = state.path.name
+        if state.status == "stale":
+            _atomic_write(state.path, state.template.body)
+            ui.ok(
+                f"  {name}: {state.shipped_label} -> "
+                f"{state.template.current_label} (it held no local edits)"
+            )
+        elif state.status == "current":
+            ui.info(f"  {name} is already at {state.template.current_label}")
+        elif state.status == "unrecognised":
+            ui.warn(f"  {name} matches no template kstrl has shipped; left alone")
+            ui.info(
+                "    Either you edited it or it came from a build outside "
+                "this history, and nothing here can tell those apart. "
+                f"Diff it against {state.template.constant_name} in "
+                "kstrl/init_cmd.py yourself."
+            )
+        else:  # absent: the scaffold pass below writes it
+            ui.info(f"  {name} is missing; the scaffold below creates it")
 
 
 def gitignore_block(language: str) -> str:
