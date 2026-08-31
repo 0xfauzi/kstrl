@@ -128,10 +128,6 @@ ignore = []
 "tests/test_evolution.py" = ["E501"]
 "tests/test_harness_integration.py" = ["E501"]
 "tests/test_parsers.py" = ["E501"]
-# The atlas relation sentences are content, one per line, keyed by the edge
-# they describe. Reflowing them would put the key and its sentence on
-# different lines for no gain.
-"scripts/atlas/relations.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
