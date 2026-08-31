@@ -791,6 +791,14 @@ SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
 # The journal's discriminator for one recorded spec audit. Named because
 # this module both writes it and reads it back, and the two must agree.
+#
+# It is NOT the only copy: ``EvolutionJournal.get_spec_issue_runs``
+# hardcodes the same literal, and that file is under concurrent edit on
+# another branch, so it is not converted here. What keeps the two from
+# drifting is a mechanism rather than this comment -
+# ``test_the_journal_reader_agrees_with_the_event_name_written`` writes
+# an entry through this module and reads it back through the journal, so
+# changing this name alone fails that test (and fourteen others).
 SPEC_ISSUES_EVENT = "spec_issues"
 
 
@@ -1044,17 +1052,72 @@ class ExcludedProject:
     renamed a project and its spec file in the same moment, so neither
     half of the key survives to link the two histories. What this
     carries is the evidence the operator needs to judge it themselves -
-    the other project's name, how many audits it holds, and which spec
-    files those audits read.
+    the other project's name, how many audits it holds, which spec
+    files those audits read, and when the last of them was written.
 
     ``audits`` is not derivable from ``spec_files``: the files are
     deduplicated and the count is per audit, so one project auditing
     one file ten times is (10, one file).
+
+    ``read_this_spec`` is #280's first arm: this project audited the
+    same file the current run did. It is carried rather than recomputed
+    so the ordering rule and the display rule cannot drift apart.
+
+    ``last_recorded`` is the timestamp string on that project's most
+    recent entry, taken in file order because the journal is
+    append-only. It is whatever was written there, including "" for an
+    entry that recorded none, and never a value this code derives.
     """
 
     project: str
     audits: int
     spec_files: tuple[str, ...]
+    read_this_spec: bool
+    last_recorded: str
+
+
+@dataclass(frozen=True)
+class ExcludedHistory:
+    """Every spec audit in this journal the report does not count (#280).
+
+    Two axes, because there are two ways for the report to see less
+    than the journal holds, and #280 is that either one going unsaid is
+    the failure the report cannot afford:
+
+    - ``own_recorded`` counts THIS project's audits on disk. The trend
+      may count fewer, because ``lookback_runs`` windows it and because
+      an entry with no readable issue list cannot be compared. Round 1
+      of review found the first version counting only the cross-project
+      axis while its wording claimed the whole journal, which is #280's
+      own defect on the other axis.
+    - ``projects`` covers every other project name in the journal.
+
+    Both are unwindowed by construction: a count of what the trend does
+    not cover that was itself windowed would omit history silently.
+    """
+
+    own_recorded: int
+    projects: tuple[ExcludedProject, ...]
+
+    @property
+    def other_audits(self) -> int:
+        return sum(p.audits for p in self.projects)
+
+    @property
+    def is_empty(self) -> bool:
+        return self.own_recorded == 0 and not self.projects
+
+
+def _entry_str(entry: dict[str, Any], key: str) -> str:
+    """A string field of a journal entry, or "" for anything else.
+
+    NOT ``str(entry.get(key, ""))``: that renders a JSON ``null`` as
+    the literal ``"None"``, which round 1 of review reproduced as a
+    phantom project named 'None' passing the emptiness guard below and
+    a spec file printed as ``None``. A null field is an absent field.
+    """
+    value = entry.get(key)
+    return value if isinstance(value, str) else ""
 
 
 def _excluded_projects(
@@ -1064,81 +1127,99 @@ def _excluded_projects(
 ) -> tuple[ExcludedProject, ...]:
     """Spec audits in ``entries`` recorded under some other project.
 
-    Ordered so the display cap can only ever drop the weakest evidence.
-    A project that audited the file this run audited sorts first: that
-    is #280's first arm, the strongest hint of a plain project rename,
-    and it is a guarantee rather than a coincidence of the cap. The
-    rest follow by how much history they hold.
+    Ordered so the display cap drops only the weakest evidence: a
+    project that audited the file this run audited sorts first, then
+    the rest by how much history they hold. The cap itself never drops
+    a spec-file match; see ``_excluded_line``.
 
     Entries with no project name are skipped rather than grouped under
     "": an unnamed project is not somewhere the operator can go and
     look, so pointing at it is not evidence.
     """
     by_project: dict[str, list[str]] = {}
+    last_seen: dict[str, str] = {}
     for entry in entries:
         if entry.get("event_type") != SPEC_ISSUES_EVENT:
             continue
-        project = str(entry.get("project", ""))
+        project = _entry_str(entry, "project")
         if not project or project == project_name:
             continue
-        by_project.setdefault(project, []).append(str(entry.get("spec_file", "")))
+        by_project.setdefault(project, []).append(_entry_str(entry, "spec_file"))
+        last_seen[project] = _entry_str(entry, "timestamp")
     excluded = [
         ExcludedProject(
             project=project,
             audits=len(files),
             spec_files=tuple(sorted({f for f in files if f})),
+            read_this_spec=spec_file in files,
+            last_recorded=last_seen[project],
         )
         for project, files in by_project.items()
     ]
-    return tuple(
-        sorted(excluded, key=lambda e: (spec_file not in e.spec_files, -e.audits, e.project))
-    )
+    return tuple(sorted(excluded, key=lambda e: (not e.read_this_spec, -e.audits, e.project)))
 
 
 def _excluded_history(
     journal: EvolutionJournal | None,
     project_name: str,
     spec_file: str,
-) -> tuple[ExcludedProject, ...]:
-    """Every spec audit this journal holds under another project (#280).
+) -> ExcludedHistory:
+    """Everything this journal records that the report will not count (#280).
 
-    Empty for the ordinary single-project repo, so the line it feeds
-    never fires on the common case.
+    Empty for a first audit in a fresh repo, so the line it feeds never
+    fires on the common case.
 
     Read through ``read_progress_events`` rather than
     ``get_spec_issue_runs``, which filters to one project inside the
-    reader by design and so cannot see the entries this asks about. It
-    is the same tolerant read the journal itself delegates to, over the
-    same public path. A reader on ``EvolutionJournal`` would be the
-    better home and would collapse this into the read the trend already
-    does; measured at 0.099 ms on this repo's journal, so the second
-    read buys nothing worth a worse layering to avoid.
+    reader by design and so cannot answer either question this asks.
+
+    That is a layering compromise and not a free one: it reaches past
+    ``EvolutionJournal`` to that journal's own storage path, and it
+    re-reads a file the trend has just read. A reader on
+    ``EvolutionJournal`` is the right home and would fold both into one
+    read. It is not done here because ``kstrl/evolution.py`` is under
+    concurrent edit on another branch, so this is a deferral for
+    contention, not a judgement that the layering is fine. The
+    mitigating fact is that it is the same tolerant read the journal
+    itself delegates to, over the same public path.
+
+    Growth, since the journal only ever grows: measured at 6.9 KB per
+    factory run in this repo, so 1 MB is about 150 runs and 10 MB about
+    1500. This read costs 4.4 ms at 1.9 MB, 53 ms at 19 MB and 229 ms
+    at 78 MB, against an architect call measured at 119 to 210 seconds.
+    Four other journal readers already parse the whole file per run, so
+    a journal large enough for this to matter is a compaction problem
+    for all of them rather than a reason to skip this one.
 
     Deliberately NOT windowed by ``lookback_runs``. That knob bounds
     how far back the *trend* reaches; a count of the history the trend
     excludes that was itself windowed would omit history silently,
-    which is the bug it exists to fix.
+    which is the bug this exists to fix.
     """
     if journal is None:
-        return ()
-    return _excluded_projects(
-        read_progress_events(journal.config.journal_path),
-        project_name,
-        spec_file,
+        return ExcludedHistory(own_recorded=0, projects=())
+    entries = read_progress_events(journal.config.journal_path)
+    return ExcludedHistory(
+        own_recorded=sum(
+            1
+            for e in entries
+            if e.get("event_type") == SPEC_ISSUES_EVENT and _entry_str(e, "project") == project_name
+        ),
+        projects=_excluded_projects(entries, project_name, spec_file),
     )
 
 
 def _surface_convergence(
     report: SpecConvergence | None,
-    excluded: tuple[ExcludedProject, ...],
+    excluded: ExcludedHistory,
     project_name: str,
     ui: UI,
 ) -> None:
     """Render the convergence report, or nothing on the first run.
 
-    No report and nothing excluded (no journal, or a first audit in a
-    repo whose journal holds nothing else) renders silently, so the
-    common first-run case prints no noise.
+    No report and an empty ``excluded`` (no journal, or a first audit
+    in a repo whose journal holds nothing else) renders silently, so
+    the common first-run case prints no noise.
 
     Counts, deltas and the trend, with no "this spec is converging"
     verdict attached: no measured threshold separates converging from
@@ -1149,19 +1230,36 @@ def _surface_convergence(
 
     No report next to a non-empty ``excluded`` is #280's own shape: the
     audit that renamed the project starts a fresh trend, and the moment
-    the history is lost is the moment worth saying so. That case says
-    the absence out loud, because a note under a bare section header
-    would leave the operator to infer it from silence.
+    the history is lost is the moment worth saying so.
+
+    ``No earlier audit of this project is recorded`` is printed ONLY
+    when the journal records none. Round 1 of review reproduced it
+    firing over three audits of this very project that the report had
+    merely failed to read, under ``lookback_runs=0`` and again on a
+    legacy journal whose entries carry no issue list. A confident
+    statement over less data than the journal holds is the defect #280
+    is about, so what prints in that case is the accounting line below.
     """
-    if report is None and not excluded:
+    if report is None and excluded.is_empty:
         return
     ui.section("Spec Convergence")
-    if report is None:
-        ui.info("No earlier audit of this project is recorded.")
-    else:
+    if report is not None:
         _surface_trend(report, ui)
-    if excluded:
-        ui.info(_excluded_line(excluded, project_name))
+    elif excluded.own_recorded == 0:
+        ui.info("No earlier audit of this project is recorded.")
+    for line in _excluded_lines(excluded, project_name, _counted_audits(report)):
+        ui.info(line)
+
+
+def _counted_audits(report: SpecConvergence | None) -> int:
+    """How many EARLIER audits the rendered trend actually counted.
+
+    The trend carries one entry per readable prior audit plus this run,
+    so the earlier ones are its length minus one. Derived from the
+    rendered value rather than recomputed, so the accounting line can
+    never disagree with the trend printed directly above it.
+    """
+    return len(report.blocker_trend) - 1 if report is not None else 0
 
 
 # How many names one line spells out before summarising the rest. A
@@ -1178,18 +1276,54 @@ def _join_capped(items: Sequence[str], noun: str) -> str:
     return f"{joined} and {rest} more {noun}" if rest else joined
 
 
-def _excluded_line(excluded: tuple[ExcludedProject, ...], project_name: str) -> str:
-    """The one line naming the audit history this report does not cover."""
-    phrases: list[str] = []
-    for entry in excluded:
-        files = _join_capped(entry.spec_files, "file(s)")
-        phrases.append(f"'{entry.project}' ({files})" if files else f"'{entry.project}'")
-    return (
-        "Note: audits are matched by project name, and this report covers "
-        f"'{project_name}'. This journal holds {sum(e.audits for e in excluded)} "
-        f"more spec audit(s) that it does not count, under "
-        f"{_join_capped(phrases, 'project(s)')}."
-    )
+def _project_phrase(entry: ExcludedProject) -> str:
+    """One project named, with the files it read and when it last ran."""
+    parts = []
+    if entry.spec_files:
+        parts.append(_join_capped(entry.spec_files, "file(s)"))
+    if entry.last_recorded:
+        parts.append(f"last {entry.last_recorded.split('T')[0]}")
+    return f"'{entry.project}' ({', '.join(parts)})" if parts else f"'{entry.project}'"
+
+
+def _excluded_lines(
+    excluded: ExcludedHistory,
+    project_name: str,
+    counted: int,
+) -> list[str]:
+    """The lines naming audit history this report does not count (#280).
+
+    Up to two, one per axis, and between them they account for every
+    ``spec_issues`` entry in the journal. Each states a count it read
+    off disk against a count it read off the rendered trend, so neither
+    can claim more coverage than it has.
+
+    Projects that audited this run's spec file are named in full and
+    only the rest are capped. Round 1 of review reproduced the previous
+    version dropping the strongest rename evidence: four other projects
+    that had all read ``spec.md``, which is a repo that split one spec
+    across several names and so #280's own shape, printed three of them
+    and "and 1 more project(s)".
+    """
+    lines: list[str] = []
+    if excluded.own_recorded > counted:
+        lines.append(
+            f"Note: this journal records {excluded.own_recorded} earlier audit(s) of "
+            f"'{project_name}' and this report counts {counted}. The rest fall outside "
+            f"the lookback window, or carry no issue list to compare."
+        )
+    if excluded.projects:
+        named = [_project_phrase(p) for p in excluded.projects if p.read_this_spec]
+        capped = _join_capped(
+            [_project_phrase(p) for p in excluded.projects if not p.read_this_spec],
+            "project(s)",
+        )
+        lines.append(
+            "Note: audits are matched by project name, and this report covers "
+            f"'{project_name}'. This journal also records {excluded.other_audits} "
+            f"spec audit(s) under {', '.join(named + [capped] if capped else named)}."
+        )
+    return lines
 
 
 def _surface_trend(report: SpecConvergence, ui: UI) -> None:
