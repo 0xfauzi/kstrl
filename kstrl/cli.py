@@ -3722,17 +3722,11 @@ def sense(
     ui_impl.kv("Path", str(path))
     ui_impl.kv("Base branch", base)
     ui_impl.info("")
-    name_width = max((len(c.name) for c in result.checks), default=0)
-    for check in result.checks:
-        verdict = "pass" if check.passed else "FAIL"
-        ui_impl.info(
-            f"  {check.name.ljust(name_width)}  {verdict}  "
-            f"{check.message}  ({check.duration_seconds:.2f}s)"
-        )
-        if not check.passed:
-            for detail in check.details:
-                for line in detail.splitlines():
-                    ui_impl.info(f"      {line}")
+    # Shared with `ks feature`'s #288 report: one renderer for this
+    # object, so a column change cannot land in one command and silently
+    # not the other.
+    for line in result.report_lines():
+        ui_impl.info(line)
     ui_impl.info("")
     failed = sum(1 for c in result.checks if not c.passed)
     if result.passed:

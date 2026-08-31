@@ -167,11 +167,35 @@ class ComponentRetrying(Event):
 
 @dataclass(frozen=True, kw_only=True)
 class VerificationResultEvent(Event):
+    """One run of ``verify.run_mechanical_verification``.
+
+    ``phase`` and ``advisory`` are #288. The factory's Phase 1 leaves
+    both at their defaults: it is the gate, and it emits once per
+    component attempt inside its own ``phase="verify"`` bracket.
+    `ks feature` emits several per run - one after the implement loop and
+    one after each repair attempt - and gates on none of them, so it
+    names the loop it measured and marks the verdict advisory.
+
+    Without those two fields a consumer reading `events.jsonl` cannot
+    tell which loop a verdict is about (filtering by type loses the
+    ordering that would otherwise say), and reads ``passed=False``
+    followed by ``phase_completed(passed=True)`` as a contradiction
+    rather than as a report next to a gate. Both default, so old
+    payloads decode unchanged; adding them later would not reach runs
+    already on disk.
+    """
+
     type: ClassVar[str] = "verification_result"
     passed: bool = False
     checks: tuple[str, ...] = ()
     failures: tuple[str, ...] = ()
     duration_seconds: float = 0.0
+    #: The loop whose output was measured ("implement", "repair-2").
+    #: Empty for the factory, whose PhaseStarted/PhaseCompleted bracket
+    #: already names it.
+    phase: str = ""
+    #: True when nothing gated on this verdict.
+    advisory: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)

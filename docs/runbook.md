@@ -28,6 +28,22 @@ Manual options:
 2. Increase `--max-retries`.
 3. Re-run with `--keep-worktrees-on-failure`, then run the agent loop manually against the preserved worktree to debug interactively.
 
+## `ks feature` reported `verification: FAIL`
+
+**Symptom**: `verification: FAIL (N of 3 checks failed)` after the implement phase or a repair attempt, with the command's exit code unchanged.
+
+**What it is**: `ks feature` runs the same mechanical checker `ks factory` and `ks sense` run, in the read-only mode `ks sense` uses, against your live checkout after every engineer loop that actually called the agent (#288). It REPORTS. It does not gate: the flow's control flow and exit codes are exactly what they were, and a failure is not routed into the repair loop. The verdict also lands in the run's `events.jsonl` as a `verification_result` event carrying `phase` (`implement`, `repair-2`) and `advisory: true` - the copy that matters under `--implementation-auto-run`, where nobody is reading the terminal.
+
+**What it measures**: `test_suite`, `typecheck` and `linter` only - your `[verify]` commands, the same three the engineer prompt states, printed before they run so a long suite is not a dead terminal. Every check that answers its question by reading `git diff <base>...HEAD` is deliberately skipped and named in the report (`verify.DIFF_DEPENDENT_CHECKS`: `diff_scope`, `bad_patterns`, `policy_envelope`, `test_adequacy`, `dead_code`, `mutation_testing`). Nothing in this flow commits, and the branch it works on comes from the PRD's `branchName`, which may be the base branch itself, so that diff is empty whenever the agent left its work uncommitted or worked on the base branch - and an empty diff is indistinguishable from nothing changed. Those checks would report a pass having measured nothing, which is worse than not running. Use `ks sense` when you want them, on a checkout where the diff is real.
+
+**When it does not run**: any exit before the implement loop (understand incomplete, review gate declined, review gate unavailable in a non-TTY, a PRD with no user stories), an engineer loop that never called the agent, and a loop you stopped. The last one is deliberate: stopping should not make you wait out a test suite.
+
+**What it costs**: one test + typecheck + lint run per engineer loop, so up to `1 + repair_max_runs` of them. Measured on the kstrl repo itself: 246s per report, essentially all test suite, against 317-348s for the engineer loop each one follows.
+
+**Diagnose**: run the failing command yourself in the checkout. `ks config show` prints the three resolved commands if you are unsure which ran.
+
+**Resolve**: fix the code, or fix the command in `kstrl.toml`. There is no retry to consume and no gate to override.
+
 ## Phase 2: review failed (hard mode)
 
 **Symptom**: `Phase 2 FAILED for <comp_id>: N failures`

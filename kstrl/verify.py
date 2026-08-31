@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -217,6 +217,34 @@ class VerificationResult:
                 for detail in check.details[:10]:
                     lines.append(f"  {detail}")
         return "\n".join(lines)
+
+    def report_lines(self, *, durations: bool = True) -> list[str]:
+        """One line per check, then the indented details of each failure.
+
+        The TERMINAL rendering of this object, in one place: ``ks sense``
+        and ``ks feature``'s #288 report print the same table, and before
+        this existed they printed it from two copies of the same
+        f-string.
+
+        ``durations=False`` drops the wall-clock column. `ks feature`
+        needs that: its narration sits inside a longer flow that
+        ``tests/test_feature_run.py`` compares BYTE FOR BYTE between a
+        recorded and an unrecorded run, and a timing makes two runs of
+        the same work disagree. The figure is not lost there - it goes on
+        the ``VerificationResultEvent``.
+        """
+        width = max((len(check.name) for check in self.checks), default=0)
+        lines: list[str] = []
+        for check in self.checks:
+            verdict = "pass" if check.passed else "FAIL"
+            timing = f"  ({check.duration_seconds:.2f}s)" if durations else ""
+            lines.append(f"  {check.name.ljust(width)}  {verdict}  {check.message}{timing}")
+            if check.passed:
+                continue
+            lines.extend(
+                f"      {line}" for detail in check.details for line in detail.splitlines()
+            )
+        return lines
 
 
 def _optional_str(value: object) -> str | None:
@@ -2060,6 +2088,55 @@ def _scope_checks(
             )
         ]
     return []
+
+
+#: Every check :func:`run_mechanical_verification` appends that answers
+#: its question by reading ``git diff <base>...HEAD``.
+#:
+#: Beside the function that appends them, because a caller that has no
+#: measurable base has to know which checks that rules out, and deriving
+#: the list by reading this module's source is how two callers end up
+#: disagreeing about it. ``mutation_testing`` belongs here even though
+#: ``read_only=True`` already skips it: it mutates the files the diff
+#: names, so with no diff there is nothing for it to mutate either.
+DIFF_DEPENDENT_CHECKS: tuple[str, ...] = (
+    "diff_scope",
+    "bad_patterns",
+    "policy_envelope",
+    "test_adequacy",
+    "dead_code",
+    "mutation_testing",
+)
+
+
+def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
+    """``config`` with every :data:`DIFF_DEPENDENT_CHECKS` toggle off.
+
+    For a caller whose tree has no base it can honestly diff against -
+    `ks feature` (#288), where nothing commits for the agent and the
+    branch the loop checks out may BE the base branch, so
+    ``base...HEAD`` is routinely empty and a diff-based check would
+    report ``0 files, all within scope`` over work it never saw.
+
+    An empty diff is indistinguishable from nothing changed: the lenient
+    git helpers return an empty file list either way, and even
+    ``get_diff_names(..., strict=True)`` returns ``[]`` without raising.
+    So the only honest answer is not to run those checks, which is what
+    this does.
+
+    Note what it does NOT cover, because the toggles cannot: ``policy``
+    and ``adequacy`` are separate config objects and are suppressed by
+    not being passed at all, and ``diff_scope`` also runs when
+    ``allowed_paths_error`` is set (see :func:`_diff_scope_runs`), so a
+    caller relying on this must leave that argument None.
+    """
+    return replace(
+        config,
+        check_diff_scope=False,
+        check_bad_patterns=False,
+        dead_code_cleanup=False,
+        mutation_testing=False,
+    )
 
 
 def run_mechanical_verification(

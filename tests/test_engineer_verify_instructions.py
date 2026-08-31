@@ -116,19 +116,23 @@ class TestStepNineDefersToTheInjectedBlock:
 class TestStepNineWhenNoBlockIsInjected:
     """``verify_config=None`` means no mechanical gate runs (#261).
 
-    Who reaches this branch decides how strong the instruction has to be.
-    `ks init` scaffolds a separate ``understand_prompt.md``, so
-    `ks understand` only lands here on a project that was never init'd.
-    The path that reaches it in normal use is `ks feature`'s implement
-    and repair loops, which run ``scripts/kstrl/prompt.md`` - this body -
-    and run NO verification phase at all (#288).
+    Who reaches this branch decides how strong the instruction has to be,
+    and #288 narrowed it. `ks feature`'s implement and repair loops used
+    to land here - the one path that wrote production code with nothing
+    checking it - and now name the checks that really run on their
+    output. What is left is the two UNDERSTAND paths: `ks understand` on
+    a project that was never init'd (`ks init` scaffolds a separate
+    ``understand_prompt.md``, so an init'd one never falls back), and
+    `ks feature`'s own understand loop when that file is missing. Neither
+    writes production code.
 
-    So this is the one path that writes production code with nothing
-    checking it, and a proportionality hint is not enough there: the
-    other guards are vacuous over an empty command list, and the v1.1.1
-    body carried an unconditional "do NOT mark the story as done unless
-    typecheck AND tests pass". The floor restates that, scoped to marking
-    a story done so a map-only understand iteration still owes nothing.
+    The floor stays a floor rather than a proportionality hint, because
+    the other guards are vacuous over an empty command list and the
+    v1.1.1 body carried an unconditional "do NOT mark the story as done
+    unless typecheck AND tests pass". It stays scoped to marking a story
+    done, so a map-only understand iteration owes nothing while any
+    future caller that reaches this branch WITH stories to mark is still
+    told to run the project's checks itself.
     """
 
     def test_the_fallback_states_a_floor_and_not_a_proportionality_hint(self) -> None:
@@ -161,21 +165,24 @@ class TestStepNineWhenNoBlockIsInjected:
         assert not _block_is_injected(prompt)
         assert "nothing will check this work mechanically" in _unwrapped(prompt)
 
-    def test_ks_feature_passes_no_verify_config_to_any_phase(self, tmp_path: Path) -> None:
-        """The structural fact that makes the floor necessary, asserted at
-        the seam rather than through the prompt text.
+    def test_ks_feature_names_the_gate_only_for_the_loops_it_gates(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#288 at the seam rather than through the prompt text.
 
-        Pinned here and not on a phase count: this is what would have to
-        change for #288 to be fixed, and a new phase in feature_cmd
-        should not break a prompt-wording test."""
+        The understand loop keeps ``None``, which still means "no
+        mechanical gate runs" and is still TRUE there: no gate runs on an
+        understand file. The implement loop gets the config the report
+        will run with, which is what makes the injected block's claim
+        true on that path. Asserted per phase rather than in aggregate,
+        because "some phase names a gate" would pass on the wiring this
+        replaced and on its exact inverse.
+        """
         _write_feature_prd(tmp_path)
         seen: list[Any] = []
 
         def fake_run_loop(*args: Any, **kwargs: Any) -> LoopResult:
-            # feature_cmd omits the argument entirely rather than passing
-            # None, so run_loop's own default supplies it. Either way the
-            # effective answer is "no gate", and this fails the moment a
-            # phase starts naming one.
             seen.append(kwargs.get("verify_config"))
             return LoopResult(completed=True, iterations=1, exit_code=0)
 
@@ -183,29 +190,28 @@ class TestStepNineWhenNoBlockIsInjected:
         # run_loop), so patching kstrl.loop.run_loop would miss it.
         with patch("kstrl.feature_cmd.run_loop", side_effect=fake_run_loop):
             _run_cli(_feature_cli_args(tmp_path, auto_run=True))
-        assert len(seen) >= 2, f"expected understand + implement, got {len(seen)}"
-        assert all(config is None for config in seen), seen
+        assert len(seen) == 2, f"expected understand + implement, got {len(seen)}"
+        assert seen[0] is None
+        assert seen[1] is not None
 
-    def test_ks_feature_renders_this_body_with_no_block_and_the_floor(
+    def test_ks_feature_gives_the_understand_loop_this_body_and_the_floor(
         self,
         tmp_path: Path,
     ) -> None:
-        """End to end through the real CLI, including the implement phase
-        that writes production code.
+        """End to end through the real CLI.
 
         ``--implementation-auto-run`` is load-bearing: without it the
         command halts at the interactive review checkpoint and only the
-        understand prompt is ever built. Every prompt the command
-        produces is checked rather than a chosen index, because on this
-        fixture the phases render byte-identically and picking one would
-        assert nothing the other does not.
+        understand prompt is ever built. Prompt 0 is that understand
+        loop, and it is the one that still lands on this branch. The
+        implement prompt is the sibling assertion in
+        ``TestStepNineDefersToTheInjectedBlock``.
         """
         _write_feature_prd(tmp_path)
-        prompts = _prompts_from_cli(_feature_cli_args(tmp_path, auto_run=True))
-        for prompt in prompts:
-            assert _step_nine(DEFAULT_PROMPT) in prompt
-            assert not _block_is_injected(prompt)
-            assert "run the project's own typecheck and tests yourself" in _unwrapped(prompt)
+        understand = _prompts_from_cli(_feature_cli_args(tmp_path, auto_run=True))[0]
+        assert _step_nine(DEFAULT_PROMPT) in understand
+        assert not _block_is_injected(understand)
+        assert "run the project's own typecheck and tests yourself" in _unwrapped(understand)
 
     def test_ks_understand_renders_this_body_and_gets_no_block(self, tmp_path: Path) -> None:
         """The other, narrower way in: no understand_prompt.md was

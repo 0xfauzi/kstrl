@@ -37,6 +37,14 @@ logger = logging.getLogger(__name__)
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
 
+#: The exit code a loop returns when ``stop_check`` asked it to stop:
+#: the shell's 128 + SIGINT, so an operator's Ctrl-C and a TUI stop
+#: request read the same downstream. Named because a caller has to be
+#: able to tell "the operator stopped this" from "it failed" - #288's
+#: verification report refuses to run a test suite on the way out of a
+#: stop.
+STOP_EXIT_CODE = 130
+
 # How many NON-REPORTING agent calls the RUN must accumulate before an
 # enabled ceiling is declared unenforceable (see LoopBudget.halt_reason).
 # Applied PER CEILING: tokenless calls condemn the token ceiling,
@@ -685,7 +693,7 @@ def run_loop(
             return LoopResult(
                 completed=False,
                 iterations=iteration - 1,
-                exit_code=130,
+                exit_code=STOP_EXIT_CODE,
                 duration_seconds=time.monotonic() - loop_start,
                 iteration_durations=iteration_durations,
                 timed_out_iterations=timed_out_iterations,

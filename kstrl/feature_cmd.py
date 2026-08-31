@@ -3,13 +3,20 @@
 Mechanical extraction from cli.feature (TUI surface C2): the click
 shell resolves configs/paths/validation and builds FeatureParams; this
 module runs the flow and RETURNS the exit code (no sys.exit - the flow
-must be hostable on a worker thread). Narration is byte-identical to
-the pre-extraction command.
+must be hostable on a worker thread). Narration was byte-identical to
+the pre-extraction command; #288 has since added the verification
+report below, and nothing else.
 
 The review gate goes through the interaction seam: the terminal wires
 UiInteractionChannel (unchanged semantics incl. the non-TTY
 "Interactive review required" refusal); the embedded TUI (C3) passes
 its queue channel so the gate opens as a modal.
+
+#288: after every engineer loop that actually called the agent, the
+flow runs the read-only mechanical checks against the operator's
+checkout and REPORTS what they found, to the terminal and to the event
+stream. It is a report, not a gate: control flow, exit codes and the
+repair loop are untouched by the verdict.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from kstrl.events import (
     RunCompleted,
     RunPlan,
     RunStarted,
+    VerificationResultEvent,
 )
 from kstrl.interaction import (
     InteractionChannel,
@@ -47,8 +55,17 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.loop import run_loop
+from kstrl.loop import STOP_EXIT_CODE, LoopResult, run_loop
 from kstrl.timeout import TimeoutConfig
+from kstrl.verify import (
+    DIFF_DEPENDENT_CHECKS,
+    ResolvedVerifyCommands,
+    VerificationResult,
+    VerifyConfig,
+    narrow_to_undiffed,
+    resolve_verify_commands,
+    run_mechanical_verification,
+)
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -158,6 +175,171 @@ def _build_repair_prd(
     return repair_path
 
 
+def resolve_feature_verify_config(root_dir: Path) -> VerifyConfig:
+    """The project's ``[verify]`` config, narrowed to what it can measure here.
+
+    The narrowing is ``verify.narrow_to_undiffed``, which lives next to
+    the checks it turns off and to ``verify.DIFF_DEPENDENT_CHECKS``, the
+    list this module narrates. Measured on a throwaway project (#288),
+    one `ks feature` run per row, with a stand-in agent that either
+    commits its work or does not:
+
+        agent commits | PRD branchName | git diff main...HEAD
+        yes           | feat/demo      | 7 files, incl. src/greet.py
+        no            | feat/demo      | 0 files
+        yes           | main           | 0 files
+
+    Nothing in this flow commits - ``run_loop`` never does - and the
+    branch the loop checks out comes from the PRD's ``branchName``, which
+    the operator is free to point at the base branch itself. Two of those
+    three configurations leave the diff empty, which is why the narrowing
+    applies here.
+
+    ONE object (#261): the same value is handed to the implement and
+    repair loops, so the three commands ``VERIFY_COMMANDS_PROMPT`` states
+    to the engineer are the three commands that then run on its output.
+    The narrowing does not touch the command fields, which is all
+    ``resolve_verify_commands`` reads, so the prompt says exactly what it
+    would have said with the full config.
+
+    Loaded unguarded, next to ``TimeoutConfig.load`` and
+    ``BreakerConfig.load``: ``[verify]`` is a fatal section of the CLI's
+    config preflight seam (``cli._PREFLIGHT_EXEMPT`` does not list
+    ``feature``), so a ``kstrl.toml`` that would fail here has already
+    stopped the command before this flow was entered.
+    """
+    return narrow_to_undiffed(VerifyConfig.load(root_dir))
+
+
+def _announce_verification(ui: UI, commands: ResolvedVerifyCommands, phase: str) -> None:
+    """Say what is about to run, BEFORE it runs.
+
+    The gates capture their output, so the terminal is otherwise dead for
+    as long as the project's test suite takes - measured on this repo at
+    246s - on a thread this module's docstring says must be able to host
+    the TUI. Naming the commands first also lets an operator who does not
+    want to wait recognise what they are waiting for.
+    """
+    ui.section(f"Verification report ({phase})")
+    ui.info(
+        "Report only, not a gate: the exit code is unchanged. Not measured "
+        "here (no diff to read, see docs/runbook.md): " + ", ".join(DIFF_DEPENDENT_CHECKS)
+    )
+    ui.info(f"  running: {commands.test}")
+    ui.info(f"  running: {commands.typecheck}")
+    ui.info(f"  running: {commands.lint}")
+
+
+def _narrate_verification(ui: UI, result: VerificationResult) -> None:
+    """Print one line per check, then the verdict."""
+    for line in result.report_lines(durations=False):
+        ui.info(line)
+    failed = sum(1 for check in result.checks if not check.passed)
+    if result.passed:
+        ui.ok(f"verification: PASS ({len(result.checks)} checks)")
+    else:
+        ui.warn(f"verification: FAIL ({failed} of {len(result.checks)} checks failed)")
+
+
+def _report_verification(
+    ui: UI,
+    emit: Callable[[Event], None],
+    component: str,
+    root_dir: Path,
+    verify_config: VerifyConfig,
+    phase: str,
+    loop_result: LoopResult,
+) -> None:
+    """Run the read-only mechanical checks and REPORT what they found.
+
+    Report only. `ks feature` keeps its control flow and its exit codes:
+    a failing check does not halt the flow, does not change what it
+    returns, and is not routed into the repair loop. The one thing that
+    changes is that the operator - and, under
+    ``--implementation-auto-run``, the event stream, where there is no
+    operator at the screen - is told.
+
+    ``loop_result`` carries the whole exit-path rule, and both halves of
+    it are refusals:
+
+    ``iterations == 0`` is a loop that never called the agent (a failed
+    branch checkout, a stop before iteration 1). Every early return
+    upstream - understand incomplete, review gate declined, review gate
+    unavailable in a non-TTY, a PRD with no user stories - leaves the
+    same way, with no production code written, and a verification verdict
+    over work that was never attempted is noise.
+
+    ``exit_code == 130`` is the operator pressing stop. Making them then
+    wait out a full test suite before the command exits is the opposite
+    of what they asked for: measured on this repo, 246s, and up to
+    ``3 x subprocess_timeout`` (900s at the default) in general.
+
+    Both guards live HERE rather than at the call sites so a caller
+    cannot forget them, and so ``run_feature`` gains a call rather than
+    two branches it cannot afford under the complexity ratchet.
+
+    ``read_only=True`` is the mode ``ks sense`` already uses to point
+    this same function at a live checkout (R10.1): no ruff auto-fix, no
+    ``git add -A`` / ``git commit``, no mutmut source rewriting. It runs
+    against ``root_dir`` because that is where the engineer worked.
+
+    ``prd_path=None`` skips the PRD-derived checks, exactly as ``ks
+    sense`` does. ``prd_stories`` re-reads the flag the agent itself
+    set, which is a self-report rather than an independent measurement;
+    and on the repair exits there are two PRDs (the operator's and the
+    generated repair PRD) with no single right answer for which one this
+    report is about. The independent measurement here is the three
+    commands.
+    """
+    if loop_result.iterations == 0 or loop_result.exit_code == STOP_EXIT_CODE:
+        return
+    _announce_verification(ui, resolve_verify_commands(verify_config, root_dir), phase)
+    started = time.monotonic()
+    result = run_mechanical_verification(
+        worktree_path=root_dir,
+        prd_path=None,
+        # Never read: ``narrow_to_undiffed`` turned off every check that
+        # consumes a diff, and the two it cannot reach are suppressed
+        # below by not being passed at all. The empty string is the
+        # honest value for "there is no base here", and
+        # tests/test_feature_verification.py pins the set of checks this
+        # call can produce so a new one cannot quietly start resolving it
+        # into a phantom base.
+        base_branch="",
+        # Left None deliberately: ``_diff_scope_runs`` re-enables
+        # diff_scope for a non-None value even with the toggle off.
+        allowed_paths_error=None,
+        allowed_paths=None,
+        # policy and adequacy read the same diff. Omitted rather than
+        # disabled, because that is what their None defaults mean.
+        config=verify_config,
+        read_only=True,
+    )
+    duration = round(time.monotonic() - started, 2)
+    _narrate_verification(ui, result)
+
+    # The same event type the factory's Phase 1 emits for a result of
+    # this same function, so `events.jsonl` carries one shape for one
+    # measurement and existing readers (reducer, observability log) need
+    # no new case. ``phase`` and ``advisory`` (#288) are what tell a
+    # consumer which loop was measured and that nothing gated on the
+    # answer. ``checks`` names what ran, and the suppressed checks are
+    # ABSENT from it rather than recorded as passing skips: a machine
+    # reader doing ``all(c.passed)`` must never see a check that measured
+    # nothing counted as a pass.
+    emit(
+        VerificationResultEvent(
+            component=component,
+            passed=result.passed,
+            checks=tuple(check.name for check in result.checks),
+            failures=tuple(check.message for check in result.checks if not check.passed),
+            duration_seconds=duration,
+            phase=phase,
+            advisory=True,
+        )
+    )
+
+
 def run_feature(
     params: FeatureParams,
     base_config: KstrlConfig,
@@ -244,6 +426,14 @@ def run_feature(
 
     timeouts = TimeoutConfig.load(root_dir)
     breaker_config = BreakerConfig.load(root_dir)
+    # #288: the config the implement and repair loops are TOLD about and
+    # the config the report below RUNS with are the same object, so the
+    # engineer prompt's "these are the exact commands kstrl's mechanical
+    # verification gate runs on your work" is true on this path. The
+    # understand loop is deliberately left on the default None: no gate
+    # runs on an understand file, so #261's rule that None states nothing
+    # is still the correct and truthful value there.
+    verify_config = resolve_feature_verify_config(root_dir)
 
     emit(PhaseStarted(component=component, phase="understand", attempt=1))
     phase_start = time.monotonic()
@@ -392,6 +582,7 @@ def run_feature(
             interaction=interaction,
             stop_check=stop_check,
             guard_state_root=root_dir,
+            verify_config=verify_config,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -406,6 +597,11 @@ def run_feature(
         )
         fail(detail)
         raise
+    # Stopped BEFORE the report, so the phase's duration is still the
+    # engineer loop's own and stays comparable to a pre-#288 run. The
+    # report carries its own duration on its event.
+    phase_duration = round(time.monotonic() - phase_start, 2)
+    _report_verification(ui, emit, component, root_dir, verify_config, "implement", result)
     implementation_completed = result.completed and result.exit_code == 0
     implementation_detail = phase_detail(
         result.exit_code,
@@ -417,7 +613,7 @@ def run_feature(
             phase="implement",
             passed=implementation_completed,
             detail=implementation_detail,
-            duration_seconds=round(time.monotonic() - phase_start, 2),
+            duration_seconds=phase_duration,
         )
     )
     if implementation_completed:
@@ -495,6 +691,7 @@ def run_feature(
                 interaction=interaction,
                 stop_check=stop_check,
                 guard_state_root=root_dir,
+                verify_config=verify_config,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
@@ -509,6 +706,16 @@ def run_feature(
             )
             fail(detail)
             raise
+        phase_duration = round(time.monotonic() - phase_start, 2)
+        _report_verification(
+            ui,
+            emit,
+            component,
+            root_dir,
+            verify_config,
+            f"repair-{attempt}",
+            repair_result,
+        )
         repair_completed = repair_result.completed and repair_result.exit_code == 0
         repair_detail = phase_detail(
             repair_result.exit_code,
@@ -520,7 +727,7 @@ def run_feature(
                 phase=f"repair-{attempt}",
                 passed=repair_completed,
                 detail=repair_detail,
-                duration_seconds=round(time.monotonic() - phase_start, 2),
+                duration_seconds=phase_duration,
             )
         )
         if repair_completed:
