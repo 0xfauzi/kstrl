@@ -140,6 +140,18 @@ class EvolutionConfig:
         input, and two lists that disagree would degrade the same value
         at startup and then raise on it mid-run.
 
+        It is deliberately NOT
+        ``config_preflight.SURFACE_REJECTIONS``, which is this tuple
+        plus ``RuntimeError``. #289 tried importing that instead, on
+        the reasoning above, and
+        ``test_decompose.py::test_the_artifact_is_written_before_any_journal_work``
+        failed: that test raises ``RuntimeError`` from :meth:`load` on
+        purpose, to assert that an error the guard does NOT catch still
+        leaves the halt artifact on disk. No coercion in :meth:`load`
+        produces one, so widening to it could only ever swallow a
+        defect, and the entry check degrading where this raises is the
+        price of keeping that defect visible mid-run.
+
         The cost of that widening, stated because it is real: a
         ``TypeError`` from a DEFECT inside :meth:`load` - a None where a
         path belongs, a signature that stopped matching - now reads as
@@ -701,7 +713,9 @@ class EvolutionJournal:
                 not self.config.experiments_path.exists()
                 or self.config.experiments_path.stat().st_size == 0
             )
-            with open(self.config.experiments_path, "a") as f:
+            # The other side of the two-sided contract: this is the
+            # file get_experiment_trends decodes as utf-8.
+            with open(self.config.experiments_path, "a", encoding="utf-8") as f:
                 if needs_header:
                     f.write(header + "\n")
                 f.write(row + "\n")
@@ -1114,9 +1128,17 @@ class EvolutionJournal:
             )
 
             try:
-                filepath.write_text(content)
+                # encoding named, ValueError caught: the description
+                # and suggested_change come from an LLM, so one curly
+                # quote makes this a UnicodeEncodeError under LC_ALL=C,
+                # and that is a ValueError, which the OSError handler
+                # below does not catch (measured: US-ASCII preferred
+                # encoding, write_text raises). A proposal write is
+                # explicitly non-fatal; without this it took the run
+                # down instead.
+                filepath.write_text(content, encoding="utf-8")
                 written.append(filepath)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 logger.warning(
                     "proposal write failed (non-fatal): %s: %s",
                     filepath,
@@ -1239,10 +1261,20 @@ class EvolutionJournal:
     # ------------------------------------------------------------------
 
     def get_experiment_trends(self, last_n: int = 10) -> list[dict[str, Any]]:
-        """Read experiments.tsv and return the last N entries as dicts."""
+        """Read experiments.tsv and return the last N entries as dicts.
+
+        Encoding is named and ``ValueError`` is caught beside
+        ``OSError``, which is the house rule for a reader of any file
+        kstrl writes (CLAUDE.md): ``UnicodeDecodeError`` IS a
+        ``ValueError`` and escapes a fail-closed ``except OSError``.
+        Measured before this line: a single non-utf-8 byte in
+        experiments.tsv raised straight out of ``EvolveScreen.on_mount``
+        two lines after the #289 config banner, which is that issue's
+        own crash from that issue's own screen.
+        """
         try:
-            text = self.config.experiments_path.read_text()
-        except OSError:
+            text = self.config.experiments_path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
             return []
 
         reader = csv.DictReader(io.StringIO(text), delimiter="\t")

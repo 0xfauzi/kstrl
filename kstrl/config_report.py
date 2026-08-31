@@ -16,6 +16,7 @@ only when no session is active.
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -105,20 +106,57 @@ def normalize_ui_mode(value: str) -> str:
     return normalized
 
 
+#: Held for the whole of any block that blanks or pops ``os.environ``,
+#: and by every thread of ours that READS ``KSTRL_*`` while another
+#: thread might be doing so.
+#:
+#: A lock rather than a refusal, and the difference was measured. #289
+#: first closed this race by adding the app's safe-mode worker to
+#: ``env_scrub_is_safe``'s refusal condition, which turned two working
+#: surfaces intermittent: on an EMPTY project the worker's flag is set
+#: for 51 to 84 ms out of every 5 s, so the config screen's refresh was
+#: denied at random with a message falsely blaming a launched run, and
+#: the evolve banner silently dropped the environment variable it was
+#: supposed to name. On a project whose events.jsonl makes the check
+#: exceed its own interval the flag never clears and the refusal is
+#: permanent. Waiting 84 ms is not a cost worth making a feature
+#: unreliable to avoid.
+#:
+#: RLock, not Lock: ``_blamed_env_var`` holds this across a
+#: ``scrubbed_environ`` block that takes it again.
+_ENVIRON_LOCK = threading.RLock()
+
+
+@contextmanager
+def environ_lock() -> Iterator[None]:
+    """Exclusive access to ``os.environ`` against other kstrl threads.
+
+    Take it around a block that MUTATES the environment, and around a
+    read of ``KSTRL_*`` on any thread that could run beside one. It
+    cannot help against a subprocess inheriting the environment, which
+    is why a launched run is still a refusal in
+    ``tui.config_guard.env_scrub_is_safe`` rather than a wait.
+    """
+    with _ENVIRON_LOCK:
+        yield
+
+
 @contextmanager
 def scrubbed_environ() -> Iterator[None]:
     """Temporarily clear os.environ so a loader sees toml + defaults only.
 
     A field whose value changes when the environment disappears was
-    env-set. PROCESS-WIDE: see the module docstring's thread warning.
+    env-set. PROCESS-WIDE, and therefore serialized on
+    :func:`environ_lock`: see the module docstring's thread warning.
     """
-    saved = dict(os.environ)
-    os.environ.clear()
-    try:
-        yield
-    finally:
+    with _ENVIRON_LOCK:
+        saved = dict(os.environ)
         os.environ.clear()
-        os.environ.update(saved)
+        try:
+            yield
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
 
 
 # Rows whose None means something more specific than "no value", and
@@ -363,7 +401,7 @@ def build_config_report(
     ``[run]`` value leaves nothing to render beside the failure.
     """
     from kstrl.config import toml_parse_scope
-    from kstrl.config_preflight import REJECTIONS
+    from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 
     toml_path = resolve_config_file(root_dir)
     phase_sections = _phase_sections()
@@ -378,10 +416,23 @@ def build_config_report(
         was added to remove. WHY a section was rejected is
         ``config_preflight``'s job to report; None here means only "no
         row can be built from this".
+
+        It is the SURFACE set, not the entry set, because this function
+        has both kinds of caller. The entry check reads kstrl.toml once
+        itself and turns an unreadable file into a ConfigError before
+        any loader runs; the TUI config screen's refresh action calls
+        this minutes later with no such pass in front of it, so a chmod
+        or an unreadable pyproject.toml between two refreshes arrives
+        here as a bare OSError. `except REJECTIONS` let that kill the
+        whole report on the one screen whose job is showing config.
         """
         try:
             return loader(root_dir)
-        except REJECTIONS:
+        except SURFACE_REJECTIONS as exc:
+            # A RuntimeError kstrl never defined is our bug, and
+            # returning None for it would silently drop a whole section
+            # from a report the operator is reading to find the truth.
+            raise_if_defect(exc)
             return None
 
     # One parse of kstrl.toml for the whole report. Without this the

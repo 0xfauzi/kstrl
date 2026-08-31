@@ -15,6 +15,7 @@ ANSI_RESTORE = "\x1b[?1049l\x1b[?25h\x1b[0m"
 
 
 def run_home_shell(root_dir: Path) -> int:
+    from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
     from kstrl.config_report import ConfigReport, build_config_report
     from kstrl.tui.app import KstrlTuiApp, Mode
 
@@ -23,7 +24,18 @@ def run_home_shell(root_dir: Path) -> int:
     config_report: ConfigReport | None
     try:
         config_report = build_config_report(root_dir)
-    except ValueError:
+    except SURFACE_REJECTIONS as exc:
+        # Same imported tuple as the screen's refresh action: `except
+        # ValueError` was one exception narrower than the entry check,
+        # so a toml array where a number belongs escaped as a TypeError
+        # (#289). Latent today, because `cli.cli` rejects that file
+        # before this runs, and one exemption away from being live.
+        #
+        # The tuple carries RuntimeError for the domain errors deriving
+        # from it, so widening it also widened what a silent `None`
+        # could hide: a defect of ours would have opened the shell with
+        # an empty config screen instead of failing.
+        raise_if_defect(exc)
         config_report = None  # the screen renders the guidance line
 
     app = KstrlTuiApp(

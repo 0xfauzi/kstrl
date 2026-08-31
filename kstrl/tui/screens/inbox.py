@@ -27,6 +27,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem
+from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 _PRIORITY_STYLE = {"high": "bold red", "normal": "", "low": "dim"}
@@ -61,6 +62,7 @@ class InboxScreen(Screen[None]):
     # -- composition -------------------------------------------------------
     def compose(self) -> ComposeResult:
         yield ContextBar("inbox")
+        yield ConfigProblemBanner()
         with Horizontal():
             yield DataTable(id="inbox-table")
             yield Static("", id="inbox-detail")
@@ -73,14 +75,33 @@ class InboxScreen(Screen[None]):
         self.action_refresh()
 
     # -- data --------------------------------------------------------------
-    def _inbox(self) -> Inbox:
-        return Inbox(self._root, InboxConfig.load(self._root))
+    def _inbox(self) -> Inbox | None:
+        """The inbox, or None with the banner saying why (#289).
+
+        Re-read per call rather than cached: this screen outlives edits
+        to kstrl.toml, which is the same reason the config screen has a
+        refresh action. That is also why the guard is here and not only
+        at mount - the file can break between two keystrokes.
+        """
+        config = self.query_one(ConfigProblemBanner).load(InboxConfig.load, self._root)
+        return None if config is None else Inbox(self._root, config)
 
     def action_refresh(self) -> None:
-        box = self._inbox()
-        self._items = box.items() if self._show_decided else box.open_items()
+        self._redraw(self._inbox())
+
+    def _redraw(self, box: Inbox | None) -> None:
+        """The table and detail for a box already loaded, or for None.
+
+        Split from the load so a caller holding the answer does not
+        throw it away and load again to get the same one.
+        """
         table = self.query_one("#inbox-table", DataTable)
         table.clear()
+        if box is None:
+            self._items = []
+            self._render_detail()
+            return
+        self._items = box.items() if self._show_decided else box.open_items()
         for item in self._items:
             repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
             table.add_row(
@@ -106,9 +127,14 @@ class InboxScreen(Screen[None]):
         detail = self.query_one("#inbox-detail", Static)
         item = self._selected()
         if item is None:
+            # "Inbox clear" is a claim about the log. It must never be
+            # made from an empty list that only means the config would
+            # not load, so the banner is asked rather than a second
+            # copy of its answer being kept beside it.
+            unreadable = self.query_one(ConfigProblemBanner).problem is not None
             detail.update(
                 Text("Inbox clear: nothing is waiting on you.", style="dim")
-                if not self._items
+                if not self._items and not unreadable
                 else Text("")
             )
             return
@@ -141,6 +167,11 @@ class InboxScreen(Screen[None]):
         if item is None:
             return
         box = self._inbox()
+        if box is None:
+            # The file broke since the list was drawn. Render that
+            # state from the answer already in hand.
+            self._redraw(None)
+            return
         try:
             if action == "approve":
                 box.approve(item.id, actor=self._actor(), comment=comment)
@@ -152,7 +183,13 @@ class InboxScreen(Screen[None]):
             self.notify(str(exc), severity="error")
             return
         self.notify(f"{action}d: {item.title}")
-        self.action_refresh()
+        # _redraw, not action_refresh: this holds the Inbox already and
+        # `box.items()` re-reads the log from disk, so the post-decision
+        # state renders identically with one config load instead of two.
+        # Throwing the answer away to load it again is the exact waste
+        # _redraw was split out to prevent, and on a broken kstrl.toml
+        # it doubled the os.environ scrub window per keystroke.
+        self._redraw(box)
 
     @staticmethod
     def _actor() -> str:

@@ -22,6 +22,7 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Select, Static
 
+from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.init_cmd import run_init
 from kstrl.init_wizard import (
     AGENT_TYPES,
@@ -67,16 +68,25 @@ def _detected_text(root: Path) -> Text:
     they cannot share a line.
 
     VerifyConfig.load raises ValueError on malformed TOML by design
-    (config._load_toml), and this is the screen an operator opens to
-    repair a broken scaffold, so it reports one rather than taking the
-    app down on mount.
+    (config.load_toml_document), and this is the screen an operator
+    opens to repair a broken scaffold, so it reports one rather than
+    taking the app down on mount.
+
+    The rejection set is IMPORTED, not restated. It was
+    ``(ValueError, OSError)``, one exception narrower than the entry
+    check: ``[verify] self_critique_min_bullets = ["3"]`` coerces
+    through ``int()`` and raises TypeError, which this guard did not
+    catch (#289). This screen keeps its own one-line message rather
+    than the shared banner, because the row it is replacing belongs to
+    a labelled block that has no room for a section and a value.
     """
     rows: list[tuple[str, str]] = [
         ("detected", detect_context(root).get("language", "unknown")),
     ]
     try:
         commands = resolve_verify_commands(VerifyConfig.load(root), root)
-    except (ValueError, OSError):
+    except SURFACE_REJECTIONS as exc:
+        raise_if_defect(exc)
         rows.append(("verify", "kstrl.toml is unreadable; cannot show gate commands"))
     else:
         rows += [

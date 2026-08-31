@@ -2994,25 +2994,32 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
-    from kstrl.config_preflight import collect_config_problems
-
-    def _problems() -> list[str]:
-        try:
-            return collect_config_problems(root_dir, warn=_preflight_warn)
-        except ValueError as document_exc:
-            # The document will not parse, so no section resolved and
-            # the parse error IS the whole report.
-            return [str(document_exc)]
+    from kstrl.config_preflight import (
+        SURFACE_REJECTIONS,
+        config_problem_lines,
+        raise_if_defect,
+    )
 
     try:
         report = build_config_report(root_dir, overlay=_overlay)
-    except ValueError as exc:
+    except SURFACE_REJECTIONS as exc:
         # No rows are possible: the base config itself was rejected, or
         # the document will not parse. Report it in the same shape as the
         # success-with-problems path below, and in the seam's words -
         # section, key, offending value - rather than the bare coercion
         # message this used to print.
-        _echo_config_problems(_problems() or [str(exc)])
+        #
+        # The tuple is IMPORTED, and `config` being preflight-exempt is
+        # exactly why it has to be: no entry seam catches this first.
+        # `except ValueError` here let `[run] max_iterations = ["3"]`
+        # out as a raw TypeError traceback, from the one command whose
+        # whole job is explaining a broken config (#289).
+        #
+        # Except when the RuntimeError is one kstrl never defined: that
+        # is our defect, and printing it under "configuration problems"
+        # both blames the operator and loses the traceback.
+        raise_if_defect(exc)
+        _echo_config_problems(config_problem_lines(root_dir, warn=_preflight_warn) or [str(exc)])
         sys.exit(1)
 
     toml_path = report.toml_path
@@ -3035,7 +3042,7 @@ def config_show(
     # resolved (a rejected section costs its rows, not the report); the
     # problems below cover every section, the eleven this report does not
     # render included, in the words the rest of the CLI uses.
-    problems = _problems()
+    problems = config_problem_lines(root_dir, warn=_preflight_warn)
     if problems:
         _echo_config_problems(problems)
         sys.exit(1)

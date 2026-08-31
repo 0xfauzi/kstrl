@@ -58,7 +58,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from kstrl.config import (
     ConfigError,
@@ -67,7 +67,7 @@ from kstrl.config import (
     resolve_config_file,
     toml_parse_scope,
 )
-from kstrl.config_report import scrubbed_environ
+from kstrl.config_report import environ_lock, scrubbed_environ
 
 #: Exceptions a loader raises for input the operator has to fix, and the
 #: complete set of them: these loaders read a file and coerce values, so
@@ -88,6 +88,53 @@ from kstrl.config_report import scrubbed_environ
 #: ``[serve] max_consecutive_poison = 0`` that way, and ``QueueError``,
 #: ``InboxError`` and ``IntakeError`` are its siblings.
 REJECTIONS = (ValueError, TypeError, RuntimeError)
+
+#: :data:`REJECTIONS` plus the read failure a long-lived surface has to
+#: survive, for anything loading config AFTER command entry.
+#:
+#: ``OSError`` carries two unrelated rationales and both are why this
+#: cannot be fixed by normalizing it inside ``load_toml_document``.
+#: First, the entry check reads the document once itself and turns an
+#: unreadable kstrl.toml into a ``ConfigError`` before any loader runs;
+#: a screen re-reading the file minutes later has no such pass in front
+#: of it, and a ``chmod`` between two refreshes raises ``OSError``
+#: straight out of ``load_toml_section``. Second, a loader may read a
+#: file that is not kstrl.toml at all: ``resolve_verify_commands``
+#: reads the project's pyproject.toml, so ``init_wizard._detected_text``
+#: needs ``OSError`` for a document this module never opens.
+SURFACE_REJECTIONS = (*REJECTIONS, OSError)
+
+
+def raise_if_defect(exc: BaseException) -> None:
+    """Re-raise ``exc`` when it is kstrl's bug, not the operator's file.
+
+    :data:`REJECTIONS` names ``RuntimeError`` only for the domain errors
+    that DERIVE from it - ``ServeError`` for ``[serve]
+    max_consecutive_poison = 0``, and its ``QueueError``, ``InboxError``
+    and ``IntakeError`` siblings - which are operator input and are
+    reported as such. Everything else that arrives as a ``RuntimeError``
+    is ours: reporting it as "configuration unreadable" blames the
+    operator for our defect and eats the traceback that would locate it.
+
+    The test is DERIVED, not a list. The first cut wrote ``type(exc) is
+    RuntimeError``, which is true only of a bare one, so
+    ``NotImplementedError`` and ``RecursionError`` - both direct
+    ``RuntimeError`` subclasses, both unambiguously defects - were
+    reported as the operator's broken file. A hand-written tuple of the
+    four domain errors would have fixed those two and gone stale the
+    next time a fifth is added, which is the failure mode this codebase
+    keeps recording. So the question asked is "did kstrl define this
+    class": ten ``RuntimeError`` subclasses live in ``kstrl/`` today and
+    every one of them is a condition we chose to raise, while
+    ``builtins`` and any dependency's ``RuntimeError`` is not something
+    we modelled and so not something we can honestly blame a file for.
+    ``tests/test_tui_config_guard.py`` pins both halves.
+    """
+    if isinstance(exc, RuntimeError) and type(exc).__module__.split(".")[0] != "kstrl":
+        raise exc
+
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -239,7 +286,14 @@ def collect_config_problems(
             try:
                 section.loader(root_dir)
             except REJECTIONS as exc:
-                detail = _detail(section, toml_path, root_dir, exc)
+                # Same rule as every other catcher of this tuple: a
+                # RuntimeError kstrl did not define is our defect, and
+                # listing it under "configuration problems" blames the
+                # operator's file for it. This is the seam all three
+                # reporting surfaces route through, so the hole would
+                # have been one call deep from each of them.
+                raise_if_defect(exc)
+                detail = _detail(section, toml_path, root_dir, exc, blame_env=True)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
                 else:
@@ -247,25 +301,133 @@ def collect_config_problems(
     return problems
 
 
+def config_problem_lines(
+    root_dir: Path,
+    *,
+    warn: Callable[[str], None],
+) -> list[str]:
+    """Every line the entry check would print for ``root_dir``.
+
+    :func:`collect_config_problems` with the one failure it does not
+    return folded back in: a document that will not parse raises, and
+    the answer to "what is wrong with this configuration" is then that
+    parse error and nothing else, because no section could be resolved
+    behind it.
+
+    Split out because ``ks config show`` and the TUI config screen are
+    the two surfaces whose whole job is explaining a broken config, and
+    they were carrying a copy of this each. The copies had already
+    drifted in their handling of the empty case; a third surface would
+    have made it three. Callers supply their own ``warn`` because one
+    prints to stderr and the other must stay silent on a screen.
+    """
+    try:
+        return collect_config_problems(root_dir, warn=warn)
+    except SURFACE_REJECTIONS as exc:
+        raise_if_defect(exc)
+        return [str(exc)]
+
+
+def load_or_report(
+    loader: Callable[[Path], T],
+    root_dir: Path,
+    *,
+    blame_env: bool,
+) -> tuple[T | None, str | None]:
+    """One section, resolved, or the line this module would have printed.
+
+    Exactly one of the pair is ever None. For a long-lived surface that
+    loads a section AFTER command entry - a TUI screen the home shell
+    opens - and so has no seam in front of it to fail on its behalf.
+    The message is produced by the same ``_detail`` the entry check
+    uses, so the same broken file reads the same way on both surfaces,
+    which is what #289 was about; ``tests/test_tui_config_guard.py``
+    pins the two strings equal rather than trusting that.
+
+    ``blame_env`` is required rather than defaulted because getting it
+    wrong is not a cosmetic mistake. Naming the offending variable means
+    measuring it (``_blamed_env_var``), and measuring it means clearing
+    ``os.environ``, which is PROCESS-WIDE. At command entry nothing else
+    of ours is running; on a screen a launched run may be on another
+    thread, spawning subprocesses that inherit the environment. Pass
+    False there and the line keeps everything except the variable's
+    name. ``kstrl.tui.config_guard`` is where that decision is made.
+
+    Wider than :data:`REJECTIONS` by ``OSError``: see
+    :data:`SURFACE_REJECTIONS`.
+    """
+    # Scoped per call, never across calls: a screen's refresh action
+    # exists to see the file as it is NOW (see ``toml_parse_scope``).
+    with toml_parse_scope():
+        try:
+            return loader(root_dir), None
+        except SURFACE_REJECTIONS as exc:
+            # A RuntimeError kstrl did not define is a defect in kstrl,
+            # not the operator's file. This is the same line
+            # EvolutionConfig.load_or_none draws, and it is drawn here
+            # too because that method's reason (a widening can only ever
+            # swallow a defect) is about the exception, not the site.
+            raise_if_defect(exc)
+            # Looked up HERE, not before the try: `_section_for` calls
+            # `config_sections()`, whose 22 deferred imports cost a
+            # measured 6.2 ms on their first call in a process that has
+            # imported kstrl.tui.app, and that first call otherwise
+            # lands on the Textual event loop inside on_mount even when
+            # kstrl.toml is perfectly valid (4.7 us warm). Only the
+            # failure path needs a label, so only it pays. An
+            # unenrolled loader still raises LookupError, on the path
+            # that would have had to name it.
+            return None, _detail(
+                _section_for(loader),
+                resolve_config_file(root_dir),
+                root_dir,
+                exc,
+                blame_env=blame_env,
+            )
+
+
+def _section_for(loader: Callable[[Path], Any]) -> ConfigSection:
+    """The registry entry for ``loader``.
+
+    A caller passes the loader rather than a section name so that it
+    cannot label itself with a section the entry check does not know,
+    and so that the label and the blame helpers come from the one table
+    :func:`config_sections` already keeps complete.
+
+    Compared with ``==``, not ``is``: ``EvolutionConfig.load`` is a bound
+    classmethod and Python builds a fresh object on every attribute
+    access, so ``is`` is False even for the same method, while ``==``
+    compares ``__func__`` and ``__self__``.
+    """
+    for section in config_sections():
+        if section.loader == loader:
+            return section
+    raise LookupError(f"{loader!r} is not a loader config_sections() names")
+
+
 def _detail(
     section: ConfigSection,
     toml_path: Path,
     root_dir: Path,
     exc: Exception,
+    *,
+    blame_env: bool,
 ) -> str:
     """One line: which section, what the loader said, and which input.
 
     The environment is asked FIRST because the environment wins: with
     the same bad value in both places, the variable is the one taking
     effect, so naming the file's key would send the operator to a line
-    that changing does not help.
+    that changing does not help. ``blame_env`` False skips that question
+    entirely rather than answering it unsafely; the caller that passes
+    False says why (:func:`load_or_report`).
     """
     message = str(exc)
-    blamed = _blamed_env_var(section.loader, root_dir, message) or _blamed_toml_value(
-        section.sections,
-        toml_path,
-        message,
-    )
+    # Two statements, not one expression: the environment-then-file
+    # order is the rule the docstring above states, and an `or` split
+    # across a ternary hides it.
+    blamed = _blamed_env_var(section.loader, root_dir, message) if blame_env else None
+    blamed = blamed or _blamed_toml_value(section.sections, toml_path, message)
     line = f"{section.label} {message}"
     return f"{line} ({blamed})" if blamed else line
 
@@ -310,6 +472,19 @@ def _blamed_env_var(
     no other thread of ours is alive. That is the constraint
     ``config_report.scrubbed_environ``, reused here, already documents.
     """
+    # The lock spans the WHOLE sweep, not just the scrubbed_environ
+    # block: the per-variable pops below mutate os.environ outside it,
+    # and they are the longer window of the two.
+    with environ_lock():
+        return _blame_sweep(loader, root_dir, message)
+
+
+def _blame_sweep(
+    loader: Callable[[Path], Any],
+    root_dir: Path,
+    message: str,
+) -> str | None:
+    """:func:`_blamed_env_var`'s body, under the environment lock."""
     with scrubbed_environ():
         try:
             loader(root_dir)
@@ -355,7 +530,7 @@ def _blamed_toml_value(
     """
     hits = []
     for name in sections:
-        with suppress(*REJECTIONS, OSError):
+        with suppress(*SURFACE_REJECTIONS):
             for key, value in load_toml_section(toml_path, name).items():
                 if repr(value) in message:
                     hits.append(f"kstrl.toml has [{name}] {key} = {value!r}")
