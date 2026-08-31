@@ -63,7 +63,8 @@ from kstrl.decompose import (
     build_decompose_prompt,
     generate_data_delimiter,
 )
-from kstrl.git import pasted_change_source, repo_change_source
+from kstrl.git import get_diff_stat, pasted_change_source, repo_change_source
+from kstrl.policy import parse_added_lines
 from kstrl.review import (
     REVIEWER_PROMPT,
     VALID_CONCERN_CATEGORIES,
@@ -271,6 +272,16 @@ def _materialize_fixture_repo(diff_text: str, repo: Path) -> Path:
     segments = [
         (_segment_path(seg), _segment_images(seg)) for seg in _split_file_segments(diff_text)
     ]
+    if not segments:
+        # #266 review finding 5: a fixture with no `diff --git` line
+        # yields no segments, and building a repo from nothing would
+        # measure the reviewer against whatever the default change is.
+        # Fail loudly - a calibration harness that reports a number for
+        # code the fixture does not contain is worse than one that stops.
+        raise ValueError(
+            "fixture diff contains no 'diff --git' segments; there is no "
+            "change to materialise and a default one would be measured instead"
+        )
     base = {path: pre for path, (pre, _post) in segments if pre}
     # Every file new means an empty base, and a repo with no commit has
     # no ``main`` for the reviewer's range to name.
@@ -282,8 +293,16 @@ def _materialize_fixture_repo(diff_text: str, repo: Path) -> Path:
     return repo
 
 
-def _change_source(diff_content: str, tmp_path: Path) -> tuple[str, Path]:
-    """``(change_source_block, cwd)`` for the configured mode."""
+def _change_source(diff_content: str, tmp_path: Path) -> tuple[str, Path, str]:
+    """``(change_source_block, cwd, data_delimiter)`` for the mode.
+
+    The delimiter comes BACK from the builder rather than going in: the
+    pasted variant frames untrusted bytes in a section of its own, and
+    the prompt must authenticate that same token. Returning them
+    together is what stops the two being generated independently, which
+    would leave the diff wrapped in a delimiter the prompt never names.
+    The repo variant frames nothing, so it takes a fresh token.
+    """
     if CHANGE_SOURCE_MODE == "repo":
         # Keyed on the DIFF, not on the directory: the cache below exists
         # so the N runs of one fixture share a repo, and a path-only key
@@ -292,8 +311,9 @@ def _change_source(diff_content: str, tmp_path: Path) -> tuple[str, Path]:
         # because it reports a number rather than an error.
         digest = hashlib.sha256(diff_content.encode("utf-8")).hexdigest()[:12]
         repo = _materialize_fixture_repo(diff_content, tmp_path / f"fixture-repo-{digest}")
-        return repo_change_source("main"), repo
-    return pasted_change_source(diff_content, generate_data_delimiter()), tmp_path
+        return repo_change_source("main"), repo, generate_data_delimiter()
+    block, delimiter = pasted_change_source(diff_content)
+    return block, tmp_path, delimiter
 
 
 # Skip per-test (not module-level) so structural sanity tests in
@@ -1010,8 +1030,8 @@ def _security_run_once(
     # per-run data delimiters exactly as production does. #266: and the
     # change-acquisition block, which in the default "repo" mode is the
     # production one.
-    change_source, cwd = _change_source(diff_content, tmp_path)
-    prompt = _build_security_prompt(prd_text, change_source)
+    change_source, cwd, delimiter = _change_source(diff_content, tmp_path)
+    prompt = _build_security_prompt(prd_text, change_source, delimiter)
     # R7.1: security is a reviewer role - it honors the family override.
     agent = _get_reviewer_calibration_agent()
     try:
@@ -1135,12 +1155,12 @@ def _reviewer_run_once(
     prd_text = meta.get("prd", "(no PRD)")
     # R5.3: build_review_prompt needs a PRD file on disk, so calibration
     # formats the template directly but with a real per-run delimiter.
-    change_source, cwd = _change_source(diff_content, tmp_path)
+    change_source, cwd, delimiter = _change_source(diff_content, tmp_path)
     prompt = REVIEWER_PROMPT.format(
         prd_content=prd_text,
         change_source=change_source,
         verification_summary=render_verification(meta),
-        data_delimiter=generate_data_delimiter(),
+        data_delimiter=delimiter,
     )
     # R7.1: the reviewer role honors the family override.
     agent = _get_reviewer_calibration_agent()
@@ -1323,6 +1343,33 @@ def test_architect_emits_sensible_allowed_paths(
 # ---------------------------------------------------------------------------
 # Static sanity (always runs, even without calibration env var)
 # ---------------------------------------------------------------------------
+
+
+class TestMaterialization:
+    """#295 finding 5: the harness must fail rather than measure the
+    reviewer against code the fixture does not contain."""
+
+    def test_a_diff_with_no_segments_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="no 'diff --git' segments"):
+            _materialize_fixture_repo("not a diff at all\n", tmp_path / "empty")
+
+    def test_a_real_fixture_round_trips_its_line_counts(self, tmp_path: Path) -> None:
+        """The reconstruction is only sound if the repo it builds carries
+        exactly the lines the pasted diff carried; otherwise "repo" and
+        "paste" mode would be measuring different code and the two could
+        not be compared."""
+        artifact = FIXTURES_DIR / "concerns" / "01_dead_code.diff"
+        text = artifact.read_text(encoding="utf-8")
+        repo = _materialize_fixture_repo(text, tmp_path / "fixture")
+        # policy.parse_added_lines rather than a fourth hand-rolled
+        # `startswith("+") and not startswith("+++")`: it gates the
+        # header exclusion on a preceding `--- ` line, so an added
+        # CONTENT line that happens to start "+++" is counted - which is
+        # what _segment_images does too. A hand-rolled predicate would
+        # disagree with the builder it is checking.
+        stat = get_diff_stat("main", repo)
+        assert stat.insertions == len(parse_added_lines(text))
+        assert stat.deletions == 0
 
 
 class TestFixtureStructure:

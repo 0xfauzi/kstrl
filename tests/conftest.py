@@ -334,7 +334,7 @@ class ReviewRepo:
         return json.dumps(payload)
 
 
-def _git(repo: Path, *args: str) -> None:
+def git_in(repo: Path, *args: str) -> None:
     subprocess.run(
         ["git", *args],
         cwd=repo,
@@ -379,19 +379,38 @@ def make_review_repo(
     A ``prd.json`` is written into the worktree AFTER the change commit,
     so it is untracked and contributes nothing to the diffstat: every
     caller needs a PRD on disk and none of them wants it counted.
+
+    An EMPTY ``files`` dict is rejected rather than defaulted (#266
+    review finding 5). ``files or {...}`` treated "no files" as "give me
+    the default one-file change", so a caller that computed an empty set
+    - ``_materialize_fixture_repo`` does exactly that for any input with
+    no ``diff --git`` line - would have measured a reviewer against
+    fabricated code and reported a NUMBER rather than failing. That is
+    the same trap this issue closed in the harness elsewhere, sitting in
+    the harness that produces the calibration figure.
     """
+    if files is not None and not files:
+        raise ValueError(
+            "make_review_repo: files={} is an empty change, not a default one. "
+            "Pass None for the default, or the files you meant."
+        )
+    if base_files is not None and not base_files:
+        raise ValueError("make_review_repo: base_files={} would leave nothing to commit")
     path.mkdir(parents=True, exist_ok=True)
-    _git(path, "init", "-q")
-    _git(path, "config", "user.email", "kstrl@test.invalid")
-    _git(path, "config", "user.name", "kstrl tests")
-    _write_all(path, base_files or {"README.md": "base\n"})
-    _git(path, "add", "-A")
-    _git(path, "commit", "-qm", "base")
-    _git(path, "branch", "-M", "main")
-    _git(path, "checkout", "-qb", "feature")
-    _write_all(path, files or {"src/mod.py": "def added() -> int:\n    return 1\n"})
-    _git(path, "add", "-A")
-    _git(path, "commit", "-qm", "change")
+    git_in(path, "init", "-q")
+    git_in(path, "config", "user.email", "kstrl@test.invalid")
+    git_in(path, "config", "user.name", "kstrl tests")
+    _write_all(path, base_files if base_files is not None else {"README.md": "base\n"})
+    git_in(path, "add", "-A")
+    git_in(path, "commit", "-qm", "base")
+    git_in(path, "branch", "-M", "main")
+    git_in(path, "checkout", "-qb", "feature")
+    _write_all(
+        path,
+        files if files is not None else {"src/mod.py": "def added() -> int:\n    return 1\n"},
+    )
+    git_in(path, "add", "-A")
+    git_in(path, "commit", "-qm", "change")
     repo = ReviewRepo(path=path, base_branch="main", stat=get_diff_stat("main", path))
     repo.prd_path.write_text(DEFAULT_REVIEW_PRD, encoding="utf-8")
     return repo

@@ -86,6 +86,7 @@ from kstrl.review import (
     setpoint_disagreements,
     setpoint_retry_context,
 )
+from kstrl.sandbox import SandboxConfig
 from kstrl.security import SecurityMode, SecurityResult
 from kstrl.verify import VerificationResult
 
@@ -481,6 +482,16 @@ class ComponentPipeline:
         self.base_config = base_config
         self.ui = ui
         self.root_dir = root_dir
+        # #266 review finding 3: the reviewer roles were built with
+        # read_only=True and NO sandbox, so `[sandbox] enabled = true`
+        # reached the engineer and never the reviewers - the one pair of
+        # roles that now runs shell commands inside the tree under
+        # review. read_only is a permission-layer posture on the claude
+        # adapters; the operator's OS-level enforcement is a separate
+        # payload and both are wanted. Loaded once here rather than per
+        # phase: it is a run-level setting and the phases run per
+        # component attempt.
+        self.sandbox_config = SandboxConfig.load(root_dir)
         self.run_id = run_id
         self.bus = bus
         self.journal_path = journal_path
@@ -2829,6 +2840,71 @@ class ComponentPipeline:
         self.ui.warn(f"  {message}")
         return None
 
+    #: The operator-facing account of a refused review, shared by both
+    #: phases so the remedy is worded once. ``noun`` is what cannot be
+    #: trusted (a verdict, or findings) and ``agent`` names the config
+    #: knob to look at.
+    _COVERAGE_UNVERIFIED = (
+        "{role} coverage unverified: {disagreement}. The reviewer could not "
+        "show it read the whole change, so its {noun} cannot be trusted and "
+        "the engineer cannot fix it. Check that the {agent} can run git in "
+        "the worktree, or select a model that honours the observedDiffstat "
+        "field (#266)."
+    )
+
+    def _coverage_failure(
+        self,
+        comp: Component,
+        *,
+        phase: str,
+        banner: str,
+        role: str,
+        noun: str,
+        agent: str,
+        disagreement: str,
+        reported_a_stat: bool,
+    ) -> PhaseFailure:
+        """#266: the wall a review that cannot prove its coverage hits.
+
+        FAIL, never RETRY_OR_FAIL. The refusal is a HARNESS-side fault -
+        the reviewer could not show it read the change - and the
+        engineer cannot fix it by writing code. Routed through the
+        ordinary failure path it re-ran the engineer and handed it the
+        coverage complaint as retry context.
+
+        That is worse than useless, because unlike a crash or a
+        truncated JSON reply this trigger is DETERMINISTIC: a reviewer
+        model that does not emit ``observedDiffstat``, or counts it
+        differently, produces the identical failure on every attempt.
+        The component would burn its whole retry budget on engineer runs
+        that cannot move the outcome and then fail anyway - precisely
+        the #265 economics this issue exists to remove, reintroduced by
+        its own fix. Same rule as the budget walls: retrying cannot
+        change the input, so do not pay for the attempt.
+        """
+        error = self._COVERAGE_UNVERIFIED.format(
+            role=role,
+            disagreement=disagreement,
+            noun=noun,
+            agent=agent,
+        )
+        self.ui.err(f"  {banner} FAILED for {comp.id}: {error}")
+        # The two refusals have different remedies and the journal
+        # should not have to read prose to tell them apart. "no-diffstat"
+        # is a model that never emits the field - swap the reviewer.
+        # "range-mismatch" is a model that emitted the wrong numbers -
+        # look at whether it can reach the repository. Both are
+        # harness-side and neither is fixable by the engineer, which is
+        # why they route the same way.
+        reason = "range-mismatch" if reported_a_stat else "no-diffstat"
+        return PhaseFailure(
+            action=FailureAction.FAIL,
+            error=error,
+            phase=phase,
+            check="coverage",
+            signatures=[f"{phase}:coverage-unverified:{reason}"],
+        )
+
     def _review_failure(
         self,
         comp: Component,
@@ -2838,6 +2914,25 @@ class ComponentPipeline:
     ) -> ReviewPhaseResult:
         """Phase 2's failure branch: build the retry context, then decide
         between retrying and the #265 divergence wall."""
+        if review_result.coverage_refused:
+            # BEFORE the "N failures" banner below: the coverage concern
+            # is advisory, so a reviewer that returned passing criteria
+            # would otherwise print "Phase 2 FAILED: 0 failures"
+            # immediately above the line saying what actually went wrong.
+            return ReviewPhaseResult(
+                ran=True,
+                result=review_result,
+                failure=self._coverage_failure(
+                    comp,
+                    phase="review",
+                    banner="Phase 2",
+                    role="Review",
+                    noun="verdict",
+                    agent="review agent",
+                    disagreement=review_result.diffstat_disagreement,
+                    reported_a_stat=review_result.observed_diffstat is not None,
+                ),
+            )
         self.ui.warn(f"  Phase 2 FAILED for {comp.id}: {review_result.fail_count} failures")
         # #265: before spending another engineer run, ask whether the
         # last few have been spent moving away from a pass. Advisory by
@@ -2998,9 +3093,19 @@ class ComponentPipeline:
                 self.review_selection.reasoning,
                 self.review_selection.agent_type,
                 # #266: the reviewer reads the tree it is judging, so it
-                # must not be able to write it. Unconditional, and not an
-                # operator knob: measured, an unsandboxed reviewer left
-                # __pycache__/ behind in the worktree it was judging.
+                # must not be able to write it. Not an operator knob:
+                # measured, an unsandboxed reviewer left __pycache__/
+                # behind in the worktree it was judging. The operator's
+                # OS-level intent rides ALONGSIDE it - the two are
+                # layered, not alternatives.
+                #
+                # One carve-out, and it is not silent: a custom
+                # ``agent_cmd`` resolves to CustomAgent, which has no
+                # generic sandbox surface and drops BOTH settings.
+                # run_factory warns per reviewer role at startup rather
+                # than letting an operator believe in a boundary that is
+                # not there.
+                sandbox=self.sandbox_config,
                 read_only=True,
             )
             with self._phase_transcript(comp.id, "review") as on_line:
@@ -3369,7 +3474,9 @@ class ComponentPipeline:
                 self.security_selection.reasoning,
                 self.security_selection.agent_type,
                 # #266: same rule as Phase 2 - a reviewer must not be
-                # able to write the tree it is judging.
+                # able to write the tree it is judging, and the
+                # operator's sandbox intent rides alongside.
+                sandbox=self.sandbox_config,
                 read_only=True,
             )
             with self._phase_transcript(comp.id, "security") as on_line:
@@ -3441,50 +3548,75 @@ class ComponentPipeline:
                     comp.review_findings = sec_result.as_pr_body_section()
 
             if not sec_result.passed:
-                reason = (
-                    "Security review crashed"
-                    if sec_result.infrastructure_error
-                    else "Security review failed"
-                )
-                self.ui.warn(
-                    f"  Phase 2.5 FAILED for {comp.id}: "
-                    f"{sec_result.critical_count} critical, "
-                    f"{sec_result.high_count} high"
-                )
-                ctx = IterationContext.from_json(
-                    comp_result.context_json or "{}",
-                )
-                # as_retry_context is empty for infra results (no
-                # findings list); fall back to the notes so the
-                # retry prompt still says what went wrong.
-                ctx.add_review_finding(
-                    sec_result.as_retry_context()
-                    or "Security review infrastructure error: " + sec_result.overall_notes,
-                    attempt=comp.retries + 1,
-                    phase="security",
-                    infrastructure=sec_result.infrastructure_error,
-                )
-                # R6.1: journal the vuln categories that failed the
-                # gate ("security:injection", ...), not the reason.
-                from kstrl.evolution import signatures_from_findings
-
-                return SecurityPhaseResult(
-                    ran=True,
-                    result=sec_result,
-                    failure=PhaseFailure(
-                        action=FailureAction.RETRY_OR_FAIL,
-                        error=reason,
-                        phase="security",
-                        check=("infrastructure" if sec_result.infrastructure_error else "findings"),
-                        context_json=ctx.to_json(),
-                        signatures=signatures_from_findings(
-                            "security",
-                            sec_result.as_findings(),
-                        ),
-                    ),
-                )
+                return self._security_failure(comp, comp_result, sec_result)
 
         return SecurityPhaseResult(ran=True, result=sec_result)
+
+    def _security_failure(
+        self,
+        comp: Component,
+        comp_result: ComponentResult,
+        sec_result: SecurityResult,
+    ) -> SecurityPhaseResult:
+        """Phase 2.5's failure branch, mirroring ``_review_failure``.
+
+        Extracted so the two phases route a failure the same way and in
+        the same shape - the coverage wall first, the retry path after -
+        rather than one of them being a method and the other twenty
+        lines inline in the middle of the phase.
+        """
+        if sec_result.coverage_refused:
+            return SecurityPhaseResult(
+                ran=True,
+                result=sec_result,
+                failure=self._coverage_failure(
+                    comp,
+                    phase="security",
+                    banner="Phase 2.5",
+                    role="Security review",
+                    noun="findings",
+                    agent="security agent",
+                    disagreement=sec_result.diffstat_disagreement,
+                    reported_a_stat=sec_result.observed_diffstat is not None,
+                ),
+            )
+        reason = (
+            "Security review crashed"
+            if sec_result.infrastructure_error
+            else "Security review failed"
+        )
+        self.ui.warn(
+            f"  Phase 2.5 FAILED for {comp.id}: "
+            f"{sec_result.critical_count} critical, "
+            f"{sec_result.high_count} high"
+        )
+        ctx = IterationContext.from_json(comp_result.context_json or "{}")
+        # as_retry_context is empty for infra results (no findings list);
+        # fall back to the notes so the retry prompt still says what
+        # went wrong.
+        ctx.add_review_finding(
+            sec_result.as_retry_context()
+            or "Security review infrastructure error: " + sec_result.overall_notes,
+            attempt=comp.retries + 1,
+            phase="security",
+            infrastructure=sec_result.infrastructure_error,
+        )
+        # R6.1: journal the vuln categories that failed the gate
+        # ("security:injection", ...), not the reason.
+        from kstrl.evolution import signatures_from_findings
+
+        return SecurityPhaseResult(
+            ran=True,
+            result=sec_result,
+            failure=PhaseFailure(
+                action=FailureAction.RETRY_OR_FAIL,
+                error=reason,
+                phase="security",
+                check=("infrastructure" if sec_result.infrastructure_error else "findings"),
+                context_json=ctx.to_json(),
+                signatures=signatures_from_findings("security", sec_result.as_findings()),
+            ),
+        )
 
     def _phase_distill(
         self,

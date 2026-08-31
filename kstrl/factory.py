@@ -2684,6 +2684,33 @@ def run_factory(
         run_lock.release()
 
 
+def _warn_unsandboxable_reviewers(
+    ui: UI,
+    review_selection: AdversarialAgentSelection | None,
+    security_selection: AdversarialAgentSelection | None,
+) -> None:
+    """#266: say so when a reviewer cannot be held read-only.
+
+    ``get_agent`` returns ``CustomAgent`` BEFORE any adapter branch, so a
+    custom command drops the read-only posture as well as the sandbox -
+    and the reviewer selections fall back to the engineer's
+    ``agent_cmd``, so ``[agent] command`` alone reaches them. The
+    read-only guarantee is the one an operator is most likely to assume
+    holds unconditionally, which is exactly why it is worth saying out
+    loud when it does not.
+    """
+    for role, selection in (
+        ("review", review_selection),
+        ("security", security_selection),
+    ):
+        if selection is not None and selection.agent_cmd:
+            ui.warn(
+                f"  the {role} reviewer is a custom command; it CANNOT be "
+                "sandboxed or held read-only, so it may write the worktree "
+                "it is judging (#266)"
+            )
+
+
 def _run_factory_locked(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -3121,6 +3148,7 @@ def _run_factory_locked(
             "sandbox settings CANNOT be applied to it and are ignored "
             "(worktree isolation remains the only boundary)"
         )
+    _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
     if not _run_preflights(
         manifest,

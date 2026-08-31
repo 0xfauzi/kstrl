@@ -127,6 +127,14 @@ class SecurityResult:
     # ``model:<id>`` tag and into the PR body.
     reviewer_model: str = ""
 
+    @property
+    def coverage_refused(self) -> bool:
+        """#266: the coverage check REFUSED this review, not merely
+        recorded a disagreement. See ``review.ReviewResult`` for why the
+        two halves of the predicate travel together.
+        """
+        return bool(self.diffstat_disagreement) and not self.passed
+
     def as_retry_context(self) -> str:
         """Format failing findings for injection into the implementer's
         retry prompt."""
@@ -457,17 +465,31 @@ reviewer would demand?
 """
 
 
-def _build_security_prompt(prd_text: str, change_source: str) -> str:
+def _build_security_prompt(
+    prd_text: str,
+    change_source: str,
+    data_delimiter: str | None = None,
+) -> str:
     """Render SECURITY_PROMPT around a change-acquisition block.
 
     ``change_source`` is one of ``git.repo_change_source`` (production:
     the reviewer runs in the worktree and reads git itself) or
     ``git.pasted_change_source`` (a caller holding a diff and no repo).
+
+    ``data_delimiter`` is for the pasted path, which frames untrusted
+    bytes in a delimited section of its own and returns the token it
+    used: that section and this prompt's must carry the SAME run token,
+    or the prompt authenticates one token while the diff is framed by
+    another and the model has no stated reason to treat those bytes as
+    data. The production path passes nothing and gets a fresh token.
+
+    ``is None`` rather than ``or``: an empty string is not a valid
+    delimiter and must not be laundered into a fresh one.
     """
     return SECURITY_PROMPT.format(
         prd_content=prd_text or "(PRD not available)",
         change_source=change_source,
-        data_delimiter=generate_data_delimiter(),
+        data_delimiter=(generate_data_delimiter() if data_delimiter is None else data_delimiter),
     )
 
 
@@ -642,14 +664,14 @@ def run_security_review(
         pass
 
     try:
-        # Resolved ONCE and shared with the harness's own measurement, so
-        # a disagreement can only mean the reviewer did not read the
-        # change - never that the two sides were asked about different
-        # ranges. See review.run_review for why the resolved ref, and
-        # not the branch name, is what get_diff_stat is given.
-        base_ref = git.resolve_base_ref(base_branch, worktree_path)
-        actual_diffstat = git.get_diff_stat(base_ref, worktree_path)
-        prompt = _build_security_prompt(prd_text, git.repo_change_source(base_ref))
+        # A SHA, resolved ONCE and shared with the harness's own
+        # measurement, so a disagreement can only mean the reviewer did
+        # not read the change - never that the two sides were asked
+        # about the same moving name at two different times. Identical
+        # to Phase 2; see git.resolve_base_sha for why a name will not do.
+        base_sha = git.resolve_base_sha(base_branch, worktree_path)
+        actual_diffstat = git.get_diff_stat(base_sha, worktree_path, resolved=True)
+        prompt = _build_security_prompt(prd_text, git.repo_change_source(base_sha))
         output_lines = collect_agent_output(
             agent,
             prompt,

@@ -172,6 +172,26 @@ class ReviewResult:
     # cross-family review outcomes stay attributable.
     reviewer_model: str = ""
 
+    @property
+    def coverage_refused(self) -> bool:
+        """#266: the coverage check REFUSED this review, not merely
+        recorded a disagreement about it.
+
+        ``apply_coverage_check`` records ``diffstat_disagreement`` in
+        EVERY mode - that is how an advisory pass stays visibly
+        unverified - and forces ``passed=False`` only in hard mode. The
+        pipeline's wall has to key on the refusal, or advisory mode
+        starts blocking, which is the one thing it promises never to do.
+
+        A property rather than the predicate spelled out at each wall,
+        because the two walls were not spelled the same: Phase 2's got
+        the ``passed`` half for free by living inside ``_review_failure``
+        (a passing review never reaches it) while Phase 2.5's sat in the
+        open and had to state it. One of them was therefore relying on
+        an invariant proved three functions away.
+        """
+        return bool(self.diffstat_disagreement) and not self.passed
+
     def as_retry_context(self) -> str:
         """Format failing/advisory findings for injection into retry prompt."""
         lines: list[str] = []
@@ -777,10 +797,10 @@ def build_review_prompt(
 
     No diff is passed and none is fetched: the reviewer runs inside the
     worktree (``run_review`` passes ``cwd``) and is told to obtain the
-    change from git itself. ``base_ref`` must be the ref the harness
-    measures against, already resolved through
-    :func:`git.resolve_base_ref`, so the reviewer's diffstat and the
-    harness's are computed over the same range.
+    change from git itself. ``base_ref`` must be what the harness
+    measures against, resolved through :func:`git.resolve_base_sha`, so
+    the reviewer's diffstat and the harness's are computed over the same
+    range at the same commit.
     """
     prd = PRD.load(prd_path)
     prd_lines: list[str] = []
@@ -1045,26 +1065,19 @@ def run_review(
     reviewer_model = getattr(agent, "name", "") or ""
 
     try:
-        # Resolved once and used for BOTH the reviewer's instructions and
-        # the harness's own measurement, so a disagreement can only mean
-        # the reviewer did not read the change - never that the two sides
-        # were asked about different ranges (R0.2: origin/<base> and
-        # <base> are routinely different commits).
-        base_ref = git.resolve_base_ref(base_branch, worktree_path)
+        # A SHA, resolved ONCE, and used for BOTH the reviewer's
+        # instructions and the harness's own measurement. A ref name
+        # would not do: origin/<base> moves whenever a sibling
+        # component's PR merges mid-run, and the two measurements are
+        # taken minutes apart. See git.resolve_base_sha.
+        base_sha = git.resolve_base_sha(base_branch, worktree_path)
         # Strict by construction (git.get_diff_stat): a failed
         # measurement raises into the handler below rather than folding
         # to a zero that would agree with a reviewer that read nothing.
-        # Measured against the RESOLVED ref, not the branch name: passing
-        # the name would resolve it a second time, and a fetch landing
-        # between the two resolutions would move the harness's range
-        # away from the one the prompt named - manufacturing exactly the
-        # disagreement this check exists to detect. (resolve_base_ref
-        # short-circuits on an already-origin/ prefixed value, so this
-        # is also one subprocess fewer.)
-        actual_diffstat = git.get_diff_stat(base_ref, worktree_path)
+        actual_diffstat = git.get_diff_stat(base_sha, worktree_path, resolved=True)
         prompt = build_review_prompt(
             prd_path,
-            base_ref,
+            base_sha,
             verification_result,
         )
         # R1.1: the coverage gate needs the ground-truth story ids from

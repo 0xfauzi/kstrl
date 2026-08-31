@@ -275,15 +275,18 @@ def codex_review_sandbox_args() -> list[str]:
 def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
     """Claude settings JSON for a read-only reviewer.
 
-    Read-only is layered ON TOP of the operator's intent rather than
-    replacing it, and that is where this differs from the codex mapping.
-    There, ``--sandbox read-only`` is strictly tighter than ``--sandbox
-    workspace-write`` and simply supersedes it. Here the two payloads
-    are disjoint: the operator's carries the OS-level ``sandbox`` object
-    (and ``allowUnsandboxedCommands: false``, the escape hatch this
-    module always closes) while the reviewer's carries permission rules.
-    Emitting only the reviewer's would silently drop OS-level sandboxing
-    for the one role with the least business writing anything.
+    The operator's SANDBOX OBJECT is kept and their PERMISSIONS are
+    replaced, which is where this differs from the codex mapping. There,
+    ``--sandbox read-only`` is strictly tighter than ``--sandbox
+    workspace-write`` and simply supersedes the whole thing. Here the
+    two payloads are disjoint: the operator's carries the OS-level
+    ``sandbox`` object (and ``allowUnsandboxedCommands: false``, the
+    escape hatch this module always closes), which the reviewer wants,
+    while their permission rules exist to re-allow the file tools an
+    ENGINEER needs, which the reviewer must not have. Emitting only the
+    reviewer's payload would drop OS-level sandboxing for the one role
+    with the least business writing anything; merging the permissions
+    leaked a file tool (see below).
 
     Paired with :func:`claude_review_drops_skip_permissions`: the
     permission rules are permission-layer, so they only bite when the
@@ -291,23 +294,23 @@ def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
     """
     base = claude_sandbox_settings(config)
     settings: dict[str, object] = json.loads(base) if base else {}
-    permissions = settings.get("permissions")
-    operator_allow = list(permissions.get("allow", [])) if isinstance(permissions, dict) else []
-    review_allow = [
-        *CLAUDE_REVIEW_ALLOW_TOOLS,
-        *(f"Bash({verb}:*)" for verb in CLAUDE_REVIEW_GIT_COMMANDS),
-    ]
-    # The reviewer's deny list wins over anything the operator payload
-    # allowed - the operator's list re-allows the file tools an engineer
-    # needs, and a reviewer must not have them. Claude resolves deny
-    # ahead of allow, but a rule in both lists would still be a
-    # contradiction on the page, so it is dropped here.
+    # The operator's SANDBOX object is kept (that is the OS-level
+    # enforcement, and the reviewer wants it); the operator's
+    # PERMISSIONS are REPLACED, never merged.
+    #
+    # Merging was wrong and the #266 review caught it: the operator's
+    # allow list exists to re-allow the file tools an ENGINEER needs
+    # under the no-network mode, and it names MultiEdit, which is not in
+    # the reviewer's deny list. Subtracting a deny list from a merged
+    # allow list leaks every tool nobody thought to deny - the failure
+    # mode points the wrong way. Replacing means the reviewer holds
+    # exactly the rules named below, and a tool added to the engineer's
+    # list in future is excluded here until somebody considers it.
     settings["permissions"] = {
         "deny": list(CLAUDE_REVIEW_DENY_TOOLS),
         "allow": [
-            rule
-            for rule in dict.fromkeys([*operator_allow, *review_allow])
-            if rule not in CLAUDE_REVIEW_DENY_TOOLS
+            *CLAUDE_REVIEW_ALLOW_TOOLS,
+            *(f"Bash({verb}:*)" for verb in CLAUDE_REVIEW_GIT_COMMANDS),
         ],
     }
     return json.dumps(settings)

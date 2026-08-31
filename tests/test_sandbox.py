@@ -21,6 +21,8 @@ from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
 from kstrl.sandbox import (
+    _CLAUDE_SANDBOXED_TOOL_ALLOW,
+    CLAUDE_REVIEW_ALLOW_TOOLS,
     SandboxConfig,
     claude_sandbox_args,
     claude_sandbox_drops_skip_permissions,
@@ -337,6 +339,27 @@ class TestReadOnlyReviewerPassThrough:
         assert "--dangerously-skip-permissions" not in _claude_cmd(None, read_only=True)
         assert "--dangerously-skip-permissions" in _claude_cmd(None)
 
+    @pytest.mark.parametrize("tool", _CLAUDE_SANDBOXED_TOOL_ALLOW)
+    def test_no_engineer_allow_rule_leaks_into_the_reviewer(self, tool: str) -> None:
+        """#295 finding 2. The reviewer's permissions are built as an
+        ALLOW list, not by subtracting a deny list from the operator's.
+
+        Subtracting leaked every tool nobody thought to deny: the
+        engineer's list names MultiEdit, the reviewer's deny list does
+        not, so a file-writing tool survived into the reviewer's allow
+        rules. Parametrized over the ENGINEER's list on purpose, so a
+        tool added there in future fails here until somebody decides
+        whether a reviewer may have it."""
+        cmd = _claude_cmd(SandboxConfig(enabled=True, allow_network=False), read_only=True)
+        settings = json.loads(cmd[cmd.index("--settings") + 1])
+        allow = settings["permissions"]["allow"]
+        if tool in CLAUDE_REVIEW_ALLOW_TOOLS:
+            assert tool in allow, "a read tool the reviewer needs went missing"
+        else:
+            assert tool not in allow, (
+                f"{tool} reached the reviewer's allow list from the engineer's"
+            )
+
     def test_claude_read_only_LAYERS_over_the_operator_sandbox(self) -> None:
         """Unlike codex, the two claude payloads are DISJOINT: the
         operator's carries the OS-level sandbox object, the reviewer's
@@ -347,12 +370,13 @@ class TestReadOnlyReviewerPassThrough:
         settings = json.loads(cmd[cmd.index("--settings") + 1])
         assert settings["sandbox"]["enabled"] is True
         assert settings["sandbox"]["allowUnsandboxedCommands"] is False
-        # The operator payload re-allows the file tools an engineer needs;
-        # the reviewer's deny list has to win over them.
-        allow = settings["permissions"]["allow"]
-        assert "Write" not in allow
-        assert "Edit" not in allow
-        assert "Bash(git diff:*)" in allow
+        # The operator payload re-allows the file tools an engineer
+        # needs; the reviewer's rules are built from scratch rather than
+        # inheriting them. Which engineer tools stay out is pinned
+        # exhaustively by test_no_engineer_allow_rule_leaks_into_the_reviewer;
+        # what is unique here is that the OS-level object SURVIVED that
+        # replacement.
+        assert "Bash(git diff:*)" in settings["permissions"]["allow"]
 
     def test_get_agent_plumbs_read_only_to_every_adapter(self) -> None:
         from kstrl.agents import get_agent

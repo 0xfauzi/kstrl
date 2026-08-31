@@ -485,6 +485,61 @@ class TestVerifyAndDiffTransitions:
         assert comp.failed_check == "git_diff"
 
 
+class TestReviewerSandboxPlumbing:
+    """#295 finding 3. ``read_only=True`` is a permission-layer posture
+    on the claude adapters; the operator's ``[sandbox]`` intent is a
+    separate OS-level payload. Both reviewer roles were built with the
+    first and NOT the second, so an operator who turned sandboxing on
+    got it for the engineer and silently not for the two roles that now
+    run shell commands inside the tree under review."""
+
+    def _captured_kwargs(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> list[dict[str, Any]]:
+        (tmp_path / "kstrl.toml").write_text(
+            "[sandbox]\nenabled = true\nallow_network = false\n",
+            encoding="utf-8",
+        )
+        seen: list[dict[str, Any]] = []
+
+        def _fake_get_agent(*args: Any, **kwargs: Any) -> Any:
+            # The returned object is never driven: the pipeline hands it
+            # straight to hooks.run_review, which _recording_hooks stubs.
+            seen.append(kwargs)
+            return object()
+
+        monkeypatch.setattr("kstrl.agents.get_agent", _fake_get_agent)
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(
+                review_mode="advisory",
+                security_config=SecurityConfig(mode="advisory"),
+            ),
+            security_selection=_selection("security"),
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        pipeline.process_result("comp-a", _success("comp-a"))
+        return seen
+
+    def test_both_reviewers_receive_the_operator_sandbox(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        seen = self._captured_kwargs(tmp_path, monkeypatch)
+        assert len(seen) == 2, "expected a review agent and a security agent"
+        for kwargs in seen:
+            assert kwargs.get("read_only") is True
+            sandbox = kwargs.get("sandbox")
+            assert sandbox is not None, "the operator's sandbox intent never arrived"
+            assert sandbox.enabled is True
+            assert sandbox.allow_network is False
+
+
 class TestReviewAndSecurityTransitions:
     def test_review_failure_retries(self, tmp_path: Path) -> None:
         pipeline, manifest, _, _ = _make_pipeline(
@@ -529,6 +584,156 @@ class TestReviewAndSecurityTransitions:
         assert comp.review_passed is None
         assert "review" not in calls
         assert any(f.is_phase_skip for f in comp.findings)
+
+    def test_unverified_review_coverage_fails_without_re_running_engineer(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#295 finding 1. A reviewer that cannot show it read the change
+        is a HARNESS fault, and the trigger is deterministic: the same
+        reviewer omits or miscounts ``observedDiffstat`` on every
+        attempt. Routed as RETRY_OR_FAIL it burned the whole retry budget
+        on engineer runs that could not change the input - the #265
+        economics this issue exists to remove.
+
+        The assertion that matters is ``comp.retries == 0``: retries
+        REMAIN available and are deliberately not spent, so this cannot
+        pass by accident on an exhausted budget."""
+        pipeline, manifest, result, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(review_mode="hard", max_retries=3),
+            hooks_overrides={
+                "run_review": lambda *a, **k: ReviewResult(
+                    passed=False,
+                    mode="hard",
+                    infrastructure_error=True,
+                    diffstat_disagreement=(
+                        "the reviewer reported no diffstat, so nothing says it read the change"
+                    ),
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.FAILED
+        assert comp.retries == 0
+        assert comp.status == ComponentStatus.FAILED.value
+        assert comp.failed_phase == "review"
+        assert comp.failed_check == "coverage"
+        assert result.failed == ["comp-a"]
+        # No retry context was built, so nothing is queued for a rerun.
+        assert "comp-a" not in pipeline.component_contexts
+
+    def test_unverified_security_coverage_fails_without_re_running_engineer(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#295 finding 1, Phase 2.5's half."""
+        pipeline, manifest, result, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(
+                review_mode="skip",
+                security_config=SecurityConfig(mode="hard"),
+                max_retries=3,
+            ),
+            security_selection=_selection("security"),
+            hooks_overrides={
+                "run_security_review": lambda *a, **k: SecurityResult(
+                    passed=False,
+                    mode="hard",
+                    infrastructure_error=True,
+                    diffstat_disagreement="git reports 4 files, +900/-12",
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.FAILED
+        assert comp.retries == 0
+        assert comp.failed_phase == "security"
+        assert comp.failed_check == "coverage"
+        assert result.failed == ["comp-a"]
+        assert "comp-a" not in pipeline.component_contexts
+
+    @pytest.mark.parametrize("phase", ["review", "security"])
+    def test_advisory_mode_is_never_failed_by_the_coverage_wall(
+        self,
+        tmp_path: Path,
+        phase: str,
+    ) -> None:
+        """``apply_coverage_check`` records ``diffstat_disagreement`` in
+        EVERY mode - that is how an advisory pass stays visibly
+        unverified - and only refuses in hard mode. The finding-1 wall
+        must therefore key on the REFUSAL, not on the disagreement
+        alone, or advisory mode starts blocking, which is the one thing
+        it promises never to do.
+
+        Caught while writing the fix: Phase 2's wall lives inside
+        ``_review_failure`` and a passing review never reaches it, but
+        Phase 2.5's sat in the open and did fire."""
+        unverified = "the reviewer reported no diffstat"
+        overrides: dict[str, Any] = (
+            {
+                "run_review": lambda *a, **k: ReviewResult(
+                    passed=True,
+                    mode="advisory",
+                    diffstat_disagreement=unverified,
+                ),
+            }
+            if phase == "review"
+            else {
+                "run_security_review": lambda *a, **k: SecurityResult(
+                    passed=True,
+                    mode="advisory",
+                    diffstat_disagreement=unverified,
+                ),
+            }
+        )
+        pipeline, manifest, result, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(
+                review_mode="advisory",
+                security_config=SecurityConfig(mode="advisory"),
+            ),
+            security_selection=_selection("security"),
+            hooks_overrides=overrides,
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.COMPLETED
+        assert comp.status != ComponentStatus.FAILED.value
+        assert result.failed == []
+
+    def test_an_ordinary_review_failure_still_retries(self, tmp_path: Path) -> None:
+        """The finding-1 wall must be specific to unverified coverage.
+        A reviewer that DID prove it read the change and found real
+        problems is exactly the case retrying exists for."""
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            config=_factory_config(review_mode="hard", max_retries=3),
+            hooks_overrides={
+                "run_review": lambda *a, **k: ReviewResult(
+                    passed=False,
+                    mode="hard",
+                ),
+            },
+        )
+        comp = manifest.get_component("comp-a")
+        assert comp is not None
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result("comp-a", _success("comp-a"))
+        assert outcome is not None
+        assert outcome.transition == Transition.RETRYING
+        assert comp.failed_check == "criteria"
 
     def test_security_failure_retries(self, tmp_path: Path) -> None:
         pipeline, manifest, _, _ = _make_pipeline(
