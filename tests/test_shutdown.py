@@ -26,6 +26,7 @@ import pytest
 from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
 from kstrl.factory import (
     ComponentResult,
+    FactoryResult,
     _abort_inflight,
     _wait_interruptible,
     run_factory,
@@ -36,6 +37,13 @@ from tests.helpers.procs import (
     kill_group,
     read_pid,
     wait_for_group_to_die,
+)
+from tests.spine_utils import (
+    base_config,
+    component,
+    factory_config,
+    init_kstrl_repo,
+    make_manifest,
 )
 from tests.test_event_stream import (
     _component,
@@ -386,6 +394,27 @@ class TestLoopStopCheck:
 # its own agent reported and nothing here searches a command line.
 
 
+#: The agent must OUTLIVE the whole test, so that finding its process
+#: group dead can only mean the shutdown killed it.
+#:
+#: The previous version used `sleep 60` and proved nothing. Measured: the
+#: test's wall time tracked the agent's sleep exactly, 60.19s for
+#: `sleep 60` and 20.65s for `sleep 20`. Instrumented, the stop was
+#: requested at t=0.08s and `_abort_inflight` was not reached until
+#: t=60.03s, so the agent ran its sleep to the end and died of old age.
+#: Planting `return 0` at the top of `kill_active_process_groups` left
+#: the test GREEN. With `sleep 600` and a real pool the same sabotage
+#: leaves the group alive and the assertion red, which is the whole
+#: difference between a test and a decoration.
+AGENT_SLEEP_SECONDS = 600
+
+#: `run_factory` must return once the stop is set rather than when the
+#: agent finishes. Measured at 0.79s against a real pool. The bound is
+#: two orders of margin, and it exists so a regression of that promptness
+#: FAILS instead of hanging CI for ten minutes on `sleep 600`.
+RUN_FACTORY_BOUND_SECONDS = 120
+
+
 @pytest.mark.spine
 class TestWorkerSigterm:
     def test_pool_worker_sigterm_kills_agent_group(
@@ -393,38 +422,63 @@ class TestWorkerSigterm:
         tmp_path: Path,
     ) -> None:
         """A REAL pool worker running a sleeping agent: SIGTERM to the
-        worker must kill the agent's process group (no orphans) and the
-        component must be recorded aborted."""
-        root = _setup_project(tmp_path, ["comp-a"])
-        manifest = _make_manifest([_component("comp-a")])
-        base = _make_base_config(root)
-        # The agent reports its own pid before becoming the sleep, so the
-        # test never has to go looking for it. `exec` keeps the pid, and
-        # DeadlineStreamer starts it with start_new_session=True, so that
-        # pid also leads its own process group.
-        pidfile = tmp_path / "agent.pid"
-        base.agent_cmd = f"echo $$ > {pidfile}; exec sleep 60"
-        config = _factory_config(root, max_parallel=2)
+        worker must kill the agent's process group (no orphans).
+
+        "REAL pool worker" is asserted, not assumed. The version this
+        replaces asked for `max_parallel=2` and silently got
+        `_InlineExecutor`, because its `_factory_config` helper defaults
+        to `use_worktrees=False` and `run_factory` forces `max_parallel=1`
+        when worktrees are off. So there was no worker, nothing was
+        SIGTERMed, and the class name and this docstring were both wrong.
+        Worse, the inline executor runs the component synchronously in
+        the calling thread, which is why the stop could not be observed
+        until the agent had already exited.
+
+        The spine harness is used instead, because a real pool needs a
+        real git repository to make worktrees in, and `use_worktrees=True`
+        is what stops `max_parallel` being forced back to 1.
+        """
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("comp-a",))
+        manifest = make_manifest([component("comp-a")])
+
+        # The agent reports two pids and then becomes the sleep. `$$` is
+        # its own, kept across `exec`, and DeadlineStreamer starts it with
+        # start_new_session=True so that pid also leads its own group.
+        # `$PPID` is the process that spawned it, which is the evidence
+        # that a separate worker ran it.
+        agent_pidfile = tmp_path / "agent.pid"
+        worker_pidfile = tmp_path / "worker.pid"
+        base = base_config(
+            root,
+            agent_cmd=(
+                f"echo $PPID > {worker_pidfile}; "
+                f"echo $$ > {agent_pidfile}; "
+                f"exec sleep {AGENT_SLEEP_SECONDS}"
+            ),
+        )
+        config = factory_config(max_parallel=2)
         stop = StopController()
-        # Captured by the watcher thread while the agent is still alive:
-        # after the shutdown there is no process left to ask.
-        agent_pgid: list[int] = []
+        # Read while the agent is alive: after the shutdown there is no
+        # process left to ask.
+        observed: dict[str, int] = {}
 
         def stop_soon() -> None:
             try:
-                agent_pgid.append(os.getpgid(read_pid(pidfile, timeout=15.0)))
+                observed["agent_pgid"] = os.getpgid(read_pid(agent_pidfile, timeout=60.0))
+                observed["worker_pid"] = read_pid(worker_pidfile, timeout=10.0)
             except (AssertionError, ProcessLookupError):
                 pass
             # Requested even when the agent never appeared, so a miss
             # surfaces as the explicit assertion below rather than as
-            # run_factory blocking until its own timeout.
+            # run_factory blocking for the full sleep.
             stop.request("sigterm spine test")
 
-        watcher = threading.Thread(target=stop_soon)
-        watcher.start()
-        try:
-            with patch("kstrl.git.get_diff_content", return_value=""):
-                result = run_factory(
+        results: list[FactoryResult] = []
+
+        def run() -> None:
+            results.append(
+                run_factory(
                     manifest,
                     config,
                     base,
@@ -432,27 +486,53 @@ class TestWorkerSigterm:
                     root,
                     stop=stop,
                 )
-            assert result.exit_code == 130
-            # Without this the test could pass having observed nothing:
-            # an agent that never started cannot leave an orphan either.
-            assert agent_pgid, "never observed the agent subprocess start"
+            )
 
-            pgid = agent_pgid[0]
+        watcher = threading.Thread(target=stop_soon)
+        watcher.start()
+        # Daemon so a hang cannot wedge the interpreter at exit; the
+        # bounded join below is what turns a hang into a failure.
+        runner = threading.Thread(target=run, daemon=True)
+        runner.start()
+        try:
+            runner.join(timeout=RUN_FACTORY_BOUND_SECONDS)
+            assert not runner.is_alive(), (
+                f"run_factory did not return within {RUN_FACTORY_BOUND_SECONDS}s "
+                f"of the stop being requested; it is waiting for the agent to "
+                f"finish rather than aborting it"
+            )
+            assert results and results[0].exit_code == 130
+
+            # An agent that never started cannot leave an orphan either,
+            # so without this the test could pass having observed nothing.
+            assert "agent_pgid" in observed, "never observed the agent subprocess start"
+
+            # The precondition the old version silently lost. If the agent
+            # ran in THIS process there was no worker to SIGTERM, and
+            # everything below would be measuring the inline path instead.
+            assert observed["worker_pid"] != os.getpid(), (
+                "the agent was spawned by the test process itself, so no "
+                "pool worker exists and this test is not exercising the "
+                "SIGTERM forwarding it claims to; check that use_worktrees "
+                "is on and max_parallel survived to the executor choice"
+            )
+
+            pgid = observed["agent_pgid"]
             # The invariant that makes a group-scoped assertion safe to
-            # make at all. A pool worker is a plain fork and shares our
-            # process group, so a group that WERE ours would make the
-            # cleanup below `killpg` the harness itself, which is the
-            # footgun agents/proc.py::_signal_group documents.
+            # make at all: killing our own group would kill the harness,
+            # the footgun agents/proc.py::_signal_group documents.
             assert pgid != os.getpgrp()
 
+            # The agent still had ~10 minutes of sleep left, so a dead
+            # group here can only have been killed.
             assert wait_for_group_to_die(pgid), (
                 f"agent subprocess orphaned: process group {pgid} still has a "
                 f"live member after the worker was told to stop"
             )
         finally:
             watcher.join(timeout=20)
-            for pgid in agent_pgid:
-                kill_group(pgid)
+            if "agent_pgid" in observed:
+                kill_group(observed["agent_pgid"])
 
 
 class TestTheOrphanCheckIsScopedToItsOwnGroup:
@@ -497,7 +577,7 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
             # because "sleep 60" is a prefix of the decoy's "sleep 600".
             # This is the assertion that used to fail runs, and it is
             # here so the fix cannot be quietly reverted to it. The AST
-            # net in tests/test_atomicio.py allows this one line by name.
+            # net in tests/test_process_scoping.py allows this file by name.
             stale = subprocess.run(["pgrep", "-f", "sleep 60"], capture_output=True)
             assert stale.returncode == 0, (
                 "expected the decoy to still match the old machine-wide "

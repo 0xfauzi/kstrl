@@ -2011,12 +2011,20 @@ def _run_component(
         max_budget_usd=agent_budget_usd,
     )
 
-    # Copy PRD into worktree if needed
+    # Copy PRD into worktree if needed.
+    #
+    # shutil.copyfile, not read_text/write_text: these are COPIES, and a
+    # copy that decodes and re-encodes is only byte-exact when the
+    # locale's codec round-trips. #291 made the PRD utf-8 on disk, which
+    # under LC_ALL=C a bare read_text cannot decode at all, and #286's
+    # scaffold digests depend on prompt.md copying byte for byte. A byte
+    # copy removes the encoding question rather than answering it four
+    # times.
     worktree_prd = worktree_path / prd_path_str
     prd_source = root_dir / prd_path_str
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
-        worktree_prd.write_text(prd_source.read_text())
+        shutil.copyfile(prd_source, worktree_prd)
 
     # The prompt template's $prd_path placeholder (shipped in
     # DEFAULT_PROMPT >= 1.1.0 and the scaffolded prompt.md) is substituted
@@ -2029,7 +2037,7 @@ def _run_component(
     prompt_source = root_dir / prompt_file_str
     if not worktree_prompt.exists() and prompt_source.exists():
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
-        worktree_prompt.write_text(prompt_source.read_text())
+        shutil.copyfile(prompt_source, worktree_prompt)
 
     # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
     # use_worktrees=False, worktree_path IS the repo root so the files are
@@ -2037,7 +2045,7 @@ def _run_component(
     claude_dest = worktree_path / "CLAUDE.md"
     claude_src = root_dir / "CLAUDE.md"
     if not claude_dest.exists() and claude_src.exists():
-        claude_dest.write_text(claude_src.read_text())
+        shutil.copyfile(claude_src, claude_dest)
     agents_dest = worktree_path / "AGENTS.md"
     agents_src = root_dir / "AGENTS.md"
     if not agents_dest.exists():
@@ -2045,7 +2053,7 @@ def _run_component(
             # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
             agents_dest.symlink_to("CLAUDE.md")
         elif agents_src.exists():
-            agents_dest.write_text(agents_src.read_text())
+            shutil.copyfile(agents_src, agents_dest)
         elif claude_dest.exists():
             agents_dest.symlink_to("CLAUDE.md")
 

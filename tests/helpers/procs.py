@@ -16,7 +16,7 @@ and never a pattern:
     A test may assert on a process it can name. It may not assert on
     what else the machine happens to be running.
 
-``tests/test_atomicio.py`` mechanises the negative half by AST-walking
+``tests/test_process_scoping.py`` mechanises the negative half by AST-walking
 this suite for ``pgrep``/``pkill``/``killall``/``pidof``, so the class
 cannot come back quietly.
 
@@ -68,17 +68,51 @@ def group_has_live_member(pgid: int) -> bool:
     Only the two columns the question needs are requested. Asking ``ps``
     for command lines as well measured 23.5ms per call against 11.6ms for
     this on a 895-process machine, and this runs inside a poll loop.
+
+    RAISES rather than reports absence when it cannot see. A helper that
+    answers "nothing is there" because ``ps`` failed is the same defect
+    #292 exists to remove, one level down: measured with ``ps`` forced to
+    return 127, this reported the caller's OWN live process group as dead
+    and ``wait_for_group_to_die`` returned True, so the orphan assertion
+    would have passed having measured nothing. ``ps`` is absent or
+    restricted often enough to matter, on ``hidepid`` mounts and in
+    minimal containers.
+
+    So absence is only ever reported by a call that proved it can see
+    something: the caller's own process group is alive by construction,
+    and if that is missing from the output the output is not evidence.
     """
     out = subprocess.run(
         ["ps", "-A", "-o", "pgid=,stat="],
         capture_output=True,
         text=True,
     )
+    if out.returncode != 0:
+        raise AssertionError(
+            f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. "
+            f"Process-group liveness cannot be measured here, and "
+            f"reporting 'no live member' would be a false negative."
+        )
+
+    ours = str(os.getpgrp())
+    saw_own_group = False
+    found = False
     for line in out.stdout.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and parts[0] == str(pgid) and not parts[1].startswith("Z"):
-            return True
-    return False
+        if len(parts) < 2:
+            continue
+        if parts[0] == ours:
+            saw_own_group = True
+        if parts[0] == str(pgid) and not parts[1].startswith("Z"):
+            found = True
+
+    if not saw_own_group:
+        raise AssertionError(
+            f"ps did not report this process's own group ({ours}), so it "
+            f"cannot be trusted to report the absence of group {pgid}. "
+            f"Restricted or filtered ps output."
+        )
+    return found
 
 
 def wait_for_group_to_die(pgid: int, timeout: float = 10.0) -> bool:

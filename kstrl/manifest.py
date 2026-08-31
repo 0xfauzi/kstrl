@@ -230,8 +230,15 @@ class Manifest:
 
     @classmethod
     def load(cls, path: Path) -> Manifest:
-        """Load manifest from JSON file."""
-        with open(path) as f:
+        """Load manifest from JSON file.
+
+        utf-8 pinned to match ``save``: the manifest is written as utf-8
+        (#291) and a bare ``open`` would decode it with the locale codec,
+        so one non-ASCII character in a component description made the
+        file unreadable under ``LC_ALL=C``. Measured before this pin:
+        ``UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2``.
+        """
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         errors = cls.validate_schema(data)

@@ -186,8 +186,13 @@ class PRD:
 
     @classmethod
     def load(cls, path: Path) -> PRD:
-        """Load PRD from JSON file."""
-        with open(path) as f:
+        """Load PRD from JSON file.
+
+        utf-8 pinned to match ``save`` (#291): the read side has to name
+        the same encoding as the write side or the file is only readable
+        in the locale that happened to write it.
+        """
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         errors = cls.validate_schema(data)

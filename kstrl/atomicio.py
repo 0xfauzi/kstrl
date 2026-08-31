@@ -148,9 +148,20 @@ def atomic_write_text(target: Path, content: str) -> None:
 
     fd, tmp_path = _create_temp(target.parent, f".{target.name}-")
     try:
-        if mode is not None:
-            os.fchmod(fd, mode)
+        # ``fdopen`` FIRST, so the descriptor belongs to a context
+        # manager before anything that can fail touches it. With the
+        # ``fchmod`` outside, a destination whose filesystem refuses it
+        # (NFS with root-squash, exFAT, SMB all return EPERM or EROFS)
+        # raised past the raw fd and leaked it: measured at 20 leaked
+        # descriptors from 20 failed writes, which inside the serve
+        # daemon or a retrying worker accumulates to EMFILE.
+        #
+        # The ``fchmod`` still runs BEFORE the first write, so the file
+        # is empty for the whole window in which it carries the wrong
+        # mode, and replacing a 0600 file never exposes its contents.
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            if mode is not None:
+                os.fchmod(handle.fileno(), mode)
             handle.write(content)
         os.replace(tmp_path, str(target))
     except BaseException:

@@ -1054,9 +1054,9 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     prd_file = kstrl_dir / "prd.json"
 
     try:
-        with open(prd_file) as f:
+        with open(prd_file, encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         ui.err(f"Invalid JSON in prd.json: {e}")
         return 1
 

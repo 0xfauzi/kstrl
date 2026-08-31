@@ -635,9 +635,9 @@ def check_fixtures_from_prd(
     """
     start = time.monotonic()
     try:
-        with open(prd_path) as f:
+        with open(prd_path, encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         return CheckResult(
             name="fixtures",
             passed=False,
@@ -744,8 +744,8 @@ def check_snapshot_regression(
         return []
 
     try:
-        snapshot_data = json.loads(snapshot_path.read_text())
-    except (json.JSONDecodeError, OSError):
+        snapshot_data = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         return ["Failed to read snapshot file - cannot check for regressions"]
 
     previous_entries = {entry["description"]: entry for entry in snapshot_data.get("entries", [])}

@@ -301,9 +301,9 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
         sys.exit(1)
 
     try:
-        with open(prd_file) as f:
+        with open(prd_file, encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         ui_impl.err(f"Invalid JSON in {prd_file}: {exc}")
         sys.exit(1)
     except OSError as exc:

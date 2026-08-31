@@ -20,6 +20,7 @@ not in ``WRITERS``.
 from __future__ import annotations
 
 import ast
+import errno
 import inspect
 import json
 import os
@@ -378,3 +379,242 @@ class TestEveryCopyOfThePatternWasMigrated:
             f"encoding rules live, and a hand-rolled copy is how #291 "
             f"came to have ten of them, nine downgrading the mode."
         )
+
+
+class TestTheReadSideNamesTheSameEncoding:
+    """#291 round two: pinning only the WRITE side made files unreadable.
+
+    ``ensure_ascii=False`` turns a JSON document that used to be pure
+    ASCII into raw utf-8 bytes. Every reader that opened it with the
+    LOCALE codec then failed on the first non-ASCII character, on a file
+    the previous release read fine. Measured before the fix, under
+    ``LC_ALL=C`` on a manifest holding one curly quote:
+    ``UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2``.
+
+    ``UnicodeDecodeError`` is a ``ValueError``, not an ``OSError``, so it
+    was not caught by the ``(json.JSONDecodeError, OSError)`` handlers
+    that exist to fail closed; it propagated out of
+    ``check_snapshot_regression`` instead.
+
+    A round trip is the only honest test of this: pinning the write side
+    and then asserting on the write side proves nothing about a reader.
+    """
+
+    #: One curly quote is all it takes, and it is exactly what an LLM
+    #: writes into a component description or an acceptance criterion.
+    CURLY = "the operator\u2019s \u00e9\u00e8\u00fc \u2713"
+
+    def _probe(self, tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
+        """Run ``body`` in a child under a POSIX/ASCII locale.
+
+        The script is pure ASCII for the reason the locale test above
+        gives: under ``LC_ALL=C`` a child cannot decode a non-ASCII argv
+        or source file.
+        """
+        repo_root = Path(kstrl.atomicio.__file__).parent.parent
+        script = tmp_path / "probe.py"
+        script.write_text(
+            "import sys\n" + f"sys.path.insert(0, {ascii(str(repo_root))})\n" + body,
+            encoding="ascii",
+        )
+        # The child's stdout is ASCII under this locale too, so a probe
+        # prints ascii(value) rather than the value: printing it directly
+        # raises UnicodeEncodeError and would fail the test for a reason
+        # that has nothing to do with whether the READ worked.
+        return subprocess.run(
+            [sys.executable, str(script), str(tmp_path)],
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "LC_ALL": "C",
+                "LANG": "C",
+                "PYTHONCOERCECLOCALE": "0",
+                "PYTHONUTF8": "0",
+            },
+        )
+
+    def test_a_manifest_written_here_loads_under_the_c_locale(self, tmp_path: Path) -> None:
+        target = tmp_path / "manifest.json"
+        atomic_write_json(
+            target,
+            {
+                "version": "1",
+                "specFile": "spec.md",
+                "projectName": "p",
+                "baseBranch": "main",
+                "singlePr": False,
+                "components": [
+                    {
+                        "id": "comp-a",
+                        "title": "T",
+                        "description": self.CURLY,
+                        "dependencies": [],
+                        "prdPath": "p.json",
+                        "branchName": "b",
+                    }
+                ],
+            },
+        )
+        assert not all(b < 128 for b in target.read_bytes()), (
+            "the payload must actually be non-ASCII on disk, or this test "
+            "cannot detect a locale-dependent reader"
+        )
+
+        result = self._probe(
+            tmp_path,
+            "from pathlib import Path\n"
+            "from kstrl.manifest import Manifest\n"
+            "m = Manifest.load(Path(sys.argv[1]) / 'manifest.json')\n"
+            "print(ascii(m.components[0].description))\n",
+        )
+        assert result.returncode == 0, result.stderr
+        assert ascii(self.CURLY) in result.stdout
+
+    def test_a_prd_written_here_loads_under_the_c_locale(self, tmp_path: Path) -> None:
+        atomic_write_json(
+            tmp_path / "prd.json",
+            {
+                "branchName": "b",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": self.CURLY,
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
+            },
+        )
+        result = self._probe(
+            tmp_path,
+            "from pathlib import Path\n"
+            "from kstrl.prd import PRD\n"
+            "p = PRD.load(Path(sys.argv[1]) / 'prd.json')\n"
+            "print(ascii(p.user_stories[0].title))\n",
+        )
+        assert result.returncode == 0, result.stderr
+        assert ascii(self.CURLY) in result.stdout
+
+    def test_a_fixture_snapshot_is_readable_under_the_c_locale(self, tmp_path: Path) -> None:
+        """``check_snapshot_regression`` fails CLOSED on an unreadable
+        snapshot, so a decode error there did not even surface as one: it
+        escaped the handler entirely, because ``UnicodeDecodeError`` is a
+        ``ValueError`` and the handler names ``OSError``."""
+        atomic_write_json(
+            tmp_path / "comp-a.json",
+            {"component_id": "comp-a", "fixture_count": 0, "entries": [], "note": self.CURLY},
+        )
+        result = self._probe(
+            tmp_path,
+            "from pathlib import Path\n"
+            "from kstrl.fixtures import check_snapshot_regression\n"
+            "print('REGRESSIONS:', check_snapshot_regression('comp-a', [], Path(sys.argv[1])))\n",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "REGRESSIONS: []" in result.stdout
+
+
+class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
+    """#291 round two: a failing ``fchmod`` leaked the raw descriptor.
+
+    ``_create_temp`` hands back a raw fd. With the ``fchmod`` outside the
+    ``fdopen``, a destination whose filesystem refuses it raised straight
+    past that fd with nothing owning it. Measured before the fix: 20
+    failed writes leaked 20 descriptors. NFS with root-squash, exFAT and
+    SMB all return EPERM or EROFS here, and inside the serve daemon or a
+    retrying worker that accumulates to EMFILE.
+    """
+
+    def _open_fd_count(self) -> int:
+        return len(os.listdir("/dev/fd"))
+
+    def test_a_failing_fchmod_leaks_no_descriptors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "tracked.json"
+        target.write_text("original\n", encoding="utf-8")
+        os.chmod(target, 0o644)
+
+        def refuse(fd: int, mode: int) -> None:
+            raise PermissionError("fchmod not supported on this filesystem")
+
+        monkeypatch.setattr(kstrl.atomicio.os, "fchmod", refuse)
+        before = self._open_fd_count()
+        for _ in range(20):
+            with pytest.raises(PermissionError):
+                atomic_write_text(target, "new")
+        leaked = self._open_fd_count() - before
+        monkeypatch.undo()
+
+        assert leaked == 0, f"{leaked} descriptors leaked across 20 failed writes"
+        assert target.read_text(encoding="utf-8") == "original\n"
+        assert _mode(target) == 0o644
+        assert [p.name for p in tmp_path.iterdir()] == ["tracked.json"]
+
+    def test_the_mode_is_still_pinned_before_any_byte_is_written(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Moving ``fchmod`` inside the ``with`` must not open a window in
+        which a private file's contents sit at a looser mode."""
+        target = tmp_path / "secret.txt"
+        target.write_text("old", encoding="utf-8")
+        os.chmod(target, 0o600)
+
+        sizes: list[int] = []
+        real_fchmod = kstrl.atomicio.os.fchmod
+
+        def record(fd: int, mode: int) -> None:
+            sizes.append(os.fstat(fd).st_size)
+            real_fchmod(fd, mode)
+
+        monkeypatch.setattr(kstrl.atomicio.os, "fchmod", record)
+        atomic_write_text(target, "brand new secret")
+        monkeypatch.undo()
+
+        assert sizes == [0], (
+            f"the temp file held {sizes} bytes when its mode was pinned; it "
+            f"must be empty, or a 0600 file's contents are briefly readable"
+        )
+        assert _mode(target) == 0o600
+
+
+class TestReplaceRefusesAMissingTargetWithoutRenamingTheError:
+    """#291 round two, and the one finding this pushes back on.
+
+    ``init_cmd._atomic_replace`` guards with ``target.is_file()``. Review
+    read that as swallowing every ``OSError``, so an ``EACCES`` on the
+    parent directory would be reported as "the caller is wrong".
+    Measured: it does not. ``pathlib`` ignores only ENOENT, ENOTDIR,
+    EBADF and ELOOP, so ``is_file()`` PROPAGATES ``PermissionError`` and
+    the real errno survives, on every Python this project supports
+    (>=3.11). Pinned here so it stays true rather than staying argued.
+    """
+
+    def test_a_missing_target_is_refused(self, tmp_path: Path) -> None:
+        from kstrl.init_cmd import _atomic_replace
+
+        with pytest.raises(FileNotFoundError, match="expects an existing file"):
+            _atomic_replace(tmp_path / "never-created.md", "x")
+        assert not (tmp_path / "never-created.md").exists(), (
+            "a refusal must not leave behind the file it refused to write"
+        )
+
+    def test_an_unreadable_parent_keeps_its_own_errno(self, tmp_path: Path) -> None:
+        from kstrl.init_cmd import _atomic_replace
+
+        locked = tmp_path / "locked"
+        locked.mkdir()
+        target = locked / "prompt.md"
+        target.write_text("hi\n", encoding="utf-8")
+        os.chmod(locked, 0o000)
+        try:
+            if os.access(locked, os.X_OK):
+                pytest.skip("running as root: permission bits are not enforced")
+            with pytest.raises(PermissionError) as caught:
+                _atomic_replace(target, "x")
+            assert caught.value.errno == errno.EACCES
+        finally:
+            os.chmod(locked, 0o700)
