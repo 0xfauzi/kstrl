@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual.widgets import DataTable
 
-from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.tui import theme
+from kstrl.tui.state import planned_component_ids
 
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
@@ -84,7 +84,10 @@ class DagTable(DataTable[Text | str]):
         # architect named `architect` is not. Those were one string until
         # #281, and this table had its own declaration of it, so a real
         # component with that name vanished from the DAG entirely.
-        order = [cid for cid in state.plan_order if cid != ARCHITECT_COMPONENT]
+        #
+        # Resolved per run rather than pinned to the constant, or a
+        # pre-#281 dir's stale pseudo-row renders as a graph node.
+        order = planned_component_ids(state)
         deps_map = {cid: state.components[cid].deps for cid in order if cid in state.components}
         tiers = compute_tiers(deps_map)
         prds = {a["component"] for a in state.artifacts if a.get("label") == "prd"}
