@@ -35,6 +35,7 @@ kstrl's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 - **Do not run `/code-review` on your own code.** Per H1 of `docs/adversarial-roadmap.md`, AI self-review of AI-generated code is prohibited. The user or `/code-review ultra` is the gating reviewer.
 - **Calibration is the truth signal.** When changing an adversarial prompt (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, the engineer prompt), re-run the calibration suite and compare detection rates against the saved baseline. A prompt edit without a calibration check is treated as untested (H2).
 - **Prompt edits require a version bump AND a hash update.** Every adversarial prompt (including the harness-shipped engineer prompt `DEFAULT_PROMPT`) declares a `*_PROMPT_VERSION` semver constant next to the body. `tests/test_prompt_versions.py` snapshots each prompt as a `(hash, version)` tuple in `_EXPECTED_SNAPSHOTS`; both must move together. The test also AST-walks `kstrl/` for any module-level `*_PROMPT` constant and fails if a new one is not enrolled. The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving (H3).
+- **A `DEFAULT_PROMPT` bump also appends a scaffold-ledger row.** `ks init` never overwrites `scripts/kstrl/prompt.md`, so a version bump alone reaches no already-initialised project. `SCAFFOLDED_TEMPLATES` in `kstrl/init_cmd.py` records the SHA-256 of every body each scaffolded template has ever shipped; append the new row, never edit or drop an older one, because an old row is the only thing that can recognise a copy already on someone's disk (H3b).
 - **Be explicit about what was tested vs assumed.** "Smoke passed" without listing what was checked is presence-testing, not behavior-testing (H4).
 - **All adversarial-roadmap policies are tracked in `docs/adversarial-roadmap.md`**. Read it before changing the role architecture.
 
@@ -73,6 +74,7 @@ Every adversarial decision writes a record: review/security findings go to PR bo
 - Do NOT run `/code-review` on your own code (H1).
 - Do NOT ship a prompt change without re-running calibration (H2).
 - Do NOT update the hash in `tests/test_prompt_versions.py` without also bumping the matching `*_PROMPT_VERSION` constant (H3). The two changes always travel together.
+- Do NOT edit or delete a row in `SCAFFOLDED_TEMPLATES`; only append (H3b).
 - Do NOT use `pickle` to load untrusted data; the existing `tests/test_phase_c_coverage.py` C8 pickling test only round-trips configs we constructed in-test.
 - Do NOT add unverifiable self-report claims to results without flagging them as hints (E9 added `infrastructure_error` precisely to distinguish verified from claimed; E3-infra lifts the same signal into the `Finding` stream so `len(findings)==0` is a safe "ran cleanly" check).
 - Do NOT bypass the budget cap (`max_adversarial_calls`) without explicit user opt-in.

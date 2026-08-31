@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Literal
 
@@ -12,12 +13,19 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.statedir import STATE_DIR_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from kstrl.config import KstrlConfig
     from kstrl.ui.base import UI
+
+
+#: A repo-relative path inside kstrl's own state directory. Matched
+#: rather than string-compared so ``.kstrl-backup/x`` and ``sub/.kstrl/x``
+#: do not qualify: only the state directory AT THE WALK ROOT is kstrl's.
+_WITHIN_STATE_DIR = re.compile(rf"^{re.escape(STATE_DIR_NAME)}/")
 
 
 def path_is_allowed(path: str, allowed_paths: list[str]) -> bool:
@@ -91,8 +99,18 @@ def check_violations(
 ) -> list[str]:
     """Check for files that violate ALLOWED_PATHS.
 
-    ``ignored_paths`` contains exact harness-owned files or directory
-    prefixes for this invocation, never a blanket state-directory bypass.
+    ``ignored_paths`` is harness-owned only: the exact files kstrl
+    requires this invocation's agent to write
+    (``config.component_harness_paths``, #264) plus the entries kstrl
+    itself creates under its state directory
+    (``statedir.state_dir_carve_out``, #274).
+
+    Still never a blanket state-directory bypass. ``.kstrl/`` as a bare
+    prefix is refused everywhere - ``decompose._ALLOWED_PATHS_EXCLUDE``
+    will not let an architect authorise it - and the state carve-out
+    names only the subtrees and files kstrl writes, so a path the
+    harness does not create (``.kstrl/notes.md``) is still a violation.
+
     Returns list of disallowed files.
     """
     if not allowed_paths:
@@ -112,8 +130,8 @@ def _revert_violation(
     ui: UI,
     cwd: Path | None,
     baseline: git.WorkspaceBaseline | None,
-) -> None:
-    """Undo one out-of-scope change.
+) -> bool:
+    """Undo one out-of-scope change. False when it was REFUSED.
 
     With a baseline the revert source is the BASELINE COMMIT, not the
     index: the violation may already be committed, and restoring from
@@ -122,7 +140,23 @@ def _revert_violation(
     violation and the next iteration would re-detect it forever. A file
     that did not exist at the baseline is dropped from the index and
     deleted, so it disappears from the delta the way a revert should.
+
+    Nothing under kstrl's own state directory is ever reverted (#274
+    review). The paths that reach here are by definition the ones the
+    carve-out does NOT cover, and ``statedir.STATE_NOT_CARVED`` keeps
+    exactly the authority-carrying entries countable: the work queue,
+    evolution proposals, the autonomy level, the pause marker. Deleting
+    an untracked file is how this function disposes of a violation, and
+    ``git.delete_untracked`` recurses into directories - so without this
+    refusal, making those paths VISIBLE to the guard would also hand
+    them to a deleter, and an operator choosing "Revert and continue"
+    could destroy the pause marker they had just written. Reporting a
+    file and destroying it are different powers; this function only has
+    the second, so it declines the cases where only the first is wanted.
     """
+    if _WITHIN_STATE_DIR.match(file):
+        ui.warn(f"  Refused (kstrl state, reported not reverted): {file}")
+        return False
     if baseline is not None and baseline.head is not None:
         if git.restore_file_from(file, baseline.head, cwd):
             ui.info(f"  Restored: {file}")
@@ -130,13 +164,67 @@ def _revert_violation(
             git.remove_from_index(file, cwd)
             git.delete_untracked(file, cwd)
             ui.info(f"  Deleted: {file}")
-        return
+        return True
     if git.is_file_tracked(file, cwd):
         git.restore_file(file, cwd)
         ui.info(f"  Restored: {file}")
     else:
         git.delete_untracked(file, cwd)
         ui.info(f"  Deleted: {file}")
+    return True
+
+
+def _revert_violations(
+    violations: list[str],
+    ui: UI,
+    cwd: Path | None,
+    baseline: git.WorkspaceBaseline | None,
+) -> list[str]:
+    """Revert what may be reverted; return what was refused.
+
+    Its own function so ``enforce_allowed_paths`` keeps one statement
+    here rather than a branch: the refusals have to travel back to the
+    caller, because reporting "reverted" for a file still on disk is the
+    silent-success failure this whole guard exists to avoid.
+    """
+    return [f for f in violations if not _revert_violation(f, ui, cwd, baseline)]
+
+
+def _report_violations(
+    ui: UI,
+    allowed_paths: list[str],
+    ignored_paths: list[str] | None,
+    violations: list[str],
+) -> None:
+    """Print the scope failure, authored list and carve-out apart.
+
+    The two lists never merge (#264, #274). An operator reading a scope
+    failure has to be able to tell what THEY authorised from what the
+    harness added on their behalf, and a retry agent must not read
+    kstrl's own PRD, progress log or state directory as the thing it has
+    to stop writing - that is the one instruction it cannot obey and
+    still pass ``prd_stories``. Mirrors ``verify._diff_scope_details``,
+    which does the same for the Phase 1 half of the same question.
+
+    The parenthetical repeats ``verify._diff_scope_details`` and
+    ``factory._run_component`` word for word. Deliberate: the three
+    scope failures must read identically wherever they are caught, and
+    the claim itself has to be the same claim, because a retry agent
+    told "already in scope" at one guard and "not part of
+    ALLOWED_PATHS" at another has been given two different instructions
+    about the same files.
+    """
+    ui.channel_header("GUARD", "Disallowed changes")
+    ui.kv("ALLOWED_PATHS", ", ".join(allowed_paths))
+    if ignored_paths:
+        ui.kv("HARNESS_PATHS", ", ".join(ignored_paths))
+        ui.info(
+            "  (kstrl's own files, already in scope, no need to widen allowedPaths)",
+        )
+    ui.info("")
+    ui.info("Disallowed files:")
+    for f in violations:
+        ui.info(f"    - {f}")
 
 
 def enforce_allowed_paths(
@@ -153,8 +241,10 @@ def enforce_allowed_paths(
     - ok is True if enforcement passed (no violations or resolved)
     - violations is list of disallowed files
 
-    ``ignored_paths`` is the caller's exact set of harness-owned outputs
-    for the active run.
+    ``ignored_paths`` is the harness-owned set for the active run: the
+    caller's per-invocation files plus kstrl's own state directory. It
+    is reported separately from ``config.allowed_paths`` in the failure
+    block, never folded into it.
 
     ``baseline`` is the workspace as it stood before the agent started
     (``git.capture_workspace_baseline``). With one, the guard judges the
@@ -190,13 +280,7 @@ def enforce_allowed_paths(
     if not violations:
         return True, []
 
-    # Display violations
-    ui.channel_header("GUARD", "Disallowed changes")
-    ui.kv("ALLOWED_PATHS", ", ".join(config.allowed_paths))
-    ui.info("")
-    ui.info("Disallowed files:")
-    for f in violations:
-        ui.info(f"    - {f}")
+    _report_violations(ui, config.allowed_paths, ignored_paths, violations)
 
     if not config.interactive:
         ui.err(
@@ -229,11 +313,11 @@ def enforce_allowed_paths(
         # Quit
         return False, violations
     elif choice == 1:
-        # Revert
+        # Revert. Anything refused (kstrl's own state) is reported back
+        # unreverted rather than silently counted as handled.
         ui.info("Reverting disallowed changes...")
-        for f in violations:
-            _revert_violation(f, ui, cwd, baseline)
-        return True, []
+        refused = _revert_violations(violations, ui, cwd, baseline)
+        return not refused, refused
     else:
         # Continue anyway
         ui.warn("Continuing with disallowed changes")

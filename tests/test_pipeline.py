@@ -45,6 +45,7 @@ from kstrl.pipeline import (
 )
 from kstrl.pr import PrOutcome
 from kstrl.review import ReviewConcern, ReviewResult
+from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
@@ -212,6 +213,10 @@ def _make_pipeline(
         security_selection=security_selection,
         knowledge_config=knowledge or KnowledgeConfig(enabled=False),
         factory_result=factory_result,
+        # #269: the plan-time snapshot the factory resolves before the
+        # first engineer call, built here the same way run_factory
+        # builds it so the pipeline is judged against a real one.
+        run_scope=RunScope.resolve(manifest, tmp_path, _base_config(tmp_path)),
         hooks=_recording_hooks(call_log, **(hooks_overrides or {})),
         worktree_paths={},
         component_contexts={},

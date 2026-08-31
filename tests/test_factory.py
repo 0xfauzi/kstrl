@@ -24,6 +24,12 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.helpers.component_prd import write_component_prd
+
+#: The component ids this module's manifests use. _setup_project puts
+#: a PRD at each one's prdPath, which the plan-time scope snapshot
+#: reads before the run is allowed to start.
+_COMP_IDS = ("a", "b")
 
 
 def _make_manifest(
@@ -57,11 +63,19 @@ def _make_base_config(root_dir: Path) -> KstrlConfig:
 
 
 def _setup_project(tmp_path: Path) -> Path:
-    """Create minimal project structure for factory tests."""
+    """Create minimal project structure for factory tests.
+
+    Including a PRD per component this module's manifests name.
+    Without one the run is refused before it starts (#293 review): a
+    component whose pre-run PRD will not read has no plan-time scope,
+    and Phase 1 would fail it identically on every attempt.
+    """
     kstrl_dir = tmp_path / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
-    (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+    write_component_prd(tmp_path, "scripts/kstrl/prd.json")
+    for comp_id in _COMP_IDS:
+        write_component_prd(tmp_path, f"{comp_id}.json")
     return tmp_path
 
 

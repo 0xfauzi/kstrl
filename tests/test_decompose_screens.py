@@ -11,12 +11,15 @@ from rich.text import Text
 from textual.coordinate import Coordinate
 from textual.widgets import DataTable
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.cli import cli
+from kstrl.reducer import ComponentState, RunState
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.dispatch import initial_screens_for_kind
 from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.decompose import DecomposeScreen, SpecTriageScreen
 from kstrl.tui.screens.overview import OverviewScreen
+from kstrl.tui.state import architect_component_id
 from kstrl.tui.widgets.dag_table import DagTable, compute_tiers
 from kstrl.tui.widgets.header import RunHeader
 from tests.helpers.fake_run import (
@@ -49,6 +52,55 @@ class TestComputeTiers:
 
     def test_self_dependency_is_a_cycle(self) -> None:
         assert compute_tiers({"a": ("a",)}) == {"a": -1}
+
+
+class TestArchitectComponentId:
+    """#296 review: the read side of #281, for run dirs already on disk.
+
+    The fallback exists because this seam's failure was WRONG rather than
+    conservative. These pin the two conditions that stop it becoming the
+    collision it was built to remove.
+    """
+
+    @staticmethod
+    def _state(run_id: str, *component_ids: str) -> RunState:
+        state = RunState(run_id=run_id)
+        for cid in component_ids:
+            state.components[cid] = ComponentState(component_id=cid)
+        return state
+
+    def test_a_pre_281_decompose_dir_resolves_to_the_bare_key(self) -> None:
+        state = self._state("decompose-20260101-120000.000000-old", "architect", "api")
+        assert architect_component_id(state) == "architect"
+
+    def test_a_post_281_decompose_dir_resolves_to_the_namespaced_key(self) -> None:
+        state = self._state("decompose-20260901-120000.000000-new", ARCHITECT_COMPONENT, "api")
+        assert architect_component_id(state) == ARCHITECT_COMPONENT
+
+    def test_a_new_dir_with_a_component_named_architect_never_falls_back(self) -> None:
+        """Condition one. `ks decompose` writes the architect's RunPlan
+        entry before the spec reaches an LLM, and the reducer creates a
+        row from RunPlan - so a post-#281 dir always answers on the first
+        branch, and the LLM's own `architect` is never consulted."""
+        state = self._state(
+            "decompose-20260901-120000.000000-new",
+            ARCHITECT_COMPONENT,
+            "architect",
+        )
+        assert architect_component_id(state) == ARCHITECT_COMPONENT
+
+    def test_a_factory_run_never_falls_back(self) -> None:
+        """Condition two, and the one that does not depend on emit order.
+
+        A factory run's architect row is absent whenever the architect
+        never reported - a resume, or an adapter that reports nothing -
+        and its manifest may hold a component named `architect`. That is
+        exactly the ambiguity `serve.read_run_spend` refuses to guess at,
+        so the fallback is restricted to decompose runs and this stays
+        pessimistic.
+        """
+        state = self._state("factory-20260101-120000.000000-run", "architect", "api")
+        assert architect_component_id(state) == ARCHITECT_COMPONENT
 
 
 class TestDispatch:
@@ -108,10 +160,104 @@ class TestDecomposeScreen:
 
             # A replaced event stream may contain a smaller plan; rows
             # from the old fold must not survive the rebuild.
-            app.store.state.plan_order = ["architect", "database"]
+            app.store.state.plan_order = [ARCHITECT_COMPONENT, "database"]
             app.store.state.components.pop("api")
             table.update_state(app.store.state)
             assert {key.value for key in table.rows} == {"database"}
+
+    async def test_a_component_named_architect_is_not_filtered_out_of_the_dag(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#281 in the TUI. ``DagTable`` hides the architect's pseudo
+        row by comparing plan ids against the role's key, so while that
+        key was the bare word a component the architect genuinely NAMED
+        `architect` was excluded from the DAG view - present in the plan,
+        holding real dependencies, and invisible.
+
+        Asserted as membership rather than against the constant: with the
+        namespace collapsed both spellings are the same word, and any
+        assertion phrased in constants would be satisfied by the row
+        being absent.
+        """
+        run_dir = write_fake_decompose_run(tmp_path, components=("architect", "api"))
+        app = _decompose_app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            table = app.screen.query_one(DagTable)
+            assert {key.value for key in table.rows} == {"architect", "api"}
+
+    async def test_a_pre_281_run_dir_still_renders_as_the_run_it_was(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#296 review, MEDIUM. Run directories are the durable record.
+
+        Every decompose dir written before #281 keys the architect by the
+        bare word, and reading only the new key made this screen report a
+        COMPLETED run as failed - a wrong answer, not a conservative one,
+        which is why this seam takes a fallback where
+        ``serve.read_run_spend`` refuses one.
+
+        Asserts all four symptoms the review named, off one old dir: the
+        summary, the attempt strip, the audit-ran branch of the issue
+        strip, and the stale pseudo-row leaking into the graph.
+        """
+        run_dir = write_fake_decompose_run(
+            tmp_path,
+            minors=0,
+            components=("database", "api"),
+            architect_key="architect",
+        )
+        app = _decompose_app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            screen = app.screen
+            assert isinstance(screen, DecomposeScreen)
+
+            summary = str(screen.query_one("#decompose-summary").content)
+            assert "did not complete" not in summary
+            assert "2 component(s)" in summary
+
+            attempt = str(screen.query_one("#attempt-strip").content)
+            assert "waiting for the architect" not in attempt
+            assert "completed" in attempt
+
+            # audit_ran, which only the architect's phase_history shows.
+            assert "clean audit" in str(screen.query_one("#issues-strip").content)
+
+            # The pseudo-row is still filtered, under the key THIS dir
+            # used rather than the one the constant now names.
+            table = screen.query_one(DagTable)
+            assert {key.value for key in table.rows} == {"database", "api"}
+
+            # The transcript tails the key the dir actually wrote.
+            assert screen.transcript_component == "architect"
+
+    async def test_a_pre_281_halted_run_still_shows_its_blocker_banner(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``SpecTriageScreen._refresh`` computes ``halted`` from the
+        architect's status, so on an old dir it read False for a run that
+        did halt and hid the banner pointing at the spec-issues
+        artifact."""
+        run_dir = write_fake_decompose_run(
+            tmp_path,
+            blockers=1,
+            minors=1,
+            architect_key="architect",
+        )
+        app = _decompose_app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("i")
+            await pilot.pause(0.1)
+            triage = app.screen
+            assert isinstance(triage, SpecTriageScreen)
+            banner = triage.query_one("#triage-banner")
+            assert banner.display, "an old halted run must still say it halted"
+            assert "halted" in str(banner.content)
 
     async def test_state_update_after_header_removed_is_safe(
         self,

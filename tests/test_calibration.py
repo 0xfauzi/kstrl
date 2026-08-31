@@ -61,8 +61,8 @@ from kstrl.decompose import (
     _parse_spec_issues,
     _select_agent_output,
     build_decompose_prompt,
-    generate_data_delimiter,
 )
+from kstrl.delimiters import generate_data_delimiter
 from kstrl.git import get_diff_stat, pasted_change_source, repo_change_source
 from kstrl.policy import parse_added_lines
 from kstrl.review import (

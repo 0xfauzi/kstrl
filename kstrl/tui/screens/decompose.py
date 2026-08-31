@@ -22,11 +22,13 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.tui import theme
 from kstrl.tui.messages import StateChanged
+from kstrl.tui.state import architect_component_id, planned_component_ids
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.cost_meter import CostMeter
-from kstrl.tui.widgets.dag_table import ARCHITECT_ID, DagTable
+from kstrl.tui.widgets.dag_table import DagTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.transcript import TranscriptTail
 
@@ -45,7 +47,7 @@ _SEVERITY_STYLES = {
 def _issue_strip(state: RunState) -> Text:
     text = Text()
     counts = state.spec_issue_counts
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(architect_component_id(state))
     audit_ran = architect is not None and any(
         p.get("phase") == "audit" for p in architect.phase_history
     )
@@ -80,7 +82,7 @@ def _issue_strip(state: RunState) -> Text:
 
 def _attempt_strip(state: RunState) -> Text:
     text = Text()
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(architect_component_id(state))
     if architect is None:
         text.append("waiting for the architect...", style=theme.MUTED)
         return text
@@ -104,11 +106,11 @@ def _summary(state: RunState) -> Text | None:
     if not state.finished:
         return None
     text = Text()
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(architect_component_id(state))
     if architect is None or architect.status != "completed":
         text.append("✗ decompose did not complete", style=f"bold {theme.ERROR}")
         return text
-    planned = [c for c in state.plan_order if c != ARCHITECT_ID]
+    planned = planned_component_ids(state)
     prds = [a for a in state.artifacts if a.get("label") == "prd"]
     manifest = next(
         (a for a in state.artifacts if a.get("label") == "manifest"),
@@ -133,7 +135,12 @@ class DecomposeScreen(Screen[None]):
         super().__init__()
         # The app's duck-typed poll contract (A3): refresh_state +
         # the architect's bounded transcript tail.
-        self.transcript_component = ARCHITECT_ID
+        #
+        # Seeded with the current key and re-resolved in refresh_state,
+        # because the run's own format is not knowable until its first
+        # events have folded (#281). A pre-#281 dir keeps its transcript
+        # under the bare word, so tailing the new key found nothing.
+        self.transcript_component = ARCHITECT_COMPONENT
         self._following = True
 
     def compose(self) -> ComposeResult:
@@ -167,6 +174,10 @@ class DecomposeScreen(Screen[None]):
         manifest: Manifest | None,
     ) -> None:
         del manifest  # the folded plan is the source; no manifest join
+        # Before the ready guard: the tail key must track the run's
+        # format even on a poll whose widgets are not up yet, and it is
+        # a plain assignment that cannot raise.
+        self.transcript_component = architect_component_id(state)
         if not self.ready:
             return
         try:
@@ -260,7 +271,7 @@ class SpecTriageScreen(Screen[None]):
             key=lambda i: _SEVERITY_ORDER.get(i.get("severity", ""), 9),
         )
         banner = self.query_one("#triage-banner", Static)
-        architect = state.components.get(ARCHITECT_ID)
+        architect = state.components.get(architect_component_id(state))
         halted = (
             bool(state.spec_issue_counts.get("blocker"))
             and architect is not None

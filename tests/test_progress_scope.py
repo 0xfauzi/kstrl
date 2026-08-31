@@ -44,7 +44,6 @@ from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
     FactoryResult,
-    _component_scope,
     run_factory,
 )
 from kstrl.guards import enforce_allowed_paths, path_is_allowed
@@ -56,6 +55,7 @@ from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline, PipelineHooks
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
+from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
@@ -219,6 +219,7 @@ def _pipeline(
             ),
             cleanup_worktree=lambda *a, **k: None,
         ),
+        run_scope=RunScope.resolve(_manifest([comp]), root, _base_config(root)),
         worktree_paths={comp.id: wt_path},
         component_contexts={},
         fresh_base_retry_ids=set(),
@@ -352,7 +353,7 @@ class TestProgressPathInsideAllowedPaths:
         map_rel = relative_to_root(base.codebase_map_file, tmp_path)
 
         comp = _component()
-        scope = _pipeline(tmp_path, comp, tmp_path)._resolve_verify_scope(comp, tmp_path)
+        scope = _pipeline(tmp_path, comp, tmp_path).run_scope.for_component(comp.id)
         effective = [*allowed, *scope.harness_paths]
 
         assert path_is_allowed(map_rel, effective), (
@@ -831,7 +832,6 @@ class TestInLoopGuardSeesTheComponentScope:
         tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
-        from kstrl.factory import _component_scope
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -845,12 +845,13 @@ class TestInLoopGuardSeesTheComponentScope:
                 }
             )
         )
-        scope = _component_scope(
+        scope = ComponentScope.resolve(
             self._component(prd_rel),
             tmp_path,
             KstrlConfig(),
         )
-        assert scope == ["src/", "tests/"]
+        assert scope.allowed_paths == ["src/", "tests/"]
+        assert scope.source == "component_prd"
 
     def test_an_empty_run_wide_flag_no_longer_disables_the_guard(
         self,
@@ -858,7 +859,6 @@ class TestInLoopGuardSeesTheComponentScope:
     ) -> None:
         """The exact production condition: no --allowed-paths flag."""
         from kstrl.config import KstrlConfig
-        from kstrl.factory import _component_scope
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -874,15 +874,14 @@ class TestInLoopGuardSeesTheComponentScope:
         )
         base = KstrlConfig()
         assert not base.allowed_paths, "precondition: run-wide flag unset"
-        scope = _component_scope(self._component(prd_rel), tmp_path, base)
-        assert scope, "guard would be inert with a falsy scope"
+        scope = ComponentScope.resolve(self._component(prd_rel), tmp_path, base)
+        assert scope.allowed_paths, "guard would be inert with a falsy scope"
 
     def test_a_legacy_prd_falls_back_to_the_run_wide_flag(
         self,
         tmp_path: Path,
     ) -> None:
         from kstrl.config import KstrlConfig
-        from kstrl.factory import _component_scope
 
         prd_rel = "scripts/kstrl/feature/comp-a/prd.json"
         prd = tmp_path / prd_rel
@@ -896,31 +895,38 @@ class TestInLoopGuardSeesTheComponentScope:
             )
         )
         base = KstrlConfig(allowed_paths=["fallback/"])
-        scope = _component_scope(self._component(prd_rel), tmp_path, base)
-        assert scope == ["fallback/"]
+        scope = ComponentScope.resolve(self._component(prd_rel), tmp_path, base)
+        assert scope.allowed_paths == ["fallback/"]
+        assert scope.source == "run_flag"
 
-    def test_an_unreadable_prd_fails_open_here_and_closed_at_phase_1(
+    def test_an_unreadable_prd_with_no_flag_fails_phase_1_closed(
         self,
         tmp_path: Path,
     ) -> None:
-        """Asymmetry by design: the tripwire yields, the gate does not.
+        """R1.5, now decided once at plan time (#269).
 
-        Failing closed in-loop would fail a component before the
-        engineer had done anything. Phase 1 still fails CLOSED on the
-        same unreadable PRD (R1.5), so nothing merges unverified.
+        The two guards used to answer this differently: the in-loop
+        tripwire yielded (no scope, run unguarded) while Phase 1 failed
+        closed on its own separate read. One snapshot cannot hold two
+        answers, so it holds the strict one - an unresolved scope
+        carries an error, which fails ``check_diff_scope`` CLOSED. The
+        tripwire is still not the thing that fails the component: with
+        no authored list it simply does not fire, exactly as before.
         """
         from kstrl.config import KstrlConfig
-        from kstrl.factory import _component_scope
         from kstrl.verify import check_diff_scope
 
         comp = self._component("scripts/kstrl/feature/comp-a/prd.json")
-        assert _component_scope(comp, tmp_path, KstrlConfig()) is None
+        scope = ComponentScope.resolve(comp, tmp_path, KstrlConfig())
+        assert scope.allowed_paths is None, "the in-loop guard stays inert"
+        assert scope.source == "unresolved"
+        assert scope.error is not None
 
         gate = check_diff_scope(
             tmp_path,
             "main",
-            None,
-            allowed_paths_error="PRD not found: missing",
+            scope.allowed_paths,
+            allowed_paths_error=scope.error,
         )
         assert not gate.passed
 
@@ -1586,44 +1592,46 @@ class TestRevertUndoesCommittedViolations:
 
 
 class TestUnreadablePrdIsCaught:
-    """``_component_scope`` caught only (FileNotFoundError, ValueError).
+    """Scope resolution caught only (FileNotFoundError, ValueError).
     A prd.json that is a DIRECTORY raises IsADirectoryError and an
     unreadable one PermissionError - both OSError subclasses that escaped
-    and aborted SCHEDULING, before Phase 1 ever ran."""
+    and aborted SCHEDULING, before Phase 1 ever ran. The read moved to
+    plan time in #269; the family it has to catch did not change, and
+    the answer is now a recorded error rather than a fallback (#293
+    review): a scope that could not be READ is not a scope that does
+    not exist, so the run-wide flag does not stand in for it."""
 
     PRD_REL = "scripts/kstrl/feature/comp-a/prd.json"
 
     def _component(self) -> Component:
         return Component("comp-a", "A", "D", [], self.PRD_REL, "kstrl/comp-a")
 
-    def test_a_prd_that_is_a_directory_falls_back(
+    def test_a_prd_that_is_a_directory_is_caught_not_raised(
         self,
         tmp_path: Path,
     ) -> None:
         (tmp_path / self.PRD_REL).mkdir(parents=True)
         base = KstrlConfig(allowed_paths=["fallback/"])
-        assert _component_scope(
-            self._component(),
-            tmp_path,
-            base,
-        ) == ["fallback/"]
+        scope = ComponentScope.resolve(self._component(), tmp_path, base)
+        assert scope.source == "unresolved"
+        assert scope.allowed_paths is None
+        assert scope.error is not None
+        assert "could not be read" in scope.error
 
     @pytest.mark.skipif(
         hasattr(os, "geteuid") and os.geteuid() == 0,
         reason="root bypasses file permissions",
     )
-    def test_an_unreadable_prd_falls_back(self, tmp_path: Path) -> None:
+    def test_an_unreadable_prd_is_caught_not_raised(self, tmp_path: Path) -> None:
         prd = tmp_path / self.PRD_REL
         prd.parent.mkdir(parents=True)
         prd.write_text('{"branchName": "b", "userStories": []}')
         prd.chmod(0o000)
         try:
             base = KstrlConfig(allowed_paths=["fallback/"])
-            assert _component_scope(
-                self._component(),
-                tmp_path,
-                base,
-            ) == ["fallback/"]
+            scope = ComponentScope.resolve(self._component(), tmp_path, base)
+            assert scope.source == "unresolved"
+            assert scope.error is not None
         finally:
             prd.chmod(0o644)
 
@@ -1632,9 +1640,16 @@ class TestUnreadablePrdIsCaught:
         tmp_path: Path,
     ) -> None:
         """Fail-closed only works if the failure is CAUGHT: Phase 1 must
-        hand check_diff_scope an allowed_paths_error, not raise."""
+        hand check_diff_scope an allowed_paths_error, not raise.
+
+        The unreadable file is the PRE-RUN copy now (#269), because that
+        is the one scope is read from. A worktree copy that cannot be
+        read is still caught, by ``check_prd_stories``, which is the
+        gate that actually reads it.
+        """
         comp = self._component()
         wt_path = tmp_path / "wt"
+        (tmp_path / self.PRD_REL).mkdir(parents=True)
         (wt_path / self.PRD_REL).mkdir(parents=True)
         seen: list[str | None] = []
 
@@ -1660,4 +1675,4 @@ class TestUnreadablePrdIsCaught:
         )
         assert result.ran
         assert seen and seen[0] is not None
-        assert "PRD could not be read" in seen[0]
+        assert "pre-run PRD could not be read" in seen[0]

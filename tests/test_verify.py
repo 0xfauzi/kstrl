@@ -1141,11 +1141,19 @@ class TestReadOnlyVerification:
         """The factory path is untouched: no existing caller passes the flag."""
         import subprocess as sp
 
+        # `run_scrubbed` takes a shell string OR an argv list, and the
+        # staging call is a list (#274: the `:(exclude)` pathspec must
+        # reach git unmangled). Rendered to one string per call so the
+        # assertions below read the same for both forms.
         calls: list[str] = []
 
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            calls.append(cmd)
-            if "ruff check --fix" in cmd:
+        def mock_run(
+            cmd: str | list[str],
+            **kwargs: object,
+        ) -> sp.CompletedProcess[str]:
+            rendered = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(rendered)
+            if "ruff check --fix" in rendered:
                 return sp.CompletedProcess(
                     cmd,
                     0,
@@ -1162,7 +1170,8 @@ class TestReadOnlyVerification:
             result = check_dead_code(tmp_path, "main")
 
         assert any("ruff check --fix" in c for c in calls)
-        assert any("git add -A" in c for c in calls)
+        staged = next(c for c in calls if c.startswith("git add"))
+        assert staged == "git add -A -- . :(exclude).kstrl"
         assert any("git commit" in c for c in calls)
         assert "auto-fixed 2" in result.message
 

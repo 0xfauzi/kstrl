@@ -29,8 +29,8 @@ from kstrl.decompose import (
     _extract_json,
     _select_agent_output,
     collect_agent_output,
-    generate_data_delimiter,
 )
+from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
 
 if TYPE_CHECKING:

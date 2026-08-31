@@ -35,8 +35,8 @@ from kstrl.decompose import (
     _extract_json,
     _select_agent_output,
     collect_agent_output,
-    generate_data_delimiter,
 )
+from kstrl.delimiters import generate_data_delimiter
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -85,11 +85,12 @@ class KnowledgeConfig:
 
         Reads the [knowledge] section from ``<root_dir>/kstrl.toml`` if
         present, then applies any matching environment variable overrides.
-        Raises ValueError on malformed TOML, matching the error policy of
-        :meth:`KstrlConfig.load` so the two loaders treat the same file
-        consistently.
+        Raises ``ConfigError`` on malformed TOML through the shared
+        ``load_toml_section``, which is where every other loader reads
+        its section: a second copy of the open-and-decode was a second
+        place for the file's error policy to drift (#272).
         """
-        import tomllib
+        from kstrl.config import load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
@@ -97,35 +98,23 @@ class KnowledgeConfig:
         config = cls()
         config.knowledge_root = root_dir / ".kstrl" / "knowledge"
 
-        from kstrl.config import resolve_config_file
-
-        toml_path = resolve_config_file(root_dir)
-        data: dict[str, Any] = {}
-        if toml_path.exists():
-            try:
-                with open(toml_path, "rb") as f:
-                    data = tomllib.load(f)
-            except tomllib.TOMLDecodeError as exc:
-                raise ValueError(f"Invalid TOML in {toml_path}: {exc}") from exc
-
-        section = data.get("knowledge")
-        if isinstance(section, dict):
-            if "enabled" in section:
-                config.enabled = bool(section["enabled"])
-            if "max_core_tokens" in section:
-                config.max_core_tokens = int(section["max_core_tokens"])
-            if "max_dependency_tokens" in section:
-                config.max_dependency_tokens = int(section["max_dependency_tokens"])
-            if "max_sibling_tokens" in section:
-                config.max_sibling_tokens = int(section["max_sibling_tokens"])
-            if "distill_timeout_seconds" in section:
-                config.distill_timeout_seconds = float(section["distill_timeout_seconds"])
-            if "distill_model" in section:
-                config.distill_model = str(section["distill_model"])
-            if "max_facts_per_distill" in section:
-                config.max_facts_per_distill = int(section["max_facts_per_distill"])
-            if "dependency_scope" in section:
-                config.dependency_scope = str(section["dependency_scope"])
+        section = load_toml_section(resolve_config_file(root_dir), "knowledge")
+        if "enabled" in section:
+            config.enabled = bool(section["enabled"])
+        if "max_core_tokens" in section:
+            config.max_core_tokens = int(section["max_core_tokens"])
+        if "max_dependency_tokens" in section:
+            config.max_dependency_tokens = int(section["max_dependency_tokens"])
+        if "max_sibling_tokens" in section:
+            config.max_sibling_tokens = int(section["max_sibling_tokens"])
+        if "distill_timeout_seconds" in section:
+            config.distill_timeout_seconds = float(section["distill_timeout_seconds"])
+        if "distill_model" in section:
+            config.distill_model = str(section["distill_model"])
+        if "max_facts_per_distill" in section:
+            config.max_facts_per_distill = int(section["max_facts_per_distill"])
+        if "dependency_scope" in section:
+            config.dependency_scope = str(section["dependency_scope"])
 
         _apply_knowledge_env_overrides(config)
         return config

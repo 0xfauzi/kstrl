@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE, UsageRecord
 from kstrl.commandrun import open_command_run
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.reducer import load_run_state
@@ -98,7 +98,7 @@ def _decompose(
         ui,
         tmp_path,
         "decompose",
-        component="architect",
+        component=ARCHITECT_COMPONENT,
         enabled=True,
         heartbeat=False,
     )
@@ -112,7 +112,7 @@ def _decompose(
             ui=ui,
             root_dir=tmp_path,
             bus=run.bus,
-            transcript=run.transcript_writer("architect"),
+            transcript=run.transcript_writer(ARCHITECT_COMPONENT),
         )
     finally:
         run.close()
@@ -133,10 +133,10 @@ class TestDecomposeRun:
         assert state.finished
         # The forming DAG: architect first, then the manifest order.
         assert state.plan_order == [
-            "architect",
+            ARCHITECT_COMPONENT,
             *[c.id for c in manifest.components],  # type: ignore[attr-defined]
         ]
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "completed"
         assert [p["phase"] for p in architect.phase_history] == [
             "decompose",
@@ -180,7 +180,7 @@ class TestDecomposeRun:
     ) -> None:
         _decompose(tmp_path, TwoShotAgent(VALID_DECOMPOSE_OUTPUT))
         state, _ = load_run_state(tmp_path)
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         decompose_phases = [p for p in architect.phase_history if p["phase"] == "decompose"]
         assert [p["passed"] for p in decompose_phases] == [False, True]
         assert architect.attempt == 2
@@ -195,14 +195,14 @@ class TestDecomposeRun:
 
         state, _ = load_run_state(tmp_path)
         assert state.finished  # not dead - the architect judged and halted
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "failed"
         audit = [p for p in architect.phase_history if p["phase"] == "audit"]
         assert audit and audit[0]["passed"] is False
         assert state.spec_issue_counts == {"blocker": 1}
         assert [a["label"] for a in state.artifacts] == ["spec_issues"]
         # No plan beyond the architect: nothing was decomposed.
-        assert state.plan_order == ["architect"]
+        assert state.plan_order == [ARCHITECT_COMPONENT]
 
     def test_transcript_captures_the_architect_stream(
         self,
@@ -211,7 +211,7 @@ class TestDecomposeRun:
         _decompose(tmp_path, MockDecomposeAgent(MINOR_ISSUE_OUTPUT))
         runs_root = tmp_path / ".kstrl" / "runs"
         run_dir = next(iter(runs_root.iterdir()))
-        transcript = run_dir / "components" / "architect" / "engineer.log"
+        transcript = run_dir / "components" / ARCHITECT_COMPONENT / "engineer.log"
         assert "spec_issues" in transcript.read_text()
 
     def test_agent_exception_finishes_the_run(self, tmp_path: Path) -> None:
@@ -219,7 +219,7 @@ class TestDecomposeRun:
             _decompose(tmp_path, ExplodingAgent())
         state, _ = load_run_state(tmp_path)
         assert state.finished
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "failed"
         assert architect.error == "RuntimeError: architect exploded"
         assert architect.phase_history[-1]["phase"] == "decompose"
@@ -240,7 +240,7 @@ class TestDecomposeRun:
 
         state, _ = load_run_state(tmp_path)
         assert state.finished
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "failed"
         assert architect.error == "OSError: manifest disk full"
         assert [a["label"] for a in state.artifacts] == ["spec_issues"]
@@ -341,7 +341,7 @@ class TestArchitectUsageIsRecorded:
         assert state.cost_calls == 1
         assert state.cost_usd == pytest.approx(0.5)
         assert state.total_tokens == 120
-        architect = state.components["architect"]
+        architect = state.components[ARCHITECT_COMPONENT]
         assert architect.usage_calls == 1
         assert architect.cost_usd == pytest.approx(0.5)
 
@@ -377,14 +377,21 @@ class TestArchitectUsageIsRecorded:
         """The meter's phase key is the ROLE name, which is what the
         coverage footer prints. It must be the fifth role's name, not the
         ``decompose``/``audit`` lifecycle phases this component reports
-        elsewhere."""
+        elsewhere.
+
+        #281: the two axes are asserted against DIFFERENT constants, and
+        that is the property. The phase axis is kstrl's vocabulary on
+        both sides, so it stays the bare role name; the component axis is
+        one the architect LLM also writes to, so the role's key is
+        namespaced out of reach of any component id.
+        """
         _decompose(tmp_path, MeteringAgent(MINOR_ISSUE_OUTPUT))
         run_dir = next(iter((tmp_path / ".kstrl" / "runs").iterdir()))
         events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text().splitlines()]
         usage = [e for e in events if e.get("event") == "component_usage"]
         assert len(usage) == 1
-        assert usage[0]["component"] == "architect"
-        assert usage[0]["data"]["phase"] == "architect"
+        assert usage[0]["component"] == ARCHITECT_COMPONENT
+        assert usage[0]["data"]["phase"] == ARCHITECT_ROLE
 
     def test_an_agent_that_reports_nothing_adds_no_phantom_row(
         self,

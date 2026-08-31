@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.delimiters import generate_data_delimiter
+
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
@@ -1233,11 +1235,6 @@ def pasted_change_source(diff_content: str) -> tuple[str, str]:
     on the one path whose job is to measure the prompt honestly. Callers
     on this path own the size of what they paste.
     """
-    # Local import: kstrl.decompose reaches kstrl.guards, which imports
-    # this module, so a module-level import would close a cycle. Same
-    # pattern the config loaders in this package already use.
-    from kstrl.decompose import generate_data_delimiter
-
     data_delimiter = generate_data_delimiter()
     block = f"""\
 No repository is available to you, so the complete change is pasted

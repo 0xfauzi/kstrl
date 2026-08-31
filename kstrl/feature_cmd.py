@@ -76,6 +76,12 @@ class FeatureParams:
     log_dir: Path
     understand_iterations: int
     understand_prompt_file: Path | None
+    #: The engineer prompt the implement and repair loops run on. Set by
+    #: the caller so the CLI preflight that warns about a stale prompt
+    #: (#286) and the loop that reads it are the SAME path by
+    #: construction. It was a literal repeated in both modules, agreeing
+    #: only by luck; nothing failed when they diverged.
+    prompt_file: Path
     implementation_auto_run: bool
     repair_max_runs: int
     repair_iterations: int
@@ -170,14 +176,12 @@ def run_feature(
     """
     component = params.feature_name
     bus = run.bus if run is not None else None
-    guard_ignored_paths: list[str] = []
-    try:
-        relative_log_dir = params.log_dir.relative_to(root_dir).as_posix()
-    except ValueError:
-        pass
-    else:
-        if relative_log_dir.startswith(".kstrl/logs/"):
-            guard_ignored_paths.append(relative_log_dir.rstrip("/") + "/")
+    # This flow used to hand `run_loop` its own `.kstrl/logs/<feature>/`
+    # entry. #274 removed it: every loop below runs with `cwd=root_dir`,
+    # `guard_state_root=root_dir` carves out `.kstrl/logs/` as part of
+    # the whole state directory, and `path_is_allowed` matches that as a
+    # prefix. Declaring it here as well would print two entries for one
+    # carve-out and read as wider than it is.
 
     def emit(event: Event) -> None:
         if bus is not None:
@@ -251,7 +255,7 @@ def run_feature(
             bus=bus,
             interaction=interaction,
             stop_check=stop_check,
-            guard_ignored_paths=guard_ignored_paths,
+            guard_state_root=root_dir,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -360,7 +364,7 @@ def run_feature(
         ui.warn("PRD has no user stories. Skipping implementation.")
         skip("PRD has no user stories")
         return 0
-    run_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+    run_config.prompt_file = params.prompt_file
     if params.allowed_paths_override is not None:
         run_config.allowed_paths = params.allowed_paths_override
     if params.branch_override is not None:
@@ -382,7 +386,7 @@ def run_feature(
             bus=bus,
             interaction=interaction,
             stop_check=stop_check,
-            guard_ignored_paths=guard_ignored_paths,
+            guard_state_root=root_dir,
         )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
@@ -450,7 +454,7 @@ def run_feature(
         )
         repair_config = copy.deepcopy(base_config)
         repair_config.prd_file = repair_prd
-        repair_config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
+        repair_config.prompt_file = params.prompt_file
         repair_config.max_iterations = params.repair_iterations
         if params.allowed_paths_override is not None:
             repair_config.allowed_paths = params.allowed_paths_override
@@ -485,7 +489,7 @@ def run_feature(
                 bus=bus,
                 interaction=interaction,
                 stop_check=stop_check,
-                guard_ignored_paths=guard_ignored_paths,
+                guard_state_root=root_dir,
             )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"

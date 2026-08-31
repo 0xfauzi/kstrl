@@ -13,6 +13,35 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `kstrl.toml` and the `KSTRL_*` environment are now resolved once, at
+  command entry, before a command constructs anything. They used to be
+  parsed lazily, by whichever config dataclass first needed its section,
+  so a typo failed at the first loader that reached it: on the decompose
+  path that is `LinearConfig.load`, which runs after the architect has
+  been invoked and paid for (measured at 119 to 210 seconds against a
+  frontier model on a real spec), and `KSTRL_MUTATION_THRESHOLD=many` or
+  `KSTRL_SECURITY_TIMEOUT=many` left a raw `ValueError` traceback out of
+  `ks factory`. The blast radius of a typo therefore depended on which
+  section it was in and which command was run. Every section is now
+  checked up front and the error names the section, the offending key or
+  environment variable, and its value. `[evolution]` is the one section
+  that warns and continues, because the journal is an optional audit
+  trail; every other section configures a gate, a budget, a boundary or
+  a destination, where substituting a default would measure the run with
+  something other than what the operator configured. Bare `ks` on a
+  terminal is checked too, before the home shell opens, because the TUI
+  launches runs in-process.
+
+  One command is exempt from the check itself: `ks init`, which writes
+  the file, and would otherwise refuse to replace the very file it
+  cannot parse. Three more skip only the entry seam and run the same
+  check in their own bodies, under their own contracts: `ks config show`
+  prints every row it can resolve and then names each rejected section
+  with its key and value, `ks sense` reports through exit 2 and a JSON
+  error document, and `ks serve` through exit 2 before it can poison a
+  queue item. `ks config show` is the surface guaranteed to run and
+  explain whatever else refuses (#272).
+
 - Safe mode on the dashboard: six defects an independent review
   reproduced after the change merged. All three `dock: top` siblings
   reserved row zero and painted over each other, so the checkpoint

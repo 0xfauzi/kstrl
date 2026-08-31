@@ -27,7 +27,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.decompose import build_decompose_prompt, generate_data_delimiter
+from kstrl.decompose import build_decompose_prompt
+from kstrl.delimiters import generate_data_delimiter
 from kstrl.git import pasted_change_source, repo_change_source
 from kstrl.knowledge import build_distill_prompt
 from kstrl.manifest import Component

@@ -40,6 +40,10 @@ class ConfigReport:
     toml_path: Path
     toml_exists: bool
     rows: tuple[ConfigRow, ...]
+    #: Sections whose loader rejected the configuration, so no row could
+    #: be built for them. The report is still returned: see
+    #: :func:`build_config_report`.
+    unresolved: tuple[str, ...] = ()
 
 
 # (toml section, [(toml key, KstrlConfig field)]) - the documented
@@ -154,22 +158,25 @@ def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
 def _phase_sections() -> list[tuple[str, Any, list[str]]]:
     """(section, loader, knob fields) - the documented kstrl.toml
     surface for the factory-phase configs. Loaders import lazily; the
-    report is not on any hot path."""
-    from kstrl.contract import ContractConfig
-    from kstrl.evolution import EvolutionConfig
-    from kstrl.factory import FactoryConfig
-    from kstrl.feedforward import FeedforwardConfig
-    from kstrl.knowledge import KnowledgeConfig
-    from kstrl.linear import LinearConfig
-    from kstrl.observability import NotifyConfig
-    from kstrl.security import SecurityConfig
+    report is not on any hot path.
+
+    The LOADER for each section comes from
+    ``config_preflight.config_sections()``, which is the one registry of
+    section to loader and is kept complete by an AST test. Only the knob
+    lists are local, because they are about what this report RENDERS
+    rather than about what a section is loaded by. A second copy of the
+    loader table is what the comment on ``verify`` below is already an
+    account of, one level down.
+    """
+    from kstrl.config_preflight import config_sections
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
 
-    return [
+    loaders = {name: entry.loader for entry in config_sections() for name in entry.sections}
+
+    knobs: list[tuple[str, list[str]]] = [
         (
             "factory",
-            FactoryConfig.load,
             [
                 "max_parallel",
                 "max_retries",
@@ -196,10 +203,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         # VerifyConfig IS a documented kstrl.toml key, which gen_docs
         # already enforces, so the field list is the key list and a
         # second copy of it can only ever be wrong.
-        ("verify", VerifyConfig.load, [f.name for f in dataclass_fields(VerifyConfig)]),
+        ("verify", [f.name for f in dataclass_fields(VerifyConfig)]),
         (
             "security",
-            SecurityConfig.load,
             [
                 "mode",
                 "fail_threshold",
@@ -209,10 +215,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "model",
             ],
         ),
-        ("contract", ContractConfig.load, ["mode", "test_command", "timeout"]),
+        ("contract", ["mode", "test_command", "timeout"]),
         (
             "feedforward",
-            FeedforwardConfig.load,
             [
                 "enabled",
                 "module_map",
@@ -224,7 +229,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "knowledge",
-            KnowledgeConfig.load,
             [
                 "enabled",
                 "max_core_tokens",
@@ -238,7 +242,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "evolution",
-            EvolutionConfig.load,
             [
                 "enabled",
                 "journal_path",
@@ -249,10 +252,9 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "auto_apply_computational",
             ],
         ),
-        ("timeout", TimeoutConfig.load, [f.name for f in dataclass_fields(TimeoutConfig)]),
+        ("timeout", [f.name for f in dataclass_fields(TimeoutConfig)]),
         (
             "notify",
-            NotifyConfig.load,
             [
                 "on_complete",
                 "on_first_failure",
@@ -262,7 +264,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         (
             "linear",
-            LinearConfig.load,
             [
                 "enabled",
                 "team_id",
@@ -275,6 +276,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
             ],
         ),
     ]
+    return [(name, loaders[name], fields) for name, fields in knobs]
 
 
 def _base_sources(
@@ -347,20 +349,64 @@ def build_config_report(
 
     ``overlay`` is the CLI's flag layer: it mutates the resolved
     KstrlConfig and returns the field names it overrode (tagged
-    ``flag``). Raises ValueError when a loader rejects the config -
-    presentation of that error is the caller's job.
+    ``flag``).
+
+    A PHASE section whose loader rejects the config costs that section's
+    rows and is named in ``unresolved``; it does not cost the report.
+    One typo used to abort the whole thing before a single row printed,
+    which made ``ks config show`` the LEAST informative surface in the
+    CLI at the exact moment it is the one an operator opens: every other
+    command named the section, the key and the value, and this one said
+    ``error: could not convert string to float: 'many'``.
+
+    The base config still raises, because a malformed document or a bad
+    ``[run]`` value leaves nothing to render beside the failure.
     """
+    from kstrl.config import toml_parse_scope
+    from kstrl.config_preflight import REJECTIONS
+
     toml_path = resolve_config_file(root_dir)
     phase_sections = _phase_sections()
 
-    resolved_base = KstrlConfig.load(root_dir)
-    phase_resolved = {name: loader(root_dir) for name, loader, _ in phase_sections}
-    with scrubbed_environ():
-        noenv_base = KstrlConfig.load(root_dir)
-        phase_noenv = {name: loader(root_dir) for name, loader, _ in phase_sections}
-    phase_toml_keys = {
-        name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
-    }
+    def _resolve(loader: Any) -> Any:
+        """The section, or None when it rejects the configuration.
+
+        The rejection set is IMPORTED, not restated: it has already
+        widened twice, and a local copy that missed the third widening
+        would let the new exception escape and kill the whole report
+        before a single row printed, which is the defect this tolerance
+        was added to remove. WHY a section was rejected is
+        ``config_preflight``'s job to report; None here means only "no
+        row can be built from this".
+        """
+        try:
+            return loader(root_dir)
+        except REJECTIONS:
+            return None
+
+    # One parse of kstrl.toml for the whole report. Without this the
+    # loader calls and section reads below lex the same bytes 32 times:
+    # counted, and measured on the shipped 21 KB kstrl.toml.example at
+    # 13.34 ms against 0.82 ms with it. The TUI config screen pays that
+    # again on every refresh. Per call, so that screen's
+    # re-read-on-demand keeps seeing the file as it is now.
+    with toml_parse_scope():
+        resolved_base = KstrlConfig.load(root_dir)
+        phase_resolved = {name: _resolve(loader) for name, loader, _ in phase_sections}
+        with scrubbed_environ():
+            noenv_base = KstrlConfig.load(root_dir)
+            phase_noenv = {name: _resolve(loader) for name, loader, _ in phase_sections}
+        # Derived rather than accumulated: a loader never returns None, so
+        # the two passes ARE the record of which sections failed, and the
+        # skip below cannot drift from the reason for it.
+        unresolved = tuple(
+            name
+            for name, _, _ in phase_sections
+            if phase_resolved[name] is None or phase_noenv[name] is None
+        )
+        phase_toml_keys = {
+            name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
+        }
 
     defaults_base = kstrl_config_defaults(root_dir)
 
@@ -372,6 +418,8 @@ def build_config_report(
 
     rows = _base_rows(resolved_base, base_sources)
     for section, _, knob_fields in phase_sections:
+        if section in unresolved:
+            continue
         rows.extend(
             _phase_rows(
                 section,
@@ -387,4 +435,5 @@ def build_config_report(
         toml_path=toml_path,
         toml_exists=toml_path.exists(),
         rows=tuple(rows),
+        unresolved=unresolved,
     )

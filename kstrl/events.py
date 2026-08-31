@@ -404,6 +404,32 @@ class RunPlan(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class ComponentScopeResolved(Event):
+    """One component's write scope, as resolved before any engineer ran.
+
+    #269: both guards read a single plan-time snapshot
+    (``scope.ComponentScope``) instead of each re-reading a PRD, so the
+    scope decision is made once and has to be recorded once - otherwise
+    the only way to answer "why was this component allowed to write
+    that?" after the run is to re-derive a value from files the run has
+    since changed. ``scope_source`` says which authority supplied the
+    list (the component PRD, the run-wide flag, or nothing) and
+    ``origin`` names the file or flag it came from.
+
+    ``scope_source``, not ``source``: that name is an ENVELOPE field on
+    every event, so a payload field sharing it is overwritten by the bus
+    at emit and dropped from the serialised record.
+    """
+
+    type: ClassVar[str] = "component_scope_resolved"
+    scope_source: str = ""
+    origin: str = ""
+    allowed_paths: tuple[str, ...] = ()
+    harness_paths: tuple[str, ...] = ()
+    error: str = ""
+
+
+@dataclass(frozen=True, kw_only=True)
 class PhaseStarted(Event):
     type: ClassVar[str] = "phase_started"
     phase: str = ""

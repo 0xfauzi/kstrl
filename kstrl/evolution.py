@@ -129,16 +129,32 @@ class EvolutionConfig:
         Which exceptions that means is stated here rather than at a call
         site, because it is a fact about :meth:`load`: ``ValueError``
         from malformed TOML or a non-integer ``lookback_runs`` (from the
-        file or from ``KSTRL_EVOLUTION_LOOKBACK_RUNS``), and ``OSError``
-        from an unreadable ``kstrl.toml``. A future coercion added to
+        file or from ``KSTRL_EVOLUTION_LOOKBACK_RUNS``), ``TypeError``
+        from a toml array where a number belongs, and ``OSError`` from
+        an unreadable ``kstrl.toml``. A future coercion added to
         ``load`` is then covered here instead of silently escaping a
         guard somebody wrote around a call.
+
+        ``TypeError`` was added when #272 gave the same section an entry
+        check: ``config_preflight.REJECTIONS`` treats it as operator
+        input, and two lists that disagree would degrade the same value
+        at startup and then raise on it mid-run.
+
+        The cost of that widening, stated because it is real: a
+        ``TypeError`` from a DEFECT inside :meth:`load` - a None where a
+        path belongs, a signature that stopped matching - now reads as
+        "config unreadable, skipping journal" rather than surfacing. It
+        cannot be narrowed to the toml-array case without inspecting the
+        message, which would be guessing. The journal going quiet is the
+        signal that a defect is hiding here, so treat a "skipping
+        journal" warning on a config that looks correct as a bug report
+        about this method rather than about the operator's file.
 
         Degrades loudly: ``warn`` is called with the parse failure.
         """
         try:
             return cls.load(root_dir)
-        except (ValueError, OSError) as exc:
+        except (ValueError, TypeError, OSError) as exc:
             warn(f"Evolution config unreadable, skipping journal: {exc}")
             return None
 
@@ -438,6 +454,15 @@ def _role_usage_entries(
     (#257 review). The architect is what made that reachable: a one-role
     pseudo-component that spends before any component exists and never
     appears in a manifest.
+
+    "Never" became structural in #281. This split is a set difference
+    against the manifest's ids, so while role keys were bare words a
+    component genuinely named `architect` swallowed the role row: the
+    difference was empty, the spend was attributed to the component's
+    ``usage`` field, and no ``role_usage`` row was written at all.
+    ``names.role_component_key`` puts role keys where no component id can
+    be spelled, so the two sets are now disjoint by construction rather
+    than by what the architect happened to name things.
 
     A distinct ``event_type`` rather than a synthetic
     ``component_result``, because every field that row carries - status,

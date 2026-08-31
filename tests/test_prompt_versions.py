@@ -176,7 +176,17 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
         "(MAJOR for breaking taxonomy changes, MINOR for wording, PATCH for typos).\n"
         f"  3. Update _EXPECTED_SNAPSHOTS[{name!r}] in this file to the new "
         "(hash, version) tuple.\n"
-        "Both writes are required. The PR diff with prompt + version + "
+    )
+    if name == "DEFAULT_PROMPT":
+        parts.append(
+            "  4. APPEND the new (hash, version) row to the prompt.md entry of "
+            "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py, keeping every older "
+            "row (#286). Without it the bump reaches no already-initialised "
+            "project and nothing can tell an operator their prompt.md is "
+            "behind.\n"
+        )
+    parts.append(
+        "All of these writes are required. The PR diff with prompt + version + "
         "snapshot all moving is the audit trail.\n"
     )
     return "".join(parts)
@@ -216,6 +226,27 @@ def test_default_engineer_prompt_snapshot_unchanged() -> None:
     engineer phase. Snapshot-protected on the same terms as the other
     role prompts."""
     _check_snapshot("DEFAULT_PROMPT")
+
+
+def test_engineer_prompt_bump_reaches_existing_projects() -> None:
+    """H3's reach (#286): a version bump that is not also recorded in the
+    scaffold ledger is invisible to every already-initialised project.
+
+    ``ks init`` never overwrites ``scripts/kstrl/prompt.md``, so the only
+    thing that can tell an operator their copy is behind is the ledger of
+    bodies the harness has shipped. This test fails the moment
+    DEFAULT_PROMPT moves without a matching row, in the same file the
+    person doing the bump is already editing. The deeper invariants live
+    in tests/test_prompt_staleness.py."""
+    from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
+
+    template = next(t for t in SCAFFOLDED_TEMPLATES if t.filename == "prompt.md")
+    assert template.history[-1] == (_sha256(DEFAULT_PROMPT), DEFAULT_PROMPT_VERSION), (
+        "SCAFFOLDED_TEMPLATES in kstrl/init_cmd.py does not end with the "
+        "engineer prompt this harness ships. APPEND "
+        f"({_sha256(DEFAULT_PROMPT)!r}, {DEFAULT_PROMPT_VERSION!r}) to its "
+        "history and keep every older row."
+    )
 
 
 def test_no_silent_version_pin(monkeypatch: pytest.MonkeyPatch) -> None:

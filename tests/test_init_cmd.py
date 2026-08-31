@@ -32,10 +32,10 @@ from kstrl.ui.rich_ui import RichUI
 from tests.spine_utils import git
 
 
-def run_init_capturing(root: Path) -> tuple[int, str]:
+def run_init_capturing(root: Path, *, upgrade_prompts: bool = False) -> tuple[int, str]:
     """Run init against ``root``, returning (exit code, printed output)."""
     buffer = io.StringIO()
-    code = run_init(root, PlainUI(no_color=True, file=buffer))
+    code = run_init(root, PlainUI(no_color=True, file=buffer), upgrade_prompts=upgrade_prompts)
     return code, buffer.getvalue()
 
 

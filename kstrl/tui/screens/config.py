@@ -221,10 +221,22 @@ class ConfigScreen(Screen[None]):
         if root_dir is None:
             return
         try:
-            self.app.config_report = (  # type: ignore[attr-defined]
-                build_config_report(root_dir)
-            )
+            report = build_config_report(root_dir)
         except ValueError as exc:
             self.app.notify(f"config failed to resolve: {exc}", severity="error")
             return
+        self.app.config_report = report  # type: ignore[attr-defined]
+        if report.unresolved:
+            # A rejected section costs its rows rather than the whole
+            # report (#272). Saying so is the difference between "this
+            # section has no rows" and "this section is silently absent".
+            # The REASON lives in `ks config show`, which names the key
+            # and the value; this report carries only section names, and
+            # only for the sections it renders.
+            self.app.notify(
+                "unusable, so not shown: "
+                + ", ".join(f"[{s}]" for s in report.unresolved)
+                + " - run `ks config show` for the key and value",
+                severity="error",
+            )
         self._render_report(self.query_one(Input).value)
