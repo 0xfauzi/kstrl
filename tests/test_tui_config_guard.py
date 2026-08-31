@@ -657,6 +657,30 @@ def test_the_config_screen_and_ks_config_show_share_one_problem_reporter() -> No
     assert "config_problem_lines(root_dir, warn=" in cli
 
 
+def test_the_entry_check_does_not_list_our_own_defect_as_a_config_problem(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The seam all three reporting surfaces route through.
+
+    ``ks config show``, the TUI config screen and the entry check
+    itself all reach ``collect_config_problems``, so a RuntimeError
+    kstrl never defined being listed there as the operator's broken
+    file is the same defect as findings 2 and 6, one call deeper and
+    reachable from all of them.
+    """
+    import kstrl.evolution
+
+    def _explode(root_dir: Path | None = None) -> None:
+        raise NotImplementedError("a loader we forgot to finish")
+
+    monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+    with pytest.raises(NotImplementedError):
+        collect_config_problems(tmp_path, warn=lambda _m: None)
+    with pytest.raises(NotImplementedError):
+        config_problem_lines(tmp_path, warn=lambda _m: None)
+
+
 def test_the_shared_reporter_gives_the_document_error_when_nothing_parses(
     tmp_path: Path,
 ) -> None:

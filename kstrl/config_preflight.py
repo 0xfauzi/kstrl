@@ -286,6 +286,13 @@ def collect_config_problems(
             try:
                 section.loader(root_dir)
             except REJECTIONS as exc:
+                # Same rule as every other catcher of this tuple: a
+                # RuntimeError kstrl did not define is our defect, and
+                # listing it under "configuration problems" blames the
+                # operator's file for it. This is the seam all three
+                # reporting surfaces route through, so the hole would
+                # have been one call deep from each of them.
+                raise_if_defect(exc)
                 detail = _detail(section, toml_path, root_dir, exc, blame_env=True)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
